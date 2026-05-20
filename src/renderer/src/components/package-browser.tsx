@@ -1,0 +1,396 @@
+import { useAppStore } from '../store'
+import { useEffect, useState } from 'react'
+import { clsx } from 'clsx'
+import {
+  Package,
+  Search,
+  Download,
+  Trash2,
+  ExternalLink,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  X,
+  Store,
+  FolderOpen,
+  Puzzle,
+  BookOpen,
+  Palette,
+} from 'lucide-react'
+
+export function PackageBrowser(): React.JSX.Element {
+  const installedPackages = useAppStore((state) => state.installedPackages)
+  const catalogPackages = useAppStore((state) => state.catalogPackages)
+  const packageLoading = useAppStore((state) => state.packageLoading)
+  const packageSearchQuery = useAppStore((state) => state.packageSearchQuery)
+  const loadInstalledPackages = useAppStore((state) => state.loadInstalledPackages)
+  const installPackage = useAppStore((state) => state.installPackage)
+  const removePackage = useAppStore((state) => state.removePackage)
+  const searchCatalog = useAppStore((state) => state.searchCatalog)
+  const setPackageSearchQuery = useAppStore((state) => state.setPackageSearchQuery)
+  const setCurrentView = useAppStore((state) => state.setCurrentView)
+  const installedSkills = useAppStore((state) => state.installedSkills)
+  const loadSkills = useAppStore((state) => state.loadSkills)
+
+  const [activeTab, setActiveTab] = useState<'installed' | 'catalog' | 'skills'>('installed')
+  const [installInput, setInstallInput] = useState('')
+  const [installing, setInstalling] = useState(false)
+
+  useEffect(() => {
+    loadInstalledPackages()
+    loadSkills()
+    searchCatalog()
+  }, [loadInstalledPackages, loadSkills, searchCatalog])
+
+  const handleInstall = async () => {
+    if (!installInput.trim()) return
+    setInstalling(true)
+    await installPackage(installInput.trim())
+    setInstallInput('')
+    setInstalling(false)
+  }
+
+  const handleRemove = async (spec: string) => {
+    await removePackage(spec)
+  }
+
+  const handleSearch = (query: string) => {
+    setPackageSearchQuery(query)
+    searchCatalog(query)
+  }
+
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Header */}
+      <div className="border-b border-neutral-800 px-4 py-3">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Package size={16} className="text-neutral-400" />
+            <h2 className="text-sm font-medium text-neutral-200">Packages & Skills</h2>
+          </div>
+          <button
+            onClick={() => setCurrentView('chat')}
+            className="rounded px-2 py-1 text-xs text-neutral-500 hover:text-neutral-300 transition-colors"
+          >
+            Back to Chat
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1">
+          <TabButton
+            active={activeTab === 'installed'}
+            onClick={() => setActiveTab('installed')}
+            icon={<FolderOpen size={12} />}
+            label="Installed"
+            count={installedPackages.length}
+          />
+          <TabButton
+            active={activeTab === 'catalog'}
+            onClick={() => setActiveTab('catalog')}
+            icon={<Store size={12} />}
+            label="Catalog"
+          />
+          <TabButton
+            active={activeTab === 'skills'}
+            onClick={() => setActiveTab('skills')}
+            icon={<Puzzle size={12} />}
+            label="Skills"
+            count={installedSkills.length}
+          />
+        </div>
+      </div>
+
+      {/* Install bar */}
+      <div className="border-b border-neutral-800 px-4 py-3">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={installInput}
+            onChange={(e) => setInstallInput(e.target.value)}
+            placeholder="npm:package-name or git:github.com/user/repo"
+            className="flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleInstall()
+            }}
+          />
+          <button
+            onClick={handleInstall}
+            disabled={installing || !installInput.trim()}
+            className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {installing ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Download size={14} />
+            )}
+            Install
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {activeTab === 'installed' && (
+          <InstalledTab
+            packages={installedPackages}
+            loading={packageLoading}
+            onRemove={handleRemove}
+          />
+        )}
+        {activeTab === 'catalog' && (
+          <CatalogTab
+            packages={catalogPackages}
+            loading={packageLoading}
+            searchQuery={packageSearchQuery}
+            onSearch={handleSearch}
+            onInstall={installPackage}
+          />
+        )}
+        {activeTab === 'skills' && (
+          <SkillsTab skills={installedSkills} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Tab Buttons ─────────────────────────────────────────────────────────────
+
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+  count,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: React.ReactNode
+  label: string
+  count?: number
+}): React.JSX.Element {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors',
+        active
+          ? 'bg-neutral-800 text-neutral-200'
+          : 'text-neutral-500 hover:bg-neutral-800/50 hover:text-neutral-300'
+      )}
+    >
+      {icon}
+      {label}
+      {count !== undefined && count > 0 && (
+        <span className="rounded-full bg-neutral-700 px-1.5 py-0.5 text-[10px]">{count}</span>
+      )}
+    </button>
+  )
+}
+
+// ─── Installed Tab ───────────────────────────────────────────────────────────
+
+function InstalledTab({
+  packages,
+  loading,
+  onRemove,
+}: {
+  packages: Array<{ name: string; source: string; type: string; version: string | null }>
+  loading: boolean
+  onRemove: (spec: string) => void
+}): React.JSX.Element {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 size={24} className="animate-spin text-neutral-500" />
+      </div>
+    )
+  }
+
+  if (packages.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-neutral-500">
+        <Package size={32} className="mb-3 text-neutral-600" />
+        <p className="text-sm">No packages installed</p>
+        <p className="mt-1 text-xs text-neutral-600">Browse the catalog or use the install bar above</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {packages.map((pkg) => (
+        <div
+          key={pkg.source}
+          className="flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-3"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-neutral-200">{pkg.name}</span>
+              {pkg.version && (
+                <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500">
+                  v{pkg.version}
+                </span>
+              )}
+              <span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-[10px] text-blue-400">
+                {pkg.type}
+              </span>
+            </div>
+            <div className="mt-0.5 text-xs text-neutral-500 truncate">{pkg.source}</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => window.piDesktop.system.openExternal(`https://www.npmjs.com/package/${pkg.name}`)}
+              className="rounded p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+              title="View on npm"
+            >
+              <ExternalLink size={14} />
+            </button>
+            <button
+              onClick={() => onRemove(pkg.source)}
+              className="rounded p-1.5 text-neutral-500 hover:bg-red-900/30 hover:text-red-400 transition-colors"
+              title="Remove package"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Catalog Tab ─────────────────────────────────────────────────────────────
+
+function CatalogTab({
+  packages,
+  loading,
+  searchQuery,
+  onSearch,
+  onInstall,
+}: {
+  packages: unknown[]
+  loading: boolean
+  searchQuery: string
+  onSearch: (query: string) => void
+  onInstall: (spec: string) => void
+}): React.JSX.Element {
+  return (
+    <div>
+      {/* Search */}
+      <div className="mb-4">
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder="Search packages..."
+            className="w-full rounded-lg border border-neutral-700 bg-neutral-900 py-2 pl-9 pr-4 text-sm text-neutral-200 placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none"
+          />
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 size={24} className="animate-spin text-neutral-500" />
+        </div>
+      ) : packages.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-neutral-500">
+          <Store size={32} className="mb-3 text-neutral-600" />
+          <p className="text-sm">No packages found</p>
+          <p className="mt-1 text-xs text-neutral-600">
+            Visit <button onClick={() => window.piDesktop.system.openExternal('https://pi.dev/packages')} className="text-blue-400 hover:underline">pi.dev/packages</button> to browse
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {(packages as Array<{ name: string; description?: string; type?: string; installCommand?: string }>).map((pkg, index) => (
+            <div
+              key={`${pkg.name}-${index}`}
+              className="flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-3"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-neutral-200">{pkg.name}</span>
+                  {pkg.type && (
+                    <span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-[10px] text-blue-400">
+                      {pkg.type}
+                    </span>
+                  )}
+                </div>
+                {pkg.description && (
+                  <p className="mt-0.5 text-xs text-neutral-500 line-clamp-1">{pkg.description}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.piDesktop.system.openExternal(`https://pi.dev/packages/${pkg.name}`)}
+                  className="rounded p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+                  title="View details"
+                >
+                  <ExternalLink size={14} />
+                </button>
+                <button
+                  onClick={() => onInstall(pkg.installCommand ?? `npm:${pkg.name}`)}
+                  className="flex items-center gap-1 rounded bg-blue-600 px-2.5 py-1 text-xs text-white hover:bg-blue-500 transition-colors"
+                >
+                  <Download size={12} />
+                  Install
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Skills Tab ──────────────────────────────────────────────────────────────
+
+function SkillsTab({
+  skills,
+}: {
+  skills: Array<{ name: string; description: string; path: string; source: string; enabled: boolean }>
+}): React.JSX.Element {
+  if (skills.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-neutral-500">
+        <Puzzle size={32} className="mb-3 text-neutral-600" />
+        <p className="text-sm">No skills found</p>
+        <p className="mt-1 text-xs text-neutral-600">
+          Install skill packages or create skills in .pi/skills/
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {skills.map((skill) => (
+        <div
+          key={skill.path}
+          className="rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-3"
+        >
+          <div className="flex items-center gap-2">
+            <Puzzle size={14} className="text-purple-400" />
+            <span className="text-sm font-medium text-neutral-200">{skill.name}</span>
+            <span className={clsx(
+              'rounded px-1.5 py-0.5 text-[10px]',
+              skill.source === 'global' ? 'bg-blue-900/30 text-blue-400' : 'bg-emerald-900/30 text-emerald-400'
+            )}>
+              {skill.source}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-neutral-500">{skill.description}</p>
+          <div className="mt-2 flex items-center gap-2 text-xs text-neutral-600">
+            <span className="truncate">{skill.path}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}

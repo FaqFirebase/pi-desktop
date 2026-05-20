@@ -1,0 +1,1160 @@
+import { ipcMain, dialog, shell, app, BrowserWindow } from 'electron'
+import { PiRpcManager } from './pi-rpc-manager'
+import { WorkspaceManager } from './workspace-manager'
+import { SessionTagManager } from './session-tags'
+import type { PiStartOptions, PiRpcEvent, AppSettings } from '../shared/ipc-contracts'
+import { IPC_CHANNELS } from '../shared/ipc-contracts'
+import { readdir, stat, readFile, writeFile, mkdir, access } from 'fs/promises'
+import { join } from 'path'
+import { existsSync } from 'fs'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
+
+const execFileAsync = promisify(execFile)
+
+/**
+ * Registers all IPC handlers that the renderer can invoke.
+ *
+ * Security: every handler validates its input types before processing.
+ * The preload bridge is the only path from renderer to these handlers.
+ */
+
+const JSONL_EXTENSION = '.jsonl'
+const MAX_SESSION_LIST = 100
+const MAX_CATALOG_PACKAGES = 200
+
+// Type guard helpers
+function isString(value: unknown): value is string {
+  return typeof value === 'string'
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === 'string'
+}
+
+function isOptionalBoolean(value: unknown): value is boolean | undefined {
+  return value === undefined || typeof value === 'boolean'
+}
+
+function isOptionalStringArray(value: unknown): value is string[] | undefined {
+  return value === undefined || (Array.isArray(value) && value.every(isString))
+}
+
+export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
+  const tagManager = new SessionTagManager()
+
+  // Helper: get PI manager for active workspace
+  function getActivePi(): PiRpcManager {
+    const pi = workspaceManager.getActivePiManager()
+    if (!pi) throw new Error('No active workspace or PI not running')
+    return pi
+  }
+
+  // Helper: broadcast to all renderer windows
+  function broadcast(channel: string, data: unknown): void {
+    const windows = BrowserWindow.getAllWindows()
+    for (const win of windows) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(channel, data)
+      }
+    }
+  }
+
+  // ─── PI Process Lifecycle ───────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.PI_START, async (_event, options?: unknown) => {
+    console.log('[IPC] PI_START called')
+    const opts = validateStartOptions(options)
+    const activeWs = workspaceManager.getActiveWorkspace()
+    if (!activeWs) throw new Error('No active workspace')
+
+    // Validate cwd exists; fall back to home directory if not
+    let cwd = activeWs.path
+    try {
+      await access(cwd)
+    } catch {
+      cwd = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()
+    }
+
+    await workspaceManager.startPiForWorkspace(activeWs.id, { ...opts, cwd })
+    const pi = workspaceManager.getPiManager(activeWs.id)
+    if (!pi) throw new Error('Failed to create PI manager')
+
+    const result = pi.getStatus()
+    console.log('[IPC] PI_START result:', result.status)
+    return result
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PI_STOP, async () => {
+    const activeWs = workspaceManager.getActiveWorkspace()
+    if (activeWs) {
+      workspaceManager.stopPiForWorkspace(activeWs.id)
+    }
+    return { status: 'stopped', pid: null, error: null }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PI_RESTART, async (_event, options?: unknown) => {
+    const opts = validateStartOptions(options)
+    const activeWs = workspaceManager.getActiveWorkspace()
+    if (!activeWs) throw new Error('No active workspace')
+
+    const pi = workspaceManager.getPiManager(activeWs.id)
+    if (!pi) throw new Error('No PI manager for workspace')
+
+    pi.stop()
+    return pi.start({ cwd: activeWs.path, ...opts })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PI_STATUS, async () => {
+    const pi = workspaceManager.getActivePiManager()
+    if (!pi) return { status: 'stopped', pid: null, error: null }
+    return pi.getStatus()
+  })
+
+  // ─── PI Commands ────────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.PI_PROMPT, async (_event, message: unknown, options?: unknown) => {
+    if (!isString(message)) throw new Error('message must be a string')
+    const cmd: Record<string, unknown> = { type: 'prompt', message }
+    if (isObject(options)) {
+      if (options.images) cmd.images = options.images
+      if (options.streamingBehavior) cmd.streamingBehavior = options.streamingBehavior
+    }
+    return getActivePi().sendCommand(cmd)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PI_STEER, async (_event, message: unknown) => {
+    if (!isString(message)) throw new Error('message must be a string')
+    return getActivePi().sendCommand({ type: 'steer', message })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PI_FOLLOW_UP, async (_event, message: unknown) => {
+    if (!isString(message)) throw new Error('message must be a string')
+    return getActivePi().sendCommand({ type: 'follow_up', message })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PI_ABORT, async () => {
+    return getActivePi().sendCommand({ type: 'abort' })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PI_BASH, async (_event, command: unknown) => {
+    if (!isString(command)) throw new Error('command must be a string')
+    return getActivePi().sendCommand({ type: 'bash', command })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PI_ABORT_BASH, async () => {
+    return getActivePi().sendCommand({ type: 'abort_bash' })
+  })
+
+  // ─── Session Management ─────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_NEW, async () => {
+    const pi = workspaceManager.getActivePiManager()
+    if (!pi || pi.getStatus().status !== 'running') {
+      return { success: false, error: 'PI not running. Start PI first.' }
+    }
+    return pi.sendCommand({ type: 'new_session' })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_SWITCH, async (_event, sessionPath: unknown) => {
+    if (!isString(sessionPath)) throw new Error('sessionPath must be a string')
+    const pi = workspaceManager.getActivePiManager()
+    if (!pi || pi.getStatus().status !== 'running') {
+      // PI not running — just store the path for when it starts
+      return { success: false, error: 'PI not running. Start PI first.' }
+    }
+    return pi.sendCommand({ type: 'switch_session', sessionPath })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_FORK, async (_event, entryId?: unknown) => {
+    const cmd: Record<string, unknown> = { type: 'fork' }
+    if (isString(entryId)) cmd.entryId = entryId
+    return getActivePi().sendCommand(cmd)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_CLONE, async () => {
+    return getActivePi().sendCommand({ type: 'clone' })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async (_event, cwd?: unknown) => {
+    const ws = workspaceManager.getActiveWorkspace()
+    const listSessions = createListSessions(workspaceManager)
+    return listSessions(isString(cwd) ? cwd : ws?.path ?? process.cwd())
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_LIST_ALL, async (_event, cwd?: unknown) => {
+    const ws = workspaceManager.getActiveWorkspace()
+    const listAllSessions = createListAllSessions(workspaceManager)
+    return listAllSessions(isString(cwd) ? cwd : ws?.path ?? process.cwd())
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_GET_STATE, async () => {
+    const pi = workspaceManager.getActivePiManager()
+    if (!pi || pi.getStatus().status !== 'running') return null
+    return pi.sendCommand({ type: 'get_state' })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_GET_MESSAGES, async () => {
+    const pi = workspaceManager.getActivePiManager()
+    if (!pi || pi.getStatus().status !== 'running') return null
+    return pi.sendCommand({ type: 'get_messages' })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_GET_STATS, async () => {
+    const pi = workspaceManager.getActivePiManager()
+    if (!pi || pi.getStatus().status !== 'running') return null
+    return pi.sendCommand({ type: 'get_session_stats' })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_SET_NAME, async (_event, name: unknown) => {
+    if (!isString(name)) throw new Error('name must be a string')
+    return getActivePi().sendCommand({ type: 'set_session_name', name })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_EXPORT_HTML, async (_event, outputPath?: unknown) => {
+    const cmd: Record<string, unknown> = { type: 'export_html' }
+    if (isString(outputPath)) cmd.outputPath = outputPath
+    return getActivePi().sendCommand(cmd)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_GET_FORK_MESSAGES, async () => {
+    return getActivePi().sendCommand({ type: 'get_fork_messages' })
+  })
+
+  // ─── Model Management ───────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.MODEL_SET, async (_event, provider: unknown, modelId: unknown) => {
+    if (!isString(provider)) throw new Error('provider must be a string')
+    if (!isString(modelId)) throw new Error('modelId must be a string')
+    return getActivePi().sendCommand({ type: 'set_model', provider, modelId })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.MODEL_CYCLE, async () => {
+    return getActivePi().sendCommand({ type: 'cycle_model' })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.MODEL_LIST_AVAILABLE, async () => {
+    return getActivePi().sendCommand({ type: 'get_available_models' })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.THINKING_SET_LEVEL, async (_event, level: unknown) => {
+    if (!isString(level)) throw new Error('level must be a string')
+    return getActivePi().sendCommand({ type: 'set_thinking_level', level })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.THINKING_CYCLE_LEVEL, async () => {
+    return getActivePi().sendCommand({ type: 'cycle_thinking_level' })
+  })
+
+  // ─── Settings ───────────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_ALL, async () => {
+    return loadAppSettings(workspaceManager)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_SAVE, async (_event, settings: unknown) => {
+    if (!isObject(settings)) throw new Error('settings must be an object')
+    await saveAppSettings(settings as Partial<AppSettings>)
+    return loadAppSettings(workspaceManager)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_THEME, async () => {
+    const settings = await loadAppSettings(workspaceManager)
+    return settings.theme
+  })
+
+  // ─── Workspace Management ───────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_LIST, async () => {
+    return workspaceManager.getWorkspaces()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_CREATE, async (_event, name: unknown, path: unknown) => {
+    if (!isString(name)) throw new Error('name must be a string')
+    if (!isString(path)) throw new Error('path must be a string')
+    return workspaceManager.createWorkspace(name, path)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_REMOVE, async (_event, workspaceId: unknown) => {
+    if (!isString(workspaceId)) throw new Error('workspaceId must be a string')
+    await workspaceManager.removeWorkspace(workspaceId)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_RENAME, async (_event, workspaceId: unknown, name: unknown) => {
+    if (!isString(workspaceId)) throw new Error('workspaceId must be a string')
+    if (!isString(name)) throw new Error('name must be a string')
+    await workspaceManager.renameWorkspace(workspaceId, name)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_SET_ACTIVE, async (_event, workspaceId: unknown) => {
+    if (!isString(workspaceId)) throw new Error('workspaceId must be a string')
+    return workspaceManager.setActiveWorkspace(workspaceId)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_GET_ACTIVE, async () => {
+    return workspaceManager.getActiveWorkspace()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_START_PI, async (_event, workspaceId: unknown, options?: unknown) => {
+    if (!isString(workspaceId)) throw new Error('workspaceId must be a string')
+    const opts = validateStartOptions(options)
+    await workspaceManager.startPiForWorkspace(workspaceId, opts)
+    const pi = workspaceManager.getPiManager(workspaceId)
+    return pi?.getStatus() ?? { status: 'stopped', pid: null, error: null }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_STOP_PI, async (_event, workspaceId: unknown) => {
+    if (!isString(workspaceId)) throw new Error('workspaceId must be a string')
+    workspaceManager.stopPiForWorkspace(workspaceId)
+    return { status: 'stopped', pid: null, error: null }
+  })
+
+  // ─── Package Management ─────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.PACKAGE_LIST_INSTALLED, async () => {
+    const ws = workspaceManager.getActiveWorkspace()
+    const cwd = ws?.path ?? process.cwd()
+    return listInstalledPackages(cwd)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PACKAGE_INSTALL, async (_event, packageSpec: unknown) => {
+    if (!isString(packageSpec)) throw new Error('packageSpec must be a string')
+    const ws = workspaceManager.getActiveWorkspace()
+    const cwd = ws?.path ?? process.cwd()
+    return installPackage(packageSpec, cwd)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PACKAGE_REMOVE, async (_event, packageSpec: unknown) => {
+    if (!isString(packageSpec)) throw new Error('packageSpec must be a string')
+    const ws = workspaceManager.getActiveWorkspace()
+    const cwd = ws?.path ?? process.cwd()
+    return removePackage(packageSpec, cwd)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PACKAGE_UPDATE, async (_event, packageSpec?: unknown) => {
+    const ws = workspaceManager.getActiveWorkspace()
+    const cwd = ws?.path ?? process.cwd()
+    return updatePackage(isString(packageSpec) ? packageSpec : undefined, cwd)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PACKAGE_CATALOG_FETCH, async (_event, query?: unknown, page?: unknown) => {
+    return fetchPackageCatalog(
+      isString(query) ? query : undefined,
+      typeof page === 'number' ? page : 0
+    )
+  })
+
+  // ─── Skills ─────────────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.SKILLS_LIST, async () => {
+    const ws = workspaceManager.getActiveWorkspace()
+    const cwd = ws?.path ?? process.cwd()
+    return listSkills(cwd)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.COMMANDS_LIST, async () => {
+    const pi = workspaceManager.getActivePiManager()
+    if (!pi || pi.getStatus().status !== 'running') return []
+    try {
+      const response = await pi.sendCommand({ type: 'get_commands' }) as { success?: boolean; data?: { commands?: unknown[] } } | null
+      if (response?.success && response.data?.commands) {
+        return response.data.commands
+      }
+      return []
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.MCP_SERVERS_LIST, async () => {
+    const ws = workspaceManager.getActiveWorkspace()
+    return listMcpServers(ws?.path)
+  })
+
+  // ─── Session Tags ───────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.TAG_GET, async (_event, sessionId: unknown) => {
+    if (!isString(sessionId)) throw new Error('sessionId must be a string')
+    return tagManager.getTags(sessionId)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.TAG_SET, async (_event, sessionId: unknown, tags: unknown) => {
+    if (!isString(sessionId)) throw new Error('sessionId must be a string')
+    if (!Array.isArray(tags)) throw new Error('tags must be an array')
+    await tagManager.setTags(sessionId, tags.map(String))
+    return tagManager.getTags(sessionId)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.TAG_ADD, async (_event, sessionId: unknown, tag: unknown) => {
+    if (!isString(sessionId)) throw new Error('sessionId must be a string')
+    if (!isString(tag)) throw new Error('tag must be a string')
+    return tagManager.addTag(sessionId, tag)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.TAG_REMOVE, async (_event, sessionId: unknown, tag: unknown) => {
+    if (!isString(sessionId)) throw new Error('sessionId must be a string')
+    if (!isString(tag)) throw new Error('tag must be a string')
+    return tagManager.removeTag(sessionId, tag)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.TAG_GET_ALL, async () => {
+    return tagManager.getAllTags()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.TAG_GET_ALL_USED, async () => {
+    return tagManager.getAllUsedTags()
+  })
+
+  // ─── File Operations ────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.FILE_TREE, async (_event, maxDepth?: unknown) => {
+    const fs = workspaceManager.getActiveFileService()
+    if (!fs) throw new Error('No active workspace')
+    return fs.getFileTree(typeof maxDepth === 'number' ? maxDepth : 4)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.FILE_SEARCH, async (_event, query: unknown) => {
+    if (!isString(query)) throw new Error('query must be a string')
+    const fs = workspaceManager.getActiveFileService()
+    if (!fs) throw new Error('No active workspace')
+    return fs.searchFiles(query)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.FILE_SEARCH_CONTENT, async (_event, query: unknown) => {
+    if (!isString(query)) throw new Error('query must be a string')
+    const fs = workspaceManager.getActiveFileService()
+    if (!fs) throw new Error('No active workspace')
+    return fs.searchContent(query)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.FILE_READ, async (_event, filePath: unknown) => {
+    if (!isString(filePath)) throw new Error('filePath must be a string')
+    const fs = workspaceManager.getActiveFileService()
+    if (!fs) throw new Error('No active workspace')
+    return fs.readFileContent(filePath)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.FILE_DIFF, async (_event, filePath?: unknown) => {
+    const fs = workspaceManager.getActiveFileService()
+    if (!fs) throw new Error('No active workspace')
+    return fs.getFileDiff(isString(filePath) ? filePath : undefined)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.FILE_STAGED_DIFF, async (_event, filePath?: unknown) => {
+    const fs = workspaceManager.getActiveFileService()
+    if (!fs) throw new Error('No active workspace')
+    return fs.getStagedDiff(isString(filePath) ? filePath : undefined)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.GIT_STATUS, async () => {
+    const fs = workspaceManager.getActiveFileService()
+    if (!fs) throw new Error('No active workspace')
+    const statusMap = await fs.getGitStatus()
+    // Convert Map to plain object for IPC
+    const result: Record<string, unknown> = {}
+    for (const [key, value] of statusMap) {
+      result[key] = value
+    }
+    return result
+  })
+
+  ipcMain.handle(IPC_CHANNELS.GIT_BRANCH, async () => {
+    const fs = workspaceManager.getActiveFileService()
+    if (!fs) throw new Error('No active workspace')
+    return fs.getGitBranch()
+  })
+
+  // ─── System ─────────────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.SYSTEM_OPEN_DIALOG, async (_event, options?: unknown) => {
+    const dialogOptions: Electron.OpenDialogOptions = {
+      properties: ['openDirectory'],
+    }
+    if (isObject(options) && isString(options.title)) {
+      dialogOptions.title = options.title
+    }
+    const result = await dialog.showOpenDialog(dialogOptions)
+    return result.canceled ? null : result.filePaths[0]
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SYSTEM_GET_PATH, async (_event, name: unknown) => {
+    if (!isString(name)) throw new Error('name must be a string')
+    const validPaths = ['home', 'appData', 'userData', 'temp', 'desktop', 'documents'] as const
+    if (validPaths.includes(name as (typeof validPaths)[number])) {
+      return app.getPath(name as 'home' | 'appData' | 'userData' | 'temp' | 'desktop' | 'documents')
+    }
+    throw new Error(`Invalid path name: ${name}`)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, async (_event, url: unknown) => {
+    if (!isString(url)) throw new Error('url must be a string')
+    if (!url.startsWith('https://') && !url.startsWith('http://')) {
+      throw new Error('Only http(s) URLs are allowed')
+    }
+    await shell.openExternal(url)
+  })
+
+  // ─── Extension UI Responses ─────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.UI_SELECT_RESPONSE, async (_event, id: unknown, value: unknown) => {
+    if (!isString(id)) throw new Error('id must be a string')
+    getActivePi().sendExtensionUiResponse(id, { value })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.UI_CONFIRM_RESPONSE, async (_event, id: unknown, confirmed: unknown) => {
+    if (!isString(id)) throw new Error('id must be a string')
+    getActivePi().sendExtensionUiResponse(id, { confirmed: !!confirmed })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.UI_INPUT_RESPONSE, async (_event, id: unknown, value: unknown) => {
+    if (!isString(id)) throw new Error('id must be a string')
+    getActivePi().sendExtensionUiResponse(id, { value })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.UI_EDITOR_RESPONSE, async (_event, id: unknown, value: unknown) => {
+    if (!isString(id)) throw new Error('id must be a string')
+    getActivePi().sendExtensionUiResponse(id, { value })
+  })
+
+  // ─── Event Forwarding ───────────────────────────────────────────────────
+
+  // Forward PI events from every workspace's PI manager to the renderer.
+  // Why: a switched-to workspace may have a different PiRpcManager instance;
+  // wiring once at startup against the active manager would drop events.
+  workspaceManager.onPiManager((piManager: PiRpcManager) => {
+    piManager.on('event', (event: PiRpcEvent) => {
+      broadcast(IPC_CHANNELS.EVENT_PI, event)
+    })
+
+    piManager.on('status-change', () => {
+      broadcast(IPC_CHANNELS.EVENT_PI, {
+        type: 'status_change',
+        ...piManager.getStatus(),
+      })
+    })
+  })
+}
+
+// ─── Validation Helpers ──────────────────────────────────────────────────────
+
+function validateStartOptions(value: unknown): PiStartOptions {
+  if (value === undefined || value === null) return {}
+
+  if (!isObject(value)) throw new Error('Start options must be an object')
+
+  const opts: PiStartOptions = {}
+
+  if (!isOptionalString(value.cwd)) throw new Error('cwd must be a string')
+  if (!isOptionalString(value.model)) throw new Error('model must be a string')
+  if (!isOptionalString(value.provider)) throw new Error('provider must be a string')
+  if (!isOptionalString(value.sessionPath)) throw new Error('sessionPath must be a string')
+  if (!isOptionalBoolean(value.noSession)) throw new Error('noSession must be a boolean')
+  if (!isOptionalStringArray(value.args)) throw new Error('args must be a string array')
+
+  if (isString(value.cwd)) opts.cwd = value.cwd
+  if (isString(value.model)) opts.model = value.model
+  if (isString(value.provider)) opts.provider = value.provider
+  if (isString(value.sessionPath)) opts.sessionPath = value.sessionPath
+  if (value.noSession === true) opts.noSession = true
+  if (Array.isArray(value.args)) opts.args = value.args as string[]
+
+  return opts
+}
+
+// ─── Session Listing ─────────────────────────────────────────────────────────
+
+interface SessionEntry {
+  path: string
+  name: string | null
+  sessionId: string
+  lastModified: number
+  messageCount: number
+  projectPath: string
+  projectName: string
+}
+
+function createListSessions(wm: WorkspaceManager) {
+  return async function listSessions(_cwd: string): Promise<SessionEntry[]> {
+    try {
+      const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
+      const sessionsDir = join(homeDir, '.pi', 'agent', 'sessions')
+      const entries: SessionEntry[] = []
+      await collectSessionFiles(sessionsDir, entries, sessionsDir, wm)
+      entries.sort((a, b) => b.lastModified - a.lastModified)
+      return entries.slice(0, MAX_SESSION_LIST)
+    } catch {
+      return []
+    }
+  }
+}
+
+function createListAllSessions(wm: WorkspaceManager) {
+  const listSessions = createListSessions(wm)
+  return async function listAllSessions(cwd: string): Promise<SessionEntry[]> {
+    return listSessions(cwd)
+  }
+}
+
+/**
+ * Convert a sanitized session directory name back to a real path.
+ * PI sanitizes paths by replacing / with - and wrapping in --.
+ * e.g., --home-shane-- → /home/shane
+ * e.g., --mnt-041ac9b6-7ef1-49e8-9985-cdd2887f5cdd-Projects-foo-- → /mnt/041ac9b6-7ef1-49e8-9985-cdd2887f5cdd/Projects/foo
+ *
+ * NOTE: This is lossy — hyphens in the original path become indistinguishable
+ * from path separators. We use the workspace list to resolve actual paths.
+ */
+function desanitizeSessionDir(dirName: string): string {
+  // Only process PI-sanitized directories (start and end with --)
+  if (!dirName.startsWith('--') || !dirName.endsWith('--')) {
+    return dirName
+  }
+
+  // Strip wrapping dashes
+  let inner = dirName.slice(2, -2)
+
+  // Split on dash to get path segments
+  const segments = inner.split('-')
+
+  // Try to match against known workspace paths
+  // This is lossy, so we return the best guess
+  return '/' + segments.join('/')
+}
+
+async function collectSessionFiles(
+  dir: string,
+  entries: SessionEntry[],
+  sessionsRoot: string,
+  wm: WorkspaceManager
+): Promise<void> {
+  try {
+    const items = await readdir(dir, { withFileTypes: true })
+    for (const item of items) {
+      const fullPath = join(dir, item.name)
+      if (item.isDirectory()) {
+        await collectSessionFiles(fullPath, entries, sessionsRoot, wm)
+      } else if (item.isFile() && item.name.endsWith(JSONL_EXTENSION)) {
+        try {
+          const fileStat = await stat(fullPath)
+
+          // Determine project path from the directory structure
+          const relativeToRoot = dir.replace(sessionsRoot, '').replace(/^\//, '')
+          let projectPath = ''
+          let projectName = 'Unknown'
+
+          if (relativeToRoot) {
+            // Try to match against known workspace paths
+            const workspaces = wm.getWorkspaces()
+            const matched = workspaces.find((ws) => {
+              const sanitized = sanitizePath(ws.path)
+              return sanitized === relativeToRoot
+            })
+
+            if (matched) {
+              projectPath = matched.path
+              projectName = matched.name
+            } else {
+              // Fallback: use desanitize (lossy)
+              projectPath = desanitizeSessionDir(relativeToRoot)
+              projectName = projectPath.split('/').pop() ?? projectPath
+            }
+          }
+
+          entries.push({
+            path: fullPath,
+            name: null,
+            sessionId: item.name.replace(JSONL_EXTENSION, ''),
+            lastModified: fileStat.mtimeMs,
+            messageCount: 0,
+            projectPath,
+            projectName,
+          })
+        } catch {
+          // Skip unreadable files
+        }
+      }
+    }
+  } catch {
+    // Directory doesn't exist or isn't readable
+  }
+}
+
+/**
+ * Sanitize a path the same way PI does for session directory names.
+ */
+function sanitizePath(path: string): string {
+  // PI replaces / with - and wraps in --
+  return '--' + path.replace(/^\//, '').replace(/\//g, '-') + '--'
+}
+
+// ─── Package Management ──────────────────────────────────────────────────────
+
+interface InstalledPackage {
+  name: string
+  source: string
+  type: string
+  version: string | null
+  path: string
+}
+
+async function listInstalledPackages(cwd: string): Promise<InstalledPackage[]> {
+  try {
+    const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
+    const globalSettingsPath = join(homeDir, '.pi', 'agent', 'settings.json')
+    const projectSettingsPath = join(cwd, '.pi', 'settings.json')
+
+    const packages: InstalledPackage[] = []
+
+    // Read global settings
+    const globalPackages = await readPackagesFromSettings(globalSettingsPath)
+    packages.push(...globalPackages.map((p) => ({ ...p, scope: 'global' })))
+
+    // Read project settings
+    const projectPackages = await readPackagesFromSettings(projectSettingsPath)
+    packages.push(...projectPackages.map((p) => ({ ...p, scope: 'project' })))
+
+    return packages
+  } catch {
+    return []
+  }
+}
+
+async function readPackagesFromSettings(settingsPath: string): Promise<InstalledPackage[]> {
+  try {
+    if (!existsSync(settingsPath)) return []
+    const content = await readFile(settingsPath, 'utf-8')
+    const settings = JSON.parse(content)
+    const packageEntries = settings.packages ?? []
+
+    return packageEntries.map((entry: unknown) => {
+      if (typeof entry === 'string') {
+        return {
+          name: extractPackageName(entry),
+          source: entry,
+          type: 'package',
+          version: extractVersion(entry),
+          path: settingsPath,
+        }
+      }
+      if (typeof entry === 'object' && entry !== null) {
+        const e = entry as Record<string, unknown>
+        return {
+          name: extractPackageName(String(e.source ?? '')),
+          source: String(e.source ?? ''),
+          type: 'package',
+          version: extractVersion(String(e.source ?? '')),
+          path: settingsPath,
+        }
+      }
+      return { name: 'unknown', source: String(entry), type: 'package', version: null, path: settingsPath }
+    })
+  } catch {
+    return []
+  }
+}
+
+function extractPackageName(source: string): string {
+  // npm:@scope/name@1.0.0 -> @scope/name
+  // npm:name@1.0.0 -> name
+  // git:github.com/user/repo -> user/repo
+  const npmMatch = source.match(/^npm:(@?[^@]+)/)
+  if (npmMatch) return npmMatch[1]
+
+  const gitMatch = source.match(/github\.com\/([^/]+\/[^/@]+)/)
+  if (gitMatch) return gitMatch[1]
+
+  return source.split('/').pop() ?? source
+}
+
+function extractVersion(source: string): string | null {
+  const match = source.match(/@([^/]+)$/)
+  return match ? match[1] : null
+}
+
+async function installPackage(spec: string, cwd: string): Promise<{ success: boolean; output: string }> {
+  try {
+    const { stdout, stderr } = await execFileAsync('pi', ['install', spec], {
+      cwd,
+      timeout: 120_000,
+      env: { ...process.env },
+    })
+    return { success: true, output: stdout + stderr }
+  } catch (err) {
+    return {
+      success: false,
+      output: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+async function removePackage(spec: string, cwd: string): Promise<{ success: boolean; output: string }> {
+  try {
+    const { stdout, stderr } = await execFileAsync('pi', ['remove', spec], {
+      cwd,
+      timeout: 30_000,
+      env: { ...process.env },
+    })
+    return { success: true, output: stdout + stderr }
+  } catch (err) {
+    return {
+      success: false,
+      output: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+async function updatePackage(spec: string | undefined, cwd: string): Promise<{ success: boolean; output: string }> {
+  try {
+    const args = ['update']
+    if (spec) args.push(spec)
+    const { stdout, stderr } = await execFileAsync('pi', args, {
+      cwd,
+      timeout: 120_000,
+      env: { ...process.env },
+    })
+    return { success: true, output: stdout + stderr }
+  } catch (err) {
+    return {
+      success: false,
+      output: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+// ─── Package Catalog ─────────────────────────────────────────────────────────
+
+interface CatalogPackage {
+  name: string
+  description: string
+  author: string
+  type: string
+  downloads: number
+  updatedAt: string
+  npmUrl: string | null
+  repoUrl: string | null
+  installCommand: string
+}
+
+async function fetchPackageCatalog(_query?: string, page = 0): Promise<CatalogPackage[]> {
+  try {
+    const url = `https://pi.dev/packages`
+    const response = await fetch(url)
+    const html = await response.text()
+
+    const packages: CatalogPackage[] = []
+    const seen = new Set<string>()
+
+    const packageRegex = /href="\/packages\/([^"]+)"/g
+    let match
+    let count = 0
+    const offset = page * MAX_CATALOG_PACKAGES
+
+    while ((match = packageRegex.exec(html)) !== null && count < offset + MAX_CATALOG_PACKAGES) {
+      const name = match[1]
+      if (seen.has(name)) continue
+      seen.add(name)
+
+      if (count >= offset) {
+        packages.push({
+          name,
+          description: '',
+          author: '',
+          type: 'package',
+          downloads: 0,
+          updatedAt: '',
+          npmUrl: `https://www.npmjs.com/package/${name}`,
+          repoUrl: null,
+          installCommand: `pi install npm:${name}`,
+        })
+      }
+      count++
+    }
+
+    return packages
+  } catch {
+    return []
+  }
+}
+
+// ─── Skills Listing ──────────────────────────────────────────────────────────
+
+interface InstalledSkill {
+  name: string
+  description: string
+  path: string
+  source: string
+  enabled: boolean
+}
+
+async function listSkills(cwd: string): Promise<InstalledSkill[]> {
+  const skills: InstalledSkill[] = []
+  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
+
+  // Global skills
+  const globalPaths = [
+    join(homeDir, '.pi', 'agent', 'skills'),
+    join(homeDir, '.agents', 'skills'),
+  ]
+
+  for (const skillsDir of globalPaths) {
+    await collectSkills(skillsDir, skills, 'global')
+  }
+
+  // Project skills
+  const projectPaths = [
+    join(cwd, '.pi', 'skills'),
+    join(cwd, '.agents', 'skills'),
+  ]
+
+  for (const skillsDir of projectPaths) {
+    await collectSkills(skillsDir, skills, 'project')
+  }
+
+  return skills
+}
+
+async function collectSkills(
+  dir: string,
+  skills: InstalledSkill[],
+  source: string
+): Promise<void> {
+  try {
+    if (!existsSync(dir)) return
+
+    const items = await readdir(dir, { withFileTypes: true })
+
+    for (const item of items) {
+      const fullPath = join(dir, item.name)
+
+      if (item.isFile() && item.name.endsWith('.md') && item.name !== 'SKILL.md') {
+        // Root .md file as individual skill
+        try {
+          const content = await readFile(fullPath, 'utf-8')
+          const parsed = parseSkillFrontmatter(content)
+          if (parsed) {
+            skills.push({
+              name: parsed.name,
+              description: parsed.description,
+              path: fullPath,
+              source,
+              enabled: true,
+            })
+          }
+        } catch {
+          // Skip unreadable files
+        }
+      } else if (item.isDirectory()) {
+        // Directory with SKILL.md
+        const skillFile = join(fullPath, 'SKILL.md')
+        if (existsSync(skillFile)) {
+          try {
+            const content = await readFile(skillFile, 'utf-8')
+            const parsed = parseSkillFrontmatter(content)
+            if (parsed) {
+              skills.push({
+                name: parsed.name,
+                description: parsed.description,
+                path: skillFile,
+                source,
+                enabled: true,
+              })
+            }
+          } catch {
+            // Skip unreadable files
+          }
+        }
+
+        // Recurse into subdirectories
+        await collectSkills(fullPath, skills, source)
+      }
+    }
+  } catch {
+    // Directory doesn't exist or isn't readable
+  }
+}
+
+function parseSkillFrontmatter(content: string): { name: string; description: string } | null {
+  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/)
+  if (!frontmatterMatch) return null
+
+  const frontmatter = frontmatterMatch[1]
+  const nameMatch = frontmatter.match(/^name:\s*(.+)$/m)
+  const descMatch = frontmatter.match(/^description:\s*(.+)$/m)
+
+  if (!nameMatch || !descMatch) return null
+
+  return {
+    name: nameMatch[1].trim(),
+    description: descMatch[1].trim(),
+  }
+}
+
+// ─── App Settings Persistence ────────────────────────────────────────────────
+
+const SETTINGS_DIR_NAME = '.pi-desktop-gui'
+const SETTINGS_FILE_NAME = 'settings.json'
+
+const DEFAULT_SETTINGS: AppSettings = {
+  piExecutablePath: 'pi',
+  defaultArgs: [],
+  theme: 'dark',
+  defaultModel: null,
+  defaultProvider: null,
+  defaultCwd: null,
+  fontSize: 14,
+  showThinking: true,
+  autoScroll: true,
+}
+
+function getSettingsPath(): string {
+  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
+  return join(homeDir, SETTINGS_DIR_NAME, SETTINGS_FILE_NAME)
+}
+
+async function loadAppSettings(workspaceManager: WorkspaceManager): Promise<AppSettings> {
+  try {
+    const settingsPath = getSettingsPath()
+    if (existsSync(settingsPath)) {
+      const data = await readFile(settingsPath, 'utf-8')
+      const saved = JSON.parse(data)
+      return { ...DEFAULT_SETTINGS, ...saved }
+    }
+  } catch {
+    // Fall through to defaults
+  }
+
+  return {
+    ...DEFAULT_SETTINGS,
+    defaultCwd: workspaceManager.getActiveWorkspace()?.path ?? (process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()),
+  }
+}
+
+async function saveAppSettings(settings: Partial<AppSettings>): Promise<void> {
+  const settingsPath = getSettingsPath()
+  const dir = join(settingsPath, '..')
+
+  if (!existsSync(dir)) {
+    await mkdir(dir, { recursive: true })
+  }
+
+  // Merge with existing
+  let existing: AppSettings = { ...DEFAULT_SETTINGS }
+  try {
+    if (existsSync(settingsPath)) {
+      const data = await readFile(settingsPath, 'utf-8')
+      existing = { ...DEFAULT_SETTINGS, ...JSON.parse(data) }
+    }
+  } catch {
+    // Use defaults
+  }
+
+  const merged = { ...existing, ...settings }
+  await writeFile(settingsPath, JSON.stringify(merged, null, 2), 'utf-8')
+}
+
+// ─── MCP Server Discovery ────────────────────────────────────────────────────
+
+interface McpServerInfo {
+  name: string
+  command: string
+  args: string[]
+  env: Record<string, string>
+  source: 'global' | 'project'
+  status: 'configured' | 'unknown'
+}
+
+async function listMcpServers(wsPath?: string): Promise<McpServerInfo[]> {
+  const servers: McpServerInfo[] = []
+  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
+
+  // Check PI global settings for mcpServers
+  const globalSettingsPath = join(homeDir, '.pi', 'agent', 'settings.json')
+  await collectMcpServers(globalSettingsPath, servers, 'global')
+
+  // Check project settings
+  if (wsPath) {
+    const projectSettingsPath = join(wsPath, '.pi', 'settings.json')
+    await collectMcpServers(projectSettingsPath, servers, 'project')
+  }
+
+  // Also check common MCP config locations
+  const mcpConfigPaths = [
+    join(homeDir, '.config', 'claude', 'claude_desktop_config.json'),
+    join(homeDir, '.cursor', 'mcp.json'),
+    join(homeDir, '.codeium', 'mcp.json'),
+  ]
+
+  for (const configPath of mcpConfigPaths) {
+    await collectMcpServersFromConfig(configPath, servers)
+  }
+
+  return servers
+}
+
+async function collectMcpServers(
+  settingsPath: string,
+  servers: McpServerInfo[],
+  source: 'global' | 'project'
+): Promise<void> {
+  try {
+    if (!existsSync(settingsPath)) return
+    const content = await readFile(settingsPath, 'utf-8')
+    const settings = JSON.parse(content)
+
+    // PI settings may have mcpServers under various keys
+    const mcpServers = settings.mcpServers ?? settings.mcp?.servers ?? {}
+
+    for (const [name, config] of Object.entries(mcpServers)) {
+      if (typeof config === 'object' && config !== null) {
+        const cfg = config as Record<string, unknown>
+        servers.push({
+          name,
+          command: String(cfg.command ?? ''),
+          args: Array.isArray(cfg.args) ? cfg.args.map(String) : [],
+          env: typeof cfg.env === 'object' && cfg.env !== null ? cfg.env as Record<string, string> : {},
+          source,
+          status: 'configured',
+        })
+      }
+    }
+  } catch {
+    // Skip unreadable files
+  }
+}
+
+async function collectMcpServersFromConfig(
+  configPath: string,
+  servers: McpServerInfo[]
+): Promise<void> {
+  try {
+    if (!existsSync(configPath)) return
+    const content = await readFile(configPath, 'utf-8')
+    const config = JSON.parse(content)
+
+    // Claude Desktop format: { mcpServers: { name: { command, args } } }
+    const mcpServers = config.mcpServers ?? {}
+
+    for (const [name, serverConfig] of Object.entries(mcpServers)) {
+      if (typeof serverConfig === 'object' && serverConfig !== null) {
+        const cfg = serverConfig as Record<string, unknown>
+        // Avoid duplicates
+        if (!servers.some((s) => s.name === name)) {
+          servers.push({
+            name,
+            command: String(cfg.command ?? ''),
+            args: Array.isArray(cfg.args) ? cfg.args.map(String) : [],
+            env: typeof cfg.env === 'object' && cfg.env !== null ? cfg.env as Record<string, string> : {},
+            source: 'global',
+            status: 'configured',
+          })
+        }
+      }
+    }
+  } catch {
+    // Skip unreadable files
+  }
+}

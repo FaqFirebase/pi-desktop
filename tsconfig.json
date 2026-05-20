@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "composite": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "incremental": true
+  },
+  "references": [
+    { "path": "./src/shared/tsconfig.json" },
+    { "path": "./src/main/tsconfig.json" },
+    { "path": "./src/preload/tsconfig.json" },
+    { "path": "./src/renderer/tsconfig.json" }
+  ]
+}

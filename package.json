@@ -1,0 +1,164 @@
+{
+  "name": "pi-desktop",
+  "version": "0.0.1",
+  "description": "Desktop GUI frontend for the PI coding agent",
+  "main": "out/main/index.js",
+  "author": "PI Desktop GUI Contributors",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/pi-desktop-gui/pi-desktop-gui",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pi-desktop-gui/pi-desktop-gui"
+  },
+  "keywords": [
+    "pi",
+    "coding-agent",
+    "ai",
+    "electron",
+    "desktop",
+    "ide"
+  ],
+  "bin": {
+    "pi-desktop": "./bin/pi-desktop.js"
+  },
+  "scripts": {
+    "dev": "electron-vite build && electron-vite preview -- --no-sandbox --disable-gpu",
+    "dev:hot": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/renderer/tsconfig.json",
+    "lint": "eslint src/",
+    "package": "electron-vite build && electron-builder",
+    "package:linux": "electron-vite build && electron-builder --linux",
+    "package:linux:appimage": "electron-vite build && electron-builder --linux AppImage",
+    "package:linux:deb": "electron-vite build && electron-builder --linux deb",
+    "package:linux:rpm": "electron-vite build && electron-builder --linux rpm",
+    "package:linux:snap": "electron-vite build && electron-builder --linux snap",
+    "package:linux:all": "electron-vite build && electron-builder --linux",
+    "package:mac": "electron-vite build && electron-builder --mac",
+    "package:mac:dmg": "electron-vite build && electron-builder --mac dmg",
+    "package:mac:zip": "electron-vite build && electron-builder --mac zip",
+    "package:win": "electron-vite build && electron-builder --win",
+    "package:win:nsis": "electron-vite build && electron-builder --win nsis",
+    "package:win:portable": "electron-vite build && electron-builder --win portable",
+    "package:all": "electron-vite build && electron-builder --linux --mac --win",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
+    "chokidar": "^5.0.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.511.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
+    "zustand": "^5.0.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.27.0",
+    "@tailwindcss/vite": "^4.1.7",
+    "@types/react": "^19.1.4",
+    "@types/react-dom": "^19.1.5",
+    "@vitejs/plugin-react": "^4.5.2",
+    "electron": "^36.3.1",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^3.1.0",
+    "eslint": "^9.27.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "tailwindcss": "^4.1.7",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.33.0",
+    "vite": "^6.3.5"
+  },
+  "build": {
+    "appId": "dev.pi.desktop-gui",
+    "productName": "PI Desktop",
+    "copyright": "Copyright 2026 PI Desktop GUI Contributors. Licensed under the Apache License, Version 2.0.",
+    "files": [
+      "out/**/*",
+      "bin/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/",
+        "to": "resources/",
+        "filter": ["**/*"]
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "category": "Development",
+      "icon": "resources/icons",
+      "synopsis": "Desktop GUI for the PI coding agent",
+      "description": "A production-ready Electron desktop application that provides a modern GUI frontend for the PI coding agent.",
+      "maintainer": "PI Desktop GUI Contributors"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "resources/icons/icon.icns",
+      "darkModeSupport": true,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "resources/icons/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PI Desktop",
+      "installerIcon": "resources/icons/icon.ico",
+      "uninstallerIcon": "resources/icons/icon.ico"
+    },
+    "appImage": {
+      "license": "LICENSE"
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0"
+      ],
+      "priority": "optional"
+    },
+    "rpm": {
+      "depends": [
+        "gtk3",
+        "libnotify",
+        "nss",
+        "libXScrnSaver",
+        "libXtst",
+        "xdg-utils",
+        "at-spi2-atk",
+        "libuuid"
+      ]
+    }
+  }
+}

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="96" fill="#0a0a0a"/>
+  <rect x="16" y="16" width="480" height="480" rx="80" fill="#141414" stroke="#3b82f6" stroke-width="4"/>
+  <!-- Terminal prompt symbol -->
+  <text x="256" y="300" text-anchor="middle" font-family="monospace" font-size="200" font-weight="bold" fill="#3b82f6">⌘</text>
+  <!-- PI text -->
+  <text x="256" y="420" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="48" font-weight="600" fill="#e5e5e5">PI Desktop</text>
+</svg>
