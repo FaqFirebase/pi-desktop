@@ -52,9 +52,6 @@ coverage/
 # Electron / packaging artifacts
 *.dmg
 *.AppImage
-*.deb
-*.rpm
-*.snap
 *.exe
 *.msi
 *.pkg

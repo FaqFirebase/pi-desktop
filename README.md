@@ -2,9 +2,12 @@
 
 A production-ready Electron desktop application that provides a modern GUI frontend for the [PI coding agent](https://pi.dev).
 
-![Version](https://img.shields.io/badge/version-0.0.1-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+![Version](https://img.shields.io/badge/version-0.0.1--alpha-orange)
+![Status](https://img.shields.io/badge/status-alpha-orange)
+![License](https://img.shields.io/badge/license-Apache--2.0-green)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
+
+> **⚠ Alpha — repository currently private.** This project is in early alpha. The repository is private while we stabilize the build and distribution pipeline. The install methods, download links, and `git clone` URLs documented below describe the intended public release flow but will not resolve for the general public until the repo is made public and packages are published. Expect breaking changes between alpha releases.
 
 ## Features
 
@@ -41,18 +44,16 @@ pi-desktop
 ### Option 2: Quick Install Script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pi-desktop-gui/pi-desktop-gui/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/FaqFirebase/pi-desktop-gui/master/install.sh | bash
 ```
 
 ### Option 3: Download Binaries
 
-Download from [GitHub Releases](https://github.com/pi-desktop-gui/pi-desktop-gui/releases):
+Download from [GitHub Releases](https://github.com/FaqFirebase/pi-desktop-gui/releases):
 
 | Platform | Format | Download |
 |----------|--------|----------|
 | Linux | AppImage | `PI-Desktop-linux-x64.AppImage` |
-| Linux | Debian | `PI-Desktop-linux-x64.deb` |
-| Linux | RPM | `PI-Desktop-linux-x64.rpm` |
 | macOS | DMG | `PI-Desktop-mac-x64.dmg` (Intel) |
 | macOS | DMG | `PI-Desktop-mac-arm64.dmg` (Apple Silicon) |
 | Windows | Installer | `PI-Desktop-win-x64.exe` |
@@ -63,20 +64,6 @@ Download from [GitHub Releases](https://github.com/pi-desktop-gui/pi-desktop-gui
 ```bash
 chmod +x PI-Desktop-linux-x64.AppImage
 ./PI-Desktop-linux-x64.AppImage
-```
-
-#### deb (Debian/Ubuntu)
-
-```bash
-sudo dpkg -i pi-desktop_0.0.1_amd64.deb
-pi-desktop
-```
-
-#### rpm (Fedora/RHEL)
-
-```bash
-sudo rpm -i pi-desktop-0.0.1.x86_64.rpm
-pi-desktop
 ```
 
 #### macOS
@@ -94,7 +81,7 @@ pi-desktop
 ### Option 4: Build from Source
 
 ```bash
-git clone https://github.com/pi-desktop-gui/pi-desktop-gui.git
+git clone https://github.com/FaqFirebase/pi-desktop-gui.git
 cd pi-desktop-gui
 npm install
 npm run package:linux   # or package:mac, package:win
@@ -176,4 +163,4 @@ Apache License 2.0 — see [LICENSE](LICENSE)
 - [PI Coding Agent](https://pi.dev)
 - [PI Documentation](https://pi.dev/docs/latest)
 - [PI Packages](https://pi.dev/packages)
-- [GitHub Issues](https://github.com/pi-desktop-gui/pi-desktop-gui/issues)
+- [GitHub Issues](https://github.com/FaqFirebase/pi-desktop-gui/issues)
