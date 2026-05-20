@@ -1,10 +1,10 @@
 #!/bin/bash
 # PI Desktop — Quick Install Script
-# Usage: curl -fsSL https://raw.githubusercontent.com/pi-desktop-gui/pi-desktop-gui/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/FaqFirebase/pi-desktop-gui/master/install.sh | bash
 
 set -e
 
-REPO="pi-desktop-gui/pi-desktop-gui"
+REPO="FaqFirebase/pi-desktop-gui"
 BINARY_NAME="pi-desktop"
 INSTALL_DIR="${HOME}/.local/bin"
 
