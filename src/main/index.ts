@@ -1,7 +1,13 @@
 import { app, BrowserWindow, Menu, shell } from 'electron'
-import { join } from 'path'
+import { existsSync } from 'fs'
+import { basename, join, resolve as resolvePath } from 'path'
 import { WorkspaceManager } from './workspace-manager'
 import { registerIpcHandlers } from './ipc-handlers'
+
+// Env var honored on startup: if set, the named directory becomes the active
+// workspace (created on first run, switched to on subsequent runs). The CLI
+// launcher in bin/pi-desktop.js sets this from `pi-desktop <path>`.
+const WORKSPACE_ENV_VAR = 'PI_DESKTOP_WORKSPACE'
 
 // Suppress EPIPE errors from closed subprocess pipes
 process.on('uncaughtException', (err) => {
@@ -159,6 +165,9 @@ app.whenReady().then(async () => {
   // Initialize workspace manager
   await workspaceManager.initialize()
 
+  // Honor PI_DESKTOP_WORKSPACE if set: switch to (or create) the named workspace.
+  await applyWorkspaceFromEnv(workspaceManager)
+
   // Register IPC handlers before creating windows
   registerIpcHandlers(workspaceManager)
 
@@ -194,3 +203,24 @@ app.on('web-contents-created', (_event, contents) => {
     return { action: 'deny' }
   })
 })
+
+async function applyWorkspaceFromEnv(manager: WorkspaceManager): Promise<void> {
+  const raw = process.env[WORKSPACE_ENV_VAR]
+  if (!raw) return
+
+  const path = resolvePath(raw)
+  if (!existsSync(path)) {
+    console.warn(`[PI Desktop] ${WORKSPACE_ENV_VAR}=${raw} does not exist; ignoring`)
+    return
+  }
+
+  const existing = manager.getWorkspaces().find((w) => w.path === path)
+  if (existing) {
+    await manager.setActiveWorkspace(existing.id)
+    return
+  }
+
+  const name = basename(path) || path
+  const created = await manager.createWorkspace(name, path)
+  await manager.setActiveWorkspace(created.id)
+}

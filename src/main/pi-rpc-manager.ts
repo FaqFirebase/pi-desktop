@@ -1,4 +1,4 @@
-import { ChildProcess, spawn } from 'child_process'
+import { ChildProcess, SpawnOptions, spawn } from 'child_process'
 import { existsSync } from 'fs'
 import { EventEmitter } from 'events'
 import { StringDecoder } from 'string_decoder'
@@ -104,25 +104,24 @@ export class PiRpcManager extends EventEmitter {
     const args = this.buildArgs(options)
 
     try {
-      const spawnOptions = {
-        stdio: ['pipe', 'pipe', 'pipe'] as const,
+      const spawnOptions: SpawnOptions = {
+        stdio: ['pipe', 'pipe', 'pipe'],
         cwd: options.cwd,
         env: { ...process.env },
       }
 
       console.log('[PI] Spawning with cwd:', options.cwd)
-      if (USE_NODE) {
-        this.process = spawn(NODE_BINARY, [PI_SCRIPT, ...args], spawnOptions)
-      } else {
-        this.process = spawn(PI_SCRIPT, args, spawnOptions)
-      }
+      const proc = USE_NODE
+        ? spawn(NODE_BINARY, [PI_SCRIPT, ...args], spawnOptions)
+        : spawn(PI_SCRIPT, args, spawnOptions)
+      this.process = proc
 
-      this.process.on('error', (err) => {
+      proc.on('error', (err) => {
         console.error('[PI] Spawn error:', err.message)
       })
 
-      this.process.on('exit', (code, signal) => {
-        console.log('[PI] Process exited with code:', code, 'signal:', signal, 'pid:', this.process?.pid)
+      proc.on('exit', (code, signal) => {
+        console.log('[PI] Process exited with code:', code, 'signal:', signal, 'pid:', proc.pid)
       })
 
       this.setupStreams()

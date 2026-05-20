@@ -1,6 +1,6 @@
 # PI Desktop
 
-A production-ready Electron desktop application that provides a modern GUI frontend for the [PI coding agent](https://pi.dev).
+An Electron desktop application that provides a GUI frontend for the [PI coding agent](https://pi.dev). Currently in alpha — see the status banner below.
 
 ![Version](https://img.shields.io/badge/version-0.0.1--alpha-orange)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
@@ -42,15 +42,16 @@ curl -fsSL https://raw.githubusercontent.com/FaqFirebase/pi-desktop-gui/master/i
 
 ### Option 2: Download Binaries
 
-Download from [GitHub Releases](https://github.com/FaqFirebase/pi-desktop-gui/releases):
+Pre-built artifacts will be published to [GitHub Releases](https://github.com/FaqFirebase/pi-desktop-gui/releases) as they become available. The table below reflects the intended distribution matrix; not every platform ships on every release.
 
-| Platform | Format | Download |
-|----------|--------|----------|
-| Linux | AppImage | `PI-Desktop-linux-x64.AppImage` |
-| macOS | DMG | `PI-Desktop-mac-x64.dmg` (Intel) |
-| macOS | DMG | `PI-Desktop-mac-arm64.dmg` (Apple Silicon) |
-| Windows | Installer | `PI-Desktop-win-x64.exe` |
-| Windows | Portable | `PI-Desktop-win-x64-portable.exe` |
+| Platform | Format | Filename | Status |
+|----------|--------|----------|--------|
+| Linux x64 | AppImage | `PI-Desktop-linux-x64.AppImage` | Primary alpha target |
+| Linux arm64 | AppImage | `PI-Desktop-linux-arm64.AppImage` | Planned |
+| Windows x64 | NSIS installer | `PI-Desktop-win-x64.exe` | Planned once Wine cross-build is verified |
+| Windows x64 | Portable | `PI-Desktop-win-x64-portable.exe` | Planned once Wine cross-build is verified |
+| macOS x64 | DMG (Intel) | `PI-Desktop-mac-x64.dmg` | Available once a macOS build environment and code-signing identity are acquired |
+| macOS arm64 | DMG (Apple Silicon) | `PI-Desktop-mac-arm64.dmg` | Available once a macOS build environment and code-signing identity are acquired |
 
 #### AppImage (Linux)
 
@@ -59,17 +60,23 @@ chmod +x PI-Desktop-linux-x64.AppImage
 ./PI-Desktop-linux-x64.AppImage
 ```
 
-#### macOS
+#### macOS — *not yet shipping*
+
+When macOS DMGs become available, the flow will be:
 
 1. Open the `.dmg` file
 2. Drag "PI Desktop" to Applications
 3. Open from Applications or Spotlight
 
-#### Windows
+#### Windows — *not yet shipping*
+
+When Windows installers become available, the flow will be:
 
 1. Run the `.exe` installer
 2. Follow the installation wizard
 3. Launch from Start Menu or Desktop shortcut
+
+The portable build runs in-place from any folder, no installation required.
 
 ### Option 3: Build from Source
 
@@ -77,10 +84,10 @@ chmod +x PI-Desktop-linux-x64.AppImage
 git clone https://github.com/FaqFirebase/pi-desktop-gui.git
 cd pi-desktop-gui
 npm install
-npm run package:linux   # or package:mac, package:win
+npm run package:linux   # AppImage; or package:win (cross-build via Wine)
 ```
 
-The built files will be in the `release/` directory. To run the app without packaging it, use `npm run dev` instead.
+The built artifacts land in `release/`. To run the app without packaging it, use `npm run dev`. macOS builds require an actual macOS host with a code-signing identity and are not produced from Linux.
 
 ## Usage
 
@@ -122,7 +129,7 @@ npm run typecheck     # Type check all packages
 
 ```
 src/
-├── shared/ipc-contracts.ts    # 70+ typed IPC channels
+├── shared/ipc-contracts.ts    # 69 typed IPC channels
 ├── main/                      # Electron main process
 │   ├── index.ts               # App lifecycle
 │   ├── ipc-handlers.ts        # IPC handler registration
@@ -135,7 +142,7 @@ src/
     └── src/
         ├── store.ts           # Zustand state management
         ├── hooks.ts           # Event subscriptions
-        └── components/        # 16 React components
+        └── components/        # 17 React components
 ```
 
 ## Configuration

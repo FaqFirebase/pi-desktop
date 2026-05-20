@@ -35,9 +35,18 @@ By submitting a pull request, you acknowledge that you have read and agree to th
 
 ### Submitting Code
 
+**Branch policy.** This repository uses two long-lived branches:
+
+- `master` — public-facing docs only (`README.md`, `LICENSE`, `NOTICE`, `CLA.md`, `CONTRIBUTING.md`, `.gitignore`). Do not target PRs here.
+- `Dev` — all application source. This is where active development happens. **Target your pull requests against `Dev`.**
+
+Steps:
+
 1. **Fork** the repository
-2. **Create a branch** from `main`:
+2. **Check out and branch from `Dev`:**
    ```bash
+   git checkout Dev
+   git pull
    git checkout -b feature/my-feature
    ```
 3. **Make your changes** following the coding standards below
@@ -50,7 +59,7 @@ By submitting a pull request, you acknowledge that you have read and agree to th
    ```bash
    git push origin feature/my-feature
    ```
-7. **Open a pull request** against `main`
+7. **Open a pull request against `Dev`** (not `master`)
 
 ### Commit Message Format
 
@@ -161,7 +170,7 @@ src/
 
 - **Issues:** [GitHub Issues](https://github.com/FaqFirebase/pi-desktop-gui/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/FaqFirebase/pi-desktop-gui/discussions)
-- **Documentation:** See `AGENT.md` and `MEMORY.md` in the repository
+- **Documentation:** Read [README.md](README.md) for an overview and the source under `src/` for implementation details.
 
 ## License
 

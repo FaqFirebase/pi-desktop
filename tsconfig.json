@@ -16,6 +16,7 @@
     "noFallthroughCasesInSwitch": true,
     "incremental": true
   },
+  "files": [],
   "references": [
     { "path": "./src/shared/tsconfig.json" },
     { "path": "./src/main/tsconfig.json" },
