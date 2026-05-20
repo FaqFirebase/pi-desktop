@@ -34,7 +34,9 @@ curl -fsSL https://pi.dev/install.sh | sh
 npm install -g @earendil-works/pi-coding-agent
 ```
 
-### Option 1: npm (Recommended)
+### Option 1: npm (Recommended) — _available after public release_
+
+> Not yet published. Will become available once the project moves out of alpha and the package is published to npm.
 
 ```bash
 npm install -g pi-desktop
