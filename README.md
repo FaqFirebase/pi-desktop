@@ -34,22 +34,13 @@ curl -fsSL https://pi.dev/install.sh | sh
 npm install -g @earendil-works/pi-coding-agent
 ```
 
-### Option 1: npm (Recommended) — _available after public release_
-
-> Not yet published. Will become available once the project moves out of alpha and the package is published to npm.
-
-```bash
-npm install -g pi-desktop
-pi-desktop
-```
-
-### Option 2: Quick Install Script
+### Option 1: Quick Install Script
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/FaqFirebase/pi-desktop-gui/master/install.sh | bash
 ```
 
-### Option 3: Download Binaries
+### Option 2: Download Binaries
 
 Download from [GitHub Releases](https://github.com/FaqFirebase/pi-desktop-gui/releases):
 
@@ -80,7 +71,7 @@ chmod +x PI-Desktop-linux-x64.AppImage
 2. Follow the installation wizard
 3. Launch from Start Menu or Desktop shortcut
 
-### Option 4: Build from Source
+### Option 3: Build from Source
 
 ```bash
 git clone https://github.com/FaqFirebase/pi-desktop-gui.git
@@ -89,7 +80,7 @@ npm install
 npm run package:linux   # or package:mac, package:win
 ```
 
-The built files will be in the `release/` directory.
+The built files will be in the `release/` directory. To run the app without packaging it, use `npm run dev` instead.
 
 ## Usage
 
