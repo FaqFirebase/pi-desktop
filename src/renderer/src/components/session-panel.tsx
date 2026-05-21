@@ -1,9 +1,11 @@
 import { useAppStore } from '../store'
 import { FolderOpen, Plus, Clock, Search, ChevronRight, ChevronDown, FolderTree, Tag, X, MoreVertical, Archive, ArchiveRestore, Trash2 } from 'lucide-react'
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { useContextMenu, buildSessionContextMenu } from './context-menu'
+import { getSessionMenuPosition, type MenuPosition } from './session-menu-position'
 
 export function SessionPanel(): React.JSX.Element {
   const sessionList = useAppStore((state) => state.sessionList)
@@ -317,21 +319,57 @@ function SessionEntry({
   const [showTagInput, setShowTagInput] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [busy, setBusy] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const menuPopupRef = useRef<HTMLDivElement>(null)
 
   // Close kebab menu on outside click
   useEffect(() => {
     if (!menuOpen) return
     const onDocClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node
+      if (
+        !menuButtonRef.current?.contains(target) &&
+        !menuPopupRef.current?.contains(target)
+      ) {
         setMenuOpen(false)
       }
     }
     document.addEventListener('mousedown', onDocClick)
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [menuOpen])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const closeMenu = () => setMenuOpen(false)
+    window.addEventListener('resize', closeMenu)
+    window.addEventListener('scroll', closeMenu, true)
+    return () => {
+      window.removeEventListener('resize', closeMenu)
+      window.removeEventListener('scroll', closeMenu, true)
+    }
+  }, [menuOpen])
+
+  const toggleMenu = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation()
+
+    if (menuOpen) {
+      setMenuOpen(false)
+      return
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect()
+    setMenuPosition(getSessionMenuPosition({
+      triggerRect: rect,
+      menuWidth: 150,
+      menuHeight: 74,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    }))
+    setMenuOpen(true)
+  }
 
   const handleAddTag = async () => {
     if (tagInput.trim()) {
@@ -383,7 +421,7 @@ function SessionEntry({
     <div
       onContextMenu={handleRightClick}
       className={clsx(
-        'group px-4 py-2 pl-10 transition-colors relative',
+        'group py-2 pl-10 pr-10 transition-colors relative',
         isActive
           ? 'bg-blue-900/20'
           : isArchived
@@ -444,38 +482,42 @@ function SessionEntry({
       {/* Kebab menu trigger — always visible so the actions are discoverable.
           The row also honors right-click for the same actions (see onContextMenu
           on the wrapping div). */}
-      <div ref={menuRef} className="absolute right-2 top-1.5 transition-opacity">
+      <div className="absolute right-2 top-1.5 transition-opacity">
         <button
-          onClick={(e) => {
-            e.stopPropagation()
-            setMenuOpen((o) => !o)
-          }}
+          ref={menuButtonRef}
+          onClick={toggleMenu}
           className="rounded p-1 text-neutral-400 hover:bg-neutral-700/60 hover:text-neutral-200"
           aria-label="Session actions"
+          aria-expanded={menuOpen}
           title="Session actions (or right-click the row)"
         >
           <MoreVertical size={14} />
         </button>
-        {menuOpen && (
-          <div className="absolute right-0 top-7 z-20 min-w-[150px] rounded-md border border-neutral-700 bg-neutral-900 shadow-xl py-1 text-sm">
-            <button
-              onClick={handleArchive}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-neutral-300 hover:bg-neutral-800"
-            >
-              {isArchived ? <><ArchiveRestore size={13} /> Unarchive</> : <><Archive size={13} /> Archive</>}
-            </button>
-            <button
-              onClick={() => {
-                setMenuOpen(false)
-                setConfirmingDelete(true)
-              }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-red-400 hover:bg-red-900/30"
-            >
-              <Trash2 size={13} /> Delete…
-            </button>
-          </div>
-        )}
       </div>
+      {menuOpen && menuPosition && createPortal(
+        <div
+          ref={menuPopupRef}
+          className="fixed z-[9999] min-w-[150px] rounded-md border border-neutral-700 bg-neutral-900 py-1 text-sm shadow-xl shadow-black/40"
+          style={{ left: menuPosition.x, top: menuPosition.y }}
+        >
+          <button
+            onClick={handleArchive}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-neutral-300 hover:bg-neutral-800"
+          >
+            {isArchived ? <><ArchiveRestore size={13} /> Unarchive</> : <><Archive size={13} /> Archive</>}
+          </button>
+          <button
+            onClick={() => {
+              setMenuOpen(false)
+              setConfirmingDelete(true)
+            }}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-red-400 hover:bg-red-900/30"
+          >
+            <Trash2 size={13} /> Delete...
+          </button>
+        </div>,
+        document.body
+      )}
 
       {/* Inline delete confirmation */}
       {confirmingDelete && (
