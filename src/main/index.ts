@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, shell } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, shell } from 'electron'
 import { existsSync } from 'fs'
 import { basename, join, resolve as resolvePath } from 'path'
 import { WorkspaceManager } from './workspace-manager'
@@ -27,6 +27,13 @@ const MIN_WINDOW_HEIGHT = 600
 const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL
 const PRELOAD_PATH = join(__dirname, '../preload/index.js')
 
+// In dev: resources/ sits at the project root (app.getAppPath()).
+// In packaged: extraResources config copies resources/ into process.resourcesPath/resources/.
+const RESOURCES_BASE = app.isPackaged
+  ? join(process.resourcesPath, 'resources')
+  : join(app.getAppPath(), 'resources')
+const APP_ICON_PATH = join(RESOURCES_BASE, 'icons', 'icon.png')
+
 // ─── Workspace Manager (singleton) ───────────────────────────────────────────
 
 const workspaceManager = new WorkspaceManager()
@@ -41,6 +48,7 @@ function createMainWindow(): BrowserWindow {
     minHeight: MIN_WINDOW_HEIGHT,
     title: 'PI Desktop',
     backgroundColor: '#0a0a0a',
+    icon: APP_ICON_PATH,
     show: false,
     webPreferences: {
       preload: PRELOAD_PATH,
@@ -162,6 +170,11 @@ function createApplicationMenu(): void {
 // ─── App Lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  // Set macOS dock icon (no-op on other platforms)
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(nativeImage.createFromPath(APP_ICON_PATH))
+  }
+
   // Initialize workspace manager
   await workspaceManager.initialize()
 

@@ -10,6 +10,7 @@ import type {
   Workspace,
   InstalledPackage,
   InstalledSkill,
+  CatalogPackage,
   FileTreeNode,
   FileSearchResult,
   GitFileStatus,
@@ -95,7 +96,7 @@ interface PiDesktopAPI {
     install(spec: string): Promise<{ success: boolean; output: string }>
     remove(spec: string): Promise<{ success: boolean; output: string }>
     update(spec?: string): Promise<{ success: boolean; output: string }>
-    fetchCatalog(query?: string, page?: number): Promise<unknown[]>
+    fetchCatalog(query?: string, page?: number): Promise<CatalogPackage[]>
   }
 
   // Skills, Commands, MCP, Tags

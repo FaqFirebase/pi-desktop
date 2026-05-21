@@ -1,4 +1,5 @@
 import { useAppStore } from '../store'
+import type { CatalogPackage } from '../../../shared/ipc-contracts'
 import { useEffect, useState } from 'react'
 import { clsx } from 'clsx'
 import {
@@ -8,15 +9,9 @@ import {
   Trash2,
   ExternalLink,
   Loader2,
-  CheckCircle2,
-  AlertCircle,
-  RefreshCw,
-  X,
   Store,
   FolderOpen,
   Puzzle,
-  BookOpen,
-  Palette,
 } from 'lucide-react'
 
 export function PackageBrowser(): React.JSX.Element {
@@ -70,6 +65,7 @@ export function PackageBrowser(): React.JSX.Element {
             <h2 className="text-sm font-medium text-neutral-200">Packages & Skills</h2>
           </div>
           <button
+            type="button"
             onClick={() => setCurrentView('chat')}
             className="rounded px-2 py-1 text-xs text-neutral-500 hover:text-neutral-300 transition-colors"
           >
@@ -116,6 +112,7 @@ export function PackageBrowser(): React.JSX.Element {
             }}
           />
           <button
+            type="button"
             onClick={handleInstall}
             disabled={installing || !installInput.trim()}
             className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -173,6 +170,7 @@ function TabButton({
 }): React.JSX.Element {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={clsx(
         'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors',
@@ -242,6 +240,7 @@ function InstalledTab({
           </div>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => window.piDesktop.system.openExternal(`https://www.npmjs.com/package/${pkg.name}`)}
               className="rounded p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
               title="View on npm"
@@ -249,6 +248,7 @@ function InstalledTab({
               <ExternalLink size={14} />
             </button>
             <button
+              type="button"
               onClick={() => onRemove(pkg.source)}
               className="rounded p-1.5 text-neutral-500 hover:bg-red-900/30 hover:text-red-400 transition-colors"
               title="Remove package"
@@ -271,7 +271,7 @@ function CatalogTab({
   onSearch,
   onInstall,
 }: {
-  packages: unknown[]
+  packages: CatalogPackage[]
   loading: boolean
   searchQuery: string
   onSearch: (query: string) => void
@@ -302,44 +302,75 @@ function CatalogTab({
           <Store size={32} className="mb-3 text-neutral-600" />
           <p className="text-sm">No packages found</p>
           <p className="mt-1 text-xs text-neutral-600">
-            Visit <button onClick={() => window.piDesktop.system.openExternal('https://pi.dev/packages')} className="text-blue-400 hover:underline">pi.dev/packages</button> to browse
+            Visit{' '}
+            <button
+              type="button"
+              onClick={() => window.piDesktop.system.openExternal('https://pi.dev/packages')}
+              className="text-blue-400 hover:underline"
+            >
+              pi.dev/packages
+            </button>{' '}
+            to browse
           </p>
         </div>
       ) : (
         <div className="space-y-2">
-          {(packages as Array<{ name: string; description?: string; type?: string; installCommand?: string }>).map((pkg, index) => (
+          {packages.map((pkg, index) => (
             <div
               key={`${pkg.name}-${index}`}
-              className="flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-3"
+              className="rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-3"
             >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-neutral-200">{pkg.name}</span>
-                  {pkg.type && (
-                    <span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-[10px] text-blue-400">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-neutral-200">{pkg.name}</span>
+                    <span className={clsx(
+                      'rounded px-1.5 py-0.5 text-[10px]',
+                      pkg.type === 'extension'
+                        ? 'bg-emerald-900/30 text-emerald-400'
+                        : 'bg-blue-900/30 text-blue-400'
+                    )}>
                       {pkg.type}
                     </span>
+                  </div>
+                  {pkg.description && (
+                    <p className="mt-1 text-xs text-neutral-400 line-clamp-2">{pkg.description}</p>
                   )}
+                  <div className="mt-1.5 flex items-center gap-3 text-[11px] text-neutral-600">
+                    {pkg.author && <span>{pkg.author}</span>}
+                    {pkg.downloadsDisplay && <span>{pkg.downloadsDisplay}</span>}
+                  </div>
                 </div>
-                {pkg.description && (
-                  <p className="mt-0.5 text-xs text-neutral-500 line-clamp-1">{pkg.description}</p>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => window.piDesktop.system.openExternal(`https://pi.dev/packages/${pkg.name}`)}
-                  className="rounded p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
-                  title="View details"
-                >
-                  <ExternalLink size={14} />
-                </button>
-                <button
-                  onClick={() => onInstall(pkg.installCommand ?? `npm:${pkg.name}`)}
-                  className="flex items-center gap-1 rounded bg-blue-600 px-2.5 py-1 text-xs text-white hover:bg-blue-500 transition-colors"
-                >
-                  <Download size={12} />
-                  Install
-                </button>
+                <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
+                  {pkg.npmUrl && (
+                    <button
+                      type="button"
+                      onClick={() => window.piDesktop.system.openExternal(pkg.npmUrl!)}
+                      className="rounded p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+                      title="View on npm"
+                    >
+                      <ExternalLink size={13} />
+                    </button>
+                  )}
+                  {pkg.repoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => window.piDesktop.system.openExternal(pkg.repoUrl!)}
+                      className="rounded p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+                      title="View repo"
+                    >
+                      <ExternalLink size={13} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onInstall(pkg.installCommand)}
+                    className="flex items-center gap-1 rounded bg-blue-600 px-2.5 py-1 text-xs text-white hover:bg-blue-500 transition-colors"
+                  >
+                    <Download size={12} />
+                    Install
+                  </button>
+                </div>
               </div>
             </div>
           ))}

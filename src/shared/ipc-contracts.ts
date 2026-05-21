@@ -486,6 +486,7 @@ export interface CatalogPackage {
   author: string
   type: string
   downloads: number
+  downloadsDisplay: string
   updatedAt: string
   npmUrl: string | null
   repoUrl: string | null

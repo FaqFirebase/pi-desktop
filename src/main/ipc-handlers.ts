@@ -8,6 +8,7 @@ import type {
   PiRpcEvent,
   AppSettings,
   SessionDeleteResult,
+  CatalogPackage,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { readdir, stat, readFile, writeFile, mkdir, access, unlink } from 'fs/promises'
@@ -27,7 +28,6 @@ const execFileAsync = promisify(execFile)
 
 const JSONL_EXTENSION = '.jsonl'
 const MAX_SESSION_LIST = 100
-const MAX_CATALOG_PACKAGES = 200
 
 // Type guard helpers
 function isString(value: unknown): value is string {
@@ -926,51 +926,74 @@ async function updatePackage(spec: string | undefined, cwd: string): Promise<{ s
 
 // ─── Package Catalog ─────────────────────────────────────────────────────────
 
-interface CatalogPackage {
-  name: string
-  description: string
-  author: string
-  type: string
-  downloads: number
-  updatedAt: string
-  npmUrl: string | null
-  repoUrl: string | null
-  installCommand: string
-}
-
-async function fetchPackageCatalog(_query?: string, page = 0): Promise<CatalogPackage[]> {
+async function fetchPackageCatalog(query?: string, page = 0): Promise<CatalogPackage[]> {
   try {
-    const url = `https://pi.dev/packages`
+    // Server returns 50 items per page; page param is 1-based on the server.
+    const url = `https://pi.dev/packages?page=${page + 1}`
     const response = await fetch(url)
     const html = await response.text()
 
     const packages: CatalogPackage[] = []
-    const seen = new Set<string>()
+    const articleRegex = /<article[^>]*data-package-card="true"[^>]*>[\s\S]*?<\/article>/g
+    let articleMatch
 
-    const packageRegex = /href="\/packages\/([^"]+)"/g
-    let match
-    let count = 0
-    const offset = page * MAX_CATALOG_PACKAGES
+    while ((articleMatch = articleRegex.exec(html)) !== null) {
+      const article = articleMatch[0]
 
-    while ((match = packageRegex.exec(html)) !== null && count < offset + MAX_CATALOG_PACKAGES) {
-      const name = match[1]
-      if (seen.has(name)) continue
-      seen.add(name)
+      const nameMatch = article.match(/data-package-name="([^"]+)"/)
+      if (!nameMatch) continue
+      const name = nameMatch[1]
 
-      if (count >= offset) {
-        packages.push({
-          name,
-          description: '',
-          author: '',
-          type: 'package',
-          downloads: 0,
-          updatedAt: '',
-          npmUrl: `https://www.npmjs.com/package/${name}`,
-          repoUrl: null,
-          installCommand: `pi install npm:${name}`,
-        })
-      }
-      count++
+      const downloadsRawMatch = article.match(/data-package-downloads="([^"]+)"/)
+      const dateMatch = article.match(/data-package-date="([^"]+)"/)
+
+      const descMatch = article.match(/<p class="packages-desc">([^<]+)<\/p>/)
+      const description = descMatch ? descMatch[1].trim() : ''
+
+      // packages-meta holds 3 spans: author, downloads/mo display, time-ago
+      const metaMatch = article.match(/<div class="packages-meta">([\s\S]*?)<\/div>/)
+      const metaSpans = metaMatch
+        ? [...metaMatch[1].matchAll(/<span>([^<]*)<\/span>/g)].map((m) => m[1])
+        : []
+      const author = metaSpans[0] ?? ''
+      const downloadsDisplay = metaSpans[1] ?? ''
+
+      const typeMatch = article.match(/data-type="([^"]+)"/)
+      const type = typeMatch ? typeMatch[1] : 'package'
+
+      const npmMatch = article.match(/href="(https:\/\/www\.npmjs\.com\/package\/[^"]+)"/)
+      const npmUrl = npmMatch ? npmMatch[1] : null
+
+      // Repo link is a github.com URL that is not a /issues/ link
+      const githubMatches = [...article.matchAll(/href="(https:\/\/github\.com\/[^"]+)"/g)]
+      const repoUrl = githubMatches.map((m) => m[1]).find((u) => !u.includes('/issues/')) ?? null
+
+      const downloads = downloadsRawMatch ? parseInt(downloadsRawMatch[1], 10) : 0
+      const updatedAt = dateMatch ? new Date(parseInt(dateMatch[1], 10)).toISOString() : ''
+
+      packages.push({
+        name,
+        description,
+        author,
+        type,
+        downloads,
+        downloadsDisplay,
+        updatedAt,
+        npmUrl,
+        repoUrl,
+        installCommand: `pi install npm:${name}`,
+      })
+    }
+
+    // Search is client-side — the server returns fixed results regardless of query.
+    if (query && query.trim()) {
+      const q = query.trim().toLowerCase()
+      return packages.filter(
+        (pkg) =>
+          pkg.name.toLowerCase().includes(q) ||
+          pkg.description.toLowerCase().includes(q) ||
+          pkg.author.toLowerCase().includes(q)
+      )
     }
 
     return packages

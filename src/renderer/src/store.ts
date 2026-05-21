@@ -21,6 +21,7 @@ import type {
   Workspace,
   InstalledPackage,
   InstalledSkill,
+  CatalogPackage,
   TimelineEvent,
 } from '../../shared/ipc-contracts'
 
@@ -89,7 +90,7 @@ interface AppState {
 
   // Packages
   installedPackages: InstalledPackage[]
-  catalogPackages: unknown[]
+  catalogPackages: CatalogPackage[]
   packageLoading: boolean
   packageSearchQuery: string
 

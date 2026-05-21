@@ -67,4 +67,6 @@ MEMORY.md
 # Local agent / tool config (per-developer, never committed)
 .serena/
 .claude/
+.codex/
 .kilo/
+.agents/
