@@ -129,7 +129,7 @@ npm run typecheck     # Type check all packages
 
 ```
 src/
-├── shared/ipc-contracts.ts    # 69 typed IPC channels
+├── shared/ipc-contracts.ts    # 72 typed IPC channels
 ├── main/                      # Electron main process
 │   ├── index.ts               # App lifecycle
 │   ├── ipc-handlers.ts        # IPC handler registration
