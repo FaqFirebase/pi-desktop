@@ -30,6 +30,19 @@ chmod +x PI-Desktop-linux-x64.AppImage
 
 macOS and Windows aren't shipping yet.
 
+## Keyboard shortcuts
+
+| Shortcut | What it does |
+|----------|-------------|
+| `Enter` | Send message |
+| `Shift+Enter` | New line |
+| `Escape` | Stop streaming |
+| `Ctrl+P` | Cycle model |
+| `Ctrl+Shift+F` | File search |
+| `Ctrl+N` | New session |
+| `Ctrl+Shift+N` | New workspace |
+| `Ctrl+O` | Open project |
+
 ## Build it yourself
 
 ```bash
