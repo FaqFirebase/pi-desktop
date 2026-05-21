@@ -4,7 +4,7 @@
 
 Thank you for your interest in contributing to PI Desktop GUI ("the Project"). This Contributor License Agreement ("Agreement") documents the rights granted by contributors to the Project.
 
-By signing this Agreement, you accept and agree to the following terms and conditions for your present and future contributions submitted to the Project. Except for the license granted herein to the Project and recipients of software distributed by the Project, you reserve all right, title, and interest in and to your contributions.
+By viewing this Agreement and using PI Desktop and it's code, you accept and agree to the following terms and conditions for your present and future contributions submitted to the Project. Except for the license granted herein to the Project and recipients of software distributed by the Project, you reserve all right, title, and interest in and to your contributions.
 
 ## 1. Definitions
 

@@ -274,6 +274,148 @@
   }
 }
 
+/* ─── Nord Theme ─────────────────────────────────────────────────────────── */
+
+@layer base {
+  .nord {
+    --color-bg-primary:         #2E3440;
+    --color-bg-secondary:       #3B4252;
+    --color-bg-tertiary:        #434C5E;
+    --color-bg-elevated:        #4C566A;
+    --color-border:             #434C5E;
+    --color-border-focus:       #88C0D0;
+    --color-text-primary:       #ECEFF4;
+    --color-text-secondary:     #D8DEE9;
+    --color-text-muted:         #9599A3;
+    --color-accent:             #5E81AC;
+    --color-accent-hover:       #81A1C1;
+    --color-success:            #A3BE8C;
+    --color-warning:            #EBCB8B;
+    --color-error:              #BF616A;
+    --color-app-bg:             #2E3440;
+    --color-app-surface:        #3B4252;
+    --color-app-border:         #434C5E;
+    --color-app-text:           #ECEFF4;
+    --color-app-text-secondary: #D8DEE9;
+    --color-app-text-muted:     #9599A3;
+  }
+
+  .nord body { background-color: #2E3440; color: #ECEFF4; }
+
+  .nord .bg-neutral-950 { background-color: #2E3440 !important; }
+  .nord .bg-neutral-900 { background-color: #3B4252 !important; }
+  .nord .bg-neutral-900\/50 { background-color: rgba(59, 66, 82, 0.5) !important; }
+  .nord .bg-neutral-800 { background-color: #434C5E !important; }
+  .nord .bg-neutral-800\/50 { background-color: rgba(67, 76, 94, 0.5) !important; }
+  .nord .bg-neutral-700 { background-color: #4C566A !important; }
+  .nord .text-neutral-100 { color: #ECEFF4 !important; }
+  .nord .text-neutral-200 { color: #E5E9F0 !important; }
+  .nord .text-neutral-300 { color: #D8DEE9 !important; }
+  .nord .text-neutral-400 { color: #9599A3 !important; }
+  .nord .text-neutral-500 { color: #616E88 !important; }
+  .nord .text-neutral-600 { color: #4C566A !important; }
+  .nord .text-neutral-700 { color: #434C5E !important; }
+  .nord .border-neutral-800 { border-color: #434C5E !important; }
+  .nord .border-neutral-700 { border-color: #4C566A !important; }
+  .nord .bg-blue-600 { background-color: #5E81AC !important; }
+  .nord .bg-blue-900\/30 { background-color: rgba(46, 52, 64, 0.5) !important; }
+  .nord .text-blue-400 { color: #81A1C1 !important; }
+  .nord .bg-red-900\/30 { background-color: rgba(191, 97, 106, 0.15) !important; }
+  .nord .text-red-400 { color: #BF616A !important; }
+  .nord .bg-emerald-900\/30 { background-color: rgba(163, 190, 140, 0.15) !important; }
+  .nord .text-emerald-400 { color: #A3BE8C !important; }
+  .nord .bg-yellow-900\/30 { background-color: rgba(235, 203, 139, 0.15) !important; }
+  .nord .text-yellow-400 { color: #EBCB8B !important; }
+  .nord .bg-purple-900\/30 { background-color: rgba(180, 142, 173, 0.15) !important; }
+  .nord .text-purple-400 { color: #B48EAD !important; }
+  .nord .bg-green-950\/30 { background-color: rgba(163, 190, 140, 0.1) !important; }
+  .nord .bg-red-950\/30 { background-color: rgba(191, 97, 106, 0.1) !important; }
+  .nord .bg-emerald-950\/40 { background-color: rgba(163, 190, 140, 0.12) !important; }
+  .nord .border-emerald-800\/50 { border-color: rgba(163, 190, 140, 0.3) !important; }
+  .nord .text-emerald-300 { color: #A3BE8C !important; }
+  .nord .bg-red-950\/40 { background-color: rgba(191, 97, 106, 0.12) !important; }
+  .nord .border-red-800\/50 { border-color: rgba(191, 97, 106, 0.3) !important; }
+  .nord .text-red-300 { color: #BF616A !important; }
+
+  .nord *::-webkit-scrollbar-thumb { background-color: #434C5E !important; }
+  .nord *::-webkit-scrollbar-thumb:hover { background-color: #4C566A !important; }
+
+  .nord .markdown-body pre { background: #242932 !important; border-color: #434C5E !important; }
+  .nord .markdown-body code { background: rgba(76, 86, 106, 0.4) !important; color: #B48EAD !important; }
+  .nord .markdown-body pre code { color: #D8DEE9 !important; }
+}
+
+/* ─── Gruvbox Theme ──────────────────────────────────────────────────────── */
+
+@layer base {
+  .gruvbox {
+    --color-bg-primary:         #282828;
+    --color-bg-secondary:       #3C3836;
+    --color-bg-tertiary:        #504945;
+    --color-bg-elevated:        #665C54;
+    --color-border:             #504945;
+    --color-border-focus:       #D79921;
+    --color-text-primary:       #EBDBB2;
+    --color-text-secondary:     #D5C4A1;
+    --color-text-muted:         #928374;
+    --color-accent:             #458588;
+    --color-accent-hover:       #689D6A;
+    --color-success:            #98971A;
+    --color-warning:            #D79921;
+    --color-error:              #CC241D;
+    --color-app-bg:             #282828;
+    --color-app-surface:        #3C3836;
+    --color-app-border:         #504945;
+    --color-app-text:           #EBDBB2;
+    --color-app-text-secondary: #D5C4A1;
+    --color-app-text-muted:     #928374;
+  }
+
+  .gruvbox body { background-color: #282828; color: #EBDBB2; }
+
+  .gruvbox .bg-neutral-950 { background-color: #282828 !important; }
+  .gruvbox .bg-neutral-900 { background-color: #3C3836 !important; }
+  .gruvbox .bg-neutral-900\/50 { background-color: rgba(60, 56, 54, 0.5) !important; }
+  .gruvbox .bg-neutral-800 { background-color: #504945 !important; }
+  .gruvbox .bg-neutral-800\/50 { background-color: rgba(80, 73, 69, 0.5) !important; }
+  .gruvbox .bg-neutral-700 { background-color: #665C54 !important; }
+  .gruvbox .text-neutral-100 { color: #EBDBB2 !important; }
+  .gruvbox .text-neutral-200 { color: #D5C4A1 !important; }
+  .gruvbox .text-neutral-300 { color: #BDAE93 !important; }
+  .gruvbox .text-neutral-400 { color: #A89984 !important; }
+  .gruvbox .text-neutral-500 { color: #928374 !important; }
+  .gruvbox .text-neutral-600 { color: #7C6F64 !important; }
+  .gruvbox .text-neutral-700 { color: #665C54 !important; }
+  .gruvbox .border-neutral-800 { border-color: #504945 !important; }
+  .gruvbox .border-neutral-700 { border-color: #665C54 !important; }
+  .gruvbox .bg-blue-600 { background-color: #458588 !important; }
+  .gruvbox .bg-blue-900\/30 { background-color: rgba(40, 40, 40, 0.5) !important; }
+  .gruvbox .text-blue-400 { color: #83A598 !important; }
+  .gruvbox .bg-red-900\/30 { background-color: rgba(204, 36, 29, 0.15) !important; }
+  .gruvbox .text-red-400 { color: #FB4934 !important; }
+  .gruvbox .bg-emerald-900\/30 { background-color: rgba(152, 151, 26, 0.15) !important; }
+  .gruvbox .text-emerald-400 { color: #B8BB26 !important; }
+  .gruvbox .bg-yellow-900\/30 { background-color: rgba(215, 153, 33, 0.15) !important; }
+  .gruvbox .text-yellow-400 { color: #FABD2F !important; }
+  .gruvbox .bg-purple-900\/30 { background-color: rgba(177, 98, 134, 0.15) !important; }
+  .gruvbox .text-purple-400 { color: #D3869B !important; }
+  .gruvbox .bg-green-950\/30 { background-color: rgba(152, 151, 26, 0.1) !important; }
+  .gruvbox .bg-red-950\/30 { background-color: rgba(204, 36, 29, 0.1) !important; }
+  .gruvbox .bg-emerald-950\/40 { background-color: rgba(152, 151, 26, 0.12) !important; }
+  .gruvbox .border-emerald-800\/50 { border-color: rgba(152, 151, 26, 0.3) !important; }
+  .gruvbox .text-emerald-300 { color: #B8BB26 !important; }
+  .gruvbox .bg-red-950\/40 { background-color: rgba(204, 36, 29, 0.12) !important; }
+  .gruvbox .border-red-800\/50 { border-color: rgba(204, 36, 29, 0.3) !important; }
+  .gruvbox .text-red-300 { color: #FB4934 !important; }
+
+  .gruvbox *::-webkit-scrollbar-thumb { background-color: #504945 !important; }
+  .gruvbox *::-webkit-scrollbar-thumb:hover { background-color: #665C54 !important; }
+
+  .gruvbox .markdown-body pre { background: #1D2021 !important; border-color: #504945 !important; }
+  .gruvbox .markdown-body code { background: rgba(80, 73, 69, 0.4) !important; color: #D3869B !important; }
+  .gruvbox .markdown-body pre code { color: #EBDBB2 !important; }
+}
+
 /* ─── Light Mode Overrides ────────────────────────────────────────────────── */
 
 @layer base {

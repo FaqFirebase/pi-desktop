@@ -4,6 +4,7 @@ node_modules/
 .pnp.js
 .npm/
 jspm_packages/
+docs/
 
 # Build outputs
 out/
@@ -70,3 +71,4 @@ MEMORY.md
 .codex/
 .kilo/
 .agents/
+.superpowers/

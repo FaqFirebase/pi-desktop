@@ -93,6 +93,7 @@ interface AppState {
   catalogPackages: CatalogPackage[]
   packageLoading: boolean
   packageSearchQuery: string
+  packageNotification: { type: 'success' | 'error'; message: string } | null
 
   // Skills
   installedSkills: InstalledSkill[]
@@ -178,6 +179,7 @@ interface AppActions {
   removePackage: (spec: string) => Promise<void>
   searchCatalog: (query?: string) => Promise<void>
   setPackageSearchQuery: (query: string) => void
+  clearPackageNotification: () => void
 
   // Skills
   loadSkills: () => Promise<void>
@@ -285,6 +287,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   catalogPackages: [],
   packageLoading: false,
   packageSearchQuery: '',
+  packageNotification: null,
 
   installedSkills: [],
 
@@ -610,19 +613,19 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       set({ settings })
 
       // Apply theme
+      const html = document.documentElement
+      html.classList.remove('dark', 'light', 'nord', 'gruvbox')
       if (settings.theme === 'light') {
-        document.documentElement.classList.remove('dark')
-        document.documentElement.classList.add('light')
-        document.documentElement.style.colorScheme = 'light'
-      } else if (settings.theme === 'dark') {
-        document.documentElement.classList.remove('light')
-        document.documentElement.classList.add('dark')
-        document.documentElement.style.colorScheme = 'dark'
-      } else {
+        html.classList.add('light')
+        html.style.colorScheme = 'light'
+      } else if (settings.theme === 'system') {
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-        document.documentElement.classList.toggle('dark', prefersDark)
-        document.documentElement.classList.toggle('light', !prefersDark)
-        document.documentElement.style.colorScheme = prefersDark ? 'dark' : 'light'
+        html.classList.add(prefersDark ? 'dark' : 'light')
+        html.style.colorScheme = prefersDark ? 'dark' : 'light'
+      } else {
+        // 'dark' | 'nord' | 'gruvbox' — all dark-based
+        html.classList.add(settings.theme)
+        html.style.colorScheme = 'dark'
       }
 
       // Apply font size
@@ -897,52 +900,34 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   installPackage: async (spec) => {
-    set({ packageLoading: true })
+    set({ packageLoading: true, packageNotification: null })
     try {
       const result = await window.piDesktop.packages.install(spec)
       if (result.success) {
         await get().loadInstalledPackages()
+        set({ packageNotification: { type: 'success', message: `Installed ${spec}. Restart PI to load it.` } })
       } else {
-        get().addMessage({
-          id: generateId(),
-          role: 'system',
-          content: `Package install failed: ${result.output}`,
-          timestamp: Date.now(),
-        })
+        set({ packageNotification: { type: 'error', message: result.output || 'Install failed' } })
       }
     } catch (err) {
-      get().addMessage({
-        id: generateId(),
-        role: 'system',
-        content: `Package install error: ${err instanceof Error ? err.message : String(err)}`,
-        timestamp: Date.now(),
-      })
+      set({ packageNotification: { type: 'error', message: err instanceof Error ? err.message : String(err) } })
     } finally {
       set({ packageLoading: false })
     }
   },
 
   removePackage: async (spec) => {
-    set({ packageLoading: true })
+    set({ packageLoading: true, packageNotification: null })
     try {
       const result = await window.piDesktop.packages.remove(spec)
       if (result.success) {
         await get().loadInstalledPackages()
+        set({ packageNotification: { type: 'success', message: `Removed ${spec}` } })
       } else {
-        get().addMessage({
-          id: generateId(),
-          role: 'system',
-          content: `Package remove failed: ${result.output}`,
-          timestamp: Date.now(),
-        })
+        set({ packageNotification: { type: 'error', message: result.output || 'Remove failed' } })
       }
     } catch (err) {
-      get().addMessage({
-        id: generateId(),
-        role: 'system',
-        content: `Package remove error: ${err instanceof Error ? err.message : String(err)}`,
-        timestamp: Date.now(),
-      })
+      set({ packageNotification: { type: 'error', message: err instanceof Error ? err.message : String(err) } })
     } finally {
       set({ packageLoading: false })
     }
@@ -961,6 +946,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   setPackageSearchQuery: (query) => set({ packageSearchQuery: query }),
+
+  clearPackageNotification: () => set({ packageNotification: null }),
 
   // ─── Skills ──────────────────────────────────────────────────────────
 

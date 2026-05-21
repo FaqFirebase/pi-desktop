@@ -450,7 +450,7 @@ export type AgentMessage = AgentUserMessage | AgentAssistantMessage | AgentToolR
 export interface AppSettings {
   piExecutablePath: string
   defaultArgs: string[]
-  theme: 'dark' | 'light' | 'system'
+  theme: 'dark' | 'light' | 'system' | 'nord' | 'gruvbox'
   defaultModel: string | null
   defaultProvider: string | null
   defaultCwd: string | null
