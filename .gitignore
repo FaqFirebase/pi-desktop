@@ -63,3 +63,8 @@ coverage/
 # Agent context — local-only memory and architecture notes
 AGENT.md
 MEMORY.md
+
+# Local agent / tool config (per-developer, never committed)
+.serena/
+.claude/
+.kilo/
