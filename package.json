@@ -22,7 +22,7 @@
     "pi-desktop": "./bin/pi-desktop.js"
   },
   "scripts": {
-    "dev": "electron-vite build && electron-vite preview -- --no-sandbox --disable-gpu",
+    "dev": "electron-vite build && electron-vite preview -- --no-sandbox",
     "dev:hot": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
