@@ -44,7 +44,13 @@ export class WorkspaceManager {
   private configPath: string
   private nextColorIndex = 0
   private piManagerListeners: PiManagerListener[] = []
-  private wiredPiManagers = new WeakSet<PiRpcManager>()
+  // Track which (manager, listener) pairs are already wired so we never call
+  // the same listener twice for the same manager. Using a WeakSet keyed on
+  // the manager alone (the old design) was buggy: a manager that was created
+  // BEFORE any listeners were registered would be marked "wired" and never
+  // get the listeners that arrived later — silently dropping every PI event
+  // for managers loaded from disk during `initialize()`.
+  private wiredPairs = new WeakMap<PiRpcManager, Set<PiManagerListener>>()
   private activeWorkspaceListeners: ActiveWorkspaceListener[] = []
 
   constructor() {
@@ -54,8 +60,12 @@ export class WorkspaceManager {
 
   onPiManager(listener: PiManagerListener): void {
     this.piManagerListeners.push(listener)
+    // Attach this NEW listener to every existing manager (subject to the
+    // per-pair dedup below). This is what makes late-registered listeners
+    // (e.g. the IPC broadcaster, which registers after workspaces have been
+    // loaded from disk) actually receive events.
     for (const manager of this.piManagers.values()) {
-      this.wirePiManager(manager)
+      this.attachListenerOnce(manager, listener)
     }
   }
 
@@ -69,12 +79,27 @@ export class WorkspaceManager {
     }
   }
 
+  /**
+   * Wire all currently-registered listeners to a manager (called when a
+   * new manager is created). Per-pair dedup ensures a listener doesn't
+   * get attached twice if `wirePiManager` is called more than once for
+   * the same manager (e.g. createWorkspace + later startPiForWorkspace).
+   */
   private wirePiManager(manager: PiRpcManager): void {
-    if (this.wiredPiManagers.has(manager)) return
-    this.wiredPiManagers.add(manager)
     for (const listener of this.piManagerListeners) {
-      listener(manager)
+      this.attachListenerOnce(manager, listener)
     }
+  }
+
+  private attachListenerOnce(manager: PiRpcManager, listener: PiManagerListener): void {
+    let attached = this.wiredPairs.get(manager)
+    if (!attached) {
+      attached = new Set()
+      this.wiredPairs.set(manager, attached)
+    }
+    if (attached.has(listener)) return
+    attached.add(listener)
+    listener(manager)
   }
 
   async initialize(): Promise<void> {
