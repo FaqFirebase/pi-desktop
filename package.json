@@ -5,10 +5,10 @@
   "main": "out/main/index.js",
   "author": "PI Desktop GUI Contributors",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/FaqFirebase/pi-desktop-gui",
+  "homepage": "https://github.com/FaqFirebase/pi-desktop",
   "repository": {
     "type": "git",
-    "url": "https://github.com/FaqFirebase/pi-desktop-gui"
+    "url": "https://github.com/FaqFirebase/pi-desktop"
   },
   "keywords": [
     "pi",

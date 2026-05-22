@@ -1,10 +1,10 @@
 #!/bin/bash
 # PI Desktop — Quick Install Script
-# Usage: curl -fsSL https://raw.githubusercontent.com/FaqFirebase/pi-desktop-gui/master/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/FaqFirebase/pi-desktop/master/install.sh | bash
 
 set -e
 
-REPO="FaqFirebase/pi-desktop-gui"
+REPO="FaqFirebase/pi-desktop"
 BINARY_NAME="pi-desktop"
 INSTALL_DIR="${HOME}/.local/bin"
 
@@ -97,7 +97,7 @@ else
   echo ""
   echo "Or build from source:"
   echo "  git clone https://github.com/$REPO.git"
-  echo "  cd pi-desktop-gui"
+  echo "  cd pi-desktop"
   echo "  npm install && npm run package:$PLATFORM"
   exit 1
 fi

@@ -37,7 +37,7 @@ You need PI installed first:
 npm install -g @earendil-works/pi-coding-agent
 ```
 
-On Linux, grab the AppImage from [Releases](https://github.com/FaqFirebase/pi-desktop-gui/releases):
+On Linux, grab the AppImage from [Releases](https://github.com/FaqFirebase/pi-desktop/releases):
 
 ```bash
 chmod +x PI-Desktop-linux-x64.AppImage
@@ -62,8 +62,8 @@ macOS and Windows aren't shipping yet.
 ## Build it yourself
 
 ```bash
-git clone https://github.com/FaqFirebase/pi-desktop-gui.git
-cd pi-desktop-gui
+git clone https://github.com/FaqFirebase/pi-desktop.git
+cd pi-desktop
 npm install
 npm run dev
 ```
@@ -76,4 +76,4 @@ Apache 2.0
 
 - [pi.dev](https://pi.dev)
 - [Packages](https://pi.dev/packages)
-- [Issues](https://github.com/FaqFirebase/pi-desktop-gui/issues)
+- [Issues](https://github.com/FaqFirebase/pi-desktop/issues)

@@ -4,5 +4,5 @@ contact_links:
     url: https://github.com/earendil-works/pi/issues
     about: If the bug is in PI itself (the agent we wrap), report it upstream here.
   - name: PI Desktop releases
-    url: https://github.com/FaqFirebase/pi-desktop-gui/releases
+    url: https://github.com/FaqFirebase/pi-desktop/releases
     about: Grab the latest build before opening a bug.

@@ -19,7 +19,7 @@ By submitting a pull request, you acknowledge that you have read and agree to th
 
 ### Reporting Bugs
 
-1. Check [existing issues](https://github.com/FaqFirebase/pi-desktop-gui/issues) first
+1. Check [existing issues](https://github.com/FaqFirebase/pi-desktop/issues) first
 2. Open a new issue with:
    - Clear title and description
    - Steps to reproduce
@@ -29,7 +29,7 @@ By submitting a pull request, you acknowledge that you have read and agree to th
 
 ### Suggesting Features
 
-1. Open a [feature request](https://github.com/FaqFirebase/pi-desktop-gui/issues/new?template=feature_request.md)
+1. Open a [feature request](https://github.com/FaqFirebase/pi-desktop/issues/new?template=feature_request.md)
 2. Describe the use case and expected behavior
 3. Explain why this would be useful to other users
 
@@ -168,8 +168,8 @@ src/
 
 ## Getting Help
 
-- **Issues:** [GitHub Issues](https://github.com/FaqFirebase/pi-desktop-gui/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/FaqFirebase/pi-desktop-gui/discussions)
+- **Issues:** [GitHub Issues](https://github.com/FaqFirebase/pi-desktop/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/FaqFirebase/pi-desktop/discussions)
 - **Documentation:** Read [README.md](README.md) for an overview and the source under `src/` for implementation details.
 
 ## License
@@ -178,4 +178,4 @@ By contributing to this project, you agree that your contributions will be licen
 
 ## Acknowledgments
 
-Thank you to all contributors who help make PI Desktop GUI better!
+Thank you to all contributors who help make PI Desktop better!

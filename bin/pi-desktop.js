@@ -36,7 +36,7 @@ if (args.includes('--help') || args.includes('-h')) {
     pi-desktop .                # Launch with current directory
 
   Install:
-    See https://github.com/FaqFirebase/pi-desktop-gui for releases
+    See https://github.com/FaqFirebase/pi-desktop for releases
     and build-from-source instructions.
 
   The app requires PI to be installed:

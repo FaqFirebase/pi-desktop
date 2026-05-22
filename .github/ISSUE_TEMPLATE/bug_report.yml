@@ -94,5 +94,5 @@ body:
       options:
         - label: I searched existing issues and didn't find a duplicate.
           required: true
-        - label: I'm on the latest release listed at https://github.com/FaqFirebase/pi-desktop-gui/releases
+        - label: I'm on the latest release listed at https://github.com/FaqFirebase/pi-desktop/releases
           required: true
