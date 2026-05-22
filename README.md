@@ -74,6 +74,7 @@ Apache 2.0
 
 ## Links
 
+- [pi-desktop.com](https://pi-desktop.com)
 - [pi.dev](https://pi.dev)
 - [Packages](https://pi.dev/packages)
 - [Issues](https://github.com/FaqFirebase/pi-desktop/issues)
