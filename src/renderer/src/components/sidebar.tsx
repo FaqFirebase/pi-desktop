@@ -138,7 +138,12 @@ export function Sidebar(): React.JSX.Element {
 
       {/* Current session info */}
       {sessionState && (
-        <div className="mx-3 mt-2 rounded-md bg-neutral-900 p-3">
+        <button
+          type="button"
+          onClick={() => setCurrentView('chat')}
+          className="mx-3 mt-2 rounded-md bg-neutral-900 p-3 text-left transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-1 focus:ring-neutral-600"
+          title="Open current session in chat"
+        >
           <div className="text-xs font-medium text-neutral-400 uppercase tracking-wider">Current Session</div>
           <div className="mt-1.5 text-sm text-neutral-200 truncate">
             {sessionState.sessionName || sessionState.sessionId || 'Unnamed'}
@@ -151,7 +156,7 @@ export function Sidebar(): React.JSX.Element {
           <div className="mt-1 text-xs text-neutral-500">
             {sessionState.messageCount} messages
           </div>
-        </div>
+        </button>
       )}
 
       {/* Recent sessions */}
