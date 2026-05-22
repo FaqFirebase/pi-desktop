@@ -4,7 +4,7 @@ node_modules/
 .pnp.js
 .npm/
 jspm_packages/
-docs/
+docs/superpowers/
 
 # Build outputs
 out/
