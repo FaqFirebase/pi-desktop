@@ -44,7 +44,7 @@ chmod +x PI-Desktop-linux-x64.AppImage
 ./PI-Desktop-linux-x64.AppImage
 ```
 
-macOS and Windows aren't shipping yet.
+macOS isn't shipping yet. A Windows portable `.exe` is available in [Releases](https://github.com/FaqFirebase/pi-desktop/releases) but has not been tested — I don't have a Windows machine. If you run into issues please [open a bug report](https://github.com/FaqFirebase/pi-desktop/issues).
 
 ## Keyboard shortcuts
 

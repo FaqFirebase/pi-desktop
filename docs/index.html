@@ -46,6 +46,7 @@
       position: sticky;
       top: 0;
       background: rgba(13,13,13,0.92);
+      -webkit-backdrop-filter: blur(8px);
       backdrop-filter: blur(8px);
       z-index: 100;
     }
@@ -224,6 +225,7 @@
       font-size: 0.83rem;
       color: var(--muted);
     }
+    .mt-8 { margin-top: 8px; }
 
     /* ── FOOTER ── */
     footer {
@@ -284,6 +286,7 @@
       <img src="screenshots/Screenshot_20260521_215706.png" alt="PI Desktop — terminal" loading="lazy" />
       <img src="screenshots/Screenshot_20260521_215737.png" alt="PI Desktop — review rail" loading="lazy" />
       <img src="screenshots/Screenshot_20260521_223908.png" alt="PI Desktop — package browser" loading="lazy" />
+      <img src="screenshots/Screenshot_20260522_075508.png" alt="PI Desktop — overview" loading="lazy" />
     </div>
   </section>
 
@@ -346,7 +349,7 @@
         <div class="step-body">
           <h4>Install PI</h4>
           <p>PI Desktop wraps the PI coding agent. Install it first:</p>
-          <p style="margin-top:8px"><code>npm install -g @earendil-works/pi-coding-agent</code></p>
+          <p class="mt-8"><code>npm install -g @earendil-works/pi-coding-agent</code></p>
         </div>
       </div>
       <div class="install-step">
@@ -354,7 +357,7 @@
         <div class="step-body">
           <h4>Download and run the AppImage</h4>
           <p>Grab the latest Linux AppImage from <a href="https://github.com/FaqFirebase/pi-desktop/releases">Releases</a>, make it executable, and run it:</p>
-          <p style="margin-top:8px">
+          <p class="mt-8">
             <code>chmod +x PI-Desktop-*.AppImage</code><br>
             <code>./PI-Desktop-*.AppImage</code>
           </p>
