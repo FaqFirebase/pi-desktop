@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PI Desktop — Desktop GUI for the PI coding agent</title>
+  <meta name="description" content="PI Desktop is a free, open-source Electron app that puts a full GUI around the PI coding agent. Chat, manage files, run commands, and review changes — all in one window." />
+  <meta property="og:title" content="PI Desktop" />
+  <meta property="og:description" content="A desktop GUI for the PI coding agent. Open source. Alpha." />
+  <meta property="og:image" content="https://pi-desktop.com/screenshots/Screenshot_20260521_215458.png" />
+  <meta property="og:url" content="https://pi-desktop.com" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d0d0d;
+      --surface:  #161616;
+      --border:   #2a2a2a;
+      --text:     #e8e8e8;
+      --muted:    #888;
+      --accent:   #7c6ff7;
+      --accent2:  #5b56cc;
+      --green:    #4ade80;
+      --radius:   10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── NAV ── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 40px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: rgba(13,13,13,0.92);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+    }
+    .nav-logo { font-weight: 700; font-size: 1.1rem; color: var(--text); letter-spacing: -0.02em; }
+    .nav-logo span { color: var(--accent); }
+    .nav-links { display: flex; gap: 28px; align-items: center; }
+    .nav-links a { color: var(--muted); font-size: 0.9rem; transition: color 0.15s; }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 20px;
+      border-radius: var(--radius);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      text-decoration: none !important;
+    }
+    .btn:hover { opacity: 0.88; transform: translateY(-1px); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── HERO ── */
+    .hero {
+      text-align: center;
+      padding: 100px 24px 72px;
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 14px;
+      border-radius: 100px;
+      border: 1px solid var(--border);
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 28px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .hero h1 {
+      font-size: clamp(2.2rem, 5vw, 3.4rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+      margin-bottom: 22px;
+    }
+    .hero h1 span { color: var(--accent); }
+    .hero p {
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 560px;
+      margin: 0 auto 36px;
+    }
+    .hero-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+
+    /* ── SCREENSHOTS ── */
+    .screenshots {
+      padding: 0 24px 80px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .screenshot-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+    }
+    .screenshot-grid img {
+      width: 100%;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      display: block;
+    }
+    .screenshot-grid img:first-child {
+      grid-column: 1 / -1;
+    }
+
+    /* ── FEATURES ── */
+    .features {
+      padding: 80px 24px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    .section-label {
+      text-align: center;
+      font-size: 0.8rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 16px;
+      font-weight: 600;
+    }
+    .section-title {
+      text-align: center;
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 56px;
+    }
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+    }
+    .feature-icon {
+      font-size: 1.6rem;
+      margin-bottom: 14px;
+    }
+    .feature-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .feature-card p {
+      font-size: 0.88rem;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    /* ── INSTALL ── */
+    .install {
+      padding: 80px 24px;
+      max-width: 720px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    .install-steps {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin: 40px 0 32px;
+      text-align: left;
+    }
+    .install-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+      padding: 22px 28px;
+      border-bottom: 1px solid var(--border);
+    }
+    .install-step:last-child { border-bottom: none; }
+    .step-num {
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      background: var(--accent);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #fff;
+      margin-top: 2px;
+    }
+    .step-body h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 6px; }
+    .step-body p { font-size: 0.85rem; color: var(--muted); }
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.85em;
+      background: rgba(255,255,255,0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .install-note {
+      font-size: 0.83rem;
+      color: var(--muted);
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    footer p { font-size: 0.83rem; color: var(--muted); }
+    .footer-links { display: flex; gap: 24px; }
+    .footer-links a { font-size: 0.83rem; color: var(--muted); }
+    .footer-links a:hover { color: var(--text); text-decoration: none; }
+
+    @media (max-width: 600px) {
+      nav { padding: 16px 20px; }
+      .nav-links { gap: 16px; }
+      footer { padding: 24px 20px; flex-direction: column; align-items: flex-start; }
+      .screenshot-grid img:first-child { grid-column: auto; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <span class="nav-logo">PI <span>Desktop</span></span>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/FaqFirebase/pi-desktop">GitHub</a>
+      <a href="https://github.com/FaqFirebase/pi-desktop/releases" class="btn btn-primary">Download</a>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="badge">Open Source Alpha</div>
+    <h1>A desktop GUI for the<br><span>PI coding agent</span></h1>
+    <p>Chat with PI, review changes, browse files, and run commands — all in one window. Free and open source.</p>
+    <div class="hero-actions">
+      <a href="https://github.com/FaqFirebase/pi-desktop/releases/latest" class="btn btn-primary">
+        ↓ Download for Linux
+      </a>
+      <a href="https://github.com/FaqFirebase/pi-desktop" class="btn btn-outline">
+        View on GitHub
+      </a>
+    </div>
+  </section>
+
+  <!-- SCREENSHOTS -->
+  <section class="screenshots">
+    <div class="screenshot-grid">
+      <img src="screenshots/Screenshot_20260521_215458.png" alt="PI Desktop — main chat view" loading="lazy" />
+      <img src="screenshots/Screenshot_20260521_215613.png" alt="PI Desktop — file tree and diff viewer" loading="lazy" />
+      <img src="screenshots/Screenshot_20260521_215706.png" alt="PI Desktop — terminal" loading="lazy" />
+      <img src="screenshots/Screenshot_20260521_215737.png" alt="PI Desktop — review rail" loading="lazy" />
+      <img src="screenshots/Screenshot_20260521_223908.png" alt="PI Desktop — package browser" loading="lazy" />
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="features" id="features">
+    <p class="section-label">What's inside</p>
+    <h2 class="section-title">Everything you need in one window</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon">💬</div>
+        <h3>Streaming chat</h3>
+        <p>Real-time streaming with thinking blocks and tool-use visibility. Watch PI reason through problems step by step.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🗂</div>
+        <h3>Multiple workspaces</h3>
+        <p>Each workspace gets its own PI process and session history. Switch between projects instantly without losing context.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔍</div>
+        <h3>Review rail</h3>
+        <p>See changed files, permissions, and session status at a glance. Approve or deny tool calls without leaving the chat.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📂</div>
+        <h3>File tree &amp; diff viewer</h3>
+        <p>Browse your project, open files, and review diffs inline. File search with Ctrl+Shift+F.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⌨️</div>
+        <h3>Integrated terminal</h3>
+        <p>Full PTY terminal with ANSI color support, right inside the app. No switching windows.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📦</div>
+        <h3>Package browser</h3>
+        <p>Browse and install PI packages from pi.dev/packages without leaving the app.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🎨</div>
+        <h3>Themes</h3>
+        <p>Dark, Light, Nord, and Gruvbox. Switch themes from settings.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3>Model switching</h3>
+        <p>Cycle between models with Ctrl+P. Session tags keep your work organized.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- INSTALL -->
+  <section class="install" id="install">
+    <p class="section-label">Get started</p>
+    <h2 class="section-title">Up and running in two steps</h2>
+
+    <div class="install-steps">
+      <div class="install-step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Install PI</h4>
+          <p>PI Desktop wraps the PI coding agent. Install it first:</p>
+          <p style="margin-top:8px"><code>npm install -g @earendil-works/pi-coding-agent</code></p>
+        </div>
+      </div>
+      <div class="install-step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>Download and run the AppImage</h4>
+          <p>Grab the latest Linux AppImage from <a href="https://github.com/FaqFirebase/pi-desktop/releases">Releases</a>, make it executable, and run it:</p>
+          <p style="margin-top:8px">
+            <code>chmod +x PI-Desktop-*.AppImage</code><br>
+            <code>./PI-Desktop-*.AppImage</code>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <p class="install-note">
+      macOS and Windows builds are coming soon. In the meantime you can
+      <a href="https://github.com/FaqFirebase/pi-desktop#build-it-yourself">build from source</a>.
+    </p>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <p>PI Desktop &mdash; Apache 2.0 &mdash; Alpha</p>
+    <div class="footer-links">
+      <a href="https://github.com/FaqFirebase/pi-desktop">GitHub</a>
+      <a href="https://github.com/FaqFirebase/pi-desktop/releases">Releases</a>
+      <a href="https://github.com/FaqFirebase/pi-desktop/issues">Issues</a>
+      <a href="https://pi.dev">PI agent</a>
+    </div>
+  </footer>
+
+</body>
+</html>
