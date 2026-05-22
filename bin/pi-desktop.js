@@ -127,11 +127,14 @@ function launch() {
     }
   }
 
-  // Build electron args
+  // Build electron args.
+  // --no-sandbox is required so PI subprocesses can spawn.
+  // --disable-gpu is intentionally NOT passed by default — it breaks window
+  // creation on some Wayland + AMD setups. If the GPU process crashes on your
+  // system, re-add it locally as an escape hatch.
   const electronArgs = [
     appPath,
     '--no-sandbox',
-    '--disable-gpu',
   ]
 
   // Pass workspace path via environment variable

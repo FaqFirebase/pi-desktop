@@ -2,7 +2,7 @@
 
 A desktop GUI for the [PI coding agent](https://pi.dev). Chat, manage projects, browse files, run commands, install packages — all in one window.
 
-Still in alpha. Repo is private while we get builds sorted.
+Still in alpha — expect rough edges.
 
 ## What it does
 

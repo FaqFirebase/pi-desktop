@@ -99,8 +99,9 @@
       "category": "Development",
       "icon": "resources/icons",
       "synopsis": "Desktop GUI for the PI coding agent",
-      "description": "A production-ready Electron desktop application that provides a modern GUI frontend for the PI coding agent.",
-      "maintainer": "PI Desktop GUI Contributors"
+      "description": "An Electron desktop application that provides a GUI frontend for the PI coding agent.",
+      "maintainer": "PI Desktop GUI Contributors",
+      "artifactName": "PI-Desktop-${os}-${arch}.${ext}"
     },
     "mac": {
       "target": [

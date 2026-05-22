@@ -734,8 +734,8 @@ function createListAllSessions(wm: WorkspaceManager) {
 /**
  * Convert a sanitized session directory name back to a real path.
  * PI sanitizes paths by replacing / with - and wrapping in --.
- * e.g., --home-shane-- → /home/shane
- * e.g., --mnt-041ac9b6-7ef1-49e8-9985-cdd2887f5cdd-Projects-foo-- → /mnt/041ac9b6-7ef1-49e8-9985-cdd2887f5cdd/Projects/foo
+ * e.g., --home-alice-- → /home/alice
+ * e.g., --home-alice-Projects-my-app-- → /home/alice/Projects/my/app
  *
  * NOTE: This is lossy — hyphens in the original path become indistinguishable
  * from path separators. We use the workspace list to resolve actual paths.
