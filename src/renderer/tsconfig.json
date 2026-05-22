@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../out/renderer",
+    "rootDir": "../..",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "composite": true,
+    "declaration": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["./**/*.ts", "./**/*.tsx", "../shared/**/*.ts"]
+}

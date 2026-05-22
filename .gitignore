@@ -4,6 +4,7 @@ node_modules/
 .pnp.js
 .npm/
 jspm_packages/
+docs/superpowers/
 
 # Build outputs
 out/
@@ -67,4 +68,7 @@ MEMORY.md
 # Local agent / tool config (per-developer, never committed)
 .serena/
 .claude/
+.codex/
 .kilo/
+.agents/
+.superpowers/

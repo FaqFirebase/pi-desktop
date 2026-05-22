@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Dark rounded background (matches official Pi favicon #09090b) -->
+  <rect width="512" height="512" rx="77" fill="#09090b"/>
+
+  <!-- Pi letterforms: official brand marks, scaled from 800 -> 512 -->
+  <g transform="translate(5.5, 5.5) scale(0.62625)">
+    <!-- P shape: outer boundary clockwise, inner hole counter-clockwise -->
+    <path fill="#ffffff" fill-rule="evenodd" d="
+      M165.29 165.29
+      H517.36
+      V400
+      H400
+      V517.36
+      H282.65
+      V634.72
+      H165.29
+      Z
+      M282.65 282.65
+      V400
+      H400
+      V282.65
+      Z
+    "/>
+    <!-- i dot -->
+    <path fill="#ffffff" d="M517.36 400 H634.72 V634.72 H517.36 Z"/>
+  </g>
+</svg>
