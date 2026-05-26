@@ -6,7 +6,7 @@ import { FileTree, FileSearch, FilePreview } from './file-tree'
 import { DiffViewer } from './diff-viewer'
 import { TerminalPanel } from './terminal'
 import { useAutoScroll } from '../hooks'
-import { useState, useCallback } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { clsx } from 'clsx'
 import {
   FolderTree,
@@ -43,6 +43,12 @@ export function ChatPanel(): React.JSX.Element {
 
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const showSidePanel = sidePanel !== null || selectedFile !== null
+
+  useEffect(() => {
+    if (selectedFile && sidePanel === 'files') {
+      setSidePanel(null)
+    }
+  }, [selectedFile, sidePanel])
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
