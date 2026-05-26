@@ -39,25 +39,25 @@
     --color-warning: #eab308;
     --color-error: #ef4444;
 
-    /* CodeMirror syntax tokens (Dark — One Dark inspired) */
-    --cm-keyword:  #c678dd;
-    --cm-string:   #98c379;
-    --cm-comment:  #7f848e;
-    --cm-function: #61afef;
-    --cm-type:     #e5c07b;
-    --cm-number:   #d19a66;
-    --cm-operator: #56b6c2;
-    --cm-property: #e06c75;
-    --cm-tag:      #e06c75;
-    --cm-variable: #abb2bf;
-    --cm-constant: #d19a66;
-    --cm-heading:  #e06c75;
-    --cm-link:     #61afef;
-    --cm-list:     #56b6c2;
-    --cm-quote:    #abb2bf;
-    --cm-meta:     #abb2bf;
-    --cm-mark:     #e06c75;
-    --cm-invalid:  #f44747;
+    /* CodeMirror syntax tokens (Dark — Kate-inspired vivid palette) */
+    --cm-keyword:  #c678dd;  /* purple */
+    --cm-string:   #98c379;  /* green */
+    --cm-comment:  #7f848e;  /* gray */
+    --cm-function: #61afef;  /* blue */
+    --cm-type:     #e5c07b;  /* yellow */
+    --cm-number:   #d19a66;  /* orange */
+    --cm-operator: #56b6c2;  /* cyan */
+    --cm-property: #d19a66;  /* orange — inline code */
+    --cm-tag:      #e06c75;  /* red */
+    --cm-variable: #abb2bf;  /* light gray */
+    --cm-constant: #d19a66;  /* orange — list bullets, atoms, bools */
+    --cm-heading:  #c678dd;  /* purple — Kate-style (was red) */
+    --cm-link:     #98c379;  /* green — link text */
+    --cm-list:     #d19a66;  /* orange — list markers */
+    --cm-quote:    #abb2bf;  /* light gray */
+    --cm-meta:     #abb2bf;  /* light gray */
+    --cm-mark:     #c678dd;  /* purple — matches heading */
+    --cm-invalid:  #f44747;  /* bright red */
     --cm-active-line-bg:     rgba(255, 255, 255, 0.04);
     --cm-selection-bg:       rgba(61, 90, 254, 0.35);
     --cm-selection-match-bg: rgba(255, 255, 255, 0.06);
@@ -79,25 +79,25 @@
     --color-warning: #ca8a04;
     --color-error: #dc2626;
 
-    /* CodeMirror syntax tokens (Light — One Light inspired) */
-    --cm-keyword:  #a626a4;
-    --cm-string:   #50a14f;
-    --cm-comment:  #696c77;
-    --cm-function: #4078f2;
-    --cm-type:     #c18401;
-    --cm-number:   #986801;
-    --cm-operator: #0184bc;
-    --cm-property: #e45649;
-    --cm-tag:      #e45649;
-    --cm-variable: #383a42;
-    --cm-constant: #986801;
-    --cm-heading:  #e45649;
-    --cm-link:     #4078f2;
-    --cm-list:     #0184bc;
-    --cm-quote:    #696c77;
-    --cm-meta:     #696c77;
-    --cm-mark:     #e45649;
-    --cm-invalid:  #d52753;
+    /* CodeMirror syntax tokens (Light — Kate-inspired vivid palette) */
+    --cm-keyword:  #a626a4;  /* purple */
+    --cm-string:   #50a14f;  /* green */
+    --cm-comment:  #696c77;  /* gray */
+    --cm-function: #4078f2;  /* blue */
+    --cm-type:     #c18401;  /* yellow */
+    --cm-number:   #986801;  /* orange */
+    --cm-operator: #0184bc;  /* cyan */
+    --cm-property: #986801;  /* orange — inline code */
+    --cm-tag:      #e45649;  /* red */
+    --cm-variable: #383a42;  /* dark gray */
+    --cm-constant: #986801;  /* orange — list bullets, atoms, bools */
+    --cm-heading:  #a626a4;  /* purple — Kate-style (was red) */
+    --cm-link:     #50a14f;  /* green — link text */
+    --cm-list:     #986801;  /* orange — list markers */
+    --cm-quote:    #696c77;  /* gray */
+    --cm-meta:     #696c77;  /* gray */
+    --cm-mark:     #a626a4;  /* purple — matches heading */
+    --cm-invalid:  #d52753;  /* red */
     --cm-active-line-bg:     rgba(0, 0, 0, 0.035);
     --cm-selection-bg:       rgba(37, 99, 235, 0.22);
     --cm-selection-match-bg: rgba(0, 0, 0, 0.05);
@@ -345,25 +345,25 @@
     --color-app-text-secondary: #D8DEE9;
     --color-app-text-muted:     #9599A3;
 
-    /* CodeMirror syntax tokens (Nord) */
-    --cm-keyword:  #81A1C1;
-    --cm-string:   #A3BE8C;
-    --cm-comment:  #7B88A1;
-    --cm-function: #88C0D0;
-    --cm-type:     #8FBCBB;
-    --cm-number:   #B48EAD;
-    --cm-operator: #81A1C1;
-    --cm-property: #D08770;
-    --cm-tag:      #81A1C1;
-    --cm-variable: #D8DEE9;
-    --cm-constant: #B48EAD;
-    --cm-heading:  #88C0D0;
-    --cm-link:     #8FBCBB;
-    --cm-list:     #81A1C1;
-    --cm-quote:    #7B88A1;
-    --cm-meta:     #D8DEE9;
-    --cm-mark:     #EBCB8B;
-    --cm-invalid:  #BF616A;
+    /* CodeMirror syntax tokens (Nord — Kate-inspired vivid palette) */
+    --cm-keyword:  #B48EAD;  /* Aurora purple */
+    --cm-string:   #A3BE8C;  /* Aurora green */
+    --cm-comment:  #7B88A1;  /* Polar night light */
+    --cm-function: #88C0D0;  /* Frost cyan */
+    --cm-type:     #EBCB8B;  /* Aurora yellow */
+    --cm-number:   #D08770;  /* Aurora orange */
+    --cm-operator: #81A1C1;  /* Frost blue */
+    --cm-property: #D08770;  /* Aurora orange — also inline code */
+    --cm-tag:      #BF616A;  /* Aurora red */
+    --cm-variable: #D8DEE9;  /* Snow storm */
+    --cm-constant: #D08770;  /* Aurora orange — list bullets, atoms, bools */
+    --cm-heading:  #B48EAD;  /* Aurora purple — Kate-style */
+    --cm-link:     #A3BE8C;  /* Aurora green — link text */
+    --cm-list:     #D08770;  /* Aurora orange — list markers */
+    --cm-quote:    #7B88A1;  /* Polar night light */
+    --cm-meta:     #D8DEE9;  /* Snow storm */
+    --cm-mark:     #B48EAD;  /* Aurora purple — matches heading */
+    --cm-invalid:  #BF616A;  /* Aurora red */
     --cm-active-line-bg:     rgba(216, 222, 233, 0.05);
     --cm-selection-bg:       rgba(94, 129, 172, 0.40);
     --cm-selection-match-bg: rgba(216, 222, 233, 0.08);
@@ -439,25 +439,25 @@
     --color-app-text-secondary: #D5C4A1;
     --color-app-text-muted:     #928374;
 
-    /* CodeMirror syntax tokens (Gruvbox) */
-    --cm-keyword:  #FB4934;
-    --cm-string:   #B8BB26;
-    --cm-comment:  #A89984;
-    --cm-function: #FABD2F;
-    --cm-type:     #FE8019;
-    --cm-number:   #D3869B;
-    --cm-operator: #83A598;
-    --cm-property: #8EC07C;
-    --cm-tag:      #8EC07C;
-    --cm-variable: #EBDBB2;
-    --cm-constant: #D3869B;
-    --cm-heading:  #FABD2F;
-    --cm-link:     #83A598;
-    --cm-list:     #FE8019;
-    --cm-quote:    #A89984;
-    --cm-meta:     #BDAE93;
-    --cm-mark:     #FE8019;
-    --cm-invalid:  #FB4934;
+    /* CodeMirror syntax tokens (Gruvbox — Kate-inspired vivid palette) */
+    --cm-keyword:  #D3869B;  /* purple */
+    --cm-string:   #B8BB26;  /* green */
+    --cm-comment:  #A89984;  /* gray */
+    --cm-function: #FABD2F;  /* yellow */
+    --cm-type:     #FABD2F;  /* yellow */
+    --cm-number:   #FE8019;  /* orange */
+    --cm-operator: #83A598;  /* blue */
+    --cm-property: #FE8019;  /* orange — inline code */
+    --cm-tag:      #FB4934;  /* red */
+    --cm-variable: #EBDBB2;  /* cream */
+    --cm-constant: #FE8019;  /* orange — list bullets, atoms, bools */
+    --cm-heading:  #D3869B;  /* purple — Kate-style (was yellow) */
+    --cm-link:     #B8BB26;  /* green — link text */
+    --cm-list:     #FE8019;  /* orange — list markers */
+    --cm-quote:    #A89984;  /* gray */
+    --cm-meta:     #BDAE93;  /* gray */
+    --cm-mark:     #D3869B;  /* purple — matches heading */
+    --cm-invalid:  #FB4934;  /* red */
     --cm-active-line-bg:     rgba(235, 219, 178, 0.04);
     --cm-selection-bg:       rgba(69, 133, 136, 0.40);
     --cm-selection-match-bg: rgba(235, 219, 178, 0.08);

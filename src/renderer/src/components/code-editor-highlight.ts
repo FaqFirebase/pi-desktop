@@ -58,8 +58,8 @@ export const themedHighlightStyle = HighlightStyle.define([
   { tag: t.emphasis, fontStyle: 'italic' },
   { tag: t.strikethrough, textDecoration: 'line-through' },
   { tag: t.link, color: 'var(--cm-link)', textDecoration: 'underline' },
-  { tag: t.url, color: 'var(--cm-link)' },
-  { tag: t.monospace, color: 'var(--cm-string)' },
+  { tag: t.url, color: 'var(--cm-link)', textDecoration: 'underline' },
+  { tag: t.monospace, color: 'var(--cm-property)' },
 
   // Diff / change tracking
   { tag: t.inserted, color: 'var(--cm-string)' },
