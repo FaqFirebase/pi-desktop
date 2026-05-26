@@ -5,7 +5,7 @@ import { html } from '@codemirror/lang-html'
 import { java } from '@codemirror/lang-java'
 import { javascript } from '@codemirror/lang-javascript'
 import { json } from '@codemirror/lang-json'
-import { markdown } from '@codemirror/lang-markdown'
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { php } from '@codemirror/lang-php'
 import { python } from '@codemirror/lang-python'
 import { rust } from '@codemirror/lang-rust'
@@ -47,7 +47,11 @@ export function getCodeEditorLanguageExtensions(filePath: string): Extension[] {
     case 'json':
       return [json()]
     case 'markdown':
-      return [markdown()]
+      // markdownLanguage = GitHub-flavored Markdown: enables tables,
+      // strikethrough, task lists, and autolinks so they get tokenized
+      // and colored. The default markdown() is plain CommonMark which
+      // leaves table syntax as undecorated plain text.
+      return [markdown({ base: markdownLanguage })]
     case 'html':
       return [html()]
     case 'css':
