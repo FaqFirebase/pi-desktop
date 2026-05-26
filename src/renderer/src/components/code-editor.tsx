@@ -43,7 +43,10 @@ export function CodeEditor({
       extensions: [
         basicSetup,
         ...getCodeEditorLanguageExtensions(filePath),
-        syntaxHighlighting(themedHighlightStyle, { fallback: true }),
+        // Must NOT be { fallback: true } — basicSetup registers
+        // defaultHighlightStyle as non-fallback, so a fallback registration
+        // here would lose to its near-grayscale palette.
+        syntaxHighlighting(themedHighlightStyle),
         EditorView.editable.of(!readOnly),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
