@@ -30,7 +30,7 @@ export function ChatPanel(): React.JSX.Element {
   const selectedFile = useAppStore((state) => state.selectedFile)
 
   const [sidePanel, setSidePanel] = useState<SidePanel>(null)
-  const [sidePanelWidth, setSidePanelWidth] = useState(760)
+  const [sidePanelWidth, setSidePanelWidth] = useState(640)
   const [filePaneWidth, setFilePaneWidth] = useState(280)
 
   const scrollRef = useAutoScroll([messages.length, streamingContent])
@@ -48,10 +48,12 @@ export function ChatPanel(): React.JSX.Element {
   const showFileTree = sidePanel === 'files'
   const showEditor = selectedFile !== null && sidePanel !== 'diff'
   const showDiff = sidePanel === 'diff'
-  const minSidePanelWidth = showFileTree && showEditor ? 620 : 360
+  const showFileTreeOnly = showFileTree && !showEditor
+  const minSidePanelWidth = showFileTree && showEditor ? 600 : 360
   const effectiveSidePanelWidth = clamp(sidePanelWidth, minSidePanelWidth, 1280)
   const maxFilePaneWidth = Math.max(220, effectiveSidePanelWidth - 360)
   const effectiveFilePaneWidth = clamp(filePaneWidth, 220, maxFilePaneWidth)
+  const sidePanelContentWidth = showFileTreeOnly ? effectiveFilePaneWidth : effectiveSidePanelWidth
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -119,9 +121,16 @@ export function ChatPanel(): React.JSX.Element {
 
         {/* Side panel */}
         {showSidePanel && (
-          <div className="relative flex border-l border-neutral-800 bg-neutral-950" style={{ width: effectiveSidePanelWidth }}>
+          <div className="relative flex border-l border-neutral-800 bg-neutral-950" style={{ width: sidePanelContentWidth }}>
             <ResizeHandle
-              onResize={(delta) => setSidePanelWidth((width) => clamp(width - delta, minSidePanelWidth, 1280))}
+              onResize={(delta) => {
+                if (showFileTreeOnly) {
+                  setFilePaneWidth((width) => clamp(width - delta, 220, 520))
+                  return
+                }
+
+                setSidePanelWidth((width) => clamp(width - delta, minSidePanelWidth, 1280))
+              }}
             />
             <div className="flex min-w-0 flex-1 overflow-hidden">
               {showFileTree && (
@@ -147,15 +156,15 @@ export function ChatPanel(): React.JSX.Element {
                 </div>
               )}
             </div>
-            <button
-              onClick={() => {
-                setSidePanel(null)
-                useAppStore.getState().setSelectedFile(null, null)
-              }}
-              className="absolute top-1 right-1 rounded p-1 text-neutral-600 hover:text-neutral-400 z-10"
-            >
-              <X size={12} />
-            </button>
+            {showFileTreeOnly && (
+              <button
+                onClick={() => setSidePanel(null)}
+                className="absolute top-1 right-1 z-10 rounded p-1 text-neutral-600 hover:text-neutral-400"
+                title="Close file tree"
+              >
+                <X size={12} />
+              </button>
+            )}
           </div>
         )}
       </div>
