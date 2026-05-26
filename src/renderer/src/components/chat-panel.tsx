@@ -30,8 +30,8 @@ export function ChatPanel(): React.JSX.Element {
   const selectedFile = useAppStore((state) => state.selectedFile)
 
   const [sidePanel, setSidePanel] = useState<SidePanel>(null)
+  const [sidePanelWidth, setSidePanelWidth] = useState(760)
   const [filePaneWidth, setFilePaneWidth] = useState(280)
-  const [editorPaneWidth, setEditorPaneWidth] = useState(420)
 
   const scrollRef = useAutoScroll([messages.length, streamingContent])
 
@@ -46,6 +46,12 @@ export function ChatPanel(): React.JSX.Element {
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const showSidePanel = sidePanel !== null || selectedFile !== null
   const showFileTree = sidePanel === 'files'
+  const showEditor = selectedFile !== null && sidePanel !== 'diff'
+  const showDiff = sidePanel === 'diff'
+  const minSidePanelWidth = showFileTree && showEditor ? 620 : 360
+  const effectiveSidePanelWidth = clamp(sidePanelWidth, minSidePanelWidth, 1280)
+  const maxFilePaneWidth = Math.max(220, effectiveSidePanelWidth - 360)
+  const effectiveFilePaneWidth = clamp(filePaneWidth, 220, maxFilePaneWidth)
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -113,41 +119,34 @@ export function ChatPanel(): React.JSX.Element {
 
         {/* Side panel */}
         {showSidePanel && (
-          <div className="relative flex border-l border-neutral-800 bg-neutral-950">
+          <div className="relative flex border-l border-neutral-800 bg-neutral-950" style={{ width: effectiveSidePanelWidth }}>
             <ResizeHandle
-              onResize={(delta) => {
-                if (sidePanel === 'files' && !selectedFile) {
-                  setFilePaneWidth((width) => clamp(width - delta, 220, 520))
-                } else {
-                  setEditorPaneWidth((width) => clamp(width - delta, 320, 900))
-                }
-              }}
+              onResize={(delta) => setSidePanelWidth((width) => clamp(width - delta, minSidePanelWidth, 1280))}
             />
-            {showFileTree && (
-              <>
-                <div className="flex min-w-0 flex-col overflow-hidden" style={{ width: filePaneWidth }}>
-                  <FileTree />
+            <div className="flex min-w-0 flex-1 overflow-hidden">
+              {showFileTree && (
+                <>
+                  <div className="flex min-w-0 shrink-0 flex-col overflow-hidden" style={{ width: effectiveFilePaneWidth }}>
+                    <FileTree />
+                  </div>
+                  {showEditor && (
+                    <ResizeHandle
+                      onResize={(delta) => setFilePaneWidth((width) => clamp(width + delta, 220, maxFilePaneWidth))}
+                    />
+                  )}
+                </>
+              )}
+              {showDiff && (
+                <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                  <DiffViewer onClose={() => setSidePanel(null)} />
                 </div>
-                {selectedFile && (
-                  <ResizeHandle
-                    onResize={(delta) => setFilePaneWidth((width) => clamp(width + delta, 220, 520))}
-                  />
-                )}
-              </>
-            )}
-            {sidePanel === 'diff' && (
-              <div className="flex min-w-0 flex-col overflow-hidden" style={{ width: editorPaneWidth }}>
-                <DiffViewer onClose={() => setSidePanel(null)} />
-              </div>
-            )}
-            {selectedFile && sidePanel !== 'diff' && (
-              <div
-                className="flex min-w-0 flex-col overflow-hidden border-l border-neutral-800"
-                style={{ width: editorPaneWidth }}
-              >
-                <FilePreview />
-              </div>
-            )}
+              )}
+              {showEditor && (
+                <div className="flex min-w-[360px] flex-1 flex-col overflow-hidden border-l border-neutral-800">
+                  <FilePreview />
+                </div>
+              )}
+            </div>
             <button
               onClick={() => {
                 setSidePanel(null)
