@@ -76,4 +76,10 @@ export const themedHighlightStyle = HighlightStyle.define([
   // like VS Code's Markdown rendering) and list/emphasis marks pop instead
   // of blending into the background.
   { tag: t.processingInstruction, color: 'var(--cm-mark)' },
+
+  // Markdown thematic break (`---`, `***`, `___`) — tagged as
+  // t.contentSeparator. Use the same mark color so horizontal rules are
+  // clearly visible (default would render them in a dark fallback color
+  // that barely shows up against any of our themed backgrounds).
+  { tag: t.contentSeparator, color: 'var(--cm-mark)' },
 ])
