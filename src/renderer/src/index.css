@@ -42,20 +42,21 @@
     /* CodeMirror syntax tokens (Dark — One Dark inspired) */
     --cm-keyword:  #c678dd;
     --cm-string:   #98c379;
-    --cm-comment:  #5c6370;
+    --cm-comment:  #7f848e;
     --cm-function: #61afef;
     --cm-type:     #e5c07b;
     --cm-number:   #d19a66;
     --cm-operator: #56b6c2;
     --cm-property: #e06c75;
     --cm-tag:      #e06c75;
-    --cm-variable: #e06c75;
+    --cm-variable: #abb2bf;
     --cm-constant: #d19a66;
     --cm-heading:  #e06c75;
     --cm-link:     #61afef;
     --cm-list:     #56b6c2;
-    --cm-quote:    #7f848e;
-    --cm-meta:     #5c6370;
+    --cm-quote:    #abb2bf;
+    --cm-meta:     #abb2bf;
+    --cm-mark:     #e06c75;
     --cm-invalid:  #f44747;
     --cm-active-line-bg:     rgba(255, 255, 255, 0.04);
     --cm-selection-bg:       rgba(61, 90, 254, 0.35);
@@ -81,7 +82,7 @@
     /* CodeMirror syntax tokens (Light — One Light inspired) */
     --cm-keyword:  #a626a4;
     --cm-string:   #50a14f;
-    --cm-comment:  #a0a1a7;
+    --cm-comment:  #696c77;
     --cm-function: #4078f2;
     --cm-type:     #c18401;
     --cm-number:   #986801;
@@ -93,8 +94,9 @@
     --cm-heading:  #e45649;
     --cm-link:     #4078f2;
     --cm-list:     #0184bc;
-    --cm-quote:    #a0a1a7;
-    --cm-meta:     #a0a1a7;
+    --cm-quote:    #696c77;
+    --cm-meta:     #696c77;
+    --cm-mark:     #e45649;
     --cm-invalid:  #d52753;
     --cm-active-line-bg:     rgba(0, 0, 0, 0.035);
     --cm-selection-bg:       rgba(37, 99, 235, 0.22);
@@ -346,7 +348,7 @@
     /* CodeMirror syntax tokens (Nord) */
     --cm-keyword:  #81A1C1;
     --cm-string:   #A3BE8C;
-    --cm-comment:  #616E88;
+    --cm-comment:  #7B88A1;
     --cm-function: #88C0D0;
     --cm-type:     #8FBCBB;
     --cm-number:   #B48EAD;
@@ -358,8 +360,9 @@
     --cm-heading:  #88C0D0;
     --cm-link:     #8FBCBB;
     --cm-list:     #81A1C1;
-    --cm-quote:    #616E88;
-    --cm-meta:     #616E88;
+    --cm-quote:    #7B88A1;
+    --cm-meta:     #D8DEE9;
+    --cm-mark:     #EBCB8B;
     --cm-invalid:  #BF616A;
     --cm-active-line-bg:     rgba(216, 222, 233, 0.05);
     --cm-selection-bg:       rgba(94, 129, 172, 0.40);
@@ -439,7 +442,7 @@
     /* CodeMirror syntax tokens (Gruvbox) */
     --cm-keyword:  #FB4934;
     --cm-string:   #B8BB26;
-    --cm-comment:  #928374;
+    --cm-comment:  #A89984;
     --cm-function: #FABD2F;
     --cm-type:     #FE8019;
     --cm-number:   #D3869B;
@@ -451,8 +454,9 @@
     --cm-heading:  #FABD2F;
     --cm-link:     #83A598;
     --cm-list:     #FE8019;
-    --cm-quote:    #928374;
-    --cm-meta:     #928374;
+    --cm-quote:    #A89984;
+    --cm-meta:     #BDAE93;
+    --cm-mark:     #FE8019;
     --cm-invalid:  #FB4934;
     --cm-active-line-bg:     rgba(235, 219, 178, 0.04);
     --cm-selection-bg:       rgba(69, 133, 136, 0.40);

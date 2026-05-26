@@ -71,8 +71,9 @@ export const themedHighlightStyle = HighlightStyle.define([
   { tag: t.invalid, color: 'var(--cm-invalid)' },
 
   // Markdown structural marks (`#`, `-`, `*`, link/emphasis delimiters).
-  // Lang-markdown emits these as t.processingInstruction. Keep them visible
-  // but slightly de-emphasized via the operator color rather than the muted
-  // meta color.
-  { tag: t.processingInstruction, color: 'var(--cm-operator)' },
+  // Lang-markdown emits these as t.processingInstruction. Use the heading
+  // color so `##` matches the heading text it precedes (visually unified,
+  // like VS Code's Markdown rendering) and list/emphasis marks pop instead
+  // of blending into the background.
+  { tag: t.processingInstruction, color: 'var(--cm-mark)' },
 ])
