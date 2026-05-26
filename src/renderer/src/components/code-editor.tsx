@@ -31,6 +31,12 @@ export function CodeEditor({
     // Clear any leftover DOM from a previous view before mounting the new one
     containerRef.current.innerHTML = ''
 
+    // Tell CodeMirror whether the active app theme is dark so its base theme
+    // picks the right fallback styles (drop cursor, selection layer, etc.).
+    // Light is the only non-dark theme; everything else (Dark, Nord, Gruvbox)
+    // is dark.
+    const isLightTheme = document.documentElement.classList.contains('light')
+
     const view = new EditorView({
       doc: value,
       parent: containerRef.current,
@@ -81,7 +87,7 @@ export function CodeEditor({
           '&.cm-focused': {
             outline: 'none',
           },
-        }),
+        }, { dark: !isLightTheme }),
       ],
     })
     viewRef.current = view

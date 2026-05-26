@@ -67,6 +67,12 @@ export const themedHighlightStyle = HighlightStyle.define([
   { tag: t.changed, color: 'var(--cm-number)' },
 
   // Meta and invalid
-  { tag: [t.meta, t.processingInstruction, t.annotation], color: 'var(--cm-meta)' },
+  { tag: [t.meta, t.annotation], color: 'var(--cm-meta)' },
   { tag: t.invalid, color: 'var(--cm-invalid)' },
+
+  // Markdown structural marks (`#`, `-`, `*`, link/emphasis delimiters).
+  // Lang-markdown emits these as t.processingInstruction. Keep them visible
+  // but slightly de-emphasized via the operator color rather than the muted
+  // meta color.
+  { tag: t.processingInstruction, color: 'var(--cm-operator)' },
 ])
