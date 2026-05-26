@@ -511,6 +511,194 @@
   .gruvbox .markdown-body pre code { color: #EBDBB2 !important; }
 }
 
+/* ─── Breeze Dark Theme (Kate) ───────────────────────────────────────────── */
+
+@layer base {
+  .breeze-dark {
+    --color-bg-primary:         #232629;
+    --color-bg-secondary:       #31363b;
+    --color-bg-tertiary:        #2A2E32;
+    --color-bg-elevated:        #3f4347;
+    --color-border:             #3f4347;
+    --color-border-focus:       #3daee9;
+    --color-text-primary:       #cfcfc2;
+    --color-text-secondary:     #a5a6a8;
+    --color-text-muted:         #7a7c7d;
+    --color-accent:             #2980b9;
+    --color-accent-hover:       #3daee9;
+    --color-success:            #1c8042;
+    --color-warning:            #f67400;
+    --color-error:              #da4453;
+    --color-app-bg:             #232629;
+    --color-app-surface:        #31363b;
+    --color-app-border:         #3f4347;
+    --color-app-text:           #cfcfc2;
+    --color-app-text-secondary: #a5a6a8;
+    --color-app-text-muted:     #7a7c7d;
+
+    /* CodeMirror syntax tokens — Kate Breeze Dark palette */
+    --cm-keyword:  #fdbc4b;  /* Kate ControlFlow yellow */
+    --cm-string:   #f44f4f;  /* Kate String red */
+    --cm-comment:  #7a7c7d;  /* Kate Comment */
+    --cm-function: #8e44ad;  /* Kate Function purple */
+    --cm-type:     #2980b9;  /* Kate DataType blue */
+    --cm-number:   #f67400;  /* Kate DecVal orange */
+    --cm-operator: #3f8058;  /* Kate Operator dark green */
+    --cm-property: #27aeae;  /* Kate Variable teal */
+    --cm-tag:      #2980b9;  /* Kate Attribute */
+    --cm-variable: #cfcfc2;  /* Kate Normal */
+    --cm-constant: #27aeae;  /* Kate Constant */
+    --cm-heading:  #8e44ad;  /* Kate Function purple */
+    --cm-link:     #0099ff;  /* Kate Extension */
+    --cm-list:     #da4453;  /* Kate SpecialString red */
+    --cm-quote:    #7a7c7d;
+    --cm-meta:     #a5a6a8;
+    --cm-mark:     #8e44ad;  /* matches heading */
+    --cm-invalid:  #da4453;
+    --cm-active-line-bg:     #2A2E32;
+    --cm-selection-bg:       rgba(45, 92, 118, 0.65);  /* Kate TextSelection */
+    --cm-selection-match-bg: rgba(65, 72, 87, 0.5);
+  }
+
+  .breeze-dark body { background-color: #232629; color: #cfcfc2; }
+
+  .breeze-dark .bg-neutral-950 { background-color: #232629 !important; }
+  .breeze-dark .bg-neutral-900 { background-color: #31363b !important; }
+  .breeze-dark .bg-neutral-900\/50 { background-color: rgba(49, 54, 59, 0.5) !important; }
+  .breeze-dark .bg-neutral-800 { background-color: #3f4347 !important; }
+  .breeze-dark .bg-neutral-800\/50 { background-color: rgba(63, 67, 71, 0.5) !important; }
+  .breeze-dark .bg-neutral-700 { background-color: #4d5358 !important; }
+  .breeze-dark .text-neutral-100 { color: #cfcfc2 !important; }
+  .breeze-dark .text-neutral-200 { color: #c0c0b5 !important; }
+  .breeze-dark .text-neutral-300 { color: #a5a6a8 !important; }
+  .breeze-dark .text-neutral-400 { color: #898a8c !important; }
+  .breeze-dark .text-neutral-500 { color: #7a7c7d !important; }
+  .breeze-dark .text-neutral-600 { color: #5f6266 !important; }
+  .breeze-dark .text-neutral-700 { color: #4d5358 !important; }
+  .breeze-dark .border-neutral-800 { border-color: #3f4347 !important; }
+  .breeze-dark .border-neutral-700 { border-color: #4d5358 !important; }
+  .breeze-dark .bg-blue-600 { background-color: #2980b9 !important; }
+  .breeze-dark .bg-blue-900\/30 { background-color: rgba(45, 92, 118, 0.5) !important; }
+  .breeze-dark .text-blue-400 { color: #3daee9 !important; }
+  .breeze-dark .bg-red-900\/30 { background-color: rgba(218, 68, 83, 0.15) !important; }
+  .breeze-dark .text-red-400 { color: #da4453 !important; }
+  .breeze-dark .bg-emerald-900\/30 { background-color: rgba(28, 128, 66, 0.15) !important; }
+  .breeze-dark .text-emerald-400 { color: #1c8042 !important; }
+  .breeze-dark .bg-yellow-900\/30 { background-color: rgba(246, 116, 0, 0.15) !important; }
+  .breeze-dark .text-yellow-400 { color: #fdbc4b !important; }
+  .breeze-dark .bg-purple-900\/30 { background-color: rgba(142, 68, 173, 0.15) !important; }
+  .breeze-dark .text-purple-400 { color: #8e44ad !important; }
+  .breeze-dark .bg-green-950\/30 { background-color: rgba(28, 128, 66, 0.1) !important; }
+  .breeze-dark .bg-red-950\/30 { background-color: rgba(218, 68, 83, 0.1) !important; }
+  .breeze-dark .bg-emerald-950\/40 { background-color: rgba(28, 128, 66, 0.12) !important; }
+  .breeze-dark .border-emerald-800\/50 { border-color: rgba(28, 128, 66, 0.3) !important; }
+  .breeze-dark .text-emerald-300 { color: #1c8042 !important; }
+  .breeze-dark .bg-red-950\/40 { background-color: rgba(218, 68, 83, 0.12) !important; }
+  .breeze-dark .border-red-800\/50 { border-color: rgba(218, 68, 83, 0.3) !important; }
+  .breeze-dark .text-red-300 { color: #da4453 !important; }
+
+  .breeze-dark *::-webkit-scrollbar-thumb { background-color: #3f4347 !important; }
+  .breeze-dark *::-webkit-scrollbar-thumb:hover { background-color: #4d5358 !important; }
+
+  .breeze-dark .markdown-body pre { background: #1d2024 !important; border-color: #3f4347 !important; }
+  .breeze-dark .markdown-body code { background: rgba(63, 67, 71, 0.5) !important; color: #8e44ad !important; }
+  .breeze-dark .markdown-body pre code { color: #cfcfc2 !important; }
+}
+
+/* ─── Breeze Light Theme (Kate) ──────────────────────────────────────────── */
+
+@layer base {
+  .breeze-light {
+    --color-bg-primary:         #ffffff;
+    --color-bg-secondary:       #f8f7f6;
+    --color-bg-tertiary:        #ebebeb;
+    --color-bg-elevated:        #ffffff;
+    --color-border:             #d8d8d8;
+    --color-border-focus:       #0057ae;
+    --color-text-primary:       #1f1c1b;
+    --color-text-secondary:     #444444;
+    --color-text-muted:         #898887;
+    --color-accent:             #0057ae;
+    --color-accent-hover:       #2980b9;
+    --color-success:            #006e28;
+    --color-warning:            #b08000;
+    --color-error:              #bf0303;
+    --color-app-bg:             #ffffff;
+    --color-app-surface:        #f8f7f6;
+    --color-app-border:         #d8d8d8;
+    --color-app-text:           #1f1c1b;
+    --color-app-text-secondary: #444444;
+    --color-app-text-muted:     #898887;
+
+    /* CodeMirror syntax tokens — Kate Breeze Light palette */
+    --cm-keyword:  #b08000;  /* yellow-orange for visibility */
+    --cm-string:   #bf0303;  /* Kate String red */
+    --cm-comment:  #898887;  /* Kate Comment */
+    --cm-function: #644a9b;  /* Kate Function purple */
+    --cm-type:     #0057ae;  /* Kate DataType blue */
+    --cm-number:   #b08000;  /* Kate DecVal */
+    --cm-operator: #ca60ca;  /* Kate Operator magenta */
+    --cm-property: #0057ae;  /* Kate Attribute blue */
+    --cm-tag:      #0057ae;
+    --cm-variable: #1f1c1b;  /* Kate Normal */
+    --cm-constant: #aa5500;  /* Kate Constant brown-orange */
+    --cm-heading:  #644a9b;  /* Kate Function purple */
+    --cm-link:     #0095ff;  /* Kate Extension */
+    --cm-list:     #bf0303;  /* Kate SpecialString red */
+    --cm-quote:    #898887;
+    --cm-meta:     #898887;
+    --cm-mark:     #644a9b;  /* matches heading */
+    --cm-invalid:  #bf0303;
+    --cm-active-line-bg:     #f8f7f6;
+    --cm-selection-bg:       rgba(148, 202, 239, 0.6);  /* Kate TextSelection */
+    --cm-selection-match-bg: rgba(0, 0, 0, 0.05);
+  }
+
+  .breeze-light body { background-color: #ffffff; color: #1f1c1b; }
+
+  .breeze-light .bg-neutral-950 { background-color: #ffffff !important; }
+  .breeze-light .bg-neutral-900 { background-color: #f8f7f6 !important; }
+  .breeze-light .bg-neutral-900\/50 { background-color: rgba(248, 247, 246, 0.5) !important; }
+  .breeze-light .bg-neutral-800 { background-color: #ebebeb !important; }
+  .breeze-light .bg-neutral-800\/50 { background-color: rgba(235, 235, 235, 0.5) !important; }
+  .breeze-light .bg-neutral-700 { background-color: #d8d8d8 !important; }
+  .breeze-light .text-neutral-100 { color: #1f1c1b !important; }
+  .breeze-light .text-neutral-200 { color: #232629 !important; }
+  .breeze-light .text-neutral-300 { color: #444444 !important; }
+  .breeze-light .text-neutral-400 { color: #5d5d5d !important; }
+  .breeze-light .text-neutral-500 { color: #7a7c7d !important; }
+  .breeze-light .text-neutral-600 { color: #898887 !important; }
+  .breeze-light .text-neutral-700 { color: #d8d8d8 !important; }
+  .breeze-light .border-neutral-800 { border-color: #d8d8d8 !important; }
+  .breeze-light .border-neutral-700 { border-color: #c0c0bf !important; }
+  .breeze-light .bg-blue-600 { background-color: #0057ae !important; }
+  .breeze-light .bg-blue-900\/30 { background-color: rgba(0, 87, 174, 0.12) !important; }
+  .breeze-light .text-blue-400 { color: #0057ae !important; }
+  .breeze-light .bg-red-900\/30 { background-color: rgba(191, 3, 3, 0.12) !important; }
+  .breeze-light .text-red-400 { color: #bf0303 !important; }
+  .breeze-light .bg-emerald-900\/30 { background-color: rgba(0, 110, 40, 0.12) !important; }
+  .breeze-light .text-emerald-400 { color: #006e28 !important; }
+  .breeze-light .bg-yellow-900\/30 { background-color: rgba(176, 128, 0, 0.12) !important; }
+  .breeze-light .text-yellow-400 { color: #b08000 !important; }
+  .breeze-light .bg-purple-900\/30 { background-color: rgba(100, 74, 155, 0.12) !important; }
+  .breeze-light .text-purple-400 { color: #644a9b !important; }
+  .breeze-light .bg-green-950\/30 { background-color: rgba(0, 110, 40, 0.1) !important; }
+  .breeze-light .bg-red-950\/30 { background-color: rgba(191, 3, 3, 0.1) !important; }
+  .breeze-light .bg-emerald-950\/40 { background-color: rgba(0, 110, 40, 0.12) !important; }
+  .breeze-light .border-emerald-800\/50 { border-color: rgba(0, 110, 40, 0.3) !important; }
+  .breeze-light .text-emerald-300 { color: #006e28 !important; }
+  .breeze-light .bg-red-950\/40 { background-color: rgba(191, 3, 3, 0.12) !important; }
+  .breeze-light .border-red-800\/50 { border-color: rgba(191, 3, 3, 0.3) !important; }
+  .breeze-light .text-red-300 { color: #bf0303 !important; }
+
+  .breeze-light *::-webkit-scrollbar-thumb { background-color: #d8d8d8 !important; }
+  .breeze-light *::-webkit-scrollbar-thumb:hover { background-color: #898887 !important; }
+
+  .breeze-light .markdown-body pre { background: #f8f7f6 !important; border-color: #d8d8d8 !important; }
+  .breeze-light .markdown-body code { background: rgba(0, 0, 0, 0.06) !important; color: #644a9b !important; }
+  .breeze-light .markdown-body pre code { color: #1f1c1b !important; }
+}
+
 /* ─── Light Mode Overrides ────────────────────────────────────────────────── */
 
 @layer base {

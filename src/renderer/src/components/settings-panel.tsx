@@ -140,6 +140,8 @@ export function SettingsPanel(): React.JSX.Element {
               <option value="system">System</option>
               <option value="nord">Nord</option>
               <option value="gruvbox">Gruvbox</option>
+              <option value="breeze-dark">Breeze Dark (Kate)</option>
+              <option value="breeze-light">Breeze Light (Kate)</option>
             </select>
           </SettingsRow>
 
@@ -205,21 +207,22 @@ export function SettingsPanel(): React.JSX.Element {
 
 // ─── Theme Application ───────────────────────────────────────────────────────
 
-const THEME_CLASSES = ['dark', 'light', 'nord', 'gruvbox'] as const
+const THEME_CLASSES = ['dark', 'light', 'nord', 'gruvbox', 'breeze-dark', 'breeze-light'] as const
+const LIGHT_THEMES = new Set(['light', 'breeze-light'])
 
 function applyTheme(theme: string): void {
   const html = document.documentElement
   html.classList.remove(...THEME_CLASSES)
 
-  if (theme === 'light') {
-    html.classList.add('light')
-    html.style.colorScheme = 'light'
-  } else if (theme === 'system') {
+  if (theme === 'system') {
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
     html.classList.add(prefersDark ? 'dark' : 'light')
     html.style.colorScheme = prefersDark ? 'dark' : 'light'
+  } else if (LIGHT_THEMES.has(theme)) {
+    html.classList.add(theme)
+    html.style.colorScheme = 'light'
   } else {
-    // 'dark' | 'nord' | 'gruvbox' — all dark-based
+    // 'dark' | 'nord' | 'gruvbox' | 'breeze-dark' — all dark-based
     html.classList.add(theme)
     html.style.colorScheme = 'dark'
   }

@@ -480,7 +480,7 @@ export type PermissionMode = 'plan-readonly' | 'ask-edits' | 'ask-commands' | 't
 export interface AppSettings {
   piExecutablePath: string
   defaultArgs: string[]
-  theme: 'dark' | 'light' | 'system' | 'nord' | 'gruvbox'
+  theme: 'dark' | 'light' | 'system' | 'nord' | 'gruvbox' | 'breeze-dark' | 'breeze-light'
   defaultModel: string | null
   defaultProvider: string | null
   defaultCwd: string | null

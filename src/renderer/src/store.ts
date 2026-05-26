@@ -616,16 +616,16 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
       // Apply theme
       const html = document.documentElement
-      html.classList.remove('dark', 'light', 'nord', 'gruvbox')
-      if (settings.theme === 'light') {
-        html.classList.add('light')
-        html.style.colorScheme = 'light'
-      } else if (settings.theme === 'system') {
+      html.classList.remove('dark', 'light', 'nord', 'gruvbox', 'breeze-dark', 'breeze-light')
+      if (settings.theme === 'system') {
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
         html.classList.add(prefersDark ? 'dark' : 'light')
         html.style.colorScheme = prefersDark ? 'dark' : 'light'
+      } else if (settings.theme === 'light' || settings.theme === 'breeze-light') {
+        html.classList.add(settings.theme)
+        html.style.colorScheme = 'light'
       } else {
-        // 'dark' | 'nord' | 'gruvbox' — all dark-based
+        // 'dark' | 'nord' | 'gruvbox' | 'breeze-dark' — all dark-based
         html.classList.add(settings.theme)
         html.style.colorScheme = 'dark'
       }
