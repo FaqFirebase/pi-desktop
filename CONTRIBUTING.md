@@ -1,4 +1,4 @@
-# Contributing to PI Desktop GUI
+# Contributing to PI Desktop
 
 Thank you for your interest in contributing! This document explains how to contribute to the project.
 
@@ -29,7 +29,7 @@ By submitting a pull request, you acknowledge that you have read and agree to th
 
 ### Suggesting Features
 
-1. Open a [feature request](https://github.com/FaqFirebase/pi-desktop/issues/new?template=feature_request.md)
+1. Open a [feature request](https://github.com/FaqFirebase/pi-desktop/issues/new?template=feature_request.yml)
 2. Describe the use case and expected behavior
 3. Explain why this would be useful to other users
 
@@ -156,8 +156,10 @@ src/
 │   ├── ipc-handlers.ts        # IPC handler registration
 │   ├── pi-rpc-manager.ts      # PI subprocess management
 │   ├── workspace-manager.ts   # Multi-workspace
-│   ├── file-service.ts        # File tree, search, git
-│   └── session-tags.ts        # Tag persistence
+│   ├── file-service.ts        # File tree, search, git, file write
+│   ├── terminal-service.ts    # node-pty PTY management
+│   ├── session-tags.ts        # Tag persistence
+│   └── archived-sessions.ts   # Archived session persistence
 ├── preload/index.ts           # Secure contextBridge API
 └── renderer/                  # React UI
     └── src/
