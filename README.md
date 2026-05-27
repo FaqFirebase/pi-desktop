@@ -61,12 +61,71 @@ macOS isn't shipping yet. A Windows portable `.exe` is available in [Releases](h
 
 ## Build it yourself
 
+### Linux / macOS
+
 ```bash
 git clone https://github.com/FaqFirebase/pi-desktop.git
 cd pi-desktop
 npm install
 npm run dev
 ```
+
+### Windows
+
+Windows requires extra steps because **node-pty** (the terminal backend) compiles a native module against Electron's ABI.
+
+#### 1. Install prerequisites
+
+Install all of the following **before** cloning:
+
+- [Git for Windows](https://git-scm.com/download/win)
+- [Node.js LTS](https://nodejs.org) — use the official Windows installer (adds `node` and `npm` to PATH)
+- **Visual Studio Build Tools 2022** — download from [Visual Studio downloads](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022)
+  - Select the **Desktop development with C++** workload
+  - Open **Individual components**, search `Spectre`, and install **Spectre-mitigated libs for v143 toolset**
+
+> **⚠️ Use VS Build Tools 2022, not 2026.** node-pty requires Spectre-mitigated runtime libraries. VS 2022 stable (v143 toolset) ships them. VS 2026 preview (v180 toolset) does not — `npm install` will fail with `MSB8040: Spectre-mitigated libraries are required for this project`.
+
+#### 2. Add a Windows Defender exclusion (recommended)
+
+Defender can block or slow `npm install` on projects with many small files. Before cloning, add an exclusion:
+
+Settings → Privacy & Security → Windows Security → Virus & threat protection → Manage settings → Exclusions → Add a folder → (pick where you'll clone the repo)
+
+#### 3. Clone and install
+
+```powershell
+git clone https://github.com/FaqFirebase/pi-desktop.git
+cd pi-desktop
+npm install
+```
+
+The postinstall script rebuilds `node-pty` against Electron's ABI and downloads the Electron binary. First install may take a few minutes.
+
+#### 4. Install PI
+
+```powershell
+powershell -c "irm https://pi.dev/install.ps1 | iex"
+```
+
+Open a **new terminal** after this so the updated PATH takes effect.
+
+#### 5. Run
+
+```powershell
+npm run dev
+```
+
+#### Common Windows errors
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `MSB8040` — Spectre libs missing | VS Build Tools 2026 (v180 toolset) installed instead of 2022 (v143) | Uninstall 2026, install VS Build Tools 2022 with Spectre libs for v143 |
+| `electron-vite is not recognized` | `npm install` didn't complete | Run `npm install` again |
+| Electron binary missing after install | Antivirus blocked extraction | Add the repo folder to Defender exclusions, then `npm install` again |
+| PI shows "error" in status popover | PI not installed or PATH not updated | Run the install script above in a **new** terminal window |
+
+> **Note:** Windows builds are community-tested. The maintainers do not have a Windows machine. If you hit an issue not listed above, please [open a bug report](https://github.com/FaqFirebase/pi-desktop/issues).
 
 ## License
 
