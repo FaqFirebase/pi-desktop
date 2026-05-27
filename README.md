@@ -102,6 +102,8 @@ npm install
 
 The postinstall script rebuilds `node-pty` against Electron's ABI and downloads the Electron binary. First install may take a few minutes.
 
+If the Electron binary is missing after install, use the [manual Electron binary download](#manual-electron-binary-download) steps below. This is the confirmed fallback on Windows when Electron's postinstall extraction leaves a partial `dist` folder.
+
 #### 4. Install PI
 
 ```powershell
@@ -122,8 +124,27 @@ npm run dev
 |-------|-------|-----|
 | `MSB8040` — Spectre libs missing | VS Build Tools 2026 (v180 toolset) installed instead of 2022 (v143) | Uninstall 2026, install VS Build Tools 2022 with Spectre libs for v143 |
 | `electron-vite is not recognized` | `npm install` didn't complete | Run `npm install` again |
-| Electron binary missing after install | Antivirus blocked extraction | Add the repo folder to Defender exclusions, then `npm install` again |
+| Electron binary missing after install | Electron's postinstall extraction left a partial or missing `dist` folder | Add the repo folder to Defender exclusions, then `npm install` again. If it still fails, use the manual download steps below |
 | PI shows "error" in status popover | PI not installed or PATH not updated | Run the install script above in a **new** terminal window |
+
+#### Manual Electron binary download
+
+If `npm install` completes but the app won't launch because Electron is missing or corrupted, download it directly from GitHub and unpack it into place. This is the known-good fallback when `node_modules\electron\dist` contains only partial contents, such as `locales`, and no `electron.exe`.
+
+Replace `39.8.10` with the version in `node_modules/electron/package.json` if it differs.
+
+```powershell
+$ver = "39.8.10"
+$url = "https://github.com/electron/electron/releases/download/v$ver/electron-v$ver-win32-x64.zip"
+$zip = "$env:TEMP\electron-v$ver-win32-x64.zip"
+Invoke-WebRequest -Uri $url -OutFile $zip
+if (Test-Path node_modules\electron\dist) { Remove-Item -Recurse -Force node_modules\electron\dist }
+Expand-Archive -Path $zip -DestinationPath node_modules\electron\dist -Force
+"electron.exe" | Out-File -Encoding ASCII -NoNewline node_modules\electron\path.txt
+"v$ver" | Out-File -Encoding ASCII -NoNewline node_modules\electron\dist\version
+```
+
+After this, `npm run dev` should work normally.
 
 > **Note:** Windows builds are community-tested. The maintainers do not have a Windows machine. If you hit an issue not listed above, please [open a bug report](https://github.com/FaqFirebase/pi-desktop/issues).
 
