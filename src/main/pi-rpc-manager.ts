@@ -97,7 +97,7 @@ function findPiBinary(): string {
     // Default npm layout: <prefix>/node_modules/<package>/dist/cli.js on
     // Windows, <prefix>/lib/node_modules/... on macOS/Linux.
     const fromPrefixCandidates = IS_WINDOWS
-      ? [join(prefix, PI_CLI_REL), join(prefix, 'pi.cmd')]
+      ? [join(prefix, PI_CLI_REL), join(prefix, 'pi.cmd'), join(prefix, 'pi.ps1')]
       : [join(prefix, 'lib', PI_CLI_REL), join(prefix, 'bin', 'pi')]
     for (const c of fromPrefixCandidates) {
       if (existsSync(c)) return c
@@ -153,6 +153,10 @@ function findNodeBinary(): string {
     const programFilesX86 = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'
     const localAppData = process.env.LOCALAPPDATA ?? ''
     const candidates = [
+      // PI's install.ps1 auto-installs Node to %LOCALAPPDATA%\pi-node when
+      // the user has no Node — check this first since it's what install.ps1
+      // wires up for spawning pi.
+      localAppData ? join(localAppData, 'pi-node', 'node.exe') : '',
       join(programFiles, 'nodejs', 'node.exe'),
       join(programFilesX86, 'nodejs', 'node.exe'),
       localAppData ? join(localAppData, 'fnm_multishells', 'node.exe') : '',
@@ -174,7 +178,7 @@ function findNodeBinary(): string {
 const PI_SCRIPT = findPiBinary()
 const USE_NODE = PI_SCRIPT.endsWith('.js')
 const NODE_BINARY = findNodeBinary()
-// On Windows, .cmd/.bat shims require shell:true to be invoked via spawn.
+// On Windows, .cmd/.bat/.ps1 shims require shell:true to be invoked via spawn.
 const NEEDS_SHELL = IS_WINDOWS && !USE_NODE && /\.(cmd|bat|ps1)$/i.test(PI_SCRIPT)
 console.log('[PI] Using:', USE_NODE ? `${NODE_BINARY} ${PI_SCRIPT}` : PI_SCRIPT, NEEDS_SHELL ? '(via shell)' : '')
 
