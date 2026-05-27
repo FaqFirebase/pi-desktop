@@ -25,13 +25,16 @@ export class TerminalService {
     } as Record<string, string>
 
     this.cwd = cwd
+    // node-pty's `encoding` option calls setEncoding() under the hood,
+    // which Windows (conpty/winpty) does not support and logs a warning
+    // for. Only pass it on POSIX platforms.
     this.terminal = pty.spawn(shell, [], {
       name: 'xterm-256color',
       cols: options.cols ?? 80,
       rows: options.rows ?? 24,
       cwd,
       env,
-      encoding: 'utf8',
+      ...(process.platform === 'win32' ? {} : { encoding: 'utf8' }),
     })
 
     this.terminal.onData(onData)
