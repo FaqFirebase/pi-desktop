@@ -3,6 +3,8 @@ import { basicSetup, EditorView } from 'codemirror'
 import { syntaxHighlighting } from '@codemirror/language'
 import { getCodeEditorLanguageExtensions } from './code-editor-language'
 import { themedHighlightStyle } from './code-editor-highlight'
+import { useAppStore } from '../store'
+import { isLightTheme } from '../utils/theme'
 
 interface CodeEditorProps {
   filePath: string
@@ -20,6 +22,8 @@ export function CodeEditor({
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
+  const theme = useAppStore((state) => state.settings?.theme)
+  const lightTheme = isLightTheme(theme)
 
   useEffect(() => {
     onChangeRef.current = onChange
@@ -33,9 +37,6 @@ export function CodeEditor({
 
     // Tell CodeMirror whether the active app theme is dark so its base theme
     // picks the right fallback styles (drop cursor, selection layer, etc.).
-    // Light is the only non-dark theme; everything else (Dark, Nord, Gruvbox)
-    // is dark.
-    const isLightTheme = document.documentElement.classList.contains('light')
 
     const view = new EditorView({
       doc: value,
@@ -90,7 +91,7 @@ export function CodeEditor({
           '&.cm-focused': {
             outline: 'none',
           },
-        }, { dark: !isLightTheme }),
+        }, { dark: !lightTheme }),
       ],
     })
     viewRef.current = view
@@ -99,7 +100,7 @@ export function CodeEditor({
       view.destroy()
       viewRef.current = null
     }
-  }, [filePath, readOnly])
+  }, [filePath, readOnly, lightTheme])
 
   useEffect(() => {
     const view = viewRef.current

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { applyTheme } from './utils/theme'
 import type {
   PiRpcEvent,
   PiStatus,
@@ -621,21 +622,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       const settings = await window.piDesktop.settings.getAll()
       set({ settings })
 
-      // Apply theme
-      const html = document.documentElement
-      html.classList.remove('dark', 'light', 'nord', 'gruvbox', 'breeze-dark', 'breeze-light')
-      if (settings.theme === 'system') {
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-        html.classList.add(prefersDark ? 'dark' : 'light')
-        html.style.colorScheme = prefersDark ? 'dark' : 'light'
-      } else if (settings.theme === 'light' || settings.theme === 'breeze-light') {
-        html.classList.add(settings.theme)
-        html.style.colorScheme = 'light'
-      } else {
-        // 'dark' | 'nord' | 'gruvbox' | 'breeze-dark' — all dark-based
-        html.classList.add(settings.theme)
-        html.style.colorScheme = 'dark'
-      }
+      applyTheme(settings.theme)
 
       // Apply font size
       document.documentElement.style.fontSize = `${settings.fontSize}px`
