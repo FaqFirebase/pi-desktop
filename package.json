@@ -39,7 +39,7 @@
     "package:win:nsis": "electron-vite build && electron-builder --win nsis",
     "package:win:portable": "electron-vite build && electron-builder --win portable",
     "package:all": "electron-vite build && electron-builder --linux --mac --win",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
     "@codemirror/lang-cpp": "^6.0.3",
