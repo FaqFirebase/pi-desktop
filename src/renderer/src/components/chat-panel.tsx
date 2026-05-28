@@ -37,12 +37,14 @@ export function ChatPanel(): React.JSX.Element {
   const scrollRef = useAutoScroll([messages.length, streamingContent])
 
   const handleRetry = useCallback(async (messageId: string) => {
-    // Find the user message and resend it
-    const msg = messages.find((m) => m.id === messageId)
+    // Read from the store so this callback stays referentially stable, keeping
+    // the memoized MessageBubble list from re-rendering when messages change.
+    const { messages: current, sendPrompt } = useAppStore.getState()
+    const msg = current.find((m) => m.id === messageId)
     if (msg?.role === 'user') {
-      await useAppStore.getState().sendPrompt(msg.content)
+      await sendPrompt(msg.content)
     }
-  }, [messages])
+  }, [])
 
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const showSidePanel = sidePanel !== null || selectedFile !== null

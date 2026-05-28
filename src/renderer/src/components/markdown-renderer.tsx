@@ -2,6 +2,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { useContextMenu, buildCodeBlockContextMenu, buildLinkContextMenu } from './context-menu'
+import { ErrorBoundary } from './error-boundary'
 
 interface MarkdownRendererProps {
   content: string
@@ -11,7 +12,9 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
   const { show, ContextMenuComponent } = useContextMenu()
 
   return (
-    <>
+    <ErrorBoundary
+      fallback={<pre className="whitespace-pre-wrap break-words text-neutral-300">{content}</pre>}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
@@ -60,7 +63,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
                       navigator.clipboard.writeText(codeText)
                     }
                   }}
-                  className="absolute top-2 right-2 rounded px-2 py-1 text-xs text-neutral-500 opacity-0 group-hover:opacity-100 bg-neutral-800 hover:text-neutral-300 transition-all"
+                  className="absolute top-2 right-2 rounded px-2 py-1 text-xs text-neutral-400 opacity-40 group-hover:opacity-100 bg-neutral-800 hover:text-neutral-200 transition-all"
                 >
                   Copy
                 </button>
@@ -110,7 +113,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
         {content}
       </ReactMarkdown>
       {ContextMenuComponent}
-    </>
+    </ErrorBoundary>
   )
 }
 

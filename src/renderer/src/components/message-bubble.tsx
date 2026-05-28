@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { memo, useState, useRef } from 'react'
 import { useAppStore, type DisplayMessage } from '../store'
 import { MarkdownRenderer } from './markdown-renderer'
 import { useContextMenu, buildMessageContextMenu } from './context-menu'
@@ -21,9 +21,16 @@ import {
   Send,
   X,
   Paperclip,
+  Terminal,
+  Search,
+  Globe,
+  Pencil,
+  FilePlus,
+  List,
+  type LucideIcon,
 } from 'lucide-react'
 
-export function MessageBubble({
+function MessageBubbleImpl({
   message,
   onRetry,
 }: {
@@ -139,6 +146,11 @@ export function MessageBubble({
 
   return <></>
 }
+
+// Memoized so finalized messages don't re-parse markdown on every store update
+// (e.g. during streaming of a later message). Relies on stable `message`
+// references and a stable `onRetry` callback from the caller.
+export const MessageBubble = memo(MessageBubbleImpl)
 
 // ─── User Message ────────────────────────────────────────────────────────────
 
@@ -330,6 +342,7 @@ function ToolCallBadge({
   toolCall: NonNullable<DisplayMessage['toolCalls']>[number]
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false)
+  const Icon = toolIcon(toolCall.name)
 
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900/50">
@@ -337,8 +350,11 @@ function ToolCallBadge({
         onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center gap-2 px-3 py-2 text-xs text-neutral-400 hover:text-neutral-300 transition-colors"
       >
-        <Wrench size={12} className="shrink-0" />
+        <Icon size={12} className="shrink-0" />
         <span className="font-medium">{toolCall.name}</span>
+        {toolCall.durationMs !== undefined && !toolCall.isExecuting && (
+          <span className="text-[10px] text-neutral-600">{formatDuration(toolCall.durationMs)}</span>
+        )}
         {toolCall.isError !== undefined && (
           <span className={clsx(
             'ml-auto rounded px-1.5 py-0.5 text-[10px]',
@@ -422,6 +438,7 @@ function ActionButton({
       onClick={onClick}
       className="flex items-center gap-1 rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
       title={title}
+      aria-label={title}
     >
       {icon}
       {label && <span>{label}</span>}
@@ -430,6 +447,24 @@ function ActionButton({
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// Map common PI tool names to a representative icon; falls back to a wrench.
+function toolIcon(name: string): LucideIcon {
+  const n = name.toLowerCase()
+  if (n.includes('bash') || n.includes('shell') || n.includes('exec') || n.includes('terminal')) return Terminal
+  if (n.includes('search') || n.includes('grep') || n.includes('find')) return Search
+  if (n.includes('web') || n.includes('fetch') || n.includes('http') || n.includes('url')) return Globe
+  if (n.includes('edit') || n.includes('replace') || n.includes('patch')) return Pencil
+  if (n.includes('write') || n.includes('create')) return FilePlus
+  if (n.includes('list') || n.startsWith('ls') || n.includes('tree') || n.includes('dir')) return List
+  if (n.includes('read') || n.includes('view') || n.includes('cat') || n.includes('file')) return FileText
+  return Wrench
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`
+}
 
 function formatToolCallArgs(args: string): string {
   try {

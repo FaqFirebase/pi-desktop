@@ -43,6 +43,7 @@ export interface DisplayMessage {
     result?: string
     isError?: boolean
     isExecuting?: boolean
+    durationMs?: number
   }>
   thinking?: string
   model?: string
@@ -67,7 +68,10 @@ interface AppState {
   messages: DisplayMessage[]
   streamingContent: string
   streamingThinking: string
-  streamingToolCalls: Map<string, { name: string; args: string; isExecuting: boolean }>
+  streamingToolCalls: Map<
+    string,
+    { name: string; args: string; isExecuting: boolean; startedAt?: number; durationMs?: number }
+  >
   isStreaming: boolean
 
   // Queue
@@ -1136,6 +1140,7 @@ function handleMessageUpdate(
             name: String(toolCall.name ?? 'unknown'),
             args: '',
             isExecuting: true,
+            startedAt: Date.now(),
           })
           return { streamingToolCalls: newMap }
         })
@@ -1172,6 +1177,7 @@ function handleMessageUpdate(
               ...existing,
               isExecuting: false,
               args: JSON.stringify(toolCall.arguments ?? existing.args),
+              durationMs: existing.startedAt ? Date.now() - existing.startedAt : undefined,
             })
           }
           return { streamingToolCalls: newMap }
@@ -1195,6 +1201,7 @@ function handleTurnComplete(
         name: tc.name,
         arguments: tc.args,
         isExecuting: false,
+        durationMs: tc.durationMs,
       }))
 
       newMessages.push({

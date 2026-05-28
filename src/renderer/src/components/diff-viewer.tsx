@@ -203,7 +203,7 @@ function DiffHunk({ lines }: { lines: DiffLine[] }): React.JSX.Element {
     <>
       {lines.map((line, i) => (
         <tr
-          key={i}
+          key={`${line.type}-${line.oldLine ?? ''}-${line.newLine ?? ''}-${i}`}
           className={clsx(
             line.type === 'add' && 'bg-green-950/30',
             line.type === 'remove' && 'bg-red-950/30',

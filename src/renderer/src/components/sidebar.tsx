@@ -83,6 +83,7 @@ export function Sidebar(): React.JSX.Element {
           onClick={toggleSidebar}
           className="rounded p-1 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
           title="Close sidebar"
+          aria-label="Close sidebar"
         >
           <PanelLeftClose size={16} />
         </button>
@@ -284,6 +285,7 @@ function WorkspaceSwitcher(): React.JSX.Element {
                   }}
                   className="rounded p-1 text-neutral-600 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all"
                   title="Remove workspace"
+                  aria-label="Remove workspace"
                 >
                   <Trash2 size={12} />
                 </button>
