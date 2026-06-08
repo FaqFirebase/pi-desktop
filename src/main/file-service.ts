@@ -3,6 +3,7 @@ import { readdir, stat, readFile, writeFile } from 'fs/promises'
 import { join, extname, basename, resolve, relative } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import { describeWriteError } from './fs-errors'
 
 const execFileAsync = promisify(execFile)
 
@@ -263,7 +264,12 @@ export class FileService {
       throw new Error('Refusing to write outside the active workspace')
     }
 
-    await writeFile(resolvedFile, content, 'utf-8')
+    try {
+      await writeFile(resolvedFile, content, 'utf-8')
+    } catch (err) {
+      // Turn opaque EPERM/EACCES into a Controlled Folder Access hint on Windows.
+      throw describeWriteError(err, resolvedFile)
+    }
   }
 
   /**

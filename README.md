@@ -44,7 +44,26 @@ chmod +x PI-Desktop-linux-x64.AppImage
 ./PI-Desktop-linux-x64.AppImage
 ```
 
-macOS isn't shipping yet. A Windows portable `.exe` is available in [Releases](https://github.com/FaqFirebase/pi-desktop/releases) but has not been tested — I don't have a Windows machine. If you run into issues please [open a bug report](https://github.com/FaqFirebase/pi-desktop/issues).
+### macOS
+
+Download the `.dmg` (Apple Silicon / arm64) from [Releases](https://github.com/FaqFirebase/pi-desktop/releases), open it, and drag **PI Desktop** to Applications.
+
+Builds are **not yet signed or notarized**, so on first launch macOS blocks the app ("Apple could not verify… is free of malware"). To allow it:
+
+1. Try to open **PI Desktop** once (double-click). macOS blocks it — click **Done**.
+2. Open **System Settings → Privacy & Security**.
+3. Scroll down to the **Security** section. You'll see *"PI Desktop was blocked to protect your Mac."* Click **Open Anyway**.
+4. Confirm with Touch ID / your password, then open the app again.
+
+You only need to do this once. If a downloaded `.zip` instead reports the app is **"damaged and can't be opened,"** that's the quarantine flag — clear it in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/PI Desktop.app"
+```
+
+### Windows
+
+Download from [Releases](https://github.com/FaqFirebase/pi-desktop/releases): the **installer** (`…-win-x64-setup.exe`, recommended) or the **portable** `…-win-x64.exe`. Builds are unsigned, so SmartScreen may warn — choose **More info → Run anyway**. If file edits or saves fail, see the [Controlled Folder Access](#controlled-folder-access-ransomware-protection) note below. Windows is community-tested; please [open a bug report](https://github.com/FaqFirebase/pi-desktop/issues) if you hit an issue.
 
 ## Keyboard shortcuts
 
@@ -125,7 +144,25 @@ npm run dev
 | `MSB8040` — Spectre libs missing | VS Build Tools 2026 (v180 toolset) installed instead of 2022 (v143) | Uninstall 2026, install VS Build Tools 2022 with Spectre libs for v143 |
 | `electron-vite is not recognized` | `npm install` didn't complete | Run `npm install` again |
 | Electron binary missing after install | Electron's postinstall extraction left a partial or missing `dist` folder | Add the repo folder to Defender exclusions, then `npm install` again. If it still fails, use the manual download steps below |
+| `EPERM` / `EACCES` writing a project file | Controlled Folder Access (Ransomware protection) is blocking writes under Documents/Desktop | Keep the repo and your projects out of protected folders, or allow PI Desktop through Controlled folder access — see below |
 | PI shows "error" in status popover | PI not installed or PATH not updated | Run the install script above in a **new** terminal window |
+
+#### Controlled Folder Access (Ransomware protection)
+
+Windows **Controlled Folder Access** protects `Documents`, `Desktop`, `Pictures`, and similar folders, silently blocking apps it doesn't trust from writing to them. Because PI Desktop is a coding agent that edits files, this shows up as intermittent `EPERM`/`EACCES` failures — during `npm install`, when the agent edits code, or when you save a file — if your repo or projects live inside a protected folder.
+
+The reliable fix is to **keep code out of protected folders**. Clone the repo and put your projects somewhere unprotected, for example:
+
+```powershell
+# Not C:\Users\<you>\Documents\... — use an unprotected path:
+git clone https://github.com/FaqFirebase/pi-desktop.git C:\dev\pi-desktop
+```
+
+If you must keep code under Documents/Desktop, allow the app instead:
+
+**Windows Security → Virus & threat protection → Ransomware protection → Manage ransomware protection → Allow an app through Controlled folder access → Add an allowed app** — add the installed `PI Desktop.exe` (and, for development, `node.exe`, `git.exe`, and `electron.exe`).
+
+> The portable `.exe` re-extracts to a temporary folder on each launch, so allow-listing it doesn't stick. Prefer the **installer** (`PI-Desktop-<version>-win-x64-setup.exe`) if you rely on the allow-list approach.
 
 #### Manual Electron binary download
 
