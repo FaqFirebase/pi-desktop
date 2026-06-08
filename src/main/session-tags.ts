@@ -2,14 +2,14 @@ import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { deriveAutoTag } from './auto-tag'
+import { getGuiDataPath } from './app-data-paths'
 
 /**
  * Session tags store.
  * Maps session IDs to arrays of tags.
- * Stored in ~/.pi-desktop-gui/session-tags.json
+ * Stored in the Electron userData directory.
  */
 
-const CONFIG_DIR_NAME = '.pi-desktop-gui'
 const TAGS_FILE_NAME = 'session-tags.json'
 const AUTO_TAGS_FILE_NAME = 'session-auto-tags.json'
 const MAX_TAG_LENGTH = 32
@@ -39,9 +39,8 @@ export class SessionTagManager {
   private autoLoaded = false
 
   constructor() {
-    const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-    this.tagsPath = join(homeDir, CONFIG_DIR_NAME, TAGS_FILE_NAME)
-    this.autoTagsPath = join(homeDir, CONFIG_DIR_NAME, AUTO_TAGS_FILE_NAME)
+    this.tagsPath = getGuiDataPath(TAGS_FILE_NAME)
+    this.autoTagsPath = getGuiDataPath(AUTO_TAGS_FILE_NAME)
   }
 
   async getTags(sessionId: string): Promise<string[]> {

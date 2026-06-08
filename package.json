@@ -1,6 +1,6 @@
 {
   "name": "pi-desktop",
-  "version": "0.0.3-alpha",
+  "version": "0.0.4-alpha",
   "description": "Desktop GUI frontend for the PI coding agent",
   "main": "out/main/index.js",
   "author": "PI Desktop GUI Contributors",
