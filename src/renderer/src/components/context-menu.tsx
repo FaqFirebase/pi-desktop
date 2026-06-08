@@ -50,10 +50,14 @@ export function useContextMenu(): {
   })
 
   const menuRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLElement | null>(null)
 
   const show = useCallback((e: React.MouseEvent, items: ContextMenuItem[]) => {
     e.preventDefault()
     e.stopPropagation()
+
+    // Remember the element to restore focus to when the menu closes.
+    triggerRef.current = document.activeElement as HTMLElement | null
 
     // Calculate position, keeping menu within viewport
     let x = e.clientX
@@ -88,7 +92,8 @@ export function useContextMenu(): {
     }
 
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') hide()
+      // Escape closes; Tab dismisses so focus isn't trapped behind the menu.
+      if (e.key === 'Escape' || e.key === 'Tab') hide()
     }
 
     // Delay to avoid immediate close from the same right-click
@@ -112,9 +117,21 @@ export function useContextMenu(): {
     return () => window.removeEventListener('scroll', handleScroll, true)
   }, [state.visible, hide])
 
+  // Move focus into the menu when it opens; restore it to the trigger on close.
+  useEffect(() => {
+    if (state.visible) {
+      menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    } else if (triggerRef.current) {
+      triggerRef.current.focus()
+      triggerRef.current = null
+    }
+  }, [state.visible])
+
   const component = state.visible ? (
     <div
       ref={menuRef}
+      role="menu"
+      aria-orientation="vertical"
       className="fixed z-[9999] min-w-[180px] rounded-lg border border-neutral-700 bg-neutral-900 py-1 shadow-xl shadow-black/40 animate-fade-in"
       style={{ left: state.x, top: state.y }}
     >
@@ -126,6 +143,7 @@ export function useContextMenu(): {
         return (
           <button
             key={item.id}
+            role="menuitem"
             onClick={(e) => {
               e.stopPropagation()
               if (!item.disabled) {

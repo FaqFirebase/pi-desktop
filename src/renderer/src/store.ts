@@ -43,6 +43,7 @@ export interface DisplayMessage {
     result?: string
     isError?: boolean
     isExecuting?: boolean
+    durationMs?: number
   }>
   thinking?: string
   model?: string
@@ -67,7 +68,10 @@ interface AppState {
   messages: DisplayMessage[]
   streamingContent: string
   streamingThinking: string
-  streamingToolCalls: Map<string, { name: string; args: string; isExecuting: boolean }>
+  streamingToolCalls: Map<
+    string,
+    { name: string; args: string; isExecuting: boolean; startedAt?: number; durationMs?: number }
+  >
   isStreaming: boolean
 
   // Queue
@@ -114,6 +118,8 @@ interface AppState {
   // Session tags
   sessionTags: Record<string, string[]>
   allUsedTags: string[]
+  // Machine-derived tags for sessions the user hasn't tagged (sessionId → tag)
+  autoTags: Record<string, string>
 
   // Archived sessions (GUI-only registry — PI has no archive concept)
   archivedSessions: Record<string, number>
@@ -204,6 +210,8 @@ interface AppActions {
   addSessionTag: (sessionId: string, tag: string) => Promise<void>
   removeSessionTag: (sessionId: string, tag: string) => Promise<void>
   getTagsForSession: (sessionId: string) => string[]
+  ensureAutoTags: (sessions: Array<{ sessionId: string; path: string }>) => Promise<void>
+  removeAutoTag: (sessionId: string) => Promise<void>
 
   // Archive / delete
   loadArchivedSessions: () => Promise<void>
@@ -306,6 +314,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   fileSearchOpen: false,
 
   sessionTags: {},
+  autoTags: {},
   allUsedTags: [],
 
   archivedSessions: {},
@@ -329,9 +338,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       set({ piStatus: status.status, piPid: status.pid, piError: status.error })
 
       if (status.status === 'running') {
-        get().refreshSessionState()
-        get().refreshSessionStats()
-        get().refreshSessionList()
+        await get().refreshSessionState()
+        await get().refreshSessionStats()
+        await get().refreshSessionList()
       }
     } catch (err) {
       set({ piStatus: 'error', piError: err instanceof Error ? err.message : String(err) })
@@ -464,9 +473,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         return
       }
       get().clearMessages()
-      get().refreshSessionState()
-      get().refreshSessionStats()
-      get().refreshSessionList()
+      await get().refreshSessionState()
+      await get().refreshSessionStats()
+      await get().refreshSessionList()
     } catch (err) {
       get().addMessage({
         id: generateId(),
@@ -544,7 +553,30 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   refreshSessionList: async () => {
     try {
       const list = await window.piDesktop.session.list()
-      set({ sessionList: list })
+      const sessionState = get().sessionState
+      const activeWorkspace = get().activeWorkspace
+      const hasActiveSession = sessionState?.sessionFile
+        ? list.some((item) => item.path === sessionState.sessionFile || item.sessionId === sessionState.sessionId)
+        : false
+
+      const sessionList = hasActiveSession
+        ? list
+        : sessionState?.sessionFile
+        ? [
+            {
+              path: sessionState.sessionFile,
+              name: sessionState.sessionName,
+              sessionId: sessionState.sessionId,
+              lastModified: Date.now(),
+              messageCount: sessionState.messageCount,
+              projectPath: activeWorkspace?.path ?? '',
+              projectName: activeWorkspace?.name ?? '',
+            },
+            ...list,
+          ]
+        : list
+
+      set({ sessionList })
     } catch {
       // Silent failure
     }
@@ -980,11 +1012,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   loadTags: async () => {
     try {
-      const [allTags, usedTags] = await Promise.all([
+      const [allTags, usedTags, autoTags] = await Promise.all([
         window.piDesktop.tags.getAll(),
         window.piDesktop.tags.getAllUsed(),
+        window.piDesktop.tags.autoGetAll(),
       ])
-      set({ sessionTags: allTags, allUsedTags: usedTags })
+      set({ sessionTags: allTags, allUsedTags: usedTags, autoTags })
     } catch {
       // Silent failure
     }
@@ -993,12 +1026,38 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   addSessionTag: async (sessionId, tag) => {
     try {
       const tags = await window.piDesktop.tags.add(sessionId, tag)
-      set((state) => ({
-        sessionTags: { ...state.sessionTags, [sessionId]: tags },
-      }))
+      set((state) => {
+        // A manual tag supersedes the auto-tag (backend drops it too).
+        const { [sessionId]: _dropped, ...autoTags } = state.autoTags
+        return {
+          sessionTags: { ...state.sessionTags, [sessionId]: tags },
+          autoTags,
+        }
+      })
       // Refresh used tags
       const usedTags = await window.piDesktop.tags.getAllUsed()
       set({ allUsedTags: usedTags })
+    } catch {
+      // Silent failure
+    }
+  },
+
+  ensureAutoTags: async (sessions) => {
+    try {
+      const autoTags = await window.piDesktop.tags.autoEnsure(sessions)
+      set({ autoTags })
+    } catch {
+      // Silent failure
+    }
+  },
+
+  removeAutoTag: async (sessionId) => {
+    try {
+      await window.piDesktop.tags.autoRemove(sessionId)
+      set((state) => {
+        const { [sessionId]: _dropped, ...autoTags } = state.autoTags
+        return { autoTags }
+      })
     } catch {
       // Silent failure
     }
@@ -1136,6 +1195,7 @@ function handleMessageUpdate(
             name: String(toolCall.name ?? 'unknown'),
             args: '',
             isExecuting: true,
+            startedAt: Date.now(),
           })
           return { streamingToolCalls: newMap }
         })
@@ -1172,6 +1232,7 @@ function handleMessageUpdate(
               ...existing,
               isExecuting: false,
               args: JSON.stringify(toolCall.arguments ?? existing.args),
+              durationMs: existing.startedAt ? Date.now() - existing.startedAt : undefined,
             })
           }
           return { streamingToolCalls: newMap }
@@ -1195,6 +1256,7 @@ function handleTurnComplete(
         name: tc.name,
         arguments: tc.args,
         isExecuting: false,
+        durationMs: tc.durationMs,
       }))
 
       newMessages.push({

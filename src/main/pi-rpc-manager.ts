@@ -163,8 +163,10 @@ function findPiBinary(): string {
   } else {
     candidates.push(join(home, '.npm-global', PI_CLI_REL))
     candidates.push(join(home, '.npm-global', 'bin', 'pi'))
+    candidates.push(join('/opt/homebrew/lib', PI_CLI_REL))
     candidates.push(join('/usr/local/lib', PI_CLI_REL))
     candidates.push(join('/usr/lib', PI_CLI_REL))
+    candidates.push('/opt/homebrew/bin/pi')
     candidates.push('/usr/local/bin/pi')
     candidates.push('/usr/bin/pi')
     candidates.push(join(home, '.local/bin/pi'))
@@ -313,6 +315,10 @@ export class PiRpcManager extends EventEmitter {
         // .cmd/.bat/.ps1 shims on Windows can't be invoked directly from
         // spawn — they need the cmd.exe interpreter via shell:true.
         shell: NEEDS_SHELL,
+        // On POSIX, make the child its own process-group leader so kill()'s
+        // negative-PID group kill reaps PI and all its descendants. Skipped on
+        // Windows, where it would spawn a detached console window with shell:true.
+        detached: !IS_WINDOWS,
       }
 
       console.log('[PI] Spawning with cwd:', options.cwd)
@@ -321,24 +327,6 @@ export class PiRpcManager extends EventEmitter {
         ? spawn(NODE_BINARY, [PI_SCRIPT, ...args], spawnOptions)
         : spawn(PI_SCRIPT, args, spawnOptions)
       this.process = proc
-
-      proc.on('error', (err) => {
-        console.error('[PI] Spawn error:', err.message)
-        // Surface to the renderer status popover so users see something
-        // useful instead of a blank 'error' state.
-        this.stderrBuffer += `Spawn error: ${err.message}\n`
-        this.setStatus('error')
-      })
-
-      proc.on('exit', (code, signal) => {
-        console.log('[PI] Process exited with code:', code, 'signal:', signal, 'pid:', proc.pid)
-        // If PI exited non-zero before reaching 'running', capture that as
-        // the error reason so the popover can show it.
-        if (this.status !== 'running' && code !== 0 && code !== null) {
-          this.stderrBuffer = (this.stderrBuffer || '') + `PI exited with code ${code} before becoming ready.`
-          this.setStatus('error')
-        }
-      })
 
       this.setupStreams()
 
@@ -358,14 +346,25 @@ export class PiRpcManager extends EventEmitter {
         }
         this.process!.stdout?.on('data', onFirstData)
 
-        this.process!.on('error', (err) => {
+        proc.on('error', (err) => {
+          console.error('[PI] Spawn error:', err.message)
+          // Surface to the renderer status popover so users see something
+          // useful instead of a blank 'error' state.
+          this.stderrBuffer += `Spawn error: ${err.message}\n`
           this.setStatus('error')
-          this.stderrBuffer = err.message
           done()
         })
 
-        this.process!.on('exit', (code, signal) => {
-          this.setStatus('stopped')
+        proc.on('exit', (code, signal) => {
+          console.log('[PI] Process exited with code:', code, 'signal:', signal, 'pid:', proc.pid)
+          // If PI exited non-zero before reaching 'running', preserve that as
+          // the error reason so the popover can show it; otherwise it stopped.
+          if (this.status !== 'running' && code !== 0 && code !== null) {
+            this.stderrBuffer = (this.stderrBuffer || '') + `PI exited with code ${code} before becoming ready.`
+            this.setStatus('error')
+          } else {
+            this.setStatus('stopped')
+          }
           this.emit('exit', { code, signal })
           this.rejectAllPending('PI process exited')
           done()
@@ -386,8 +385,12 @@ export class PiRpcManager extends EventEmitter {
         // 'starting' after the full timeout (the settle timer should have fired).
         setTimeout(() => {
           if (this.status === 'starting') {
-            this.setStatus('error')
             const captured = this.stderrBuffer.trim()
+            // Reap the hung process before flipping to 'error' so we don't
+            // leave a zombie buffering on stdio. kill() resets buffers, so
+            // build the message first and restore it after.
+            this.kill()
+            this.setStatus('error')
             this.stderrBuffer =
               `PI did not respond within ${SPAWN_STARTUP_TIMEOUT_MS / 1000}s.\n\n` +
               (captured

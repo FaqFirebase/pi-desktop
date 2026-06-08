@@ -1,5 +1,5 @@
 import { useAppStore } from '../store'
-import { FolderOpen, Plus, Clock, Search, ChevronRight, ChevronDown, FolderTree, Tag, X, MoreVertical, Archive, ArchiveRestore, Trash2 } from 'lucide-react'
+import { FolderOpen, Plus, Clock, Search, ChevronRight, ChevronDown, FolderTree, Tag, X, MoreVertical, Archive, ArchiveRestore, Trash2, Sparkles } from 'lucide-react'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
@@ -20,6 +20,17 @@ export function SessionPanel(): React.JSX.Element {
   const archivedSessions = useAppStore((state) => state.archivedSessions)
   const showArchived = useAppStore((state) => state.showArchived)
   const toggleShowArchived = useAppStore((state) => state.toggleShowArchived)
+  const ensureAutoTags = useAppStore((state) => state.ensureAutoTags)
+
+  // Auto-assign a context tag to any session the user hasn't tagged. The main
+  // process skips already-processed sessions, so this is idempotent and only
+  // reads session files the first time each session is seen.
+  useEffect(() => {
+    if (sessionList.length === 0) return
+    void ensureAutoTags(
+      sessionList.map((s) => ({ sessionId: s.sessionId, path: s.path }))
+    )
+  }, [sessionList, ensureAutoTags])
 
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
@@ -307,14 +318,17 @@ function SessionEntry({
   onSelect: () => void
 }): React.JSX.Element {
   const sessionTags = useAppStore((state) => state.sessionTags)
+  const autoTags = useAppStore((state) => state.autoTags)
   const addSessionTag = useAppStore((state) => state.addSessionTag)
   const removeSessionTag = useAppStore((state) => state.removeSessionTag)
+  const removeAutoTag = useAppStore((state) => state.removeAutoTag)
   const archivedSessions = useAppStore((state) => state.archivedSessions)
   const archiveSession = useAppStore((state) => state.archiveSession)
   const unarchiveSession = useAppStore((state) => state.unarchiveSession)
   const deleteSession = useAppStore((state) => state.deleteSession)
 
   const tags = sessionTags[session.sessionId] ?? []
+  const autoTag = autoTags[session.sessionId]
   const isArchived = session.sessionId in archivedSessions
   const [showTagInput, setShowTagInput] = useState(false)
   const [tagInput, setTagInput] = useState('')
@@ -439,7 +453,7 @@ function SessionEntry({
           <div className={clsx('text-sm truncate', isActive ? 'text-blue-300' : 'text-neutral-400')}>
             {session.name || session.sessionId.slice(0, 12)}
           </div>
-          {tags.length > 0 && (
+          {(tags.length > 0 || autoTag) && (
             <div className="flex flex-wrap gap-1 mt-1">
               {tags.map((tag) => (
                 <span
@@ -461,6 +475,26 @@ function SessionEntry({
                   </button>
                 </span>
               ))}
+              {autoTag && (
+                <span
+                  title="Auto-tagged from chat context — add your own tag to replace it"
+                  className="inline-flex items-center gap-0.5 rounded border border-dashed border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-500"
+                >
+                  <Sparkles size={8} />
+                  {autoTag}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      removeAutoTag(session.sessionId)
+                    }}
+                    title={`Remove auto-tag ${autoTag}`}
+                    aria-label={`Remove auto-tag ${autoTag}`}
+                    className="ml-0.5 hover:text-neutral-300"
+                  >
+                    <X size={8} />
+                  </button>
+                </span>
+              )}
             </div>
           )}
         </div>

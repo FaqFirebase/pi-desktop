@@ -5,7 +5,10 @@ import { clsx } from 'clsx'
 interface StreamingBubbleProps {
   content: string
   thinking: string
-  toolCalls: Map<string, { name: string; args: string; isExecuting: boolean }>
+  toolCalls: Map<
+    string,
+    { name: string; args: string; isExecuting: boolean; startedAt?: number; durationMs?: number }
+  >
 }
 
 export function StreamingBubble({ content, thinking, toolCalls }: StreamingBubbleProps): React.JSX.Element {

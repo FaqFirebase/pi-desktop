@@ -109,6 +109,9 @@ export const IPC_CHANNELS = {
   TAG_REMOVE: 'tag:remove',
   TAG_GET_ALL: 'tag:get-all',
   TAG_GET_ALL_USED: 'tag:get-all-used',
+  TAG_AUTO_GET_ALL: 'tag:auto-get-all',
+  TAG_AUTO_ENSURE: 'tag:auto-ensure',
+  TAG_AUTO_REMOVE: 'tag:auto-remove',
 
   // Events (main → renderer)
   EVENT_PI: 'event:pi',
@@ -396,6 +399,11 @@ export interface SessionListItem {
   messageCount: number
   projectPath: string
   projectName: string
+}
+
+export interface AutoTagSessionRef {
+  sessionId: string
+  path: string
 }
 
 export interface SessionDeleteResult {

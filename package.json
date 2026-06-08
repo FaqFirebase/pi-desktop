@@ -1,6 +1,6 @@
 {
   "name": "pi-desktop",
-  "version": "0.0.2-alpha",
+  "version": "0.0.3-alpha",
   "description": "Desktop GUI frontend for the PI coding agent",
   "main": "out/main/index.js",
   "author": "PI Desktop GUI Contributors",
@@ -129,7 +129,8 @@
       "icon": "resources/icons/icon.icns",
       "darkModeSupport": true,
       "hardenedRuntime": true,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "artifactName": "PI-Desktop-${version}-${os}-${arch}.${ext}"
     },
     "win": {
       "target": [
@@ -146,7 +147,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "PI Desktop",
       "installerIcon": "resources/icons/icon.ico",
-      "uninstallerIcon": "resources/icons/icon.ico"
+      "uninstallerIcon": "resources/icons/icon.ico",
+      "artifactName": "PI-Desktop-${version}-${os}-${arch}-setup.${ext}"
     },
     "appImage": {
       "license": "LICENSE"

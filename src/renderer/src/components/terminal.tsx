@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Terminal as XTerm } from '@xterm/xterm'
+import { Terminal as XTerm, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
@@ -13,10 +13,48 @@ import {
   Trash2,
 } from 'lucide-react'
 
+// Build the xterm color theme from the active app theme's CSS variables so the
+// terminal matches whichever theme (dark/light/nord/gruvbox/breeze) is applied.
+// Falls back to the dark palette if a variable is missing.
+function buildTerminalTheme(): ITheme {
+  const css = getComputedStyle(document.documentElement)
+  const v = (name: string, fallback: string): string => {
+    const value = css.getPropertyValue(name).trim()
+    return value || fallback
+  }
+
+  const bg = v('--color-bg-primary', '#0a0a0a')
+  const fg = v('--color-text-primary', '#d4d4d4')
+
+  return {
+    background: bg,
+    foreground: fg,
+    cursor: fg,
+    selectionBackground: v('--cm-selection-bg', '#3b82f666'),
+    black: bg,
+    red: v('--color-error', '#ef4444'),
+    green: v('--color-success', '#22c55e'),
+    yellow: v('--color-warning', '#eab308'),
+    blue: v('--color-accent', '#3b82f6'),
+    magenta: v('--cm-keyword', '#a855f7'),
+    cyan: v('--cm-link', '#06b6d4'),
+    white: fg,
+    brightBlack: v('--color-text-muted', '#525252'),
+    brightRed: v('--color-error', '#f87171'),
+    brightGreen: v('--color-success', '#4ade80'),
+    brightYellow: v('--color-warning', '#facc15'),
+    brightBlue: v('--color-accent', '#60a5fa'),
+    brightMagenta: v('--cm-keyword', '#c084fc'),
+    brightCyan: v('--cm-link', '#22d3ee'),
+    brightWhite: v('--color-text-secondary', '#ffffff'),
+  }
+}
+
 export function TerminalPanel(): React.JSX.Element | null {
   const terminalOpen = useAppStore((state) => state.terminalOpen)
   const toggleTerminal = useAppStore((state) => state.toggleTerminal)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
+  const theme = useAppStore((state) => state.settings?.theme)
 
   const [maximized, setMaximized] = useState(false)
   const [shellLabel, setShellLabel] = useState<string>('Terminal')
@@ -32,28 +70,7 @@ export function TerminalPanel(): React.JSX.Element | null {
       convertEol: true,
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
       fontSize: 12,
-      theme: {
-        background: '#0a0a0a',
-        foreground: '#d4d4d4',
-        cursor: '#e5e5e5',
-        selectionBackground: '#3b82f666',
-        black: '#0a0a0a',
-        red: '#ef4444',
-        green: '#22c55e',
-        yellow: '#eab308',
-        blue: '#3b82f6',
-        magenta: '#a855f7',
-        cyan: '#06b6d4',
-        white: '#d4d4d4',
-        brightBlack: '#525252',
-        brightRed: '#f87171',
-        brightGreen: '#4ade80',
-        brightYellow: '#facc15',
-        brightBlue: '#60a5fa',
-        brightMagenta: '#c084fc',
-        brightCyan: '#22d3ee',
-        brightWhite: '#ffffff',
-      },
+      theme: buildTerminalTheme(),
     })
     const fit = new FitAddon()
     terminal.loadAddon(fit)
@@ -119,6 +136,13 @@ export function TerminalPanel(): React.JSX.Element | null {
     }, 0)
   }, [terminalOpen, maximized])
 
+  // Recolor the live terminal when the app theme changes, without recreating it.
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.options.theme = buildTerminalTheme()
+    }
+  }, [theme])
+
   if (!terminalOpen) return null
 
   return (
@@ -139,6 +163,7 @@ export function TerminalPanel(): React.JSX.Element | null {
             onClick={() => terminalRef.current?.clear()}
             className="rounded p-1 text-neutral-600 hover:text-neutral-400 transition-colors"
             title="Clear"
+            aria-label="Clear terminal"
           >
             <Trash2 size={12} />
           </button>
@@ -146,6 +171,7 @@ export function TerminalPanel(): React.JSX.Element | null {
             onClick={() => setMaximized(!maximized)}
             className="rounded p-1 text-neutral-600 hover:text-neutral-400 transition-colors"
             title={maximized ? 'Restore terminal' : 'Maximize terminal'}
+            aria-label={maximized ? 'Restore terminal' : 'Maximize terminal'}
           >
             {maximized ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
           </button>
@@ -153,6 +179,7 @@ export function TerminalPanel(): React.JSX.Element | null {
             onClick={toggleTerminal}
             className="rounded p-1 text-neutral-600 hover:text-neutral-400 transition-colors"
             title="Close terminal"
+            aria-label="Close terminal"
           >
             <X size={12} />
           </button>

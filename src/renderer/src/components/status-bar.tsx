@@ -105,6 +105,7 @@ export function StatusBar(): React.JSX.Element {
           onClick={toggleSidebar}
           className="rounded p-0.5 text-neutral-500 hover:text-neutral-300 transition-colors"
           title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+          aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
         >
           {sidebarOpen ? <PanelLeftClose size={12} /> : <PanelLeft size={12} />}
         </button>
@@ -117,6 +118,7 @@ export function StatusBar(): React.JSX.Element {
             terminalOpen ? 'text-blue-400' : 'text-neutral-500 hover:text-neutral-300'
           )}
           title={terminalOpen ? 'Hide terminal' : 'Show terminal'}
+          aria-label={terminalOpen ? 'Hide terminal' : 'Show terminal'}
         >
           <Terminal size={12} />
         </button>
@@ -126,6 +128,7 @@ export function StatusBar(): React.JSX.Element {
           onClick={() => setCurrentView('settings')}
           className="rounded p-0.5 text-neutral-500 hover:text-neutral-300 transition-colors"
           title="Settings"
+          aria-label="Settings"
         >
           <Settings size={12} />
         </button>

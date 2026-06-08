@@ -39,7 +39,9 @@ export function ChatInput(): React.JSX.Element {
       if (path) {
         const content = await window.piDesktop.files.read(path)
         const name = path.split('/').pop() ?? path
-        setAttachments((prev) => [...prev, { name, path, content }])
+        setAttachments((prev) =>
+          prev.some((a) => a.path === path) ? prev : [...prev, { name, path, content }]
+        )
       }
     } catch {
       // Silent failure
@@ -61,7 +63,7 @@ export function ChatInput(): React.JSX.Element {
         <div className="mb-2 flex flex-wrap gap-1">
           {attachments.map((att, i) => (
             <div
-              key={i}
+              key={att.path}
               className="flex items-center gap-1.5 rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-300"
             >
               <FileText size={12} className="text-neutral-500" />
@@ -84,6 +86,7 @@ export function ChatInput(): React.JSX.Element {
           disabled={isDisabled}
           className="flex shrink-0 items-center justify-center p-3 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
           title="Attach file"
+          aria-label="Attach file"
         >
           <Paperclip size={16} />
         </button>
@@ -126,6 +129,7 @@ export function ChatInput(): React.JSX.Element {
               onClick={handleAbort}
               className="flex items-center justify-center rounded-lg bg-red-600 p-2 text-white hover:bg-red-500 transition-colors"
               title="Stop (Esc)"
+              aria-label="Stop generating"
             >
               <Square size={14} />
             </button>
@@ -141,6 +145,7 @@ export function ChatInput(): React.JSX.Element {
               disabled={isDisabled}
               className="flex items-center justify-center rounded-lg bg-blue-600 p-2 text-white hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Send (Enter)"
+              aria-label="Send message"
             >
               <Send size={14} />
             </button>

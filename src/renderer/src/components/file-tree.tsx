@@ -50,7 +50,9 @@ export function FileTree(): React.JSX.Element {
     void loadTree(true)
 
     const interval = window.setInterval(() => {
-      void loadTree(false)
+      // Skip polling while the window is hidden/minimized; the 'focus' listener
+      // below refreshes immediately when the user returns.
+      if (!document.hidden) void loadTree(false)
     }, 2000)
 
     const handleFocus = () => {
@@ -80,9 +82,12 @@ export function FileTree(): React.JSX.Element {
 
   if (!tree) {
     return (
-      <div className="flex flex-col items-center justify-center py-8 text-neutral-500">
+      <div className="flex flex-col items-center justify-center px-4 py-8 text-center text-neutral-500">
         <FolderOpen size={24} className="mb-2 text-neutral-600" />
         <p className="text-xs">No workspace open</p>
+        <p className="mt-1 text-[11px] text-neutral-600">
+          Switch to a project folder from the workspace switcher in the sidebar.
+        </p>
       </div>
     )
   }

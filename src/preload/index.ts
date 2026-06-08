@@ -119,6 +119,9 @@ interface PiDesktopAPI {
     remove(sessionId: string, tag: string): Promise<string[]>
     getAll(): Promise<Record<string, string[]>>
     getAllUsed(): Promise<string[]>
+    autoGetAll(): Promise<Record<string, string>>
+    autoEnsure(sessions: Array<{ sessionId: string; path: string }>): Promise<Record<string, string>>
+    autoRemove(sessionId: string): Promise<void>
   }
 
   // File operations
@@ -255,6 +258,9 @@ const api: PiDesktopAPI = {
     remove: (sessionId, tag) => ipcRenderer.invoke(IPC_CHANNELS.TAG_REMOVE, sessionId, tag),
     getAll: () => ipcRenderer.invoke(IPC_CHANNELS.TAG_GET_ALL),
     getAllUsed: () => ipcRenderer.invoke(IPC_CHANNELS.TAG_GET_ALL_USED),
+    autoGetAll: () => ipcRenderer.invoke(IPC_CHANNELS.TAG_AUTO_GET_ALL),
+    autoEnsure: (sessions) => ipcRenderer.invoke(IPC_CHANNELS.TAG_AUTO_ENSURE, sessions),
+    autoRemove: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.TAG_AUTO_REMOVE, sessionId),
   },
 
   files: {
