@@ -49,10 +49,12 @@ jobs:
           cache: 'npm'
 
       # Runs postinstall, which rebuilds native modules (node-pty) for Electron.
-      # NOTE: the windows-latest runner's bundled Visual Studio is expected to
-      # already include Spectre-mitigated MSVC libs, so node-pty should compile
-      # without an explicit install step. (People building from source on their
-      # own machines may still need those libs — see README.)
+      # NOTE: confirmed (2026-06-08) that the windows-latest runner's bundled
+      # Visual Studio already includes the Spectre-mitigated MSVC libs node-pty
+      # needs — it compiles here with no explicit install step. An earlier
+      # vs_installer step worked but added ~4 min for nothing, so it was removed.
+      # (People building from source on their own machines may still need those
+      # libs — see README.)
       - name: Install dependencies
         run: npm ci
 
