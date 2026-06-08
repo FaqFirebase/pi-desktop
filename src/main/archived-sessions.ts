@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { existsSync } from 'fs'
+import { getGuiDataPath } from './app-data-paths'
 
 /**
  * Archived-session registry.
@@ -10,13 +11,12 @@ import { existsSync } from 'fs'
  * Archive is therefore a GUI-only annotation stored alongside session-tags.
  *
  * Shape on disk: { "<sessionId>": <archivedAtEpochMs> }
- * Path: ~/.pi-desktop-gui/archived-sessions.json
+ * Path: archived-sessions.json in the Electron userData directory.
  *
  * The session ID is the file basename without `.jsonl` — matches the keys
  * used by SessionTagManager.
  */
 
-const CONFIG_DIR_NAME = '.pi-desktop-gui'
 const ARCHIVED_FILE_NAME = 'archived-sessions.json'
 
 type ArchiveStore = Record<string, number>
@@ -27,8 +27,7 @@ export class ArchivedSessionsManager {
   private loaded = false
 
   constructor() {
-    const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-    this.path = join(homeDir, CONFIG_DIR_NAME, ARCHIVED_FILE_NAME)
+    this.path = getGuiDataPath(ARCHIVED_FILE_NAME)
   }
 
   async isArchived(sessionId: string): Promise<boolean> {

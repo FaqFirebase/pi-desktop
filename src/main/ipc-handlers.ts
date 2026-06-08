@@ -4,6 +4,7 @@ import { WorkspaceManager } from './workspace-manager'
 import { SessionTagManager } from './session-tags'
 import { ArchivedSessionsManager } from './archived-sessions'
 import { TerminalService } from './terminal-service'
+import { getGuiDataPath } from './app-data-paths'
 import type {
   PiStartOptions,
   PiRpcEvent,
@@ -1243,7 +1244,6 @@ function parseSkillFrontmatter(content: string): { name: string; description: st
 
 // ─── App Settings Persistence ────────────────────────────────────────────────
 
-const SETTINGS_DIR_NAME = '.pi-desktop-gui'
 const SETTINGS_FILE_NAME = 'settings.json'
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -1260,8 +1260,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 }
 
 function getSettingsPath(): string {
-  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-  return join(homeDir, SETTINGS_DIR_NAME, SETTINGS_FILE_NAME)
+  return getGuiDataPath(SETTINGS_FILE_NAME)
 }
 
 async function loadAppSettings(workspaceManager: WorkspaceManager): Promise<AppSettings> {

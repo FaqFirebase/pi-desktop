@@ -1,8 +1,9 @@
 import { app, BrowserWindow, Menu, nativeImage, shell } from 'electron'
-import { existsSync } from 'fs'
+import { existsSync, mkdirSync } from 'fs'
 import { basename, join, resolve as resolvePath } from 'path'
 import { WorkspaceManager } from './workspace-manager'
 import { registerIpcHandlers } from './ipc-handlers'
+import { configureGuiDataDir, getCanonicalUserDataDir, migrateLegacyGuiData } from './app-data-paths'
 
 // Env var honored on startup: if set, the named directory becomes the active
 // workspace (created on first run, switched to on subsequent runs). The CLI
@@ -43,7 +44,12 @@ function getAppIconPath(): string {
 
 // ─── Workspace Manager (singleton) ───────────────────────────────────────────
 
-const workspaceManager = new WorkspaceManager()
+let workspaceManager: WorkspaceManager | null = null
+
+const canonicalUserDataDir = getCanonicalUserDataDir(app.getPath('appData'))
+mkdirSync(canonicalUserDataDir, { recursive: true })
+app.setPath('userData', canonicalUserDataDir)
+configureGuiDataDir(canonicalUserDataDir)
 
 // ─── Window Creation ─────────────────────────────────────────────────────────
 
@@ -177,12 +183,18 @@ function createApplicationMenu(): void {
 // ─── App Lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  await migrateLegacyGuiData({
+    appDataDir: app.getPath('appData'),
+    userDataDir: app.getPath('userData'),
+  })
+
   // Set macOS dock icon (no-op on other platforms)
   if (process.platform === 'darwin' && app.dock) {
     app.dock.setIcon(nativeImage.createFromPath(getAppIconPath()))
   }
 
   // Initialize workspace manager
+  workspaceManager = new WorkspaceManager()
   await workspaceManager.initialize()
 
   // Honor PI_DESKTOP_WORKSPACE if set: switch to (or create) the named workspace.
@@ -214,7 +226,7 @@ app.on('window-all-closed', () => {
 
 // Cleanup on quit
 app.on('before-quit', () => {
-  workspaceManager.stopAll()
+  workspaceManager?.stopAll()
 })
 
 // Security: prevent new window creation

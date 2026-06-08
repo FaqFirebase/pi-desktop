@@ -4,14 +4,14 @@ import { existsSync } from 'fs'
 import { PiRpcManager } from './pi-rpc-manager'
 import { FileService } from './file-service'
 import type { PiStartOptions } from '../shared/ipc-contracts'
+import { getGuiDataPath } from './app-data-paths'
 
 /**
  * Manages multiple workspaces (project directories), each with its own PI process.
  *
- * Persistence: workspace list stored in ~/.pi-desktop-gui/workspaces.json
+ * Persistence: workspace list stored in the Electron userData directory.
  */
 
-const CONFIG_DIR_NAME = '.pi-desktop-gui'
 const WORKSPACES_FILE = 'workspaces.json'
 
 export interface Workspace {
@@ -54,8 +54,7 @@ export class WorkspaceManager {
   private activeWorkspaceListeners: ActiveWorkspaceListener[] = []
 
   constructor() {
-    const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-    this.configPath = join(homeDir, CONFIG_DIR_NAME, WORKSPACES_FILE)
+    this.configPath = getGuiDataPath(WORKSPACES_FILE)
   }
 
   onPiManager(listener: PiManagerListener): void {
