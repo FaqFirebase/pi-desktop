@@ -48,29 +48,11 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      # node-pty's bundled conpty needs Microsoft's Spectre-mitigated MSVC
-      # libraries to compile on Windows. This stable (non-version-pinned)
-      # component installs the latest matching libs before the rebuild runs
-      # in `npm ci` (postinstall -> electron-builder install-app-deps).
-      - name: Install Spectre-mitigated libraries (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $installPath = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
-          $args = @(
-            'modify',
-            '--installPath', "`"$installPath`"",
-            '--add', 'Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre',
-            '--quiet', '--norestart', '--nocache'
-          )
-          $p = Start-Process -FilePath "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe" `
-            -ArgumentList $args -Wait -PassThru
-          if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
-            Write-Error "vs_installer exited with $($p.ExitCode)"
-            exit $p.ExitCode
-          }
-
       # Runs postinstall, which rebuilds native modules (node-pty) for Electron.
+      # NOTE: the windows-latest runner's bundled Visual Studio is expected to
+      # already include Spectre-mitigated MSVC libs, so node-pty should compile
+      # without an explicit install step. (People building from source on their
+      # own machines may still need those libs — see README.)
       - name: Install dependencies
         run: npm ci
 
