@@ -22,7 +22,7 @@ export function App(): React.JSX.Element {
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
 
   // Global context menu
-  const { show, hide, ContextMenuComponent } = useContextMenu()
+  const { show, ContextMenuComponent } = useContextMenu()
 
   // Override default right-click globally
   useEffect(() => {

@@ -14,13 +14,11 @@ import {
   Loader2,
   ChevronUp,
   Check,
-  X,
 } from 'lucide-react'
 
 export function StatusBar(): React.JSX.Element {
   const piStatus = useAppStore((state) => state.piStatus)
   const piPid = useAppStore((state) => state.piPid)
-  const sessionState = useAppStore((state) => state.sessionState)
   const sessionStats = useAppStore((state) => state.sessionStats)
   const isStreaming = useAppStore((state) => state.isStreaming)
   const pendingSteering = useAppStore((state) => state.pendingSteering)
@@ -142,7 +140,6 @@ export function StatusBar(): React.JSX.Element {
 function ModelSelector(): React.JSX.Element {
   const sessionState = useAppStore((state) => state.sessionState)
   const setModel = useAppStore((state) => state.setModel)
-  const cycleModel = useAppStore((state) => state.cycleModel)
   const piStatus = useAppStore((state) => state.piStatus)
 
   const [isOpen, setIsOpen] = useState(false)
@@ -283,7 +280,6 @@ function ModelSelector(): React.JSX.Element {
 function ThinkingLevelSelector(): React.JSX.Element {
   const sessionState = useAppStore((state) => state.sessionState)
   const setThinkingLevel = useAppStore((state) => state.setThinkingLevel)
-  const cycleThinkingLevel = useAppStore((state) => state.cycleThinkingLevel)
   const piStatus = useAppStore((state) => state.piStatus)
 
   const [isOpen, setIsOpen] = useState(false)

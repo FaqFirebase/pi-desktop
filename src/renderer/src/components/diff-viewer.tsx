@@ -4,8 +4,6 @@ import { clsx } from 'clsx'
 import {
   GitCompare,
   File,
-  Plus,
-  Minus,
   RefreshCw,
   ChevronDown,
   ChevronRight,
@@ -33,7 +31,7 @@ interface DiffViewerProps {
 }
 
 export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element {
-  const [diffText, setDiffText] = useState<string | null>(null)
+  const [, setDiffText] = useState<string | null>(null)
   const [files, setFiles] = useState<DiffFileBlock[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())

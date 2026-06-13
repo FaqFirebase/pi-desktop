@@ -30,7 +30,6 @@ export function Sidebar(): React.JSX.Element {
   const switchWorkspace = useAppStore((state) => state.switchWorkspace)
   const workspaces = useAppStore((state) => state.workspaces)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
-  const piStatus = useAppStore((state) => state.piStatus)
   const archivedSessions = useAppStore((state) => state.archivedSessions)
   const archiveSession = useAppStore((state) => state.archiveSession)
   const unarchiveSession = useAppStore((state) => state.unarchiveSession)
@@ -212,7 +211,6 @@ function WorkspaceSwitcher(): React.JSX.Element {
   const switchWorkspace = useAppStore((state) => state.switchWorkspace)
   const createWorkspace = useAppStore((state) => state.createWorkspace)
   const removeWorkspace = useAppStore((state) => state.removeWorkspace)
-  const loadWorkspaces = useAppStore((state) => state.loadWorkspaces)
 
   const [isOpen, setIsOpen] = useState(false)
   const [isCreating, setIsCreating] = useState(false)

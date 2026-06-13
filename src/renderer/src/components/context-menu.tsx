@@ -7,8 +7,6 @@ import {
   TextSelect,
   ExternalLink,
   Search,
-  RotateCcw,
-  FileText,
   Archive,
   ArchiveRestore,
   Trash2,

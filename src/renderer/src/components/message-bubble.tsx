@@ -11,16 +11,12 @@ import {
   Wrench,
   Brain,
   Bot,
-  User,
   Edit3,
   GitBranch,
   RotateCcw,
   Download,
   FileText,
-  Trash2,
   Send,
-  X,
-  Paperclip,
   Terminal,
   Search,
   Globe,
@@ -97,7 +93,6 @@ function MessageBubbleImpl({
         editContent={editContent}
         onEditContentChange={setEditContent}
         onCopy={handleCopy}
-        copied={copied}
         onEdit={handleEdit}
         onSaveEdit={handleSaveEdit}
         onCancelEdit={handleCancelEdit}
@@ -160,7 +155,6 @@ function UserMessage({
   editContent,
   onEditContentChange,
   onCopy,
-  copied,
   onEdit,
   onSaveEdit,
   onCancelEdit,
@@ -173,7 +167,6 @@ function UserMessage({
   editContent: string
   onEditContentChange: (v: string) => void
   onCopy: () => void
-  copied: boolean
   onEdit: () => void
   onSaveEdit: () => void
   onCancelEdit: () => void

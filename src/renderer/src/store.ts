@@ -8,7 +8,6 @@ import type {
   SessionState,
   SessionStats,
   SessionListItem,
-  ModelInfo,
   AppSettings,
   PiMessageUpdateEvent,
   PiToolExecutionStartEvent,
