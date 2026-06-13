@@ -20,13 +20,18 @@ import {
 
 // ─── File Tree ───────────────────────────────────────────────────────────────
 
+// Disk changes refresh the tree instantly via the main-process watcher
+// (window.piDesktop.onFileChange). This interval is only a safety net for
+// environments where watching is unavailable (e.g. inotify limits), so it can
+// be slow; focus also triggers an immediate refresh.
+const SAFETY_POLL_MS = 15000
+
 export function FileTree(): React.JSX.Element {
   const [tree, setTree] = useState<FileTreeNode | null>(null)
   const [gitStatus, setGitStatus] = useState<Record<string, GitFileStatus>>({})
   const [gitBranch, setGitBranch] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
-  const setCurrentView = useAppStore((state) => state.setCurrentView)
 
   const loadTree = useCallback(async (showLoading: boolean) => {
     if (showLoading) setLoading(true)
@@ -49,11 +54,17 @@ export function FileTree(): React.JSX.Element {
   useEffect(() => {
     void loadTree(true)
 
+    // Primary path: refresh the instant the main process reports a disk change
+    // in the active workspace.
+    const unsubscribe = window.piDesktop.onFileChange(() => {
+      if (!document.hidden) void loadTree(false)
+    })
+
     const interval = window.setInterval(() => {
       // Skip polling while the window is hidden/minimized; the 'focus' listener
       // below refreshes immediately when the user returns.
       if (!document.hidden) void loadTree(false)
-    }, 2000)
+    }, SAFETY_POLL_MS)
 
     const handleFocus = () => {
       void loadTree(false)
@@ -61,6 +72,7 @@ export function FileTree(): React.JSX.Element {
     window.addEventListener('focus', handleFocus)
 
     return () => {
+      unsubscribe()
       window.clearInterval(interval)
       window.removeEventListener('focus', handleFocus)
     }

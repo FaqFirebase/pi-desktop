@@ -115,6 +115,7 @@ export const IPC_CHANNELS = {
 
   // Events (main → renderer)
   EVENT_PI: 'event:pi',
+  EVENT_FILE_CHANGE: 'event:file-change',
   EVENT_TERMINAL_DATA: 'event:terminal-data',
   EVENT_TERMINAL_EXIT: 'event:terminal-exit',
 } as const
@@ -567,6 +568,17 @@ export interface FileSearchResult {
   matchType: 'filename' | 'content'
   line?: number
   snippet?: string
+}
+
+/**
+ * Emitted (main → renderer, debounced) when files change on disk in the
+ * active workspace. The renderer should refresh the file tree and git status
+ * wholesale; `changeType`/`relativePath` describe the most recent change in
+ * the debounce window and are informational, not an exhaustive change list.
+ */
+export interface FileChangeEvent {
+  changeType: 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir'
+  relativePath: string
 }
 
 export interface DiffHunk {

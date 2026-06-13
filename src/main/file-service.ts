@@ -1,9 +1,10 @@
-import { type FSWatcher } from 'chokidar'
+import { watch, type FSWatcher } from 'chokidar'
 import { readdir, stat, readFile, writeFile } from 'fs/promises'
 import { join, extname, basename, resolve, relative } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { describeWriteError } from './fs-errors'
+import type { FileChangeEvent } from '../shared/ipc-contracts'
 
 const execFileAsync = promisify(execFile)
 
@@ -17,6 +18,15 @@ const IGNORED_DIRS = new Set([
   '.cache', '__pycache__', '.venv', 'venv', '.tox',
   'target', 'coverage', '.nyc_output',
 ])
+
+// Watcher tuning. Depth matches the tree view (getFileTree default), so the
+// watcher never recurses into deep subtrees the UI doesn't render — important
+// because the default workspace is the user's home directory. Burst writes
+// (e.g. an agent editing several files) are coalesced into one refresh.
+const WATCH_DEPTH = 4
+const WATCH_DEBOUNCE_MS = 250
+
+export type FileChangeCallback = (event: FileChangeEvent) => void
 
 const TEXT_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.json', '.md', '.mdx', '.txt',
@@ -70,6 +80,8 @@ export function buildNewFileDiff(relativePath: string, content: string): string 
 export class FileService {
   private watcher: FSWatcher | null = null
   private workspacePath: string
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null
+  private pendingChange: FileChangeEvent | null = null
 
   constructor(workspacePath: string) {
     this.workspacePath = workspacePath
@@ -273,16 +285,67 @@ export class FileService {
   }
 
   /**
-   * Stop watching. Defensive cleanup — kept because callers (workspace
-   * removal, app shutdown) invoke it. `startWatching` itself was removed
-   * because nothing in the UI was actually subscribing to file events;
-   * see MEMORY.md for the dead-export sweep that found it.
+   * Start watching the workspace for file changes and invoke `callback`
+   * (debounced) when files are added, changed, or removed. Heavy and hidden
+   * directories are ignored, and recursion is bounded to `WATCH_DEPTH` so the
+   * watcher stays cheap even when the workspace is the user's home directory.
+   * Idempotent per instance: a second call replaces the previous watcher.
+   */
+  startWatching(callback: FileChangeCallback): void {
+    this.stopWatching()
+
+    this.watcher = watch(this.workspacePath, {
+      ignored: (path) => this.isIgnoredPath(path),
+      ignoreInitial: true,
+      depth: WATCH_DEPTH,
+      awaitWriteFinish: { stabilityThreshold: WATCH_DEBOUNCE_MS, pollInterval: 50 },
+      persistent: true,
+    })
+
+    const emit = (changeType: FileChangeEvent['changeType']) => (absolutePath: string): void => {
+      this.pendingChange = { changeType, relativePath: relative(this.workspacePath, absolutePath) }
+      if (this.debounceTimer) clearTimeout(this.debounceTimer)
+      this.debounceTimer = setTimeout(() => {
+        this.debounceTimer = null
+        const change = this.pendingChange
+        this.pendingChange = null
+        if (change) callback(change)
+      }, WATCH_DEBOUNCE_MS)
+    }
+
+    this.watcher
+      .on('add', emit('add'))
+      .on('change', emit('change'))
+      .on('unlink', emit('unlink'))
+      .on('addDir', emit('addDir'))
+      .on('unlinkDir', emit('unlinkDir'))
+      // Tolerate watch failures (e.g. inotify limit ENOSPC on large trees):
+      // the renderer's safety-net poll still keeps the tree fresh.
+      .on('error', (err) => console.error('[FileService] watch error:', err))
+  }
+
+  /**
+   * Stop watching and cancel any pending debounced change. Idempotent; callers
+   * (workspace removal, app shutdown, re-watch) rely on it being safe to call
+   * when no watcher is active.
    */
   stopWatching(): void {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer)
+      this.debounceTimer = null
+    }
+    this.pendingChange = null
     if (this.watcher) {
-      this.watcher.close()
+      void this.watcher.close()
       this.watcher = null
     }
+  }
+
+  /** True if any path segment under the workspace is an ignored directory. */
+  private isIgnoredPath(absolutePath: string): boolean {
+    const rel = relative(this.workspacePath, absolutePath)
+    if (!rel || rel.startsWith('..')) return false
+    return rel.split(/[\\/]/).some((segment) => IGNORED_DIRS.has(segment))
   }
 
   /**

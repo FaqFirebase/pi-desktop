@@ -767,6 +767,13 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     })
   }
   workspaceManager.onActiveWorkspaceChanged(broadcastActiveStatus)
+
+  // Forward debounced file-change events from the active workspace's watcher
+  // so the renderer can refresh the file tree and git status live. The
+  // WorkspaceManager only watches the active workspace, so no filtering here.
+  workspaceManager.onFileChange((event) => {
+    broadcast(IPC_CHANNELS.EVENT_FILE_CHANGE, event)
+  })
 }
 
 // ─── Validation Helpers ──────────────────────────────────────────────────────
@@ -851,7 +858,7 @@ function desanitizeSessionDir(dirName: string): string {
   }
 
   // Strip wrapping dashes
-  let inner = dirName.slice(2, -2)
+  const inner = dirName.slice(2, -2)
 
   // Split on dash to get path segments
   const segments = inner.split('-')

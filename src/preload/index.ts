@@ -13,6 +13,7 @@ import type {
   CatalogPackage,
   FileTreeNode,
   FileSearchResult,
+  FileChangeEvent,
   GitFileStatus,
   TerminalExitEvent,
   TerminalStartOptions,
@@ -165,6 +166,7 @@ interface PiDesktopAPI {
   // Event subscription
   onEvent(callback: (event: PiRpcEvent) => void): () => void
   onStatusChange(callback: (status: PiStatus) => void): () => void
+  onFileChange(callback: (event: FileChangeEvent) => void): () => void
   onMenuAction(callback: (action: string) => void): () => void
 }
 
@@ -319,6 +321,14 @@ const api: PiDesktopAPI = {
     ipcRenderer.on('pi:status-change', handler)
     return () => {
       ipcRenderer.removeListener('pi:status-change', handler)
+    }
+  },
+
+  onFileChange: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: FileChangeEvent) => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.EVENT_FILE_CHANGE, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.EVENT_FILE_CHANGE, handler)
     }
   },
 

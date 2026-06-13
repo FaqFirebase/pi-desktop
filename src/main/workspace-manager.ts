@@ -3,7 +3,7 @@ import { readFile, writeFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import { PiRpcManager } from './pi-rpc-manager'
 import { FileService } from './file-service'
-import type { PiStartOptions } from '../shared/ipc-contracts'
+import type { FileChangeEvent, PiStartOptions } from '../shared/ipc-contracts'
 import { getGuiDataPath } from './app-data-paths'
 
 /**
@@ -35,6 +35,7 @@ const WORKSPACE_COLORS = [
 
 export type PiManagerListener = (manager: PiRpcManager) => void
 export type ActiveWorkspaceListener = (workspaceId: string | null) => void
+export type FileChangeListener = (event: FileChangeEvent) => void
 
 export class WorkspaceManager {
   private workspaces: Workspace[] = []
@@ -52,9 +53,44 @@ export class WorkspaceManager {
   // for managers loaded from disk during `initialize()`.
   private wiredPairs = new WeakMap<PiRpcManager, Set<PiManagerListener>>()
   private activeWorkspaceListeners: ActiveWorkspaceListener[] = []
+  private fileChangeListeners: FileChangeListener[] = []
+  // The workspace whose FileService currently has an active disk watcher.
+  // Only the active workspace is watched, mirroring how PI events are
+  // forwarded for the active workspace only.
+  private watchingWorkspaceId: string | null = null
 
   constructor() {
     this.configPath = getGuiDataPath(WORKSPACES_FILE)
+  }
+
+  onFileChange(listener: FileChangeListener): void {
+    this.fileChangeListeners.push(listener)
+  }
+
+  private emitFileChange(event: FileChangeEvent): void {
+    for (const listener of this.fileChangeListeners) {
+      listener(event)
+    }
+  }
+
+  /**
+   * Ensure the disk watcher is attached to the active workspace's FileService
+   * (and detached from any previously-watched one). Called on startup and on
+   * every active-workspace change.
+   */
+  private updateActiveWatcher(): void {
+    if (this.watchingWorkspaceId === this.activeWorkspaceId) return
+
+    if (this.watchingWorkspaceId) {
+      this.fileServices.get(this.watchingWorkspaceId)?.stopWatching()
+    }
+
+    this.watchingWorkspaceId = this.activeWorkspaceId
+    if (this.activeWorkspaceId) {
+      this.fileServices
+        .get(this.activeWorkspaceId)
+        ?.startWatching((event) => this.emitFileChange(event))
+    }
   }
 
   onPiManager(listener: PiManagerListener): void {
@@ -73,6 +109,7 @@ export class WorkspaceManager {
   }
 
   private emitActiveWorkspaceChanged(): void {
+    this.updateActiveWatcher()
     for (const listener of this.activeWorkspaceListeners) {
       listener(this.activeWorkspaceId)
     }
@@ -109,6 +146,10 @@ export class WorkspaceManager {
       const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()
       await this.createWorkspace('Home', homeDir)
     }
+
+    // Workspaces loaded from disk don't go through emitActiveWorkspaceChanged,
+    // so attach the watcher to the active workspace explicitly here.
+    this.updateActiveWatcher()
   }
 
   getWorkspaces(): Workspace[] {
@@ -262,6 +303,7 @@ export class WorkspaceManager {
     for (const [, fs] of this.fileServices) {
       fs.stopWatching()
     }
+    this.watchingWorkspaceId = null
     this.piManagers.clear()
     this.fileServices.clear()
   }
