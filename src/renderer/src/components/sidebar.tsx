@@ -13,6 +13,8 @@ import {
   ChevronDown,
   Check,
   Trash2,
+  NotebookPen,
+  Archive,
 } from 'lucide-react'
 import { useState } from 'react'
 import { StatusPopover } from './status-popover'
@@ -36,6 +38,12 @@ export function Sidebar(): React.JSX.Element {
   const deleteSession = useAppStore((state) => state.deleteSession)
 
   const { show: showMenu, ContextMenuComponent: SessionMenu } = useContextMenu()
+
+  const [archivedOpen, setArchivedOpen] = useState(false)
+
+  // Archived sessions live in their own collapsible section; Recent excludes them.
+  const recentSessions = sessionList.filter((s) => !(s.sessionId in archivedSessions)).slice(0, 20)
+  const archivedList = sessionList.filter((s) => s.sessionId in archivedSessions)
 
   const openSession = async (session: SessionListItem): Promise<void> => {
     // Auto-switch workspace if session is from a different project
@@ -69,6 +77,29 @@ export function Sidebar(): React.JSX.Element {
       })
     )
   }
+
+  const renderSessionRow = (session: SessionListItem): React.JSX.Element => (
+    <button
+      key={session.path}
+      onClick={() => openSession(session)}
+      onContextMenu={(e) => handleSessionRightClick(e, session)}
+      title="Click to open · right-click for actions"
+      className={clsx(
+        'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
+        sessionState?.sessionFile === session.path
+          ? 'bg-neutral-800 text-neutral-200'
+          : 'text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-300'
+      )}
+    >
+      <Clock size={12} className="shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="truncate">{session.name || session.sessionId.slice(0, 12)}</div>
+        {session.projectPath !== activeWorkspace?.path && session.projectName && (
+          <div className="text-[10px] text-neutral-600 truncate">{session.projectName}</div>
+        )}
+      </div>
+    </button>
+  )
 
   return (
     <aside className="flex w-64 flex-col border-r border-neutral-800 bg-neutral-950">
@@ -129,6 +160,12 @@ export function Sidebar(): React.JSX.Element {
           onClick={() => setCurrentView('packages')}
         />
         <SidebarItem
+          icon={<NotebookPen size={14} />}
+          label="Notes"
+          active={currentView === 'notes'}
+          onClick={() => setCurrentView('notes')}
+        />
+        <SidebarItem
           icon={<Settings size={14} />}
           label="Settings"
           active={currentView === 'settings'}
@@ -164,40 +201,35 @@ export function Sidebar(): React.JSX.Element {
         <div className="px-2 py-1 text-xs font-medium text-neutral-500 uppercase tracking-wider">
           Recent Sessions
         </div>
-        {sessionList.length === 0 ? (
+        {recentSessions.length === 0 ? (
           <div className="px-2 py-2 text-xs text-neutral-600">No sessions yet</div>
         ) : (
-          sessionList.slice(0, 20).map((session) => {
-            const isArchived = session.sessionId in archivedSessions
-            return (
-              <button
-                key={session.path}
-                onClick={() => openSession(session)}
-                onContextMenu={(e) => handleSessionRightClick(e, session)}
-                title="Click to open · right-click for actions"
-                className={clsx(
-                  'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
-                  sessionState?.sessionFile === session.path
-                    ? 'bg-neutral-800 text-neutral-200'
-                    : 'text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-300',
-                  isArchived && 'opacity-50'
-                )}
-              >
-                <Clock size={12} className="shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate">{session.name || session.sessionId.slice(0, 12)}</div>
-                  {session.projectPath !== activeWorkspace?.path && session.projectName && (
-                    <div className="text-[10px] text-neutral-600 truncate">{session.projectName}</div>
-                  )}
-                </div>
-                {isArchived && (
-                  <span className="text-[9px] uppercase tracking-wide text-amber-500/70">arc</span>
-                )}
-              </button>
-            )
-          })
+          recentSessions.map(renderSessionRow)
         )}
       </div>
+
+      {/* Archived sessions (collapsible) */}
+      {archivedList.length > 0 && (
+        <div className="shrink-0 border-t border-neutral-800 px-2 py-1">
+          <button
+            onClick={() => setArchivedOpen((open) => !open)}
+            className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium uppercase tracking-wider text-neutral-500 hover:text-neutral-300 transition-colors"
+            title={archivedOpen ? 'Collapse archived sessions' : 'Expand archived sessions'}
+          >
+            <ChevronDown
+              size={12}
+              className={clsx('shrink-0 transition-transform', !archivedOpen && '-rotate-90')}
+            />
+            <Archive size={12} className="shrink-0" />
+            <span>Archived ({archivedList.length})</span>
+          </button>
+          {archivedOpen && (
+            <div className="max-h-48 overflow-y-auto pb-1">
+              {archivedList.map(renderSessionRow)}
+            </div>
+          )}
+        </div>
+      )}
       {SessionMenu}
     </aside>
   )
