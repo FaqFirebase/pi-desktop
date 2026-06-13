@@ -139,8 +139,29 @@ export function useInitialize(): void {
       await refreshSessionList()
       await useAppStore.getState().loadTags()
       await useAppStore.getState().loadArchivedSessions()
+      await useAppStore.getState().loadNotes()
     }
 
     initialize()
   }, [startPi, loadSettings, loadWorkspaces, refreshSessionState, refreshSessionStats, refreshSessionList])
+}
+
+/**
+ * Global shortcut (Ctrl+Shift+P) that toggles the quick note picker, letting
+ * the user insert a saved prompt from anywhere in the app. (Ctrl+Shift+N is
+ * reserved for the New Workspace menu accelerator.)
+ */
+export function useNotePickerShortcut(): void {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
+      if (e.ctrlKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+        e.preventDefault()
+        const { notePickerOpen, setNotePickerOpen } = useAppStore.getState()
+        setNotePickerOpen(!notePickerOpen)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 }

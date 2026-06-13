@@ -1,7 +1,10 @@
-import { useRef, useCallback, useState } from 'react'
+import { useRef, useCallback, useState, useEffect } from 'react'
 import { useAppStore } from '../store'
 import { useChatKeyboard } from '../hooks'
-import { Send, Square, Paperclip, X, FileText } from 'lucide-react'
+import { Send, Square, Paperclip, X, FileText, NotebookPen } from 'lucide-react'
+
+// Max height (px) the auto-growing input expands to before scrolling.
+const MAX_INPUT_HEIGHT = 192
 
 export function ChatInput(): React.JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -9,6 +12,29 @@ export function ChatInput(): React.JSX.Element {
   const abort = useAppStore((state) => state.abort)
   const isStreaming = useAppStore((state) => state.isStreaming)
   const piStatus = useAppStore((state) => state.piStatus)
+  const pendingInsert = useAppStore((state) => state.pendingInsert)
+  const clearPendingInsert = useAppStore((state) => state.clearPendingInsert)
+  const setNotePickerOpen = useAppStore((state) => state.setNotePickerOpen)
+
+  // Apply a note inserted from the panel or picker: drop the text at the
+  // cursor, refocus, resize, then clear so the same note can be inserted again.
+  useEffect(() => {
+    if (!pendingInsert) return
+    const ta = textareaRef.current
+    if (!ta) return
+
+    const start = ta.selectionStart ?? ta.value.length
+    const end = ta.selectionEnd ?? ta.value.length
+    ta.value = ta.value.slice(0, start) + pendingInsert.text + ta.value.slice(end)
+
+    const caret = start + pendingInsert.text.length
+    ta.focus()
+    ta.setSelectionRange(caret, caret)
+    ta.style.height = 'auto'
+    ta.style.height = `${Math.min(ta.scrollHeight, MAX_INPUT_HEIGHT)}px`
+
+    clearPendingInsert()
+  }, [pendingInsert, clearPendingInsert])
 
   const [attachments, setAttachments] = useState<Array<{ name: string; path: string; content: string }>>([])
 
@@ -91,6 +117,16 @@ export function ChatInput(): React.JSX.Element {
           <Paperclip size={16} />
         </button>
 
+        {/* Notes picker button */}
+        <button
+          onClick={() => setNotePickerOpen(true)}
+          className="flex shrink-0 items-center justify-center py-3 pr-1 text-neutral-500 hover:text-neutral-300 transition-colors"
+          title="Insert a saved note (Ctrl+Shift+P)"
+          aria-label="Insert a saved note"
+        >
+          <NotebookPen size={16} />
+        </button>
+
         {/* Text input */}
         <textarea
           ref={textareaRef}
@@ -107,7 +143,7 @@ export function ChatInput(): React.JSX.Element {
           onInput={(e) => {
             const target = e.currentTarget
             target.style.height = 'auto'
-            target.style.height = `${Math.min(target.scrollHeight, 192)}px`
+            target.style.height = `${Math.min(target.scrollHeight, MAX_INPUT_HEIGHT)}px`
           }}
           onKeyDown={(e) => {
             if (e.ctrlKey && e.key === 'p') {
@@ -161,6 +197,7 @@ export function ChatInput(): React.JSX.Element {
           <span>Esc: stop</span>
           <span>Ctrl+P: model</span>
           <span>Ctrl+Shift+F: search</span>
+          <span>Ctrl+Shift+P: notes</span>
         </div>
         {isStreaming && (
           <span className="text-yellow-500 animate-pulse">Streaming...</span>

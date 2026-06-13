@@ -9,6 +9,7 @@ export const LEGACY_ELECTRON_GUI_DATA_DIR_NAMES = ['PI Desktop', 'pi-desktop-gui
 
 export const GUI_DATA_FILES = [
   'archived-sessions.json',
+  'notes.json',
   'session-auto-tags.json',
   'session-tags.json',
   'settings.json',

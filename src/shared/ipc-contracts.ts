@@ -113,6 +113,12 @@ export const IPC_CHANNELS = {
   TAG_AUTO_ENSURE: 'tag:auto-ensure',
   TAG_AUTO_REMOVE: 'tag:auto-remove',
 
+  // Notes (reusable prompts / commands)
+  NOTES_LIST: 'notes:list',
+  NOTES_CREATE: 'notes:create',
+  NOTES_UPDATE: 'notes:update',
+  NOTES_REMOVE: 'notes:remove',
+
   // Events (main → renderer)
   EVENT_PI: 'event:pi',
   EVENT_FILE_CHANGE: 'event:file-change',
@@ -517,6 +523,37 @@ export interface Workspace {
   lastActiveAt: number
   color: string
 }
+
+// ─── Notes Types ────────────────────────────────────────────────────────────
+
+/**
+ * Scope of a note. Either the literal `'global'` (available everywhere) or a
+ * workspace id (only surfaced when that workspace is active). Stored as a
+ * single field so all notes live in one store and the UI merges by scope.
+ */
+export type NoteScope = 'global' | string
+
+/** A reusable prompt or agent command the user has saved. */
+export interface Note {
+  id: string
+  title: string
+  body: string
+  tags: string[]
+  scope: NoteScope
+  createdAt: number
+  updatedAt: number
+}
+
+/** Fields supplied when creating a note. */
+export interface NoteInput {
+  title: string
+  body: string
+  tags: string[]
+  scope: NoteScope
+}
+
+/** Mutable fields when updating a note. */
+export type NoteUpdate = Partial<NoteInput>
 
 // ─── Package Types ──────────────────────────────────────────────────────────
 

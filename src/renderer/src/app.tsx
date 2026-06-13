@@ -6,10 +6,12 @@ import { SessionPanel } from './components/session-panel'
 import { Timeline } from './components/timeline'
 import { PackageBrowser } from './components/package-browser'
 import { DiffViewer } from './components/diff-viewer'
+import { NotesPanel } from './components/notes-panel'
+import { NotePicker } from './components/note-picker'
 import { ExtensionUiDialog } from './components/extension-ui-dialog'
 import { ReviewRail } from './components/review-rail'
 import { useContextMenu, buildDefaultContextMenu } from './components/context-menu'
-import { usePiEvents, useMenuActions, useInitialize } from './hooks'
+import { usePiEvents, useMenuActions, useInitialize, useNotePickerShortcut } from './hooks'
 import { useAppStore } from './store'
 import { useEffect } from 'react'
 
@@ -17,6 +19,7 @@ export function App(): React.JSX.Element {
   usePiEvents()
   useMenuActions()
   useInitialize()
+  useNotePickerShortcut()
 
   const currentView = useAppStore((state) => state.currentView)
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
@@ -59,6 +62,7 @@ export function App(): React.JSX.Element {
             {currentView === 'timeline' && <Timeline />}
             {currentView === 'packages' && <PackageBrowser />}
             {currentView === 'diff' && <DiffViewer />}
+            {currentView === 'notes' && <NotesPanel />}
           </main>
           {currentView === 'chat' && <ReviewRail />}
         </div>
@@ -66,6 +70,7 @@ export function App(): React.JSX.Element {
 
       <StatusBar />
       <ExtensionUiDialog />
+      <NotePicker />
       {ContextMenuComponent}
     </div>
   )

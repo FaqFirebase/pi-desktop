@@ -18,6 +18,9 @@ import type {
   TerminalExitEvent,
   TerminalStartOptions,
   TerminalStartResult,
+  Note,
+  NoteInput,
+  NoteUpdate,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 
@@ -123,6 +126,14 @@ interface PiDesktopAPI {
     autoGetAll(): Promise<Record<string, string>>
     autoEnsure(sessions: Array<{ sessionId: string; path: string }>): Promise<Record<string, string>>
     autoRemove(sessionId: string): Promise<void>
+  }
+
+  // Notes (reusable prompts / commands)
+  notes: {
+    list(): Promise<Note[]>
+    create(input: NoteInput): Promise<Note>
+    update(id: string, patch: NoteUpdate): Promise<Note>
+    remove(id: string): Promise<void>
   }
 
   // File operations
@@ -263,6 +274,13 @@ const api: PiDesktopAPI = {
     autoGetAll: () => ipcRenderer.invoke(IPC_CHANNELS.TAG_AUTO_GET_ALL),
     autoEnsure: (sessions) => ipcRenderer.invoke(IPC_CHANNELS.TAG_AUTO_ENSURE, sessions),
     autoRemove: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.TAG_AUTO_REMOVE, sessionId),
+  },
+
+  notes: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.NOTES_LIST),
+    create: (input) => ipcRenderer.invoke(IPC_CHANNELS.NOTES_CREATE, input),
+    update: (id, patch) => ipcRenderer.invoke(IPC_CHANNELS.NOTES_UPDATE, id, patch),
+    remove: (id) => ipcRenderer.invoke(IPC_CHANNELS.NOTES_REMOVE, id),
   },
 
   files: {
