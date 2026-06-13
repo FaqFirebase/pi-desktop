@@ -16,6 +16,7 @@ export function SettingsPanel(): React.JSX.Element {
   const [fontSize, setFontSize] = useState(settings?.fontSize ?? 14)
   const [showThinking, setShowThinking] = useState(settings?.showThinking ?? true)
   const [autoScroll, setAutoScroll] = useState(settings?.autoScroll ?? true)
+  const [resumeLastSession, setResumeLastSession] = useState(settings?.resumeLastSession ?? true)
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
     settings?.permissionMode ?? DEFAULT_PERMISSION_MODE,
   )
@@ -29,6 +30,7 @@ export function SettingsPanel(): React.JSX.Element {
       setFontSize(settings.fontSize)
       setShowThinking(settings.showThinking)
       setAutoScroll(settings.autoScroll)
+      setResumeLastSession(settings.resumeLastSession)
       setPermissionMode(settings.permissionMode)
     }
   }, [settings])
@@ -45,6 +47,7 @@ export function SettingsPanel(): React.JSX.Element {
       fontSize,
       showThinking,
       autoScroll,
+      resumeLastSession,
       permissionMode,
     }
 
@@ -69,6 +72,7 @@ export function SettingsPanel(): React.JSX.Element {
       fontSize: 14,
       showThinking: true,
       autoScroll: true,
+      resumeLastSession: true,
       permissionMode: DEFAULT_PERMISSION_MODE,
     }
 
@@ -77,6 +81,7 @@ export function SettingsPanel(): React.JSX.Element {
     setFontSize(defaults.fontSize!)
     setShowThinking(defaults.showThinking!)
     setAutoScroll(defaults.autoScroll!)
+    setResumeLastSession(defaults.resumeLastSession!)
     setPermissionMode(defaults.permissionMode!)
 
     const result = await window.piDesktop.settings.save(defaults)
@@ -181,6 +186,13 @@ export function SettingsPanel(): React.JSX.Element {
 
           <SettingsRow label="Auto Scroll" description="Automatically scroll to new messages">
             <Toggle checked={autoScroll} onChange={setAutoScroll} />
+          </SettingsRow>
+
+          <SettingsRow
+            label="Resume Last Session"
+            description="On launch, continue the most recent session instead of starting a new one"
+          >
+            <Toggle checked={resumeLastSession} onChange={setResumeLastSession} />
           </SettingsRow>
         </SettingsSection>
 

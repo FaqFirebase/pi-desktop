@@ -92,6 +92,18 @@ function toolsForPermissionMode(mode: PermissionMode): string | null {
   }
 }
 
+/**
+ * Opt into resuming the most recent session on launch (PI's --continue) when
+ * the user setting is enabled and the caller hasn't requested a specific
+ * session or an ephemeral (no-session) run.
+ */
+function applyResumePreference(options: PiStartOptions, settings: AppSettings): PiStartOptions {
+  if (settings.resumeLastSession && !options.sessionPath && !options.noSession) {
+    return { ...options, continueSession: true }
+  }
+  return options
+}
+
 function applyPermissionModeToStartOptions(
   options: PiStartOptions,
   settings: AppSettings
@@ -184,7 +196,7 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
 
     await workspaceManager.startPiForWorkspace(
       activeWs.id,
-      applyPermissionModeToStartOptions({ ...opts, cwd }, settings)
+      applyPermissionModeToStartOptions(applyResumePreference({ ...opts, cwd }, settings), settings)
     )
     const pi = workspaceManager.getPiManager(activeWs.id)
     if (!pi) throw new Error('Failed to create PI manager')
@@ -212,7 +224,12 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     if (!pi) throw new Error('No PI manager for workspace')
 
     pi.stop()
-    return pi.start(applyPermissionModeToStartOptions({ cwd: activeWs.path, ...opts }, settings))
+    return pi.start(
+      applyPermissionModeToStartOptions(
+        applyResumePreference({ cwd: activeWs.path, ...opts }, settings),
+        settings
+      )
+    )
   })
 
   ipcMain.handle(IPC_CHANNELS.PI_STATUS, async () => {
@@ -1264,6 +1281,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   showThinking: true,
   autoScroll: true,
   permissionMode: 'ask-edits',
+  resumeLastSession: true,
 }
 
 function getSettingsPath(): string {

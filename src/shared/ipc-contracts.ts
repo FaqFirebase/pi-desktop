@@ -136,6 +136,10 @@ export interface PiStartOptions {
   provider?: string
   sessionPath?: string
   noSession?: boolean
+  // When true (and neither sessionPath nor noSession is set), PI is launched
+  // with --continue so it resumes the most recent session for the cwd instead
+  // of creating a fresh one.
+  continueSession?: boolean
   args?: string[]
   env?: Record<string, string>
 }
@@ -498,6 +502,9 @@ export interface AppSettings {
   showThinking: boolean
   autoScroll: boolean
   permissionMode: PermissionMode
+  // Resume the most recent session for the workspace on launch (via PI's
+  // --continue) instead of starting a fresh session.
+  resumeLastSession: boolean
 }
 
 // ─── Workspace Types ────────────────────────────────────────────────────────

@@ -29,6 +29,7 @@ const MODE_FLAG = '--mode'
 const PROVIDER_FLAG = '--provider'
 const MODEL_FLAG = '--model'
 const SESSION_FLAG = '--session'
+const CONTINUE_FLAG = '--continue'
 const IS_WINDOWS = process.platform === 'win32'
 const PI_FALLBACK_BINARY = IS_WINDOWS ? 'pi.cmd' : 'pi'
 const SPAWN_STARTUP_TIMEOUT_MS = 15_000
@@ -502,6 +503,10 @@ export class PiRpcManager extends EventEmitter {
 
     if (options.sessionPath) {
       args.push(SESSION_FLAG, options.sessionPath)
+    } else if (options.continueSession && !options.noSession) {
+      // Resume the most recent session for the cwd. PI falls back to a fresh
+      // session when none exists, so this is safe on first run.
+      args.push(CONTINUE_FLAG)
     }
 
     if (options.args) {
