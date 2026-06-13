@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { clsx } from 'clsx'
 import { Plus, Search, Pencil, Trash2, CornerDownLeft, Tag, ArrowLeft } from 'lucide-react'
 import { useAppStore } from '../store'
@@ -24,10 +24,23 @@ export function NotesPanel(): React.JSX.Element {
   const deleteNote = useAppStore((state) => state.deleteNote)
   const insertPrompt = useAppStore((state) => state.insertPrompt)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
+  const noteDraft = useAppStore((state) => state.noteDraft)
+  const clearNoteDraft = useAppStore((state) => state.clearNoteDraft)
 
   const [query, setQuery] = useState('')
   // null = list; 'new' = create form; Note = edit form
   const [editing, setEditing] = useState<'new' | Note | null>(null)
+
+  // A draft captured elsewhere (e.g. "Add to Notes" from a message) opens the
+  // create form pre-filled with that text.
+  useEffect(() => {
+    if (noteDraft !== null) setEditing('new')
+  }, [noteDraft])
+
+  const leaveForm = (): void => {
+    setEditing(null)
+    if (noteDraft !== null) clearNoteDraft()
+  }
 
   const scopeLabel = (scope: string): string =>
     scope === GLOBAL_SCOPE
@@ -56,16 +69,17 @@ export function NotesPanel(): React.JSX.Element {
     return (
       <NoteForm
         note={editing === 'new' ? null : editing}
+        initialBody={editing === 'new' ? (noteDraft ?? '') : ''}
         workspaceId={activeWorkspace?.id ?? null}
         workspaceName={activeWorkspace?.name ?? null}
-        onCancel={() => setEditing(null)}
+        onCancel={leaveForm}
         onSubmit={async (input) => {
           if (editing === 'new') {
             await saveNote(input)
           } else {
             await updateNote(editing.id, input)
           }
-          setEditing(null)
+          leaveForm()
         }}
       />
     )
@@ -188,19 +202,21 @@ export function NotesPanel(): React.JSX.Element {
 
 function NoteForm({
   note,
+  initialBody,
   workspaceId,
   workspaceName,
   onSubmit,
   onCancel,
 }: {
   note: Note | null
+  initialBody: string
   workspaceId: string | null
   workspaceName: string | null
   onSubmit: (input: NoteInput) => Promise<void>
   onCancel: () => void
 }): React.JSX.Element {
   const [title, setTitle] = useState(note?.title ?? '')
-  const [body, setBody] = useState(note?.body ?? '')
+  const [body, setBody] = useState(note?.body ?? initialBody)
   const [tagsRaw, setTagsRaw] = useState(note?.tags.join(' ') ?? '')
   const [scope, setScope] = useState<string>(note?.scope ?? GLOBAL_SCOPE)
   const [error, setError] = useState<string | null>(null)

@@ -11,6 +11,7 @@ import {
   ArchiveRestore,
   Trash2,
   MessageSquare,
+  NotebookPen,
 } from 'lucide-react'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 
@@ -295,7 +296,13 @@ export function buildCodeBlockContextMenu(code: string): ContextMenuItem[] {
   ]
 }
 
-export function buildMessageContextMenu(messageContent: string): ContextMenuItem[] {
+export function buildMessageContextMenu(
+  messageContent: string,
+  onAddToNotes: (text: string) => void
+): ContextMenuItem[] {
+  const selectedText = getSelectedText()
+  const hasSelection = selectedText.length > 0
+
   return [
     {
       id: 'copy-message',
@@ -307,11 +314,16 @@ export function buildMessageContextMenu(messageContent: string): ContextMenuItem
       id: 'copy-selection',
       label: 'Copy Selection',
       icon: <Copy size={14} />,
-      disabled: !getSelectedText(),
+      disabled: !hasSelection,
       action: () => {
-        const text = getSelectedText()
-        if (text) navigator.clipboard.writeText(text)
+        if (hasSelection) navigator.clipboard.writeText(selectedText)
       },
+    },
+    {
+      id: 'add-to-notes',
+      label: hasSelection ? 'Add Selection to Notes' : 'Add Message to Notes',
+      icon: <NotebookPen size={14} />,
+      action: () => onAddToNotes(hasSelection ? selectedText : messageContent),
     },
     {
       id: 'divider-1',

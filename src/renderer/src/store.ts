@@ -133,6 +133,9 @@ interface AppState {
   // A prompt queued for insertion into the chat input. The nonce lets the
   // chat input re-apply the same text on repeated inserts.
   pendingInsert: { text: string; nonce: number } | null
+  // Body text captured (e.g. from a message) to seed a new note in the Notes
+  // panel. Non-null opens the panel's New Note form pre-filled.
+  noteDraft: string | null
 }
 
 interface AppActions {
@@ -237,6 +240,8 @@ interface AppActions {
   insertPrompt: (text: string) => void
   clearPendingInsert: () => void
   setNotePickerOpen: (open: boolean) => void
+  startNoteFromText: (text: string) => void
+  clearNoteDraft: () => void
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -341,6 +346,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   notes: [],
   notePickerOpen: false,
   pendingInsert: null,
+  noteDraft: null,
 
   // ─── PI Lifecycle ─────────────────────────────────────────────────────
 
@@ -1213,6 +1219,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   clearPendingInsert: () => set({ pendingInsert: null }),
 
   setNotePickerOpen: (open) => set({ notePickerOpen: open }),
+
+  startNoteFromText: (text) =>
+    set({ noteDraft: text, notePickerOpen: false, currentView: 'notes' }),
+
+  clearNoteDraft: () => set({ noteDraft: null }),
 }))
 
 // ─── Event Handlers ──────────────────────────────────────────────────────────
