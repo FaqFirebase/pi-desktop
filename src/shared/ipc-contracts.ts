@@ -511,6 +511,9 @@ export interface AppSettings {
   // Resume the most recent session for the workspace on launch (via PI's
   // --continue) instead of starting a fresh session.
   resumeLastSession: boolean
+  // Project paths whose session group is collapsed in the Sessions panel.
+  // Persisted so the collapsed/expanded layout survives navigation and restarts.
+  collapsedSessionGroups: string[]
 }
 
 // ─── Workspace Types ────────────────────────────────────────────────────────

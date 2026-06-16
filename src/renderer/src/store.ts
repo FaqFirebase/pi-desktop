@@ -180,6 +180,7 @@ interface AppActions {
   toggleTerminal: () => void
   loadSettings: () => Promise<void>
   setPermissionMode: (mode: PermissionMode) => Promise<void>
+  toggleSessionGroupCollapsed: (projectPath: string) => Promise<void>
   loadCommands: () => Promise<void>
 
   // Events
@@ -701,6 +702,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (get().piStatus === 'running') {
       await get().restartPi()
     }
+  },
+
+  toggleSessionGroupCollapsed: async (projectPath) => {
+    const current = get().settings?.collapsedSessionGroups ?? []
+    const next = current.includes(projectPath)
+      ? current.filter((p) => p !== projectPath)
+      : [...current, projectPath]
+    const updated = await window.piDesktop.settings.save({ collapsedSessionGroups: next })
+    set({ settings: updated })
   },
 
   loadCommands: async () => {

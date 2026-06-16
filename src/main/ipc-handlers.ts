@@ -1350,6 +1350,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoScroll: true,
   permissionMode: 'ask-edits',
   resumeLastSession: true,
+  collapsedSessionGroups: [],
 }
 
 function getSettingsPath(): string {

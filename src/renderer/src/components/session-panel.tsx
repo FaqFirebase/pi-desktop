@@ -21,6 +21,8 @@ export function SessionPanel(): React.JSX.Element {
   const showArchived = useAppStore((state) => state.showArchived)
   const toggleShowArchived = useAppStore((state) => state.toggleShowArchived)
   const ensureAutoTags = useAppStore((state) => state.ensureAutoTags)
+  const settings = useAppStore((state) => state.settings)
+  const toggleSessionGroupCollapsed = useAppStore((state) => state.toggleSessionGroupCollapsed)
 
   // Auto-assign a context tag to any session the user hasn't tagged. The main
   // process skips already-processed sessions, so this is idempotent and only
@@ -33,8 +35,14 @@ export function SessionPanel(): React.JSX.Element {
   }, [sessionList, ensureAutoTags])
 
   const [searchQuery, setSearchQuery] = useState('')
-  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const [showAllProjects, setShowAllProjects] = useState(true)
+
+  // Collapsed project groups are persisted in settings so the layout survives
+  // navigating away and app restarts.
+  const collapsedGroups = useMemo(
+    () => new Set(settings?.collapsedSessionGroups ?? []),
+    [settings?.collapsedSessionGroups]
+  )
 
   const archivedCount = useMemo(() => {
     return sessionList.filter((s) => s.sessionId in archivedSessions).length
@@ -104,12 +112,7 @@ export function SessionPanel(): React.JSX.Element {
   }
 
   const toggleProject = (project: string) => {
-    setExpandedProjects((prev) => {
-      const next = new Set(prev)
-      if (next.has(project)) next.delete(project)
-      else next.add(project)
-      return next
-    })
+    void toggleSessionGroupCollapsed(project)
   }
 
   const totalSessions = sessionList.length
@@ -211,7 +214,9 @@ export function SessionPanel(): React.JSX.Element {
         ) : (
           <div className="space-y-2">
             {filteredGroups.map(([projectPath, sessions]) => {
-              const isExpanded = expandedProjects.has(projectPath) || filteredGroups.length <= 3
+              // Default expanded; collapse only when the user has collapsed this
+              // group. An active search force-expands so matches stay visible.
+              const isExpanded = searchQuery.trim() !== '' || !collapsedGroups.has(projectPath)
               const isCurrentProject = projectPath === activeWorkspace?.path
               const projectName = sessions[0]?.projectName ?? 'Unknown'
               const latestSession = sessions[0]
