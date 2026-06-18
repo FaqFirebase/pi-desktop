@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { clsx } from 'clsx'
 import { Plus, Search, Pencil, Trash2, CornerDownLeft, Tag, ArrowLeft } from 'lucide-react'
 import { useAppStore } from '../store'
+import { MarkdownRenderer } from './markdown-renderer'
 import type { Note, NoteInput } from '../../../shared/ipc-contracts'
 
 const GLOBAL_SCOPE = 'global'
@@ -30,6 +31,8 @@ export function NotesPanel(): React.JSX.Element {
   const [query, setQuery] = useState('')
   // null = list; 'new' = create form; Note = edit form
   const [editing, setEditing] = useState<'new' | Note | null>(null)
+  // Read view: the note being viewed (formatted markdown), or null for the list.
+  const [viewing, setViewing] = useState<Note | null>(null)
 
   // A draft captured elsewhere (e.g. "Add to Notes" from a message) opens the
   // create form pre-filled with that text.
@@ -85,6 +88,19 @@ export function NotesPanel(): React.JSX.Element {
     )
   }
 
+  if (viewing !== null) {
+    return (
+      <NoteReadView
+        note={viewing}
+        scope={scopeLabel(viewing.scope)}
+        onBack={() => setViewing(null)}
+        onInsert={() => insertPrompt(viewing.body)}
+        onEdit={() => { setEditing(viewing); setViewing(null) }}
+        onDelete={async () => { await deleteNote(viewing.id); setViewing(null) }}
+      />
+    )
+  }
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -135,34 +151,36 @@ export function NotesPanel(): React.JSX.Element {
               key={note.id}
               className="group rounded-md border border-neutral-800 bg-neutral-900 p-3 hover:border-neutral-700 transition-colors"
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-neutral-200">{note.title}</span>
-                    <span
-                      className={clsx(
-                        'shrink-0 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide',
-                        note.scope === GLOBAL_SCOPE
-                          ? 'bg-neutral-800 text-neutral-400'
-                          : 'bg-blue-950 text-blue-300'
-                      )}
-                    >
-                      {scopeLabel(note.scope)}
-                    </span>
-                  </div>
-                  <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-xs text-neutral-500">{note.body}</p>
-                  {note.tags.length > 0 && (
-                    <div className="mt-2 flex flex-wrap items-center gap-1">
-                      <Tag size={10} className="text-neutral-600" />
-                      {note.tags.map((tag) => (
-                        <span key={tag} className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-400">
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+              <button
+                onClick={() => setViewing(note)}
+                className="block w-full text-left"
+                title="View note"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm font-medium text-neutral-200">{note.title}</span>
+                  <span
+                    className={clsx(
+                      'shrink-0 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide',
+                      note.scope === GLOBAL_SCOPE
+                        ? 'bg-neutral-800 text-neutral-400'
+                        : 'bg-blue-950 text-blue-300'
+                    )}
+                  >
+                    {scopeLabel(note.scope)}
+                  </span>
                 </div>
-              </div>
+                <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-xs text-neutral-500">{note.body}</p>
+                {note.tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1">
+                    <Tag size={10} className="text-neutral-600" />
+                    {note.tags.map((tag) => (
+                      <span key={tag} className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-400">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </button>
 
               <div className="mt-2 flex items-center gap-1">
                 <button
@@ -193,6 +211,91 @@ export function NotesPanel(): React.JSX.Element {
             </div>
           ))
         )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Note Read View ─────────────────────────────────────────────────────────
+
+function NoteReadView({
+  note,
+  scope,
+  onBack,
+  onInsert,
+  onEdit,
+  onDelete,
+}: {
+  note: Note
+  scope: string
+  onBack: () => void
+  onInsert: () => void
+  onEdit: () => void
+  onDelete: () => void
+}): React.JSX.Element {
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-2 border-b border-neutral-800 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            onClick={onBack}
+            className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
+            title="Back to notes"
+          >
+            <ArrowLeft size={13} />
+            Back
+          </button>
+          <h1 className="truncate text-sm font-medium text-neutral-200">{note.title}</h1>
+          <span className="shrink-0 rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">
+            {scope}
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            onClick={onInsert}
+            className="flex items-center gap-1 rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-700 transition-colors"
+            title="Insert into chat input"
+          >
+            <CornerDownLeft size={11} />
+            Insert
+          </button>
+          <button
+            onClick={onEdit}
+            className="rounded p-1 text-neutral-500 hover:text-neutral-300 transition-colors"
+            title="Edit note"
+            aria-label="Edit note"
+          >
+            <Pencil size={13} />
+          </button>
+          <button
+            onClick={onDelete}
+            className="rounded p-1 text-neutral-500 hover:text-red-400 transition-colors"
+            title="Delete note"
+            aria-label="Delete note"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+
+      {/* Tags */}
+      {note.tags.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1 border-b border-neutral-800/60 px-4 py-2">
+          <Tag size={11} className="text-neutral-600" />
+          {note.tags.map((tag) => (
+            <span key={tag} className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-400">
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Rendered body — markdown with preserved indents, line breaks, code blocks */}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className="markdown-body text-sm text-neutral-200">
+          <MarkdownRenderer content={note.body} />
+        </div>
       </div>
     </div>
   )
