@@ -140,6 +140,8 @@ export function useInitialize(): void {
       await useAppStore.getState().loadTags()
       await useAppStore.getState().loadArchivedSessions()
       await useAppStore.getState().loadNotes()
+      // Best-effort GitHub release check (non-blocking).
+      void useAppStore.getState().checkForUpdates()
 
       if (openToHome) {
         // Land on the Home/launcher screen; PI starts lazily on first action.

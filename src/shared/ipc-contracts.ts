@@ -63,6 +63,7 @@ export const IPC_CHANNELS = {
   SYSTEM_GET_PATH: 'system:get-path',
   SYSTEM_OPEN_EXTERNAL: 'system:open-external',
   SYSTEM_GET_VERSION: 'system:get-version',
+  UPDATE_CHECK: 'update:check',
 
   // Workspaces
   WORKSPACE_LIST: 'workspace:list',
@@ -518,6 +519,19 @@ export interface AppSettings {
   // Show the Home/launcher screen on launch (PI starts lazily on first action)
   // instead of booting straight into Chat. When false, legacy behavior applies.
   openToHomeOnLaunch: boolean
+}
+
+// ─── Update Check Types ─────────────────────────────────────────────────────
+
+/** Result of checking GitHub releases for a newer version. */
+export interface UpdateCheckResult {
+  updateAvailable: boolean
+  currentVersion: string
+  latestVersion: string
+  // Release page URL to open for downloading; empty when the check failed.
+  url: string
+  // Release name/title, when available.
+  name?: string
 }
 
 // ─── Workspace Types ────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import { useContextMenu, buildDefaultContextMenu } from './components/context-me
 import { usePiEvents, useMenuActions, useInitialize, useNotePickerShortcut } from './hooks'
 import { useAppStore } from './store'
 import { useEffect } from 'react'
+import { ArrowUpCircle, X } from 'lucide-react'
 
 export function App(): React.JSX.Element {
   usePiEvents()
@@ -24,6 +25,9 @@ export function App(): React.JSX.Element {
 
   const currentView = useAppStore((state) => state.currentView)
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
+  const updateInfo = useAppStore((state) => state.updateInfo)
+  const updateDismissed = useAppStore((state) => state.updateDismissed)
+  const dismissUpdate = useAppStore((state) => state.dismissUpdate)
 
   // Global context menu
   const { show, ContextMenuComponent } = useContextMenu()
@@ -54,8 +58,32 @@ export function App(): React.JSX.Element {
   // rail, and status bar so it reads as a standalone landing page.
   const isHome = currentView === 'home'
 
+  const showUpdateBanner = !!updateInfo?.updateAvailable && !updateDismissed
+
   return (
     <div className="flex h-screen flex-col bg-neutral-950 text-neutral-100">
+      {showUpdateBanner && updateInfo && (
+        <div className="flex shrink-0 items-center justify-center gap-3 bg-blue-600 px-4 py-1.5 text-xs text-white">
+          <ArrowUpCircle size={14} className="shrink-0" />
+          <span>
+            PI Desktop <strong>v{updateInfo.latestVersion}</strong> is available — you&apos;re on v{updateInfo.currentVersion}.
+          </span>
+          <button
+            onClick={() => window.piDesktop.system.openExternal(updateInfo.url)}
+            className="rounded bg-white/20 px-2 py-0.5 font-medium hover:bg-white/30 transition-colors"
+          >
+            Download
+          </button>
+          <button
+            onClick={dismissUpdate}
+            className="rounded p-0.5 text-white/80 hover:bg-white/20 hover:text-white transition-colors"
+            aria-label="Dismiss update notification"
+            title="Dismiss"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
       <div className="flex flex-1 overflow-hidden">
         {sidebarOpen && !isHome && <Sidebar />}
 

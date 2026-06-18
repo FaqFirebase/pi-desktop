@@ -28,6 +28,7 @@ import type {
   Note,
   NoteInput,
   NoteUpdate,
+  UpdateCheckResult,
 } from '../../shared/ipc-contracts'
 
 // ─── Message State (renderer-local, built from events) ───────────────────────
@@ -136,6 +137,10 @@ interface AppState {
   // Body text captured (e.g. from a message) to seed a new note in the Notes
   // panel. Non-null opens the panel's New Note form pre-filled.
   noteDraft: string | null
+
+  // Update check (GitHub releases). Set when a newer version is available.
+  updateInfo: UpdateCheckResult | null
+  updateDismissed: boolean
 }
 
 interface AppActions {
@@ -243,6 +248,10 @@ interface AppActions {
   setNotePickerOpen: (open: boolean) => void
   startNoteFromText: (text: string) => void
   clearNoteDraft: () => void
+
+  // Update check
+  checkForUpdates: () => Promise<void>
+  dismissUpdate: () => void
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -350,6 +359,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   notePickerOpen: false,
   pendingInsert: null,
   noteDraft: null,
+  updateInfo: null,
+  updateDismissed: false,
 
   // ─── PI Lifecycle ─────────────────────────────────────────────────────
 
@@ -1236,6 +1247,19 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     set({ noteDraft: text, notePickerOpen: false, currentView: 'notes' }),
 
   clearNoteDraft: () => set({ noteDraft: null }),
+
+  // ─── Update check ─────────────────────────────────────────────────────
+
+  checkForUpdates: async () => {
+    try {
+      const info = await window.piDesktop.updates.check()
+      if (info.updateAvailable) set({ updateInfo: info, updateDismissed: false })
+    } catch {
+      // Silent — update check is best-effort
+    }
+  },
+
+  dismissUpdate: () => set({ updateDismissed: true }),
 }))
 
 // ─── Event Handlers ──────────────────────────────────────────────────────────

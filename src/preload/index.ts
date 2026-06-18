@@ -21,6 +21,7 @@ import type {
   Note,
   NoteInput,
   NoteUpdate,
+  UpdateCheckResult,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 
@@ -156,6 +157,11 @@ interface PiDesktopAPI {
     getPath(name: string): Promise<string>
     openExternal(url: string): Promise<void>
     getVersion(): Promise<string>
+  }
+
+  // Update check (GitHub releases)
+  updates: {
+    check(): Promise<UpdateCheckResult>
   }
 
   terminal: {
@@ -302,6 +308,10 @@ const api: PiDesktopAPI = {
     getPath: (name) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_PATH, name),
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, url),
     getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_VERSION),
+  },
+
+  updates: {
+    check: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK),
   },
 
   terminal: {
