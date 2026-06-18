@@ -2,6 +2,8 @@
 
 A desktop GUI for the [PI coding agent](https://pi.dev). Chat, manage projects, browse files, run commands, install packages — all in one window.
 
+![PI Desktop — Home launcher screen](docs/screenshots/Pi_Home_Screenshot_20260618_090453.png)
+
 Still in alpha — expect rough edges.
 
 ## What it does
