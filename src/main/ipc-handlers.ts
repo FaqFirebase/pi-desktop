@@ -19,6 +19,7 @@ import type {
   UpdateCheckResult,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
+import type { SessionLineageRecord } from '../shared/session-lineage'
 import { readdir, stat, readFile, writeFile, mkdir, access, unlink } from 'fs/promises'
 import { basename, join } from 'path'
 import { existsSync } from 'fs'
@@ -533,6 +534,10 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
 
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST_ARCHIVED, async () => {
     return archivedSessions.getAll()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_GET_LINEAGE, async () => {
+    return readSessionLineage()
   })
 
   // ─── Model Management ───────────────────────────────────────────────────
@@ -1304,6 +1309,51 @@ async function fetchPackageCatalog(query?: string, page = 0): Promise<CatalogPac
   } catch {
     return []
   }
+}
+
+// ─── Session Lineage Reader ──────────────────────────────────────────────────
+
+async function readSessionLineage(): Promise<SessionLineageRecord[]> {
+  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
+  const sessionsDir = join(homeDir, '.pi', 'agent', 'sessions')
+  const records: SessionLineageRecord[] = []
+  if (!existsSync(sessionsDir)) return records
+
+  let projectDirs: string[]
+  try {
+    const entries = await readdir(sessionsDir, { withFileTypes: true })
+    projectDirs = entries.filter((e) => e.isDirectory()).map((e) => join(sessionsDir, e.name))
+  } catch {
+    return records
+  }
+
+  for (const dir of projectDirs) {
+    let files: string[]
+    try {
+      files = (await readdir(dir)).filter((f) => f.endsWith('.jsonl'))
+    } catch {
+      continue
+    }
+    for (const file of files) {
+      const full = join(dir, file)
+      try {
+        const content = await readFile(full, 'utf-8')
+        const newlineIdx = content.indexOf('\n')
+        const firstLine = newlineIdx === -1 ? content : content.slice(0, newlineIdx)
+        const header = JSON.parse(firstLine) as Record<string, unknown>
+        if (header.type !== 'session' || typeof header.id !== 'string') continue
+        records.push({
+          sessionId: header.id,
+          path: full,
+          name: typeof header.cwd === 'string' ? header.cwd.split('/').pop() ?? null : null,
+          parentPath: typeof header.parentSession === 'string' ? header.parentSession : null,
+        })
+      } catch {
+        // Skip unreadable / malformed session files.
+      }
+    }
+  }
+  return records
 }
 
 // ─── Skills Listing ──────────────────────────────────────────────────────────

@@ -39,6 +39,7 @@ export const IPC_CHANNELS = {
   SESSION_ARCHIVE: 'session:archive',
   SESSION_UNARCHIVE: 'session:unarchive',
   SESSION_LIST_ARCHIVED: 'session:list-archived',
+  SESSION_GET_LINEAGE: 'session:get-lineage',
 
   // Model management
   MODEL_SET: 'model:set',
@@ -426,6 +427,8 @@ export interface SessionDeleteResult {
 }
 
 export type ArchivedSessionsMap = Record<string, number>
+
+export type { SessionLineageRecord } from './session-lineage'
 
 // ─── Agent Message Types ────────────────────────────────────────────────────
 

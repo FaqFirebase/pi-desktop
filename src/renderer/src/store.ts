@@ -3,6 +3,7 @@ import { applyTheme } from './utils/theme'
 import { buildPlanningPrompt } from './utils/planning-prompt'
 import type { PiCommand } from '../../shared/pi-command'
 import { normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
+import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
 import type {
   PiRpcEvent,
   PiStatus,
@@ -146,6 +147,9 @@ interface AppState {
   // Update check (GitHub releases). Set when a newer version is available.
   updateInfo: UpdateCheckResult | null
   updateDismissed: boolean
+
+  // Cross-session lineage tree
+  lineage: LineageNode[]
 }
 
 interface AppActions {
@@ -262,6 +266,9 @@ interface AppActions {
   // Update check
   checkForUpdates: () => Promise<void>
   dismissUpdate: () => void
+
+  // Lineage
+  loadLineage: () => Promise<void>
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -374,6 +381,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   noteDraft: null,
   updateInfo: null,
   updateDismissed: false,
+
+  lineage: [],
 
   // ─── PI Lifecycle ─────────────────────────────────────────────────────
 
@@ -1317,6 +1326,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   dismissUpdate: () => set({ updateDismissed: true }),
+
+  // ─── Lineage ──────────────────────────────────────────────────────────
+
+  loadLineage: async () => {
+    try {
+      const records = await window.piDesktop.session.getLineage()
+      set({ lineage: buildLineageTree(records) })
+    } catch {
+      set({ lineage: [] })
+    }
+  },
 }))
 
 // ─── Event Handlers ──────────────────────────────────────────────────────────
