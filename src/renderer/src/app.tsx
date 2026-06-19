@@ -8,6 +8,7 @@ import { PackageBrowser } from './components/package-browser'
 import { DiffViewer } from './components/diff-viewer'
 import { HomeScreen } from './components/home-screen'
 import { NotesPanel } from './components/notes-panel'
+import { SkillsPanel } from './components/skills-panel'
 import { NotePicker } from './components/note-picker'
 import { CommandPalette } from './components/command-palette'
 import { ExtensionUiDialog } from './components/extension-ui-dialog'
@@ -98,6 +99,7 @@ export function App(): React.JSX.Element {
             {currentView === 'packages' && <PackageBrowser />}
             {currentView === 'diff' && <DiffViewer />}
             {currentView === 'notes' && <NotesPanel />}
+            {currentView === 'skills' && <SkillsPanel />}
           </main>
           {currentView === 'chat' && <ReviewRail />}
         </div>
