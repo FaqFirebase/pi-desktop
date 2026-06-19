@@ -548,11 +548,6 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     return getActivePi().sendCommand(cmd)
   })
 
-  ipcMain.handle(IPC_CHANNELS.SESSION_SET_AUTO_COMPACTION, async (_event, enabled: unknown) => {
-    if (typeof enabled !== 'boolean') throw new Error('enabled must be a boolean')
-    return getActivePi().sendCommand({ type: 'set_auto_compaction', enabled })
-  })
-
   // ─── Model Management ───────────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.MODEL_SET, async (_event, provider: unknown, modelId: unknown) => {

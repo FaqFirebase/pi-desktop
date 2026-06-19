@@ -41,7 +41,6 @@ export const IPC_CHANNELS = {
   SESSION_LIST_ARCHIVED: 'session:list-archived',
   SESSION_GET_LINEAGE: 'session:get-lineage',
   SESSION_COMPACT: 'session:compact',
-  SESSION_SET_AUTO_COMPACTION: 'session:set-auto-compaction',
 
   // Model management
   MODEL_SET: 'model:set',

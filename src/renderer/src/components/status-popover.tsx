@@ -51,9 +51,7 @@ export function StatusPopover(): React.JSX.Element {
   const sessionStats = useAppStore((state) => state.sessionStats)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const compactContext = useAppStore((state) => state.compactContext)
-  const setAutoCompaction = useAppStore((state) => state.setAutoCompaction)
   const isCompacting = sessionState?.isCompacting ?? false
-  const autoCompaction = sessionState?.autoCompactionEnabled ?? false
   const ref = useRef<HTMLDivElement>(null)
 
   // Load data when opened
@@ -243,22 +241,6 @@ export function StatusPopover(): React.JSX.Element {
                 <StatusRow
                   label="Tokens"
                   value={`${((sessionStats.tokens.input + sessionStats.tokens.output) / 1000).toFixed(1)}k`}
-                />
-                <StatusRow
-                  label="Auto-compact"
-                  value={
-                    <button
-                      onClick={() => setAutoCompaction(!autoCompaction)}
-                      className={clsx(
-                        'rounded px-2 py-0.5 text-xs transition-colors',
-                        autoCompaction
-                          ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-900/60'
-                          : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'
-                      )}
-                    >
-                      {autoCompaction ? 'On' : 'Off'}
-                    </button>
-                  }
                 />
                 <button
                   onClick={() => compactContext()}

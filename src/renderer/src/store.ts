@@ -193,7 +193,6 @@ interface AppActions {
 
   // Context compaction
   compactContext: () => Promise<void>
-  setAutoCompaction: (enabled: boolean) => Promise<void>
 
   // UI
   setCurrentView: (view: AppState['currentView']) => void
@@ -746,15 +745,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // state + stats so the context-usage figures update afterwards.
       get().refreshSessionState()
       get().refreshSessionStats()
-    } catch {
-      // Silent failure
-    }
-  },
-
-  setAutoCompaction: async (enabled) => {
-    try {
-      await window.piDesktop.session.setAutoCompaction(enabled)
-      get().refreshSessionState()
     } catch {
       // Silent failure
     }
