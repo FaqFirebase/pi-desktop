@@ -4,22 +4,35 @@ import { Terminal } from 'lucide-react'
 import { useAppStore } from '../store'
 import { filterCommands, type PiCommand } from '../../../shared/pi-command'
 
+// Source used for PI built-in commands that map to a GUI action rather than
+// being inserted as text. PI's RPC only expands `/skill:` and `/template` from
+// typed input, so these built-ins run the equivalent GUI action directly.
+const BUILTIN_SOURCE = 'builtin'
+
 const SOURCE_BADGE: Record<string, string> = {
   skill: 'bg-purple-900/40 text-purple-300',
   prompt: 'bg-blue-900/40 text-blue-300',
+  [BUILTIN_SOURCE]: 'bg-amber-900/40 text-amber-300',
   extension: 'bg-emerald-900/40 text-emerald-300',
 }
 
 const GROUPS: Array<{ source: string; label: string }> = [
   { source: 'skill', label: 'Skills' },
   { source: 'prompt', label: 'Prompts' },
-  { source: 'extension', label: 'Commands' },
+  { source: BUILTIN_SOURCE, label: 'Commands' },
+  { source: 'extension', label: 'Extensions' },
 ]
 
-/** Token inserted into the composer when a command is chosen. */
+/** Token inserted into the composer when a skill/prompt/extension is chosen. */
 function invocationToken(name: string, source: string): string {
   if (source === 'skill') return `/skill:${name.replace(/^skill:/, '')} `
   return `/${name} `
+}
+
+interface BuiltinCommand {
+  name: string
+  description: string
+  run: () => void
 }
 
 export function CommandPalette(): React.JSX.Element | null {
@@ -29,15 +42,41 @@ export function CommandPalette(): React.JSX.Element | null {
   const commands = useAppStore((s) => s.commands)
   const setCommandPalette = useAppStore((s) => s.setCommandPalette)
   const insertPrompt = useAppStore((s) => s.insertPrompt)
+  const compactContext = useAppStore((s) => s.compactContext)
+  const cloneBranch = useAppStore((s) => s.cloneBranch)
+  const createNewSession = useAppStore((s) => s.createNewSession)
+  const setCurrentView = useAppStore((s) => s.setCurrentView)
 
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const results = useMemo(() => filterCommands(commands, query), [commands, query])
+  // PI built-in commands that have a direct GUI equivalent. Excludes built-ins
+  // that need an argument or aren't supported in the GUI (e.g. /name, /tree).
+  const builtins = useMemo<BuiltinCommand[]>(
+    () => [
+      { name: 'compact', description: 'Compact the conversation to free up context', run: () => { void compactContext() } },
+      { name: 'clone', description: 'Clone the current branch into a new session', run: () => { void cloneBranch() } },
+      { name: 'new', description: 'Start a new session', run: () => { void createNewSession() } },
+      { name: 'resume', description: 'Open the Sessions list', run: () => setCurrentView('sessions') },
+      { name: 'fork', description: 'Open Branches to fork from a message', run: () => setCurrentView('timeline') },
+      { name: 'settings', description: 'Open Settings', run: () => setCurrentView('settings') },
+    ],
+    [compactContext, cloneBranch, createNewSession, setCurrentView]
+  )
 
-  // Ordered groups (Skills, Prompts, Commands) plus an "Other" catch-all for any
-  // unexpected source, so nothing is silently hidden.
+  const allCommands = useMemo<PiCommand[]>(
+    () => [
+      ...commands,
+      ...builtins.map((b) => ({ name: b.name, description: b.description, source: BUILTIN_SOURCE })),
+    ],
+    [commands, builtins]
+  )
+
+  const results = useMemo(() => filterCommands(allCommands, query), [allCommands, query])
+
+  // Ordered groups plus an "Other" catch-all for any unexpected source, so
+  // nothing is silently hidden.
   const grouped = useMemo(() => {
     const known = new Set(GROUPS.map((g) => g.source))
     const out = GROUPS.map((g) => ({
@@ -67,7 +106,13 @@ export function CommandPalette(): React.JSX.Element | null {
   if (!open) return null
 
   const choose = (cmd: PiCommand | undefined): void => {
-    if (cmd) insertPrompt(invocationToken(cmd.name, cmd.source), replace)
+    if (cmd) {
+      if (cmd.source === BUILTIN_SOURCE) {
+        builtins.find((b) => b.name === cmd.name)?.run()
+      } else {
+        insertPrompt(invocationToken(cmd.name, cmd.source), replace)
+      }
+    }
     setCommandPalette(false)
   }
 
@@ -110,11 +155,7 @@ export function CommandPalette(): React.JSX.Element | null {
         </div>
         <div className="max-h-72 overflow-y-auto py-1">
           {flat.length === 0 ? (
-            <div className="px-3 py-6 text-center text-sm text-neutral-600">
-              {commands.length === 0
-                ? 'No commands available — is PI running?'
-                : 'No matching commands'}
-            </div>
+            <div className="px-3 py-6 text-center text-sm text-neutral-600">No matching commands</div>
           ) : (
             grouped.map((group) => (
               <div key={group.label}>
@@ -141,7 +182,9 @@ export function CommandPalette(): React.JSX.Element | null {
                       >
                         {cmd.source}
                       </span>
-                      <span className="truncate text-sm text-neutral-200">{cmd.name}</span>
+                      <span className="truncate text-sm text-neutral-200">
+                        {cmd.source === BUILTIN_SOURCE ? `/${cmd.name}` : cmd.name}
+                      </span>
                       <span className="ml-auto line-clamp-1 text-xs text-neutral-500">
                         {cmd.description}
                       </span>
@@ -153,7 +196,7 @@ export function CommandPalette(): React.JSX.Element | null {
           )}
         </div>
         <div className="border-t border-neutral-800 px-3 py-1.5 text-[10px] text-neutral-600">
-          ↑↓ navigate · Enter/Tab insert · Esc close
+          ↑↓ navigate · Enter/Tab run · Esc close
         </div>
       </div>
     </div>
