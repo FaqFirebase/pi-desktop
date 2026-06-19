@@ -45,7 +45,7 @@ export function CommandPalette(): React.JSX.Element | null {
 
   const choose = (index: number): void => {
     const cmd = results[index]
-    if (cmd) insertPrompt(invocationToken(cmd.name, cmd.source))
+    if (cmd) insertPrompt(invocationToken(cmd.name, cmd.source), true)
     setCommandPalette(false)
   }
 

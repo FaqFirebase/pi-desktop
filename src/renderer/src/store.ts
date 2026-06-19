@@ -136,7 +136,7 @@ interface AppState {
   commandPaletteQuery: string
   // A prompt queued for insertion into the chat input. The nonce lets the
   // chat input re-apply the same text on repeated inserts.
-  pendingInsert: { text: string; nonce: number } | null
+  pendingInsert: { text: string; nonce: number; replace?: boolean } | null
   // Body text captured (e.g. from a message) to seed a new note in the Notes
   // panel. Non-null opens the panel's New Note form pre-filled.
   noteDraft: string | null
@@ -246,7 +246,7 @@ interface AppActions {
   saveNote: (input: NoteInput) => Promise<void>
   updateNote: (id: string, patch: NoteUpdate) => Promise<void>
   deleteNote: (id: string) => Promise<void>
-  insertPrompt: (text: string) => void
+  insertPrompt: (text: string, replace?: boolean) => void
   clearPendingInsert: () => void
   setNotePickerOpen: (open: boolean) => void
   setCommandPalette: (open: boolean, query?: string) => void
@@ -1252,11 +1252,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     set((state) => ({ notes: state.notes.filter((n) => n.id !== id) }))
   },
 
-  insertPrompt: (text) =>
+  insertPrompt: (text, replace = false) =>
     set({
       currentView: 'chat',
       notePickerOpen: false,
-      pendingInsert: { text, nonce: Date.now() },
+      pendingInsert: { text, nonce: Date.now(), replace },
     }),
 
   clearPendingInsert: () => set({ pendingInsert: null }),
