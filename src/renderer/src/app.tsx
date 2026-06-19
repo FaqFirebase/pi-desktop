@@ -9,6 +9,7 @@ import { DiffViewer } from './components/diff-viewer'
 import { HomeScreen } from './components/home-screen'
 import { NotesPanel } from './components/notes-panel'
 import { NotePicker } from './components/note-picker'
+import { CommandPalette } from './components/command-palette'
 import { ExtensionUiDialog } from './components/extension-ui-dialog'
 import { ReviewRail } from './components/review-rail'
 import { useContextMenu, buildDefaultContextMenu } from './components/context-menu'
@@ -105,6 +106,7 @@ export function App(): React.JSX.Element {
       {!isHome && <StatusBar />}
       <ExtensionUiDialog />
       <NotePicker />
+      <CommandPalette />
       {ContextMenuComponent}
     </div>
   )
