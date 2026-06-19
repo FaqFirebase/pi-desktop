@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useAppStore } from '../store'
 import type { TimelineEvent as StoreTimelineEvent } from '../../../shared/ipc-contracts'
 import { clsx } from 'clsx'
@@ -12,14 +13,65 @@ import {
   Loader2,
   Trash2,
   Clock,
+  GitFork,
+  Copy,
 } from 'lucide-react'
 
 export function Timeline(): React.JSX.Element {
   const timelineEvents = useAppStore((state) => state.timelineEvents)
   const clearTimeline = useAppStore((state) => state.clearTimeline)
+  const forkMessages = useAppStore((state) => state.forkMessages)
+  const loadForkMessages = useAppStore((state) => state.loadForkMessages)
+  const forkFrom = useAppStore((state) => state.forkFrom)
+  const cloneBranch = useAppStore((state) => state.cloneBranch)
+  const loadLineage = useAppStore((state) => state.loadLineage)
+
+  useEffect(() => {
+    loadForkMessages()
+    loadLineage()
+  }, [loadForkMessages, loadLineage])
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Branches */}
+      <div className="border-b border-neutral-800 px-4 py-3">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <GitFork size={15} className="text-neutral-400" />
+            <h3 className="text-sm font-medium text-neutral-200">Branches</h3>
+          </div>
+          <button
+            onClick={() => cloneBranch()}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
+            title="Clone the current branch into a new session"
+          >
+            <Copy size={12} />
+            Clone branch
+          </button>
+        </div>
+        {forkMessages.length === 0 ? (
+          <p className="text-xs text-neutral-600">No earlier messages to fork from.</p>
+        ) : (
+          <div className="space-y-1">
+            {forkMessages.map((fp) => (
+              <div
+                key={fp.entryId}
+                className="group flex items-center gap-2 rounded px-2 py-1.5 hover:bg-neutral-800/50"
+              >
+                <span className="line-clamp-1 flex-1 text-xs text-neutral-400">{fp.text}</span>
+                <button
+                  onClick={() => forkFrom(fp.entryId)}
+                  className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[11px] text-neutral-500 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-neutral-700 hover:text-neutral-200"
+                  title="Fork a new session from this message"
+                >
+                  <GitFork size={11} />
+                  Fork
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
         <div className="flex items-center gap-2">
