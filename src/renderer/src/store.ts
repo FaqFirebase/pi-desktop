@@ -137,6 +137,7 @@ interface AppState {
   notePickerOpen: boolean
   commandPaletteOpen: boolean
   commandPaletteQuery: string
+  commandPaletteReplace: boolean
   // A prompt queued for insertion into the chat input. The nonce lets the
   // chat input re-apply the same text on repeated inserts.
   pendingInsert: { text: string; nonce: number; replace?: boolean } | null
@@ -262,7 +263,7 @@ interface AppActions {
   insertPrompt: (text: string, replace?: boolean) => void
   clearPendingInsert: () => void
   setNotePickerOpen: (open: boolean) => void
-  setCommandPalette: (open: boolean, query?: string) => void
+  setCommandPalette: (open: boolean, query?: string, replace?: boolean) => void
   startNoteFromText: (text: string) => void
   clearNoteDraft: () => void
 
@@ -380,6 +381,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   notePickerOpen: false,
   commandPaletteOpen: false,
   commandPaletteQuery: '',
+  commandPaletteReplace: true,
   pendingInsert: null,
   noteDraft: null,
   updateInfo: null,
@@ -1321,8 +1323,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   setNotePickerOpen: (open) => set({ notePickerOpen: open }),
 
-  setCommandPalette: (open, query = '') =>
-    set({ commandPaletteOpen: open, commandPaletteQuery: query }),
+  setCommandPalette: (open, query = '', replace = true) =>
+    set({ commandPaletteOpen: open, commandPaletteQuery: query, commandPaletteReplace: replace }),
 
   startNoteFromText: (text) =>
     set({ noteDraft: text, notePickerOpen: false, currentView: 'notes' }),

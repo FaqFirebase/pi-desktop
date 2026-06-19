@@ -153,7 +153,7 @@ export function ChatInput(): React.JSX.Element {
             target.style.height = `${Math.min(target.scrollHeight, MAX_INPUT_HEIGHT)}px`
             const value = target.value
             if (value.startsWith('/')) {
-              useAppStore.getState().setCommandPalette(true, value)
+              useAppStore.getState().setCommandPalette(true, value, true)
             } else {
               useAppStore.getState().setCommandPalette(false)
             }
