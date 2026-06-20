@@ -139,6 +139,18 @@ export function buildConsensusPrompt(request: string, results: ConsultantResult[
   ].join('\n')
 }
 
+/** Prompt to revise the consensus plan based on the user's feedback. */
+export function buildRevisionPrompt(feedback: string): string {
+  return [
+    'The user reviewed the consensus plan above and requested changes:',
+    '',
+    feedback,
+    '',
+    'Revise the consensus plan to address this feedback. Output ONLY the revised plan.',
+    'DO NOT implement, build, or write any files yet — wait for approval.',
+  ].join('\n')
+}
+
 /** Prompt for the optional debate round: revise own plan given the others'. */
 export function buildDebatePrompt(
   request: string,

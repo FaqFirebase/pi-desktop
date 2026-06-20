@@ -9,6 +9,7 @@ import {
   resolveActiveMembers,
   hasQuorum,
   buildConsensusPrompt,
+  buildRevisionPrompt,
   type CouncilAgentId,
   type ConsultantResult,
 } from '../../shared/council-config'
@@ -203,6 +204,7 @@ interface AppActions {
   sendFollowUp: (message: string) => Promise<void>
   runCouncil: (request: string) => Promise<void>
   approveCouncilPlan: () => Promise<void>
+  reviseCouncilPlan: (feedback: string) => Promise<void>
   cancelCouncil: () => void
   abort: () => Promise<void>
 
@@ -634,6 +636,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (!run || run.phase !== 'awaiting-approval') return
     set({ councilRun: null })
     await get().sendFollowUp('Approved. Implement the consensus plan above now.')
+  },
+
+  reviseCouncilPlan: async (feedback) => {
+    const run = get().councilRun
+    if (!run || run.phase !== 'awaiting-approval' || !feedback.trim()) return
+    // PI revises the consensus plan in-place; the run stays at the approval gate.
+    await get().sendPrompt(buildRevisionPrompt(feedback))
   },
 
   cancelCouncil: () => set({ councilRun: null }),

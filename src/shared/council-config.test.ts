@@ -98,6 +98,7 @@ import {
   buildConsensusPrompt,
   buildDebatePrompt,
   buildConsultantCommand,
+  buildRevisionPrompt,
   parseClaudeStreamLine,
   parseCodexStreamLine,
   parsePiStreamLine,
@@ -150,6 +151,13 @@ test('consensus prompt excludes non-contributed plans', () => {
   const p = buildConsensusPrompt('req', results)
   assert.ok(p.includes('KEPT'))
   assert.ok(!p.includes('timed-out'))
+})
+
+test('revision prompt embeds feedback and forbids implementing yet', () => {
+  const p = buildRevisionPrompt('Use Postgres instead of SQLite')
+  assert.ok(p.includes('Use Postgres instead of SQLite'))
+  assert.ok(/revise/i.test(p))
+  assert.ok(/do not (implement|build|write)/i.test(p))
 })
 
 test('debate prompt shows other plans and asks for a revision', () => {

@@ -53,7 +53,7 @@ This is **off by default**. Enable it in **Settings → "Multi-Agent Council Pla
 
 **Per-member timeout** (10–600s, default 240s) bounds each member. A member that times out or errors is dropped, and the run proceeds as long as at least one plan was produced.
 
-**To use it:** with the feature enabled, type your request and click **Plan with Council** in the composer. Review each member's plan and PI's merged consensus plan, then click **Implement this** to have PI build it.
+**To use it:** with the feature enabled, type your request and click **Plan with Council** in the composer. Review each member's plan and PI's merged consensus plan. If you want changes, type feedback in **Request changes to the plan…** and PI revises the consensus (repeat as needed). When you're happy, click **Implement this** to have PI build it. The panel collapses once a plan is ready so the output stays readable.
 
 ## Getting started
 

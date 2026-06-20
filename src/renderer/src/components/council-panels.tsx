@@ -23,7 +23,10 @@ function formatElapsed(seconds: number): string {
 export function CouncilPanels(): React.JSX.Element | null {
   const run = useAppStore((s) => s.councilRun)
   const approve = useAppStore((s) => s.approveCouncilPlan)
+  const revise = useAppStore((s) => s.reviseCouncilPlan)
   const cancel = useAppStore((s) => s.cancelCouncil)
+  const isStreaming = useAppStore((s) => s.isStreaming)
+  const [reviseText, setReviseText] = React.useState('')
 
   const consulting = run?.phase === 'consulting'
   const startedAt = run?.startedAt
@@ -118,19 +121,48 @@ export function CouncilPanels(): React.JSX.Element | null {
 
       {/* Approval controls stay visible even when the cards are collapsed. */}
       {awaiting && (
-        <div className="mt-3 flex justify-end gap-2">
-          <button
-            className="rounded px-3 py-1 text-sm text-neutral-300 hover:bg-neutral-800"
-            onClick={cancel}
-          >
-            Cancel
-          </button>
-          <button
-            className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-500"
-            onClick={() => void approve()}
-          >
-            Implement this
-          </button>
+        <div className="mt-3 space-y-2">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={reviseText}
+              onChange={(e) => setReviseText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && reviseText.trim() && !isStreaming) {
+                  void revise(reviseText)
+                  setReviseText('')
+                }
+              }}
+              placeholder="Request changes to the plan…"
+              disabled={isStreaming}
+              className="flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none disabled:opacity-50"
+            />
+            <button
+              disabled={isStreaming || !reviseText.trim()}
+              className="rounded border border-neutral-700 px-3 py-1 text-sm text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
+              onClick={() => {
+                void revise(reviseText)
+                setReviseText('')
+              }}
+            >
+              Revise
+            </button>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              className="rounded px-3 py-1 text-sm text-neutral-300 hover:bg-neutral-800"
+              onClick={cancel}
+            >
+              Cancel
+            </button>
+            <button
+              disabled={isStreaming}
+              className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-500 disabled:opacity-50"
+              onClick={() => void approve()}
+            >
+              Implement this
+            </button>
+          </div>
         </div>
       )}
     </div>
