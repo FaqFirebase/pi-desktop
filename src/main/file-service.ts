@@ -1,12 +1,53 @@
 import { watch, type FSWatcher } from 'chokidar'
-import { readdir, stat, readFile, writeFile } from 'fs/promises'
-import { join, extname, basename, resolve, relative } from 'path'
+import { readdir, stat, readFile, writeFile, realpath } from 'fs/promises'
+import { join, extname, basename, resolve, relative, isAbsolute, sep, dirname } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { describeWriteError } from './fs-errors'
 import type { FileChangeEvent } from '../shared/ipc-contracts'
 
 const execFileAsync = promisify(execFile)
+
+const PARENT_ESCAPE = '..'
+
+/**
+ * True when `filePath` (absolute or workspace-relative) resolves to a location
+ * strictly inside `workspacePath`. Pure and synchronous; covers parent-directory
+ * traversal and Windows cross-drive paths. Symlink escapes are checked
+ * separately via realpath in the read/write paths.
+ */
+export function isPathInsideWorkspace(workspacePath: string, filePath: string): boolean {
+  const fullPath = isAbsolute(filePath) ? filePath : join(workspacePath, filePath)
+  const rel = relative(resolve(workspacePath), resolve(fullPath))
+  return (
+    rel !== '' &&
+    rel !== PARENT_ESCAPE &&
+    !rel.startsWith(PARENT_ESCAPE + sep) &&
+    !isAbsolute(rel)
+  )
+}
+
+/**
+ * Real path of the deepest existing ancestor of `p`, with the still-missing tail
+ * re-appended. Lets us resolve symlinks even when the target file does not exist
+ * yet (e.g. writing a new file into a real directory).
+ */
+async function realpathDeepest(p: string): Promise<string> {
+  let current = resolve(p)
+  const tail: string[] = []
+  for (;;) {
+    try {
+      const real = await realpath(current)
+      return tail.length ? resolve(real, ...tail.reverse()) : real
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+      const parent = dirname(current)
+      if (parent === current) return resolve(p)
+      tail.push(basename(current))
+      current = parent
+    }
+  }
+}
 
 /**
  * File system service for the workspace.
@@ -262,26 +303,39 @@ export class FileService {
    * Read a file's content (for preview).
    */
   async readFileContent(filePath: string): Promise<string> {
-    const fullPath = filePath.startsWith('/') ? filePath : join(this.workspacePath, filePath)
-    return readFile(fullPath, 'utf-8')
+    const resolvedFile = await this.resolveInsideWorkspace(filePath, 'read')
+    return readFile(resolvedFile, 'utf-8')
   }
 
   async writeFileContent(filePath: string, content: string): Promise<void> {
-    const fullPath = filePath.startsWith('/') ? filePath : join(this.workspacePath, filePath)
-    const resolvedWorkspace = resolve(this.workspacePath)
-    const resolvedFile = resolve(fullPath)
-    const rel = relative(resolvedWorkspace, resolvedFile)
-
-    if (rel.startsWith('..') || rel === '') {
-      throw new Error('Refusing to write outside the active workspace')
-    }
-
+    const resolvedFile = await this.resolveInsideWorkspace(filePath, 'write')
     try {
       await writeFile(resolvedFile, content, 'utf-8')
     } catch (err) {
       // Turn opaque EPERM/EACCES into a Controlled Folder Access hint on Windows.
       throw describeWriteError(err, resolvedFile)
     }
+  }
+
+  /**
+   * Resolve a caller-supplied path and confirm it stays inside the workspace,
+   * rejecting parent-directory traversal, cross-drive paths, and symlink escapes.
+   * Returns the absolute path to use.
+   */
+  private async resolveInsideWorkspace(filePath: string, action: 'read' | 'write'): Promise<string> {
+    if (!isPathInsideWorkspace(this.workspacePath, filePath)) {
+      throw new Error(`Refusing to ${action} outside the active workspace`)
+    }
+    const fullPath = isAbsolute(filePath) ? filePath : join(this.workspacePath, filePath)
+    const resolvedFile = resolve(fullPath)
+    // Symlink hardening: compare real paths so a symlink inside the workspace
+    // that points outside it cannot be used to escape.
+    const realWorkspace = await realpath(this.workspacePath)
+    const realTarget = await realpathDeepest(resolvedFile)
+    if (!isPathInsideWorkspace(realWorkspace, realTarget)) {
+      throw new Error(`Refusing to ${action} outside the active workspace`)
+    }
+    return resolvedFile
   }
 
   /**

@@ -16,6 +16,7 @@ import {
   Trash2,
   NotebookPen,
   Archive,
+  Sparkles,
 } from 'lucide-react'
 import { useState } from 'react'
 import { StatusPopover } from './status-popover'
@@ -171,6 +172,12 @@ export function Sidebar(): React.JSX.Element {
           label="Notes"
           active={currentView === 'notes'}
           onClick={() => setCurrentView('notes')}
+        />
+        <SidebarItem
+          icon={<Sparkles size={14} />}
+          label="Skills"
+          active={currentView === 'skills'}
+          onClick={() => setCurrentView('skills')}
         />
         <SidebarItem
           icon={<Settings size={14} />}

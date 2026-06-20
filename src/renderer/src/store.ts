@@ -1,6 +1,10 @@
 import { create } from 'zustand'
 import { applyTheme } from './utils/theme'
 import { buildPlanningPrompt } from './utils/planning-prompt'
+import type { PiCommand } from '../../shared/pi-command'
+import { normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
+import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
+import { validateModelsConfig, mergeModelsConfig, type ModelsConfig } from '../../shared/models-config'
 import type {
   PiRpcEvent,
   PiStatus,
@@ -28,6 +32,7 @@ import type {
   Note,
   NoteInput,
   NoteUpdate,
+  UpdateCheckResult,
 } from '../../shared/ipc-contracts'
 
 // ─── Message State (renderer-local, built from events) ───────────────────────
@@ -65,6 +70,7 @@ interface AppState {
   sessionState: SessionState | null
   sessionStats: SessionStats | null
   sessionList: SessionListItem[]
+  forkMessages: ForkPoint[]
 
   // Messages
   messages: DisplayMessage[]
@@ -81,7 +87,7 @@ interface AppState {
   pendingFollowUp: string[]
 
   // UI
-  currentView: 'home' | 'chat' | 'settings' | 'sessions' | 'timeline' | 'packages' | 'diff' | 'notes'
+  currentView: 'home' | 'chat' | 'settings' | 'sessions' | 'timeline' | 'packages' | 'diff' | 'notes' | 'skills'
   // Chat side panel: which secondary view (file tree or diff) is open in
   // the chat workspace. Lifted into the store so it survives navigating
   // away from chat (e.g. into Settings) and back.
@@ -89,7 +95,7 @@ interface AppState {
   sidebarOpen: boolean
   terminalOpen: boolean
   settings: AppSettings | null
-  commands: Array<{ name: string; description: string; source: string }>
+  commands: PiCommand[]
 
   // Extension UI
   extensionUiRequest: PiExtensionUiRequest | null
@@ -111,6 +117,10 @@ interface AppState {
   // Skills
   installedSkills: InstalledSkill[]
 
+  // Custom models config (~/.pi/agent/models.json)
+  customModels: ModelsConfig | null
+  customModelsError: string | null
+
   // File preview
   selectedFile: { relativePath: string; path: string } | null
 
@@ -130,17 +140,26 @@ interface AppState {
   // Notes (reusable prompts / commands)
   notes: Note[]
   notePickerOpen: boolean
+  commandPaletteOpen: boolean
+  commandPaletteQuery: string
+  commandPaletteReplace: boolean
   // A prompt queued for insertion into the chat input. The nonce lets the
   // chat input re-apply the same text on repeated inserts.
-  pendingInsert: { text: string; nonce: number } | null
+  pendingInsert: { text: string; nonce: number; replace?: boolean } | null
   // Body text captured (e.g. from a message) to seed a new note in the Notes
   // panel. Non-null opens the panel's New Note form pre-filled.
   noteDraft: string | null
+
+  // Update check (GitHub releases). Set when a newer version is available.
+  updateInfo: UpdateCheckResult | null
+  updateDismissed: boolean
+
+  // Cross-session lineage tree
+  lineage: LineageNode[]
 }
 
 interface AppActions {
   // PI lifecycle
-  setPiStatus: (status: PiStatus) => void
   startPi: (options?: Record<string, unknown>) => Promise<void>
   stopPi: () => Promise<void>
   restartPi: (options?: Record<string, unknown>) => Promise<void>
@@ -159,10 +178,14 @@ interface AppActions {
   // Session
   createNewSession: () => Promise<void>
   switchSession: (path: string) => Promise<void>
+  reloadActiveSession: () => Promise<void>
   refreshSessionState: () => Promise<void>
   refreshSessionStats: () => Promise<void>
   refreshSessionList: () => Promise<void>
   setSessionName: (name: string) => Promise<void>
+  loadForkMessages: () => Promise<void>
+  forkFrom: (entryId: string) => Promise<void>
+  cloneBranch: () => Promise<void>
 
   // Model
   setModel: (provider: string, modelId: string) => Promise<void>
@@ -172,6 +195,9 @@ interface AppActions {
   // Thinking
   setThinkingLevel: (level: string) => Promise<void>
   cycleThinkingLevel: () => Promise<void>
+
+  // Context compaction
+  compactContext: () => Promise<void>
 
   // UI
   setCurrentView: (view: AppState['currentView']) => void
@@ -212,6 +238,10 @@ interface AppActions {
   // Skills
   loadSkills: () => Promise<void>
 
+  // Custom models config
+  loadCustomModels: () => Promise<void>
+  saveCustomModels: (edited: ModelsConfig) => Promise<{ ok: boolean; errors?: string[] }>
+
   // File preview
   setSelectedFile: (relativePath: string | null, path: string | null) => void
 
@@ -238,11 +268,19 @@ interface AppActions {
   saveNote: (input: NoteInput) => Promise<void>
   updateNote: (id: string, patch: NoteUpdate) => Promise<void>
   deleteNote: (id: string) => Promise<void>
-  insertPrompt: (text: string) => void
+  insertPrompt: (text: string, replace?: boolean) => void
   clearPendingInsert: () => void
   setNotePickerOpen: (open: boolean) => void
+  setCommandPalette: (open: boolean, query?: string, replace?: boolean) => void
   startNoteFromText: (text: string) => void
   clearNoteDraft: () => void
+
+  // Update check
+  checkForUpdates: () => Promise<void>
+  dismissUpdate: () => void
+
+  // Lineage
+  loadLineage: () => Promise<void>
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -301,6 +339,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   sessionState: null,
   sessionStats: null,
   sessionList: [],
+  forkMessages: [],
 
   messages: [],
   streamingContent: '',
@@ -335,6 +374,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   installedSkills: [],
 
+  customModels: null,
+  customModelsError: null,
+
   selectedFile: null,
 
   fileSearchOpen: false,
@@ -348,17 +390,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   notes: [],
   notePickerOpen: false,
+  commandPaletteOpen: false,
+  commandPaletteQuery: '',
+  commandPaletteReplace: true,
   pendingInsert: null,
   noteDraft: null,
+  updateInfo: null,
+  updateDismissed: false,
+
+  lineage: [],
 
   // ─── PI Lifecycle ─────────────────────────────────────────────────────
-
-  setPiStatus: (status) =>
-    set({
-      piStatus: status.status,
-      piPid: status.pid,
-      piError: status.error,
-    }),
 
   startPi: async (options) => {
     // Don't start if already running
@@ -529,20 +571,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         })
         return
       }
-      get().clearMessages()
-      get().refreshSessionState()
-      get().refreshSessionStats()
-      // Reload messages for the new session
-      const response = await window.piDesktop.session.getMessages()
-      if (response && typeof response === 'object') {
-        const resp = response as { success?: boolean; data?: { messages?: unknown[] } }
-        if (resp.success && resp.data?.messages) {
-          const loaded = (resp.data.messages as unknown[])
-            .map(parseAgentMessage)
-            .filter((m): m is DisplayMessage => m !== null)
-          set({ messages: loaded })
-        }
-      }
+      await get().reloadActiveSession()
     } catch (err) {
       get().addMessage({
         id: generateId(),
@@ -551,6 +580,23 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         timestamp: Date.now(),
       })
     }
+  },
+
+  reloadActiveSession: async () => {
+    get().clearMessages()
+    get().refreshSessionState()
+    get().refreshSessionStats()
+    const response = await window.piDesktop.session.getMessages()
+    if (response && typeof response === 'object') {
+      const resp = response as { success?: boolean; data?: { messages?: unknown[] } }
+      if (resp.success && resp.data?.messages) {
+        const loaded = (resp.data.messages as unknown[])
+          .map(parseAgentMessage)
+          .filter((m): m is DisplayMessage => m !== null)
+        set({ messages: loaded })
+      }
+    }
+    get().refreshSessionList()
   },
 
   refreshSessionState: async () => {
@@ -622,6 +668,29 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
+  loadForkMessages: async () => {
+    try {
+      const raw = await window.piDesktop.session.getForkMessages()
+      set({ forkMessages: normalizeForkMessages(raw) })
+    } catch {
+      set({ forkMessages: [] })
+    }
+  },
+
+  forkFrom: async (entryId) => {
+    const result = (await window.piDesktop.session.fork(entryId)) as { success?: boolean } | null
+    if (result?.success) {
+      await get().reloadActiveSession()
+    }
+  },
+
+  cloneBranch: async () => {
+    const result = (await window.piDesktop.session.clone()) as { success?: boolean } | null
+    if (result?.success) {
+      await get().reloadActiveSession()
+    }
+  },
+
   // ─── Model ────────────────────────────────────────────────────────────
 
   setModel: async (provider, modelId) => {
@@ -675,6 +744,18 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
+  compactContext: async () => {
+    try {
+      await window.piDesktop.session.compact()
+      // compaction_start/end events drive the chat system messages; refresh
+      // state + stats so the context-usage figures update afterwards.
+      get().refreshSessionState()
+      get().refreshSessionStats()
+    } catch {
+      // Silent failure
+    }
+  },
+
   // ─── UI ───────────────────────────────────────────────────────────────
 
   setCurrentView: (view) => set({ currentView: view }),
@@ -717,10 +798,20 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   loadCommands: async () => {
     try {
-      // Commands are loaded via RPC get_commands
-      set({ commands: [] })
+      const raw = await window.piDesktop.piCommands.list()
+      const commands: PiCommand[] = Array.isArray(raw)
+        ? raw
+            .filter((c): c is Record<string, unknown> => typeof c === 'object' && c !== null)
+            .map((c) => ({
+              name: String(c.name ?? ''),
+              description: String(c.description ?? ''),
+              source: typeof c.source === 'string' ? c.source : 'extension',
+            }))
+            .filter((c) => c.name.length > 0)
+        : []
+      set({ commands })
     } catch {
-      // Silent failure
+      set({ commands: [] })
     }
   },
 
@@ -855,6 +946,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           piPid: statusEvent.pid,
           piError: statusEvent.error,
         })
+        if (statusEvent.status === 'running') {
+          get().loadCommands()
+          get().loadSkills()
+        }
         break
       }
     }
@@ -1040,6 +1135,30 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
+  loadCustomModels: async () => {
+    try {
+      const result = await window.piDesktop.models.read()
+      if ('error' in result) {
+        set({ customModels: null, customModelsError: result.error })
+      } else {
+        set({ customModels: result.config, customModelsError: null })
+      }
+    } catch (err) {
+      set({ customModels: null, customModelsError: err instanceof Error ? err.message : String(err) })
+    }
+  },
+
+  saveCustomModels: async (edited) => {
+    const errors = validateModelsConfig(edited)
+    if (errors.length > 0) return { ok: false, errors }
+    const original = get().customModels ?? { providers: {} }
+    const merged = mergeModelsConfig(original, edited)
+    const result = await window.piDesktop.models.write(merged)
+    if (!result.success) return { ok: false, errors: [result.error ?? 'Write failed'] }
+    await get().loadCustomModels()
+    return { ok: true }
+  },
+
   setSelectedFile: (relativePath, path) => {
     set({ selectedFile: relativePath && path ? { relativePath, path } : null })
   },
@@ -1221,21 +1340,48 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     set((state) => ({ notes: state.notes.filter((n) => n.id !== id) }))
   },
 
-  insertPrompt: (text) =>
+  insertPrompt: (text, replace = false) =>
     set({
       currentView: 'chat',
       notePickerOpen: false,
-      pendingInsert: { text, nonce: Date.now() },
+      pendingInsert: { text, nonce: Date.now(), replace },
     }),
 
   clearPendingInsert: () => set({ pendingInsert: null }),
 
   setNotePickerOpen: (open) => set({ notePickerOpen: open }),
 
+  setCommandPalette: (open, query = '', replace = true) =>
+    set({ commandPaletteOpen: open, commandPaletteQuery: query, commandPaletteReplace: replace }),
+
   startNoteFromText: (text) =>
     set({ noteDraft: text, notePickerOpen: false, currentView: 'notes' }),
 
   clearNoteDraft: () => set({ noteDraft: null }),
+
+  // ─── Update check ─────────────────────────────────────────────────────
+
+  checkForUpdates: async () => {
+    try {
+      const info = await window.piDesktop.updates.check()
+      if (info.updateAvailable) set({ updateInfo: info, updateDismissed: false })
+    } catch {
+      // Silent — update check is best-effort
+    }
+  },
+
+  dismissUpdate: () => set({ updateDismissed: true }),
+
+  // ─── Lineage ──────────────────────────────────────────────────────────
+
+  loadLineage: async () => {
+    try {
+      const records = await window.piDesktop.session.getLineage()
+      set({ lineage: buildLineageTree(records) })
+    } catch {
+      set({ lineage: [] })
+    }
+  },
 }))
 
 // ─── Event Handlers ──────────────────────────────────────────────────────────

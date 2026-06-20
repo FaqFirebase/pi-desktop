@@ -23,11 +23,18 @@ export function ChatInput(): React.JSX.Element {
     const ta = textareaRef.current
     if (!ta) return
 
-    const start = ta.selectionStart ?? ta.value.length
-    const end = ta.selectionEnd ?? ta.value.length
-    ta.value = ta.value.slice(0, start) + pendingInsert.text + ta.value.slice(end)
-
-    const caret = start + pendingInsert.text.length
+    let caret: number
+    if (pendingInsert.replace) {
+      // Replace the whole composer (used by the slash palette, which fires
+      // only when the entire input is a "/..." query).
+      ta.value = pendingInsert.text
+      caret = pendingInsert.text.length
+    } else {
+      const start = ta.selectionStart ?? ta.value.length
+      const end = ta.selectionEnd ?? ta.value.length
+      ta.value = ta.value.slice(0, start) + pendingInsert.text + ta.value.slice(end)
+      caret = start + pendingInsert.text.length
+    }
     ta.focus()
     ta.setSelectionRange(caret, caret)
     ta.style.height = 'auto'
@@ -144,6 +151,12 @@ export function ChatInput(): React.JSX.Element {
             const target = e.currentTarget
             target.style.height = 'auto'
             target.style.height = `${Math.min(target.scrollHeight, MAX_INPUT_HEIGHT)}px`
+            const value = target.value
+            if (value.startsWith('/')) {
+              useAppStore.getState().setCommandPalette(true, value, true)
+            } else {
+              useAppStore.getState().setCommandPalette(false)
+            }
           }}
           onKeyDown={(e) => {
             if (e.ctrlKey && e.key === 'p') {

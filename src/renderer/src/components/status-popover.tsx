@@ -7,6 +7,7 @@ import {
   Cpu,
   Zap,
   Layers,
+  Minimize2,
   Puzzle,
   Brain,
   CheckCircle2,
@@ -49,6 +50,8 @@ export function StatusPopover(): React.JSX.Element {
   const sessionState = useAppStore((state) => state.sessionState)
   const sessionStats = useAppStore((state) => state.sessionStats)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
+  const compactContext = useAppStore((state) => state.compactContext)
+  const isCompacting = sessionState?.isCompacting ?? false
   const ref = useRef<HTMLDivElement>(null)
 
   // Load data when opened
@@ -239,6 +242,19 @@ export function StatusPopover(): React.JSX.Element {
                   label="Tokens"
                   value={`${((sessionStats.tokens.input + sessionStats.tokens.output) / 1000).toFixed(1)}k`}
                 />
+                <button
+                  onClick={() => compactContext()}
+                  disabled={isCompacting}
+                  className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-md bg-neutral-800 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Summarize and compact the conversation to free up context"
+                >
+                  {isCompacting ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Minimize2 size={12} />
+                  )}
+                  {isCompacting ? 'Compacting…' : 'Compact context'}
+                </button>
               </StatusSection>
             )}
 

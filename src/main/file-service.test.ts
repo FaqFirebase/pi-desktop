@@ -1,9 +1,41 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, mkdir } from 'fs/promises'
+import { test } from 'node:test'
+import { mkdtemp, writeFile, mkdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { buildNewFileDiff, FileService } from './file-service'
+import { buildNewFileDiff, FileService, isPathInsideWorkspace } from './file-service'
 import type { FileChangeEvent } from '../shared/ipc-contracts'
+
+// ─── Path-boundary guard ──────────────────────────────────────────────────
+
+test('isPathInsideWorkspace allows in-workspace relative and absolute paths', () => {
+  assert.equal(isPathInsideWorkspace('/work', 'src/a.ts'), true)
+  assert.equal(isPathInsideWorkspace('/work', '/work/src/a.ts'), true)
+})
+
+test('isPathInsideWorkspace rejects traversal and outside-absolute paths', () => {
+  assert.equal(isPathInsideWorkspace('/work', '../secret'), false)
+  assert.equal(isPathInsideWorkspace('/work', 'src/../../secret'), false)
+  assert.equal(isPathInsideWorkspace('/work', '/etc/passwd'), false)
+  assert.equal(isPathInsideWorkspace('/work', '/work'), false) // the root itself
+})
+
+test('readFileContent reads inside the workspace but refuses traversal', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pi-fs-read-'))
+  await writeFile(join(dir, 'ok.txt'), 'inside')
+  const service = new FileService(dir)
+  assert.equal(await service.readFileContent('ok.txt'), 'inside')
+  await assert.rejects(() => service.readFileContent('../../../etc/passwd'), /outside the active workspace/)
+  await assert.rejects(() => service.readFileContent('/etc/passwd'), /outside the active workspace/)
+})
+
+test('writeFileContent writes inside the workspace but refuses traversal', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pi-fs-write-'))
+  const service = new FileService(dir)
+  await service.writeFileContent('out.txt', 'data')
+  assert.equal(await readFile(join(dir, 'out.txt'), 'utf-8'), 'data')
+  await assert.rejects(() => service.writeFileContent('../escape.txt', 'x'), /outside the active workspace/)
+})
 
 const diff = buildNewFileDiff('TEST.md', '# Test\n\nHello\n')
 
@@ -75,6 +107,5 @@ async function testWatcherIgnoresHeavyDirs(): Promise<void> {
   assert.equal(events.length, 0, 'changes under node_modules must not emit events')
 }
 
-await testWatcherEmitsOnChange()
-await testWatcherIgnoresHeavyDirs()
-console.log('file-service watcher tests passed')
+test('watcher emits a debounced change event', testWatcherEmitsOnChange)
+test('watcher ignores heavy dirs like node_modules', testWatcherIgnoresHeavyDirs)

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useAppStore } from '../store'
 import type { TimelineEvent as StoreTimelineEvent } from '../../../shared/ipc-contracts'
 import { clsx } from 'clsx'
@@ -12,14 +13,78 @@ import {
   Loader2,
   Trash2,
   Clock,
+  GitFork,
+  GitBranch,
+  Copy,
 } from 'lucide-react'
+import type { LineageNode } from '../../../shared/session-lineage'
 
 export function Timeline(): React.JSX.Element {
   const timelineEvents = useAppStore((state) => state.timelineEvents)
   const clearTimeline = useAppStore((state) => state.clearTimeline)
+  const forkMessages = useAppStore((state) => state.forkMessages)
+  const loadForkMessages = useAppStore((state) => state.loadForkMessages)
+  const forkFrom = useAppStore((state) => state.forkFrom)
+  const cloneBranch = useAppStore((state) => state.cloneBranch)
+  const loadLineage = useAppStore((state) => state.loadLineage)
+  const lineage = useAppStore((state) => state.lineage)
+  const currentSessionFile = useAppStore((state) => state.sessionState?.sessionFile ?? null)
+  const switchSession = useAppStore((state) => state.switchSession)
+
+  useEffect(() => {
+    loadForkMessages()
+    loadLineage()
+  }, [loadForkMessages, loadLineage])
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Branches */}
+      <div className="border-b border-neutral-800 px-4 py-3">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <GitFork size={15} className="text-neutral-400" />
+            <h3 className="text-sm font-medium text-neutral-200">Branches</h3>
+          </div>
+          <button
+            onClick={() => cloneBranch()}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
+            title="Clone the current branch into a new session"
+          >
+            <Copy size={12} />
+            Clone branch
+          </button>
+        </div>
+        {forkMessages.length === 0 ? (
+          <p className="text-xs text-neutral-600">No earlier messages to fork from.</p>
+        ) : (
+          <div className="space-y-1">
+            {forkMessages.map((fp) => (
+              <div
+                key={fp.entryId}
+                className="group flex items-center gap-2 rounded px-2 py-1.5 hover:bg-neutral-800/50"
+              >
+                <span className="line-clamp-1 flex-1 text-xs text-neutral-400">{fp.text}</span>
+                <button
+                  onClick={() => forkFrom(fp.entryId)}
+                  className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[11px] text-neutral-500 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-neutral-700 hover:text-neutral-200"
+                  title="Fork a new session from this message"
+                >
+                  <GitFork size={11} />
+                  Fork
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {lineage.length > 0 && (
+          <div className="mt-3 border-t border-neutral-800 pt-2">
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-600">
+              Session tree
+            </div>
+            <LineageTree nodes={lineage} currentPath={currentSessionFile} onSwitch={switchSession} />
+          </div>
+        )}
+      </div>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
         <div className="flex items-center gap-2">
@@ -170,4 +235,46 @@ function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
   return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`
+}
+
+function LineageTree({
+  nodes,
+  depth = 0,
+  currentPath,
+  onSwitch,
+}: {
+  nodes: LineageNode[]
+  depth?: number
+  currentPath: string | null
+  onSwitch: (path: string) => void
+}): React.JSX.Element {
+  return (
+    <div className="space-y-0.5">
+      {nodes.map((node) => (
+        <div key={node.path}>
+          <button
+            onClick={() => onSwitch(node.path)}
+            style={{ paddingLeft: `${depth * 14 + 8}px` }}
+            className={clsx(
+              'flex w-full items-center gap-2 rounded py-1 pr-2 text-left text-xs transition-colors',
+              node.path === currentPath
+                ? 'bg-blue-900/30 text-blue-300'
+                : 'text-neutral-400 hover:bg-neutral-800/50'
+            )}
+          >
+            <GitBranch size={11} className="shrink-0 text-neutral-600" />
+            <span className="truncate">{node.name ?? node.sessionId.slice(0, 8)}</span>
+          </button>
+          {node.children.length > 0 && (
+            <LineageTree
+              nodes={node.children}
+              depth={depth + 1}
+              currentPath={currentPath}
+              onSwitch={onSwitch}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  )
 }

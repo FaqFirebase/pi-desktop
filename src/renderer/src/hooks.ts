@@ -7,20 +7,14 @@ import { useAppStore } from './store'
  */
 export function usePiEvents(): void {
   const handlePiEvent = useAppStore((state) => state.handlePiEvent)
-  const setPiStatus = useAppStore((state) => state.setPiStatus)
 
   useEffect(() => {
-    // Subscribe to PI events
+    // Subscribe to PI events (status changes arrive here too, as 'status_change').
     const unsubscribeEvent = window.piDesktop.onEvent(handlePiEvent)
-
-    // Subscribe to status changes
-    const unsubscribeStatus = window.piDesktop.onStatusChange(setPiStatus)
-
     return () => {
       unsubscribeEvent()
-      unsubscribeStatus()
     }
-  }, [handlePiEvent, setPiStatus])
+  }, [handlePiEvent])
 }
 
 /**
@@ -140,6 +134,8 @@ export function useInitialize(): void {
       await useAppStore.getState().loadTags()
       await useAppStore.getState().loadArchivedSessions()
       await useAppStore.getState().loadNotes()
+      // Best-effort GitHub release check (non-blocking).
+      void useAppStore.getState().checkForUpdates()
 
       if (openToHome) {
         // Land on the Home/launcher screen; PI starts lazily on first action.

@@ -39,6 +39,8 @@ export const IPC_CHANNELS = {
   SESSION_ARCHIVE: 'session:archive',
   SESSION_UNARCHIVE: 'session:unarchive',
   SESSION_LIST_ARCHIVED: 'session:list-archived',
+  SESSION_GET_LINEAGE: 'session:get-lineage',
+  SESSION_COMPACT: 'session:compact',
 
   // Model management
   MODEL_SET: 'model:set',
@@ -63,6 +65,7 @@ export const IPC_CHANNELS = {
   SYSTEM_GET_PATH: 'system:get-path',
   SYSTEM_OPEN_EXTERNAL: 'system:open-external',
   SYSTEM_GET_VERSION: 'system:get-version',
+  UPDATE_CHECK: 'update:check',
 
   // Workspaces
   WORKSPACE_LIST: 'workspace:list',
@@ -85,6 +88,10 @@ export const IPC_CHANNELS = {
   SKILLS_LIST: 'skills:list',
   COMMANDS_LIST: 'commands:list',
   MCP_SERVERS_LIST: 'mcp:servers-list',
+
+  // Models config
+  MODELS_READ: 'models:read',
+  MODELS_WRITE: 'models:write',
 
   // File operations
   FILE_TREE: 'file:tree',
@@ -426,6 +433,13 @@ export interface SessionDeleteResult {
 
 export type ArchivedSessionsMap = Record<string, number>
 
+export type { SessionLineageRecord } from './session-lineage'
+export type { ModelsConfig, ProviderConfig, CustomModel } from './models-config'
+
+import type { ModelsConfig as ModelsConfigType } from './models-config'
+/** Result of the MODELS_READ IPC call. */
+export type ModelsReadResult = { config: ModelsConfigType } | { error: string; raw: string }
+
 // ─── Agent Message Types ────────────────────────────────────────────────────
 
 export interface AgentTextContent {
@@ -518,6 +532,19 @@ export interface AppSettings {
   // Show the Home/launcher screen on launch (PI starts lazily on first action)
   // instead of booting straight into Chat. When false, legacy behavior applies.
   openToHomeOnLaunch: boolean
+}
+
+// ─── Update Check Types ─────────────────────────────────────────────────────
+
+/** Result of checking GitHub releases for a newer version. */
+export interface UpdateCheckResult {
+  updateAvailable: boolean
+  currentVersion: string
+  latestVersion: string
+  // Release page URL to open for downloading; empty when the check failed.
+  url: string
+  // Release name/title, when available.
+  name?: string
 }
 
 // ─── Workspace Types ────────────────────────────────────────────────────────

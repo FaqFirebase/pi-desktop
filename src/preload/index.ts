@@ -21,6 +21,10 @@ import type {
   Note,
   NoteInput,
   NoteUpdate,
+  UpdateCheckResult,
+  SessionLineageRecord,
+  ModelsConfig,
+  ModelsReadResult,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 
@@ -63,6 +67,8 @@ interface PiDesktopAPI {
     archive(sessionId: string): Promise<ArchivedSessionsMap>
     unarchive(sessionId: string): Promise<ArchivedSessionsMap>
     listArchived(): Promise<ArchivedSessionsMap>
+    getLineage(): Promise<SessionLineageRecord[]>
+    compact(customInstructions?: string): Promise<unknown>
   }
 
   // Model management
@@ -106,6 +112,12 @@ interface PiDesktopAPI {
     fetchCatalog(query?: string, page?: number): Promise<CatalogPackage[]>
   }
 
+  // Models config (read/write ~/.pi/agent/models.json)
+  models: {
+    read(): Promise<ModelsReadResult>
+    write(config: ModelsConfig): Promise<{ success: boolean; error?: string }>
+  }
+
   // Skills, Commands, MCP, Tags
   skills: {
     list(): Promise<InstalledSkill[]>
@@ -147,7 +159,6 @@ interface PiDesktopAPI {
     getStagedDiff(filePath?: string): Promise<string>
     getGitStatus(): Promise<Record<string, GitFileStatus>>
     getGitBranch(): Promise<string | null>
-    isTextFile(path: string): boolean
   }
 
   // System
@@ -156,6 +167,11 @@ interface PiDesktopAPI {
     getPath(name: string): Promise<string>
     openExternal(url: string): Promise<void>
     getVersion(): Promise<string>
+  }
+
+  // Update check (GitHub releases)
+  updates: {
+    check(): Promise<UpdateCheckResult>
   }
 
   terminal: {
@@ -177,7 +193,6 @@ interface PiDesktopAPI {
 
   // Event subscription
   onEvent(callback: (event: PiRpcEvent) => void): () => void
-  onStatusChange(callback: (status: PiStatus) => void): () => void
   onFileChange(callback: (event: FileChangeEvent) => void): () => void
   onMenuAction(callback: (action: string) => void): () => void
 }
@@ -214,6 +229,8 @@ const api: PiDesktopAPI = {
     setName: (name) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SET_NAME, name),
     exportHtml: (outputPath) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_EXPORT_HTML, outputPath),
     getForkMessages: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_FORK_MESSAGES),
+    getLineage: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_LINEAGE),
+    compact: (customInstructions) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_COMPACT, customInstructions),
     delete: (sessionPath) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_DELETE, sessionPath),
     archive: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_ARCHIVE, sessionId),
     unarchive: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_UNARCHIVE, sessionId),
@@ -256,6 +273,11 @@ const api: PiDesktopAPI = {
     fetchCatalog: (query, page) => ipcRenderer.invoke(IPC_CHANNELS.PACKAGE_CATALOG_FETCH, query, page),
   },
 
+  models: {
+    read: () => ipcRenderer.invoke(IPC_CHANNELS.MODELS_READ),
+    write: (config) => ipcRenderer.invoke(IPC_CHANNELS.MODELS_WRITE, config),
+  },
+
   skills: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.SKILLS_LIST),
   },
@@ -294,7 +316,6 @@ const api: PiDesktopAPI = {
     getStagedDiff: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE_STAGED_DIFF, filePath),
     getGitStatus: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_STATUS),
     getGitBranch: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_BRANCH),
-    isTextFile: (_path) => true, // Checked on main side
   },
 
   system: {
@@ -302,6 +323,10 @@ const api: PiDesktopAPI = {
     getPath: (name) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_PATH, name),
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, url),
     getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_VERSION),
+  },
+
+  updates: {
+    check: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK),
   },
 
   terminal: {
@@ -333,14 +358,6 @@ const api: PiDesktopAPI = {
     ipcRenderer.on(IPC_CHANNELS.EVENT_PI, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.EVENT_PI, handler)
-    }
-  },
-
-  onStatusChange: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, data: PiStatus) => callback(data)
-    ipcRenderer.on('pi:status-change', handler)
-    return () => {
-      ipcRenderer.removeListener('pi:status-change', handler)
     }
   },
 

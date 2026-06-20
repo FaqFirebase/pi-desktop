@@ -266,7 +266,11 @@ export class PiRpcManager extends EventEmitter {
     return {
       status: this.status,
       pid: this.process?.pid ?? null,
-      error: this.stderrBuffer || null,
+      // Only report captured stderr as an error when we're actually in the
+      // 'error' state. PI and its extensions (e.g. pi-ollama) log benign,
+      // informational lines to stderr while running — surfacing those as an
+      // error misleads the UI into showing healthy startup logs as ERROR.
+      error: this.status === 'error' ? (this.stderrBuffer || null) : null,
     }
   }
 

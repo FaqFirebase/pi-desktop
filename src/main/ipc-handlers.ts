@@ -16,8 +16,12 @@ import type {
   NoteInput,
   NoteUpdate,
   NoteScope,
+  UpdateCheckResult,
+  ModelsConfig,
+  ModelsReadResult,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
+import type { SessionLineageRecord } from '../shared/session-lineage'
 import { readdir, stat, readFile, writeFile, mkdir, access, unlink } from 'fs/promises'
 import { basename, join } from 'path'
 import { existsSync } from 'fs'
@@ -197,6 +201,82 @@ async function deleteSessionFile(sessionPath: string): Promise<SessionDeleteResu
       method: 'unlink',
       error: err instanceof Error ? err.message : String(err),
     }
+  }
+}
+
+const UPDATE_REPO = 'FaqFirebase/pi-desktop'
+const UPDATE_CHECK_TIMEOUT_MS = 8000
+
+interface GithubRelease {
+  tag_name: string
+  html_url: string
+  name: string | null
+  draft: boolean
+  prerelease: boolean
+}
+
+/** Parse a version like "0.0.5-alpha" into numeric core + prerelease tag. */
+function parseVersion(version: string): { core: number[]; pre: string } {
+  const clean = version.replace(/^v/, '').trim()
+  const [core, pre = ''] = clean.split('-')
+  const nums = core.split('.').map((n) => parseInt(n, 10) || 0)
+  while (nums.length < 3) nums.push(0)
+  return { core: nums.slice(0, 3), pre }
+}
+
+/**
+ * True when `latest` is a newer version than `current`. Handles the project's
+ * `x.y.z-prerelease` scheme: a release with no prerelease tag outranks one with
+ * the same core that has a tag; two prerelease tags compare lexically
+ * (alpha < beta < rc).
+ */
+function isNewerVersion(latest: string, current: string): boolean {
+  const a = parseVersion(latest)
+  const b = parseVersion(current)
+  for (let i = 0; i < 3; i++) {
+    if (a.core[i] !== b.core[i]) return a.core[i] > b.core[i]
+  }
+  if (a.pre === b.pre) return false
+  if (!a.pre) return true
+  if (!b.pre) return false
+  return a.pre > b.pre
+}
+
+/** Check GitHub releases (including prereleases) for a version newer than this build. */
+async function checkForUpdate(): Promise<UpdateCheckResult> {
+  const currentVersion = app.getVersion()
+  const noUpdate: UpdateCheckResult = { updateAvailable: false, currentVersion, latestVersion: currentVersion, url: '' }
+
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS)
+    const res = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases?per_page=10`, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'PI-Desktop' },
+      signal: controller.signal,
+    })
+    clearTimeout(timer)
+    if (!res.ok) return noUpdate
+
+    const releases = (await res.json()) as GithubRelease[]
+    const published = releases.filter((r) => !r.draft)
+    if (published.length === 0) return noUpdate
+
+    // Pick the highest version among published releases (not just newest by date).
+    let latest = published[0]
+    for (const r of published) {
+      if (isNewerVersion(r.tag_name.replace(/^v/, ''), latest.tag_name.replace(/^v/, ''))) latest = r
+    }
+
+    const latestVersion = latest.tag_name.replace(/^v/, '')
+    return {
+      updateAvailable: isNewerVersion(latestVersion, currentVersion),
+      currentVersion,
+      latestVersion,
+      url: latest.html_url,
+      name: latest.name ?? latest.tag_name,
+    }
+  } catch {
+    return noUpdate
   }
 }
 
@@ -458,6 +538,18 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     return archivedSessions.getAll()
   })
 
+  ipcMain.handle(IPC_CHANNELS.SESSION_GET_LINEAGE, async () => {
+    return readSessionLineage()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_COMPACT, async (_event, customInstructions?: unknown) => {
+    const cmd: Record<string, unknown> = { type: 'compact' }
+    if (isString(customInstructions) && customInstructions.length > 0) {
+      cmd.customInstructions = customInstructions
+    }
+    return getActivePi().sendCommand(cmd)
+  })
+
   // ─── Model Management ───────────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.MODEL_SET, async (_event, provider: unknown, modelId: unknown) => {
@@ -609,6 +701,45 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   ipcMain.handle(IPC_CHANNELS.MCP_SERVERS_LIST, async () => {
     const ws = workspaceManager.getActiveWorkspace()
     return listMcpServers(ws?.path)
+  })
+
+  // ─── Models Config ──────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.MODELS_READ, async (): Promise<ModelsReadResult> => {
+    const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
+    const file = join(homeDir, '.pi', 'agent', 'models.json')
+    if (!existsSync(file)) return { config: { providers: {} } }
+    let raw: string
+    try {
+      raw = await readFile(file, 'utf-8')
+    } catch (err) {
+      return { error: `Could not read models.json: ${err instanceof Error ? err.message : String(err)}`, raw: '' }
+    }
+    try {
+      const parsed = JSON.parse(raw) as ModelsConfig
+      if (typeof parsed !== 'object' || parsed === null || typeof parsed.providers !== 'object') {
+        return { error: 'models.json is not a valid models config (missing "providers")', raw }
+      }
+      return { config: parsed }
+    } catch (err) {
+      return { error: `models.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`, raw }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.MODELS_WRITE, async (_event, config: unknown): Promise<{ success: boolean; error?: string }> => {
+    if (typeof config !== 'object' || config === null || typeof (config as ModelsConfig).providers !== 'object') {
+      return { success: false, error: 'Invalid models config' }
+    }
+    const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
+    const dir = join(homeDir, '.pi', 'agent')
+    const file = join(dir, 'models.json')
+    try {
+      if (!existsSync(dir)) await mkdir(dir, { recursive: true })
+      await writeFile(file, JSON.stringify(config, null, 2) + '\n', 'utf-8')
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   // ─── Session Tags ───────────────────────────────────────────────────────
@@ -792,6 +923,10 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
 
   ipcMain.handle(IPC_CHANNELS.SYSTEM_GET_VERSION, async () => {
     return app.getVersion()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK, async (): Promise<UpdateCheckResult> => {
+    return checkForUpdate()
   })
 
   // ─── Extension UI Responses ─────────────────────────────────────────────
@@ -1223,6 +1358,51 @@ async function fetchPackageCatalog(query?: string, page = 0): Promise<CatalogPac
   } catch {
     return []
   }
+}
+
+// ─── Session Lineage Reader ──────────────────────────────────────────────────
+
+async function readSessionLineage(): Promise<SessionLineageRecord[]> {
+  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
+  const sessionsDir = join(homeDir, '.pi', 'agent', 'sessions')
+  const records: SessionLineageRecord[] = []
+  if (!existsSync(sessionsDir)) return records
+
+  let projectDirs: string[]
+  try {
+    const entries = await readdir(sessionsDir, { withFileTypes: true })
+    projectDirs = entries.filter((e) => e.isDirectory()).map((e) => join(sessionsDir, e.name))
+  } catch {
+    return records
+  }
+
+  for (const dir of projectDirs) {
+    let files: string[]
+    try {
+      files = (await readdir(dir)).filter((f) => f.endsWith('.jsonl'))
+    } catch {
+      continue
+    }
+    for (const file of files) {
+      const full = join(dir, file)
+      try {
+        const content = await readFile(full, 'utf-8')
+        const newlineIdx = content.indexOf('\n')
+        const firstLine = newlineIdx === -1 ? content : content.slice(0, newlineIdx)
+        const header = JSON.parse(firstLine) as Record<string, unknown>
+        if (header.type !== 'session' || typeof header.id !== 'string') continue
+        records.push({
+          sessionId: header.id,
+          path: full,
+          name: typeof header.cwd === 'string' ? header.cwd.split('/').pop() ?? null : null,
+          parentPath: typeof header.parentSession === 'string' ? header.parentSession : null,
+        })
+      } catch {
+        // Skip unreadable / malformed session files.
+      }
+    }
+  }
+  return records
 }
 
 // ─── Skills Listing ──────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import {
   Zap,
   DollarSign,
   Layers,
+  Minimize2,
   Settings,
   Loader2,
   ChevronUp,
@@ -28,6 +29,8 @@ export function StatusBar(): React.JSX.Element {
   const toggleTerminal = useAppStore((state) => state.toggleTerminal)
   const terminalOpen = useAppStore((state) => state.terminalOpen)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
+  const compactContext = useAppStore((state) => state.compactContext)
+  const isCompacting = useAppStore((state) => state.sessionState?.isCompacting ?? false)
 
   return (
     <div className="flex h-7 items-center justify-between border-t border-neutral-800 bg-neutral-950 px-3 text-xs">
@@ -88,6 +91,23 @@ export function StatusBar(): React.JSX.Element {
                 : '?'}
             </span>
           </div>
+        )}
+
+        {/* Compact context */}
+        {sessionStats?.contextUsage && (
+          <button
+            onClick={() => compactContext()}
+            disabled={isCompacting}
+            className="flex items-center gap-1 text-neutral-500 hover:text-neutral-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title="Compact context — summarize the conversation to free up space"
+          >
+            {isCompacting ? (
+              <Loader2 size={10} className="animate-spin" />
+            ) : (
+              <Minimize2 size={10} />
+            )}
+            <span>{isCompacting ? 'compacting…' : 'compact'}</span>
+          </button>
         )}
 
         {/* Cost */}

@@ -5,6 +5,7 @@ import { Settings, Save, RotateCcw, FolderOpen, Check } from 'lucide-react'
 import { DEFAULT_PERMISSION_MODE } from './permission-mode'
 import { PermissionSelector } from './permission-selector'
 import { applyTheme } from '../utils/theme'
+import { CustomModelsEditor } from './custom-models-editor'
 
 export function SettingsPanel(): React.JSX.Element {
   const settings = useAppStore((state) => state.settings)
@@ -206,6 +207,11 @@ export function SettingsPanel(): React.JSX.Element {
           >
             <Toggle checked={resumeLastSession} onChange={setResumeLastSession} />
           </SettingsRow>
+        </SettingsSection>
+
+        {/* Custom Models */}
+        <SettingsSection title="Custom Models">
+          <CustomModelsEditor />
         </SettingsSection>
 
         {/* Actions */}

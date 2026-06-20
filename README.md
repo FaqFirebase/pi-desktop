@@ -9,6 +9,9 @@ Still in alpha — expect rough edges.
 ## What it does
 
 - Streaming chat with thinking blocks and tool use
+- Command palette (`Ctrl/Cmd+K` or `/`) — run skills, prompt templates, and built-in commands
+- Skills browser, session fork/branch tree, and one-click context compaction
+- Custom models & providers editor (Settings) — edits `~/.pi/agent/models.json`
 - Multiple workspaces, each with its own PI process and sessions
 - Review rail with permissions, approvals, changed files, and session status
 - File tree, code editor (CodeMirror 6 with syntax highlighting), diff viewer, file search
@@ -76,6 +79,8 @@ Download from [Releases](https://github.com/FaqFirebase/pi-desktop/releases): th
 | `Enter` | Send message |
 | `Shift+Enter` | New line |
 | `Escape` | Stop streaming |
+| `Ctrl/Cmd+K` | Open command palette |
+| `/` (start of message) | Open command palette |
 | `Ctrl+P` | Cycle model |
 | `Ctrl+Shift+F` | File search |
 | `Ctrl+Shift+P` | Insert saved note |
