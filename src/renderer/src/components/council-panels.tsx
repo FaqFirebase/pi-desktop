@@ -1,4 +1,5 @@
 import React from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useAppStore } from '../store'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -26,7 +27,10 @@ export function CouncilPanels(): React.JSX.Element | null {
 
   const consulting = run?.phase === 'consulting'
   const startedAt = run?.startedAt
+  const phase = run?.phase
   const [elapsed, setElapsed] = React.useState(0)
+  const [collapsed, setCollapsed] = React.useState(false)
+
   React.useEffect(() => {
     if (!consulting || !startedAt) {
       setElapsed(0)
@@ -38,58 +42,82 @@ export function CouncilPanels(): React.JSX.Element | null {
     return () => clearInterval(interval)
   }, [consulting, startedAt])
 
+  // Expand while consultants stream; collapse once a plan is ready so the
+  // consensus output below stays readable. The user can still toggle manually.
+  React.useEffect(() => {
+    if (phase === 'consulting') setCollapsed(false)
+    else if (phase === 'awaiting-approval') setCollapsed(true)
+  }, [phase])
+
   if (!run) return null
+
+  const awaiting = run.phase === 'awaiting-approval'
 
   return (
     <div className="my-2 rounded-lg border border-neutral-700 bg-neutral-900/60 p-3">
-      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">
-        Council planning — {run.phase}
-        {consulting && startedAt ? <span className="ml-1 text-neutral-500">({formatElapsed(elapsed)})</span> : null}
-      </div>
+      <button
+        type="button"
+        onClick={() => setCollapsed((c) => !c)}
+        className="flex w-full items-center gap-1 text-xs font-medium uppercase tracking-wide text-neutral-400 hover:text-neutral-200"
+      >
+        {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+        <span>Council planning — {run.phase}</span>
+        {consulting && startedAt ? <span className="text-neutral-500">({formatElapsed(elapsed)})</span> : null}
+        {collapsed && run.results.length > 0 ? (
+          <span className="ml-2 normal-case text-neutral-500">
+            {run.results.map((r) => `${AGENT_LABEL[r.id] ?? r.id} ${r.status === 'contributed' ? '✓' : '✕'}`).join(' · ')}
+          </span>
+        ) : null}
+      </button>
 
-      {run.phase === 'refused' && <div className="text-sm text-amber-400">{run.reason}</div>}
+      {!collapsed && (
+        <div className="mt-2">
+          {run.phase === 'refused' && <div className="text-sm text-amber-400">{run.reason}</div>}
 
-      {/* Live streaming view while consultants are working. */}
-      {run.phase === 'consulting' && (run.members?.length ?? 0) > 0 && (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {run.members!.map((id) => {
-            const text = run.partials?.[id] ?? ''
-            return (
-              <div key={id} className="rounded border border-neutral-800 bg-neutral-950 p-2">
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="text-sm text-neutral-200">{AGENT_LABEL[id] ?? id}</span>
-                  <span className="text-xs text-blue-400">{text ? 'streaming…' : 'working…'}</span>
-                </div>
-                <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-xs text-neutral-400">
-                  {text}
-                </pre>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {run.results.length > 0 && (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {run.results.map((r) => (
-            <div key={r.id} className="rounded border border-neutral-800 bg-neutral-950 p-2">
-              <div className="mb-1 flex items-center justify-between">
-                <span className="text-sm text-neutral-200">{AGENT_LABEL[r.id] ?? r.id}</span>
-                <span
-                  className={`text-xs ${r.status === 'contributed' ? 'text-green-400' : 'text-amber-400'}`}
-                >
-                  {STATUS_LABEL[r.status]}
-                </span>
-              </div>
-              <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-xs text-neutral-400">
-                {r.plan ?? r.error ?? ''}
-              </pre>
+          {/* Live streaming view while consultants are working. */}
+          {run.phase === 'consulting' && (run.members?.length ?? 0) > 0 && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {run.members!.map((id) => {
+                const text = run.partials?.[id] ?? ''
+                return (
+                  <div key={id} className="rounded border border-neutral-800 bg-neutral-950 p-2">
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className="text-sm text-neutral-200">{AGENT_LABEL[id] ?? id}</span>
+                      <span className="text-xs text-blue-400">{text ? 'streaming…' : 'working…'}</span>
+                    </div>
+                    <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-xs text-neutral-400">
+                      {text}
+                    </pre>
+                  </div>
+                )
+              })}
             </div>
-          ))}
+          )}
+
+          {run.results.length > 0 && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {run.results.map((r) => (
+                <div key={r.id} className="rounded border border-neutral-800 bg-neutral-950 p-2">
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-sm text-neutral-200">{AGENT_LABEL[r.id] ?? r.id}</span>
+                    <span
+                      className={`text-xs ${r.status === 'contributed' ? 'text-green-400' : 'text-amber-400'}`}
+                    >
+                      {STATUS_LABEL[r.status]}
+                    </span>
+                  </div>
+                  <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-xs text-neutral-400">
+                    {r.plan ?? r.error ?? ''}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {run.phase === 'awaiting-approval' && (
+      {/* Approval controls stay visible even when the cards are collapsed. */}
+      {awaiting && (
         <div className="mt-3 flex justify-end gap-2">
           <button
             className="rounded px-3 py-1 text-sm text-neutral-300 hover:bg-neutral-800"
