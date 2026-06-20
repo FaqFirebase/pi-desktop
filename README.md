@@ -9,6 +9,7 @@ Still in alpha — expect rough edges.
 ## What it does
 
 - Streaming chat with thinking blocks and tool use
+- [Multi-Agent Council Planning](#multi-agent-council-planning) — PI, Claude, and Codex plan together and reach consensus before PI builds (opt-in)
 - Command palette (`Ctrl/Cmd+K` or `/`) — run skills, prompt templates, and built-in commands
 - Skills browser, session fork/branch tree, and one-click context compaction
 - Custom models & providers editor (Settings) — edits `~/.pi/agent/models.json`
