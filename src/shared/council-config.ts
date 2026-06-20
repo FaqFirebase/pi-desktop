@@ -87,3 +87,75 @@ export function resolveActiveMembers(
 export function hasQuorum(results: ConsultantResult[]): boolean {
   return results.some((r) => r.status === 'contributed')
 }
+
+const AGENT_LABELS: Record<CouncilAgentId, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+}
+
+/** Prompt sent to each consultant: produce a plan, change nothing. */
+export function buildConsultantPrompt(request: string): string {
+  return [
+    'You are a planning consultant. Read the project if helpful, but DO NOT modify, edit, write, or create any files.',
+    'Produce a concise, concrete implementation plan for the request below: key files, structure, and steps.',
+    'Output ONLY the plan.',
+    '',
+    'REQUEST:',
+    request,
+  ].join('\n')
+}
+
+/** Prompt sent to PI (arbiter) to merge contributed consultant plans into one. */
+export function buildConsensusPrompt(request: string, results: ConsultantResult[]): string {
+  const sections = results
+    .filter((r) => r.status === 'contributed' && r.plan)
+    .map((r) => `### Plan from ${AGENT_LABELS[r.id]}\n${r.plan}`)
+    .join('\n\n')
+  return [
+    'You are the arbiter and the builder. Several agents proposed plans for the request below.',
+    'Synthesize them into ONE consensus implementation plan you endorse, noting any tradeoffs you resolved.',
+    'Output ONLY the consensus plan. DO NOT implement, build, or write any files yet — wait for approval.',
+    '',
+    'REQUEST:',
+    request,
+    '',
+    'PROPOSED PLANS:',
+    sections,
+  ].join('\n')
+}
+
+/** Prompt for the optional debate round: revise own plan given the others'. */
+export function buildDebatePrompt(
+  request: string,
+  _self: CouncilAgentId,
+  others: ConsultantResult[],
+): string {
+  const sections = others
+    .filter((r) => r.status === 'contributed' && r.plan)
+    .map((r) => `### Plan from ${AGENT_LABELS[r.id]}\n${r.plan}`)
+    .join('\n\n')
+  return [
+    "Here are other agents' plans for the same request. Critique them and revise YOUR plan accordingly.",
+    'DO NOT modify, edit, or write any files. Output ONLY your revised plan.',
+    '',
+    'REQUEST:',
+    request,
+    '',
+    'OTHER PLANS:',
+    sections,
+  ].join('\n')
+}
+
+/** Spawn argv for a consultant in read-only mode. Flags verified per CLI. */
+export function buildConsultantCommand(
+  id: CouncilAgentId,
+  executable: string,
+  prompt: string,
+): { file: string; args: string[] } {
+  switch (id) {
+    case 'claude':
+      return { file: executable, args: ['-p', prompt, '--permission-mode', 'plan'] }
+    case 'codex':
+      return { file: executable, args: ['exec', '--sandbox', 'read-only', prompt] }
+  }
+}

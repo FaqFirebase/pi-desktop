@@ -37,7 +37,6 @@ test('flags unknown consensus mode', () => {
 import {
   resolveActiveMembers,
   hasQuorum,
-  type MemberResolution,
   type ConsultantResult,
 } from './council-config'
 
@@ -93,3 +92,61 @@ test('hasQuorum false when none contributed', () => {
 function DEFAULT_COUNCIL_CONFIG_ENABLED(): CouncilConfig {
   return { ...DEFAULT_COUNCIL_CONFIG, enabled: true, members: { claude: true, codex: true } }
 }
+
+import {
+  buildConsultantPrompt,
+  buildConsensusPrompt,
+  buildDebatePrompt,
+  buildConsultantCommand,
+} from './council-config'
+
+test('consultant prompt forbids edits and embeds request', () => {
+  const p = buildConsultantPrompt('Build a gallery site')
+  assert.ok(p.includes('Build a gallery site'))
+  assert.ok(/do not (modify|edit|change|write)/i.test(p))
+  assert.ok(/plan/i.test(p))
+})
+
+test('consensus prompt includes request and every contributed plan, labeled', () => {
+  const results: ConsultantResult[] = [
+    { id: 'claude', status: 'contributed', plan: 'CLAUDE PLAN TEXT' },
+    { id: 'codex', status: 'contributed', plan: 'CODEX PLAN TEXT' },
+    { id: 'claude', status: 'errored', error: 'ignored' },
+  ]
+  const p = buildConsensusPrompt('Original request', results)
+  assert.ok(p.includes('Original request'))
+  assert.ok(p.includes('CLAUDE PLAN TEXT'))
+  assert.ok(p.includes('CODEX PLAN TEXT'))
+  assert.ok(p.toLowerCase().includes('claude'))
+  assert.ok(p.toLowerCase().includes('codex'))
+  assert.ok(/do not (implement|start|build|write)/i.test(p))
+})
+
+test('consensus prompt excludes non-contributed plans', () => {
+  const results: ConsultantResult[] = [
+    { id: 'claude', status: 'contributed', plan: 'KEPT' },
+    { id: 'codex', status: 'timed-out' },
+  ]
+  const p = buildConsensusPrompt('req', results)
+  assert.ok(p.includes('KEPT'))
+  assert.ok(!p.includes('timed-out'))
+})
+
+test('debate prompt shows other plans and asks for a revision', () => {
+  const others: ConsultantResult[] = [{ id: 'codex', status: 'contributed', plan: 'OTHER PLAN' }]
+  const p = buildDebatePrompt('req', 'claude', others)
+  assert.ok(p.includes('OTHER PLAN'))
+  assert.ok(/revis|critiq/i.test(p))
+})
+
+test('consultant command uses read-only flags per agent', () => {
+  const claude = buildConsultantCommand('claude', '/usr/bin/claude', 'PROMPT')
+  assert.equal(claude.file, '/usr/bin/claude')
+  assert.ok(claude.args.includes('-p'))
+  assert.ok(claude.args.includes('PROMPT'))
+
+  const codex = buildConsultantCommand('codex', '/usr/bin/codex', 'PROMPT')
+  assert.equal(codex.file, '/usr/bin/codex')
+  assert.ok(codex.args.includes('exec'))
+  assert.ok(codex.args.includes('PROMPT'))
+})
