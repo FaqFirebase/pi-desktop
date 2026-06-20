@@ -1,5 +1,6 @@
 import { useAppStore } from '../store'
 import { ChatInput } from './chat-input'
+import { CouncilPanels } from './council-panels'
 import { MessageBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
 import { FileTree, FileSearch, FilePreview } from './file-tree'
@@ -118,6 +119,9 @@ export function ChatPanel(): React.JSX.Element {
 
           {/* Input area */}
           <div className="border-t border-neutral-800 bg-neutral-950">
+            <div className="mx-auto w-full max-w-3xl px-4">
+              <CouncilPanels />
+            </div>
             <ChatInput />
           </div>
         </div>

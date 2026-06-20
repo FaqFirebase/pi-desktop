@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect } from 'react'
 import { useAppStore } from '../store'
 import { useChatKeyboard } from '../hooks'
-import { Send, Square, Paperclip, X, FileText, NotebookPen } from 'lucide-react'
+import { Send, Square, Paperclip, X, FileText, NotebookPen, Users } from 'lucide-react'
 
 // Max height (px) the auto-growing input expands to before scrolling.
 const MAX_INPUT_HEIGHT = 192
@@ -15,6 +15,8 @@ export function ChatInput(): React.JSX.Element {
   const pendingInsert = useAppStore((state) => state.pendingInsert)
   const clearPendingInsert = useAppStore((state) => state.clearPendingInsert)
   const setNotePickerOpen = useAppStore((state) => state.setNotePickerOpen)
+  const councilEnabled = useAppStore((s) => s.settings?.council?.enabled ?? false)
+  const runCouncil = useAppStore((s) => s.runCouncil)
 
   // Apply a note inserted from the panel or picker: drop the text at the
   // cursor, refocus, resize, then clear so the same note can be inserted again.
@@ -133,6 +135,25 @@ export function ChatInput(): React.JSX.Element {
         >
           <NotebookPen size={16} />
         </button>
+
+        {/* Plan with Council button */}
+        {councilEnabled && (
+          <button
+            onClick={() => {
+              const value = textareaRef.current?.value.trim()
+              if (value) {
+                void runCouncil(value)
+                if (textareaRef.current) textareaRef.current.value = ''
+              }
+            }}
+            disabled={isDisabled || isStreaming}
+            className="flex shrink-0 items-center justify-center py-3 pr-1 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
+            title="Plan with Council"
+            aria-label="Plan with Council"
+          >
+            <Users size={16} />
+          </button>
+        )}
 
         {/* Text input */}
         <textarea
