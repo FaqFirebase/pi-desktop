@@ -19,12 +19,12 @@ import type {
   UpdateCheckResult,
   ModelsConfig,
   ModelsReadResult,
-  CouncilRunRequest,
   CouncilRunResult,
   CouncilDetectResult,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
-import { DEFAULT_COUNCIL_CONFIG } from '../shared/council-config'
+import { DEFAULT_COUNCIL_CONFIG, COUNCIL_AGENT_IDS, clampTimeoutSeconds } from '../shared/council-config'
+import type { CouncilAgentId, ConsensusMode } from '../shared/council-config'
 import { detectAgents } from './agent-detection'
 import { runConsultants, defaultSpawnConsultant } from './council-manager'
 import type { SessionLineageRecord } from '../shared/session-lineage'
@@ -756,15 +756,38 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   ipcMain.handle(
     IPC_CHANNELS.COUNCIL_RUN_CONSULTANTS,
     async (_event, payload: unknown): Promise<CouncilRunResult> => {
-      const req = payload as CouncilRunRequest
+      // Validate the payload before spawning any child processes.
+      if (!isObject(payload)) throw new Error('Council run payload must be an object')
+      if (!isString(payload.request) || payload.request.trim().length === 0) {
+        throw new Error('Council run request must be a non-empty string')
+      }
+      if (
+        !Array.isArray(payload.members) ||
+        payload.members.length === 0 ||
+        !payload.members.every((m): m is CouncilAgentId => COUNCIL_AGENT_IDS.includes(m as CouncilAgentId))
+      ) {
+        throw new Error('Council run members must be a non-empty list of known agents')
+      }
+      if (payload.consensusMode !== 'arbiter' && payload.consensusMode !== 'debate') {
+        throw new Error('Council run consensusMode must be "arbiter" or "debate"')
+      }
+      const members = payload.members as CouncilAgentId[]
+      const consensusMode = payload.consensusMode as ConsensusMode
+      const timeoutSeconds = clampTimeoutSeconds(Number(payload.timeoutSeconds))
+
+      // The working directory is the active workspace, never the renderer's
+      // input — consultants must plan against the real project tree.
+      const activeWs = workspaceManager.getActiveWorkspace()
+      if (!activeWs) throw new Error('No active workspace')
+      let cwd = activeWs.path
+      try {
+        await access(cwd)
+      } catch {
+        cwd = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()
+      }
+
       const results = await runConsultants(
-        {
-          request: req.request,
-          members: req.members,
-          cwd: req.cwd,
-          timeoutSeconds: req.timeoutSeconds,
-          consensusMode: req.consensusMode,
-        },
+        { request: payload.request, members, cwd, timeoutSeconds, consensusMode },
         { spawnConsultant: defaultSpawnConsultant },
       )
       return { results }

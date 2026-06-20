@@ -16,8 +16,14 @@ export interface CouncilConfig {
   timeoutSeconds: number
 }
 
-const MIN_TIMEOUT_SECONDS = 10
-const MAX_TIMEOUT_SECONDS = 600
+export const MIN_TIMEOUT_SECONDS = 10
+export const MAX_TIMEOUT_SECONDS = 600
+
+/** Clamp an arbitrary number into the valid per-member timeout range. */
+export function clampTimeoutSeconds(raw: number): number {
+  if (!Number.isFinite(raw)) return DEFAULT_COUNCIL_CONFIG.timeoutSeconds
+  return Math.min(MAX_TIMEOUT_SECONDS, Math.max(MIN_TIMEOUT_SECONDS, Math.round(raw)))
+}
 
 export const DEFAULT_COUNCIL_CONFIG: CouncilConfig = {
   enabled: false,

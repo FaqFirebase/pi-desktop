@@ -98,7 +98,24 @@ import {
   buildConsensusPrompt,
   buildDebatePrompt,
   buildConsultantCommand,
+  clampTimeoutSeconds,
+  MIN_TIMEOUT_SECONDS,
+  MAX_TIMEOUT_SECONDS,
 } from './council-config'
+
+test('clampTimeoutSeconds keeps in-range values, rounding', () => {
+  assert.equal(clampTimeoutSeconds(90), 90)
+  assert.equal(clampTimeoutSeconds(90.4), 90)
+})
+
+test('clampTimeoutSeconds clamps to bounds', () => {
+  assert.equal(clampTimeoutSeconds(1), MIN_TIMEOUT_SECONDS)
+  assert.equal(clampTimeoutSeconds(99999), MAX_TIMEOUT_SECONDS)
+})
+
+test('clampTimeoutSeconds falls back to default on non-finite', () => {
+  assert.equal(clampTimeoutSeconds(Number.NaN), DEFAULT_COUNCIL_CONFIG.timeoutSeconds)
+})
 
 test('consultant prompt forbids edits and embeds request', () => {
   const p = buildConsultantPrompt('Build a gallery site')

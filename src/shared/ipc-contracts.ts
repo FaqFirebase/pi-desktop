@@ -454,11 +454,14 @@ export interface CouncilDetectResult {
   agents: Array<{ id: CouncilAgentIdType; found: boolean }>
 }
 
-/** Request payload for COUNCIL_RUN_CONSULTANTS. */
+/**
+ * Request payload for COUNCIL_RUN_CONSULTANTS. The working directory is NOT
+ * part of the payload: the main process resolves it from the active workspace,
+ * so consultants always run against the real project tree.
+ */
 export interface CouncilRunRequest {
   request: string
   members: CouncilAgentIdType[]
-  cwd: string
   timeoutSeconds: number
   consensusMode: 'arbiter' | 'debate'
 }

@@ -6,14 +6,11 @@ import { DEFAULT_PERMISSION_MODE } from './permission-mode'
 import { PermissionSelector } from './permission-selector'
 import { applyTheme } from '../utils/theme'
 import { CustomModelsEditor } from './custom-models-editor'
-
-const COUNCIL_MIN_TIMEOUT = 10
-const COUNCIL_MAX_TIMEOUT = 600
-
-function clampCouncilTimeout(raw: number): number {
-  if (!Number.isFinite(raw)) return COUNCIL_MIN_TIMEOUT
-  return Math.min(COUNCIL_MAX_TIMEOUT, Math.max(COUNCIL_MIN_TIMEOUT, Math.round(raw)))
-}
+import {
+  MIN_TIMEOUT_SECONDS as COUNCIL_MIN_TIMEOUT,
+  MAX_TIMEOUT_SECONDS as COUNCIL_MAX_TIMEOUT,
+  clampTimeoutSeconds as clampCouncilTimeout,
+} from '../../../shared/council-config'
 
 export function SettingsPanel(): React.JSX.Element {
   const settings = useAppStore((state) => state.settings)

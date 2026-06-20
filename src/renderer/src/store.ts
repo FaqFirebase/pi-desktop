@@ -574,11 +574,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
 
     set({ councilRun: { phase: 'consulting', request, results: [] } })
-    const cwd = settings?.defaultCwd ?? '.'
     const { results } = await window.piDesktop.council.runConsultants({
       request,
       members: resolution.active,
-      cwd,
       timeoutSeconds: config.timeoutSeconds,
       consensusMode: config.consensusMode,
     })
