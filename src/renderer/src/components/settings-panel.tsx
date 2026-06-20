@@ -10,6 +10,11 @@ import { CustomModelsEditor } from './custom-models-editor'
 const COUNCIL_MIN_TIMEOUT = 10
 const COUNCIL_MAX_TIMEOUT = 600
 
+function clampCouncilTimeout(raw: number): number {
+  if (!Number.isFinite(raw)) return COUNCIL_MIN_TIMEOUT
+  return Math.min(COUNCIL_MAX_TIMEOUT, Math.max(COUNCIL_MIN_TIMEOUT, Math.round(raw)))
+}
+
 export function SettingsPanel(): React.JSX.Element {
   const settings = useAppStore((state) => state.settings)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
@@ -322,7 +327,9 @@ export function SettingsPanel(): React.JSX.Element {
                   min={COUNCIL_MIN_TIMEOUT}
                   max={COUNCIL_MAX_TIMEOUT}
                   value={settings.council.timeoutSeconds}
-                  onChange={(e) => void saveCouncil({ timeoutSeconds: Number(e.target.value) })}
+                  onChange={(e) =>
+                    void saveCouncil({ timeoutSeconds: clampCouncilTimeout(Number(e.target.value)) })
+                  }
                   className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
                 />
               </SettingsRow>
