@@ -5,6 +5,13 @@ import type { PiCommand } from '../../shared/pi-command'
 import { normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
 import { validateModelsConfig, mergeModelsConfig, type ModelsConfig } from '../../shared/models-config'
+import {
+  resolveActiveMembers,
+  hasQuorum,
+  buildConsensusPrompt,
+  type CouncilAgentId,
+  type ConsultantResult,
+} from '../../shared/council-config'
 import type {
   PiRpcEvent,
   PiStatus,
@@ -56,6 +63,17 @@ export interface DisplayMessage {
   model?: string
   provider?: string
   cost?: number
+}
+
+// ─── Council Run State ───────────────────────────────────────────────────────
+
+export type CouncilPhase = 'detecting' | 'consulting' | 'merging' | 'awaiting-approval' | 'refused'
+
+export interface CouncilRunState {
+  phase: CouncilPhase
+  request: string
+  results: ConsultantResult[]
+  reason?: string
 }
 
 // ─── Store Shape ─────────────────────────────────────────────────────────────
@@ -121,6 +139,9 @@ interface AppState {
   customModels: ModelsConfig | null
   customModelsError: string | null
 
+  // Council run UI state (null when no council run is active)
+  councilRun: CouncilRunState | null
+
   // File preview
   selectedFile: { relativePath: string; path: string } | null
 
@@ -174,6 +195,9 @@ interface AppActions {
   sendPrompt: (message: string, options?: { images?: unknown[] }) => Promise<void>
   sendSteer: (message: string) => Promise<void>
   sendFollowUp: (message: string) => Promise<void>
+  runCouncil: (request: string) => Promise<void>
+  approveCouncilPlan: () => Promise<void>
+  cancelCouncil: () => void
   abort: () => Promise<void>
 
   // Session
@@ -377,6 +401,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   customModels: null,
   customModelsError: null,
+  councilRun: null,
 
   selectedFile: null,
 
@@ -529,6 +554,61 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       })
     }
   },
+
+  runCouncil: async (request) => {
+    const { piStatus, settings } = get()
+    if (piStatus !== 'running' || !request.trim()) return
+    const config = settings?.council
+    if (!config) return
+
+    set({ councilRun: { phase: 'detecting', request, results: [] } })
+
+    const detectResult = await window.piDesktop.council.detect()
+    const detected = { claude: false, codex: false } as Record<CouncilAgentId, boolean>
+    for (const a of detectResult.agents) detected[a.id] = a.found
+
+    const resolution = resolveActiveMembers(config, detected)
+    if (!resolution.canRun) {
+      set({ councilRun: { phase: 'refused', request, results: [], reason: resolution.reason } })
+      return
+    }
+
+    set({ councilRun: { phase: 'consulting', request, results: [] } })
+    const cwd = settings?.defaultCwd ?? '.'
+    const { results } = await window.piDesktop.council.runConsultants({
+      request,
+      members: resolution.active,
+      cwd,
+      timeoutSeconds: config.timeoutSeconds,
+      consensusMode: config.consensusMode,
+    })
+
+    if (!hasQuorum(results)) {
+      set({
+        councilRun: {
+          phase: 'refused',
+          request,
+          results,
+          reason: 'No consultant produced a plan (all timed out or errored). Council aborted.',
+        },
+      })
+      return
+    }
+
+    set({ councilRun: { phase: 'merging', request, results } })
+    const consensusPrompt = buildConsensusPrompt(request, results)
+    await get().sendPrompt(consensusPrompt)
+    set({ councilRun: { phase: 'awaiting-approval', request, results } })
+  },
+
+  approveCouncilPlan: async () => {
+    const run = get().councilRun
+    if (!run || run.phase !== 'awaiting-approval') return
+    set({ councilRun: null })
+    await get().sendFollowUp('Approved. Implement the consensus plan above now.')
+  },
+
+  cancelCouncil: () => set({ councilRun: null }),
 
   abort: async () => {
     try {
