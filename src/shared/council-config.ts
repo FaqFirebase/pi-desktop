@@ -1,12 +1,12 @@
 /**
- * Council member agents. All three can produce an initial plan; PI is also
+ * Council member agents. All three can produce an initial plan; Pi is also
  * always the builder/arbiter that merges the plans into the final consensus.
  */
 export type CouncilAgentId = 'pi' | 'claude' | 'codex'
 
 export const COUNCIL_AGENT_IDS: CouncilAgentId[] = ['pi', 'claude', 'codex']
 
-/** How PI reconciles consultant plans into one. */
+/** How Pi reconciles consultant plans into one. */
 export type ConsensusMode = 'arbiter' | 'debate'
 
 export interface CouncilConfig {
@@ -76,7 +76,7 @@ export interface MemberResolution {
 }
 
 /**
- * Resolve which members will plan. PI plans (when checked) and always merges the
+ * Resolve which members will plan. Pi plans (when checked) and always merges the
  * results as arbiter. Requires at least two participants to be a real council.
  */
 export function resolveActiveMembers(
@@ -91,7 +91,7 @@ export function resolveActiveMembers(
     return {
       canRun: false,
       active,
-      reason: `Council needs at least ${MIN_COUNCIL_MEMBERS} agents. Install or enable PI, Claude, or Codex, or turn the council off.`,
+      reason: `Council needs at least ${MIN_COUNCIL_MEMBERS} agents. Install or enable Pi, Claude, or Codex, or turn the council off.`,
     }
   }
   return { canRun: true, active }
@@ -103,7 +103,7 @@ export function hasQuorum(results: ConsultantResult[]): boolean {
 }
 
 const AGENT_LABELS: Record<CouncilAgentId, string> = {
-  pi: 'PI',
+  pi: 'Pi',
   claude: 'Claude',
   codex: 'Codex',
 }
@@ -120,7 +120,7 @@ export function buildConsultantPrompt(request: string): string {
   ].join('\n')
 }
 
-/** Prompt sent to PI (arbiter) to merge contributed consultant plans into one. */
+/** Prompt sent to Pi (arbiter) to merge contributed consultant plans into one. */
 export function buildConsensusPrompt(request: string, results: ConsultantResult[]): string {
   const sections = results
     .filter((r) => r.status === 'contributed' && r.plan)
@@ -269,7 +269,7 @@ export function parseCodexStreamLine(line: string): { plan?: string; display?: s
 }
 
 /**
- * Parse one line of PI's `--mode json` (JSONL) output. `plan` is assistant text
+ * Parse one line of Pi's `--mode json` (JSONL) output. `plan` is assistant text
  * (belongs in the final plan); `display` is thinking shown live but excluded
  * from the plan. Irrelevant lines and invalid JSON yield an empty object.
  */

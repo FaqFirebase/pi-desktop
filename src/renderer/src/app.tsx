@@ -84,7 +84,7 @@ export function App(): React.JSX.Element {
         <div className="flex shrink-0 items-center justify-center gap-3 bg-blue-600 px-4 py-1.5 text-xs text-white">
           <ArrowUpCircle size={14} className="shrink-0" />
           <span>
-            PI Desktop <strong>v{updateInfo.latestVersion}</strong> is available — you&apos;re on v{updateInfo.currentVersion}.
+            Pi Desktop <strong>v{updateInfo.latestVersion}</strong> is available — you&apos;re on v{updateInfo.currentVersion}.
           </span>
           <button
             onClick={() => window.piDesktop.system.openExternal(updateInfo.url)}

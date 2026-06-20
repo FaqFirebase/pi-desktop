@@ -124,7 +124,7 @@ export function CustomModelsEditor(): React.JSX.Element {
   return (
     <div className="space-y-4">
       <p className="text-xs text-neutral-500">
-        Custom providers and models in <code>~/.pi/agent/models.json</code>. Applied when PI restarts.
+        Custom providers and models in <code>~/.pi/agent/models.json</code>. Applied when Pi restarts.
       </p>
 
       {rows.map((row, pi) => (
@@ -274,7 +274,7 @@ export function CustomModelsEditor(): React.JSX.Element {
             )}
           >
             <RefreshCw size={14} />
-            Saved — Restart PI to apply
+            Saved — Restart Pi to apply
           </button>
         )}
       </div>

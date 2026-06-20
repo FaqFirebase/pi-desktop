@@ -37,7 +37,7 @@ export function describeWriteError(err: unknown, filePath: string): Error {
     return new Error(
       `Could not write "${filePath}" (${code}). On Windows this is usually ` +
         'Controlled Folder Access (Ransomware protection) blocking the change. ' +
-        'Either allow PI Desktop in Windows Security → Virus & threat ' +
+        'Either allow Pi Desktop in Windows Security → Virus & threat ' +
         'protection → Ransomware protection → "Allow an app through ' +
         'Controlled folder access", or move this project out of Documents/Desktop ' +
         'to an unprotected folder (for example C:\\dev).'

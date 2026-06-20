@@ -6,7 +6,7 @@ export interface ForkPoint {
 
 /**
  * Normalize the RPC `get_fork_messages` payload into ForkPoints. The exact RPC
- * field names are tolerated (`entryId`|`id`, `text`|`content`) so a minor PI
+ * field names are tolerated (`entryId`|`id`, `text`|`content`) so a minor Pi
  * schema difference does not break the UI. Entries without an id are dropped.
  */
 export function normalizeForkMessages(raw: unknown): ForkPoint[] {

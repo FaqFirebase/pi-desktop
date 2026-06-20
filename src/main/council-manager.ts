@@ -129,7 +129,7 @@ export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeout
         }
         if (typeof final === 'string') claudeFinal = final
       } else {
-        // PI streams thinking as token deltas (append raw); Codex emits whole
+        // Pi streams thinking as token deltas (append raw); Codex emits whole
         // reasoning items (separate with a newline).
         const isPi = id === 'pi'
         const { plan, display } = isPi ? parsePiStreamLine(line) : parseCodexStreamLine(line)

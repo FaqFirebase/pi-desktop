@@ -148,7 +148,7 @@ function toolsForPermissionMode(mode: PermissionMode): string | null {
 }
 
 /**
- * Opt into resuming the most recent session on launch (PI's --continue) when
+ * Opt into resuming the most recent session on launch (Pi's --continue) when
  * the user setting is enabled and the caller hasn't requested a specific
  * session or an ephemeral (no-session) run.
  */
@@ -183,10 +183,10 @@ function applyPermissionModeToStartOptions(
 }
 
 /**
- * Delete a session file. Mirrors PI's own session-selector deletion path:
+ * Delete a session file. Mirrors Pi's own session-selector deletion path:
  * try the `trash` CLI first (recoverable), fall back to `unlink` (permanent).
  *
- * Why this lives in the GUI and not in PI: PI's RPC mode exposes no
+ * Why this lives in the GUI and not in Pi: Pi's RPC mode exposes no
  * delete_session command (verified against pi.dev/docs/latest/rpc).
  * The official guidance is "Sessions can be removed by deleting their
  * .jsonl files" — that's what this does.
@@ -257,7 +257,7 @@ async function checkForUpdate(): Promise<UpdateCheckResult> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS)
     const res = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases?per_page=10`, {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'PI-Desktop' },
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Pi-Desktop' },
       signal: controller.signal,
     })
     clearTimeout(timer)
@@ -292,10 +292,10 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   const terminalService = new TerminalService()
   const notesManager = new NotesManager()
 
-  // Helper: get PI manager for active workspace
+  // Helper: get Pi manager for active workspace
   function getActivePi(): PiRpcManager {
     const pi = workspaceManager.getActivePiManager()
-    if (!pi) throw new Error('No active workspace or PI not running')
+    if (!pi) throw new Error('No active workspace or Pi not running')
     return pi
   }
 
@@ -309,7 +309,7 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     }
   }
 
-  // ─── PI Process Lifecycle ───────────────────────────────────────────────
+  // ─── Pi Process Lifecycle ───────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.PI_START, async (_event, options?: unknown) => {
     console.log('[IPC] PI_START called')
@@ -331,7 +331,7 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
       applyPermissionModeToStartOptions(applyResumePreference({ ...opts, cwd }, settings), settings)
     )
     const pi = workspaceManager.getPiManager(activeWs.id)
-    if (!pi) throw new Error('Failed to create PI manager')
+    if (!pi) throw new Error('Failed to create Pi manager')
 
     const result = pi.getStatus()
     console.log('[IPC] PI_START result:', result.status)
@@ -353,7 +353,7 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     if (!activeWs) throw new Error('No active workspace')
 
     const pi = workspaceManager.getPiManager(activeWs.id)
-    if (!pi) throw new Error('No PI manager for workspace')
+    if (!pi) throw new Error('No Pi manager for workspace')
 
     pi.stop()
     return pi.start(
@@ -370,7 +370,7 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     return pi.getStatus()
   })
 
-  // ─── PI Commands ────────────────────────────────────────────────────────
+  // ─── Pi Commands ────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.PI_PROMPT, async (_event, message: unknown, options?: unknown) => {
     if (!isString(message)) throw new Error('message must be a string')
@@ -441,7 +441,7 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   ipcMain.handle(IPC_CHANNELS.SESSION_NEW, async () => {
     const pi = workspaceManager.getActivePiManager()
     if (!pi || pi.getStatus().status !== 'running') {
-      return { success: false, error: 'PI not running. Start PI first.' }
+      return { success: false, error: 'Pi not running. Start Pi first.' }
     }
     return pi.sendCommand({ type: 'new_session' })
   })
@@ -450,8 +450,8 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     if (!isString(sessionPath)) throw new Error('sessionPath must be a string')
     const pi = workspaceManager.getActivePiManager()
     if (!pi || pi.getStatus().status !== 'running') {
-      // PI not running — just store the path for when it starts
-      return { success: false, error: 'PI not running. Start PI first.' }
+      // Pi not running — just store the path for when it starts
+      return { success: false, error: 'Pi not running. Start Pi first.' }
     }
     return pi.sendCommand({ type: 'switch_session', sessionPath })
   })
@@ -1008,12 +1008,12 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
 
   // ─── Event Forwarding ───────────────────────────────────────────────────
 
-  // Forward PI events ONLY from the currently-active workspace's PI manager.
+  // Forward Pi events ONLY from the currently-active workspace's Pi manager.
   // Why: each workspace has its own PiRpcManager. If we forwarded events from
   // every manager, the renderer (whose piStatus is a single global) would see
   // status from inactive workspaces and the green dot would lie about whether
-  // the *active* workspace's PI is running. Filtering here keeps the renderer's
-  // view of "PI" aligned with the active workspace it's looking at.
+  // the *active* workspace's Pi is running. Filtering here keeps the renderer's
+  // view of "Pi" aligned with the active workspace it's looking at.
   const isActiveManager = (manager: PiRpcManager): boolean =>
     manager === workspaceManager.getActivePiManager()
 
@@ -1034,9 +1034,9 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     })
   })
 
-  // Push the active workspace's PI status to the renderer whenever the active
+  // Push the active workspace's Pi status to the renderer whenever the active
   // workspace changes, so the status indicator reflects the new workspace
-  // even if its PI manager hasn't emitted any events recently.
+  // even if its Pi manager hasn't emitted any events recently.
   const broadcastActiveStatus = (): void => {
     const pi = workspaceManager.getActivePiManager()
     if (!pi) return
@@ -1123,7 +1123,7 @@ function createListAllSessions(wm: WorkspaceManager) {
 
 /**
  * Convert a sanitized session directory name back to a real path.
- * PI sanitizes paths by replacing / with - and wrapping in --.
+ * Pi sanitizes paths by replacing / with - and wrapping in --.
  * e.g., --home-alice-- → /home/alice
  * e.g., --home-alice-Projects-my-app-- → /home/alice/Projects/my/app
  *
@@ -1131,7 +1131,7 @@ function createListAllSessions(wm: WorkspaceManager) {
  * from path separators. We use the workspace list to resolve actual paths.
  */
 function desanitizeSessionDir(dirName: string): string {
-  // Only process PI-sanitized directories (start and end with --)
+  // Only process Pi-sanitized directories (start and end with --)
   if (!dirName.startsWith('--') || !dirName.endsWith('--')) {
     return dirName
   }
@@ -1206,10 +1206,10 @@ async function collectSessionFiles(
 }
 
 /**
- * Sanitize a path the same way PI does for session directory names.
+ * Sanitize a path the same way Pi does for session directory names.
  */
 function sanitizePath(path: string): string {
-  // PI replaces / with - and wraps in --
+  // Pi replaces / with - and wraps in --
   return '--' + path.replace(/^\//, '').replace(/\//g, '-') + '--'
 }
 
@@ -1654,7 +1654,7 @@ async function listMcpServers(wsPath?: string): Promise<McpServerInfo[]> {
   const servers: McpServerInfo[] = []
   const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
 
-  // Check PI global settings for mcpServers
+  // Check Pi global settings for mcpServers
   const globalSettingsPath = join(homeDir, '.pi', 'agent', 'settings.json')
   await collectMcpServers(globalSettingsPath, servers, 'global')
 
@@ -1688,7 +1688,7 @@ async function collectMcpServers(
     const content = await readFile(settingsPath, 'utf-8')
     const settings = JSON.parse(content)
 
-    // PI settings may have mcpServers under various keys
+    // Pi settings may have mcpServers under various keys
     const mcpServers = settings.mcpServers ?? settings.mcp?.servers ?? {}
 
     for (const [name, config] of Object.entries(mcpServers)) {

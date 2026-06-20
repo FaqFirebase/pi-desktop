@@ -8,13 +8,13 @@
 // ─── IPC Channel Names ──────────────────────────────────────────────────────
 
 export const IPC_CHANNELS = {
-  // PI process lifecycle
+  // Pi process lifecycle
   PI_START: 'pi:start',
   PI_STOP: 'pi:stop',
   PI_RESTART: 'pi:restart',
   PI_STATUS: 'pi:status',
 
-  // PI commands
+  // Pi commands
   PI_PROMPT: 'pi:prompt',
   PI_STEER: 'pi:steer',
   PI_FOLLOW_UP: 'pi:follow-up',
@@ -139,7 +139,7 @@ export const IPC_CHANNELS = {
   EVENT_COUNCIL_PROGRESS: 'event:council-progress',
 } as const
 
-// ─── PI Process Types ───────────────────────────────────────────────────────
+// ─── Pi Process Types ───────────────────────────────────────────────────────
 
 export type PiProcessStatus = 'stopped' | 'starting' | 'running' | 'error'
 
@@ -155,7 +155,7 @@ export interface PiStartOptions {
   provider?: string
   sessionPath?: string
   noSession?: boolean
-  // When true (and neither sessionPath nor noSession is set), PI is launched
+  // When true (and neither sessionPath nor noSession is set), Pi is launched
   // with --continue so it resumes the most recent session for the cwd instead
   // of creating a fresh one.
   continueSession?: boolean
@@ -182,7 +182,7 @@ export interface TerminalExitEvent {
   signal?: number
 }
 
-// ─── PI RPC Event Types (subset used by renderer) ───────────────────────────
+// ─── Pi RPC Event Types (subset used by renderer) ───────────────────────────
 
 export interface PiAgentStartEvent {
   type: 'agent_start'
@@ -570,13 +570,13 @@ export interface AppSettings {
   showThinking: boolean
   autoScroll: boolean
   permissionMode: PermissionMode
-  // Resume the most recent session for the workspace on launch (via PI's
+  // Resume the most recent session for the workspace on launch (via Pi's
   // --continue) instead of starting a fresh session.
   resumeLastSession: boolean
   // Project paths whose session group is collapsed in the Sessions panel.
   // Persisted so the collapsed/expanded layout survives navigation and restarts.
   collapsedSessionGroups: string[]
-  // Show the Home/launcher screen on launch (PI starts lazily on first action)
+  // Show the Home/launcher screen on launch (Pi starts lazily on first action)
   // instead of booting straight into Chat. When false, legacy behavior applies.
   openToHomeOnLaunch: boolean
   // Multi-agent council planning configuration.

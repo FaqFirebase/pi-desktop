@@ -7,7 +7,7 @@ import type { FileChangeEvent, PiStartOptions } from '../shared/ipc-contracts'
 import { getGuiDataPath } from './app-data-paths'
 
 /**
- * Manages multiple workspaces (project directories), each with its own PI process.
+ * Manages multiple workspaces (project directories), each with its own Pi process.
  *
  * Persistence: workspace list stored in the Electron userData directory.
  */
@@ -49,13 +49,13 @@ export class WorkspaceManager {
   // the same listener twice for the same manager. Using a WeakSet keyed on
   // the manager alone (the old design) was buggy: a manager that was created
   // BEFORE any listeners were registered would be marked "wired" and never
-  // get the listeners that arrived later — silently dropping every PI event
+  // get the listeners that arrived later — silently dropping every Pi event
   // for managers loaded from disk during `initialize()`.
   private wiredPairs = new WeakMap<PiRpcManager, Set<PiManagerListener>>()
   private activeWorkspaceListeners: ActiveWorkspaceListener[] = []
   private fileChangeListeners: FileChangeListener[] = []
   // The workspace whose FileService currently has an active disk watcher.
-  // Only the active workspace is watched, mirroring how PI events are
+  // Only the active workspace is watched, mirroring how Pi events are
   // forwarded for the active workspace only.
   private watchingWorkspaceId: string | null = null
 
@@ -202,7 +202,7 @@ export class WorkspaceManager {
     this.nextColorIndex++
     this.workspaces.push(workspace)
 
-    // Create PI manager and file service for this workspace
+    // Create Pi manager and file service for this workspace
     const piManager = new PiRpcManager()
     this.piManagers.set(workspace.id, piManager)
     this.wirePiManager(piManager)
@@ -237,7 +237,7 @@ export class WorkspaceManager {
     const index = this.workspaces.findIndex((w) => w.id === workspaceId)
     if (index === -1) throw new Error(`Workspace not found: ${workspaceId}`)
 
-    // Stop PI process and file watcher for this workspace
+    // Stop Pi process and file watcher for this workspace
     const piManager = this.piManagers.get(workspaceId)
     if (piManager) {
       piManager.stop()
@@ -316,7 +316,7 @@ export class WorkspaceManager {
         this.workspaces = state.workspaces ?? []
         this.activeWorkspaceId = state.activeWorkspaceId ?? null
 
-        // Create file services and PI managers for loaded workspaces
+        // Create file services and Pi managers for loaded workspaces
         for (const ws of this.workspaces) {
           if (!this.piManagers.has(ws.id)) {
             const manager = new PiRpcManager()

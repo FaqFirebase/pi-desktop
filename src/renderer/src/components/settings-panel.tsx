@@ -85,7 +85,7 @@ export function SettingsPanel(): React.JSX.Element {
   }, [settings])
 
   const handleSelectPath = async () => {
-    const path = await window.piDesktop.system.openDialog({ title: 'Select PI Executable' })
+    const path = await window.piDesktop.system.openDialog({ title: 'Select Pi Executable' })
     if (path) setPiPath(path)
   }
 
@@ -161,9 +161,9 @@ export function SettingsPanel(): React.JSX.Element {
           </button>
         </div>
 
-        {/* PI Configuration */}
-        <SettingsSection title="PI Configuration">
-          <SettingsRow label="PI Executable" description="Path to the PI binary">
+        {/* Pi Configuration */}
+        <SettingsSection title="Pi Configuration">
+          <SettingsRow label="Pi Executable" description="Path to the Pi binary">
             <div className="flex gap-2">
               <input
                 type="text"
@@ -224,7 +224,7 @@ export function SettingsPanel(): React.JSX.Element {
 
         {/* Behavior */}
         <SettingsSection title="Behavior">
-          <SettingsRow label="Permission Mode" description="Default safety mode for PI actions">
+          <SettingsRow label="Permission Mode" description="Default safety mode for Pi actions">
             <PermissionSelector
               value={permissionMode}
               onChange={(mode) => setPermissionMode(mode)}
@@ -242,7 +242,7 @@ export function SettingsPanel(): React.JSX.Element {
 
           <SettingsRow
             label="Open to Home Screen on Launch"
-            description="Show the Home launcher on startup; PI starts only when you open a workspace or session"
+            description="Show the Home launcher on startup; Pi starts only when you open a workspace or session"
           >
             <Toggle checked={openToHomeOnLaunch} onChange={setOpenToHomeOnLaunch} />
           </SettingsRow>
@@ -259,7 +259,7 @@ export function SettingsPanel(): React.JSX.Element {
         <SettingsSection title="Multi-Agent Council Planning">
           <SettingsRow
             label="Enable council planning"
-            description="Spawns Claude/Codex alongside PI to plan tasks. Increases token usage and credit/API costs."
+            description="Spawns Claude/Codex alongside Pi to plan tasks. Increases token usage and credit/API costs."
           >
             <Toggle
               checked={settings?.council.enabled ?? false}
@@ -279,7 +279,7 @@ export function SettingsPanel(): React.JSX.Element {
                 <div className="flex flex-col gap-2">
                   {(['pi', 'claude', 'codex'] as const).map((id) => {
                     const detected = detectedAgents[id]
-                    const label = id === 'pi' ? 'PI' : id === 'claude' ? 'Claude' : 'Codex'
+                    const label = id === 'pi' ? 'Pi' : id === 'claude' ? 'Claude' : 'Codex'
                     return (
                       <label
                         key={id}
@@ -385,7 +385,7 @@ export function SettingsPanel(): React.JSX.Element {
               Enable council planning?
             </h3>
             <p className="mb-6 text-sm text-neutral-400">
-              Each run spawns Claude and Codex in addition to PI. This can significantly increase
+              Each run spawns Claude and Codex in addition to Pi. This can significantly increase
               token usage and credit/API costs. Only enable this if you are comfortable with the
               extra spend.
             </p>

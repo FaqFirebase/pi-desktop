@@ -13,7 +13,7 @@ const WORKSPACE_ENV_VAR = 'PI_DESKTOP_WORKSPACE'
 // Suppress EPIPE errors from closed subprocess pipes
 process.on('uncaughtException', (err) => {
   if (err.message?.includes('EPIPE') || (err as NodeJS.ErrnoException).code === 'EPIPE') {
-    // Ignore EPIPE - happens when PI process exits
+    // Ignore EPIPE - happens when Pi process exits
     return
   }
   console.error('Uncaught exception:', err)
@@ -59,7 +59,7 @@ function createMainWindow(): BrowserWindow {
     height: WINDOW_HEIGHT,
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
-    title: 'PI Desktop',
+    title: 'Pi Desktop',
     backgroundColor: '#0a0a0a',
     icon: getAppIconPath(),
     show: false,
@@ -242,7 +242,7 @@ async function applyWorkspaceFromEnv(manager: WorkspaceManager): Promise<void> {
 
   const path = resolvePath(raw)
   if (!existsSync(path)) {
-    console.warn(`[PI Desktop] ${WORKSPACE_ENV_VAR}=${raw} does not exist; ignoring`)
+    console.warn(`[Pi Desktop] ${WORKSPACE_ENV_VAR}=${raw} does not exist; ignoring`)
     return
   }
 

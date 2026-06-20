@@ -86,7 +86,7 @@ export interface CouncilRunState {
 // ─── Store Shape ─────────────────────────────────────────────────────────────
 
 interface AppState {
-  // PI process
+  // Pi process
   piStatus: PiProcessStatus
   piPid: number | null
   piError: string | null
@@ -161,7 +161,7 @@ interface AppState {
   // Machine-derived tags for sessions the user hasn't tagged (sessionId → tag)
   autoTags: Record<string, string>
 
-  // Archived sessions (GUI-only registry — PI has no archive concept)
+  // Archived sessions (GUI-only registry — Pi has no archive concept)
   archivedSessions: Record<string, number>
   showArchived: boolean
 
@@ -187,7 +187,7 @@ interface AppState {
 }
 
 interface AppActions {
-  // PI lifecycle
+  // Pi lifecycle
   startPi: (options?: Record<string, unknown>) => Promise<void>
   stopPi: () => Promise<void>
   restartPi: (options?: Record<string, unknown>) => Promise<void>
@@ -433,7 +433,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   lineage: [],
 
-  // ─── PI Lifecycle ─────────────────────────────────────────────────────
+  // ─── Pi Lifecycle ─────────────────────────────────────────────────────
 
   startPi: async (options) => {
     // Don't start if already running
@@ -633,7 +633,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   reviseCouncilPlan: async (feedback) => {
     const run = get().councilRun
     if (!run || run.phase !== 'awaiting-approval' || !feedback.trim()) return
-    // PI revises the consensus plan in-place; the run stays at the approval gate.
+    // Pi revises the consensus plan in-place; the run stays at the approval gate.
     await get().sendPrompt(buildRevisionPrompt(feedback))
   },
 
@@ -657,7 +657,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         get().addMessage({
           id: generateId(),
           role: 'system',
-          content: result.error ?? 'Cannot create session — PI not running',
+          content: result.error ?? 'Cannot create session — Pi not running',
           timestamp: Date.now(),
         })
         return
@@ -683,7 +683,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         get().addMessage({
           id: generateId(),
           role: 'system',
-          content: result.error ?? 'Cannot switch session — PI not running',
+          content: result.error ?? 'Cannot switch session — Pi not running',
           timestamp: Date.now(),
         })
         return
@@ -1127,10 +1127,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       await window.piDesktop.workspace.setActive(workspaceId)
       get().clearMessages()
-      // Re-sync PI status from main: each workspace has its own PiRpcManager,
-      // so the new active workspace's PI may be in a different state than
+      // Re-sync Pi status from main: each workspace has its own PiRpcManager,
+      // so the new active workspace's Pi may be in a different state than
       // what piStatus is currently showing. Without this, the `if running return`
-      // guard in startPi() would skip starting the new workspace's PI.
+      // guard in startPi() would skip starting the new active workspace's Pi.
       const status = await window.piDesktop.pi.getStatus()
       set({ piStatus: status.status, piPid: status.pid, piError: status.error })
       await get().loadWorkspaces()
@@ -1197,7 +1197,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       const result = await window.piDesktop.packages.install(spec)
       if (result.success) {
         await get().loadInstalledPackages()
-        set({ packageNotification: { type: 'success', message: `Installed ${spec}. Restart PI to load it.` } })
+        set({ packageNotification: { type: 'success', message: `Installed ${spec}. Restart Pi to load it.` } })
       } else {
         set({ packageNotification: { type: 'error', message: result.output || 'Install failed' } })
       }

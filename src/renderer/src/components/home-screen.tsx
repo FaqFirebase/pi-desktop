@@ -20,8 +20,8 @@ const MAX_CHANGED_FILES = 8
 
 /**
  * Home / launcher screen shown on startup (when openToHomeOnLaunch is set).
- * PI is not running yet — every action here starts PI lazily for the chosen
- * workspace/session, then navigates to Chat. All data shown is PI-free
+ * Pi is not running yet — every action here starts Pi lazily for the chosen
+ * workspace/session, then navigates to Chat. All data shown is Pi-free
  * (workspaces, disk-listed sessions, git status for the active workspace).
  */
 export function HomeScreen(): React.JSX.Element {
@@ -46,7 +46,7 @@ export function HomeScreen(): React.JSX.Element {
     window.piDesktop.system.getVersion().then(setVersion).catch(() => setVersion(''))
   }, [])
 
-  // Git status for the active (most-recent) workspace — works without PI.
+  // Git status for the active (most-recent) workspace — works without Pi.
   useEffect(() => {
     let cancelled = false
     window.piDesktop.files
@@ -72,7 +72,7 @@ export function HomeScreen(): React.JSX.Element {
     [gitStatus]
   )
 
-  // Navigate to Chat unless PI failed to start (then stay so the error shows).
+  // Navigate to Chat unless Pi failed to start (then stay so the error shows).
   const goChatUnlessError = (): void => {
     if (useAppStore.getState().piStatus !== 'error') setCurrentView('chat')
   }
@@ -160,15 +160,15 @@ export function HomeScreen(): React.JSX.Element {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className={clsx('mx-auto max-w-4xl px-8 py-12', busy && 'pointer-events-none opacity-60')}>
-        {/* PI-not-found / start error */}
+        {/* Pi-not-found / start error */}
         {piStatus === 'error' && piError && (
           <div className="mb-6 flex items-start gap-3 rounded-lg border border-red-900/50 bg-red-950/30 px-4 py-3 text-sm text-red-300">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
             <div className="flex-1">
-              <div className="font-medium">Couldn&apos;t start PI</div>
+              <div className="font-medium">Couldn&apos;t start Pi</div>
               <div className="mt-0.5 text-red-300/80">{piError}</div>
               <div className="mt-1 text-xs text-red-300/70">
-                Check that PI is installed and its path is correct.
+                Check that Pi is installed and its path is correct.
               </div>
             </div>
             <button
@@ -186,7 +186,7 @@ export function HomeScreen(): React.JSX.Element {
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-neutral-800 text-blue-400">
             <SquareTerminal size={34} />
           </div>
-          <h1 className="mt-4 text-2xl font-semibold text-neutral-100">PI Desktop</h1>
+          <h1 className="mt-4 text-2xl font-semibold text-neutral-100">Pi Desktop</h1>
           <p className="mt-1 text-sm text-neutral-500">Open a workspace or pick up where you left off.</p>
           {version && <p className="mt-2 text-xs text-neutral-600">v{version}</p>}
         </div>

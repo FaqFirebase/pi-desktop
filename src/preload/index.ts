@@ -35,7 +35,7 @@ import { IPC_CHANNELS } from '../shared/ipc-contracts'
 // ─── Type Definitions for the Exposed API ────────────────────────────────────
 
 interface PiDesktopAPI {
-  // PI process lifecycle
+  // Pi process lifecycle
   pi: {
     start(options?: PiStartOptions): Promise<PiStatus>
     stop(): Promise<PiStatus>
@@ -43,7 +43,7 @@ interface PiDesktopAPI {
     getStatus(): Promise<PiStatus>
   }
 
-  // PI commands
+  // Pi commands
   commands: {
     prompt(message: string, options?: { images?: unknown[]; streamingBehavior?: string }): Promise<unknown>
     steer(message: string): Promise<unknown>

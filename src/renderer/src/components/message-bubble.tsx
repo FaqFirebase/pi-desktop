@@ -443,7 +443,7 @@ function ActionButton({
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Map common PI tool names to a representative icon; falls back to a wrench.
+// Map common Pi tool names to a representative icon; falls back to a wrench.
 function toolIcon(name: string): LucideIcon {
   const n = name.toLowerCase()
   if (n.includes('bash') || n.includes('shell') || n.includes('exec') || n.includes('terminal')) return Terminal

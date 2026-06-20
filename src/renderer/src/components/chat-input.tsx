@@ -160,10 +160,10 @@ export function ChatInput(): React.JSX.Element {
           ref={textareaRef}
           placeholder={
             isDisabled
-              ? 'PI agent is not running...'
+              ? 'Pi agent is not running...'
               : isStreaming
                 ? 'Type to steer the agent...'
-                : 'Ask PI anything... (Enter to send, Shift+Enter for newline)'
+                : 'Ask Pi anything... (Enter to send, Shift+Enter for newline)'
           }
           disabled={isDisabled}
           rows={1}

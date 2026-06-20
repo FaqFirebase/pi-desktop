@@ -4,8 +4,8 @@ import { Terminal } from 'lucide-react'
 import { useAppStore } from '../store'
 import { filterCommands, type PiCommand } from '../../../shared/pi-command'
 
-// Source used for PI built-in commands that map to a GUI action rather than
-// being inserted as text. PI's RPC only expands `/skill:` and `/template` from
+// Source used for Pi built-in commands that map to a GUI action rather than
+// being inserted as text. Pi's RPC only expands `/skill:` and `/template` from
 // typed input, so these built-ins run the equivalent GUI action directly.
 const BUILTIN_SOURCE = 'builtin'
 
@@ -51,7 +51,7 @@ export function CommandPalette(): React.JSX.Element | null {
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // PI built-in commands that have a direct GUI equivalent. Excludes built-ins
+  // Pi built-in commands that have a direct GUI equivalent. Excludes built-ins
   // that need an argument or aren't supported in the GUI (e.g. /name, /tree).
   const builtins = useMemo<BuiltinCommand[]>(
     () => [

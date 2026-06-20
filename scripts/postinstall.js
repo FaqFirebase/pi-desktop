@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * PI Desktop postinstall — runs electron-rebuild for native modules and
+ * Pi Desktop postinstall — runs electron-rebuild for native modules and
  * verifies that Electron's binary was actually placed on disk.
  *
  * Steps:

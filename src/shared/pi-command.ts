@@ -1,4 +1,4 @@
-/** A command exposed by PI via the RPC `get_commands` request. */
+/** A command exposed by Pi via the RPC `get_commands` request. */
 export interface PiCommand {
   name: string
   description: string

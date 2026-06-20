@@ -17,19 +17,19 @@ export const PERMISSION_MODE_OPTIONS: Array<{
   {
     value: 'ask-edits',
     label: 'Ask before edits',
-    description: 'PI will ask before file edits and shell commands that can change files.',
+    description: 'Pi will ask before file edits and shell commands that can change files.',
     tone: 'review',
   },
   {
     value: 'ask-commands',
     label: 'Ask before commands',
-    description: 'PI will ask before running shell commands.',
+    description: 'Pi will ask before running shell commands.',
     tone: 'command',
   },
   {
     value: 'trusted',
     label: 'Trusted',
-    description: 'All PI tools are enabled for workflows you trust.',
+    description: 'All Pi tools are enabled for workflows you trust.',
     tone: 'trusted',
   },
 ]

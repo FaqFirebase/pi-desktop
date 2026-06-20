@@ -36,7 +36,7 @@ export function StatusBar(): React.JSX.Element {
     <div className="flex h-7 items-center justify-between border-t border-neutral-800 bg-neutral-950 px-3 text-xs">
       {/* Left section */}
       <div className="flex items-center gap-3">
-        {/* PI Status */}
+        {/* Pi Status */}
         <div className="flex items-center gap-1.5">
           <div
             className={clsx(
@@ -48,7 +48,7 @@ export function StatusBar(): React.JSX.Element {
             )}
           />
           <span className="text-neutral-500">
-            {piStatus === 'running' ? `PI running (PID: ${piPid})` : `PI ${piStatus}`}
+            {piStatus === 'running' ? `Pi running (PID: ${piPid})` : `Pi ${piStatus}`}
           </span>
         </div>
 

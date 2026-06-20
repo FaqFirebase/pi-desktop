@@ -256,16 +256,16 @@ function EmptyState({ piStatus }: { piStatus: string }): React.JSX.Element {
       <div className="text-center">
         <div className="mb-4 text-4xl">⌘</div>
         <h2 className="mb-2 text-lg font-medium text-neutral-200">
-          PI Desktop
+          Pi Desktop
         </h2>
         <p className="mb-6 max-w-md text-sm text-neutral-500">
           {piStatus === 'running'
             ? 'Start a conversation with your coding agent. Ask it to build, debug, or explore your codebase.'
             : piStatus === 'starting'
-              ? 'Starting PI agent...'
+              ? 'Starting Pi agent...'
               : piStatus === 'error'
-                ? 'Failed to start PI agent. Check settings.'
-                : 'PI agent is not running. Start it from the sidebar or status bar.'}
+                ? 'Failed to start Pi agent. Check settings.'
+                : 'Pi agent is not running. Start it from the sidebar or status bar.'}
         </p>
         {piStatus === 'running' && (
           <div className="flex flex-wrap justify-center gap-2">

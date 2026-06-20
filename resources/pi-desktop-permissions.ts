@@ -30,7 +30,7 @@ export default function piDesktopPermissions(pi: ExtensionAPI): void {
     const confirmed = await ctx.ui.confirm(
       `Allow ${event.toolName}?`,
       [
-        `PI wants to run the ${event.toolName} tool.`,
+        `Pi wants to run the ${event.toolName} tool.`,
         summary,
       ].filter(Boolean).join('\n\n')
     )
@@ -38,7 +38,7 @@ export default function piDesktopPermissions(pi: ExtensionAPI): void {
     if (!confirmed) {
       return {
         block: true,
-        reason: `User denied ${event.toolName} permission in PI Desktop.`,
+        reason: `User denied ${event.toolName} permission in Pi Desktop.`,
       }
     }
   })

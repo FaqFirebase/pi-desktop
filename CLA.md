@@ -1,10 +1,10 @@
 # Individual Contributor License Agreement
 
-**PI Desktop GUI — Contributor License Agreement v1.0**
+**Pi Desktop GUI — Contributor License Agreement v1.0**
 
-Thank you for your interest in contributing to PI Desktop GUI ("the Project"). This Contributor License Agreement ("Agreement") documents the rights granted by contributors to the Project.
+Thank you for your interest in contributing to Pi Desktop GUI ("the Project"). This Contributor License Agreement ("Agreement") documents the rights granted by contributors to the Project.
 
-By viewing this Agreement and using PI Desktop and its code, you accept and agree to the following terms and conditions for your present and future contributions submitted to the Project. Except for the license granted herein to the Project and recipients of software distributed by the Project, you reserve all right, title, and interest in and to your contributions.
+By viewing this Agreement and using Pi Desktop and its code, you accept and agree to the following terms and conditions for your present and future contributions submitted to the Project. Except for the license granted herein to the Project and recipients of software distributed by the Project, you reserve all right, title, and interest in and to your contributions.
 
 ## 1. Definitions
 
@@ -12,7 +12,7 @@ By viewing this Agreement and using PI Desktop and its code, you accept and agre
 
 **"Contribution"** shall mean any original work of authorship, including any modifications or additions to an existing work, that is intentionally submitted by You to the Project for inclusion in, or documentation of, any of the products owned or managed by the Project (the "Work"). For the purposes of this definition, **"submitted"** means any form of electronic, verbal, or written communication sent to the Project or its representatives, including but not limited to communication on electronic mailing lists, source code control systems, and issue tracking systems that are managed by, or on behalf of, the Project for the purpose of discussing and improving the Work, but excluding communication that is conspicuously marked or otherwise designated in writing by You as "Not a Contribution."
 
-**"Project"** shall mean PI Desktop GUI and its associated repositories, organizations, and maintainers.
+**"Project"** shall mean Pi Desktop GUI and its associated repositories, organizations, and maintainers.
 
 ## 2. Grant of Copyright License
 

@@ -137,8 +137,8 @@ export function StatusPopover(): React.JSX.Element {
           </div>
 
           <div className="max-h-[70vh] overflow-y-auto">
-            {/* PI Agent */}
-            <StatusSection title="PI Agent" icon={<Cpu size={13} />}>
+            {/* Pi Agent */}
+            <StatusSection title="Pi Agent" icon={<Cpu size={13} />}>
               <StatusRow
                 label="Status"
                 value={
