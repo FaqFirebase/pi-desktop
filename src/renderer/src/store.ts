@@ -77,6 +77,8 @@ export interface CouncilRunState {
   members?: CouncilAgentId[]
   // Live output streamed per consultant during the consulting phase.
   partials?: Record<string, string>
+  // Epoch ms when the consulting phase started (drives the elapsed indicator).
+  startedAt?: number
   reason?: string
 }
 
@@ -584,6 +586,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         results: [],
         members: resolution.active,
         partials: {},
+        startedAt: Date.now(),
       },
     })
 

@@ -29,7 +29,8 @@ export const DEFAULT_COUNCIL_CONFIG: CouncilConfig = {
   enabled: false,
   members: { claude: true, codex: true },
   consensusMode: 'arbiter',
-  timeoutSeconds: 90,
+  // Real repo planning often takes minutes; 90s was too tight in practice.
+  timeoutSeconds: 240,
 }
 
 const VALID_CONSENSUS_MODES: ConsensusMode[] = ['arbiter', 'debate']
@@ -178,7 +179,8 @@ export function buildConsultantCommand(
         ],
       }
     case 'codex':
-      return { file: executable, args: ['exec', '--sandbox', 'read-only', prompt] }
+      // --json streams events as JSONL so we can show Codex's progress live.
+      return { file: executable, args: ['exec', '--json', '--sandbox', 'read-only', prompt] }
   }
 }
 
@@ -209,5 +211,31 @@ export function parseClaudeStreamLine(line: string): { delta?: string; final?: s
   if (obj.type === 'result' && typeof obj.result === 'string') {
     return { final: obj.result }
   }
+  return {}
+}
+
+/**
+ * Parse one line of Codex's `--json` (JSONL) output. `plan` is text that belongs
+ * in the final plan (the agent's message); `display` is activity text to show
+ * live but exclude from the plan (e.g. reasoning). Irrelevant lines yield {}.
+ */
+export function parseCodexStreamLine(line: string): { plan?: string; display?: string } {
+  const trimmed = line.trim()
+  if (!trimmed) return {}
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    return {}
+  }
+  if (typeof parsed !== 'object' || parsed === null) return {}
+  const obj = parsed as Record<string, unknown>
+  if (obj.type !== 'item.completed') return {}
+  const item = obj.item as Record<string, unknown> | undefined
+  if (!item) return {}
+  const text = typeof item.text === 'string' ? item.text : undefined
+  if (item.type === 'agent_message' && text) return { plan: text }
+  if (text) return { display: text }
+  if (typeof item.summary === 'string') return { display: item.summary }
   return {}
 }

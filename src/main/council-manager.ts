@@ -6,6 +6,7 @@ import {
   buildDebatePrompt,
   buildConsultantCommand,
   parseClaudeStreamLine,
+  parseCodexStreamLine,
 } from '../shared/council-config'
 import { detectAgents } from './agent-detection'
 
@@ -110,27 +111,39 @@ export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeout
     let stderr = ''
     let settled = false
 
-    // Claude emits JSONL (--output-format stream-json); we parse it into readable
-    // text deltas. Codex emits plain text, streamed through as-is.
+    // Both CLIs emit JSONL: Claude via --output-format stream-json, Codex via
+    // --json. We parse each line into readable text — streaming live via onChunk
+    // and accumulating the plan separately from activity/reasoning noise.
     const isClaude = id === 'claude'
     let lineBuffer = ''
-    let claudeText = ''
+    let planText = ''
     let claudeFinal: string | undefined
 
-    const applyClaudeLine = (line: string): void => {
-      const { delta, final } = parseClaudeStreamLine(line)
-      if (delta) {
-        claudeText += delta
-        onChunk?.(delta)
+    const applyLine = (line: string): void => {
+      if (isClaude) {
+        const { delta, final } = parseClaudeStreamLine(line)
+        if (delta) {
+          planText += delta
+          onChunk?.(delta)
+        }
+        if (typeof final === 'string') claudeFinal = final
+      } else {
+        const { plan, display } = parseCodexStreamLine(line)
+        if (typeof plan === 'string') {
+          planText += plan
+          onChunk?.(plan)
+        } else if (typeof display === 'string') {
+          // Reasoning/activity: show live but keep it out of the final plan.
+          onChunk?.(display + '\n')
+        }
       }
-      if (typeof final === 'string') claudeFinal = final
     }
 
-    const consumeClaude = (text: string): void => {
+    const consume = (text: string): void => {
       lineBuffer += text
       let nl: number
       while ((nl = lineBuffer.indexOf('\n')) !== -1) {
-        applyClaudeLine(lineBuffer.slice(0, nl))
+        applyLine(lineBuffer.slice(0, nl))
         lineBuffer = lineBuffer.slice(nl + 1)
       }
     }
@@ -145,23 +158,21 @@ export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeout
     const timer = setTimeout(() => {
       child.kill('SIGTERM')
       setTimeout(() => child.kill('SIGKILL'), FORCE_KILL_TIMEOUT_MS)
-      finish({ ok: false, output: isClaude ? claudeText : stdout, timedOut: true })
+      finish({ ok: false, output: planText, timedOut: true })
     }, timeoutMs)
 
     child.stdout?.on('data', (d: Buffer) => {
       const text = outDecoder.write(d)
       stdout += text
-      if (isClaude) consumeClaude(text)
-      else onChunk?.(text)
+      consume(text)
     })
     child.stderr?.on('data', (d: Buffer) => { stderr += errDecoder.write(d) })
     child.on('error', (err) => finish({ ok: false, output: stdout, error: err.message }))
     child.on('close', (code) => {
-      if (isClaude && lineBuffer) applyClaudeLine(lineBuffer)
+      if (lineBuffer) applyLine(lineBuffer)
       if (code === 0) {
-        // For Claude prefer the parsed final/streamed text; fall back to raw
-        // stdout if parsing yielded nothing.
-        const output = isClaude ? (claudeFinal ?? claudeText) || stdout : stdout
+        // Prefer the parsed plan; fall back to raw stdout if parsing yielded nothing.
+        const output = (claudeFinal ?? planText) || stdout
         finish({ ok: true, output })
       } else {
         // Some CLIs (e.g. Claude on an auth failure) print the real reason to

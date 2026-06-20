@@ -12,16 +12,38 @@ const AGENT_LABEL: Record<string, string> = {
   codex: 'Codex',
 }
 
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
 export function CouncilPanels(): React.JSX.Element | null {
   const run = useAppStore((s) => s.councilRun)
   const approve = useAppStore((s) => s.approveCouncilPlan)
   const cancel = useAppStore((s) => s.cancelCouncil)
+
+  const consulting = run?.phase === 'consulting'
+  const startedAt = run?.startedAt
+  const [elapsed, setElapsed] = React.useState(0)
+  React.useEffect(() => {
+    if (!consulting || !startedAt) {
+      setElapsed(0)
+      return
+    }
+    const tick = (): void => setElapsed(Math.floor((Date.now() - startedAt) / 1000))
+    tick()
+    const interval = setInterval(tick, 1000)
+    return () => clearInterval(interval)
+  }, [consulting, startedAt])
+
   if (!run) return null
 
   return (
     <div className="my-2 rounded-lg border border-neutral-700 bg-neutral-900/60 p-3">
       <div className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">
         Council planning — {run.phase}
+        {consulting && startedAt ? <span className="ml-1 text-neutral-500">({formatElapsed(elapsed)})</span> : null}
       </div>
 
       {run.phase === 'refused' && <div className="text-sm text-amber-400">{run.reason}</div>}

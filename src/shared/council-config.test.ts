@@ -99,6 +99,7 @@ import {
   buildDebatePrompt,
   buildConsultantCommand,
   parseClaudeStreamLine,
+  parseCodexStreamLine,
   clampTimeoutSeconds,
   MIN_TIMEOUT_SECONDS,
   MAX_TIMEOUT_SECONDS,
@@ -194,4 +195,35 @@ test('parseClaudeStreamLine ignores irrelevant lines and bad JSON', () => {
   assert.deepEqual(parseClaudeStreamLine(''), {})
   assert.deepEqual(parseClaudeStreamLine('not json'), {})
   assert.deepEqual(parseClaudeStreamLine(JSON.stringify({ type: 'system', subtype: 'init' })), {})
+})
+
+test('codex command requests JSONL streaming and read-only sandbox', () => {
+  const codex = buildConsultantCommand('codex', '/usr/bin/codex', 'PROMPT')
+  assert.ok(codex.args.includes('exec'))
+  assert.ok(codex.args.includes('--json'))
+  assert.ok(codex.args.includes('--sandbox'))
+  assert.ok(codex.args.includes('read-only'))
+  assert.ok(codex.args.includes('PROMPT'))
+})
+
+test('parseCodexStreamLine extracts the agent message as plan', () => {
+  const line = JSON.stringify({
+    type: 'item.completed',
+    item: { id: 'item_0', type: 'agent_message', text: 'CODEX PLAN' },
+  })
+  assert.deepEqual(parseCodexStreamLine(line), { plan: 'CODEX PLAN' })
+})
+
+test('parseCodexStreamLine returns non-message items as live-only display', () => {
+  const line = JSON.stringify({
+    type: 'item.completed',
+    item: { id: 'item_1', type: 'reasoning', text: 'thinking about files' },
+  })
+  assert.deepEqual(parseCodexStreamLine(line), { display: 'thinking about files' })
+})
+
+test('parseCodexStreamLine ignores non-item events and bad JSON', () => {
+  assert.deepEqual(parseCodexStreamLine(JSON.stringify({ type: 'turn.started' })), {})
+  assert.deepEqual(parseCodexStreamLine('not json'), {})
+  assert.deepEqual(parseCodexStreamLine(''), {})
 })
