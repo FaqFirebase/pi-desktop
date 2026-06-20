@@ -93,6 +93,10 @@ export const IPC_CHANNELS = {
   MODELS_READ: 'models:read',
   MODELS_WRITE: 'models:write',
 
+  // Council planning
+  COUNCIL_DETECT: 'council:detect',
+  COUNCIL_RUN_CONSULTANTS: 'council:run-consultants',
+
   // File operations
   FILE_TREE: 'file:tree',
   FILE_SEARCH: 'file:search',
@@ -435,8 +439,37 @@ export type ArchivedSessionsMap = Record<string, number>
 
 export type { SessionLineageRecord } from './session-lineage'
 export type { ModelsConfig, ProviderConfig, CustomModel } from './models-config'
+export type {
+  CouncilConfig,
+  CouncilAgentId,
+  ConsensusMode,
+  ConsultantResult,
+  ConsultantStatus,
+} from './council-config'
+
+import type { CouncilAgentId as CouncilAgentIdType, ConsultantResult as ConsultantResultType } from './council-config'
+
+/** Result of COUNCIL_DETECT. */
+export interface CouncilDetectResult {
+  agents: Array<{ id: CouncilAgentIdType; found: boolean }>
+}
+
+/** Request payload for COUNCIL_RUN_CONSULTANTS. */
+export interface CouncilRunRequest {
+  request: string
+  members: CouncilAgentIdType[]
+  cwd: string
+  timeoutSeconds: number
+  consensusMode: 'arbiter' | 'debate'
+}
+
+/** Result of COUNCIL_RUN_CONSULTANTS. */
+export interface CouncilRunResult {
+  results: ConsultantResultType[]
+}
 
 import type { ModelsConfig as ModelsConfigType } from './models-config'
+import type { CouncilConfig } from './council-config'
 /** Result of the MODELS_READ IPC call. */
 export type ModelsReadResult = { config: ModelsConfigType } | { error: string; raw: string }
 
@@ -532,6 +565,8 @@ export interface AppSettings {
   // Show the Home/launcher screen on launch (PI starts lazily on first action)
   // instead of booting straight into Chat. When false, legacy behavior applies.
   openToHomeOnLaunch: boolean
+  // Multi-agent council planning configuration.
+  council: CouncilConfig
 }
 
 // ─── Update Check Types ─────────────────────────────────────────────────────
