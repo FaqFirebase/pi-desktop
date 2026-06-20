@@ -160,7 +160,6 @@ interface AppState {
 
 interface AppActions {
   // PI lifecycle
-  setPiStatus: (status: PiStatus) => void
   startPi: (options?: Record<string, unknown>) => Promise<void>
   stopPi: () => Promise<void>
   restartPi: (options?: Record<string, unknown>) => Promise<void>
@@ -402,13 +401,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   lineage: [],
 
   // ─── PI Lifecycle ─────────────────────────────────────────────────────
-
-  setPiStatus: (status) =>
-    set({
-      piStatus: status.status,
-      piPid: status.pid,
-      piError: status.error,
-    }),
 
   startPi: async (options) => {
     // Don't start if already running

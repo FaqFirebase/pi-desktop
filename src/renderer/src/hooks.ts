@@ -7,20 +7,14 @@ import { useAppStore } from './store'
  */
 export function usePiEvents(): void {
   const handlePiEvent = useAppStore((state) => state.handlePiEvent)
-  const setPiStatus = useAppStore((state) => state.setPiStatus)
 
   useEffect(() => {
-    // Subscribe to PI events
+    // Subscribe to PI events (status changes arrive here too, as 'status_change').
     const unsubscribeEvent = window.piDesktop.onEvent(handlePiEvent)
-
-    // Subscribe to status changes
-    const unsubscribeStatus = window.piDesktop.onStatusChange(setPiStatus)
-
     return () => {
       unsubscribeEvent()
-      unsubscribeStatus()
     }
-  }, [handlePiEvent, setPiStatus])
+  }, [handlePiEvent])
 }
 
 /**
