@@ -27,7 +27,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc -b --noEmit",
-    "lint": "eslint src/",
+    "lint": "eslint src bin scripts",
     "package": "electron-vite build && electron-builder",
     "package:linux": "electron-vite build && electron-builder --linux",
     "package:linux:appimage": "electron-vite build && electron-builder --linux AppImage",

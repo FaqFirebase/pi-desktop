@@ -44,4 +44,16 @@ export default tseslint.config(
       ...reactHooks.configs['recommended-latest'].rules,
     },
   },
+  // CommonJS Node scripts: CLI launcher and install hooks. `require()` is the
+  // correct module syntax here, so the TS-oriented rule is disabled.
+  {
+    files: ['bin/**/*.js', 'scripts/**/*.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { ...globals.node },
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
 )
