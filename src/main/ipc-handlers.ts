@@ -19,8 +19,14 @@ import type {
   UpdateCheckResult,
   ModelsConfig,
   ModelsReadResult,
+  CouncilRunRequest,
+  CouncilRunResult,
+  CouncilDetectResult,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
+import { DEFAULT_COUNCIL_CONFIG } from '../shared/council-config'
+import { detectAgents } from './agent-detection'
+import { runConsultants, defaultSpawnConsultant } from './council-manager'
 import type { SessionLineageRecord } from '../shared/session-lineage'
 import { readdir, stat, readFile, writeFile, mkdir, access, unlink } from 'fs/promises'
 import { basename, join } from 'path'
@@ -741,6 +747,29 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
       return { success: false, error: err instanceof Error ? err.message : String(err) }
     }
   })
+
+  ipcMain.handle(IPC_CHANNELS.COUNCIL_DETECT, async (): Promise<CouncilDetectResult> => {
+    const agents = detectAgents().map((a) => ({ id: a.id, found: a.found }))
+    return { agents }
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.COUNCIL_RUN_CONSULTANTS,
+    async (_event, payload: unknown): Promise<CouncilRunResult> => {
+      const req = payload as CouncilRunRequest
+      const results = await runConsultants(
+        {
+          request: req.request,
+          members: req.members,
+          cwd: req.cwd,
+          timeoutSeconds: req.timeoutSeconds,
+          consensusMode: req.consensusMode,
+        },
+        { spawnConsultant: defaultSpawnConsultant },
+      )
+      return { results }
+    },
+  )
 
   // ─── Session Tags ───────────────────────────────────────────────────────
 
@@ -1536,6 +1565,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   resumeLastSession: true,
   collapsedSessionGroups: [],
   openToHomeOnLaunch: true,
+  council: DEFAULT_COUNCIL_CONFIG,
 }
 
 function getSettingsPath(): string {
