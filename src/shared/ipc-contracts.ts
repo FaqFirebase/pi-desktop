@@ -74,6 +74,8 @@ export const IPC_CHANNELS = {
   WORKSPACE_RENAME: 'workspace:rename',
   WORKSPACE_SET_ACTIVE: 'workspace:set-active',
   WORKSPACE_GET_ACTIVE: 'workspace:get-active',
+  WORKSPACE_CHANGE_PATH: 'workspace:change-path',
+  WORKSPACE_PATH_EXISTS: 'workspace:path-exists',
   WORKSPACE_START_PI: 'workspace:start-pi',
   WORKSPACE_STOP_PI: 'workspace:stop-pi',
 

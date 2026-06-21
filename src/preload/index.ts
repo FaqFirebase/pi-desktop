@@ -101,6 +101,8 @@ interface PiDesktopAPI {
     create(name: string, path: string): Promise<Workspace>
     remove(workspaceId: string): Promise<void>
     rename(workspaceId: string, name: string): Promise<void>
+    changePath(workspaceId: string, newPath: string): Promise<void>
+    pathExists(): Promise<boolean>
     setActive(workspaceId: string): Promise<Workspace>
     getActive(): Promise<Workspace | null>
     startPi(workspaceId: string, options?: PiStartOptions): Promise<PiStatus>
@@ -269,6 +271,8 @@ const api: PiDesktopAPI = {
     create: (name, path) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CREATE, name, path),
     remove: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_REMOVE, workspaceId),
     rename: (workspaceId, name) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_RENAME, workspaceId, name),
+    changePath: (workspaceId, newPath) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CHANGE_PATH, workspaceId, newPath),
+    pathExists: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_PATH_EXISTS),
     setActive: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_SET_ACTIVE, workspaceId),
     getActive: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GET_ACTIVE),
     startPi: (workspaceId, options) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_START_PI, workspaceId, options),

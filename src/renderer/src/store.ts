@@ -254,6 +254,7 @@ interface AppActions {
   switchWorkspace: (workspaceId: string) => Promise<void>
   removeWorkspace: (workspaceId: string) => Promise<void>
   renameWorkspace: (workspaceId: string, name: string) => Promise<void>
+  changeWorkspaceFolder: (workspaceId: string, newPath: string) => Promise<void>
 
   // Timeline
   addTimelineEvent: (event: TimelineEvent) => void
@@ -1168,6 +1169,20 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       await get().loadWorkspaces()
     } catch {
       // Silent failure
+    }
+  },
+
+  changeWorkspaceFolder: async (workspaceId, newPath) => {
+    try {
+      await window.piDesktop.workspace.changePath(workspaceId, newPath)
+      await get().loadWorkspaces()
+    } catch (err) {
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: `Change folder error: ${err instanceof Error ? err.message : String(err)}`,
+        timestamp: Date.now(),
+      })
     }
   },
 

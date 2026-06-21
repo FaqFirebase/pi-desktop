@@ -623,6 +623,16 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     await workspaceManager.renameWorkspace(workspaceId, name)
   })
 
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_CHANGE_PATH, async (_event, workspaceId: unknown, newPath: unknown) => {
+    if (!isString(workspaceId)) throw new Error('workspaceId must be a string')
+    if (!isString(newPath)) throw new Error('newPath must be a string')
+    await workspaceManager.changeWorkspacePath(workspaceId, newPath)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_PATH_EXISTS, async (): Promise<boolean> => {
+    return workspaceManager.activeWorkspacePathExists()
+  })
+
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_SET_ACTIVE, async (_event, workspaceId: unknown) => {
     if (!isString(workspaceId)) throw new Error('workspaceId must be a string')
     return workspaceManager.setActiveWorkspace(workspaceId)

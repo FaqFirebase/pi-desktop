@@ -259,6 +259,7 @@ function WorkspaceSwitcher(): React.JSX.Element {
   const createWorkspace = useAppStore((state) => state.createWorkspace)
   const removeWorkspace = useAppStore((state) => state.removeWorkspace)
   const renameWorkspace = useAppStore((state) => state.renameWorkspace)
+  const changeWorkspaceFolder = useAppStore((state) => state.changeWorkspaceFolder)
   const { show: showContextMenu, ContextMenuComponent: WorkspaceContextMenu } = useContextMenu()
 
   const [isOpen, setIsOpen] = useState(false)
@@ -287,6 +288,12 @@ function WorkspaceSwitcher(): React.JSX.Element {
     setIsOpen(false)
   }
 
+  const handleChangeFolder = async () => {
+    if (!activeWorkspace) return
+    const path = await window.piDesktop.system.openDialog({ title: 'Select Workspace Folder' })
+    if (path) await changeWorkspaceFolder(activeWorkspace.id, path)
+  }
+
   const handleWorkspaceContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -297,6 +304,15 @@ function WorkspaceSwitcher(): React.JSX.Element {
         icon: <Pencil size={14} />,
         disabled: !activeWorkspace,
         action: startRenaming,
+      },
+      {
+        id: 'change-folder',
+        label: 'Change folder…',
+        icon: <FolderOpen size={14} />,
+        disabled: !activeWorkspace,
+        action: () => {
+          void handleChangeFolder()
+        },
       },
     ])
   }
