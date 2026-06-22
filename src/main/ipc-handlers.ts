@@ -26,6 +26,7 @@ import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { DEFAULT_COUNCIL_CONFIG, COUNCIL_AGENT_IDS, clampTimeoutSeconds } from '../shared/council-config'
 import type { CouncilAgentId, ConsensusMode } from '../shared/council-config'
 import { detectAgents } from './agent-detection'
+import { readAttachment } from './attachment-reader'
 import { runConsultants, defaultSpawnConsultant } from './council-manager'
 import type { SessionLineageRecord } from '../shared/session-lineage'
 import { readdir, stat, readFile, writeFile, mkdir, access, unlink } from 'fs/promises'
@@ -312,7 +313,6 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   // ─── Pi Process Lifecycle ───────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.PI_START, async (_event, options?: unknown) => {
-    console.log('[IPC] PI_START called')
     const opts = validateStartOptions(options)
     const settings = await loadAppSettings(workspaceManager)
     const activeWs = workspaceManager.getActiveWorkspace()
@@ -333,9 +333,7 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     const pi = workspaceManager.getPiManager(activeWs.id)
     if (!pi) throw new Error('Failed to create Pi manager')
 
-    const result = pi.getStatus()
-    console.log('[IPC] PI_START result:', result.status)
-    return result
+    return pi.getStatus()
   })
 
   ipcMain.handle(IPC_CHANNELS.PI_STOP, async () => {
@@ -382,9 +380,11 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     return getActivePi().sendCommand(cmd)
   })
 
-  ipcMain.handle(IPC_CHANNELS.PI_STEER, async (_event, message: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.PI_STEER, async (_event, message: unknown, images?: unknown) => {
     if (!isString(message)) throw new Error('message must be a string')
-    return getActivePi().sendCommand({ type: 'steer', message })
+    const cmd: Record<string, unknown> = { type: 'steer', message }
+    if (Array.isArray(images) && images.length > 0) cmd.images = images
+    return getActivePi().sendCommand(cmd)
   })
 
   ipcMain.handle(IPC_CHANNELS.PI_FOLLOW_UP, async (_event, message: unknown) => {
@@ -917,6 +917,13 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     return fs.readFileContent(filePath)
   })
 
+  // Reads a user-selected attachment by absolute path (chosen via the native
+  // open dialog, so it may live outside the workspace).
+  ipcMain.handle(IPC_CHANNELS.FILE_READ_ATTACHMENT, async (_event, filePath: unknown) => {
+    if (!isString(filePath)) throw new Error('filePath must be a string')
+    return readAttachment(filePath)
+  })
+
   ipcMain.handle(IPC_CHANNELS.FILE_WRITE, async (_event, filePath: unknown, content: unknown) => {
     if (!isString(filePath)) throw new Error('filePath must be a string')
     if (!isString(content)) throw new Error('content must be a string')
@@ -959,11 +966,17 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   // ─── System ─────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.SYSTEM_OPEN_DIALOG, async (_event, options?: unknown) => {
+    // Default to directory selection for back-compat with workspace pickers;
+    // callers pass mode: 'file' (and optional filters) to attach files.
+    const pickFile = isObject(options) && options.mode === 'file'
     const dialogOptions: Electron.OpenDialogOptions = {
-      properties: ['openDirectory'],
+      properties: [pickFile ? 'openFile' : 'openDirectory'],
     }
-    if (isObject(options) && isString(options.title)) {
-      dialogOptions.title = options.title
+    if (isObject(options)) {
+      if (isString(options.title)) dialogOptions.title = options.title
+      if (Array.isArray(options.filters)) {
+        dialogOptions.filters = options.filters as Electron.FileFilter[]
+      }
     }
     const result = await dialog.showOpenDialog(dialogOptions)
     return result.canceled ? null : result.filePaths[0]

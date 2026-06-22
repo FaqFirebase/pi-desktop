@@ -104,6 +104,7 @@ export const IPC_CHANNELS = {
   FILE_SEARCH: 'file:search',
   FILE_SEARCH_CONTENT: 'file:search-content',
   FILE_READ: 'file:read',
+  FILE_READ_ATTACHMENT: 'file:read-attachment',
   FILE_WRITE: 'file:write',
   FILE_DIFF: 'file:diff',
   FILE_STAGED_DIFF: 'file:staged-diff',
@@ -439,6 +440,32 @@ export interface SessionDeleteResult {
 }
 
 export type ArchivedSessionsMap = Record<string, number>
+
+// File extensions Pi accepts as inline images (matches Pi's RPC image support).
+export const SUPPORTED_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'] as const
+
+/** A single image attachment in the shape Pi's RPC `prompt` command expects. */
+export interface PromptImage {
+  type: 'image'
+  mimeType: string
+  /** Base64-encoded image bytes (no data: URI prefix). */
+  data: string
+}
+
+/**
+ * Result of reading a user-selected attachment. Images are returned as a
+ * Pi-ready `PromptImage`; everything else is read as UTF-8 text to inline.
+ */
+export type AttachmentReadResult =
+  | { kind: 'image'; name: string; image: PromptImage }
+  | { kind: 'text'; name: string; content: string }
+
+/** Options for the native open dialog. Defaults to picking a directory. */
+export interface OpenDialogOptions {
+  title?: string
+  mode?: 'file' | 'directory'
+  filters?: Array<{ name: string; extensions: string[] }>
+}
 
 export type { SessionLineageRecord } from './session-lineage'
 export type { ModelsConfig, ProviderConfig, CustomModel } from './models-config'

@@ -41,6 +41,7 @@ import type {
   NoteInput,
   NoteUpdate,
   UpdateCheckResult,
+  PromptImage,
 } from '../../shared/ipc-contracts'
 
 // ─── Message State (renderer-local, built from events) ───────────────────────
@@ -198,7 +199,7 @@ interface AppActions {
   clearMessages: () => void
 
   // Prompts
-  sendPrompt: (message: string, options?: { images?: unknown[] }) => Promise<void>
+  sendPrompt: (message: string, options?: { images?: PromptImage[] }) => Promise<void>
   sendSteer: (message: string) => Promise<void>
   sendFollowUp: (message: string) => Promise<void>
   runCouncil: (request: string) => Promise<void>
@@ -511,8 +512,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
     try {
       if (isStreaming) {
-        // Queue as steering during streaming
-        await window.piDesktop.commands.steer(message)
+        // Queue as steering during streaming, carrying any image attachments.
+        await window.piDesktop.commands.steer(message, options?.images)
       } else {
         const prompt = settings?.permissionMode === 'plan-readonly'
           ? buildPlanningPrompt(message)

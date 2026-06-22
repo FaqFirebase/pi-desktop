@@ -29,6 +29,9 @@ import type {
   CouncilRunRequest,
   CouncilRunResult,
   CouncilProgressEvent,
+  AttachmentReadResult,
+  OpenDialogOptions,
+  PromptImage,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 
@@ -45,8 +48,8 @@ interface PiDesktopAPI {
 
   // Pi commands
   commands: {
-    prompt(message: string, options?: { images?: unknown[]; streamingBehavior?: string }): Promise<unknown>
-    steer(message: string): Promise<unknown>
+    prompt(message: string, options?: { images?: PromptImage[]; streamingBehavior?: string }): Promise<unknown>
+    steer(message: string, images?: PromptImage[]): Promise<unknown>
     followUp(message: string): Promise<unknown>
     abort(): Promise<unknown>
     bash(command: string): Promise<unknown>
@@ -166,6 +169,7 @@ interface PiDesktopAPI {
     search(query: string): Promise<FileSearchResult[]>
     searchContent(query: string): Promise<FileSearchResult[]>
     read(path: string): Promise<string>
+    readAttachment(path: string): Promise<AttachmentReadResult>
     write(path: string, content: string): Promise<{ ok: boolean }>
     getDiff(filePath?: string): Promise<string>
     getStagedDiff(filePath?: string): Promise<string>
@@ -175,7 +179,7 @@ interface PiDesktopAPI {
 
   // System
   system: {
-    openDialog(options?: { title?: string }): Promise<string | null>
+    openDialog(options?: OpenDialogOptions): Promise<string | null>
     getPath(name: string): Promise<string>
     openExternal(url: string): Promise<void>
     getVersion(): Promise<string>
@@ -221,7 +225,7 @@ const api: PiDesktopAPI = {
 
   commands: {
     prompt: (message, options) => ipcRenderer.invoke(IPC_CHANNELS.PI_PROMPT, message, options),
-    steer: (message) => ipcRenderer.invoke(IPC_CHANNELS.PI_STEER, message),
+    steer: (message, images) => ipcRenderer.invoke(IPC_CHANNELS.PI_STEER, message, images),
     followUp: (message) => ipcRenderer.invoke(IPC_CHANNELS.PI_FOLLOW_UP, message),
     abort: () => ipcRenderer.invoke(IPC_CHANNELS.PI_ABORT),
     bash: (command) => ipcRenderer.invoke(IPC_CHANNELS.PI_BASH, command),
@@ -335,6 +339,7 @@ const api: PiDesktopAPI = {
     search: (query) => ipcRenderer.invoke(IPC_CHANNELS.FILE_SEARCH, query),
     searchContent: (query) => ipcRenderer.invoke(IPC_CHANNELS.FILE_SEARCH_CONTENT, query),
     read: (path) => ipcRenderer.invoke(IPC_CHANNELS.FILE_READ, path),
+    readAttachment: (path) => ipcRenderer.invoke(IPC_CHANNELS.FILE_READ_ATTACHMENT, path),
     write: (path, content) => ipcRenderer.invoke(IPC_CHANNELS.FILE_WRITE, path, content),
     getDiff: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE_DIFF, filePath),
     getStagedDiff: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE_STAGED_DIFF, filePath),

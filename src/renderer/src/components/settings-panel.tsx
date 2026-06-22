@@ -85,7 +85,7 @@ export function SettingsPanel(): React.JSX.Element {
   }, [settings])
 
   const handleSelectPath = async () => {
-    const path = await window.piDesktop.system.openDialog({ title: 'Select Pi Executable' })
+    const path = await window.piDesktop.system.openDialog({ title: 'Select Pi Executable', mode: 'file' })
     if (path) setPiPath(path)
   }
 
