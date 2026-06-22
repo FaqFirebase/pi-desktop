@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { applyTheme } from './utils/theme'
 import { buildPlanningPrompt } from './utils/planning-prompt'
+import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
 import type { PiCommand } from '../../shared/pi-command'
 import { normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
@@ -44,28 +45,7 @@ import type {
   PromptImage,
 } from '../../shared/ipc-contracts'
 
-// ─── Message State (renderer-local, built from events) ───────────────────────
-
-export interface DisplayMessage {
-  id: string
-  role: 'user' | 'assistant' | 'toolResult' | 'system'
-  content: string
-  timestamp: number
-  isStreaming?: boolean
-  toolCalls?: Array<{
-    id: string
-    name: string
-    arguments: string
-    result?: string
-    isError?: boolean
-    isExecuting?: boolean
-    durationMs?: number
-  }>
-  thinking?: string
-  model?: string
-  provider?: string
-  cost?: number
-}
+export type { DisplayAttachment, DisplayMessage } from './message-parsing'
 
 // ─── Council Run State ───────────────────────────────────────────────────────
 
@@ -199,7 +179,7 @@ interface AppActions {
   clearMessages: () => void
 
   // Prompts
-  sendPrompt: (message: string, options?: { images?: PromptImage[] }) => Promise<void>
+  sendPrompt: (message: string, options?: { images?: PromptImage[]; attachments?: DisplayAttachment[] }) => Promise<void>
   sendSteer: (message: string) => Promise<void>
   sendFollowUp: (message: string) => Promise<void>
   runCouncil: (request: string) => Promise<void>
@@ -322,21 +302,6 @@ interface AppActions {
 let messageCounter = 0
 function generateId(): string {
   return `msg-${Date.now()}-${++messageCounter}`
-}
-
-function extractTextContent(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content
-      .filter((block: unknown) => {
-        if (typeof block !== 'object' || block === null) return false
-        const b = block as Record<string, unknown>
-        return b.type === 'text' && typeof b.text === 'string'
-      })
-      .map((block) => (block as { text: string }).text)
-      .join('')
-  }
-  return ''
 }
 
 /**
@@ -506,6 +471,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       role: 'user',
       content: message,
       timestamp: Date.now(),
+      attachments: options?.attachments,
     })
 
     set({ isStreaming: true, streamingContent: '', streamingThinking: '', streamingToolCalls: new Map() })
@@ -1782,72 +1748,4 @@ function handleAutoRetry(
       get().refreshSessionStats()
     }
   }
-}
-
-// ─── Message Parsing ─────────────────────────────────────────────────────────
-
-function parseAgentMessage(msg: unknown): DisplayMessage | null {
-  if (!msg || typeof msg !== 'object') return null
-
-  const m = msg as Record<string, unknown>
-  const role = m.role as string
-
-  if (role === 'user') {
-    return {
-      id: String(m.id ?? generateId()),
-      role: 'user',
-      content: extractTextContent(m.content),
-      timestamp: Number(m.timestamp) || Date.now(),
-    }
-  }
-
-  if (role === 'assistant') {
-    const content = Array.isArray(m.content) ? m.content : []
-    const textParts = content
-      .filter((c: unknown) => typeof c === 'object' && c !== null && (c as Record<string, unknown>).type === 'text')
-      .map((c: unknown) => ((c as Record<string, unknown>).text as string) ?? '')
-
-    const thinkingParts = content
-      .filter((c: unknown) => typeof c === 'object' && c !== null && (c as Record<string, unknown>).type === 'thinking')
-      .map((c: unknown) => ((c as Record<string, unknown>).thinking as string) ?? '')
-
-    const toolCalls = content
-      .filter((c: unknown) => typeof c === 'object' && c !== null && (c as Record<string, unknown>).type === 'toolCall')
-      .map((c: unknown) => {
-        const tc = c as Record<string, unknown>
-        return {
-          id: String(tc.id ?? ''),
-          name: String(tc.name ?? ''),
-          arguments: JSON.stringify(tc.arguments ?? {}),
-        }
-      })
-
-    return {
-      id: String(m.id ?? generateId()),
-      role: 'assistant',
-      content: textParts.join(''),
-      timestamp: Number(m.timestamp) || Date.now(),
-      thinking: thinkingParts.length > 0 ? thinkingParts.join('') : undefined,
-      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-      model: typeof m.model === 'string' ? m.model : undefined,
-      provider: typeof m.provider === 'string' ? m.provider : undefined,
-    }
-  }
-
-  if (role === 'toolResult') {
-    const content = Array.isArray(m.content) ? m.content : []
-    const text = content
-      .filter((c: unknown) => typeof c === 'object' && c !== null && (c as Record<string, unknown>).type === 'text')
-      .map((c: unknown) => ((c as Record<string, unknown>).text as string) ?? '')
-      .join('')
-
-    return {
-      id: String(m.id ?? generateId()),
-      role: 'toolResult',
-      content: text,
-      timestamp: Number(m.timestamp) || Date.now(),
-    }
-  }
-
-  return null
 }

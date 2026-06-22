@@ -62,6 +62,14 @@ export function ChatInput(): React.JSX.Element {
       const images = attachments
         .filter((a): a is Extract<Attachment, { kind: 'image' }> => a.kind === 'image')
         .map((a) => a.image)
+      const displayAttachments = attachments
+        .filter((a): a is Extract<Attachment, { kind: 'image' }> => a.kind === 'image')
+        .map((a) => ({
+          kind: 'image' as const,
+          name: a.name,
+          mimeType: a.image.mimeType,
+          data: a.image.data,
+        }))
 
       let fullMessage = message
       if (textAttachments.length > 0) {
@@ -70,7 +78,10 @@ export function ChatInput(): React.JSX.Element {
           .join('')
       }
 
-      sendPrompt(fullMessage, images.length > 0 ? { images } : undefined)
+      sendPrompt(
+        fullMessage,
+        images.length > 0 ? { images, attachments: displayAttachments } : undefined
+      )
       setAttachments([])
     },
     [sendPrompt, attachments]
