@@ -2,14 +2,14 @@ import { useEffect, useRef } from 'react'
 import { useAppStore } from './store'
 
 /**
- * Subscribes to PI events from the main process and routes them to the store.
+ * Subscribes to Pi events from the main process and routes them to the store.
  * Must be called once in the top-level component tree.
  */
 export function usePiEvents(): void {
   const handlePiEvent = useAppStore((state) => state.handlePiEvent)
 
   useEffect(() => {
-    // Subscribe to PI events (status changes arrive here too, as 'status_change').
+    // Subscribe to Pi events (status changes arrive here too, as 'status_change').
     const unsubscribeEvent = window.piDesktop.onEvent(handlePiEvent)
     return () => {
       unsubscribeEvent()
@@ -108,7 +108,7 @@ export function useChatKeyboard(
 }
 
 /**
- * Loads initial data on mount — workspaces, settings, then PI.
+ * Loads initial data on mount — workspaces, settings, then Pi.
  */
 export function useInitialize(): void {
   const startPi = useAppStore((state) => state.startPi)
@@ -128,7 +128,7 @@ export function useInitialize(): void {
       await loadSettings()
       const openToHome = useAppStore.getState().settings?.openToHomeOnLaunch ?? true
 
-      // PI-free data needed by both Home and Chat.
+      // Pi-free data needed by both Home and Chat.
       await loadWorkspaces()
       await refreshSessionList()
       await useAppStore.getState().loadTags()
@@ -138,7 +138,7 @@ export function useInitialize(): void {
       void useAppStore.getState().checkForUpdates()
 
       if (openToHome) {
-        // Land on the Home/launcher screen; PI starts lazily on first action.
+        // Land on the Home/launcher screen; Pi starts lazily on first action.
         useAppStore.getState().setCurrentView('home')
         return
       }

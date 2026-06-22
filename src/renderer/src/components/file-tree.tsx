@@ -32,6 +32,8 @@ export function FileTree(): React.JSX.Element {
   const [gitBranch, setGitBranch] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const [pathExists, setPathExists] = useState(true)
+  const activeWorkspace = useAppStore((state) => state.activeWorkspace)
 
   const loadTree = useCallback(async (showLoading: boolean) => {
     if (showLoading) setLoading(true)
@@ -44,8 +46,16 @@ export function FileTree(): React.JSX.Element {
       setTree(treeData)
       setGitStatus(status)
       setGitBranch(branch)
+      setPathExists(true)
     } catch {
-      // Silent failure
+      // The tree couldn't load — usually the workspace folder is missing or
+      // unreadable. Record whether it exists so the UI can say which.
+      setTree(null)
+      try {
+        setPathExists(await window.piDesktop.workspace.pathExists())
+      } catch {
+        setPathExists(true)
+      }
     } finally {
       if (showLoading) setLoading(false)
     }
@@ -93,6 +103,21 @@ export function FileTree(): React.JSX.Element {
   }
 
   if (!tree) {
+    // Active workspace whose folder is missing/unreadable — say so explicitly
+    // (e.g. the folder was moved/deleted or the saved path is wrong).
+    if (activeWorkspace && !pathExists) {
+      return (
+        <div className="flex flex-col items-center justify-center px-4 py-8 text-center text-neutral-500">
+          <FolderOpen size={24} className="mb-2 text-amber-500/70" />
+          <p className="text-xs text-amber-400">Folder not found</p>
+          <p className="mt-1 break-all text-[11px] text-neutral-500">{activeWorkspace.path}</p>
+          <p className="mt-2 text-[11px] text-neutral-600">
+            The folder may have moved or been deleted. Right-click the workspace in the
+            sidebar and choose “Change folder…” to point it somewhere else.
+          </p>
+        </div>
+      )
+    }
     return (
       <div className="flex flex-col items-center justify-center px-4 py-8 text-center text-neutral-500">
         <FolderOpen size={24} className="mb-2 text-neutral-600" />

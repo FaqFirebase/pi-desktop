@@ -5,6 +5,13 @@ export interface CustomModelCost {
   cacheWrite: number
 }
 
+export interface ModelCompat {
+  supportsReasoningEffort?: boolean
+  supportsDeveloperRole?: boolean
+  supportsUsageInStreaming?: boolean
+  [key: string]: unknown
+}
+
 export interface CustomModel {
   id: string
   name?: string
@@ -23,6 +30,7 @@ export interface ProviderConfig {
   api?: string
   apiKey?: string
   models?: CustomModel[]
+  compat?: ModelCompat
   // Preserve headers, authHeader, modelOverrides, compat, ...
   [key: string]: unknown
 }
@@ -85,5 +93,56 @@ export function mergeModelsConfig(original: ModelsConfig, edited: ModelsConfig):
     })
     result.providers[key] = { ...origProv, ...prov, models: mergedModels }
   }
-  return result
+  return normalizeModelsConfigForPi(result)
+}
+
+export function normalizeModelsConfigForPi(config: ModelsConfig): ModelsConfig {
+  const providers: ModelsConfig['providers'] = {}
+  let changed = false
+
+  for (const [key, provider] of Object.entries(config.providers ?? {})) {
+    let nextProvider = provider
+
+    if (shouldEnableOllamaCloudReasoningEffort(provider)) {
+      nextProvider = {
+        ...nextProvider,
+        compat: {
+          ...(nextProvider.compat ?? {}),
+          supportsReasoningEffort: true,
+        },
+      }
+      changed = true
+    }
+
+    providers[key] = nextProvider
+  }
+
+  return changed ? { ...config, providers } : config
+}
+
+function isOllamaCloudProvider(provider: ProviderConfig): boolean {
+  const baseUrl = provider.baseUrl?.replace(/\/+$/, '')
+  return (baseUrl === 'https://ollama.com' || baseUrl === 'https://ollama.com/v1') && provider.api === 'openai-completions'
+}
+
+function shouldEnableOllamaCloudReasoningEffort(provider: ProviderConfig): boolean {
+  if (!isOllamaCloudProvider(provider)) return false
+  if (provider.compat?.supportsReasoningEffort === true) return false
+  return (provider.models ?? []).some((model) => model.reasoning === true)
+}
+
+const TEXT_INPUT = 'text'
+const IMAGE_INPUT = 'image'
+
+/**
+ * Toggle image (vision) support in a model's `input` modalities while always
+ * keeping text. Returns a new array; never mutates the input.
+ */
+export function withImageInput(input: string[] | undefined, enabled: boolean): string[] {
+  const base = input && input.length > 0 ? input : [TEXT_INPUT]
+  const withText = base.includes(TEXT_INPUT) ? base : [TEXT_INPUT, ...base]
+  if (enabled) {
+    return withText.includes(IMAGE_INPUT) ? [...withText] : [...withText, IMAGE_INPUT]
+  }
+  return withText.filter((modality) => modality !== IMAGE_INPUT)
 }

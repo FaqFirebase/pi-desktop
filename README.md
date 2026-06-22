@@ -1,18 +1,19 @@
-# PI Desktop
+# Pi Desktop
 
-A desktop GUI for the [PI coding agent](https://pi.dev). Chat, manage projects, browse files, run commands, install packages — all in one window.
+A desktop GUI for the [Pi coding agent](https://pi.dev). Chat, manage projects, browse files, run commands, install packages — all in one window.
 
-![PI Desktop — Home launcher screen](docs/screenshots/Pi_Home_Screenshot_20260618_090453.png)
+![Pi Desktop — Home launcher screen](docs/screenshots/Pi_Home_Screenshot_20260618_090453.png)
 
 Still in alpha — expect rough edges.
 
 ## What it does
 
 - Streaming chat with thinking blocks and tool use
+- [Multi-Agent Council Planning](#multi-agent-council-planning) — Pi, Claude, and Codex plan together and reach consensus before Pi builds (opt-in)
 - Command palette (`Ctrl/Cmd+K` or `/`) — run skills, prompt templates, and built-in commands
 - Skills browser, session fork/branch tree, and one-click context compaction
 - Custom models & providers editor (Settings) — edits `~/.pi/agent/models.json`
-- Multiple workspaces, each with its own PI process and sessions
+- Multiple workspaces, each with its own Pi process and sessions
 - Review rail with permissions, approvals, changed files, and session status
 - File tree, code editor (CodeMirror 6 with syntax highlighting), diff viewer, file search
 - Terminal with ANSI colors
@@ -21,7 +22,7 @@ Still in alpha — expect rough edges.
 
 ## Review rail
 
-The right-side Review rail keeps safety and working-tree state visible while you chat with PI.
+The right-side Review rail keeps safety and working-tree state visible while you chat with Pi.
 
 Changed files use readable status badges:
 
@@ -34,9 +35,30 @@ Changed files use readable status badges:
 | `STG` | Modified file staged in git |
 | `REN` | File was renamed |
 
+## Multi-Agent Council Planning
+
+Pi, Claude, and Codex each produce an initial plan, share and converge, and Pi presents the agreed consensus plan *before* anything is built. All members plan read-only; Pi is the only agent that edits files.
+
+This is **off by default**. Enable it in **Settings → "Multi-Agent Council Planning"**. A confirmation dialog warns that it increases token/credit usage, because each request runs multiple agents.
+
+**Members.** Pi, Claude, and Codex. The app auto-detects each CLI cross-platform; only detected agents can be enabled, via per-agent checkboxes. At least two members must be available, or a run is refused. Pi always merges the plans into the final consensus, even when not checked as a planner.
+
+**Read-only planning.** Every member plans read-only (Claude `--permission-mode plan`, Codex `--sandbox read-only`, Pi with write tools excluded) — they produce plans but never modify files. Only Pi implements the approved result.
+
+**Live output.** Each member streams its plan live in its own card during the consulting phase, with an elapsed timer.
+
+**Consensus modes:**
+
+- **One debate round** (default) — each member sees the others' plans and revises once, then Pi merges. You watch them converge.
+- **Arbiter merge** — faster/cheaper. Pi synthesizes the initial plans directly with no debate round.
+
+**Per-member timeout** (10–600s, default 240s) bounds each member. A member that times out or errors is dropped, and the run proceeds as long as at least one plan was produced.
+
+**To use it:** with the feature enabled, type your request and click **Plan with Council** in the composer. Review each member's plan and Pi's merged consensus plan. If you want changes, type feedback in **Request changes to the plan…** and Pi revises the consensus (repeat as needed). When you're happy, click **Implement this** to have Pi build it. The panel collapses once a plan is ready so the output stays readable.
+
 ## Getting started
 
-You need PI installed first:
+You need Pi installed first:
 
 ```bash
 npm install -g @earendil-works/pi-coding-agent
@@ -45,25 +67,25 @@ npm install -g @earendil-works/pi-coding-agent
 On Linux, grab the AppImage from [Releases](https://github.com/FaqFirebase/pi-desktop/releases):
 
 ```bash
-chmod +x PI-Desktop-linux-x64.AppImage
-./PI-Desktop-linux-x64.AppImage
+chmod +x Pi-Desktop-linux-x64.AppImage
+./Pi-Desktop-linux-x64.AppImage
 ```
 
 ### macOS
 
-Download the `.dmg` (Apple Silicon / arm64) from [Releases](https://github.com/FaqFirebase/pi-desktop/releases), open it, and drag **PI Desktop** to Applications.
+Download the `.dmg` (Apple Silicon / arm64) from [Releases](https://github.com/FaqFirebase/pi-desktop/releases), open it, and drag **Pi Desktop** to Applications.
 
 Builds are **not yet signed or notarized**, so on first launch macOS blocks the app ("Apple could not verify… is free of malware"). To allow it:
 
-1. Try to open **PI Desktop** once (double-click). macOS blocks it — click **Done**.
+1. Try to open **Pi Desktop** once (double-click). macOS blocks it — click **Done**.
 2. Open **System Settings → Privacy & Security**.
-3. Scroll down to the **Security** section. You'll see *"PI Desktop was blocked to protect your Mac."* Click **Open Anyway**.
+3. Scroll down to the **Security** section. You'll see *"Pi Desktop was blocked to protect your Mac."* Click **Open Anyway**.
 4. Confirm with Touch ID / your password, then open the app again.
 
 You only need to do this once. If a downloaded `.zip` instead reports the app is **"damaged and can't be opened,"** that's the quarantine flag — clear it in Terminal:
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/PI Desktop.app"
+xattr -dr com.apple.quarantine "/Applications/Pi Desktop.app"
 ```
 
 > **Prefer to skip the unsigned-app warnings entirely?** Build from source. A build you compile yourself runs locally without Gatekeeper blocking it, so there's no signing/notarization prompt and no quarantine flag to clear. See [Build it yourself → Linux / macOS](#linux--macos) below.
@@ -133,7 +155,7 @@ The postinstall script rebuilds `node-pty` against Electron's ABI and downloads 
 
 If the Electron binary is missing after install, use the [manual Electron binary download](#manual-electron-binary-download) steps below. This is the confirmed fallback on Windows when Electron's postinstall extraction leaves a partial `dist` folder.
 
-#### 4. Install PI
+#### 4. Install Pi
 
 ```powershell
 powershell -c "irm https://pi.dev/install.ps1 | iex"
@@ -154,12 +176,12 @@ npm run dev
 | `MSB8040` — Spectre libs missing | VS Build Tools 2026 (v180 toolset) installed instead of 2022 (v143) | Uninstall 2026, install VS Build Tools 2022 with Spectre libs for v143 |
 | `electron-vite is not recognized` | `npm install` didn't complete | Run `npm install` again |
 | Electron binary missing after install | Electron's postinstall extraction left a partial or missing `dist` folder | Add the repo folder to Defender exclusions, then `npm install` again. If it still fails, use the manual download steps below |
-| `EPERM` / `EACCES` writing a project file | Controlled Folder Access (Ransomware protection) is blocking writes under Documents/Desktop | Keep the repo and your projects out of protected folders, or allow PI Desktop through Controlled folder access — see below |
-| PI shows "error" in status popover | PI not installed or PATH not updated | Run the install script above in a **new** terminal window |
+| `EPERM` / `EACCES` writing a project file | Controlled Folder Access (Ransomware protection) is blocking writes under Documents/Desktop | Keep the repo and your projects out of protected folders, or allow Pi Desktop through Controlled folder access — see below |
+| Pi shows "error" in status popover | Pi not installed or PATH not updated | Run the install script above in a **new** terminal window |
 
 #### Controlled Folder Access (Ransomware protection)
 
-Windows **Controlled Folder Access** protects `Documents`, `Desktop`, `Pictures`, and similar folders, silently blocking apps it doesn't trust from writing to them. Because PI Desktop is a coding agent that edits files, this shows up as intermittent `EPERM`/`EACCES` failures — during `npm install`, when the agent edits code, or when you save a file — if your repo or projects live inside a protected folder.
+Windows **Controlled Folder Access** protects `Documents`, `Desktop`, `Pictures`, and similar folders, silently blocking apps it doesn't trust from writing to them. Because Pi Desktop is a coding agent that edits files, this shows up as intermittent `EPERM`/`EACCES` failures — during `npm install`, when the agent edits code, or when you save a file — if your repo or projects live inside a protected folder.
 
 The reliable fix is to **keep code out of protected folders**. Clone the repo and put your projects somewhere unprotected, for example:
 
@@ -170,9 +192,9 @@ git clone https://github.com/FaqFirebase/pi-desktop.git C:\dev\pi-desktop
 
 If you must keep code under Documents/Desktop, allow the app instead:
 
-**Windows Security → Virus & threat protection → Ransomware protection → Manage ransomware protection → Allow an app through Controlled folder access → Add an allowed app** — add the installed `PI Desktop.exe` (and, for development, `node.exe`, `git.exe`, and `electron.exe`).
+**Windows Security → Virus & threat protection → Ransomware protection → Manage ransomware protection → Allow an app through Controlled folder access → Add an allowed app** — add the installed `Pi Desktop.exe` (and, for development, `node.exe`, `git.exe`, and `electron.exe`).
 
-> The portable `.exe` re-extracts to a temporary folder on each launch, so allow-listing it doesn't stick. Prefer the **installer** (`PI-Desktop-<version>-win-x64-setup.exe`) if you rely on the allow-list approach.
+> The portable `.exe` re-extracts to a temporary folder on each launch, so allow-listing it doesn't stick. Prefer the **installer** (`Pi-Desktop-<version>-win-x64-setup.exe`) if you rely on the allow-list approach.
 
 #### Manual Electron binary download
 

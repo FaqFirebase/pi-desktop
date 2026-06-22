@@ -31,7 +31,6 @@ interface DiffViewerProps {
 }
 
 export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element {
-  const [, setDiffText] = useState<string | null>(null)
   const [files, setFiles] = useState<DiffFileBlock[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
@@ -44,10 +43,8 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
       const diff = stagedMode
         ? await window.piDesktop.files.getStagedDiff()
         : await window.piDesktop.files.getDiff()
-      setDiffText(diff)
       setFiles(parseDiff(diff))
     } catch {
-      setDiffText(null)
       setFiles([])
     } finally {
       setLoading(false)

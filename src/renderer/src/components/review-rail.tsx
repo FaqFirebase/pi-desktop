@@ -56,7 +56,7 @@ export function ReviewRail(): React.JSX.Element {
           <h2 className="text-sm font-semibold text-neutral-100">Review</h2>
         </div>
         <p className="mt-1 text-xs leading-5 text-neutral-500">
-          Control what PI can do before changes move forward.
+          Control what Pi can do before changes move forward.
         </p>
       </div>
 
@@ -153,7 +153,7 @@ export function ReviewRail(): React.JSX.Element {
           <div className="rounded-md border border-neutral-800 bg-neutral-900/50 p-3 text-sm text-neutral-400">
             <div className="flex items-center gap-2">
               <FileSearch size={15} className="text-neutral-500" />
-              <span>{isStreaming ? 'PI is working in the active session.' : 'PI is idle in the active session.'}</span>
+              <span>{isStreaming ? 'Pi is working in the active session.' : 'Pi is idle in the active session.'}</span>
             </div>
           </div>
         </section>

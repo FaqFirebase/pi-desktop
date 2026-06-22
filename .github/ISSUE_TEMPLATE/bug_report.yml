@@ -23,7 +23,7 @@ body:
       label: Steps to reproduce
       description: Tell us how to make the bug happen again.
       placeholder: |
-        1. Open PI Desktop
+        1. Open Pi Desktop
         2. Click '...'
         3. See error
     validations:
@@ -60,7 +60,7 @@ body:
   - type: input
     id: pi-desktop-version
     attributes:
-      label: PI Desktop version
+      label: Pi Desktop version
       description: "Find it in Settings > About or the title bar. Example: 0.0.1-alpha"
     validations:
       required: true
@@ -68,8 +68,8 @@ body:
   - type: input
     id: pi-version
     attributes:
-      label: PI agent version
-      description: "Run `pi --version` in a terminal. If PI isn't installed, write 'not installed'."
+      label: Pi agent version
+      description: "Run `pi --version` in a terminal. If Pi isn't installed, write 'not installed'."
     validations:
       required: true
 

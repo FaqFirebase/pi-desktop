@@ -1,5 +1,5 @@
-import { join } from 'path'
-import { readFile, writeFile, mkdir } from 'fs/promises'
+import { dirname } from 'path'
+import { readFile, writeFile, mkdir, rename, copyFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { PiRpcManager } from './pi-rpc-manager'
 import { FileService } from './file-service'
@@ -7,7 +7,7 @@ import type { FileChangeEvent, PiStartOptions } from '../shared/ipc-contracts'
 import { getGuiDataPath } from './app-data-paths'
 
 /**
- * Manages multiple workspaces (project directories), each with its own PI process.
+ * Manages multiple workspaces (project directories), each with its own Pi process.
  *
  * Persistence: workspace list stored in the Electron userData directory.
  */
@@ -49,13 +49,13 @@ export class WorkspaceManager {
   // the same listener twice for the same manager. Using a WeakSet keyed on
   // the manager alone (the old design) was buggy: a manager that was created
   // BEFORE any listeners were registered would be marked "wired" and never
-  // get the listeners that arrived later — silently dropping every PI event
+  // get the listeners that arrived later — silently dropping every Pi event
   // for managers loaded from disk during `initialize()`.
   private wiredPairs = new WeakMap<PiRpcManager, Set<PiManagerListener>>()
   private activeWorkspaceListeners: ActiveWorkspaceListener[] = []
   private fileChangeListeners: FileChangeListener[] = []
   // The workspace whose FileService currently has an active disk watcher.
-  // Only the active workspace is watched, mirroring how PI events are
+  // Only the active workspace is watched, mirroring how Pi events are
   // forwarded for the active workspace only.
   private watchingWorkspaceId: string | null = null
 
@@ -202,7 +202,7 @@ export class WorkspaceManager {
     this.nextColorIndex++
     this.workspaces.push(workspace)
 
-    // Create PI manager and file service for this workspace
+    // Create Pi manager and file service for this workspace
     const piManager = new PiRpcManager()
     this.piManagers.set(workspace.id, piManager)
     this.wirePiManager(piManager)
@@ -237,7 +237,7 @@ export class WorkspaceManager {
     const index = this.workspaces.findIndex((w) => w.id === workspaceId)
     if (index === -1) throw new Error(`Workspace not found: ${workspaceId}`)
 
-    // Stop PI process and file watcher for this workspace
+    // Stop Pi process and file watcher for this workspace
     const piManager = this.piManagers.get(workspaceId)
     if (piManager) {
       piManager.stop()
@@ -268,6 +268,34 @@ export class WorkspaceManager {
 
     workspace.name = name
     await this.saveWorkspaces()
+  }
+
+  /**
+   * Repoint a workspace at a different folder. Replaces its FileService (which
+   * binds the path at construction) and re-arms watching if it's the active one.
+   * Pi must be restarted separately to pick up the new cwd.
+   */
+  async changeWorkspacePath(workspaceId: string, newPath: string): Promise<void> {
+    const workspace = this.workspaces.find((w) => w.id === workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    if (!existsSync(newPath)) throw new Error(`Folder does not exist: ${newPath}`)
+
+    workspace.path = newPath
+    const oldFs = this.fileServices.get(workspaceId)
+    oldFs?.stopWatching()
+    this.fileServices.set(workspaceId, new FileService(newPath))
+    await this.saveWorkspaces()
+    // Re-arm the watcher if this is the active workspace.
+    if (this.activeWorkspaceId === workspaceId) {
+      this.watchingWorkspaceId = null
+      this.updateActiveWatcher()
+    }
+  }
+
+  /** Whether the active workspace's folder currently exists on disk. */
+  activeWorkspacePathExists(): boolean {
+    const ws = this.getActiveWorkspace()
+    return ws ? existsSync(ws.path) : false
   }
 
   async startPiForWorkspace(workspaceId: string, options?: PiStartOptions): Promise<void> {
@@ -309,34 +337,48 @@ export class WorkspaceManager {
   }
 
   private async loadWorkspaces(): Promise<void> {
-    try {
-      if (existsSync(this.configPath)) {
-        const data = await readFile(this.configPath, 'utf-8')
-        const state: WorkspaceState = JSON.parse(data)
-        this.workspaces = state.workspaces ?? []
-        this.activeWorkspaceId = state.activeWorkspaceId ?? null
-
-        // Create file services and PI managers for loaded workspaces
-        for (const ws of this.workspaces) {
-          if (!this.piManagers.has(ws.id)) {
-            const manager = new PiRpcManager()
-            this.piManagers.set(ws.id, manager)
-            this.wirePiManager(manager)
-          }
-          if (!this.fileServices.has(ws.id)) {
-            this.fileServices.set(ws.id, new FileService(ws.path))
-          }
-        }
-      }
-    } catch {
+    // Prefer the live file; fall back to the .bak if the live file is missing
+    // or unparseable (e.g. an external tool corrupted it).
+    const state =
+      (await this.readWorkspaceState(this.configPath)) ??
+      (await this.readWorkspaceState(`${this.configPath}.bak`))
+    if (!state) {
       this.workspaces = []
       this.activeWorkspaceId = null
+      return
+    }
+
+    this.workspaces = state.workspaces ?? []
+    this.activeWorkspaceId = state.activeWorkspaceId ?? null
+
+    // Create file services and Pi managers for loaded workspaces
+    for (const ws of this.workspaces) {
+      if (!this.piManagers.has(ws.id)) {
+        const manager = new PiRpcManager()
+        this.piManagers.set(ws.id, manager)
+        this.wirePiManager(manager)
+      }
+      if (!this.fileServices.has(ws.id)) {
+        this.fileServices.set(ws.id, new FileService(ws.path))
+      }
+    }
+  }
+
+  /** Read + parse a workspace-state file, or null if missing/unparseable. */
+  private async readWorkspaceState(path: string): Promise<WorkspaceState | null> {
+    try {
+      if (!existsSync(path)) return null
+      const parsed = JSON.parse(await readFile(path, 'utf-8')) as WorkspaceState
+      if (!parsed || !Array.isArray(parsed.workspaces)) return null
+      return parsed
+    } catch {
+      return null
     }
   }
 
   private async saveWorkspaces(): Promise<void> {
     try {
-      const dir = join(this.configPath, '..')
+      const dir = dirname(this.configPath)
       if (!existsSync(dir)) {
         await mkdir(dir, { recursive: true })
       }
@@ -346,7 +388,15 @@ export class WorkspaceManager {
         activeWorkspaceId: this.activeWorkspaceId,
       }
 
-      await writeFile(this.configPath, JSON.stringify(state, null, 2), 'utf-8')
+      // Keep a backup of the last good file before overwriting.
+      if (existsSync(this.configPath)) {
+        await copyFile(this.configPath, `${this.configPath}.bak`)
+      }
+      // Atomic write: write a temp file then rename over the target so a crash
+      // or partial write can never leave a half-written/corrupt config.
+      const tmpPath = `${this.configPath}.tmp`
+      await writeFile(tmpPath, JSON.stringify(state, null, 2), 'utf-8')
+      await rename(tmpPath, this.configPath)
     } catch (err) {
       console.error('Failed to save workspaces:', err)
     }

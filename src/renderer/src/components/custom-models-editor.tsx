@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { clsx } from 'clsx'
 import { Plus, Trash2, Save, RefreshCw, AlertTriangle } from 'lucide-react'
 import { useAppStore } from '../store'
-import type { ModelsConfig, CustomModel } from '../../../shared/models-config'
+import { withImageInput } from '../../../shared/models-config'
+import type { ModelsConfig, ProviderConfig, CustomModel } from '../../../shared/models-config'
 
 const API_OPTIONS = [
   'openai-completions',
@@ -16,6 +17,7 @@ interface ProviderRow {
   baseUrl: string
   api: string
   apiKey: string
+  compat: ProviderConfig['compat']
   models: CustomModel[]
 }
 
@@ -26,6 +28,7 @@ function configToRows(config: ModelsConfig | null): ProviderRow[] {
     baseUrl: typeof p.baseUrl === 'string' ? p.baseUrl : '',
     api: typeof p.api === 'string' ? p.api : '',
     apiKey: typeof p.apiKey === 'string' ? p.apiKey : '',
+    compat: p.compat,
     models: Array.isArray(p.models) ? p.models : [],
   }))
 }
@@ -37,6 +40,7 @@ function rowsToConfig(rows: ProviderRow[]): ModelsConfig {
       ...(r.baseUrl ? { baseUrl: r.baseUrl } : {}),
       ...(r.api ? { api: r.api } : {}),
       ...(r.apiKey ? { apiKey: r.apiKey } : {}),
+      ...(r.compat ? { compat: r.compat } : {}),
       models: r.models,
     }
   }
@@ -68,12 +72,15 @@ export function CustomModelsEditor(): React.JSX.Element {
   }
 
   const addProvider = (): void =>
-    update([...rows, { key: '', baseUrl: '', api: API_OPTIONS[0], apiKey: '', models: [] }])
+    update([...rows, { key: '', baseUrl: '', api: API_OPTIONS[0], apiKey: '', compat: undefined, models: [] }])
 
   const removeProvider = (i: number): void => update(rows.filter((_, idx) => idx !== i))
 
   const patchProvider = (i: number, patch: Partial<ProviderRow>): void =>
     update(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+
+  const patchProviderCompat = (i: number, patch: NonNullable<ProviderConfig['compat']>): void =>
+    patchProvider(i, { compat: { ...(rows[i].compat ?? {}), ...patch } })
 
   const addModel = (i: number): void =>
     patchProvider(i, { models: [...rows[i].models, { id: '' }] })
@@ -124,7 +131,12 @@ export function CustomModelsEditor(): React.JSX.Element {
   return (
     <div className="space-y-4">
       <p className="text-xs text-neutral-500">
-        Custom providers and models in <code>~/.pi/agent/models.json</code>. Applied when PI restarts.
+        Custom providers and models in <code>~/.pi/agent/models.json</code>. Applied when Pi restarts.
+      </p>
+      <p className="text-xs text-neutral-600">
+        Heads-up: imported models may load without capability flags set. If a model supports
+        thinking, tick <span className="text-neutral-400">reasoning</span>; if it accepts images,
+        tick <span className="text-neutral-400">vision</span>. Restart Pi to apply.
       </p>
 
       {rows.map((row, pi) => (
@@ -162,6 +174,15 @@ export function CustomModelsEditor(): React.JSX.Element {
               ))}
             </select>
           </div>
+          <label className="mt-2 flex items-center gap-2 text-[11px] text-neutral-500">
+            <input
+              type="checkbox"
+              checked={row.compat?.supportsReasoningEffort ?? false}
+              onChange={(e) => patchProviderCompat(pi, { supportsReasoningEffort: e.target.checked })}
+              className="accent-blue-500"
+            />
+            supports reasoning effort
+          </label>
           <input
             value={row.apiKey}
             onChange={(e) => patchProvider(pi, { apiKey: e.target.value })}
@@ -193,7 +214,7 @@ export function CustomModelsEditor(): React.JSX.Element {
                     <Trash2 size={12} />
                   </button>
                 </div>
-                <div className="mt-2 grid grid-cols-3 gap-2">
+                <div className="mt-2 grid grid-cols-4 gap-2">
                   <label className="flex items-center gap-1 text-[11px] text-neutral-500">
                     ctx
                     <input
@@ -228,6 +249,17 @@ export function CustomModelsEditor(): React.JSX.Element {
                       className="accent-blue-500"
                     />
                     reasoning
+                  </label>
+                  <label className="flex items-center gap-1 text-[11px] text-neutral-500">
+                    <input
+                      type="checkbox"
+                      checked={model.input?.includes('image') ?? false}
+                      onChange={(e) =>
+                        patchModel(pi, mi, { input: withImageInput(model.input, e.target.checked) })
+                      }
+                      className="accent-blue-500"
+                    />
+                    vision
                   </label>
                 </div>
               </div>
@@ -274,7 +306,7 @@ export function CustomModelsEditor(): React.JSX.Element {
             )}
           >
             <RefreshCw size={14} />
-            Saved — Restart PI to apply
+            Saved — Restart Pi to apply
           </button>
         )}
       </div>

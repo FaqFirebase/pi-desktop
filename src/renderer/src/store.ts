@@ -1,10 +1,19 @@
 import { create } from 'zustand'
 import { applyTheme } from './utils/theme'
 import { buildPlanningPrompt } from './utils/planning-prompt'
+import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
 import type { PiCommand } from '../../shared/pi-command'
 import { normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
 import { validateModelsConfig, mergeModelsConfig, type ModelsConfig } from '../../shared/models-config'
+import {
+  resolveActiveMembers,
+  hasQuorum,
+  buildConsensusPrompt,
+  buildRevisionPrompt,
+  type CouncilAgentId,
+  type ConsultantResult,
+} from '../../shared/council-config'
 import type {
   PiRpcEvent,
   PiStatus,
@@ -33,35 +42,32 @@ import type {
   NoteInput,
   NoteUpdate,
   UpdateCheckResult,
+  PromptImage,
 } from '../../shared/ipc-contracts'
 
-// ─── Message State (renderer-local, built from events) ───────────────────────
+export type { DisplayAttachment, DisplayMessage } from './message-parsing'
 
-export interface DisplayMessage {
-  id: string
-  role: 'user' | 'assistant' | 'toolResult' | 'system'
-  content: string
-  timestamp: number
-  isStreaming?: boolean
-  toolCalls?: Array<{
-    id: string
-    name: string
-    arguments: string
-    result?: string
-    isError?: boolean
-    isExecuting?: boolean
-    durationMs?: number
-  }>
-  thinking?: string
-  model?: string
-  provider?: string
-  cost?: number
+// ─── Council Run State ───────────────────────────────────────────────────────
+
+export type CouncilPhase = 'detecting' | 'consulting' | 'merging' | 'awaiting-approval' | 'refused'
+
+export interface CouncilRunState {
+  phase: CouncilPhase
+  request: string
+  results: ConsultantResult[]
+  // Active consultants for this run (used to render live cards while consulting).
+  members?: CouncilAgentId[]
+  // Live output streamed per consultant during the consulting phase.
+  partials?: Record<string, string>
+  // Epoch ms when the consulting phase started (drives the elapsed indicator).
+  startedAt?: number
+  reason?: string
 }
 
 // ─── Store Shape ─────────────────────────────────────────────────────────────
 
 interface AppState {
-  // PI process
+  // Pi process
   piStatus: PiProcessStatus
   piPid: number | null
   piError: string | null
@@ -121,6 +127,9 @@ interface AppState {
   customModels: ModelsConfig | null
   customModelsError: string | null
 
+  // Council run UI state (null when no council run is active)
+  councilRun: CouncilRunState | null
+
   // File preview
   selectedFile: { relativePath: string; path: string } | null
 
@@ -133,7 +142,7 @@ interface AppState {
   // Machine-derived tags for sessions the user hasn't tagged (sessionId → tag)
   autoTags: Record<string, string>
 
-  // Archived sessions (GUI-only registry — PI has no archive concept)
+  // Archived sessions (GUI-only registry — Pi has no archive concept)
   archivedSessions: Record<string, number>
   showArchived: boolean
 
@@ -159,7 +168,7 @@ interface AppState {
 }
 
 interface AppActions {
-  // PI lifecycle
+  // Pi lifecycle
   startPi: (options?: Record<string, unknown>) => Promise<void>
   stopPi: () => Promise<void>
   restartPi: (options?: Record<string, unknown>) => Promise<void>
@@ -170,9 +179,13 @@ interface AppActions {
   clearMessages: () => void
 
   // Prompts
-  sendPrompt: (message: string, options?: { images?: unknown[] }) => Promise<void>
+  sendPrompt: (message: string, options?: { images?: PromptImage[]; attachments?: DisplayAttachment[] }) => Promise<void>
   sendSteer: (message: string) => Promise<void>
   sendFollowUp: (message: string) => Promise<void>
+  runCouncil: (request: string) => Promise<void>
+  approveCouncilPlan: () => Promise<void>
+  reviseCouncilPlan: (feedback: string) => Promise<void>
+  cancelCouncil: () => void
   abort: () => Promise<void>
 
   // Session
@@ -222,6 +235,7 @@ interface AppActions {
   switchWorkspace: (workspaceId: string) => Promise<void>
   removeWorkspace: (workspaceId: string) => Promise<void>
   renameWorkspace: (workspaceId: string, name: string) => Promise<void>
+  changeWorkspaceFolder: (workspaceId: string, newPath: string) => Promise<void>
 
   // Timeline
   addTimelineEvent: (event: TimelineEvent) => void
@@ -288,21 +302,6 @@ interface AppActions {
 let messageCounter = 0
 function generateId(): string {
   return `msg-${Date.now()}-${++messageCounter}`
-}
-
-function extractTextContent(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content
-      .filter((block: unknown) => {
-        if (typeof block !== 'object' || block === null) return false
-        const b = block as Record<string, unknown>
-        return b.type === 'text' && typeof b.text === 'string'
-      })
-      .map((block) => (block as { text: string }).text)
-      .join('')
-  }
-  return ''
 }
 
 /**
@@ -376,6 +375,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   customModels: null,
   customModelsError: null,
+  councilRun: null,
 
   selectedFile: null,
 
@@ -400,7 +400,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   lineage: [],
 
-  // ─── PI Lifecycle ─────────────────────────────────────────────────────
+  // ─── Pi Lifecycle ─────────────────────────────────────────────────────
 
   startPi: async (options) => {
     // Don't start if already running
@@ -471,14 +471,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       role: 'user',
       content: message,
       timestamp: Date.now(),
+      attachments: options?.attachments,
     })
 
     set({ isStreaming: true, streamingContent: '', streamingThinking: '', streamingToolCalls: new Map() })
 
     try {
       if (isStreaming) {
-        // Queue as steering during streaming
-        await window.piDesktop.commands.steer(message)
+        // Queue as steering during streaming, carrying any image attachments.
+        await window.piDesktop.commands.steer(message, options?.images)
       } else {
         const prompt = settings?.permissionMode === 'plan-readonly'
           ? buildPlanningPrompt(message)
@@ -522,6 +523,90 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
+  runCouncil: async (request) => {
+    const { piStatus, settings } = get()
+    if (piStatus !== 'running' || !request.trim()) return
+    const config = settings?.council
+    if (!config) return
+
+    set({ councilRun: { phase: 'detecting', request, results: [] } })
+
+    const detectResult = await window.piDesktop.council.detect()
+    const detected = { pi: false, claude: false, codex: false } as Record<CouncilAgentId, boolean>
+    for (const a of detectResult.agents) detected[a.id] = a.found
+
+    const resolution = resolveActiveMembers(config, detected)
+    if (!resolution.canRun) {
+      set({ councilRun: { phase: 'refused', request, results: [], reason: resolution.reason } })
+      return
+    }
+
+    set({
+      councilRun: {
+        phase: 'consulting',
+        request,
+        results: [],
+        members: resolution.active,
+        partials: {},
+        startedAt: Date.now(),
+      },
+    })
+
+    // Stream live consultant output into councilRun.partials while consulting.
+    const unsubscribe = window.piDesktop.council.onProgress(({ id, chunk }) => {
+      const run = get().councilRun
+      if (!run || run.phase !== 'consulting') return
+      const partials = { ...(run.partials ?? {}) }
+      partials[id] = (partials[id] ?? '') + chunk
+      set({ councilRun: { ...run, partials } })
+    })
+
+    let results
+    try {
+      ;({ results } = await window.piDesktop.council.runConsultants({
+        request,
+        members: resolution.active,
+        timeoutSeconds: config.timeoutSeconds,
+        consensusMode: config.consensusMode,
+      }))
+    } finally {
+      unsubscribe()
+    }
+
+    if (!hasQuorum(results)) {
+      set({
+        councilRun: {
+          phase: 'refused',
+          request,
+          results,
+          reason: 'No consultant produced a plan (all timed out or errored). Council aborted.',
+        },
+      })
+      return
+    }
+
+    set({ councilRun: { phase: 'merging', request, results } })
+    const consensusPrompt = buildConsensusPrompt(request, results)
+    await get().sendPrompt(consensusPrompt)
+    set({ councilRun: { phase: 'awaiting-approval', request, results } })
+  },
+
+  approveCouncilPlan: async () => {
+    const run = get().councilRun
+    if (!run || run.phase !== 'awaiting-approval') return
+    set({ councilRun: null })
+    await get().sendFollowUp('Approved. Implement the consensus plan above now.')
+  },
+
+  reviseCouncilPlan: async (feedback) => {
+    const run = get().councilRun
+    if (!run || run.phase !== 'awaiting-approval' || !feedback.trim()) return
+    // Pi revises the consensus plan in-place; the run stays at the approval gate.
+    await get().sendPrompt(buildRevisionPrompt(feedback))
+  },
+
+  cancelCouncil: () => set({ councilRun: null }),
+
   abort: async () => {
     try {
       await window.piDesktop.commands.abort()
@@ -540,7 +625,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         get().addMessage({
           id: generateId(),
           role: 'system',
-          content: result.error ?? 'Cannot create session — PI not running',
+          content: result.error ?? 'Cannot create session — Pi not running',
           timestamp: Date.now(),
         })
         return
@@ -566,7 +651,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         get().addMessage({
           id: generateId(),
           role: 'system',
-          content: result.error ?? 'Cannot switch session — PI not running',
+          content: result.error ?? 'Cannot switch session — Pi not running',
           timestamp: Date.now(),
         })
         return
@@ -1010,10 +1095,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       await window.piDesktop.workspace.setActive(workspaceId)
       get().clearMessages()
-      // Re-sync PI status from main: each workspace has its own PiRpcManager,
-      // so the new active workspace's PI may be in a different state than
+      // Re-sync Pi status from main: each workspace has its own PiRpcManager,
+      // so the new active workspace's Pi may be in a different state than
       // what piStatus is currently showing. Without this, the `if running return`
-      // guard in startPi() would skip starting the new workspace's PI.
+      // guard in startPi() would skip starting the new active workspace's Pi.
       const status = await window.piDesktop.pi.getStatus()
       set({ piStatus: status.status, piPid: status.pid, piError: status.error })
       await get().loadWorkspaces()
@@ -1049,8 +1134,23 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       await window.piDesktop.workspace.rename(workspaceId, name)
       await get().loadWorkspaces()
+      await get().refreshSessionList()
     } catch {
       // Silent failure
+    }
+  },
+
+  changeWorkspaceFolder: async (workspaceId, newPath) => {
+    try {
+      await window.piDesktop.workspace.changePath(workspaceId, newPath)
+      await get().loadWorkspaces()
+    } catch (err) {
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: `Change folder error: ${err instanceof Error ? err.message : String(err)}`,
+        timestamp: Date.now(),
+      })
     }
   },
 
@@ -1080,7 +1180,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       const result = await window.piDesktop.packages.install(spec)
       if (result.success) {
         await get().loadInstalledPackages()
-        set({ packageNotification: { type: 'success', message: `Installed ${spec}. Restart PI to load it.` } })
+        set({ packageNotification: { type: 'success', message: `Installed ${spec}. Restart Pi to load it.` } })
       } else {
         set({ packageNotification: { type: 'error', message: result.output || 'Install failed' } })
       }
@@ -1648,72 +1748,4 @@ function handleAutoRetry(
       get().refreshSessionStats()
     }
   }
-}
-
-// ─── Message Parsing ─────────────────────────────────────────────────────────
-
-function parseAgentMessage(msg: unknown): DisplayMessage | null {
-  if (!msg || typeof msg !== 'object') return null
-
-  const m = msg as Record<string, unknown>
-  const role = m.role as string
-
-  if (role === 'user') {
-    return {
-      id: String(m.id ?? generateId()),
-      role: 'user',
-      content: extractTextContent(m.content),
-      timestamp: Number(m.timestamp) || Date.now(),
-    }
-  }
-
-  if (role === 'assistant') {
-    const content = Array.isArray(m.content) ? m.content : []
-    const textParts = content
-      .filter((c: unknown) => typeof c === 'object' && c !== null && (c as Record<string, unknown>).type === 'text')
-      .map((c: unknown) => ((c as Record<string, unknown>).text as string) ?? '')
-
-    const thinkingParts = content
-      .filter((c: unknown) => typeof c === 'object' && c !== null && (c as Record<string, unknown>).type === 'thinking')
-      .map((c: unknown) => ((c as Record<string, unknown>).thinking as string) ?? '')
-
-    const toolCalls = content
-      .filter((c: unknown) => typeof c === 'object' && c !== null && (c as Record<string, unknown>).type === 'toolCall')
-      .map((c: unknown) => {
-        const tc = c as Record<string, unknown>
-        return {
-          id: String(tc.id ?? ''),
-          name: String(tc.name ?? ''),
-          arguments: JSON.stringify(tc.arguments ?? {}),
-        }
-      })
-
-    return {
-      id: String(m.id ?? generateId()),
-      role: 'assistant',
-      content: textParts.join(''),
-      timestamp: Number(m.timestamp) || Date.now(),
-      thinking: thinkingParts.length > 0 ? thinkingParts.join('') : undefined,
-      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-      model: typeof m.model === 'string' ? m.model : undefined,
-      provider: typeof m.provider === 'string' ? m.provider : undefined,
-    }
-  }
-
-  if (role === 'toolResult') {
-    const content = Array.isArray(m.content) ? m.content : []
-    const text = content
-      .filter((c: unknown) => typeof c === 'object' && c !== null && (c as Record<string, unknown>).type === 'text')
-      .map((c: unknown) => ((c as Record<string, unknown>).text as string) ?? '')
-      .join('')
-
-    return {
-      id: String(m.id ?? generateId()),
-      role: 'toolResult',
-      content: text,
-      timestamp: Number(m.timestamp) || Date.now(),
-    }
-  }
-
-  return null
 }

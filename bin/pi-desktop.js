@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * pi-desktop — CLI launcher for PI Desktop GUI
+ * pi-desktop — CLI launcher for Pi Desktop GUI
  *
  * Usage:
  *   pi-desktop              # Launch the app
@@ -22,7 +22,7 @@ const args = process.argv.slice(2)
 
 if (args.includes('--help') || args.includes('-h')) {
   console.log(`
-  pi-desktop v${VERSION} — Desktop GUI for the PI coding agent
+  pi-desktop v${VERSION} — Desktop GUI for the Pi coding agent
 
   Usage:
     pi-desktop                  Launch the app
@@ -39,7 +39,7 @@ if (args.includes('--help') || args.includes('-h')) {
     See https://github.com/FaqFirebase/pi-desktop for releases
     and build-from-source instructions.
 
-  The app requires PI to be installed:
+  The app requires Pi to be installed:
     curl -fsSL https://pi.dev/install.sh | sh
     # or
     npm install -g @earendil-works/pi-coding-agent
@@ -128,7 +128,7 @@ function launch() {
   }
 
   // Build electron args.
-  // --no-sandbox is required so PI subprocesses can spawn.
+  // --no-sandbox is required so Pi subprocesses can spawn.
   // --disable-gpu is intentionally NOT passed by default — it breaks window
   // creation on some Wayland + AMD setups. If the GPU process crashes on your
   // system, re-add it locally as an escape hatch.
@@ -151,7 +151,7 @@ function launch() {
   })
 
   child.on('error', (err) => {
-    console.error('Failed to start PI Desktop:', err.message)
+    console.error('Failed to start Pi Desktop:', err.message)
     process.exit(1)
   })
 

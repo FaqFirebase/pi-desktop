@@ -1,9 +1,9 @@
 {
   "name": "pi-desktop",
-  "version": "0.0.6-alpha",
-  "description": "Desktop GUI frontend for the PI coding agent",
+  "version": "0.0.7-alpha",
+  "description": "Desktop GUI frontend for the Pi coding agent",
   "main": "out/main/index.js",
-  "author": "PI Desktop GUI Contributors",
+  "author": "Pi Desktop GUI Contributors",
   "license": "Apache-2.0",
   "homepage": "https://github.com/FaqFirebase/pi-desktop",
   "repository": {
@@ -91,8 +91,8 @@
   },
   "build": {
     "appId": "dev.pi.desktop-gui",
-    "productName": "PI Desktop",
-    "copyright": "Copyright 2026 PI Desktop GUI Contributors. Licensed under the Apache License, Version 2.0.",
+    "productName": "Pi Desktop",
+    "copyright": "Copyright 2026 Pi Desktop GUI Contributors. Licensed under the Apache License, Version 2.0.",
     "files": [
       "out/**/*",
       "bin/**/*"
@@ -115,10 +115,10 @@
       ],
       "category": "Development",
       "icon": "resources/icons",
-      "synopsis": "Desktop GUI for the PI coding agent",
-      "description": "An Electron desktop application that provides a GUI frontend for the PI coding agent.",
-      "maintainer": "PI Desktop GUI Contributors",
-      "artifactName": "PI-Desktop-${version}-${os}-${arch}.${ext}"
+      "synopsis": "Desktop GUI for the Pi coding agent",
+      "description": "An Electron desktop application that provides a GUI frontend for the Pi coding agent.",
+      "maintainer": "Pi Desktop GUI Contributors",
+      "artifactName": "Pi-Desktop-${version}-${os}-${arch}.${ext}"
     },
     "mac": {
       "target": [
@@ -130,7 +130,7 @@
       "darkModeSupport": true,
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "artifactName": "PI-Desktop-${version}-${os}-${arch}.${ext}"
+      "artifactName": "Pi-Desktop-${version}-${os}-${arch}.${ext}"
     },
     "win": {
       "target": [
@@ -138,17 +138,17 @@
         "portable"
       ],
       "icon": "resources/icons/icon.ico",
-      "artifactName": "PI-Desktop-${version}-${os}-${arch}.${ext}"
+      "artifactName": "Pi-Desktop-${version}-${os}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "PI Desktop",
+      "shortcutName": "Pi Desktop",
       "installerIcon": "resources/icons/icon.ico",
       "uninstallerIcon": "resources/icons/icon.ico",
-      "artifactName": "PI-Desktop-${version}-${os}-${arch}-setup.${ext}"
+      "artifactName": "Pi-Desktop-${version}-${os}-${arch}-setup.${ext}"
     },
     "appImage": {
       "license": "LICENSE"

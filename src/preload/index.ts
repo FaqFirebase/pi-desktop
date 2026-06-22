@@ -25,13 +25,20 @@ import type {
   SessionLineageRecord,
   ModelsConfig,
   ModelsReadResult,
+  CouncilDetectResult,
+  CouncilRunRequest,
+  CouncilRunResult,
+  CouncilProgressEvent,
+  AttachmentReadResult,
+  OpenDialogOptions,
+  PromptImage,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 
 // ─── Type Definitions for the Exposed API ────────────────────────────────────
 
 interface PiDesktopAPI {
-  // PI process lifecycle
+  // Pi process lifecycle
   pi: {
     start(options?: PiStartOptions): Promise<PiStatus>
     stop(): Promise<PiStatus>
@@ -39,10 +46,10 @@ interface PiDesktopAPI {
     getStatus(): Promise<PiStatus>
   }
 
-  // PI commands
+  // Pi commands
   commands: {
-    prompt(message: string, options?: { images?: unknown[]; streamingBehavior?: string }): Promise<unknown>
-    steer(message: string): Promise<unknown>
+    prompt(message: string, options?: { images?: PromptImage[]; streamingBehavior?: string }): Promise<unknown>
+    steer(message: string, images?: PromptImage[]): Promise<unknown>
     followUp(message: string): Promise<unknown>
     abort(): Promise<unknown>
     bash(command: string): Promise<unknown>
@@ -97,6 +104,8 @@ interface PiDesktopAPI {
     create(name: string, path: string): Promise<Workspace>
     remove(workspaceId: string): Promise<void>
     rename(workspaceId: string, name: string): Promise<void>
+    changePath(workspaceId: string, newPath: string): Promise<void>
+    pathExists(): Promise<boolean>
     setActive(workspaceId: string): Promise<Workspace>
     getActive(): Promise<Workspace | null>
     startPi(workspaceId: string, options?: PiStartOptions): Promise<PiStatus>
@@ -116,6 +125,12 @@ interface PiDesktopAPI {
   models: {
     read(): Promise<ModelsReadResult>
     write(config: ModelsConfig): Promise<{ success: boolean; error?: string }>
+  }
+
+  council: {
+    detect(): Promise<CouncilDetectResult>
+    runConsultants(payload: CouncilRunRequest): Promise<CouncilRunResult>
+    onProgress(callback: (event: CouncilProgressEvent) => void): () => void
   }
 
   // Skills, Commands, MCP, Tags
@@ -154,6 +169,7 @@ interface PiDesktopAPI {
     search(query: string): Promise<FileSearchResult[]>
     searchContent(query: string): Promise<FileSearchResult[]>
     read(path: string): Promise<string>
+    readAttachment(path: string): Promise<AttachmentReadResult>
     write(path: string, content: string): Promise<{ ok: boolean }>
     getDiff(filePath?: string): Promise<string>
     getStagedDiff(filePath?: string): Promise<string>
@@ -163,7 +179,7 @@ interface PiDesktopAPI {
 
   // System
   system: {
-    openDialog(options?: { title?: string }): Promise<string | null>
+    openDialog(options?: OpenDialogOptions): Promise<string | null>
     getPath(name: string): Promise<string>
     openExternal(url: string): Promise<void>
     getVersion(): Promise<string>
@@ -209,7 +225,7 @@ const api: PiDesktopAPI = {
 
   commands: {
     prompt: (message, options) => ipcRenderer.invoke(IPC_CHANNELS.PI_PROMPT, message, options),
-    steer: (message) => ipcRenderer.invoke(IPC_CHANNELS.PI_STEER, message),
+    steer: (message, images) => ipcRenderer.invoke(IPC_CHANNELS.PI_STEER, message, images),
     followUp: (message) => ipcRenderer.invoke(IPC_CHANNELS.PI_FOLLOW_UP, message),
     abort: () => ipcRenderer.invoke(IPC_CHANNELS.PI_ABORT),
     bash: (command) => ipcRenderer.invoke(IPC_CHANNELS.PI_BASH, command),
@@ -259,6 +275,8 @@ const api: PiDesktopAPI = {
     create: (name, path) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CREATE, name, path),
     remove: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_REMOVE, workspaceId),
     rename: (workspaceId, name) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_RENAME, workspaceId, name),
+    changePath: (workspaceId, newPath) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CHANGE_PATH, workspaceId, newPath),
+    pathExists: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_PATH_EXISTS),
     setActive: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_SET_ACTIVE, workspaceId),
     getActive: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GET_ACTIVE),
     startPi: (workspaceId, options) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_START_PI, workspaceId, options),
@@ -276,6 +294,16 @@ const api: PiDesktopAPI = {
   models: {
     read: () => ipcRenderer.invoke(IPC_CHANNELS.MODELS_READ),
     write: (config) => ipcRenderer.invoke(IPC_CHANNELS.MODELS_WRITE, config),
+  },
+
+  council: {
+    detect: () => ipcRenderer.invoke(IPC_CHANNELS.COUNCIL_DETECT),
+    runConsultants: (payload) => ipcRenderer.invoke(IPC_CHANNELS.COUNCIL_RUN_CONSULTANTS, payload),
+    onProgress: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: CouncilProgressEvent) => callback(data)
+      ipcRenderer.on(IPC_CHANNELS.EVENT_COUNCIL_PROGRESS, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.EVENT_COUNCIL_PROGRESS, handler)
+    },
   },
 
   skills: {
@@ -311,6 +339,7 @@ const api: PiDesktopAPI = {
     search: (query) => ipcRenderer.invoke(IPC_CHANNELS.FILE_SEARCH, query),
     searchContent: (query) => ipcRenderer.invoke(IPC_CHANNELS.FILE_SEARCH_CONTENT, query),
     read: (path) => ipcRenderer.invoke(IPC_CHANNELS.FILE_READ, path),
+    readAttachment: (path) => ipcRenderer.invoke(IPC_CHANNELS.FILE_READ_ATTACHMENT, path),
     write: (path, content) => ipcRenderer.invoke(IPC_CHANNELS.FILE_WRITE, path, content),
     getDiff: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE_DIFF, filePath),
     getStagedDiff: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE_STAGED_DIFF, filePath),

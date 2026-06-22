@@ -1,7 +1,7 @@
 import { open } from 'fs/promises'
 
 /**
- * Derive a single-word topic tag from the context of a PI session by reading
+ * Derive a single-word topic tag from the context of a Pi session by reading
  * the first user message out of the session .jsonl and extracting the most
  * salient keyword. Runs locally — no network, no LLM, deterministic.
  */

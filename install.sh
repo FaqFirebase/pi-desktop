@@ -1,5 +1,5 @@
 #!/bin/bash
-# PI Desktop — Quick Install Script
+# Pi Desktop — Quick Install Script
 # Usage: curl -fsSL https://raw.githubusercontent.com/FaqFirebase/pi-desktop/master/install.sh | bash
 
 set -e
@@ -9,7 +9,7 @@ BINARY_NAME="pi-desktop"
 INSTALL_DIR="${HOME}/.local/bin"
 
 echo "╔═══════════════════════════════════════╗"
-echo "║       PI Desktop — Installer          ║"
+echo "║       Pi Desktop — Installer          ║"
 echo "╚═══════════════════════════════════════╝"
 echo ""
 
@@ -50,25 +50,25 @@ esac
 
 echo "Platform: $PLATFORM-$ARCH_NAME"
 
-# Check for PI dependency
+# Check for Pi dependency
 if ! command -v pi &> /dev/null; then
   echo ""
-  echo "⚠  PI is not installed."
-  echo "   Installing PI first..."
+  echo "⚠  Pi is not installed."
+  echo "   Installing Pi first..."
   echo ""
   curl -fsSL https://pi.dev/install.sh | sh
   echo ""
 fi
 
-echo "✓ PI found: $(which pi)"
+echo "✓ Pi found: $(which pi)"
 
 # Download the latest release artifact for this platform.
-# PI Desktop is distributed as a packaged binary, not via npm — see MEMORY.md.
+# Pi Desktop is distributed as a packaged binary, not via npm — see MEMORY.md.
 if [ "$PLATFORM" = "linux" ]; then
   echo ""
   echo "Downloading AppImage..."
 
-  DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/PI-Desktop-${PLATFORM}-${ARCH_NAME}.AppImage"
+  DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/Pi-Desktop-${PLATFORM}-${ARCH_NAME}.AppImage"
 
   mkdir -p "$INSTALL_DIR"
   OUTPUT="$INSTALL_DIR/$BINARY_NAME"
@@ -86,7 +86,7 @@ if [ "$PLATFORM" = "linux" ]; then
   fi
 
   echo ""
-  echo "✓ PI Desktop installed to $OUTPUT"
+  echo "✓ Pi Desktop installed to $OUTPUT"
   echo ""
   echo "Run: $OUTPUT"
   echo ""

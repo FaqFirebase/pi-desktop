@@ -6,8 +6,8 @@ import { getGuiDataPath } from './app-data-paths'
 /**
  * Archived-session registry.
  *
- * PI itself has no archive concept (see MEMORY.md → "PI does not expose
- * session deletion via RPC. PI does not have session archiving at all").
+ * Pi itself has no archive concept (see MEMORY.md → "Pi does not expose
+ * session deletion via RPC. Pi does not have session archiving at all").
  * Archive is therefore a GUI-only annotation stored alongside session-tags.
  *
  * Shape on disk: { "<sessionId>": <archivedAtEpochMs> }

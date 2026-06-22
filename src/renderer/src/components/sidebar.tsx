@@ -17,10 +17,12 @@ import {
   NotebookPen,
   Archive,
   Sparkles,
+  Pencil,
 } from 'lucide-react'
 import { useState } from 'react'
 import { StatusPopover } from './status-popover'
 import { useContextMenu, buildSessionContextMenu } from './context-menu'
+import { getSessionRowLabels } from './sidebar-session-labels'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 
 export function Sidebar(): React.JSX.Element {
@@ -80,28 +82,32 @@ export function Sidebar(): React.JSX.Element {
     )
   }
 
-  const renderSessionRow = (session: SessionListItem): React.JSX.Element => (
-    <button
-      key={session.path}
-      onClick={() => openSession(session)}
-      onContextMenu={(e) => handleSessionRightClick(e, session)}
-      title="Click to open · right-click for actions"
-      className={clsx(
-        'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
-        sessionState?.sessionFile === session.path
-          ? 'bg-neutral-800 text-neutral-200'
-          : 'text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-300'
-      )}
-    >
-      <Clock size={12} className="shrink-0" />
-      <div className="min-w-0 flex-1">
-        <div className="truncate">{session.name || session.sessionId.slice(0, 12)}</div>
-        {session.projectPath !== activeWorkspace?.path && session.projectName && (
-          <div className="text-[10px] text-neutral-600 truncate">{session.projectName}</div>
+  const renderSessionRow = (session: SessionListItem): React.JSX.Element => {
+    const labels = getSessionRowLabels(session)
+
+    return (
+      <button
+        key={session.path}
+        onClick={() => openSession(session)}
+        onContextMenu={(e) => handleSessionRightClick(e, session)}
+        title="Click to open · right-click for actions"
+        className={clsx(
+          'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
+          sessionState?.sessionFile === session.path
+            ? 'bg-neutral-800 text-neutral-200'
+            : 'text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-300'
         )}
-      </div>
-    </button>
-  )
+      >
+        <Clock size={12} className="shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate">{labels.title}</div>
+          {labels.subtitle && (
+            <div className="text-[10px] text-neutral-600 truncate">{labels.subtitle}</div>
+          )}
+        </div>
+      </button>
+    )
+  }
 
   return (
     <aside className="flex w-64 flex-col border-r border-neutral-800 bg-neutral-950">
@@ -109,7 +115,7 @@ export function Sidebar(): React.JSX.Element {
       <div className="flex h-12 items-center justify-between border-b border-neutral-800 px-3">
         <div className="flex items-center gap-2">
           <StatusPopover />
-          <span className="text-sm font-medium text-neutral-200">PI Desktop</span>
+          <span className="text-sm font-medium text-neutral-200">Pi Desktop</span>
         </div>
         <button
           onClick={toggleSidebar}
@@ -257,9 +263,13 @@ function WorkspaceSwitcher(): React.JSX.Element {
   const switchWorkspace = useAppStore((state) => state.switchWorkspace)
   const createWorkspace = useAppStore((state) => state.createWorkspace)
   const removeWorkspace = useAppStore((state) => state.removeWorkspace)
+  const renameWorkspace = useAppStore((state) => state.renameWorkspace)
+  const changeWorkspaceFolder = useAppStore((state) => state.changeWorkspaceFolder)
+  const { show: showContextMenu, ContextMenuComponent: WorkspaceContextMenu } = useContextMenu()
 
   const [isOpen, setIsOpen] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
+  const [isRenaming, setIsRenaming] = useState(false)
   const [newName, setNewName] = useState('')
   const [newPath, setNewPath] = useState('')
 
@@ -271,6 +281,47 @@ function WorkspaceSwitcher(): React.JSX.Element {
     setIsCreating(false)
   }
 
+  const handleRename = async () => {
+    if (!activeWorkspace || !newName.trim()) return
+    await renameWorkspace(activeWorkspace.id, newName.trim())
+    setIsRenaming(false)
+  }
+
+  const startRenaming = () => {
+    setNewName(activeWorkspace?.name ?? '')
+    setIsRenaming(true)
+    setIsOpen(false)
+  }
+
+  const handleChangeFolder = async () => {
+    if (!activeWorkspace) return
+    const path = await window.piDesktop.system.openDialog({ title: 'Select Workspace Folder' })
+    if (path) await changeWorkspaceFolder(activeWorkspace.id, path)
+  }
+
+  const handleWorkspaceContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    showContextMenu(e, [
+      {
+        id: 'rename',
+        label: 'Rename',
+        icon: <Pencil size={14} />,
+        disabled: !activeWorkspace,
+        action: startRenaming,
+      },
+      {
+        id: 'change-folder',
+        label: 'Change folder…',
+        icon: <FolderOpen size={14} />,
+        disabled: !activeWorkspace,
+        action: () => {
+          void handleChangeFolder()
+        },
+      },
+    ])
+  }
+
   const handleSelectFolder = async () => {
     const path = await window.piDesktop.system.openDialog({ title: 'Select Workspace Folder' })
     if (path) setNewPath(path)
@@ -279,22 +330,49 @@ function WorkspaceSwitcher(): React.JSX.Element {
   return (
     <div className="px-3 py-2">
       {/* Current workspace */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-800 transition-colors"
-      >
-        <div className="flex items-center gap-2 min-w-0">
+      {isRenaming ? (
+        <div className="flex items-center gap-2 rounded-md bg-neutral-900 px-3 py-2">
           <Layers size={14} style={{ color: activeWorkspace?.color ?? '#6b7280' }} />
-          <span className="truncate">{activeWorkspace?.name ?? 'No workspace'}</span>
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                handleRename()
+              } else if (e.key === 'Escape') {
+                setIsRenaming(false)
+              }
+            }}
+            onBlur={handleRename}
+            placeholder="Workspace name"
+            className="min-w-0 flex-1 rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-sm text-neutral-200 placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none"
+            autoFocus
+          />
         </div>
-        <ChevronDown
-          size={14}
-          className={clsx(
-            'shrink-0 text-neutral-500 transition-transform',
-            isOpen && 'rotate-180'
-          )}
-        />
-      </button>
+      ) : (
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          onDoubleClick={startRenaming}
+          onContextMenu={handleWorkspaceContextMenu}
+          title="Click to switch · double-click to rename · right-click for options"
+          className="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-800 transition-colors"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <Layers size={14} style={{ color: activeWorkspace?.color ?? '#6b7280' }} />
+            <span className="truncate">{activeWorkspace?.name ?? 'No workspace'}</span>
+          </div>
+          <ChevronDown
+            size={14}
+            className={clsx(
+              'shrink-0 text-neutral-500 transition-transform',
+              isOpen && 'rotate-180'
+            )}
+          />
+        </button>
+      )}
+      {WorkspaceContextMenu}
 
       {/* Dropdown */}
       {isOpen && (

@@ -1,10 +1,16 @@
 import { useRef, useCallback, useState, useEffect } from 'react'
 import { useAppStore } from '../store'
 import { useChatKeyboard } from '../hooks'
-import { Send, Square, Paperclip, X, FileText, NotebookPen } from 'lucide-react'
+import { Send, Square, Paperclip, X, FileText, NotebookPen, Users } from 'lucide-react'
+import { SUPPORTED_IMAGE_EXTENSIONS, type PromptImage } from '../../../shared/ipc-contracts'
 
 // Max height (px) the auto-growing input expands to before scrolling.
 const MAX_INPUT_HEIGHT = 192
+
+// A staged attachment: either inlined as text or sent to Pi as an image block.
+type Attachment =
+  | { kind: 'text'; name: string; path: string; content: string }
+  | { kind: 'image'; name: string; path: string; image: PromptImage }
 
 export function ChatInput(): React.JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -15,6 +21,8 @@ export function ChatInput(): React.JSX.Element {
   const pendingInsert = useAppStore((state) => state.pendingInsert)
   const clearPendingInsert = useAppStore((state) => state.clearPendingInsert)
   const setNotePickerOpen = useAppStore((state) => state.setNotePickerOpen)
+  const councilEnabled = useAppStore((s) => s.settings?.council?.enabled ?? false)
+  const runCouncil = useAppStore((s) => s.runCouncil)
 
   // Apply a note inserted from the panel or picker: drop the text at the
   // cursor, refocus, resize, then clear so the same note can be inserted again.
@@ -43,20 +51,36 @@ export function ChatInput(): React.JSX.Element {
     clearPendingInsert()
   }, [pendingInsert, clearPendingInsert])
 
-  const [attachments, setAttachments] = useState<Array<{ name: string; path: string; content: string }>>([])
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [attachError, setAttachError] = useState<string | null>(null)
 
   const handleSend = useCallback(
     async (message: string) => {
-      // Include attachment context in the message
+      // Text attachments are inlined into the prompt; image attachments are
+      // sent as Pi image blocks so the model actually sees them.
+      const textAttachments = attachments.filter((a) => a.kind === 'text')
+      const imageAttachments = attachments.filter(
+        (a): a is Extract<Attachment, { kind: 'image' }> => a.kind === 'image'
+      )
+      const images = imageAttachments.map((a) => a.image)
+      const displayAttachments = imageAttachments.map((a) => ({
+        kind: 'image' as const,
+        name: a.name,
+        mimeType: a.image.mimeType,
+        data: a.image.data,
+      }))
+
       let fullMessage = message
-      if (attachments.length > 0) {
-        const attachmentContext = attachments
+      if (textAttachments.length > 0) {
+        fullMessage += textAttachments
           .map((a) => `\n\n--- File: ${a.name} ---\n${a.content}`)
           .join('')
-        fullMessage = message + attachmentContext
       }
 
-      sendPrompt(fullMessage)
+      sendPrompt(
+        fullMessage,
+        images.length > 0 ? { images, attachments: displayAttachments } : undefined
+      )
       setAttachments([])
     },
     [sendPrompt, attachments]
@@ -67,17 +91,25 @@ export function ChatInput(): React.JSX.Element {
   }, [abort])
 
   const handleAttachFile = useCallback(async () => {
+    setAttachError(null)
     try {
-      const path = await window.piDesktop.system.openDialog({ title: 'Select file to attach' })
-      if (path) {
-        const content = await window.piDesktop.files.read(path)
-        const name = path.split('/').pop() ?? path
-        setAttachments((prev) =>
-          prev.some((a) => a.path === path) ? prev : [...prev, { name, path, content }]
-        )
-      }
-    } catch {
-      // Silent failure
+      const path = await window.piDesktop.system.openDialog({
+        title: 'Attach file',
+        mode: 'file',
+        filters: [
+          { name: 'Images', extensions: [...SUPPORTED_IMAGE_EXTENSIONS] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      })
+      if (!path) return
+      const result = await window.piDesktop.files.readAttachment(path)
+      const next: Attachment =
+        result.kind === 'image'
+          ? { kind: 'image', name: result.name, path, image: result.image }
+          : { kind: 'text', name: result.name, path, content: result.content }
+      setAttachments((prev) => (prev.some((a) => a.path === path) ? prev : [...prev, next]))
+    } catch (err) {
+      setAttachError(err instanceof Error ? err.message : 'Could not attach file')
     }
   }, [])
 
@@ -91,6 +123,14 @@ export function ChatInput(): React.JSX.Element {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-4">
+      {/* Attachment error */}
+      {attachError && (
+        <div className="mb-2 flex items-center gap-1.5 text-xs text-red-400">
+          <X size={12} className="shrink-0" />
+          <span>{attachError}</span>
+        </div>
+      )}
+
       {/* Attachments */}
       {attachments.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1">
@@ -99,7 +139,15 @@ export function ChatInput(): React.JSX.Element {
               key={att.path}
               className="flex items-center gap-1.5 rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-300"
             >
-              <FileText size={12} className="text-neutral-500" />
+              {att.kind === 'image' ? (
+                <img
+                  src={`data:${att.image.mimeType};base64,${att.image.data}`}
+                  alt={att.name}
+                  className="h-5 w-5 shrink-0 rounded object-cover"
+                />
+              ) : (
+                <FileText size={12} className="text-neutral-500" />
+              )}
               <span className="max-w-[120px] truncate">{att.name}</span>
               <button
                 onClick={() => removeAttachment(i)}
@@ -134,15 +182,34 @@ export function ChatInput(): React.JSX.Element {
           <NotebookPen size={16} />
         </button>
 
+        {/* Plan with Council button */}
+        {councilEnabled && (
+          <button
+            onClick={() => {
+              const value = textareaRef.current?.value.trim()
+              if (value) {
+                void runCouncil(value)
+                if (textareaRef.current) textareaRef.current.value = ''
+              }
+            }}
+            disabled={isDisabled || isStreaming}
+            className="flex shrink-0 items-center justify-center py-3 pr-1 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
+            title="Plan with Council"
+            aria-label="Plan with Council"
+          >
+            <Users size={16} />
+          </button>
+        )}
+
         {/* Text input */}
         <textarea
           ref={textareaRef}
           placeholder={
             isDisabled
-              ? 'PI agent is not running...'
+              ? 'Pi agent is not running...'
               : isStreaming
                 ? 'Type to steer the agent...'
-                : 'Ask PI anything... (Enter to send, Shift+Enter for newline)'
+                : 'Ask Pi anything... (Enter to send, Shift+Enter for newline)'
           }
           disabled={isDisabled}
           rows={1}

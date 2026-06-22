@@ -12,10 +12,10 @@ import type {
 } from '../shared/ipc-contracts'
 
 /**
- * Manages a PI RPC child process.
+ * Manages a Pi RPC child process.
  *
  * Responsibilities:
- * - Spawn/kill PI in --mode rpc
+ * - Spawn/kill Pi in --mode rpc
  * - Parse JSONL from stdout (LF-delimited, no Unicode line separators)
  * - Route events to subscribers
  * - Correlate request/response via id field
@@ -33,7 +33,7 @@ const CONTINUE_FLAG = '--continue'
 const IS_WINDOWS = process.platform === 'win32'
 const PI_FALLBACK_BINARY = IS_WINDOWS ? 'pi.cmd' : 'pi'
 const SPAWN_STARTUP_TIMEOUT_MS = 15_000
-// PI's RPC mode is request/response — it emits nothing on connect. After this
+// Pi's RPC mode is request/response — it emits nothing on connect. After this
 // settle window, a still-alive process is considered ready.
 const PROCESS_SETTLE_MS = 2_000
 const FORCE_KILL_TIMEOUT_MS = 3_000
@@ -81,12 +81,12 @@ function npmGlobalPrefix(): string | null {
 }
 
 /**
- * Given a directory that probably contains the PI install (either an npm
+ * Given a directory that probably contains the Pi install (either an npm
  * prefix or the dirname of a pi.cmd shim), try to find the underlying
  * cli.js. Returns null if nothing matches.
  *
  * Why: spawning pi.cmd via shell:true on Windows is unreliable for RPC
- * mode — the cmd.exe wrapper interferes with stdio piping that PI's
+ * mode — the cmd.exe wrapper interferes with stdio piping that Pi's
  * JSONL protocol needs. If we can find the cli.js the shim would invoke,
  * we can run it with node.exe directly and skip the shell entirely.
  */
@@ -104,7 +104,7 @@ function findCliJsNear(dir: string): string | null {
 }
 
 /**
- * Locate the PI coding agent CLI. Strategy (most reliable first):
+ * Locate the Pi coding agent CLI. Strategy (most reliable first):
  *
  *   1. Ask npm for its global prefix and look there. Works for default
  *      Node installs, fnm, nvm, volta, pnpm, custom prefixes — anything
@@ -180,7 +180,7 @@ function findPiBinary(): string {
 }
 
 /**
- * Find a Node binary to run the PI .js script with. Searches NODE env,
+ * Find a Node binary to run the Pi .js script with. Searches NODE env,
  * npm_node_execpath (set when running under npm), Electron's own process,
  * common install paths, and PATH.
  */
@@ -195,7 +195,7 @@ function findNodeBinary(): string {
     const programFilesX86 = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'
     const localAppData = process.env.LOCALAPPDATA ?? ''
     const candidates = [
-      // PI's install.ps1 puts an auto-installed Node under
+      // Pi's install.ps1 puts an auto-installed Node under
       // %LOCALAPPDATA%\pi-node\current\node.exe. Check the symlinked
       // 'current' path first; fall back to the bare pi-node dir for
       // older layouts.
@@ -226,12 +226,12 @@ const NODE_BINARY = findNodeBinary()
 const NEEDS_SHELL = IS_WINDOWS && !USE_NODE && /\.(cmd|bat|ps1)$/i.test(PI_SCRIPT)
 const PI_SCRIPT_EXISTS = existsSync(PI_SCRIPT)
 const NODE_BINARY_EXISTS = !USE_NODE || existsSync(NODE_BINARY)
-console.log('─── PI binary resolution ────────────────────────────')
-console.log('[PI] PI_SCRIPT     :', PI_SCRIPT, PI_SCRIPT_EXISTS ? '(exists)' : '(MISSING)')
-console.log('[PI] USE_NODE      :', USE_NODE)
-console.log('[PI] NODE_BINARY   :', NODE_BINARY, USE_NODE ? (NODE_BINARY_EXISTS ? '(exists)' : '(MISSING)') : '(unused)')
-console.log('[PI] NEEDS_SHELL   :', NEEDS_SHELL)
-console.log('[PI] Spawn command :', USE_NODE ? `${NODE_BINARY} ${PI_SCRIPT}` : PI_SCRIPT, NEEDS_SHELL ? '(via shell)' : '')
+console.log('─── Pi binary resolution ────────────────────────────')
+console.log('[Pi] PI_SCRIPT     :', PI_SCRIPT, PI_SCRIPT_EXISTS ? '(exists)' : '(MISSING)')
+console.log('[Pi] USE_NODE      :', USE_NODE)
+console.log('[Pi] NODE_BINARY   :', NODE_BINARY, USE_NODE ? (NODE_BINARY_EXISTS ? '(exists)' : '(MISSING)') : '(unused)')
+console.log('[Pi] NEEDS_SHELL   :', NEEDS_SHELL)
+console.log('[Pi] Spawn command :', USE_NODE ? `${NODE_BINARY} ${PI_SCRIPT}` : PI_SCRIPT, NEEDS_SHELL ? '(via shell)' : '')
 console.log('─────────────────────────────────────────────────────')
 
 // Exported so ipc-handlers can run `pi install/remove/update` with the same
@@ -267,7 +267,7 @@ export class PiRpcManager extends EventEmitter {
       status: this.status,
       pid: this.process?.pid ?? null,
       // Only report captured stderr as an error when we're actually in the
-      // 'error' state. PI and its extensions (e.g. pi-ollama) log benign,
+      // 'error' state. Pi and its extensions (e.g. pi-ollama) log benign,
       // informational lines to stderr while running — surfacing those as an
       // error misleads the UI into showing healthy startup logs as ERROR.
       error: this.status === 'error' ? (this.stderrBuffer || null) : null,
@@ -298,15 +298,15 @@ export class PiRpcManager extends EventEmitter {
     // Pre-flight: if the binary we resolved doesn't exist, fail fast with a
     // clear message instead of letting spawn die with a cryptic ENOENT.
     if (!PI_SCRIPT_EXISTS) {
-      this.stderrBuffer = `PI binary not found at resolved path:\n  ${PI_SCRIPT}\n\nSearched npm prefix, PATH, and common install locations. Make sure PI is installed:\n  npm install -g @earendil-works/pi-coding-agent\nor on Windows:\n  irm https://pi.dev/install.ps1 | iex`
+      this.stderrBuffer = `Pi binary not found at resolved path:\n  ${PI_SCRIPT}\n\nSearched npm prefix, PATH, and common install locations. Make sure Pi is installed:\n  npm install -g @earendil-works/pi-coding-agent\nor on Windows:\n  irm https://pi.dev/install.ps1 | iex`
       this.setStatus('error')
-      console.error('[PI] Pre-flight failed:', this.stderrBuffer)
+      console.error('[Pi] Pre-flight failed:', this.stderrBuffer)
       return this.getStatus()
     }
     if (USE_NODE && !NODE_BINARY_EXISTS) {
-      this.stderrBuffer = `Node binary not found at resolved path:\n  ${NODE_BINARY}\n\nPI's .js entry point requires Node. Install Node from https://nodejs.org or set the NODE env var to your Node binary path.`
+      this.stderrBuffer = `Node binary not found at resolved path:\n  ${NODE_BINARY}\n\nPi's .js entry point requires Node. Install Node from https://nodejs.org or set the NODE env var to your Node binary path.`
       this.setStatus('error')
-      console.error('[PI] Pre-flight failed:', this.stderrBuffer)
+      console.error('[Pi] Pre-flight failed:', this.stderrBuffer)
       return this.getStatus()
     }
 
@@ -321,13 +321,13 @@ export class PiRpcManager extends EventEmitter {
         // spawn — they need the cmd.exe interpreter via shell:true.
         shell: NEEDS_SHELL,
         // On POSIX, make the child its own process-group leader so kill()'s
-        // negative-PID group kill reaps PI and all its descendants. Skipped on
+        // negative-PID group kill reaps Pi and all its descendants. Skipped on
         // Windows, where it would spawn a detached console window with shell:true.
         detached: !IS_WINDOWS,
       }
 
-      console.log('[PI] Spawning with cwd:', options.cwd)
-      console.log('[PI] Spawn argv     :', USE_NODE ? [NODE_BINARY, PI_SCRIPT, ...args] : [PI_SCRIPT, ...args])
+      console.log('[Pi] Spawning with cwd:', options.cwd)
+      console.log('[Pi] Spawn argv     :', USE_NODE ? [NODE_BINARY, PI_SCRIPT, ...args] : [PI_SCRIPT, ...args])
       const proc = USE_NODE
         ? spawn(NODE_BINARY, [PI_SCRIPT, ...args], spawnOptions)
         : spawn(PI_SCRIPT, args, spawnOptions)
@@ -343,7 +343,7 @@ export class PiRpcManager extends EventEmitter {
           resolve(this.getStatus())
         }
 
-        // Mark running immediately if PI sends stdout before the settle window.
+        // Mark running immediately if Pi sends stdout before the settle window.
         const onFirstData = (): void => {
           this.process?.stdout?.removeListener('data', onFirstData)
           if (this.status === 'starting') this.setStatus('running')
@@ -352,7 +352,7 @@ export class PiRpcManager extends EventEmitter {
         this.process!.stdout?.on('data', onFirstData)
 
         proc.on('error', (err) => {
-          console.error('[PI] Spawn error:', err.message)
+          console.error('[Pi] Spawn error:', err.message)
           // Surface to the renderer status popover so users see something
           // useful instead of a blank 'error' state.
           this.stderrBuffer += `Spawn error: ${err.message}\n`
@@ -361,21 +361,21 @@ export class PiRpcManager extends EventEmitter {
         })
 
         proc.on('exit', (code, signal) => {
-          console.log('[PI] Process exited with code:', code, 'signal:', signal, 'pid:', proc.pid)
-          // If PI exited non-zero before reaching 'running', preserve that as
+          console.log('[Pi] Process exited with code:', code, 'signal:', signal, 'pid:', proc.pid)
+          // If Pi exited non-zero before reaching 'running', preserve that as
           // the error reason so the popover can show it; otherwise it stopped.
           if (this.status !== 'running' && code !== 0 && code !== null) {
-            this.stderrBuffer = (this.stderrBuffer || '') + `PI exited with code ${code} before becoming ready.`
+            this.stderrBuffer = (this.stderrBuffer || '') + `Pi exited with code ${code} before becoming ready.`
             this.setStatus('error')
           } else {
             this.setStatus('stopped')
           }
           this.emit('exit', { code, signal })
-          this.rejectAllPending('PI process exited')
+          this.rejectAllPending('Pi process exited')
           done()
         })
 
-        // PI's RPC mode is pure request/response — it emits nothing on connect.
+        // Pi's RPC mode is pure request/response — it emits nothing on connect.
         // If the process is still alive after the settle window without erroring
         // or exiting, it is ready to receive commands.
         setTimeout(() => {
@@ -397,10 +397,10 @@ export class PiRpcManager extends EventEmitter {
             this.kill()
             this.setStatus('error')
             this.stderrBuffer =
-              `PI did not respond within ${SPAWN_STARTUP_TIMEOUT_MS / 1000}s.\n\n` +
+              `Pi did not respond within ${SPAWN_STARTUP_TIMEOUT_MS / 1000}s.\n\n` +
               (captured
-                ? `PI stderr captured during startup:\n${captured}`
-                : 'No output captured. Likely causes: PI launched but stdio piping is broken (common with shell:true on Windows), or PI is waiting on input. Try running `pi --mode rpc` directly in cmd to see if RPC mode works standalone.')
+                ? `Pi stderr captured during startup:\n${captured}`
+                : 'No output captured. Likely causes: Pi launched but stdio piping is broken (common with shell:true on Windows), or Pi is waiting on input. Try running `pi --mode rpc` directly in cmd to see if RPC mode works standalone.')
             done()
           }
         }, SPAWN_STARTUP_TIMEOUT_MS)
@@ -423,12 +423,12 @@ export class PiRpcManager extends EventEmitter {
   }
 
   /**
-   * Send a command to the PI RPC process.
+   * Send a command to the Pi RPC process.
    * Returns a correlated response if an id is provided.
    */
   async sendCommand(command: Record<string, unknown>): Promise<PiResponseEvent | null> {
     if (!this.process?.stdin || this.status !== 'running') {
-      throw new Error('PI process is not running')
+      throw new Error('Pi process is not running')
     }
 
     const id = `req-${this.nextRequestId++}`
@@ -464,7 +464,7 @@ export class PiRpcManager extends EventEmitter {
    */
   sendCommandFireAndForget(command: Record<string, unknown>): void {
     if (!this.process?.stdin || this.status !== 'running') {
-      return // Silently ignore if PI isn't running
+      return // Silently ignore if Pi isn't running
     }
 
     const line = JSON.stringify(command) + JSONL_NEWLINE
@@ -474,7 +474,7 @@ export class PiRpcManager extends EventEmitter {
       if ((err as NodeJS.ErrnoException)?.code !== 'EPIPE') {
         throw err
       }
-      // EPIPE means PI process exited
+      // EPIPE means Pi process exited
       this.setStatus('stopped')
     }
   }
@@ -508,7 +508,7 @@ export class PiRpcManager extends EventEmitter {
     if (options.sessionPath) {
       args.push(SESSION_FLAG, options.sessionPath)
     } else if (options.continueSession && !options.noSession) {
-      // Resume the most recent session for the cwd. PI falls back to a fresh
+      // Resume the most recent session for the cwd. Pi falls back to a fresh
       // session when none exists, so this is safe on first run.
       args.push(CONTINUE_FLAG)
     }
@@ -560,7 +560,7 @@ export class PiRpcManager extends EventEmitter {
       const text = chunk.toString('utf8')
       this.stderrBuffer += text
       this.emit('stderr', text)
-      console.log('[PI STDERR]:', text.slice(0, 200))
+      console.log('[Pi STDERR]:', text.slice(0, 200))
     })
   }
 
@@ -602,7 +602,7 @@ export class PiRpcManager extends EventEmitter {
   private kill(): void {
     for (const [, pending] of this.pendingResponses) {
       clearTimeout(pending.timer)
-      pending.reject(new Error('PI process killed'))
+      pending.reject(new Error('Pi process killed'))
     }
     this.pendingResponses.clear()
 

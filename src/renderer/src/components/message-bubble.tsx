@@ -219,6 +219,23 @@ function UserMessage({
     <div className="group mb-4 flex justify-end animate-fade-in">
       <div className="relative max-w-[80%]">
         <div className="rounded-2xl rounded-br-md bg-blue-600 px-4 py-2.5 text-sm text-white">
+          {message.attachments && message.attachments.length > 0 && (
+            <div className={clsx('flex flex-wrap gap-2', message.content && 'mb-2')}>
+              {message.attachments.map((attachment, index) => (
+                <div
+                  key={`${attachment.name}-${index}`}
+                  className="overflow-hidden rounded-md border border-white/20 bg-black/10"
+                  title={attachment.name}
+                >
+                  <img
+                    src={`data:${attachment.mimeType};base64,${attachment.data}`}
+                    alt={attachment.name}
+                    className="h-16 w-16 object-cover"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
           <div className="whitespace-pre-wrap break-words">{message.content}</div>
         </div>
         {/* Actions */}
@@ -443,7 +460,7 @@ function ActionButton({
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Map common PI tool names to a representative icon; falls back to a wrench.
+// Map common Pi tool names to a representative icon; falls back to a wrench.
 function toolIcon(name: string): LucideIcon {
   const n = name.toLowerCase()
   if (n.includes('bash') || n.includes('shell') || n.includes('exec') || n.includes('terminal')) return Terminal

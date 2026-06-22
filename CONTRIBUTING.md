@@ -1,4 +1,4 @@
-# Contributing to PI Desktop
+# Contributing to Pi Desktop
 
 Thank you for your interest in contributing! This document explains how to contribute to the project.
 
@@ -24,7 +24,7 @@ By submitting a pull request, you acknowledge that you have read and agree to th
    - Clear title and description
    - Steps to reproduce
    - Expected vs actual behavior
-   - Environment (OS, Electron version, PI version)
+   - Environment (OS, Electron version, Pi version)
    - Screenshots if applicable
 
 ### Suggesting Features
@@ -154,7 +154,7 @@ src/
 ├── main/                      # Electron main process
 │   ├── index.ts               # App lifecycle
 │   ├── ipc-handlers.ts        # IPC handler registration
-│   ├── pi-rpc-manager.ts      # PI subprocess management
+│   ├── pi-rpc-manager.ts      # Pi subprocess management
 │   ├── workspace-manager.ts   # Multi-workspace
 │   ├── file-service.ts        # File tree, search, git, file write
 │   ├── terminal-service.ts    # node-pty PTY management
@@ -180,4 +180,4 @@ By contributing to this project, you agree that your contributions will be licen
 
 ## Acknowledgments
 
-Thank you to all contributors who help make PI Desktop better!
+Thank you to all contributors who help make Pi Desktop better!

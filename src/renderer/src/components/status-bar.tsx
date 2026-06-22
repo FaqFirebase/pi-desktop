@@ -15,6 +15,7 @@ import {
   Loader2,
   ChevronUp,
   Check,
+  GitBranch,
 } from 'lucide-react'
 
 export function StatusBar(): React.JSX.Element {
@@ -31,12 +32,37 @@ export function StatusBar(): React.JSX.Element {
   const setCurrentView = useAppStore((state) => state.setCurrentView)
   const compactContext = useAppStore((state) => state.compactContext)
   const isCompacting = useAppStore((state) => state.sessionState?.isCompacting ?? false)
+  const activeWorkspace = useAppStore((state) => state.activeWorkspace)
+
+  // Current git branch of the active workspace. Refreshed when the workspace
+  // changes and when the window regains focus (branch switches outside the app).
+  const [gitBranch, setGitBranch] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    const load = (): void => {
+      window.piDesktop.files
+        .getGitBranch()
+        .then((b) => {
+          if (!cancelled) setGitBranch(b)
+        })
+        .catch(() => {
+          if (!cancelled) setGitBranch(null)
+        })
+    }
+    load()
+    const onFocus = (): void => load()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [activeWorkspace?.id])
 
   return (
     <div className="flex h-7 items-center justify-between border-t border-neutral-800 bg-neutral-950 px-3 text-xs">
       {/* Left section */}
       <div className="flex items-center gap-3">
-        {/* PI Status */}
+        {/* Pi Status */}
         <div className="flex items-center gap-1.5">
           <div
             className={clsx(
@@ -48,9 +74,17 @@ export function StatusBar(): React.JSX.Element {
             )}
           />
           <span className="text-neutral-500">
-            {piStatus === 'running' ? `PI running (PID: ${piPid})` : `PI ${piStatus}`}
+            {piStatus === 'running' ? `Pi running (PID: ${piPid})` : `Pi ${piStatus}`}
           </span>
         </div>
+
+        {/* Git branch of the active workspace */}
+        {gitBranch && (
+          <div className="flex items-center gap-1 text-neutral-500" title={`Git branch: ${gitBranch}`}>
+            <GitBranch size={11} />
+            <span>{gitBranch}</span>
+          </div>
+        )}
 
         {/* Streaming indicator */}
         {isStreaming && (

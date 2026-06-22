@@ -8,13 +8,13 @@
 // ─── IPC Channel Names ──────────────────────────────────────────────────────
 
 export const IPC_CHANNELS = {
-  // PI process lifecycle
+  // Pi process lifecycle
   PI_START: 'pi:start',
   PI_STOP: 'pi:stop',
   PI_RESTART: 'pi:restart',
   PI_STATUS: 'pi:status',
 
-  // PI commands
+  // Pi commands
   PI_PROMPT: 'pi:prompt',
   PI_STEER: 'pi:steer',
   PI_FOLLOW_UP: 'pi:follow-up',
@@ -74,6 +74,8 @@ export const IPC_CHANNELS = {
   WORKSPACE_RENAME: 'workspace:rename',
   WORKSPACE_SET_ACTIVE: 'workspace:set-active',
   WORKSPACE_GET_ACTIVE: 'workspace:get-active',
+  WORKSPACE_CHANGE_PATH: 'workspace:change-path',
+  WORKSPACE_PATH_EXISTS: 'workspace:path-exists',
   WORKSPACE_START_PI: 'workspace:start-pi',
   WORKSPACE_STOP_PI: 'workspace:stop-pi',
 
@@ -93,11 +95,16 @@ export const IPC_CHANNELS = {
   MODELS_READ: 'models:read',
   MODELS_WRITE: 'models:write',
 
+  // Council planning
+  COUNCIL_DETECT: 'council:detect',
+  COUNCIL_RUN_CONSULTANTS: 'council:run-consultants',
+
   // File operations
   FILE_TREE: 'file:tree',
   FILE_SEARCH: 'file:search',
   FILE_SEARCH_CONTENT: 'file:search-content',
   FILE_READ: 'file:read',
+  FILE_READ_ATTACHMENT: 'file:read-attachment',
   FILE_WRITE: 'file:write',
   FILE_DIFF: 'file:diff',
   FILE_STAGED_DIFF: 'file:staged-diff',
@@ -132,9 +139,10 @@ export const IPC_CHANNELS = {
   EVENT_FILE_CHANGE: 'event:file-change',
   EVENT_TERMINAL_DATA: 'event:terminal-data',
   EVENT_TERMINAL_EXIT: 'event:terminal-exit',
+  EVENT_COUNCIL_PROGRESS: 'event:council-progress',
 } as const
 
-// ─── PI Process Types ───────────────────────────────────────────────────────
+// ─── Pi Process Types ───────────────────────────────────────────────────────
 
 export type PiProcessStatus = 'stopped' | 'starting' | 'running' | 'error'
 
@@ -150,7 +158,7 @@ export interface PiStartOptions {
   provider?: string
   sessionPath?: string
   noSession?: boolean
-  // When true (and neither sessionPath nor noSession is set), PI is launched
+  // When true (and neither sessionPath nor noSession is set), Pi is launched
   // with --continue so it resumes the most recent session for the cwd instead
   // of creating a fresh one.
   continueSession?: boolean
@@ -177,7 +185,7 @@ export interface TerminalExitEvent {
   signal?: number
 }
 
-// ─── PI RPC Event Types (subset used by renderer) ───────────────────────────
+// ─── Pi RPC Event Types (subset used by renderer) ───────────────────────────
 
 export interface PiAgentStartEvent {
   type: 'agent_start'
@@ -433,10 +441,78 @@ export interface SessionDeleteResult {
 
 export type ArchivedSessionsMap = Record<string, number>
 
+// File extensions Pi accepts as inline images (matches Pi's RPC image support).
+export const SUPPORTED_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'] as const
+
+/** A single image attachment in the shape Pi's RPC `prompt` command expects. */
+export interface PromptImage {
+  type: 'image'
+  mimeType: string
+  /** Base64-encoded image bytes (no data: URI prefix). */
+  data: string
+}
+
+/**
+ * Result of reading a user-selected attachment. Images are returned as a
+ * Pi-ready `PromptImage`; everything else is read as UTF-8 text to inline.
+ */
+export type AttachmentReadResult =
+  | { kind: 'image'; name: string; image: PromptImage }
+  | { kind: 'text'; name: string; content: string }
+
+/** Options for the native open dialog. Defaults to picking a directory. */
+export interface OpenDialogOptions {
+  title?: string
+  mode?: 'file' | 'directory'
+  filters?: Array<{ name: string; extensions: string[] }>
+}
+
 export type { SessionLineageRecord } from './session-lineage'
 export type { ModelsConfig, ProviderConfig, CustomModel } from './models-config'
+export type {
+  CouncilConfig,
+  CouncilAgentId,
+  ConsensusMode,
+  ConsultantResult,
+  ConsultantStatus,
+} from './council-config'
+
+import type { CouncilAgentId as CouncilAgentIdType, ConsultantResult as ConsultantResultType } from './council-config'
+
+/** Result of COUNCIL_DETECT. */
+export interface CouncilDetectResult {
+  agents: Array<{ id: CouncilAgentIdType; found: boolean }>
+}
+
+/**
+ * Request payload for COUNCIL_RUN_CONSULTANTS. The working directory is NOT
+ * part of the payload: the main process resolves it from the active workspace,
+ * so consultants always run against the real project tree.
+ */
+export interface CouncilRunRequest {
+  request: string
+  members: CouncilAgentIdType[]
+  timeoutSeconds: number
+  consensusMode: 'arbiter' | 'debate'
+}
+
+/** Result of COUNCIL_RUN_CONSULTANTS. */
+export interface CouncilRunResult {
+  results: ConsultantResultType[]
+}
+
+/**
+ * Streamed live during a council run (main → renderer on EVENT_COUNCIL_PROGRESS).
+ * `chunk` is human-readable text appended to the consultant's live output:
+ * raw stdout for Codex, parsed text deltas for Claude.
+ */
+export interface CouncilProgressEvent {
+  id: CouncilAgentIdType
+  chunk: string
+}
 
 import type { ModelsConfig as ModelsConfigType } from './models-config'
+import type { CouncilConfig } from './council-config'
 /** Result of the MODELS_READ IPC call. */
 export type ModelsReadResult = { config: ModelsConfigType } | { error: string; raw: string }
 
@@ -523,15 +599,17 @@ export interface AppSettings {
   showThinking: boolean
   autoScroll: boolean
   permissionMode: PermissionMode
-  // Resume the most recent session for the workspace on launch (via PI's
+  // Resume the most recent session for the workspace on launch (via Pi's
   // --continue) instead of starting a fresh session.
   resumeLastSession: boolean
   // Project paths whose session group is collapsed in the Sessions panel.
   // Persisted so the collapsed/expanded layout survives navigation and restarts.
   collapsedSessionGroups: string[]
-  // Show the Home/launcher screen on launch (PI starts lazily on first action)
+  // Show the Home/launcher screen on launch (Pi starts lazily on first action)
   // instead of booting straight into Chat. When false, legacy behavior applies.
   openToHomeOnLaunch: boolean
+  // Multi-agent council planning configuration.
+  council: CouncilConfig
 }
 
 // ─── Update Check Types ─────────────────────────────────────────────────────
