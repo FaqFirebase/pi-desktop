@@ -428,6 +428,17 @@ export interface SessionListItem {
   projectName: string
 }
 
+export interface ActivityDay {
+  date: string // local calendar day, YYYY-MM-DD
+  count: number // number of `type === 'message'` records on that day
+}
+
+export interface ActivityHeatmapResult {
+  days: ActivityDay[] // ascending by date, length === WINDOW_DAYS
+  total: number // sum of all counts in the window
+  maxCount: number // highest single-day count in the window
+}
+
 export interface AutoTagSessionRef {
   sessionId: string
   path: string

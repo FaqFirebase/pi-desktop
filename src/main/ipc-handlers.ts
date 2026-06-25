@@ -6,6 +6,7 @@ import { ArchivedSessionsManager } from './archived-sessions'
 import { TerminalService } from './terminal-service'
 import { NotesManager } from './notes-manager'
 import { getGuiDataPath } from './app-data-paths'
+import { getSessionsRoot } from './pi-paths'
 import type {
   PiStartOptions,
   PiRpcEvent,
@@ -1122,8 +1123,7 @@ interface SessionEntry {
 function createListSessions(wm: WorkspaceManager) {
   return async function listSessions(_cwd: string): Promise<SessionEntry[]> {
     try {
-      const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-      const sessionsDir = join(homeDir, '.pi', 'agent', 'sessions')
+      const sessionsDir = getSessionsRoot()
       const entries: SessionEntry[] = []
       await collectSessionFiles(sessionsDir, entries, sessionsDir, wm)
       entries.sort((a, b) => b.lastModified - a.lastModified)
@@ -1365,8 +1365,7 @@ async function updatePackage(spec: string | undefined, cwd: string): Promise<{ s
 // ─── Session Lineage Reader ──────────────────────────────────────────────────
 
 async function readSessionLineage(): Promise<SessionLineageRecord[]> {
-  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-  const sessionsDir = join(homeDir, '.pi', 'agent', 'sessions')
+  const sessionsDir = getSessionsRoot()
   const records: SessionLineageRecord[] = []
   if (!existsSync(sessionsDir)) return records
 
