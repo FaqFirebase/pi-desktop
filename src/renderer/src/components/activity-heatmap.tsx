@@ -40,20 +40,23 @@ export function ActivityHeatmap(): React.JSX.Element | null {
     return () => { cancelled = true }
   }, [])
 
-  const weeks = useMemo(() => {
-    if (!data) return []
+  const { weeks, visibleTotal } = useMemo(() => {
+    if (!data) return { weeks: [], visibleTotal: 0 }
     const tail = data.days.slice(-STRIP_WEEKS * DAYS_PER_WEEK)
-    return buildWeeks(tail)
+    return {
+      weeks: buildWeeks(tail),
+      visibleTotal: tail.reduce((sum, d) => sum + d.count, 0),
+    }
   }, [data])
 
-  if (!data || data.total === 0 || weeks.length === 0) return null
+  if (!data || visibleTotal === 0 || weeks.length === 0) return null
 
   return (
     <div className="mb-8">
       <div className="flex items-center justify-between">
         <SectionLabel>Activity</SectionLabel>
         <span className="text-[11px] text-neutral-600">
-          {data.total} messages in the last {STRIP_WEEKS} weeks
+          {visibleTotal} messages in the last {STRIP_WEEKS} weeks
         </span>
       </div>
       <div className="flex gap-1 overflow-x-auto rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">

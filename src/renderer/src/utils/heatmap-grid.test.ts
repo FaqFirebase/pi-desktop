@@ -32,6 +32,19 @@ test('buildWeeks pads the first column when the range starts mid-week', () => {
   assert.equal(weeks[0][3]?.date, '2026-06-24')
 })
 
+test('buildWeeks pads the trailing column when the range ends mid-week', () => {
+  // 2026-06-21 is a Sunday: 10 days covers one full week plus 3 days,
+  // so the last column has days at indices 0-2 and null pads at 3-6.
+  const weeks = buildWeeks(rangeDays('2026-06-21', 10))
+  assert.equal(weeks.length, 2)
+  const lastWeek = weeks[1]
+  assert.equal(lastWeek[2]?.date, '2026-06-30')
+  assert.equal(lastWeek[3], null)
+  assert.equal(lastWeek[4], null)
+  assert.equal(lastWeek[5], null)
+  assert.equal(lastWeek[6], null)
+})
+
 test('intensityLevel buckets counts from 0 to 4', () => {
   assert.equal(intensityLevel(0, 10), 0)
   assert.equal(intensityLevel(10, 10), 4)
