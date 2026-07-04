@@ -54,6 +54,13 @@ export function StatusPopover(): React.JSX.Element {
   const isCompacting = sessionState?.isCompacting ?? false
   const ref = useRef<HTMLDivElement>(null)
 
+  // Some providers (e.g. lmstudio) return a fractional context-usage percent
+  // like 1.077270; round + clamp so it fits the fixed-width label instead of
+  // overflowing the popover.
+  const contextPct = sessionStats?.contextUsage
+    ? Math.min(100, Math.max(0, Math.round(sessionStats.contextUsage.percent ?? 0)))
+    : 0
+
   // Load data when opened
   useEffect(() => {
     if (!isOpen) return
@@ -219,17 +226,17 @@ export function StatusPopover(): React.JSX.Element {
                             <div
                               className={clsx(
                                 'h-full rounded-full transition-all',
-                                (sessionStats.contextUsage.percent ?? 0) > 80
+                                contextPct > 80
                                   ? 'bg-red-500'
-                                  : (sessionStats.contextUsage.percent ?? 0) > 60
+                                  : contextPct > 60
                                     ? 'bg-yellow-500'
                                     : 'bg-emerald-500'
                               )}
-                              style={{ width: `${sessionStats.contextUsage.percent ?? 0}%` }}
+                              style={{ width: `${contextPct}%` }}
                             />
                           </div>
-                          <span className="text-xs w-8 text-right">
-                            {sessionStats.contextUsage.percent ?? 0}%
+                          <span className="text-xs w-8 shrink-0 text-right tabular-nums">
+                            {contextPct}%
                           </span>
                         </div>
                       }
