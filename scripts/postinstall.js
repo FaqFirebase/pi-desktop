@@ -30,12 +30,37 @@ function log(msg) {
   console.log(`[postinstall] ${msg}`)
 }
 
+/**
+ * Build the environment for native-rebuild child processes.
+ *
+ * On Windows, node-pty's bundled winpty.gyp shells out with
+ * `cmd /c "cd shared && GetCommitHash.bat"`. When the machine has the
+ * `NoDefaultCurrentDirectoryInExePath` environment variable set (common on
+ * locked-down / enterprise Windows), cmd.exe stops searching the current
+ * directory for executables, so the batch file is "not recognized" and the
+ * gyp configure step fails before the compiler is ever invoked. Removing the
+ * variable for our child processes restores the default lookup behavior.
+ */
+function buildEnv() {
+  if (!IS_WINDOWS) return process.env
+  const env = { ...process.env }
+  // process.env keys are case-insensitive on Windows, but a plain object copy
+  // is not — delete every casing so the child never inherits it.
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === 'nodefaultcurrentdirectoryinexepath') {
+      delete env[key]
+    }
+  }
+  return env
+}
+
 function rebuildNativeModules() {
   log('running electron-builder install-app-deps...')
   const result = spawnSync('npx', ['electron-builder', 'install-app-deps'], {
     cwd: ROOT,
     stdio: 'inherit',
     shell: IS_WINDOWS,
+    env: buildEnv(),
   })
   if (result.status !== 0) {
     if (IS_WINDOWS) {
