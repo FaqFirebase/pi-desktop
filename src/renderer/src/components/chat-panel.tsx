@@ -102,7 +102,7 @@ export function ChatPanel(): React.JSX.Element {
             {messages.length === 0 && !isStreaming ? (
               <EmptyState piStatus={piStatus} />
             ) : (
-              <div className="mx-auto max-w-3xl px-4 py-6">
+              <div className="mx-auto max-w-5xl px-4 py-6">
                 {messages.map((message) => (
                   <MessageBubble key={message.id} message={message} onRetry={handleRetry} />
                 ))}
@@ -119,7 +119,7 @@ export function ChatPanel(): React.JSX.Element {
 
           {/* Input area */}
           <div className="border-t border-neutral-800 bg-neutral-950">
-            <div className="mx-auto w-full max-w-3xl px-4">
+            <div className="mx-auto w-full max-w-5xl px-4">
               <CouncilPanels />
             </div>
             <ChatInput />

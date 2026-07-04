@@ -609,7 +609,12 @@ export interface AppSettings {
   defaultModel: string | null
   defaultProvider: string | null
   defaultCwd: string | null
+  // UI font size in px (chat, panels, sidebar). Applied to the document root.
   fontSize: number
+  // Terminal (xterm) font size in px — independent of the UI font size.
+  terminalFontSize: number
+  // Code editor (CodeMirror) font size in px — independent of the UI font size.
+  codeEditorFontSize: number
   showThinking: boolean
   autoScroll: boolean
   permissionMode: PermissionMode

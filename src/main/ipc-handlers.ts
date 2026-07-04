@@ -1537,6 +1537,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultProvider: null,
   defaultCwd: null,
   fontSize: 14,
+  terminalFontSize: 12,
+  codeEditorFontSize: 12,
   showThinking: true,
   autoScroll: true,
   permissionMode: 'ask-edits',

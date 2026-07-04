@@ -101,6 +101,13 @@ interface AppState {
   sidebarOpen: boolean
   terminalOpen: boolean
   settings: AppSettings | null
+  // Staged (unsaved) font-size values from the Settings sliders. When non-null
+  // they take priority over the persisted setting and survive view switches, so
+  // the sliders reflect the staged value on reopen and terminal/editor pick it
+  // up on remount — all without touching (or persisting) `settings`.
+  uiFontSizePreview: number | null
+  terminalFontSizePreview: number | null
+  codeEditorFontSizePreview: number | null
   commands: PiCommand[]
 
   // Extension UI
@@ -218,6 +225,11 @@ interface AppActions {
   toggleSidebar: () => void
   toggleTerminal: () => void
   loadSettings: () => Promise<void>
+  setFontSizePreview: (patch: {
+    ui?: number | null
+    terminal?: number | null
+    editor?: number | null
+  }) => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   toggleSessionGroupCollapsed: (projectPath: string) => Promise<void>
   loadCommands: () => Promise<void>
@@ -356,6 +368,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   sidebarOpen: true,
   terminalOpen: false,
   settings: null,
+  uiFontSizePreview: null,
+  terminalFontSizePreview: null,
+  codeEditorFontSizePreview: null,
   commands: [],
 
   extensionUiRequest: null,
@@ -863,6 +878,16 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // Silent failure
     }
   },
+
+  setFontSizePreview: (patch) =>
+    set((state) => ({
+      uiFontSizePreview:
+        patch.ui !== undefined ? patch.ui : state.uiFontSizePreview,
+      terminalFontSizePreview:
+        patch.terminal !== undefined ? patch.terminal : state.terminalFontSizePreview,
+      codeEditorFontSizePreview:
+        patch.editor !== undefined ? patch.editor : state.codeEditorFontSizePreview,
+    })),
 
   setPermissionMode: async (mode) => {
     const updated = await window.piDesktop.settings.save({ permissionMode: mode })
