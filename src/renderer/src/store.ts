@@ -64,6 +64,21 @@ export interface CouncilRunState {
   reason?: string
 }
 
+// ─── Confirmation Dialog ─────────────────────────────────────────────────────
+
+export interface ConfirmOptions {
+  title?: string
+  message: string
+  confirmLabel?: string
+  cancelLabel?: string
+  // Style the confirm button as destructive (red).
+  danger?: boolean
+}
+
+export interface ConfirmRequest extends ConfirmOptions {
+  resolve: (confirmed: boolean) => void
+}
+
 // ─── Store Shape ─────────────────────────────────────────────────────────────
 
 interface AppState {
@@ -105,6 +120,9 @@ interface AppState {
 
   // Extension UI
   extensionUiRequest: PiExtensionUiRequest | null
+
+  // App-level confirmation dialog (themed replacement for window.confirm)
+  confirmRequest: ConfirmRequest | null
 
   // Workspaces
   workspaces: Workspace[]
@@ -228,6 +246,10 @@ interface AppActions {
   // Extension UI
   respondExtensionUi: (id: string, response: Record<string, unknown>) => void
   dismissExtensionUi: () => void
+
+  // App confirmation dialog (promise-based; resolves true on confirm)
+  requestConfirm: (options: ConfirmOptions) => Promise<boolean>
+  resolveConfirm: (confirmed: boolean) => void
 
   // Workspaces
   loadWorkspaces: () => Promise<void>
@@ -359,6 +381,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   commands: [],
 
   extensionUiRequest: null,
+  confirmRequest: null,
 
   workspaces: [],
   activeWorkspace: null,
@@ -1063,6 +1086,20 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       }
       set({ extensionUiRequest: null })
     }
+  },
+
+  requestConfirm: (options) =>
+    new Promise<boolean>((resolve) => {
+      // Resolve any dialog already open (treated as cancelled) before showing.
+      const pending = get().confirmRequest
+      if (pending) pending.resolve(false)
+      set({ confirmRequest: { ...options, resolve } })
+    }),
+
+  resolveConfirm: (confirmed) => {
+    const req = get().confirmRequest
+    if (req) req.resolve(confirmed)
+    set({ confirmRequest: null })
   },
 
   // ─── Workspaces ──────────────────────────────────────────────────────

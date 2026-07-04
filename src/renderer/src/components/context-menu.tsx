@@ -14,6 +14,7 @@ import {
   NotebookPen,
 } from 'lucide-react'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
+import { useAppStore } from '../store'
 
 interface ContextMenuItem {
   id: string
@@ -383,13 +384,17 @@ export function buildSessionContextMenu(
       id: 'session-delete',
       label: 'Delete…',
       icon: <Trash2 size={14} />,
-      action: () => {
-        // Confirm before destructive action. Trash is recoverable when
-        // installed; without it, delete is permanent. The wording is
-        // honest about that.
-        const ok = window.confirm(
-          `Delete session "${displayName}"?\n\nWill use the system 'trash' CLI if installed (recoverable); otherwise the .jsonl session file is permanently removed.`
-        )
+      action: async () => {
+        // Confirm before destructive action via an in-app themed dialog (not the
+        // native window.confirm, which mismatches the theme and leaves the
+        // Electron window without keyboard focus). Trash is recoverable when
+        // installed; without it, delete is permanent — the wording is honest.
+        const ok = await useAppStore.getState().requestConfirm({
+          title: 'Delete session',
+          message: `Delete session "${displayName}"?\n\nWill use the system 'trash' CLI if installed (recoverable); otherwise the .jsonl session file is permanently removed.`,
+          confirmLabel: 'Delete',
+          danger: true,
+        })
         if (ok) actions.onDelete(session)
       },
     },
