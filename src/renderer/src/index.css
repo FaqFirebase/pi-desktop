@@ -697,7 +697,7 @@
   .breeze-claudius *::-webkit-scrollbar-thumb:hover { background-color: #4d5358 !important; }
 
   .breeze-claudius .markdown-body pre { background: #1d2024 !important; border-color: #3f4347 !important; }
-  .breeze-claudius .markdown-body code { background: rgba(63, 67, 71, 0.5) !important; color: #8e44ad !important; }
+  .breeze-claudius .markdown-body code { color: #60a5fa !important; }
   .breeze-claudius .markdown-body pre code { color: #cfcfc2 !important; }
 
   /* Chat center column: custom background, distinct from the left sidebar,
