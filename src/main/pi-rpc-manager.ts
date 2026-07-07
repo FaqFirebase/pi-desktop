@@ -33,9 +33,14 @@ const CONTINUE_FLAG = '--continue'
 const IS_WINDOWS = process.platform === 'win32'
 const PI_FALLBACK_BINARY = IS_WINDOWS ? 'pi.cmd' : 'pi'
 const SPAWN_STARTUP_TIMEOUT_MS = 15_000
-// Pi's RPC mode is request/response — it emits nothing on connect. After this
-// settle window, a still-alive process is considered ready.
-const PROCESS_SETTLE_MS = 2_000
+// Pi's RPC mode emits nothing on connect — it only replies to requests. So
+// instead of a blind settle wait, we send a cheap read-only probe after spawn
+// and treat Pi's first stdout (the probe's response) as "ready". The probe is
+// resent on this interval until Pi answers, in case the first write raced Pi's
+// stdin reader; SPAWN_STARTUP_TIMEOUT_MS bounds the retries.
+const STARTUP_PROBE_ID = '__startup_probe__'
+const STARTUP_PROBE_COMMAND = 'get_available_models' // read-only, no side effects
+const STARTUP_PROBE_INTERVAL_MS = 750
 const FORCE_KILL_TIMEOUT_MS = 3_000
 const PI_PACKAGE = '@earendil-works/pi-coding-agent'
 const PI_CLI_REL = join('node_modules', PI_PACKAGE, 'dist', 'cli.js')
@@ -337,16 +342,26 @@ export class PiRpcManager extends EventEmitter {
 
       return new Promise<PiStatus>((resolve) => {
         let resolved = false
+        let probeTimer: NodeJS.Timeout | null = null
+        const startedAt = Date.now()
         const done = (): void => {
           if (resolved) return
           resolved = true
+          if (probeTimer) {
+            clearInterval(probeTimer)
+            probeTimer = null
+          }
           resolve(this.getStatus())
         }
 
-        // Mark running immediately if Pi sends stdout before the settle window.
+        // Pi's RPC emits nothing until asked, so the first stdout we see is its
+        // reply to the readiness probe (sent below) — that's our ready signal.
         const onFirstData = (): void => {
           this.process?.stdout?.removeListener('data', onFirstData)
-          if (this.status === 'starting') this.setStatus('running')
+          if (this.status === 'starting') {
+            console.log(`[Pi] Ready after ${Date.now() - startedAt}ms`)
+            this.setStatus('running')
+          }
           done()
         }
         this.process!.stdout?.on('data', onFirstData)
@@ -375,16 +390,21 @@ export class PiRpcManager extends EventEmitter {
           done()
         })
 
-        // Pi's RPC mode is pure request/response — it emits nothing on connect.
-        // If the process is still alive after the settle window without erroring
-        // or exiting, it is ready to receive commands.
-        setTimeout(() => {
-          if (this.status === 'starting') {
-            this.process?.stdout?.removeListener('data', onFirstData)
-            this.setStatus('running')
-            done()
+        // Actively probe for readiness instead of blindly waiting: send a cheap
+        // read-only command; onFirstData (its response) flips us to 'running'.
+        // Resend on an interval in case the first write raced Pi's stdin reader.
+        const sendProbe = (): void => {
+          if (this.status !== 'starting') return
+          try {
+            this.process?.stdin?.write(
+              JSON.stringify({ type: STARTUP_PROBE_COMMAND, id: STARTUP_PROBE_ID }) + JSONL_NEWLINE
+            )
+          } catch {
+            // stdin not writable yet / EPIPE — a retry or the exit handler covers it.
           }
-        }, PROCESS_SETTLE_MS)
+        }
+        sendProbe()
+        probeTimer = setInterval(sendProbe, STARTUP_PROBE_INTERVAL_MS)
 
         // Hard deadline: something is seriously wrong if we're still stuck in
         // 'starting' after the full timeout (the settle timer should have fired).
@@ -576,6 +596,9 @@ export class PiRpcManager extends EventEmitter {
     // Correlate responses with pending requests
     if (event.type === 'response') {
       const responseEvent = event as PiResponseEvent
+      // Startup readiness probe (see doStart): consume its response silently so
+      // it doesn't surface as a stray model-list event.
+      if (responseEvent.id === STARTUP_PROBE_ID) return
       if (responseEvent.id) {
         const pending = this.pendingResponses.get(responseEvent.id)
         if (pending) {

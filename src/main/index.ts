@@ -71,8 +71,18 @@ function createMainWindow(): BrowserWindow {
       webSecurity: true,
       allowRunningInsecureContent: false,
       experimentalFeatures: false,
+      // Enables the <webview> tag used by the HTML file preview to run its own
+      // JavaScript in an isolated guest process (no Node, separate origin),
+      // without loosening the app's own CSP.
+      webviewTag: true,
     },
   })
+
+  // Hide the top menu bar (File/Edit/View/Window). The application menu stays
+  // set so its accelerators (Ctrl+N, Ctrl+O, copy/paste, etc.) keep working;
+  // only the visible bar is hidden. autoHideMenuBar is left off so Alt won't
+  // reveal it.
+  window.setMenuBarVisibility(false)
 
   // Graceful show (avoid white flash)
   window.once('ready-to-show', () => {
