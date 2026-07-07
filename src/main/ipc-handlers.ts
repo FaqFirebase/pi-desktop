@@ -6,6 +6,16 @@ import { ArchivedSessionsManager } from './archived-sessions'
 import { TerminalService } from './terminal-service'
 import { NotesManager } from './notes-manager'
 import { getGuiDataPath } from './app-data-paths'
+import { getSessionsRoot } from './pi-paths'
+import {
+  sanitizePath,
+  sessionDirName,
+  desanitizeSessionDir,
+  projectNameFromPath,
+  pathsEqual,
+} from './session-paths'
+import { readSessionName } from './session-name'
+import { activityHeatmapReader } from './activity-heatmap'
 import type {
   PiStartOptions,
   PiRpcEvent,
@@ -20,6 +30,7 @@ import type {
   ModelsReadResult,
   CouncilRunResult,
   CouncilDetectResult,
+  ActivityHeatmapResult,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { DEFAULT_COUNCIL_CONFIG, COUNCIL_AGENT_IDS, clampTimeoutSeconds } from '../shared/council-config'
@@ -1000,6 +1011,10 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     return app.getVersion()
   })
 
+  ipcMain.handle(IPC_CHANNELS.ACTIVITY_GET_HEATMAP, async (): Promise<ActivityHeatmapResult> => {
+    return activityHeatmapReader.compute()
+  })
+
   ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK, async (): Promise<UpdateCheckResult> => {
     return checkForUpdate()
   })
@@ -1119,15 +1134,38 @@ interface SessionEntry {
   projectName: string
 }
 
+// How many session files to read names from in parallel. Mirrors Pi's own
+// bounded concurrency so a large session store doesn't spawn hundreds of reads.
+const SESSION_NAME_READ_CONCURRENCY = 10
+
+/** Populate `entry.name` from each session file's latest `session_info`, bounded. */
+async function fillSessionNames(entries: SessionEntry[]): Promise<void> {
+  let cursor = 0
+  async function worker(): Promise<void> {
+    while (cursor < entries.length) {
+      const entry = entries[cursor++]
+      entry.name = await readSessionName(entry.path)
+    }
+  }
+  const workers = Array.from(
+    { length: Math.min(SESSION_NAME_READ_CONCURRENCY, entries.length) },
+    () => worker()
+  )
+  await Promise.all(workers)
+}
+
 function createListSessions(wm: WorkspaceManager) {
   return async function listSessions(_cwd: string): Promise<SessionEntry[]> {
     try {
-      const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-      const sessionsDir = join(homeDir, '.pi', 'agent', 'sessions')
+      const sessionsDir = getSessionsRoot()
       const entries: SessionEntry[] = []
       await collectSessionFiles(sessionsDir, entries, sessionsDir, wm)
       entries.sort((a, b) => b.lastModified - a.lastModified)
-      return entries.slice(0, MAX_SESSION_LIST)
+      // Only read names for the sessions we actually return (avoids reading the
+      // whole store), then surface each session's latest session_info name.
+      const top = entries.slice(0, MAX_SESSION_LIST)
+      await fillSessionNames(top)
+      return top
     } catch {
       return []
     }
@@ -1139,32 +1177,6 @@ function createListAllSessions(wm: WorkspaceManager) {
   return async function listAllSessions(cwd: string): Promise<SessionEntry[]> {
     return listSessions(cwd)
   }
-}
-
-/**
- * Convert a sanitized session directory name back to a real path.
- * Pi sanitizes paths by replacing / with - and wrapping in --.
- * e.g., --home-alice-- → /home/alice
- * e.g., --home-alice-Projects-my-app-- → /home/alice/Projects/my/app
- *
- * NOTE: This is lossy — hyphens in the original path become indistinguishable
- * from path separators. We use the workspace list to resolve actual paths.
- */
-function desanitizeSessionDir(dirName: string): string {
-  // Only process Pi-sanitized directories (start and end with --)
-  if (!dirName.startsWith('--') || !dirName.endsWith('--')) {
-    return dirName
-  }
-
-  // Strip wrapping dashes
-  const inner = dirName.slice(2, -2)
-
-  // Split on dash to get path segments
-  const segments = inner.split('-')
-
-  // Try to match against known workspace paths
-  // This is lossy, so we return the best guess
-  return '/' + segments.join('/')
 }
 
 async function collectSessionFiles(
@@ -1183,26 +1195,24 @@ async function collectSessionFiles(
         try {
           const fileStat = await stat(fullPath)
 
-          // Determine project path from the directory structure
-          const relativeToRoot = dir.replace(sessionsRoot, '').replace(/^\//, '')
+          // Determine project path from the directory structure. Normalized so
+          // Windows session dirs (backslash-separated) compare correctly.
+          const relativeToRoot = sessionDirName(dir, sessionsRoot)
           let projectPath = ''
           let projectName = 'Unknown'
 
           if (relativeToRoot) {
             // Try to match against known workspace paths
             const workspaces = wm.getWorkspaces()
-            const matched = workspaces.find((ws) => {
-              const sanitized = sanitizePath(ws.path)
-              return sanitized === relativeToRoot
-            })
+            const matched = workspaces.find((ws) => pathsEqual(sanitizePath(ws.path), relativeToRoot))
 
             if (matched) {
               projectPath = matched.path
               projectName = matched.name
             } else {
-              // Fallback: use desanitize (lossy)
+              // Fallback: desanitize (lossy) and derive a clean basename.
               projectPath = desanitizeSessionDir(relativeToRoot)
-              projectName = projectPath.split('/').pop() ?? projectPath
+              projectName = projectNameFromPath(projectPath)
             }
           }
 
@@ -1223,14 +1233,6 @@ async function collectSessionFiles(
   } catch {
     // Directory doesn't exist or isn't readable
   }
-}
-
-/**
- * Sanitize a path the same way Pi does for session directory names.
- */
-function sanitizePath(path: string): string {
-  // Pi replaces / with - and wraps in --
-  return '--' + path.replace(/^\//, '').replace(/\//g, '-') + '--'
 }
 
 // ─── Package Management ──────────────────────────────────────────────────────
@@ -1365,8 +1367,7 @@ async function updatePackage(spec: string | undefined, cwd: string): Promise<{ s
 // ─── Session Lineage Reader ──────────────────────────────────────────────────
 
 async function readSessionLineage(): Promise<SessionLineageRecord[]> {
-  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-  const sessionsDir = join(homeDir, '.pi', 'agent', 'sessions')
+  const sessionsDir = getSessionsRoot()
   const records: SessionLineageRecord[] = []
   if (!existsSync(sessionsDir)) return records
 
@@ -1532,6 +1533,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultProvider: null,
   defaultCwd: null,
   fontSize: 14,
+  terminalFontSize: 12,
+  codeEditorFontSize: 12,
   showThinking: true,
   autoScroll: true,
   permissionMode: 'ask-edits',

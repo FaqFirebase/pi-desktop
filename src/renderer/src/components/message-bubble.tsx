@@ -282,7 +282,7 @@ function AssistantMessage({
         <div className="min-w-0 flex-1">
           {/* Model info */}
           {message.model && (
-            <div className="mb-1 flex items-center gap-2 text-xs text-neutral-500">
+            <div className="mb-1 flex items-center gap-2 text-sm text-neutral-500">
               <span>{message.provider}</span>
               <span className="text-neutral-700">·</span>
               <span>{message.model}</span>
@@ -300,14 +300,14 @@ function AssistantMessage({
             <div className="mb-2">
               <button
                 onClick={onToggleThinking}
-                className="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-400 transition-colors"
+                className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-400 transition-colors"
               >
                 <Brain size={12} />
                 {showThinking ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                 Thinking
               </button>
               {showThinking && (
-                <div className="mt-1 rounded-lg border border-neutral-800 bg-neutral-900/50 p-3 text-xs text-neutral-400">
+                <div className="markdown-body mt-1 rounded-lg border border-neutral-800 bg-neutral-900/50 p-3 text-neutral-400">
                   <MarkdownRenderer content={message.thinking} />
                 </div>
               )}
@@ -360,16 +360,16 @@ function ToolCallBadge({
     <div className="rounded-lg border border-neutral-800 bg-neutral-900/50">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-xs text-neutral-400 hover:text-neutral-300 transition-colors"
+        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-400 hover:text-neutral-300 transition-colors"
       >
         <Icon size={12} className="shrink-0" />
         <span className="font-medium">{toolCall.name}</span>
         {toolCall.durationMs !== undefined && !toolCall.isExecuting && (
-          <span className="text-[10px] text-neutral-600">{formatDuration(toolCall.durationMs)}</span>
+          <span className="text-xs text-neutral-600">{formatDuration(toolCall.durationMs)}</span>
         )}
         {toolCall.isError !== undefined && (
           <span className={clsx(
-            'ml-auto rounded px-1.5 py-0.5 text-[10px]',
+            'ml-auto rounded px-1.5 py-0.5 text-xs',
             toolCall.isError ? 'bg-red-900/30 text-red-400' : 'bg-emerald-900/30 text-emerald-400'
           )}>
             {toolCall.isError ? 'error' : 'done'}
@@ -382,12 +382,12 @@ function ToolCallBadge({
       </button>
       {expanded && (
         <div className="border-t border-neutral-800 px-3 py-2">
-          <pre className="overflow-x-auto text-xs text-neutral-500">
+          <pre className="overflow-x-auto text-sm text-neutral-500">
             {formatToolCallArgs(toolCall.arguments)}
           </pre>
           {toolCall.result && (
             <div className="mt-2 border-t border-neutral-800 pt-2">
-              <pre className="overflow-x-auto text-xs text-neutral-400">
+              <pre className="overflow-x-auto text-sm text-neutral-400">
                 {toolCall.result}
               </pre>
             </div>
@@ -409,7 +409,7 @@ function ToolResultMessage({ message }: { message: DisplayMessage }): React.JSX.
         </div>
         <div className="min-w-0 flex-1">
           <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
-            <pre className="overflow-x-auto text-xs text-neutral-400">
+            <pre className="overflow-x-auto text-sm text-neutral-400">
               {message.content.slice(0, 500)}
               {message.content.length > 500 && '...'}
             </pre>

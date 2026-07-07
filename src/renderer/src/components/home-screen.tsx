@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { getSessionTitle } from '../utils/session-title'
 import { clsx } from 'clsx'
 import {
   SquareTerminal,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '../store'
 import { formatGitStatus } from './review-rail'
+import { ActivityHeatmap } from './activity-heatmap'
 import type { GitFileStatus, SessionListItem } from '../../../shared/ipc-contracts'
 
 const MAX_RECENT_WORKSPACES = 6
@@ -191,6 +193,8 @@ export function HomeScreen(): React.JSX.Element {
           {version && <p className="mt-2 text-xs text-neutral-600">v{version}</p>}
         </div>
 
+        <ActivityHeatmap />
+
         <div className="grid gap-6 md:grid-cols-2">
           {/* Actions */}
           <section className="space-y-3">
@@ -304,7 +308,7 @@ export function HomeScreen(): React.JSX.Element {
                       <Clock size={13} className="shrink-0 text-neutral-600" />
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm text-neutral-300">
-                          {session.name || session.sessionId.slice(0, 12)}
+                          {getSessionTitle(session.name, session.sessionId)}
                         </div>
                         <div className="truncate text-[11px] text-neutral-600">{session.projectName}</div>
                       </div>

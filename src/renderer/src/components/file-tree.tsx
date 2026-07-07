@@ -178,7 +178,7 @@ function TreeNodeComponent({
       <div>
         <button
           onClick={() => setExpanded(!expanded)}
-          className="flex w-full items-center gap-1 py-0.5 px-2 text-xs text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-300 transition-colors"
+          className="flex w-full items-center gap-1 py-0.5 px-2 text-sm text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-300 transition-colors"
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
         >
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -207,7 +207,7 @@ function TreeNodeComponent({
     <button
       onClick={() => onFileClick(node.path, node.relativePath)}
       className={clsx(
-        'flex w-full items-center gap-1.5 py-0.5 px-2 text-xs transition-colors',
+        'flex w-full items-center gap-1.5 py-0.5 px-2 text-sm transition-colors',
         isSelected
           ? 'bg-blue-900/30 text-blue-300'
           : 'text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-300'

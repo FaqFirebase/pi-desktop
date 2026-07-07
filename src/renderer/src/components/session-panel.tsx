@@ -1,4 +1,5 @@
 import { useAppStore } from '../store'
+import { getSessionTitle } from '../utils/session-title'
 import { FolderOpen, Plus, Clock, Search, ChevronRight, ChevronDown, FolderTree, Tag, X, MoreVertical, Archive, ArchiveRestore, Trash2, Sparkles } from 'lucide-react'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
@@ -456,7 +457,7 @@ function SessionEntry({
         <Clock size={12} className="shrink-0 text-neutral-600" />
         <div className="min-w-0 flex-1">
           <div className={clsx('text-sm truncate', isActive ? 'text-blue-300' : 'text-neutral-400')}>
-            {session.name || session.sessionId.slice(0, 12)}
+            {getSessionTitle(session.name, session.sessionId)}
           </div>
           {(tags.length > 0 || autoTag) && (
             <div className="flex flex-wrap gap-1 mt-1">

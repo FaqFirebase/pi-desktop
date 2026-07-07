@@ -67,6 +67,9 @@ export const IPC_CHANNELS = {
   SYSTEM_GET_VERSION: 'system:get-version',
   UPDATE_CHECK: 'update:check',
 
+  // Activity
+  ACTIVITY_GET_HEATMAP: 'activity:get-heatmap',
+
   // Workspaces
   WORKSPACE_LIST: 'workspace:list',
   WORKSPACE_CREATE: 'workspace:create',
@@ -337,6 +340,14 @@ export interface PiStatusChangeEvent {
   error: string | null
 }
 
+// Emitted by Pi when the session title changes — e.g. an auto-title extension,
+// the `/name` command, or our own rename. `name` is the new title (null/empty
+// when cleared).
+export interface PiSessionInfoChangedEvent {
+  type: 'session_info_changed'
+  name?: string | null
+}
+
 export type PiRpcEvent =
   | PiAgentStartEvent
   | PiAgentEndEvent
@@ -357,6 +368,7 @@ export type PiRpcEvent =
   | PiResponseEvent
   | PiExtensionUiRequest
   | PiStatusChangeEvent
+  | PiSessionInfoChangedEvent
 
 // ─── Model Types ────────────────────────────────────────────────────────────
 
@@ -426,6 +438,17 @@ export interface SessionListItem {
   messageCount: number
   projectPath: string
   projectName: string
+}
+
+export interface ActivityDay {
+  date: string // local calendar day, YYYY-MM-DD
+  count: number // number of `type === 'message'` records on that day
+}
+
+export interface ActivityHeatmapResult {
+  days: ActivityDay[] // ascending by date, length === WINDOW_DAYS
+  total: number // sum of all counts in the window
+  maxCount: number // highest single-day count in the window
 }
 
 export interface AutoTagSessionRef {
@@ -595,7 +618,12 @@ export interface AppSettings {
   defaultModel: string | null
   defaultProvider: string | null
   defaultCwd: string | null
+  // UI font size in px (chat, panels, sidebar). Applied to the document root.
   fontSize: number
+  // Terminal (xterm) font size in px — independent of the UI font size.
+  terminalFontSize: number
+  // Code editor (CodeMirror) font size in px — independent of the UI font size.
+  codeEditorFontSize: number
   showThinking: boolean
   autoScroll: boolean
   permissionMode: PermissionMode

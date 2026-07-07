@@ -250,6 +250,57 @@ function EditorDialog({
   )
 }
 
+// ─── App Confirmation Dialog ─────────────────────────────────────────────────
+
+// Themed replacement for window.confirm(), driven by store.requestConfirm().
+// Using a real in-app modal (instead of the native dialog) also avoids an
+// Electron quirk where window.confirm leaves the window without keyboard focus.
+export function AppConfirmDialog(): React.JSX.Element | null {
+  const request = useAppStore((state) => state.confirmRequest)
+  const resolveConfirm = useAppStore((state) => state.resolveConfirm)
+
+  useEffect(() => {
+    if (!request) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        resolveConfirm(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [request, resolveConfirm])
+
+  if (!request) return null
+
+  return (
+    <DialogOverlay onCancel={() => resolveConfirm(false)}>
+      <DialogBox title={request.title ?? 'Confirm'} onCancel={() => resolveConfirm(false)}>
+        <p className="mb-4 whitespace-pre-line text-sm text-neutral-400">{request.message}</p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => resolveConfirm(false)}
+            autoFocus={request.danger}
+            className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:bg-neutral-800 transition-colors"
+          >
+            {request.cancelLabel ?? 'Cancel'}
+          </button>
+          <button
+            onClick={() => resolveConfirm(true)}
+            autoFocus={!request.danger}
+            className={clsx(
+              'rounded-md px-4 py-2 text-sm text-white transition-colors',
+              request.danger ? 'bg-red-600 hover:bg-red-500' : 'bg-blue-600 hover:bg-blue-500'
+            )}
+          >
+            {request.confirmLabel ?? 'Confirm'}
+          </button>
+        </div>
+      </DialogBox>
+    </DialogOverlay>
+  )
+}
+
 // ─── Shared Dialog Components ────────────────────────────────────────────────
 
 function DialogOverlay({

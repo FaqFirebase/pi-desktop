@@ -64,6 +64,21 @@ export interface CouncilRunState {
   reason?: string
 }
 
+// ─── Confirmation Dialog ─────────────────────────────────────────────────────
+
+export interface ConfirmOptions {
+  title?: string
+  message: string
+  confirmLabel?: string
+  cancelLabel?: string
+  // Style the confirm button as destructive (red).
+  danger?: boolean
+}
+
+export interface ConfirmRequest extends ConfirmOptions {
+  resolve: (confirmed: boolean) => void
+}
+
 // ─── Store Shape ─────────────────────────────────────────────────────────────
 
 interface AppState {
@@ -101,10 +116,20 @@ interface AppState {
   sidebarOpen: boolean
   terminalOpen: boolean
   settings: AppSettings | null
+  // Staged (unsaved) font-size values from the Settings sliders. When non-null
+  // they take priority over the persisted setting and survive view switches, so
+  // the sliders reflect the staged value on reopen and terminal/editor pick it
+  // up on remount — all without touching (or persisting) `settings`.
+  uiFontSizePreview: number | null
+  terminalFontSizePreview: number | null
+  codeEditorFontSizePreview: number | null
   commands: PiCommand[]
 
   // Extension UI
   extensionUiRequest: PiExtensionUiRequest | null
+
+  // App-level confirmation dialog (themed replacement for window.confirm)
+  confirmRequest: ConfirmRequest | null
 
   // Workspaces
   workspaces: Workspace[]
@@ -218,6 +243,11 @@ interface AppActions {
   toggleSidebar: () => void
   toggleTerminal: () => void
   loadSettings: () => Promise<void>
+  setFontSizePreview: (patch: {
+    ui?: number | null
+    terminal?: number | null
+    editor?: number | null
+  }) => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   toggleSessionGroupCollapsed: (projectPath: string) => Promise<void>
   loadCommands: () => Promise<void>
@@ -228,6 +258,10 @@ interface AppActions {
   // Extension UI
   respondExtensionUi: (id: string, response: Record<string, unknown>) => void
   dismissExtensionUi: () => void
+
+  // App confirmation dialog (promise-based; resolves true on confirm)
+  requestConfirm: (options: ConfirmOptions) => Promise<boolean>
+  resolveConfirm: (confirmed: boolean) => void
 
   // Workspaces
   loadWorkspaces: () => Promise<void>
@@ -356,9 +390,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   sidebarOpen: true,
   terminalOpen: false,
   settings: null,
+  uiFontSizePreview: null,
+  terminalFontSizePreview: null,
+  codeEditorFontSizePreview: null,
   commands: [],
 
   extensionUiRequest: null,
+  confirmRequest: null,
 
   workspaces: [],
   activeWorkspace: null,
@@ -747,7 +785,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   setSessionName: async (name) => {
     try {
       await window.piDesktop.session.setName(name)
-      get().refreshSessionState()
+      // No manual refresh: Pi emits `session_info_changed` after setting the
+      // name, and handlePiEvent applies it to the Current Session panel and the
+      // Recent row — the same path used by auto-title extensions.
     } catch {
       // Silent failure
     }
@@ -863,6 +903,16 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // Silent failure
     }
   },
+
+  setFontSizePreview: (patch) =>
+    set((state) => ({
+      uiFontSizePreview:
+        patch.ui !== undefined ? patch.ui : state.uiFontSizePreview,
+      terminalFontSizePreview:
+        patch.terminal !== undefined ? patch.terminal : state.terminalFontSizePreview,
+      codeEditorFontSizePreview:
+        patch.editor !== undefined ? patch.editor : state.codeEditorFontSizePreview,
+    })),
 
   setPermissionMode: async (mode) => {
     const updated = await window.piDesktop.settings.save({ permissionMode: mode })
@@ -1024,6 +1074,26 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         set({ extensionUiRequest: event as PiExtensionUiRequest })
         break
 
+      case 'session_info_changed': {
+        // Live title update (auto-title extension, /name, or our rename).
+        // Apply the new name directly to the active session's state + list row
+        // so both the Current Session panel and its Recent row update instantly,
+        // with no file read or RPC round-trip.
+        const newName = (typeof event.name === 'string' && event.name.trim()) || null
+        set((state) => {
+          const activeFile = state.sessionState?.sessionFile ?? null
+          return {
+            sessionState: state.sessionState
+              ? { ...state.sessionState, sessionName: newName }
+              : state.sessionState,
+            sessionList: activeFile
+              ? state.sessionList.map((s) => (s.path === activeFile ? { ...s, name: newName } : s))
+              : state.sessionList,
+          }
+        })
+        break
+      }
+
       case 'status_change': {
         const statusEvent = event as unknown as PiStatus
         set({
@@ -1063,6 +1133,20 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       }
       set({ extensionUiRequest: null })
     }
+  },
+
+  requestConfirm: (options) =>
+    new Promise<boolean>((resolve) => {
+      // Resolve any dialog already open (treated as cancelled) before showing.
+      const pending = get().confirmRequest
+      if (pending) pending.resolve(false)
+      set({ confirmRequest: { ...options, resolve } })
+    }),
+
+  resolveConfirm: (confirmed) => {
+    const req = get().confirmRequest
+    if (req) req.resolve(confirmed)
+    set({ confirmRequest: null })
   },
 
   // ─── Workspaces ──────────────────────────────────────────────────────

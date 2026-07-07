@@ -1,4 +1,5 @@
 import type { SessionListItem } from '../../../shared/ipc-contracts'
+import { getSessionTitle } from '../utils/session-title'
 
 type SessionRowLabelInput = Pick<SessionListItem, 'name' | 'sessionId' | 'projectName' | 'projectPath'>
 
@@ -11,7 +12,7 @@ export function getSessionRowLabels(session: SessionRowLabelInput): SessionRowLa
   const subtitle = session.projectName.trim()
 
   return {
-    title: session.name || session.sessionId.slice(0, 12),
+    title: getSessionTitle(session.name, session.sessionId),
     subtitle: subtitle || null,
   }
 }

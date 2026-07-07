@@ -5,6 +5,7 @@ import { PiRpcManager } from './pi-rpc-manager'
 import { FileService } from './file-service'
 import type { FileChangeEvent, PiStartOptions } from '../shared/ipc-contracts'
 import { getGuiDataPath } from './app-data-paths'
+import { pathsEqual } from './session-paths'
 
 /**
  * Manages multiple workspaces (project directories), each with its own Pi process.
@@ -184,8 +185,9 @@ export class WorkspaceManager {
   }
 
   async createWorkspace(name: string, path: string): Promise<Workspace> {
-    // Check for duplicate path
-    const existing = this.workspaces.find((w) => w.path === path)
+    // Check for duplicate path (case-insensitive on Windows, so "Documents"
+    // and "documents" resolve to the same workspace instead of duplicating).
+    const existing = this.workspaces.find((w) => pathsEqual(w.path, path))
     if (existing) {
       return this.setActiveWorkspace(existing.id)
     }

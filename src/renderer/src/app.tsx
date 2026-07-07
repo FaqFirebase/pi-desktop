@@ -11,7 +11,7 @@ import { NotesPanel } from './components/notes-panel'
 import { SkillsPanel } from './components/skills-panel'
 import { NotePicker } from './components/note-picker'
 import { CommandPalette } from './components/command-palette'
-import { ExtensionUiDialog } from './components/extension-ui-dialog'
+import { ExtensionUiDialog, AppConfirmDialog } from './components/extension-ui-dialog'
 import { ReviewRail } from './components/review-rail'
 import { useContextMenu, buildDefaultContextMenu } from './components/context-menu'
 import { usePiEvents, useMenuActions, useInitialize, useNotePickerShortcut } from './hooks'
@@ -123,6 +123,7 @@ export function App(): React.JSX.Element {
 
       {!isHome && <StatusBar />}
       <ExtensionUiDialog />
+      <AppConfirmDialog />
       <NotePicker />
       <CommandPalette />
       {ContextMenuComponent}

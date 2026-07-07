@@ -8,6 +8,7 @@ type TerminalExitHandler = (event: { exitCode: number; signal?: number }) => voi
 
 export class TerminalService {
   private terminal: IPty | null = null
+  private disposables: { dispose(): void }[] = []
   private cwd = os.homedir()
 
   start(
@@ -28,7 +29,7 @@ export class TerminalService {
     // node-pty's `encoding` option calls setEncoding() under the hood,
     // which Windows (conpty/winpty) does not support and logs a warning
     // for. Only pass it on POSIX platforms.
-    this.terminal = pty.spawn(shell, [], {
+    const terminal = pty.spawn(shell, [], {
       name: 'xterm-256color',
       cols: options.cols ?? 80,
       rows: options.rows ?? 24,
@@ -36,15 +37,20 @@ export class TerminalService {
       env,
       ...(process.platform === 'win32' ? {} : { encoding: 'utf8' }),
     })
+    this.terminal = terminal
 
-    this.terminal.onData(onData)
-    this.terminal.onExit(({ exitCode, signal }) => {
-      this.terminal = null
-      onExit({ exitCode, signal })
-    })
+    this.disposables.push(terminal.onData(onData))
+    this.disposables.push(
+      terminal.onExit(({ exitCode, signal }) => {
+        // Guard against a stale exit from a killed pty clobbering a terminal
+        // that has since been recreated (e.g. after a view round-trip).
+        if (this.terminal === terminal) this.terminal = null
+        onExit({ exitCode, signal })
+      })
+    )
 
     return {
-      pid: this.terminal.pid,
+      pid: terminal.pid,
       shell,
       cwd,
     }
@@ -62,8 +68,14 @@ export class TerminalService {
 
   stop(): void {
     if (!this.terminal) return
-    this.terminal.kill()
+    // Detach handlers before killing so the resulting exit event neither
+    // broadcasts a spurious "process exited" into a freshly-created terminal
+    // nor nulls it out. See the identity guard in start().
+    for (const d of this.disposables) d.dispose()
+    this.disposables = []
+    const terminal = this.terminal
     this.terminal = null
+    terminal.kill()
   }
 
   getCwd(): string {
