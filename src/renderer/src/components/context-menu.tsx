@@ -12,6 +12,7 @@ import {
   Trash2,
   MessageSquare,
   NotebookPen,
+  Pencil,
 } from 'lucide-react'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { useAppStore } from '../store'
@@ -347,6 +348,9 @@ export interface SessionContextMenuActions {
   onArchive: (sessionId: string) => void
   onUnarchive: (sessionId: string) => void
   onDelete: (session: SessionListItem) => void
+  // Optional: when provided, a "Rename…" item is shown (above Delete). Callers
+  // pass this only for the active session, since Pi's rename targets it.
+  onRename?: (session: SessionListItem) => void
 }
 
 export function buildSessionContextMenu(
@@ -355,7 +359,7 @@ export function buildSessionContextMenu(
   actions: SessionContextMenuActions
 ): ContextMenuItem[] {
   const displayName = getSessionTitle(session.name, session.sessionId)
-  return [
+  const items: ContextMenuItem[] = [
     {
       id: 'session-open',
       label: 'Open Session',
@@ -381,25 +385,37 @@ export function buildSessionContextMenu(
           icon: <Archive size={14} />,
           action: () => actions.onArchive(session.sessionId),
         },
-    {
-      id: 'session-delete',
-      label: 'Delete…',
-      icon: <Trash2 size={14} />,
-      action: async () => {
-        // Confirm before destructive action via an in-app themed dialog (not the
-        // native window.confirm, which mismatches the theme and leaves the
-        // Electron window without keyboard focus). Trash is recoverable when
-        // installed; without it, delete is permanent — the wording is honest.
-        const ok = await useAppStore.getState().requestConfirm({
-          title: 'Delete session',
-          message: `Delete session "${displayName}"?\n\nWill use the system 'trash' CLI if installed (recoverable); otherwise the .jsonl session file is permanently removed.`,
-          confirmLabel: 'Delete',
-          danger: true,
-        })
-        if (ok) actions.onDelete(session)
-      },
-    },
   ]
+
+  if (actions.onRename) {
+    items.push({
+      id: 'session-rename',
+      label: 'Rename…',
+      icon: <Pencil size={14} />,
+      action: () => actions.onRename!(session),
+    })
+  }
+
+  items.push({
+    id: 'session-delete',
+    label: 'Delete…',
+    icon: <Trash2 size={14} />,
+    action: async () => {
+      // Confirm before destructive action via an in-app themed dialog (not the
+      // native window.confirm, which mismatches the theme and leaves the
+      // Electron window without keyboard focus). Trash is recoverable when
+      // installed; without it, delete is permanent — the wording is honest.
+      const ok = await useAppStore.getState().requestConfirm({
+        title: 'Delete session',
+        message: `Delete session "${displayName}"?\n\nWill use the system 'trash' CLI if installed (recoverable); otherwise the .jsonl session file is permanently removed.`,
+        confirmLabel: 'Delete',
+        danger: true,
+      })
+      if (ok) actions.onDelete(session)
+    },
+  })
+
+  return items
 }
 
 export function buildLinkContextMenu(url: string): ContextMenuItem[] {

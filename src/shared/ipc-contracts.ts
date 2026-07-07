@@ -340,6 +340,14 @@ export interface PiStatusChangeEvent {
   error: string | null
 }
 
+// Emitted by Pi when the session title changes — e.g. an auto-title extension,
+// the `/name` command, or our own rename. `name` is the new title (null/empty
+// when cleared).
+export interface PiSessionInfoChangedEvent {
+  type: 'session_info_changed'
+  name?: string | null
+}
+
 export type PiRpcEvent =
   | PiAgentStartEvent
   | PiAgentEndEvent
@@ -360,6 +368,7 @@ export type PiRpcEvent =
   | PiResponseEvent
   | PiExtensionUiRequest
   | PiStatusChangeEvent
+  | PiSessionInfoChangedEvent
 
 // ─── Model Types ────────────────────────────────────────────────────────────
 

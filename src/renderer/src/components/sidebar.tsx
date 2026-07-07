@@ -19,7 +19,7 @@ import {
   Sparkles,
   Pencil,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { StatusPopover } from './status-popover'
 import { useContextMenu, buildSessionContextMenu } from './context-menu'
 import { getSessionRowLabels } from './sidebar-session-labels'
@@ -40,10 +40,60 @@ export function Sidebar(): React.JSX.Element {
   const archiveSession = useAppStore((state) => state.archiveSession)
   const unarchiveSession = useAppStore((state) => state.unarchiveSession)
   const deleteSession = useAppStore((state) => state.deleteSession)
+  const setSessionName = useAppStore((state) => state.setSessionName)
 
   const { show: showMenu, ContextMenuComponent: SessionMenu } = useContextMenu()
 
   const [archivedOpen, setArchivedOpen] = useState(false)
+
+  // Inline session rename. Only the active session can be renamed (Pi's rename
+  // targets it), and it's reachable from two spots — the Current Session panel
+  // (`'current'`) and its highlighted row in Recent Sessions (`'recent'`).
+  const [renamingWhere, setRenamingWhere] = useState<'current' | 'recent' | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const renameCancelRef = useRef(false)
+
+  const startSessionRename = (where: 'current' | 'recent'): void => {
+    renameCancelRef.current = false
+    // Prefill with the explicit name only; a timestamp/guid is not a name.
+    setRenameValue(sessionState?.sessionName ?? '')
+    setRenamingWhere(where)
+  }
+
+  // Single commit path (both Enter and Escape blur the input, which lands here).
+  const finishSessionRename = (): void => {
+    const cancelled = renameCancelRef.current
+    renameCancelRef.current = false
+    setRenamingWhere(null)
+    // Pi's set_session_name RPC rejects an empty name ("cannot be empty"), so an
+    // empty commit is a no-op (keeps the current name) rather than a doomed call.
+    const trimmed = renameValue.trim()
+    if (!cancelled && trimmed) setSessionName(trimmed)
+  }
+
+  const renderRenameInput = (): React.JSX.Element => (
+    <input
+      type="text"
+      value={renameValue}
+      onChange={(e) => setRenameValue(e.target.value)}
+      onFocus={(e) => e.target.select()}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          e.currentTarget.blur()
+        } else if (e.key === 'Escape') {
+          e.preventDefault()
+          renameCancelRef.current = true
+          e.currentTarget.blur()
+        }
+      }}
+      onBlur={finishSessionRename}
+      placeholder="Session name"
+      autoFocus
+      className="min-w-0 flex-1 rounded border border-neutral-700 bg-neutral-800 px-2 py-0.5 text-sm text-neutral-200 placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none"
+    />
+  )
 
   // Archived sessions live in their own collapsible section; Recent excludes them.
   const recentSessions = sessionList.filter((s) => !(s.sessionId in archivedSessions)).slice(0, 20)
@@ -71,6 +121,7 @@ export function Sidebar(): React.JSX.Element {
     // React's synthetic stopPropagation isn't enough — that handler is
     // attached to `document` and fires on native bubbling.
     e.nativeEvent.stopPropagation()
+    const isActive = sessionState?.sessionFile === session.path
     showMenu(
       e,
       buildSessionContextMenu(session, session.sessionId in archivedSessions, {
@@ -78,22 +129,55 @@ export function Sidebar(): React.JSX.Element {
         onArchive: (id) => archiveSession(id),
         onUnarchive: (id) => unarchiveSession(id),
         onDelete: (s) => { deleteSession(s) },
+        // Rename only offered for the active session (Pi renames the active one).
+        onRename: isActive ? () => startSessionRename('recent') : undefined,
       })
     )
   }
 
+  // Right-click menu for the Current Session panel — same active session, so
+  // just the rename affordance.
+  const handleCurrentSessionRightClick = (e: React.MouseEvent): void => {
+    e.nativeEvent.stopPropagation()
+    showMenu(e, [
+      {
+        id: 'current-session-rename',
+        label: 'Rename…',
+        icon: <Pencil size={14} />,
+        action: () => startSessionRename('current'),
+      },
+    ])
+  }
+
   const renderSessionRow = (session: SessionListItem): React.JSX.Element => {
     const labels = getSessionRowLabels(session)
+    const isActive = sessionState?.sessionFile === session.path
+
+    // Inline rename for the active row.
+    if (isActive && renamingWhere === 'recent') {
+      return (
+        <div
+          key={session.path}
+          className="flex w-full items-center gap-2 rounded bg-neutral-800 px-2 py-1.5"
+        >
+          <Clock size={12} className="shrink-0 text-neutral-400" />
+          {renderRenameInput()}
+        </div>
+      )
+    }
 
     return (
       <button
         key={session.path}
         onClick={() => openSession(session)}
+        onDoubleClick={() => { if (isActive) startSessionRename('recent') }}
         onContextMenu={(e) => handleSessionRightClick(e, session)}
-        title="Click to open · right-click for actions"
+        title={isActive
+          ? 'Click to open · double-click to rename · right-click for actions'
+          : 'Click to open · right-click for actions'}
         className={clsx(
           'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
-          sessionState?.sessionFile === session.path
+          isActive
             ? 'bg-neutral-800 text-neutral-200'
             : 'text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-300'
         )}
@@ -195,25 +279,38 @@ export function Sidebar(): React.JSX.Element {
 
       {/* Current session info */}
       {sessionState && (
-        <button
-          type="button"
-          onClick={() => setCurrentView('chat')}
-          className="mx-3 mt-2 rounded-md bg-neutral-900 p-3 text-left transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-1 focus:ring-neutral-600"
-          title="Open current session in chat"
-        >
-          <div className="text-xs font-medium text-neutral-400 uppercase tracking-wider">Current Session</div>
-          <div className="mt-1.5 text-sm text-neutral-200 truncate">
-            {sessionState.sessionName || sessionState.sessionId || 'Unnamed'}
+        renamingWhere === 'current' ? (
+          <div className="mx-3 mt-2 rounded-md bg-neutral-900 p-3">
+            <div className="text-xs font-medium text-neutral-400 uppercase tracking-wider">Current Session</div>
+            <div className="mt-1.5 flex">{renderRenameInput()}</div>
+            {sessionState.model && (
+              <div className="mt-1 text-xs text-neutral-500">{sessionState.model.name}</div>
+            )}
+            <div className="mt-1 text-xs text-neutral-500">{sessionState.messageCount} messages</div>
           </div>
-          {sessionState.model && (
-            <div className="mt-1 text-xs text-neutral-500">
-              {sessionState.model.name}
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCurrentView('chat')}
+            onDoubleClick={() => startSessionRename('current')}
+            onContextMenu={handleCurrentSessionRightClick}
+            className="mx-3 mt-2 rounded-md bg-neutral-900 p-3 text-left transition-colors hover:bg-neutral-800 focus:outline-none focus:ring-1 focus:ring-neutral-600"
+            title="Open current session in chat · double-click to rename"
+          >
+            <div className="text-xs font-medium text-neutral-400 uppercase tracking-wider">Current Session</div>
+            <div className="mt-1.5 text-sm text-neutral-200 truncate">
+              {sessionState.sessionName || sessionState.sessionId || 'Unnamed'}
             </div>
-          )}
-          <div className="mt-1 text-xs text-neutral-500">
-            {sessionState.messageCount} messages
-          </div>
-        </button>
+            {sessionState.model && (
+              <div className="mt-1 text-xs text-neutral-500">
+                {sessionState.model.name}
+              </div>
+            )}
+            <div className="mt-1 text-xs text-neutral-500">
+              {sessionState.messageCount} messages
+            </div>
+          </button>
+        )
       )}
 
       {/* Recent sessions */}

@@ -785,7 +785,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   setSessionName: async (name) => {
     try {
       await window.piDesktop.session.setName(name)
-      get().refreshSessionState()
+      // No manual refresh: Pi emits `session_info_changed` after setting the
+      // name, and handlePiEvent applies it to the Current Session panel and the
+      // Recent row — the same path used by auto-title extensions.
     } catch {
       // Silent failure
     }
@@ -1071,6 +1073,26 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       case 'extension_ui_request':
         set({ extensionUiRequest: event as PiExtensionUiRequest })
         break
+
+      case 'session_info_changed': {
+        // Live title update (auto-title extension, /name, or our rename).
+        // Apply the new name directly to the active session's state + list row
+        // so both the Current Session panel and its Recent row update instantly,
+        // with no file read or RPC round-trip.
+        const newName = (typeof event.name === 'string' && event.name.trim()) || null
+        set((state) => {
+          const activeFile = state.sessionState?.sessionFile ?? null
+          return {
+            sessionState: state.sessionState
+              ? { ...state.sessionState, sessionName: newName }
+              : state.sessionState,
+            sessionList: activeFile
+              ? state.sessionList.map((s) => (s.path === activeFile ? { ...s, name: newName } : s))
+              : state.sessionList,
+          }
+        })
+        break
+      }
 
       case 'status_change': {
         const statusEvent = event as unknown as PiStatus

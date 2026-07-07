@@ -14,6 +14,7 @@ import {
   projectNameFromPath,
   pathsEqual,
 } from './session-paths'
+import { readSessionName } from './session-name'
 import { activityHeatmapReader } from './activity-heatmap'
 import type {
   PiStartOptions,
@@ -1133,6 +1134,26 @@ interface SessionEntry {
   projectName: string
 }
 
+// How many session files to read names from in parallel. Mirrors Pi's own
+// bounded concurrency so a large session store doesn't spawn hundreds of reads.
+const SESSION_NAME_READ_CONCURRENCY = 10
+
+/** Populate `entry.name` from each session file's latest `session_info`, bounded. */
+async function fillSessionNames(entries: SessionEntry[]): Promise<void> {
+  let cursor = 0
+  async function worker(): Promise<void> {
+    while (cursor < entries.length) {
+      const entry = entries[cursor++]
+      entry.name = await readSessionName(entry.path)
+    }
+  }
+  const workers = Array.from(
+    { length: Math.min(SESSION_NAME_READ_CONCURRENCY, entries.length) },
+    () => worker()
+  )
+  await Promise.all(workers)
+}
+
 function createListSessions(wm: WorkspaceManager) {
   return async function listSessions(_cwd: string): Promise<SessionEntry[]> {
     try {
@@ -1140,7 +1161,11 @@ function createListSessions(wm: WorkspaceManager) {
       const entries: SessionEntry[] = []
       await collectSessionFiles(sessionsDir, entries, sessionsDir, wm)
       entries.sort((a, b) => b.lastModified - a.lastModified)
-      return entries.slice(0, MAX_SESSION_LIST)
+      // Only read names for the sessions we actually return (avoids reading the
+      // whole store), then surface each session's latest session_info name.
+      const top = entries.slice(0, MAX_SESSION_LIST)
+      await fillSessionNames(top)
+      return top
     } catch {
       return []
     }
