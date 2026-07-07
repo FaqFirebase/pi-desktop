@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { useAppStore } from '../store'
+import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { clsx } from 'clsx'
 import {
   Terminal as TerminalIcon,
@@ -68,15 +69,15 @@ export function TerminalPanel(): React.JSX.Element | null {
     const terminal = new XTerm({
       cursorBlink: true,
       convertEol: true,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-      // Use the Terminal Font Size setting (or the unsaved settings-panel
-      // preview), read once at creation. Applied on the next mount — i.e. when
-      // the user returns to chat — rather than live, to avoid resizing a hidden
-      // pty. Falls back to the default.
+      fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+      // Use the Terminal Font Size setting (or the unsaved settings draft),
+      // read once at creation. Applied on the next mount — i.e. when the user
+      // returns to chat — rather than live, to avoid resizing a hidden pty.
+      // Falls back to the default.
       fontSize:
-        useAppStore.getState().terminalFontSizePreview ??
+        useAppStore.getState().settingsDraft.terminalFontSize ??
         useAppStore.getState().settings?.terminalFontSize ??
-        12,
+        DEFAULT_SETTINGS.terminalFontSize,
       theme: buildTerminalTheme(),
     })
     const fit = new FitAddon()

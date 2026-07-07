@@ -2,7 +2,7 @@ import { useAppStore } from '../store'
 import { useState, useEffect, useRef } from 'react'
 import type { AppSettings, PermissionMode, CouncilConfig } from '../../../shared/ipc-contracts'
 import { Settings, Save, RotateCcw, FolderOpen, Check } from 'lucide-react'
-import { DEFAULT_PERMISSION_MODE } from './permission-mode'
+import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { PermissionSelector } from './permission-selector'
 import { applyTheme } from '../utils/theme'
 import { CustomModelsEditor } from './custom-models-editor'
@@ -14,27 +14,25 @@ import {
 
 export function SettingsPanel(): React.JSX.Element {
   const settings = useAppStore((state) => state.settings)
-  const setCurrentView = useAppStore((state) => state.setCurrentView)
   const loadSettings = useAppStore((state) => state.loadSettings)
-  const setFontSizePreview = useAppStore((state) => state.setFontSizePreview)
+  const setSettingsDraft = useAppStore((state) => state.setSettingsDraft)
+  const clearSettingsDraft = useAppStore((state) => state.clearSettingsDraft)
 
-  const [piPath, setPiPath] = useState(settings?.piExecutablePath ?? 'pi')
-  const [theme, setTheme] = useState(settings?.theme ?? 'dark')
-  const [fontSize, setFontSize] = useState(
-    useAppStore.getState().uiFontSizePreview ?? settings?.fontSize ?? 14,
-  )
-  const [terminalFontSize, setTerminalFontSize] = useState(
-    useAppStore.getState().terminalFontSizePreview ?? settings?.terminalFontSize ?? 12,
-  )
-  const [codeEditorFontSize, setCodeEditorFontSize] = useState(
-    useAppStore.getState().codeEditorFontSizePreview ?? settings?.codeEditorFontSize ?? 12,
-  )
-  const [showThinking, setShowThinking] = useState(settings?.showThinking ?? true)
-  const [autoScroll, setAutoScroll] = useState(settings?.autoScroll ?? true)
-  const [resumeLastSession, setResumeLastSession] = useState(settings?.resumeLastSession ?? true)
-  const [openToHomeOnLaunch, setOpenToHomeOnLaunch] = useState(settings?.openToHomeOnLaunch ?? true)
+  // Snapshot the unsaved draft once, for seeding initial local state. This is
+  // what makes edits survive leaving/returning to Settings without saving.
+  const draft0 = useAppStore.getState().settingsDraft
+
+  const [piPath, setPiPath] = useState(draft0.piExecutablePath ?? settings?.piExecutablePath ?? DEFAULT_SETTINGS.piExecutablePath)
+  const [theme, setTheme] = useState(draft0.theme ?? settings?.theme ?? DEFAULT_SETTINGS.theme)
+  const [fontSize, setFontSize] = useState(draft0.fontSize ?? settings?.fontSize ?? DEFAULT_SETTINGS.fontSize)
+  const [terminalFontSize, setTerminalFontSize] = useState(draft0.terminalFontSize ?? settings?.terminalFontSize ?? DEFAULT_SETTINGS.terminalFontSize)
+  const [codeEditorFontSize, setCodeEditorFontSize] = useState(draft0.codeEditorFontSize ?? settings?.codeEditorFontSize ?? DEFAULT_SETTINGS.codeEditorFontSize)
+  const [showThinking, setShowThinking] = useState(draft0.showThinking ?? settings?.showThinking ?? DEFAULT_SETTINGS.showThinking)
+  const [autoScroll, setAutoScroll] = useState(draft0.autoScroll ?? settings?.autoScroll ?? DEFAULT_SETTINGS.autoScroll)
+  const [resumeLastSession, setResumeLastSession] = useState(draft0.resumeLastSession ?? settings?.resumeLastSession ?? DEFAULT_SETTINGS.resumeLastSession)
+  const [openToHomeOnLaunch, setOpenToHomeOnLaunch] = useState(draft0.openToHomeOnLaunch ?? settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch)
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
-    settings?.permissionMode ?? DEFAULT_PERMISSION_MODE,
+    draft0.permissionMode ?? settings?.permissionMode ?? DEFAULT_SETTINGS.permissionMode,
   )
   const [saved, setSaved] = useState(false)
 
@@ -89,21 +87,25 @@ export function SettingsPanel(): React.JSX.Element {
     if (!settings || didInitRef.current) return
     didInitRef.current = true
     const store = useAppStore.getState()
-    setPiPath(settings.piExecutablePath)
-    setTheme(settings.theme)
-    setFontSize(store.uiFontSizePreview ?? settings.fontSize)
-    setTerminalFontSize(store.terminalFontSizePreview ?? settings.terminalFontSize)
-    setCodeEditorFontSize(store.codeEditorFontSizePreview ?? settings.codeEditorFontSize)
-    setShowThinking(settings.showThinking)
-    setAutoScroll(settings.autoScroll)
-    setResumeLastSession(settings.resumeLastSession)
-    setOpenToHomeOnLaunch(settings.openToHomeOnLaunch)
-    setPermissionMode(settings.permissionMode)
+    const draft = store.settingsDraft
+    setPiPath(draft.piExecutablePath ?? settings.piExecutablePath)
+    setTheme(draft.theme ?? settings.theme)
+    setFontSize(draft.fontSize ?? settings.fontSize)
+    setTerminalFontSize(draft.terminalFontSize ?? settings.terminalFontSize)
+    setCodeEditorFontSize(draft.codeEditorFontSize ?? settings.codeEditorFontSize)
+    setShowThinking(draft.showThinking ?? settings.showThinking)
+    setAutoScroll(draft.autoScroll ?? settings.autoScroll)
+    setResumeLastSession(draft.resumeLastSession ?? settings.resumeLastSession)
+    setOpenToHomeOnLaunch(draft.openToHomeOnLaunch ?? settings.openToHomeOnLaunch)
+    setPermissionMode(draft.permissionMode ?? settings.permissionMode)
   }, [settings])
 
   const handleSelectPath = async () => {
     const path = await window.piDesktop.system.openDialog({ title: 'Select Pi Executable', mode: 'file' })
-    if (path) setPiPath(path)
+    if (path) {
+      setPiPath(path)
+      setSettingsDraft({ piExecutablePath: path })
+    }
   }
 
   const handleSave = async () => {
@@ -129,9 +131,9 @@ export function SettingsPanel(): React.JSX.Element {
     // Reload settings in store
     await loadSettings()
 
-    // Persisted now — drop the live previews so terminal/editor read the saved
-    // settings (which loadSettings just refreshed).
-    setFontSizePreview({ ui: null, terminal: null, editor: null })
+    // Persisted now — drop the unsaved draft so the form and terminal/editor
+    // read the saved settings (just refreshed).
+    clearSettingsDraft()
 
     // Show saved indicator
     setSaved(true)
@@ -139,17 +141,20 @@ export function SettingsPanel(): React.JSX.Element {
   }
 
   const handleReset = async () => {
+    // Reset only the fields this panel exposes; the rest (council, default
+    // model/provider/cwd, collapsed groups) are left as-is by the Partial merge.
+    // Values come from the shared DEFAULT_SETTINGS so there's one source of truth.
     const defaults: Partial<AppSettings> = {
-      piExecutablePath: 'pi',
-      theme: 'dark',
-      fontSize: 14,
-      terminalFontSize: 12,
-      codeEditorFontSize: 12,
-      showThinking: true,
-      autoScroll: true,
-      resumeLastSession: true,
-      openToHomeOnLaunch: true,
-      permissionMode: DEFAULT_PERMISSION_MODE,
+      piExecutablePath: DEFAULT_SETTINGS.piExecutablePath,
+      theme: DEFAULT_SETTINGS.theme,
+      fontSize: DEFAULT_SETTINGS.fontSize,
+      terminalFontSize: DEFAULT_SETTINGS.terminalFontSize,
+      codeEditorFontSize: DEFAULT_SETTINGS.codeEditorFontSize,
+      showThinking: DEFAULT_SETTINGS.showThinking,
+      autoScroll: DEFAULT_SETTINGS.autoScroll,
+      resumeLastSession: DEFAULT_SETTINGS.resumeLastSession,
+      openToHomeOnLaunch: DEFAULT_SETTINGS.openToHomeOnLaunch,
+      permissionMode: DEFAULT_SETTINGS.permissionMode,
     }
 
     setPiPath(defaults.piExecutablePath!)
@@ -167,7 +172,7 @@ export function SettingsPanel(): React.JSX.Element {
     applyTheme(result.theme)
     document.documentElement.style.fontSize = `${result.fontSize}px`
     await loadSettings()
-    setFontSizePreview({ ui: null, terminal: null, editor: null })
+    clearSettingsDraft()
 
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -182,12 +187,6 @@ export function SettingsPanel(): React.JSX.Element {
             <Settings size={20} className="text-neutral-400" />
             <h1 className="text-lg font-semibold text-neutral-200">Settings</h1>
           </div>
-          <button
-            onClick={() => setCurrentView('chat')}
-            className="rounded-md px-3 py-1.5 text-sm text-neutral-400 hover:text-neutral-200 transition-colors"
-          >
-            Back to Chat
-          </button>
         </div>
 
         {/* Pi Configuration */}
@@ -197,7 +196,10 @@ export function SettingsPanel(): React.JSX.Element {
               <input
                 type="text"
                 value={piPath}
-                onChange={(e) => setPiPath(e.target.value)}
+                onChange={(e) => {
+                  setPiPath(e.target.value)
+                  setSettingsDraft({ piExecutablePath: e.target.value })
+                }}
                 className="flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
               />
               <button
@@ -219,6 +221,7 @@ export function SettingsPanel(): React.JSX.Element {
                 const newTheme = e.target.value as AppSettings['theme']
                 setTheme(newTheme)
                 applyTheme(newTheme)
+                setSettingsDraft({ theme: newTheme })
               }}
               className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
             >
@@ -229,6 +232,7 @@ export function SettingsPanel(): React.JSX.Element {
               <option value="gruvbox">Gruvbox</option>
               <option value="breeze-dark">Breeze Dark (Kate)</option>
               <option value="breeze-light">Breeze Light (Kate)</option>
+              <option value="breeze-claudius">Breeze Claudius</option>
             </select>
           </SettingsRow>
 
@@ -243,7 +247,7 @@ export function SettingsPanel(): React.JSX.Element {
                   const size = Number(e.target.value)
                   setFontSize(size)
                   document.documentElement.style.fontSize = `${size}px`
-                  setFontSizePreview({ ui: size })
+                  setSettingsDraft({ fontSize: size })
                 }}
                 className="flex-1 accent-blue-500"
               />
@@ -261,7 +265,7 @@ export function SettingsPanel(): React.JSX.Element {
                 onChange={(e) => {
                   const size = Number(e.target.value)
                   setTerminalFontSize(size)
-                  setFontSizePreview({ terminal: size })
+                  setSettingsDraft({ terminalFontSize: size })
                 }}
                 className="flex-1 accent-blue-500"
               />
@@ -279,7 +283,7 @@ export function SettingsPanel(): React.JSX.Element {
                 onChange={(e) => {
                   const size = Number(e.target.value)
                   setCodeEditorFontSize(size)
-                  setFontSizePreview({ editor: size })
+                  setSettingsDraft({ codeEditorFontSize: size })
                 }}
                 className="flex-1 accent-blue-500"
               />
@@ -293,31 +297,34 @@ export function SettingsPanel(): React.JSX.Element {
           <SettingsRow label="Permission Mode" description="Default safety mode for Pi actions">
             <PermissionSelector
               value={permissionMode}
-              onChange={(mode) => setPermissionMode(mode)}
+              onChange={(mode) => {
+                setPermissionMode(mode)
+                setSettingsDraft({ permissionMode: mode })
+              }}
               compact
             />
           </SettingsRow>
 
           <SettingsRow label="Show Thinking" description="Display model thinking blocks in responses">
-            <Toggle checked={showThinking} onChange={setShowThinking} />
+            <Toggle checked={showThinking} onChange={(v) => { setShowThinking(v); setSettingsDraft({ showThinking: v }) }} />
           </SettingsRow>
 
           <SettingsRow label="Auto Scroll" description="Automatically scroll to new messages">
-            <Toggle checked={autoScroll} onChange={setAutoScroll} />
+            <Toggle checked={autoScroll} onChange={(v) => { setAutoScroll(v); setSettingsDraft({ autoScroll: v }) }} />
           </SettingsRow>
 
           <SettingsRow
             label="Open to Home Screen on Launch"
             description="Show the Home launcher on startup; Pi starts only when you open a workspace or session"
           >
-            <Toggle checked={openToHomeOnLaunch} onChange={setOpenToHomeOnLaunch} />
+            <Toggle checked={openToHomeOnLaunch} onChange={(v) => { setOpenToHomeOnLaunch(v); setSettingsDraft({ openToHomeOnLaunch: v }) }} />
           </SettingsRow>
 
           <SettingsRow
             label="Resume Last Session"
             description="When opening a workspace, continue its most recent session instead of starting a new one"
           >
-            <Toggle checked={resumeLastSession} onChange={setResumeLastSession} />
+            <Toggle checked={resumeLastSession} onChange={(v) => { setResumeLastSession(v); setSettingsDraft({ resumeLastSession: v }) }} />
           </SettingsRow>
         </SettingsSection>
 

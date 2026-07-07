@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../store'
+import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { clsx } from 'clsx'
 import {
   GitCompare,
@@ -150,6 +151,10 @@ function DiffFileEntry({
 }): React.JSX.Element {
   const additions = file.hunks.flat().filter((l) => l.type === 'add').length
   const deletions = file.hunks.flat().filter((l) => l.type === 'remove').length
+  // Diff body scales with the Code Editor font-size setting (like the code viewer).
+  const codeFontSize = useAppStore(
+    (state) => state.settingsDraft.codeEditorFontSize ?? state.settings?.codeEditorFontSize ?? DEFAULT_SETTINGS.codeEditorFontSize
+  )
 
   return (
     <div className="rounded-lg border border-neutral-800 overflow-hidden">
@@ -180,7 +185,7 @@ function DiffFileEntry({
       {/* Diff content */}
       {expanded && (
         <div className="border-t border-neutral-800 overflow-x-auto">
-          <table className="w-full text-xs font-mono">
+          <table className="font-jetbrains w-full" style={{ fontSize: `${codeFontSize}px` }}>
             <tbody>
               {file.hunks.map((hunk, hunkIdx) => (
                 <DiffHunk key={hunkIdx} lines={hunk} />

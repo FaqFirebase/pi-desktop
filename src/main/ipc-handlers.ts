@@ -33,7 +33,8 @@ import type {
   ActivityHeatmapResult,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
-import { DEFAULT_COUNCIL_CONFIG, COUNCIL_AGENT_IDS, clampTimeoutSeconds } from '../shared/council-config'
+import { COUNCIL_AGENT_IDS, clampTimeoutSeconds } from '../shared/council-config'
+import { DEFAULT_SETTINGS } from '../shared/default-settings'
 import type { CouncilAgentId, ConsensusMode } from '../shared/council-config'
 import { detectAgents } from './agent-detection'
 import { readAttachment } from './attachment-reader'
@@ -1524,25 +1525,6 @@ function parseSkillFrontmatter(content: string): { name: string; description: st
 // ─── App Settings Persistence ────────────────────────────────────────────────
 
 const SETTINGS_FILE_NAME = 'settings.json'
-
-const DEFAULT_SETTINGS: AppSettings = {
-  piExecutablePath: 'pi',
-  defaultArgs: [],
-  theme: 'dark',
-  defaultModel: null,
-  defaultProvider: null,
-  defaultCwd: null,
-  fontSize: 14,
-  terminalFontSize: 12,
-  codeEditorFontSize: 12,
-  showThinking: true,
-  autoScroll: true,
-  permissionMode: 'ask-edits',
-  resumeLastSession: true,
-  collapsedSessionGroups: [],
-  openToHomeOnLaunch: true,
-  council: DEFAULT_COUNCIL_CONFIG,
-}
 
 function getSettingsPath(): string {
   return getGuiDataPath(SETTINGS_FILE_NAME)

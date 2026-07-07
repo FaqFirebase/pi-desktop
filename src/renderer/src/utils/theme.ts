@@ -7,6 +7,7 @@ export const THEME_CLASSES = [
   'gruvbox',
   'breeze-dark',
   'breeze-light',
+  'breeze-claudius',
 ] as const
 
 export type ThemeClass = (typeof THEME_CLASSES)[number]

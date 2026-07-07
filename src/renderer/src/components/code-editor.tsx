@@ -5,6 +5,7 @@ import { getCodeEditorLanguageExtensions } from './code-editor-language'
 import { themedHighlightStyle } from './code-editor-highlight'
 import { useAppStore } from '../store'
 import { isLightTheme } from '../utils/theme'
+import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 
 interface CodeEditorProps {
   filePath: string
@@ -24,7 +25,7 @@ export function CodeEditor({
   const onChangeRef = useRef(onChange)
   const theme = useAppStore((state) => state.settings?.theme)
   const lightTheme = isLightTheme(theme)
-  const fontSize = useAppStore((state) => state.codeEditorFontSizePreview ?? state.settings?.codeEditorFontSize)
+  const fontSize = useAppStore((state) => state.settingsDraft.codeEditorFontSize ?? state.settings?.codeEditorFontSize)
 
   useEffect(() => {
     onChangeRef.current = onChange
@@ -61,13 +62,13 @@ export function CodeEditor({
             height: '100%',
             backgroundColor: 'var(--color-bg-primary)',
             color: 'var(--color-text-primary)',
-            fontSize: `${fontSize ?? 12}px`,
+            fontSize: `${fontSize ?? DEFAULT_SETTINGS.codeEditorFontSize}px`,
           },
           '.cm-editor': {
             height: '100%',
           },
           '.cm-scroller': {
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+            fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', 'OpenMoji Color', 'Fira Code', 'Cascadia Code', monospace",
           },
           '.cm-content': {
             caretColor: 'var(--color-text-primary)',
