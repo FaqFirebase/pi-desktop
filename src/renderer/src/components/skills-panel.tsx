@@ -62,7 +62,7 @@ export function SkillsPanel(): React.JSX.Element {
   return (
     <div className="flex flex-1 overflow-hidden">
       <div className="flex w-72 shrink-0 flex-col border-r border-neutral-800">
-        <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
+        <div className="flex h-12 items-center justify-between border-b border-neutral-800 px-4">
           <div className="flex items-center gap-2">
             <Sparkles size={16} className="text-neutral-400" />
             <h2 className="text-sm font-medium text-neutral-200">Skills</h2>
@@ -112,7 +112,7 @@ export function SkillsPanel(): React.JSX.Element {
       <div className="flex flex-1 flex-col overflow-hidden">
         {selected ? (
           <>
-            <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
+            <div className="flex h-12 items-center justify-between border-b border-neutral-800 px-4">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-medium text-neutral-200">{selected.name}</h3>
                 <p className="truncate text-xs text-neutral-600">{selected.path}</p>

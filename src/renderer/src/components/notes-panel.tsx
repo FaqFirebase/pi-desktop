@@ -104,7 +104,7 @@ export function NotesPanel(): React.JSX.Element {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
+      <div className="flex h-12 items-center justify-between border-b border-neutral-800 px-4">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setCurrentView('chat')}
