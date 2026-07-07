@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint'
 import reactHooks from 'eslint-plugin-react-hooks'
 import globals from 'globals'
 
-// Flat config for ESLint 9. The project is split across four TS sub-projects:
+// Flat config for ESLint 10. The project is split across four TS sub-projects:
 // shared/main/preload run in Node, renderer runs in the browser with React.
 export default tseslint.config(
   {
@@ -40,8 +40,13 @@ export default tseslint.config(
     languageOptions: {
       globals: { ...globals.browser },
     },
+    // Keep the classic Rules of Hooks + exhaustive-deps policy. react-hooks 7's
+    // `recommended-latest` adds new opinionated rules (set-state-in-effect,
+    // static-components); adopting those is a separate, deliberate code-quality
+    // pass, not something to inherit implicitly from a version bump.
     rules: {
-      ...reactHooks.configs['recommended-latest'].rules,
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
     },
   },
   // CommonJS Node scripts: CLI launcher and install hooks. `require()` is the
