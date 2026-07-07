@@ -1,8 +1,13 @@
+import { useState } from 'react'
+import { clsx } from 'clsx'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import rehypeHighlight from 'rehype-highlight'
 import { useContextMenu, buildCodeBlockContextMenu, buildLinkContextMenu } from './context-menu'
+import { CopyButton } from './copy-button'
+import { highlightCodeToHtml } from './chat-code-highlight'
+import { looksLikeFilePath, openFileFromChat } from './chat-file-link'
 import { ErrorBoundary } from './error-boundary'
+import { Code2, Eye } from 'lucide-react'
 
 interface MarkdownRendererProps {
   content: string
@@ -17,7 +22,6 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
         components={{
           // Links — right-click for context menu
           a: ({ href, children, ...props }) => (
@@ -47,9 +51,16 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
             const children = p.children as React.ReactNode
             const codeText = extractCodeText(children)
 
+            // A fenced block whose content is a complete SVG document renders as
+            // an image (with a source toggle), regardless of the fence's language
+            // tag — models emit SVG under ```svg / ```xml / ```html or untagged.
+            if (isRenderableSvg(codeText)) {
+              return <SvgBlock raw={codeText.replace(/\n$/, '')} />
+            }
+
             return (
               <pre
-                className="relative group"
+                className="relative"
                 onContextMenu={(e) => {
                   if (codeText) {
                     show(e, buildCodeBlockContextMenu(codeText))
@@ -57,16 +68,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
                 }}
               >
                 {children}
-                <button
-                  onClick={() => {
-                    if (codeText) {
-                      navigator.clipboard.writeText(codeText)
-                    }
-                  }}
-                  className="absolute top-2 right-2 rounded px-2 py-1 text-xs text-neutral-400 opacity-40 group-hover:opacity-100 bg-neutral-800 hover:text-neutral-200 transition-all"
-                >
-                  Copy
-                </button>
+                <CopyButton text={codeText} className="absolute right-1.5 top-1.5" />
               </pre>
             )
           },
@@ -75,27 +77,51 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
           code: (props) => {
             const p = props as Record<string, unknown>
             const children = p.children as React.ReactNode
-            const isBlock = p.className as string | undefined
+            const className = p.className as string | undefined
 
-            // Don't add context menu to code blocks (handled by pre)
-            if (isBlock?.includes('language-')) {
-              return <code {...(p as React.HTMLAttributes<HTMLElement>)}>{children}</code>
+            // Fenced code block: highlight with the same CodeMirror pipeline the
+            // code editor uses. `language-xxx` class is added by mdast-util-to-hast
+            // from the fence info string. Context menu is handled by the pre wrapper.
+            if (className?.includes('language-')) {
+              const lang = className.replace(/^.*language-/, '').split(/\s+/)[0]
+              const raw = extractCodeText(children).replace(/\n$/, '')
+              const html = highlightCodeToHtml(raw, lang)
+              if (html !== null) {
+                return <code className={className} dangerouslySetInnerHTML={{ __html: html }} />
+              }
+              return <code className={className}>{children}</code>
+            }
+
+            const inlineText = typeof children === 'string' ? children : ''
+
+            // Inline code that reads like a real filename opens in the editor;
+            // everything else (keywords, function names, literals) copies on click.
+            if (looksLikeFilePath(inlineText)) {
+              return (
+                <code
+                  className="chat-file-link"
+                  onClick={() => {
+                    void openFileFromChat(inlineText)
+                  }}
+                  onContextMenu={(e) => {
+                    show(e, buildCodeBlockContextMenu(inlineText))
+                  }}
+                >
+                  {children}
+                </code>
+              )
             }
 
             return (
               <code
-                className="cursor-pointer hover:bg-white/10 rounded px-0.5 transition-colors"
                 onClick={() => {
-                  const text = typeof children === 'string' ? children : ''
-                  if (text) navigator.clipboard.writeText(text)
+                  if (inlineText) navigator.clipboard.writeText(inlineText)
                 }}
                 onContextMenu={(e) => {
-                  const text = typeof children === 'string' ? children : ''
-                  if (text) {
-                    show(e, buildCodeBlockContextMenu(text))
+                  if (inlineText) {
+                    show(e, buildCodeBlockContextMenu(inlineText))
                   }
                 }}
-                title="Click to copy"
               >
                 {children}
               </code>
@@ -114,6 +140,73 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
       </ReactMarkdown>
       {ContextMenuComponent}
     </ErrorBoundary>
+  )
+}
+
+/**
+ * True when `text` is a self-contained SVG document — an optional XML prolog or
+ * comment, then a root <svg> element through a closing </svg>. Used to decide
+ * whether a fenced code block should render as an image.
+ */
+function isRenderableSvg(text: string): boolean {
+  const t = text.trim()
+  return /^(?:<\?xml[\s\S]*?\?>\s*)?(?:<!--[\s\S]*?-->\s*)?<svg[\s>]/i.test(t) && /<\/svg>\s*$/i.test(t)
+}
+
+/**
+ * Renders SVG markup as an image with a toggle to view its source. The image is
+ * a `data:` URI in an <img>, which the browser treats as "secure static mode":
+ * no scripts, no external resource loads, no interactivity — so untrusted SVG
+ * from model/tool output can't run code or phone home.
+ */
+function SvgBlock({ raw }: { raw: string }): React.JSX.Element {
+  const [showSource, setShowSource] = useState(false)
+  const src = `data:image/svg+xml;utf8,${encodeURIComponent(raw)}`
+  const html = showSource ? highlightCodeToHtml(raw, 'svg') : null
+
+  return (
+    <div className="relative my-2 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/50">
+      <div className="flex items-center justify-between border-b border-neutral-800 px-2 py-1">
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setShowSource(true)}
+            className={clsx(
+              'rounded p-1 transition-colors',
+              showSource ? 'bg-neutral-800 text-neutral-200' : 'text-neutral-500 hover:bg-neutral-800/50 hover:text-neutral-300'
+            )}
+            title="View source"
+            aria-label="View source"
+          >
+            <Code2 size={14} />
+          </button>
+          <button
+            onClick={() => setShowSource(false)}
+            className={clsx(
+              'rounded p-1 transition-colors',
+              !showSource ? 'bg-neutral-800 text-neutral-200' : 'text-neutral-500 hover:bg-neutral-800/50 hover:text-neutral-300'
+            )}
+            title="Render SVG"
+            aria-label="Render SVG"
+          >
+            <Eye size={14} />
+          </button>
+        </div>
+        <CopyButton text={raw} />
+      </div>
+      {showSource ? (
+        <pre className="m-0 overflow-x-auto p-3">
+          {html !== null ? (
+            <code className="language-svg" dangerouslySetInnerHTML={{ __html: html }} />
+          ) : (
+            <code className="language-svg">{raw}</code>
+          )}
+        </pre>
+      ) : (
+        <div className="flex justify-center p-3">
+          <img src={src} alt="Rendered SVG" className="max-h-[480px] max-w-full" />
+        </div>
+      )}
+    </div>
   )
 }
 

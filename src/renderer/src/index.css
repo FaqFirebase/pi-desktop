@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Vendored OpenMoji COLRv1 color emoji font — sharp vector emoji that read well
+   on dark backgrounds. Used as the emoji fallback across chat, code, and diff. */
+@font-face {
+  font-family: 'OpenMoji Color';
+  src: url('./assets/openmoji-color.woff2') format('woff2');
+  font-display: swap;
+}
+
 @custom-variant light (.light &);
 
 @theme {
@@ -130,7 +138,31 @@
 /* ─── Markdown Rendering ─────────────────────────────────────────────────── */
 
 @layer components {
+  /* Bundled Inter for chat text (prompts + model responses). Sizes stay in rem
+     so they keep scaling with the UI font-size setting. Monospace code/pre
+     inside markdown is re-overridden below. */
+  .font-chat {
+    font-family: 'Inter Variable', 'OpenMoji Color', system-ui, sans-serif;
+  }
+
+  /* Bundled JetBrains Mono for command bodies and tool results. */
+  .font-jetbrains {
+    font-family: 'JetBrains Mono Variable', 'JetBrains Mono', 'OpenMoji Color', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  }
+
+  /* Reveal the thinking copy button on hover. Plain CSS avoids the nested-group
+     ambiguity with the message-level `group` (Tailwind group-hover didn't fire). */
+  .thinking-copy-btn {
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+  .thinking-hover:hover .thinking-copy-btn,
+  .thinking-copy-btn:focus-visible {
+    opacity: 1;
+  }
+
   .markdown-body {
+    font-family: 'Inter Variable', 'OpenMoji Color', system-ui, sans-serif;
     font-size: 0.9375rem;
     line-height: 1.6;
     color: var(--color-text-primary);
@@ -150,23 +182,34 @@
   .markdown-body h4,
   .markdown-body h5,
   .markdown-body h6 {
+    font-size: 1em;
     font-weight: 600;
     margin-top: 1.25em;
     margin-bottom: 0.5em;
     color: var(--color-text-primary);
   }
 
-  .markdown-body h1 { font-size: 1.5em; }
-  .markdown-body h2 { font-size: 1.3em; }
-  .markdown-body h3 { font-size: 1.15em; }
-
   .markdown-body code {
-    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-    font-size: 0.85em;
-    padding: 0.15em 0.35em;
-    background: rgba(255, 255, 255, 0.06);
+    font-family: 'Inter Variable', system-ui, sans-serif;
+    font-size: 1em;
+    color: #60a5fa;
+  }
+
+  /* Clickable filename references: arrow cursor + highlight box on hover. */
+  .markdown-body code.chat-file-link {
+    cursor: default;
+    padding: 0.05em 0.3em;
     border-radius: 4px;
-    color: #e879f9;
+    transition: background-color 150ms ease;
+  }
+
+  .markdown-body code.chat-file-link:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .light .markdown-body code.chat-file-link:hover,
+  .breeze-light .markdown-body code.chat-file-link:hover {
+    background-color: rgba(0, 0, 0, 0.08);
   }
 
   .markdown-body pre {
@@ -182,7 +225,8 @@
     padding: 0.875em 1em;
     background: transparent;
     color: var(--color-text-primary);
-    font-size: 0.8125rem;
+    font-family: 'JetBrains Mono Variable', 'JetBrains Mono', 'OpenMoji Color', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.75rem;
     line-height: 1.6;
   }
 
@@ -216,11 +260,13 @@
     width: 100%;
     border-collapse: collapse;
     margin: 0.75em 0;
+    font-size: inherit;
+    line-height: 1.4;
   }
 
   .markdown-body th,
   .markdown-body td {
-    padding: 0.5em 0.75em;
+    padding: 0.25em 0.5em;
     border: 1px solid var(--color-border);
     text-align: left;
   }
@@ -413,7 +459,7 @@
   .nord *::-webkit-scrollbar-thumb:hover { background-color: #4C566A !important; }
 
   .nord .markdown-body pre { background: #242932 !important; border-color: #434C5E !important; }
-  .nord .markdown-body code { background: rgba(76, 86, 106, 0.4) !important; color: #B48EAD !important; }
+  .nord .markdown-body code { color: #B48EAD !important; }
   .nord .markdown-body pre code { color: #D8DEE9 !important; }
 }
 
@@ -507,7 +553,7 @@
   .gruvbox *::-webkit-scrollbar-thumb:hover { background-color: #665C54 !important; }
 
   .gruvbox .markdown-body pre { background: #1D2021 !important; border-color: #504945 !important; }
-  .gruvbox .markdown-body code { background: rgba(80, 73, 69, 0.4) !important; color: #D3869B !important; }
+  .gruvbox .markdown-body code { color: #D3869B !important; }
   .gruvbox .markdown-body pre code { color: #EBDBB2 !important; }
 }
 
@@ -601,7 +647,7 @@
   .breeze-dark *::-webkit-scrollbar-thumb:hover { background-color: #4d5358 !important; }
 
   .breeze-dark .markdown-body pre { background: #1d2024 !important; border-color: #3f4347 !important; }
-  .breeze-dark .markdown-body code { background: rgba(63, 67, 71, 0.5) !important; color: #8e44ad !important; }
+  .breeze-dark .markdown-body code { color: #60a5fa !important; }
   .breeze-dark .markdown-body pre code { color: #cfcfc2 !important; }
 }
 
@@ -695,7 +741,7 @@
   .breeze-light *::-webkit-scrollbar-thumb:hover { background-color: #898887 !important; }
 
   .breeze-light .markdown-body pre { background: #f8f7f6 !important; border-color: #d8d8d8 !important; }
-  .breeze-light .markdown-body code { background: rgba(0, 0, 0, 0.06) !important; color: #644a9b !important; }
+  .breeze-light .markdown-body code { color: #644a9b !important; }
   .breeze-light .markdown-body pre code { color: #1f1c1b !important; }
 }
 
@@ -738,7 +784,7 @@
 
   /* Markdown in light mode */
   .light .markdown-body pre { background: #f8f9fa !important; border-color: #e5e5e5 !important; }
-  .light .markdown-body code { background: rgba(0, 0, 0, 0.06) !important; color: #a855f7 !important; }
+  .light .markdown-body code { color: #a855f7 !important; }
   .light .markdown-body pre code { color: #171717 !important; }
   .light .hljs { background: #f8f9fa !important; color: #24292e !important; }
   .light .hljs-comment, .light .hljs-quote { color: #6a737d !important; }

@@ -236,7 +236,7 @@ export function StatusPopover(): React.JSX.Element {
                               style={{ width: `${contextPct}%` }}
                             />
                           </div>
-                          <span className="text-xs w-8 shrink-0 text-right tabular-nums">
+                          <span className="text-[11px] w-8 shrink-0 text-right tabular-nums">
                             {contextPct}%
                           </span>
                         </div>

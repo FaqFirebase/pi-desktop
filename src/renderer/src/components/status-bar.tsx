@@ -120,9 +120,9 @@ export function StatusBar(): React.JSX.Element {
           <div className="flex items-center gap-1 text-neutral-500" title={`Context: ${sessionStats.contextUsage.tokens?.toLocaleString() ?? '?'} / ${sessionStats.contextUsage.contextWindow.toLocaleString()} tokens`}>
             <Layers size={10} />
             <span>
-              {sessionStats.contextUsage.percent !== null
-                ? `${sessionStats.contextUsage.percent}%`
-                : '?'}
+              {Number.isFinite(sessionStats.contextUsage.percent)
+                ? `${Math.round(sessionStats.contextUsage.percent as number)}%`
+                : '0%'}
             </span>
           </div>
         )}

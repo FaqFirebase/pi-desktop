@@ -99,7 +99,7 @@ interface AppState {
   streamingThinking: string
   streamingToolCalls: Map<
     string,
-    { name: string; args: string; isExecuting: boolean; startedAt?: number; durationMs?: number }
+    { name: string; args: string; result?: string; isExecuting: boolean; startedAt?: number; durationMs?: number }
   >
   isStreaming: boolean
 
@@ -959,7 +959,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         break
 
       case 'message_end':
-        handleTurnComplete(set)
+        handleTurnComplete(set, (event as { message?: Record<string, unknown> }).message)
         get().addTimelineEvent({
           id: generateId(),
           type: 'assistant_message',
@@ -970,7 +970,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         break
 
       case 'turn_end':
-        handleTurnComplete(set)
+        handleTurnComplete(set, (event as { message?: Record<string, unknown> }).message)
         break
 
       case 'agent_start':
@@ -1658,14 +1658,16 @@ function handleMessageUpdate(
 }
 
 function handleTurnComplete(
-  set: ZustandSet
+  set: ZustandSet,
+  message?: Record<string, unknown>
 ): void {
   set((state) => {
     const newMessages = [...state.messages]
 
     // Commit streaming content as assistant message
     if (state.streamingContent || state.streamingThinking || state.streamingToolCalls.size > 0) {
-      const toolCalls = Array.from(state.streamingToolCalls.entries()).map(([id, tc]) => ({
+      const entries = Array.from(state.streamingToolCalls.entries())
+      const toolCalls = entries.map(([id, tc]) => ({
         id,
         name: tc.name,
         arguments: tc.args,
@@ -1673,6 +1675,12 @@ function handleTurnComplete(
         durationMs: tc.durationMs,
       }))
 
+      // Prefer the model/provider Pi records on this specific message (the
+      // authoritative source, robust to mid-turn model switches); fall back to
+      // the currently-selected model when the event omits them.
+      const activeModel = state.sessionState?.model
+      const model = typeof message?.model === 'string' ? message.model : activeModel?.id
+      const provider = typeof message?.provider === 'string' ? message.provider : activeModel?.provider
       newMessages.push({
         id: generateId(),
         role: 'assistant',
@@ -1680,7 +1688,22 @@ function handleTurnComplete(
         timestamp: Date.now(),
         thinking: state.streamingThinking || undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        model,
+        provider,
       })
+
+      // Emit a standalone toolResult message per tool call so the live view
+      // matches what reloading from history produces (Pi persists tool output
+      // as separate toolResult messages, not folded into the assistant turn).
+      for (const [id, tc] of entries) {
+        if (!tc.result) continue
+        newMessages.push({
+          id: `${id}-result`,
+          role: 'toolResult',
+          content: tc.result,
+          timestamp: Date.now(),
+        })
+      }
     }
 
     return {
@@ -1702,6 +1725,7 @@ function handleToolStart(
       name: event.toolName,
       args: JSON.stringify(event.args),
       isExecuting: true,
+      startedAt: Date.now(),
     })
     return { streamingToolCalls: newMap }
   })
@@ -1720,9 +1744,11 @@ function handleToolUpdate(
     const newMap = new Map(state.streamingToolCalls)
     const existing = newMap.get(event.toolCallId)
     if (existing) {
+      // Accumulate partial output into `result`; keep `args` as the real
+      // arguments so the finalized tool-call badge shows the invocation.
       newMap.set(event.toolCallId, {
         ...existing,
-        args: text || existing.args,
+        result: text || existing.result,
       })
     }
     return { streamingToolCalls: newMap }
@@ -1745,7 +1771,8 @@ function handleToolEnd(
       newMap.set(event.toolCallId, {
         ...existing,
         isExecuting: false,
-        args: resultText || existing.args,
+        result: resultText || existing.result,
+        durationMs: existing.startedAt ? Date.now() - existing.startedAt : existing.durationMs,
       })
     }
     return { streamingToolCalls: newMap }

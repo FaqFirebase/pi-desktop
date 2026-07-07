@@ -134,6 +134,8 @@ export function useInitialize(): void {
       await useAppStore.getState().loadTags()
       await useAppStore.getState().loadArchivedSessions()
       await useAppStore.getState().loadNotes()
+      // Model id -> display-name map for chat/history; reads ~/.pi/agent/models.json.
+      void useAppStore.getState().loadCustomModels()
       // Best-effort GitHub release check (non-blocking).
       void useAppStore.getState().checkForUpdates()
 

@@ -1,6 +1,8 @@
 import { memo, useState, useRef } from 'react'
 import { useAppStore, type DisplayMessage } from '../store'
+import { modelDisplayName } from '../../../shared/models-config'
 import { MarkdownRenderer } from './markdown-renderer'
+import { CopyButton } from './copy-button'
 import { useContextMenu, buildMessageContextMenu } from './context-menu'
 import { clsx } from 'clsx'
 import {
@@ -15,15 +17,7 @@ import {
   GitBranch,
   RotateCcw,
   Download,
-  FileText,
   Send,
-  Terminal,
-  Search,
-  Globe,
-  Pencil,
-  FilePlus,
-  List,
-  type LucideIcon,
 } from 'lucide-react'
 
 function MessageBubbleImpl({
@@ -71,9 +65,21 @@ function MessageBubbleImpl({
     })
   }
 
-  const handleExport = async () => {
-    const exportContent = formatMessageForExport(message)
-    await navigator.clipboard.writeText(exportContent)
+  const handleExport = () => {
+    const blob = new Blob([message.content], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const label = message.role === 'assistant' ? 'desktop' : message.role
+    const d = new Date(message.timestamp ?? Date.now())
+    const p = (n: number): string => String(n).padStart(2, '0')
+    // Format: yyyy-mm-ddThh-mm-ss (local time)
+    const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`
+    a.download = `pi-${label}-${stamp}.md`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
   }
 
   // Context menu for message-specific actions
@@ -186,7 +192,7 @@ function UserMessage({
             ref={editRef}
             value={editContent}
             onChange={(e) => onEditContentChange(e.target.value)}
-            className="w-full rounded-2xl rounded-br-md bg-blue-600 px-4 py-2.5 text-sm text-white resize-none min-h-[40px] max-h-48 outline-none"
+            className="font-chat w-full rounded-2xl rounded-br-md bg-[#323232] px-4 py-2.5 text-sm text-[#d7d7d7] resize-none min-h-[40px] max-h-48 outline-none"
             rows={1}
             onInput={(e) => {
               const t = e.currentTarget
@@ -218,7 +224,7 @@ function UserMessage({
   return (
     <div className="group mb-4 flex justify-end animate-fade-in">
       <div className="relative max-w-[80%]">
-        <div className="rounded-2xl rounded-br-md bg-blue-600 px-4 py-2.5 text-sm text-white">
+        <div className="rounded-2xl rounded-br-md bg-[#323232] px-4 py-2.5 text-sm text-[#d7d7d7]">
           {message.attachments && message.attachments.length > 0 && (
             <div className={clsx('flex flex-wrap gap-2', message.content && 'mb-2')}>
               {message.attachments.map((attachment, index) => (
@@ -236,7 +242,7 @@ function UserMessage({
               ))}
             </div>
           )}
-          <div className="whitespace-pre-wrap break-words">{message.content}</div>
+          <div className="font-chat whitespace-pre-wrap break-words">{message.content}</div>
         </div>
         {/* Actions */}
         <div className="mt-1 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -270,6 +276,20 @@ function AssistantMessage({
   onToggleThinking: () => void
   onExport: () => void
 }): React.JSX.Element {
+  const customModels = useAppStore((state) => state.customModels)
+  const thinkingEnabled = useAppStore(
+    (state) => state.settings?.showThinking ?? false
+  )
+
+  // With thinking off, a thinking-only turn (no text, no tool calls) would
+  // collapse to just an orphaned model/provider header. Suppress it entirely so
+  // the header doesn't appear to repeat. Only applies when thinking is hidden —
+  // with thinking on, the block itself gives the header something to sit above.
+  const hasVisibleBody = message.content.trim().length > 0 || (message.toolCalls?.length ?? 0) > 0
+  if (!thinkingEnabled && !hasVisibleBody) {
+    return <></>
+  }
+
   return (
     <div className="group mb-4 animate-fade-in">
       <div className="flex items-start gap-3">
@@ -282,10 +302,10 @@ function AssistantMessage({
         <div className="min-w-0 flex-1">
           {/* Model info */}
           {message.model && (
-            <div className="mb-1 flex items-center gap-2 text-sm text-neutral-500">
+            <div className="flex h-7 items-center gap-2 text-sm text-neutral-500">
               <span>{message.provider}</span>
               <span className="text-neutral-700">·</span>
-              <span>{message.model}</span>
+              <span>{modelDisplayName(message.model, customModels)}</span>
               {message.cost !== undefined && (
                 <>
                   <span className="text-neutral-700">·</span>
@@ -295,19 +315,22 @@ function AssistantMessage({
             </div>
           )}
 
-          {/* Thinking block */}
-          {message.thinking && (
-            <div className="mb-2">
-              <button
-                onClick={onToggleThinking}
-                className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-400 transition-colors"
-              >
-                <Brain size={12} />
-                {showThinking ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                Thinking
-              </button>
+          {/* Thinking block — gated by the Show Thinking setting */}
+          {message.thinking && thinkingEnabled && (
+            <div className="thinking-hover mb-2">
+              <div className="flex h-7 items-center gap-1">
+                <button
+                  onClick={onToggleThinking}
+                  className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-400 transition-colors"
+                >
+                  <Brain size={12} />
+                  {showThinking ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  Thinking
+                </button>
+                <CopyButton text={message.thinking} className="thinking-copy-btn" />
+              </div>
               {showThinking && (
-                <div className="markdown-body mt-1 rounded-lg border border-neutral-800 bg-neutral-900/50 p-3 text-neutral-400">
+                <div className="markdown-body font-sans italic text-sm text-neutral-400">
                   <MarkdownRenderer content={message.thinking} />
                 </div>
               )}
@@ -315,31 +338,45 @@ function AssistantMessage({
           )}
 
           {/* Text content */}
-          {message.content && (
-            <div className="markdown-body">
+          {message.content.trim() && (
+            <div className={clsx(
+              'markdown-body text-sm',
+              // Sit just below the model/provider header — 6px, 2px tighter than
+              // the tool-call box's 8px top gap.
+              (message.model || message.thinking) && 'mt-1.5'
+            )}>
               <MarkdownRenderer content={message.content} />
             </div>
           )}
 
           {/* Tool calls */}
           {message.toolCalls && message.toolCalls.length > 0 && (
-            <div className="mt-2 space-y-1">
+            <div className={clsx(
+              'space-y-1',
+              // Only pad the top when something sits above; otherwise the box
+              // should top-align with the avatar.
+              (message.model || message.thinking || message.content) && 'mt-2'
+            )}>
               {message.toolCalls.map((tc) => (
                 <ToolCallBadge key={tc.id} toolCall={tc} />
               ))}
             </div>
           )}
 
-          {/* Actions */}
-          <div className="mt-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <ActionButton
-              icon={copied ? <Check size={11} /> : <Copy size={11} />}
-              onClick={onCopy}
-              title={copied ? 'Copied' : 'Copy'}
-              label={copied ? 'Copied' : 'Copy'}
-            />
-            <ActionButton icon={<Download size={11} />} onClick={onExport} title="Export" />
-          </div>
+          {/* Actions — only when there is real response text (a tool-only
+              message's content is just whitespace/newlines, which is truthy but
+              has nothing to copy/export). Always visible when shown. */}
+          {message.content.trim() && (
+            <div className="mt-2 flex items-center gap-0.5">
+              <ActionButton
+                icon={copied ? <Check size={11} /> : <Copy size={11} />}
+                onClick={onCopy}
+                title={copied ? 'Copied' : 'Copy'}
+                label={copied ? 'Copied' : 'Copy'}
+              />
+              <ActionButton icon={<Download size={11} />} onClick={onExport} title="Export" />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -354,40 +391,43 @@ function ToolCallBadge({
   toolCall: NonNullable<DisplayMessage['toolCalls']>[number]
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false)
-  const Icon = toolIcon(toolCall.name)
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900/50">
+    <div className="relative rounded-lg border border-neutral-800 bg-neutral-900/50">
+      <CopyButton text={toolCallCopyText(toolCall)} className="absolute right-1.5 top-1.5" />
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-400 hover:text-neutral-300 transition-colors"
+        className="flex w-full items-center gap-2 py-2 pl-3 pr-9 text-xs text-neutral-400 hover:text-neutral-300 transition-colors"
       >
-        <Icon size={12} className="shrink-0" />
-        <span className="font-medium">{toolCall.name}</span>
+        <span className="font-jetbrains">{toolLabel(toolCall.name)}</span>
         {toolCall.durationMs !== undefined && !toolCall.isExecuting && (
-          <span className="text-xs text-neutral-600">{formatDuration(toolCall.durationMs)}</span>
+          <span className="text-neutral-600">{formatDuration(toolCall.durationMs)}</span>
         )}
         {toolCall.isError !== undefined && (
           <span className={clsx(
-            'ml-auto rounded px-1.5 py-0.5 text-xs',
+            'rounded px-1.5 py-0.5',
             toolCall.isError ? 'bg-red-900/30 text-red-400' : 'bg-emerald-900/30 text-emerald-400'
           )}>
             {toolCall.isError ? 'error' : 'done'}
           </span>
         )}
         {toolCall.isExecuting && (
-          <span className="ml-auto text-yellow-500 animate-pulse">running</span>
+          <span className="text-yellow-500 animate-pulse">running</span>
         )}
-        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        {expanded ? (
+          <ChevronDown size={12} className="ml-auto shrink-0" />
+        ) : (
+          <ChevronRight size={12} className="ml-auto shrink-0" />
+        )}
       </button>
       {expanded && (
         <div className="border-t border-neutral-800 px-3 py-2">
-          <pre className="overflow-x-auto text-sm text-neutral-500">
+          <pre className="font-jetbrains overflow-x-auto text-xs text-neutral-500">
             {formatToolCallArgs(toolCall.arguments)}
           </pre>
           {toolCall.result && (
             <div className="mt-2 border-t border-neutral-800 pt-2">
-              <pre className="overflow-x-auto text-sm text-neutral-400">
+              <pre className="font-jetbrains overflow-x-auto text-xs text-neutral-400">
                 {toolCall.result}
               </pre>
             </div>
@@ -401,6 +441,14 @@ function ToolCallBadge({
 // ─── Tool Result Message ─────────────────────────────────────────────────────
 
 function ToolResultMessage({ message }: { message: DisplayMessage }): React.JSX.Element {
+  // Collapsed by default — tool results can be huge and otherwise dominate the
+  // scrollback. Mirrors ToolCallBadge's expand/collapse affordance.
+  const [expanded, setExpanded] = useState(false)
+  const newlineIdx = message.content.indexOf('\n')
+  const firstLine = newlineIdx === -1 ? message.content : message.content.slice(0, newlineIdx)
+  // Everything after the first line; that line already shows in the header row.
+  const rest = newlineIdx === -1 ? '' : message.content.slice(newlineIdx + 1)
+
   return (
     <div className="mb-4 animate-fade-in">
       <div className="flex items-start gap-3">
@@ -408,11 +456,29 @@ function ToolResultMessage({ message }: { message: DisplayMessage }): React.JSX.
           <Wrench size={14} className="text-neutral-500" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
-            <pre className="overflow-x-auto text-sm text-neutral-400">
-              {message.content.slice(0, 500)}
-              {message.content.length > 500 && '...'}
-            </pre>
+          <div className="relative rounded-lg border border-neutral-800 bg-neutral-900/50">
+            <CopyButton text={message.content} className="absolute right-1.5 top-1.5" />
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="flex w-full items-center gap-2 py-2 pl-3 pr-9 text-xs text-neutral-400 hover:text-neutral-300 transition-colors"
+            >
+              <span className="font-jetbrains min-w-0 flex-1 truncate text-left">
+                {firstLine}
+              </span>
+              {expanded ? (
+                <ChevronDown size={12} className="shrink-0" />
+              ) : (
+                <ChevronRight size={12} className="shrink-0" />
+              )}
+            </button>
+            {expanded && rest.trim() && (
+              <div className="px-3 pb-2">
+                <pre className="font-jetbrains overflow-x-auto text-xs text-neutral-400">
+                  {rest.slice(0, 2000)}
+                  {rest.length > 2000 && '\n…'}
+                </pre>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -460,17 +526,19 @@ function ActionButton({
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Map common Pi tool names to a representative icon; falls back to a wrench.
-function toolIcon(name: string): LucideIcon {
+// Map common Pi tool names to a friendly, user-facing label; falls back to the
+// raw name so custom/unknown tools still show something. Keyword matching
+// mirrors toolIcon() so the label and icon stay in sync.
+export function toolLabel(name: string): string {
   const n = name.toLowerCase()
-  if (n.includes('bash') || n.includes('shell') || n.includes('exec') || n.includes('terminal')) return Terminal
-  if (n.includes('search') || n.includes('grep') || n.includes('find')) return Search
-  if (n.includes('web') || n.includes('fetch') || n.includes('http') || n.includes('url')) return Globe
-  if (n.includes('edit') || n.includes('replace') || n.includes('patch')) return Pencil
-  if (n.includes('write') || n.includes('create')) return FilePlus
-  if (n.includes('list') || n.startsWith('ls') || n.includes('tree') || n.includes('dir')) return List
-  if (n.includes('read') || n.includes('view') || n.includes('cat') || n.includes('file')) return FileText
-  return Wrench
+  if (n.includes('bash') || n.includes('shell') || n.includes('exec') || n.includes('terminal')) return 'Run command'
+  if (n.includes('search') || n.includes('grep') || n.includes('find')) return 'Search'
+  if (n.includes('web') || n.includes('fetch') || n.includes('http') || n.includes('url')) return 'Fetch URL'
+  if (n.includes('edit') || n.includes('replace') || n.includes('patch')) return 'Edit file'
+  if (n.includes('write') || n.includes('create')) return 'Write file'
+  if (n.includes('list') || n.startsWith('ls') || n.includes('tree') || n.includes('dir')) return 'List files'
+  if (n.includes('read') || n.includes('view') || n.includes('cat') || n.includes('file')) return 'Read file'
+  return name
 }
 
 function formatDuration(ms: number): string {
@@ -487,27 +555,19 @@ function formatToolCallArgs(args: string): string {
   }
 }
 
-function formatMessageForExport(message: DisplayMessage): string {
-  const lines: string[] = []
-
-  if (message.role === 'user') {
-    lines.push(`## User`)
-    lines.push(message.content)
-  } else if (message.role === 'assistant') {
-    lines.push(`## Assistant`)
-    if (message.model) {
-      lines.push(`*Model: ${message.provider}/${message.model}*`)
+// What the copy button on a tool-call box yields: the raw command for
+// shell-style tools (so it pastes cleanly), otherwise the formatted arguments.
+function toolCallCopyText(toolCall: NonNullable<DisplayMessage['toolCalls']>[number]): string {
+  try {
+    const parsed = JSON.parse(toolCall.arguments)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      for (const key of ['command', 'cmd', 'script']) {
+        const value = (parsed as Record<string, unknown>)[key]
+        if (typeof value === 'string' && value.length > 0) return value
+      }
     }
-    if (message.thinking) {
-      lines.push(`\n<details><summary>Thinking</summary>\n\n${message.thinking}\n\n</details>\n`)
-    }
-    lines.push(message.content)
-  } else if (message.role === 'toolResult') {
-    lines.push(`## Tool Result`)
-    lines.push('```')
-    lines.push(message.content.slice(0, 1000))
-    lines.push('```')
+  } catch {
+    // fall through to formatted args
   }
-
-  return lines.join('\n')
+  return formatToolCallArgs(toolCall.arguments)
 }

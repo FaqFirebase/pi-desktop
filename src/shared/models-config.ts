@@ -146,3 +146,20 @@ export function withImageInput(input: string[] | undefined, enabled: boolean): s
   }
   return withText.filter((modality) => modality !== IMAGE_INPUT)
 }
+
+/**
+ * Resolve a model id to its display name from a models config, scanning every
+ * provider's models. Returns the raw id when the config is missing or has no
+ * matching model with a name (the caller's fallback).
+ */
+export function modelDisplayName(modelId: string, config: ModelsConfig | null): string {
+  if (!modelId || !config) return modelId
+  for (const provider of Object.values(config.providers ?? {})) {
+    for (const model of provider.models ?? []) {
+      if (model.id === modelId && typeof model.name === 'string' && model.name.trim().length > 0) {
+        return model.name
+      }
+    }
+  }
+  return modelId
+}
