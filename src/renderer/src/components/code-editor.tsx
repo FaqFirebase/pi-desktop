@@ -24,6 +24,7 @@ export function CodeEditor({
   const onChangeRef = useRef(onChange)
   const theme = useAppStore((state) => state.settings?.theme)
   const lightTheme = isLightTheme(theme)
+  const fontSize = useAppStore((state) => state.codeEditorFontSizePreview ?? state.settings?.codeEditorFontSize)
 
   useEffect(() => {
     onChangeRef.current = onChange
@@ -60,7 +61,7 @@ export function CodeEditor({
             height: '100%',
             backgroundColor: 'var(--color-bg-primary)',
             color: 'var(--color-text-primary)',
-            fontSize: '12px',
+            fontSize: `${fontSize ?? 12}px`,
           },
           '.cm-editor': {
             height: '100%',
@@ -100,7 +101,7 @@ export function CodeEditor({
       view.destroy()
       viewRef.current = null
     }
-  }, [filePath, readOnly, lightTheme])
+  }, [filePath, readOnly, lightTheme, fontSize])
 
   useEffect(() => {
     const view = viewRef.current

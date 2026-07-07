@@ -1,5 +1,5 @@
 import { useAppStore } from '../store'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { AppSettings, PermissionMode, CouncilConfig } from '../../../shared/ipc-contracts'
 import { Settings, Save, RotateCcw, FolderOpen, Check } from 'lucide-react'
 import { DEFAULT_PERMISSION_MODE } from './permission-mode'
@@ -16,10 +16,19 @@ export function SettingsPanel(): React.JSX.Element {
   const settings = useAppStore((state) => state.settings)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
   const loadSettings = useAppStore((state) => state.loadSettings)
+  const setFontSizePreview = useAppStore((state) => state.setFontSizePreview)
 
   const [piPath, setPiPath] = useState(settings?.piExecutablePath ?? 'pi')
   const [theme, setTheme] = useState(settings?.theme ?? 'dark')
-  const [fontSize, setFontSize] = useState(settings?.fontSize ?? 14)
+  const [fontSize, setFontSize] = useState(
+    useAppStore.getState().uiFontSizePreview ?? settings?.fontSize ?? 14,
+  )
+  const [terminalFontSize, setTerminalFontSize] = useState(
+    useAppStore.getState().terminalFontSizePreview ?? settings?.terminalFontSize ?? 12,
+  )
+  const [codeEditorFontSize, setCodeEditorFontSize] = useState(
+    useAppStore.getState().codeEditorFontSizePreview ?? settings?.codeEditorFontSize ?? 12,
+  )
   const [showThinking, setShowThinking] = useState(settings?.showThinking ?? true)
   const [autoScroll, setAutoScroll] = useState(settings?.autoScroll ?? true)
   const [resumeLastSession, setResumeLastSession] = useState(settings?.resumeLastSession ?? true)
@@ -70,18 +79,26 @@ export function SettingsPanel(): React.JSX.Element {
     await loadSettings()
   }
 
-  // Sync from store when settings load
+  // Populate the form once, when settings first load. We deliberately do NOT
+  // re-sync on every settings change: the UI font previews live and the
+  // terminal/editor sizes are staged in store state, so re-syncing would
+  // clobber other unsaved edits. Save/Reset set local state directly, so the
+  // form stays correct without a re-sync.
+  const didInitRef = useRef(false)
   useEffect(() => {
-    if (settings) {
-      setPiPath(settings.piExecutablePath)
-      setTheme(settings.theme)
-      setFontSize(settings.fontSize)
-      setShowThinking(settings.showThinking)
-      setAutoScroll(settings.autoScroll)
-      setResumeLastSession(settings.resumeLastSession)
-      setOpenToHomeOnLaunch(settings.openToHomeOnLaunch)
-      setPermissionMode(settings.permissionMode)
-    }
+    if (!settings || didInitRef.current) return
+    didInitRef.current = true
+    const store = useAppStore.getState()
+    setPiPath(settings.piExecutablePath)
+    setTheme(settings.theme)
+    setFontSize(store.uiFontSizePreview ?? settings.fontSize)
+    setTerminalFontSize(store.terminalFontSizePreview ?? settings.terminalFontSize)
+    setCodeEditorFontSize(store.codeEditorFontSizePreview ?? settings.codeEditorFontSize)
+    setShowThinking(settings.showThinking)
+    setAutoScroll(settings.autoScroll)
+    setResumeLastSession(settings.resumeLastSession)
+    setOpenToHomeOnLaunch(settings.openToHomeOnLaunch)
+    setPermissionMode(settings.permissionMode)
   }, [settings])
 
   const handleSelectPath = async () => {
@@ -94,6 +111,8 @@ export function SettingsPanel(): React.JSX.Element {
       piExecutablePath: piPath,
       theme: theme as AppSettings['theme'],
       fontSize,
+      terminalFontSize,
+      codeEditorFontSize,
       showThinking,
       autoScroll,
       resumeLastSession,
@@ -110,6 +129,10 @@ export function SettingsPanel(): React.JSX.Element {
     // Reload settings in store
     await loadSettings()
 
+    // Persisted now — drop the live previews so terminal/editor read the saved
+    // settings (which loadSettings just refreshed).
+    setFontSizePreview({ ui: null, terminal: null, editor: null })
+
     // Show saved indicator
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -120,6 +143,8 @@ export function SettingsPanel(): React.JSX.Element {
       piExecutablePath: 'pi',
       theme: 'dark',
       fontSize: 14,
+      terminalFontSize: 12,
+      codeEditorFontSize: 12,
       showThinking: true,
       autoScroll: true,
       resumeLastSession: true,
@@ -130,6 +155,8 @@ export function SettingsPanel(): React.JSX.Element {
     setPiPath(defaults.piExecutablePath!)
     setTheme(defaults.theme!)
     setFontSize(defaults.fontSize!)
+    setTerminalFontSize(defaults.terminalFontSize!)
+    setCodeEditorFontSize(defaults.codeEditorFontSize!)
     setShowThinking(defaults.showThinking!)
     setAutoScroll(defaults.autoScroll!)
     setResumeLastSession(defaults.resumeLastSession!)
@@ -138,7 +165,9 @@ export function SettingsPanel(): React.JSX.Element {
 
     const result = await window.piDesktop.settings.save(defaults)
     applyTheme(result.theme)
+    document.documentElement.style.fontSize = `${result.fontSize}px`
     await loadSettings()
+    setFontSizePreview({ ui: null, terminal: null, editor: null })
 
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -146,7 +175,7 @@ export function SettingsPanel(): React.JSX.Element {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-2xl px-6 py-8">
+      <div className="mx-auto max-w-5xl px-6 py-8">
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -203,7 +232,7 @@ export function SettingsPanel(): React.JSX.Element {
             </select>
           </SettingsRow>
 
-          <SettingsRow label="Font Size" description="Base font size in pixels">
+          <SettingsRow label="UI Font Size" description="Chat, panels, and sidebar — not the terminal or code editor">
             <div className="flex items-center gap-3">
               <input
                 type="range"
@@ -214,10 +243,47 @@ export function SettingsPanel(): React.JSX.Element {
                   const size = Number(e.target.value)
                   setFontSize(size)
                   document.documentElement.style.fontSize = `${size}px`
+                  setFontSizePreview({ ui: size })
                 }}
                 className="flex-1 accent-blue-500"
               />
               <span className="w-8 text-right text-sm text-neutral-400">{fontSize}</span>
+            </div>
+          </SettingsRow>
+
+          <SettingsRow label="Terminal Font Size" description="Font size for the terminal panel">
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={10}
+                max={20}
+                value={terminalFontSize}
+                onChange={(e) => {
+                  const size = Number(e.target.value)
+                  setTerminalFontSize(size)
+                  setFontSizePreview({ terminal: size })
+                }}
+                className="flex-1 accent-blue-500"
+              />
+              <span className="w-8 text-right text-sm text-neutral-400">{terminalFontSize}</span>
+            </div>
+          </SettingsRow>
+
+          <SettingsRow label="Code Editor Font Size" description="Font size for the code editor / file viewer">
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={10}
+                max={20}
+                value={codeEditorFontSize}
+                onChange={(e) => {
+                  const size = Number(e.target.value)
+                  setCodeEditorFontSize(size)
+                  setFontSizePreview({ editor: size })
+                }}
+                className="flex-1 accent-blue-500"
+              />
+              <span className="w-8 text-right text-sm text-neutral-400">{codeEditorFontSize}</span>
             </div>
           </SettingsRow>
         </SettingsSection>

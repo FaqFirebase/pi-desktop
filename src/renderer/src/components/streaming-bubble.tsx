@@ -25,11 +25,11 @@ export function StreamingBubble({ content, thinking, toolCalls }: StreamingBubbl
           {/* Thinking */}
           {thinking && (
             <div className="mb-2 rounded-lg border border-purple-900/30 bg-purple-900/10 p-3">
-              <div className="flex items-center gap-1 text-xs text-purple-400 mb-1">
+              <div className="flex items-center gap-1 text-sm text-purple-400 mb-1">
                 <Brain size={12} />
                 Thinking...
               </div>
-              <div className="text-xs text-neutral-500 line-clamp-3">
+              <div className="text-sm text-neutral-500 line-clamp-3">
                 {thinking.slice(-200)}
               </div>
             </div>
@@ -42,7 +42,7 @@ export function StreamingBubble({ content, thinking, toolCalls }: StreamingBubbl
                 <div
                   key={id}
                   className={clsx(
-                    'flex items-center gap-2 rounded-lg border px-3 py-2 text-xs',
+                    'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm',
                     tc.isExecuting
                       ? 'border-yellow-900/30 bg-yellow-900/10 text-yellow-400'
                       : 'border-neutral-800 bg-neutral-900/50 text-neutral-400'
@@ -55,7 +55,7 @@ export function StreamingBubble({ content, thinking, toolCalls }: StreamingBubbl
                   )}
                   <span className="font-medium">{tc.name}</span>
                   {tc.isExecuting && (
-                    <span className="ml-auto text-[10px] text-yellow-500">executing</span>
+                    <span className="ml-auto text-xs text-yellow-500">executing</span>
                   )}
                 </div>
               ))}

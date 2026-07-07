@@ -69,7 +69,14 @@ export function TerminalPanel(): React.JSX.Element | null {
       cursorBlink: true,
       convertEol: true,
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-      fontSize: 12,
+      // Use the Terminal Font Size setting (or the unsaved settings-panel
+      // preview), read once at creation. Applied on the next mount — i.e. when
+      // the user returns to chat — rather than live, to avoid resizing a hidden
+      // pty. Falls back to the default.
+      fontSize:
+        useAppStore.getState().terminalFontSizePreview ??
+        useAppStore.getState().settings?.terminalFontSize ??
+        12,
       theme: buildTerminalTheme(),
     })
     const fit = new FitAddon()
