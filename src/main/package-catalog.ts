@@ -1,4 +1,8 @@
 import type { CatalogPackage } from '../shared/ipc-contracts'
+import { filterCatalog } from '../shared/package-filter'
+
+// Re-exported so existing importers (and tests) keep resolving it from here.
+export { filterCatalog }
 
 // The package catalog at pi.dev/packages is a server-rendered, paginated list
 // with no search endpoint (query params are ignored, /api/* returns 501). To
@@ -11,6 +15,8 @@ const CATALOG_BASE_URL = 'https://pi.dev/packages'
 const PAGE_SIZE = 50
 // Safety cap so a server change (e.g. always-full pages) cannot loop forever.
 const MAX_PAGES = 40
+// Pages fetched concurrently per batch (crawl stops at the first short page).
+export const PAGE_CONCURRENCY = 8
 // Re-scrape at most this often; search fires on every keystroke, so without a
 // cache each keystroke would re-crawl every page.
 const CACHE_TTL_MS = 5 * 60 * 1000
@@ -21,6 +27,9 @@ interface CatalogCache {
 }
 
 let catalogCache: CatalogCache | null = null
+// Shared in-flight crawl so concurrent callers (e.g. the startup prefetch and a
+// user opening the Catalog tab) await the same request instead of each crawling.
+let inFlightCrawl: Promise<CatalogPackage[]> | null = null
 
 // Parse the package cards out of a single rendered catalog page. Pure so it can
 // be tested against captured HTML without network access.
@@ -80,29 +89,42 @@ export function parseCatalogHtml(html: string): CatalogPackage[] {
   return packages
 }
 
-// Match every whitespace-separated token against the combined name, description
-// and author. Tokenizing lets multi-word queries like "ollama cloud" match a
-// package named "pi-ollama-cloud". Pure for testability.
-export function filterCatalog(
-  packages: CatalogPackage[],
-  query: string | undefined
-): CatalogPackage[] {
-  if (!query || !query.trim()) return packages
-  const tokens = query.trim().toLowerCase().split(/\s+/)
-  return packages.filter((pkg) => {
-    const haystack = `${pkg.name} ${pkg.description} ${pkg.author}`.toLowerCase()
-    return tokens.every((token) => haystack.includes(token))
-  })
-}
-
 async function fetchCatalogPage(page: number): Promise<CatalogPackage[]> {
   const response = await fetch(`${CATALOG_BASE_URL}?page=${page}`)
   if (!response.ok) return []
   return parseCatalogHtml(await response.text())
 }
 
-// Crawl every catalog page (stopping at the first short page) and cache the
-// result. Exposed so the cache can be primed/forced if ever needed.
+// Crawl catalog pages in concurrent batches, stopping once a short page marks
+// the end of the catalog.
+async function crawlAllPages(): Promise<CatalogPackage[]> {
+  // Dedupe by name: batching may request a few pages past the end, and some
+  // paginated servers clamp out-of-range pages to a valid one — deduping keeps
+  // any such repeats out of the catalog. Preserves first-seen (crawl) order.
+  const byName = new Map<string, CatalogPackage>()
+  let nextPage = 1
+  let reachedEnd = false
+
+  while (!reachedEnd && nextPage <= MAX_PAGES) {
+    const batch: number[] = []
+    for (let i = 0; i < PAGE_CONCURRENCY && nextPage <= MAX_PAGES; i++) {
+      batch.push(nextPage++)
+    }
+    // Promise.all preserves order, so pages are merged in sequence.
+    const pages = await Promise.all(batch.map(fetchCatalogPage))
+    for (const pagePackages of pages) {
+      for (const pkg of pagePackages) {
+        if (!byName.has(pkg.name)) byName.set(pkg.name, pkg)
+      }
+      if (pagePackages.length < PAGE_SIZE) reachedEnd = true
+    }
+  }
+
+  return [...byName.values()]
+}
+
+// Crawl every catalog page and cache the result. Concurrent callers share one
+// in-flight crawl. Exposed so the cache can be primed (e.g. a startup prefetch).
 export async function fetchAllCatalogPackages(
   options?: { force?: boolean }
 ): Promise<CatalogPackage[]> {
@@ -114,20 +136,23 @@ export async function fetchAllCatalogPackages(
     return catalogCache.packages
   }
 
-  const packages: CatalogPackage[] = []
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const pagePackages = await fetchCatalogPage(page)
-    packages.push(...pagePackages)
-    if (pagePackages.length < PAGE_SIZE) break
+  if (!inFlightCrawl) {
+    inFlightCrawl = crawlAllPages()
+      .then((packages) => {
+        catalogCache = { packages, fetchedAt: Date.now() }
+        return packages
+      })
+      .finally(() => {
+        inFlightCrawl = null
+      })
   }
-
-  catalogCache = { packages, fetchedAt: Date.now() }
-  return packages
+  return inFlightCrawl
 }
 
 // Reset the in-memory cache (test seam).
 export function clearCatalogCache(): void {
   catalogCache = null
+  inFlightCrawl = null
 }
 
 // Fetch the full catalog (cached) and apply the search filter locally.

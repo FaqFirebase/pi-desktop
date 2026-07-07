@@ -1,6 +1,7 @@
 import { useAppStore } from '../store'
 import type { CatalogPackage } from '../../../shared/ipc-contracts'
-import { useEffect, useState } from 'react'
+import { filterCatalog } from '../../../shared/package-filter'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import {
   Package,
@@ -21,63 +22,51 @@ export function PackageBrowser(): React.JSX.Element {
   const installedPackages = useAppStore((state) => state.installedPackages)
   const catalogPackages = useAppStore((state) => state.catalogPackages)
   const packageLoading = useAppStore((state) => state.packageLoading)
-  const packageSearchQuery = useAppStore((state) => state.packageSearchQuery)
+  const catalogLoading = useAppStore((state) => state.catalogLoading)
   const packageNotification = useAppStore((state) => state.packageNotification)
   const loadInstalledPackages = useAppStore((state) => state.loadInstalledPackages)
   const installPackage = useAppStore((state) => state.installPackage)
   const removePackage = useAppStore((state) => state.removePackage)
-  const searchCatalog = useAppStore((state) => state.searchCatalog)
-  const setPackageSearchQuery = useAppStore((state) => state.setPackageSearchQuery)
+  const loadCatalog = useAppStore((state) => state.loadCatalog)
   const clearPackageNotification = useAppStore((state) => state.clearPackageNotification)
-  const setCurrentView = useAppStore((state) => state.setCurrentView)
   const installedSkills = useAppStore((state) => state.installedSkills)
   const loadSkills = useAppStore((state) => state.loadSkills)
 
-  const installedNames = new Set(installedPackages.map((p) => p.name))
+  // Memoized so the tab components (below, React.memo'd) don't re-render just
+  // because this Set was rebuilt on an unrelated render.
+  const installedNames = useMemo(
+    () => new Set(installedPackages.map((p) => p.name)),
+    [installedPackages]
+  )
 
   const [activeTab, setActiveTab] = useState<'installed' | 'catalog' | 'skills'>('installed')
-  const [installInput, setInstallInput] = useState('')
-  const [installing, setInstalling] = useState(false)
 
+  // Installed packages and skills are local/fast — load them up front so the
+  // default Installed tab paints immediately.
   useEffect(() => {
     loadInstalledPackages()
     loadSkills()
-    searchCatalog()
-  }, [loadInstalledPackages, loadSkills, searchCatalog])
+  }, [loadInstalledPackages, loadSkills])
 
-  const handleInstall = async () => {
-    if (!installInput.trim()) return
-    setInstalling(true)
-    await installPackage(installInput.trim())
-    setInstallInput('')
-    setInstalling(false)
-  }
+  // The catalog requires a (prefetched) network crawl — load it lazily the first
+  // time the Catalog tab is opened, so opening Packages never blocks on it.
+  const catalogRequested = useRef(false)
+  useEffect(() => {
+    if (activeTab === 'catalog' && !catalogRequested.current) {
+      catalogRequested.current = true
+      loadCatalog()
+    }
+  }, [activeTab, loadCatalog])
 
-  const handleRemove = async (spec: string) => {
-    await removePackage(spec)
-  }
-
-  const handleSearch = (query: string) => {
-    setPackageSearchQuery(query)
-    searchCatalog(query)
-  }
+  const handleRemove = useCallback((spec: string) => { removePackage(spec) }, [removePackage])
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
       <div className="border-b border-neutral-800 px-4 py-3">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Package size={16} className="text-neutral-400" />
-            <h2 className="text-sm font-medium text-neutral-200">Packages & Skills</h2>
-          </div>
-          <button
-            type="button"
-            onClick={() => setCurrentView('chat')}
-            className="rounded px-2 py-1 text-xs text-neutral-500 hover:text-neutral-300 transition-colors"
-          >
-            Back to Chat
-          </button>
+        <div className="flex items-center gap-2 mb-3">
+          <Package size={16} className="text-neutral-400" />
+          <h2 className="text-sm font-medium text-neutral-200">Packages & Skills</h2>
         </div>
 
         {/* Tabs */}
@@ -105,34 +94,8 @@ export function PackageBrowser(): React.JSX.Element {
         </div>
       </div>
 
-      {/* Install bar */}
-      <div className="border-b border-neutral-800 px-4 py-3">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={installInput}
-            onChange={(e) => setInstallInput(e.target.value)}
-            placeholder="npm:package-name or git:github.com/user/repo"
-            className="flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleInstall()
-            }}
-          />
-          <button
-            type="button"
-            onClick={handleInstall}
-            disabled={installing || !installInput.trim()}
-            className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {installing ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Download size={14} />
-            )}
-            Install
-          </button>
-        </div>
-      </div>
+      {/* Install bar (isolated: its keystrokes never re-render the tab lists) */}
+      <InstallBar />
 
       {/* Notification banner */}
       {packageNotification && (
@@ -170,9 +133,7 @@ export function PackageBrowser(): React.JSX.Element {
         {activeTab === 'catalog' && (
           <CatalogTab
             packages={catalogPackages}
-            loading={packageLoading}
-            searchQuery={packageSearchQuery}
-            onSearch={handleSearch}
+            loading={catalogLoading}
             onInstall={installPackage}
             installedNames={installedNames}
           />
@@ -180,6 +141,51 @@ export function PackageBrowser(): React.JSX.Element {
         {activeTab === 'skills' && (
           <SkillsTab skills={installedSkills} />
         )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Install Bar ─────────────────────────────────────────────────────────────
+
+// Isolated so typing a package spec only re-renders this small component — it
+// never touches the Installed/Catalog/Skills lists. Install runs only on click.
+function InstallBar(): React.JSX.Element {
+  const installPackage = useAppStore((state) => state.installPackage)
+  const [installInput, setInstallInput] = useState('')
+  const [installing, setInstalling] = useState(false)
+
+  const handleInstall = async (): Promise<void> => {
+    const spec = installInput.trim()
+    if (!spec) return
+    setInstalling(true)
+    await installPackage(spec)
+    setInstallInput('')
+    setInstalling(false)
+  }
+
+  return (
+    <div className="border-b border-neutral-800 px-4 py-3">
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={installInput}
+          onChange={(e) => setInstallInput(e.target.value)}
+          placeholder="npm:package-name or git:github.com/user/repo"
+          className="flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleInstall()
+          }}
+        />
+        <button
+          type="button"
+          onClick={handleInstall}
+          disabled={installing || !installInput.trim()}
+          className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {installing ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+          Install
+        </button>
       </div>
     </div>
   )
@@ -222,7 +228,7 @@ function TabButton({
 
 // ─── Installed Tab ───────────────────────────────────────────────────────────
 
-function InstalledTab({
+const InstalledTab = memo(function InstalledTab({
   packages,
   loading,
   onRemove,
@@ -292,25 +298,31 @@ function InstalledTab({
       ))}
     </div>
   )
-}
+})
 
 // ─── Catalog Tab ─────────────────────────────────────────────────────────────
 
-function CatalogTab({
+// Cap on rendered rows: the full catalog can be ~thousands of packages, so we
+// render a slice and prompt the user to refine rather than paint them all.
+const CATALOG_RENDER_CAP = 100
+
+const CatalogTab = memo(function CatalogTab({
   packages,
   loading,
-  searchQuery,
-  onSearch,
   onInstall,
   installedNames,
 }: {
   packages: CatalogPackage[]
   loading: boolean
-  searchQuery: string
-  onSearch: (query: string) => void
   onInstall: (spec: string) => void
   installedNames: Set<string>
 }): React.JSX.Element {
+  // Search is local state and filtering runs in-renderer against the already
+  // loaded catalog — no per-keystroke IPC or loading toggle.
+  const [query, setQuery] = useState('')
+  const filtered = useMemo(() => filterCatalog(packages, query), [packages, query])
+  const shown = filtered.slice(0, CATALOG_RENDER_CAP)
+
   return (
     <div>
       {/* Search */}
@@ -319,8 +331,8 @@ function CatalogTab({
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
           <input
             type="text"
-            value={searchQuery}
-            onChange={(e) => onSearch(e.target.value)}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
             placeholder="Search packages..."
             className="w-full rounded-lg border border-neutral-700 bg-neutral-900 py-2 pl-9 pr-4 text-sm text-neutral-200 placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none"
           />
@@ -331,7 +343,7 @@ function CatalogTab({
         <div className="flex items-center justify-center py-12">
           <Loader2 size={24} className="animate-spin text-neutral-500" />
         </div>
-      ) : packages.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-neutral-500">
           <Store size={32} className="mb-3 text-neutral-600" />
           <p className="text-sm">No packages found</p>
@@ -349,7 +361,7 @@ function CatalogTab({
         </div>
       ) : (
         <div className="space-y-2">
-          {packages.map((pkg, index) => (
+          {shown.map((pkg, index) => (
             <div
               key={`${pkg.name}-${index}`}
               className="rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-3"
@@ -415,15 +427,20 @@ function CatalogTab({
               </div>
             </div>
           ))}
+          {filtered.length > shown.length && (
+            <div className="py-3 text-center text-xs text-neutral-600">
+              Showing {shown.length} of {filtered.length} — refine your search to narrow results.
+            </div>
+          )}
         </div>
       )}
     </div>
   )
-}
+})
 
 // ─── Skills Tab ──────────────────────────────────────────────────────────────
 
-function SkillsTab({
+const SkillsTab = memo(function SkillsTab({
   skills,
 }: {
   skills: Array<{ name: string; description: string; path: string; source: string; enabled: boolean }>
@@ -465,4 +482,4 @@ function SkillsTab({
       ))}
     </div>
   )
-}
+})

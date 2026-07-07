@@ -6,6 +6,7 @@ import {
   fetchAllCatalogPackages,
   fetchPackageCatalog,
   clearCatalogCache,
+  PAGE_CONCURRENCY,
 } from './package-catalog'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -105,6 +106,10 @@ test('filterCatalog returns [] when no package matches', () => {
 // ─── fetchAllCatalogPackages (pagination + cache) ─────────────────────────────
 
 const FULL_PAGE = page(Array.from({ length: 50 }, (_, i) => card({ name: `pkg-${i}` })))
+// Distinct names per page so a realistic catalog (unique package names) isn't
+// collapsed by the crawler's name-dedup.
+const fullPageOf = (base: number): string =>
+  page(Array.from({ length: 50 }, (_, i) => card({ name: `pkg-${base}-${i}` })))
 const SHORT_PAGE = page([card({ name: 'pi-ollama-cloud' }), card({ name: 'last-one' })])
 
 function stubPages(pages: Record<number, string>): () => number {
@@ -118,13 +123,14 @@ function stubPages(pages: Record<number, string>): () => number {
   return () => calls
 }
 
-test('fetchAllCatalogPackages crawls until the first short page', async () => {
-  const calls = stubPages({ 1: FULL_PAGE, 2: FULL_PAGE, 3: SHORT_PAGE })
+test('fetchAllCatalogPackages crawls in batches and stops after the short page', async () => {
+  const calls = stubPages({ 1: fullPageOf(1), 2: fullPageOf(2), 3: SHORT_PAGE })
   const packages = await fetchAllCatalogPackages({ force: true })
 
-  // 50 + 50 + 2 cards collected; crawl stops after the short third page.
+  // 50 + 50 + 2 unique cards collected. Pages past 3 are fetched concurrently in
+  // the same batch but return empty, and the short page 3 stops further batches.
   assert.equal(packages.length, 102)
-  assert.equal(calls(), 3)
+  assert.ok(calls() >= 3 && calls() <= PAGE_CONCURRENCY, 'stops after the first concurrent batch')
   assert.ok(packages.some((p) => p.name === 'pi-ollama-cloud'))
 })
 

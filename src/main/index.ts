@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from 'fs'
 import { basename, join, resolve as resolvePath } from 'path'
 import { WorkspaceManager } from './workspace-manager'
 import { registerIpcHandlers } from './ipc-handlers'
+import { fetchAllCatalogPackages } from './package-catalog'
 import { configureGuiDataDir, getCanonicalUserDataDir, migrateLegacyGuiData } from './app-data-paths'
 
 // Env var honored on startup: if set, the named directory becomes the active
@@ -208,6 +209,10 @@ app.whenReady().then(async () => {
 
   // Create main window
   createMainWindow()
+
+  // Warm the package catalog cache in the background so the Catalog tab is
+  // instant when first opened. Non-blocking; failures are ignored (offline etc).
+  void fetchAllCatalogPackages().catch(() => {})
 
   // macOS: re-create window when dock icon clicked
   app.on('activate', () => {

@@ -141,8 +141,8 @@ interface AppState {
   // Packages
   installedPackages: InstalledPackage[]
   catalogPackages: CatalogPackage[]
-  packageLoading: boolean
-  packageSearchQuery: string
+  packageLoading: boolean // install/remove operations (affects the Installed tab)
+  catalogLoading: boolean // catalog crawl (Catalog tab only)
   packageNotification: { type: 'success' | 'error'; message: string } | null
 
   // Skills
@@ -279,8 +279,7 @@ interface AppActions {
   loadInstalledPackages: () => Promise<void>
   installPackage: (spec: string) => Promise<void>
   removePackage: (spec: string) => Promise<void>
-  searchCatalog: (query?: string) => Promise<void>
-  setPackageSearchQuery: (query: string) => void
+  loadCatalog: () => Promise<void>
   clearPackageNotification: () => void
 
   // Skills
@@ -406,7 +405,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   installedPackages: [],
   catalogPackages: [],
   packageLoading: false,
-  packageSearchQuery: '',
+  catalogLoading: false,
   packageNotification: null,
 
   installedSkills: [],
@@ -1292,19 +1291,19 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
-  searchCatalog: async (query) => {
-    set({ packageLoading: true })
+  // Load the full catalog once; the Catalog tab filters it locally on each
+  // keystroke (no per-keystroke IPC). catalogLoading gates only this one-time load.
+  loadCatalog: async () => {
+    set({ catalogLoading: true })
     try {
-      const packages = await window.piDesktop.packages.fetchCatalog(query)
+      const packages = await window.piDesktop.packages.fetchCatalog()
       set({ catalogPackages: packages })
     } catch {
       // Silent failure
     } finally {
-      set({ packageLoading: false })
+      set({ catalogLoading: false })
     }
   },
-
-  setPackageSearchQuery: (query) => set({ packageSearchQuery: query }),
 
   clearPackageNotification: () => set({ packageNotification: null }),
 
