@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { clsx } from 'clsx'
@@ -38,7 +38,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   const [stagedMode, setStagedMode] = useState(false)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
 
-  const loadDiff = async () => {
+  const loadDiff = useCallback(async () => {
     setLoading(true)
     try {
       const diff = stagedMode
@@ -50,11 +50,11 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
     } finally {
       setLoading(false)
     }
-  }
+  }, [stagedMode])
 
   useEffect(() => {
     loadDiff()
-  }, [stagedMode])
+  }, [loadDiff])
 
   const toggleFile = (path: string) => {
     setExpandedFiles((prev) => {

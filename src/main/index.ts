@@ -107,6 +107,24 @@ function createMainWindow(): BrowserWindow {
     event.preventDefault()
   })
 
+  // Harden the HTML file-preview <webview> guest before Electron attaches it:
+  // strip any preload/Node access it might request and reject anything that
+  // isn't the local `file://` preview it's meant for. Defense-in-depth against
+  // a renderer XSS trying to attach a guest with elevated webPreferences.
+  window.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    delete webPreferences.preload
+    webPreferences.nodeIntegration = false
+    webPreferences.nodeIntegrationInSubFrames = false
+    webPreferences.contextIsolation = true
+    webPreferences.sandbox = true
+    webPreferences.webSecurity = true
+    webPreferences.allowRunningInsecureContent = false
+
+    if (!params.src.startsWith('file://')) {
+      event.preventDefault()
+    }
+  })
+
   // Load renderer
   if (DEV_SERVER_URL) {
     window.loadURL(DEV_SERVER_URL)

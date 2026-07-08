@@ -17,8 +17,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  verify:
+    name: Lint & test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npx tsx --test 'src/**/*.test.ts'
+
   build:
     name: Build (${{ matrix.os }})
+    needs: verify
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

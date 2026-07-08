@@ -102,6 +102,10 @@ export function CodeEditor({
       view.destroy()
       viewRef.current = null
     }
+    // `value` is intentionally omitted: it only seeds the initial doc here.
+    // Subsequent changes are applied via dispatch in the effect below so the
+    // view (cursor position, undo history) isn't torn down on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filePath, readOnly, lightTheme, fontSize])
 
   useEffect(() => {
