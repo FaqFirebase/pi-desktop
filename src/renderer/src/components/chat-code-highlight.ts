@@ -237,7 +237,3 @@ export function highlightCodeToHtml(code: string, lang: string): string | null {
   )
   return html
 }
-
-export function hasChatLanguage(lang: string): boolean {
-  return getLanguage(lang) !== null
-}
