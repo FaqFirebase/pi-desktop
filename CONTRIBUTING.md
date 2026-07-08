@@ -2,6 +2,22 @@
 
 Thank you for your interest in contributing! This document explains how to contribute to the project.
 
+## Architecture reference: `AGENT.md`
+
+[`AGENT.md`](AGENT.md) is the canonical reference for the project's architecture, module layout, data-storage locations, distribution model, and delivery standards. Read it before making non-trivial changes — it is kept more current and more detailed than the summary in this guide.
+
+### For AI coding agents
+
+If you use an AI coding agent (Claude Code, Codex, Kilo, Cursor, etc.) to work on this repository, the agent **must read and follow [`AGENT.md`](AGENT.md)** — in particular its **Final Delivery Checklist** — before proposing or committing changes. Point your agent at it explicitly at the start of a session; most agents do not load a file named `AGENT.md` automatically.
+
+At minimum, an agent's work must:
+
+- Reuse existing patterns and utilities instead of duplicating logic
+- Ship complete implementations (no placeholders, dead code, or deferred work)
+- Add or update the colocated `*.test.ts` tests for any changed module
+- Pass `npm run typecheck`, `npm run lint`, `npm run build`, and `npx tsx --test`
+- Preserve the Electron security posture (see Electron Security below)
+
 ## Contributor License Agreement
 
 **Before your first contribution can be merged, you must agree to the [Contributor License Agreement (CLA)](CLA.md).**
@@ -37,7 +53,7 @@ By submitting a pull request, you acknowledge that you have read and agree to th
 
 **Branch policy.** This repository uses two long-lived branches:
 
-- `master` — public-facing docs only (`README.md`, `LICENSE`, `CLA.md`, `CONTRIBUTING.md`, `.gitignore`). Do not target PRs here.
+- `master` — public-facing docs only (`README.md`, `AGENT.md`, `LICENSE`, `CLA.md`, `CONTRIBUTING.md`, `.gitignore`). Do not target PRs here.
 - `Dev` — all application source. This is where active development happens. **Target your pull requests against `Dev`.**
 
 Steps:
@@ -129,22 +145,32 @@ docs(readme): update installation instructions
 
 Before submitting a pull request:
 
-1. **Build succeeds:**
-   ```bash
-   npm run build
-   ```
-
-2. **Type check passes:**
+1. **Type check passes:**
    ```bash
    npm run typecheck
    ```
 
-3. **App launches and works:**
+2. **Lint passes:**
+   ```bash
+   npm run lint
+   ```
+
+3. **Unit tests pass:**
+   ```bash
+   npx tsx --test
+   ```
+
+4. **Build succeeds:**
+   ```bash
+   npm run build
+   ```
+
+5. **App launches and works:**
    ```bash
    npm run dev
    ```
 
-4. **No regressions** in existing functionality
+6. **No regressions** in existing functionality
 
 ## Project Structure
 
