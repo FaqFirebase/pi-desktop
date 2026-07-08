@@ -24,7 +24,6 @@ export function NotesPanel(): React.JSX.Element {
   const updateNote = useAppStore((state) => state.updateNote)
   const deleteNote = useAppStore((state) => state.deleteNote)
   const insertPrompt = useAppStore((state) => state.insertPrompt)
-  const setCurrentView = useAppStore((state) => state.setCurrentView)
   const noteDraft = useAppStore((state) => state.noteDraft)
   const clearNoteDraft = useAppStore((state) => state.clearNoteDraft)
 
@@ -106,14 +105,6 @@ export function NotesPanel(): React.JSX.Element {
       {/* Header */}
       <div className="flex h-12 items-center justify-between border-b border-neutral-800 px-4">
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setCurrentView('chat')}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
-            title="Back to chat"
-          >
-            <ArrowLeft size={13} />
-            Back to chat
-          </button>
           <h1 className="text-sm font-medium text-neutral-200">Notes</h1>
         </div>
         <button

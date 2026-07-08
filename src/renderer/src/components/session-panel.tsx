@@ -450,9 +450,17 @@ function SessionEntry({
         busy && 'pointer-events-none opacity-40'
       )}
     >
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onSelect}
-        className="flex w-full items-center gap-3 text-left"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onSelect()
+          }
+        }}
+        className="flex w-full cursor-pointer items-center gap-3 text-left"
       >
         <Clock size={12} className="shrink-0 text-neutral-600" />
         <div className="min-w-0 flex-1">
@@ -517,7 +525,7 @@ function SessionEntry({
             active
           </span>
         )}
-      </button>
+      </div>
 
       {/* Kebab menu trigger — always visible so the actions are discoverable.
           The row also honors right-click for the same actions (see onContextMenu
