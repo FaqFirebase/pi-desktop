@@ -74,7 +74,6 @@ builder-effective-config.yaml
 .pi/
 
 # Agent context — local-only memory and architecture notes
-AGENT.md
 MEMORY.md
 TEST.md
 
