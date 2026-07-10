@@ -58,6 +58,66 @@ export function useMenuActions(): void {
 // and keep following new content.
 const AT_BOTTOM_THRESHOLD = 48
 
+// A content-relative scroll position. We store this instead of a raw scrollTop
+// so the reading spot survives content-height changes that happen while the chat
+// is hidden — chiefly toggling Show Thinking in Settings, which shows/hides every
+// thinking block. A raw scrollTop would then point at different content.
+type ScrollAnchor =
+  | { kind: 'bottom' }
+  // Preserve distance from the bottom. Used when no prose is on screen to anchor
+  // against (e.g. the viewport shows only tool boxes).
+  | { kind: 'fromBottom'; distanceFromBottom: number }
+  // `id` identifies a message's *text body* (the `data-scroll-anchor` marker on
+  // assistant text / user messages — never on tool boxes or thinking blocks).
+  // `viewportOffset` is its top edge relative to the container's top (often
+  // negative — it starts above the fold). Anchoring to the prose the reader is
+  // actually looking at — below any thinking block, even one in the same message
+  // — means collapsing thinking above it doesn't shift it. `distanceFromBottom`
+  // is a last-resort fallback if the element is somehow gone on restore.
+  | { kind: 'body'; id: string; viewportOffset: number; distanceFromBottom: number }
+
+// Snapshot the current reading position of the scroll container.
+function captureAnchor(el: HTMLElement): ScrollAnchor {
+  const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop
+  if (distanceFromBottom <= AT_BOTTOM_THRESHOLD) return { kind: 'bottom' }
+  const containerTop = el.getBoundingClientRect().top
+  const nodes = el.querySelectorAll<HTMLElement>('[data-scroll-anchor]')
+  for (const node of nodes) {
+    const rect = node.getBoundingClientRect()
+    // First text body whose bottom edge is below the container's top — i.e. the
+    // topmost at least partially visible piece of prose.
+    if (rect.bottom > containerTop) {
+      return {
+        kind: 'body',
+        id: node.dataset.scrollAnchor as string,
+        viewportOffset: rect.top - containerTop,
+        distanceFromBottom,
+      }
+    }
+  }
+  return { kind: 'fromBottom', distanceFromBottom }
+}
+
+// Restore a previously captured anchor, absorbing any height change above it.
+function restoreAnchor(el: HTMLElement, anchor: ScrollAnchor): void {
+  if (anchor.kind === 'bottom') {
+    el.scrollTop = el.scrollHeight
+    return
+  }
+  if (anchor.kind === 'fromBottom') {
+    el.scrollTop = el.scrollHeight - el.clientHeight - anchor.distanceFromBottom
+    return
+  }
+  const node = el.querySelector<HTMLElement>(`[data-scroll-anchor="${CSS.escape(anchor.id)}"]`)
+  if (!node) {
+    el.scrollTop = el.scrollHeight - el.clientHeight - anchor.distanceFromBottom
+    return
+  }
+  const containerTop = el.getBoundingClientRect().top
+  const currentOffset = node.getBoundingClientRect().top - containerTop
+  el.scrollTop += currentOffset - anchor.viewportOffset
+}
+
 /**
  * Manages the chat scroll container:
  *  - remembers each session's scroll offset and restores it when you switch back
@@ -82,10 +142,13 @@ export function useChatScroll(active: boolean): {
   const streamingContent = useAppStore((state) => state.streamingContent)
   const scrollBottomNonce = useAppStore((state) => state.chatScrollBottomNonce)
 
-  const positions = useRef<Map<string, number>>(new Map())
+  const positions = useRef<Map<string, ScrollAnchor>>(new Map())
   const activeSession = useRef<string | null>(null)
   const seenNonce = useRef(scrollBottomNonce)
   const forceBottom = useRef(false)
+  // Whether the chat was visible on the previous run, so we can re-anchor when it
+  // becomes visible again (e.g. returning from Settings after toggling thinking).
+  const prevActive = useRef(false)
   // While a just-switched session's messages are still loading (async), keep
   // re-applying the target scroll until content is actually present.
   const pendingRestore = useRef(false)
@@ -102,7 +165,7 @@ export function useChatScroll(active: boolean): {
     // clobbering the saved offset with 0 when messages are momentarily cleared
     // during a session switch.
     if (activeSession.current !== null && scrollable > AT_BOTTOM_THRESHOLD) {
-      positions.current.set(activeSession.current, el.scrollTop)
+      positions.current.set(activeSession.current, captureAnchor(el))
     }
   }, [])
 
@@ -118,7 +181,13 @@ export function useChatScroll(active: boolean): {
 
     // Defer scrolling while hidden: a display:none element has no layout, so
     // scrollHeight is 0 and any positioning would be wrong.
-    if (!el || !active) return
+    if (!el || !active) {
+      prevActive.current = active
+      return
+    }
+
+    const becameActive = !prevActive.current
+    prevActive.current = active
 
     if (scrollBottomNonce !== seenNonce.current) {
       seenNonce.current = scrollBottomNonce
@@ -136,13 +205,28 @@ export function useChatScroll(active: boolean): {
       if (forceBottom.current || saved === undefined) {
         el.scrollTop = el.scrollHeight
       } else {
-        el.scrollTop = Math.min(saved, el.scrollHeight)
+        restoreAnchor(el, saved)
       }
       // Consider the switch settled once the session's messages have loaded.
       if (messages.length > 0) {
         pendingRestore.current = false
         forceBottom.current = false
       }
+      return
+    }
+
+    // Returned to the chat view (e.g. from Settings) in the same session. The
+    // content height may have changed while hidden — Show Thinking toggles every
+    // thinking block — so re-anchor to the saved reading position rather than
+    // leaving the now-stale scrollTop, which would show different content.
+    if (becameActive) {
+      const saved = positions.current.get(sessionKey)
+      if (forceBottom.current || saved === undefined) {
+        el.scrollTop = el.scrollHeight
+      } else {
+        restoreAnchor(el, saved)
+      }
+      forceBottom.current = false
       return
     }
 

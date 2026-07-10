@@ -95,7 +95,7 @@ function MessageBubbleImpl({
   if (message.role === 'user') {
     return (
       <>
-      <div onContextMenu={handleMessageContextMenu}>
+      <div data-scroll-anchor={message.id} onContextMenu={handleMessageContextMenu}>
       <UserMessage
         message={message}
         isEditing={isEditing}
@@ -340,7 +340,9 @@ function AssistantMessage({
 
           {/* Text content */}
           {message.content.trim() && (
-            <div className={clsx(
+            <div
+              data-scroll-anchor={message.id}
+              className={clsx(
               'markdown-body text-sm',
               // Sit just below the model/provider header — 6px, 2px tighter than
               // the tool-call box's 8px top gap.
