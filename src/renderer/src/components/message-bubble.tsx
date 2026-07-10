@@ -2,6 +2,7 @@ import { memo, useState, useRef } from 'react'
 import { useAppStore, type DisplayMessage } from '../store'
 import { modelDisplayName } from '../../../shared/models-config'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
+import { toolLabel } from '../message-grouping'
 import { MarkdownRenderer } from './markdown-renderer'
 import { CopyButton } from './copy-button'
 import { useContextMenu, buildMessageContextMenu } from './context-menu'
@@ -24,9 +25,13 @@ import {
 function MessageBubbleImpl({
   message,
   onRetry,
+  hideModelHeader,
 }: {
   message: DisplayMessage
   onRetry?: (messageId: string) => void
+  // When rendered inside a tool group that shows a single shared model header,
+  // suppress this message's own provider · model line to avoid repetition.
+  hideModelHeader?: boolean
 }): React.JSX.Element {
   const [copied, setCopied] = useState(false)
   const [showThinking, setShowThinking] = useState(false)
@@ -126,6 +131,7 @@ function MessageBubbleImpl({
         showThinking={showThinking}
         onToggleThinking={() => setShowThinking(!showThinking)}
         onExport={handleExport}
+        hideModelHeader={hideModelHeader}
       />
       </div>
       {MessageContextMenu}
@@ -269,6 +275,7 @@ function AssistantMessage({
   showThinking,
   onToggleThinking,
   onExport,
+  hideModelHeader,
 }: {
   message: DisplayMessage
   onCopy: () => void
@@ -276,6 +283,7 @@ function AssistantMessage({
   showThinking: boolean
   onToggleThinking: () => void
   onExport: () => void
+  hideModelHeader?: boolean
 }): React.JSX.Element {
   const customModels = useAppStore((state) => state.customModels)
   const thinkingEnabled = useAppStore(
@@ -294,15 +302,21 @@ function AssistantMessage({
   return (
     <div className="group mb-4 animate-fade-in">
       <div className="flex items-start gap-3">
-        {/* Avatar */}
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800">
-          <Bot size={14} className="text-neutral-400" />
-        </div>
+        {/* Avatar — suppressed inside a tool group (the group shows one above),
+            keeping an empty spacer so the tool boxes stay aligned with the
+            wrench-avatared result rows. */}
+        {hideModelHeader ? (
+          <div className="h-7 w-7 shrink-0" />
+        ) : (
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800">
+            <Bot size={14} className="text-neutral-400" />
+          </div>
+        )}
 
         {/* Content */}
         <div className="min-w-0 flex-1">
           {/* Model info */}
-          {message.model && (
+          {message.model && !hideModelHeader && (
             <div className="flex h-7 items-center gap-2 text-sm text-neutral-500">
               <span>{message.provider}</span>
               <span className="text-neutral-700">·</span>
@@ -489,6 +503,101 @@ function ToolResultMessage({ message }: { message: DisplayMessage }): React.JSX.
   )
 }
 
+// ─── Tool Group ──────────────────────────────────────────────────────────────
+
+// A run of consecutive tool-activity messages (tool calls + their results, plus
+// any thinking-only turns among them) folded into one collapsed block. Collapsed
+// by default to keep repetitive runs from dominating the scrollback; expanding
+// reveals the original messages rendered exactly as they would appear ungrouped.
+function ToolGroupBubbleImpl({
+  title,
+  messages,
+  onRetry,
+}: {
+  title: string
+  messages: DisplayMessage[]
+  onRetry?: (messageId: string) => void
+}): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false)
+  const customModels = useAppStore((state) => state.customModels)
+
+  // If every assistant turn in the group used the same model, show one shared
+  // provider · model header above the body and suppress the per-turn headers. If
+  // they differ (a mid-run model switch), keep each turn's own header so the
+  // distinction isn't lost.
+  const modelKeys = new Set<string>()
+  let sharedModel: string | undefined
+  let sharedProvider: string | undefined
+  for (const m of messages) {
+    if (m.role === 'assistant' && m.model) {
+      modelKeys.add(`${m.provider ?? ''}|${m.model}`)
+      if (sharedModel === undefined) {
+        sharedModel = m.model
+        sharedProvider = m.provider
+      }
+    }
+  }
+  const showSharedHeader = modelKeys.size === 1 && sharedModel !== undefined
+
+  return (
+    <div className="group mb-4 animate-fade-in">
+      <div className="flex items-start gap-3">
+        {/* Bot avatar + model header so a grouped run reads like any other
+            assistant message, not a distinct kind of block. */}
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800">
+          <Bot size={14} className="text-neutral-400" />
+        </div>
+        <div className="min-w-0 flex-1">
+          {showSharedHeader && (
+            <div className="flex h-7 items-center gap-2 text-sm text-neutral-500">
+              <span>{sharedProvider}</span>
+              <span className="text-neutral-700">·</span>
+              <span>{modelDisplayName(sharedModel as string, customModels)}</span>
+            </div>
+          )}
+          <div
+            className={clsx(
+              'relative rounded-lg border border-neutral-800 bg-neutral-900/50',
+              showSharedHeader && 'mt-1.5'
+            )}
+          >
+            <CopyButton text={groupCopyText(messages)} className="absolute right-1.5 top-1.5" />
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="flex w-full items-center gap-2 py-2 pl-3 pr-9 text-xs text-neutral-400 hover:text-neutral-300 transition-colors"
+            >
+              <span className="font-jetbrains">{title}</span>
+              {expanded ? (
+                <ChevronDown size={12} className="ml-auto shrink-0" />
+              ) : (
+                <ChevronRight size={12} className="ml-auto shrink-0" />
+              )}
+            </button>
+          </div>
+          {/* Expanded body: the original messages, on a left rail to signal they
+              belong to the group. Per-turn model headers are suppressed since the
+              group already shows one above. Last child's bottom margin trimmed so
+              it doesn't double up on the group's own mb-4. */}
+          {expanded && (
+            <div className="mt-2 border-l border-neutral-800 pl-3 [&>*:last-child]:mb-0">
+              {messages.map((m) => (
+                <MessageBubble
+                  key={m.id}
+                  message={m}
+                  onRetry={onRetry}
+                  hideModelHeader={showSharedHeader}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export const ToolGroupBubble = memo(ToolGroupBubbleImpl)
+
 // ─── System Message ──────────────────────────────────────────────────────────
 
 function SystemMessage({ message }: { message: DisplayMessage }): React.JSX.Element {
@@ -529,21 +638,6 @@ function ActionButton({
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Map common Pi tool names to a friendly, user-facing label; falls back to the
-// raw name so custom/unknown tools still show something. Keyword matching
-// mirrors toolIcon() so the label and icon stay in sync.
-export function toolLabel(name: string): string {
-  const n = name.toLowerCase()
-  if (n.includes('bash') || n.includes('shell') || n.includes('exec') || n.includes('terminal')) return 'Run command'
-  if (n.includes('search') || n.includes('grep') || n.includes('find')) return 'Search'
-  if (n.includes('web') || n.includes('fetch') || n.includes('http') || n.includes('url')) return 'Fetch URL'
-  if (n.includes('edit') || n.includes('replace') || n.includes('patch')) return 'Edit file'
-  if (n.includes('write') || n.includes('create')) return 'Write file'
-  if (n.includes('list') || n.startsWith('ls') || n.includes('tree') || n.includes('dir')) return 'List files'
-  if (n.includes('read') || n.includes('view') || n.includes('cat') || n.includes('file')) return 'Read file'
-  return name
-}
-
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`
@@ -556,6 +650,20 @@ function formatToolCallArgs(args: string): string {
   } catch {
     return args
   }
+}
+
+// The group's copy button yields every call and result in order: each tool
+// call's copy text (raw command / formatted args) followed by its result.
+function groupCopyText(messages: DisplayMessage[]): string {
+  const parts: string[] = []
+  for (const m of messages) {
+    if (m.role === 'assistant') {
+      for (const tc of m.toolCalls ?? []) parts.push(toolCallCopyText(tc))
+    } else if (m.role === 'toolResult') {
+      parts.push(m.content)
+    }
+  }
+  return parts.join('\n\n')
 }
 
 // What the copy button on a tool-call box yields: the raw command for

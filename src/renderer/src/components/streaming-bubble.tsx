@@ -1,5 +1,5 @@
 import { MarkdownRenderer } from './markdown-renderer'
-import { toolLabel } from './message-bubble'
+import { toolLabel } from '../message-grouping'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { Wrench, Brain, Bot, Loader2 } from 'lucide-react'
