@@ -54,6 +54,16 @@ export function ChatInput(): React.JSX.Element {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
 
+  // Clear the composer and collapse it back to a single row. The textarea is
+  // uncontrolled and auto-grows in onInput, so clearing the value alone leaves it
+  // at its expanded height until the next keystroke.
+  const resetComposer = useCallback(() => {
+    const ta = textareaRef.current
+    if (!ta) return
+    ta.value = ''
+    ta.style.height = 'auto'
+  }, [])
+
   const handleSend = useCallback(
     async (message: string) => {
       // Text attachments are inlined into the prompt; image attachments are
@@ -82,8 +92,9 @@ export function ChatInput(): React.JSX.Element {
         images.length > 0 ? { images, attachments: displayAttachments } : undefined
       )
       setAttachments([])
+      resetComposer()
     },
-    [sendPrompt, attachments]
+    [sendPrompt, attachments, resetComposer]
   )
 
   const handleAbort = useCallback(() => {
@@ -189,7 +200,7 @@ export function ChatInput(): React.JSX.Element {
               const value = textareaRef.current?.value.trim()
               if (value) {
                 void runCouncil(value)
-                if (textareaRef.current) textareaRef.current.value = ''
+                resetComposer()
               }
             }}
             disabled={isDisabled || isStreaming}
@@ -255,7 +266,6 @@ export function ChatInput(): React.JSX.Element {
                 const value = textareaRef.current?.value.trim()
                 if (value) {
                   handleSend(value)
-                  if (textareaRef.current) textareaRef.current.value = ''
                 }
               }}
               disabled={isDisabled}
