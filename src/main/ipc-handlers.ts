@@ -960,7 +960,10 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
 
   ipcMain.handle(IPC_CHANNELS.GIT_STATUS, async () => {
     const fs = workspaceManager.getActiveFileService()
-    if (!fs) throw new Error('No active workspace')
+    // No active workspace (e.g. the home screen before any workspace is opened)
+    // is an expected state, not an error — report no changes rather than throwing
+    // (which Electron would log as an unhandled handler error every poll).
+    if (!fs) return {}
     const statusMap = await fs.getGitStatus()
     // Convert Map to plain object for IPC
     const result: Record<string, unknown> = {}
@@ -972,7 +975,9 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
 
   ipcMain.handle(IPC_CHANNELS.GIT_BRANCH, async () => {
     const fs = workspaceManager.getActiveFileService()
-    if (!fs) throw new Error('No active workspace')
+    // No active workspace: report "no branch" rather than throwing (matches the
+    // Promise<string | null> contract; keeps the no-workspace state error-free).
+    if (!fs) return null
     return fs.getGitBranch()
   })
 
