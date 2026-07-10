@@ -925,3 +925,14 @@
     animation: fade-in 0.2s ease-out;
   }
 }
+
+/* ─── In-conversation search highlights (CSS Custom Highlight API) ────────── */
+
+::highlight(pi-search) {
+  background-color: rgba(250, 204, 21, 0.28);
+}
+
+::highlight(pi-search-current) {
+  background-color: rgba(250, 204, 21, 0.85);
+  color: #1a1a1a;
+}
