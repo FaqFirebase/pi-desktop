@@ -1,14 +1,15 @@
 import { useAppStore } from '../store'
 import { ChatInput } from './chat-input'
 import { CouncilPanels } from './council-panels'
-import { MessageBubble } from './message-bubble'
+import { MessageBubble, ToolGroupBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
+import { groupToolMessages } from '../message-grouping'
 import { FileTree, FileSearch, FilePreview } from './file-tree'
 import { ImageViewer } from './image-viewer'
 import { DiffViewer } from './diff-viewer'
 import { TerminalPanel } from './terminal'
 import { useChatScroll } from '../hooks'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { clsx } from 'clsx'
 import piLogo from '../assets/pi-logo.svg'
 import {
@@ -44,6 +45,11 @@ export function ChatPanel(): React.JSX.Element {
 
   const currentView = useAppStore((state) => state.currentView)
   const { scrollRef, onScroll } = useChatScroll(currentView === 'chat')
+
+  // Fold consecutive tool-call/result runs into collapsed groups. Memoized so
+  // the grouping only recomputes when the message list changes, and so lone
+  // MessageBubbles keep their stable refs (no markdown re-parse on re-render).
+  const renderItems = useMemo(() => groupToolMessages(messages), [messages])
 
   const handleRetry = useCallback(async (messageId: string) => {
     // Read from the store so this callback stays referentially stable, keeping
@@ -124,9 +130,18 @@ export function ChatPanel(): React.JSX.Element {
               <EmptyState piStatus={piStatus} />
             ) : (
               <div className="mx-auto max-w-5xl px-4 py-6">
-                {messages.map((message) => (
-                  <MessageBubble key={message.id} message={message} onRetry={handleRetry} />
-                ))}
+                {renderItems.map((item) =>
+                  item.kind === 'toolGroup' ? (
+                    <ToolGroupBubble
+                      key={item.id}
+                      title={item.title}
+                      messages={item.messages}
+                      onRetry={handleRetry}
+                    />
+                  ) : (
+                    <MessageBubble key={item.message.id} message={item.message} onRetry={handleRetry} />
+                  )
+                )}
                 {isStreaming && (
                   <StreamingBubble
                     content={streamingContent}
