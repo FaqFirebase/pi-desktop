@@ -2,7 +2,18 @@ import { memo, useState, useRef } from 'react'
 import { useAppStore, type DisplayMessage } from '../store'
 import { modelDisplayName } from '../../../shared/models-config'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
-import { toolCallLabel } from '../message-grouping'
+import {
+  toolCallLabel,
+  toolLabel,
+  toolCallFile,
+  parseEdits,
+  editStats,
+  splitReadTruncationNote,
+  type EditBlock,
+} from '../message-grouping'
+import { getCodeEditorLanguageName } from './code-editor-language'
+import { highlightCodeToHtml } from './chat-code-highlight'
+import { LineNumberedCode } from './line-numbered-code'
 import { MarkdownRenderer } from './markdown-renderer'
 import { CopyButton } from './copy-button'
 import { useContextMenu, buildMessageContextMenu } from './context-menu'
@@ -409,6 +420,14 @@ function ToolCallBadge({
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false)
 
+  // Edit calls render their `edits` as a diff (old lines out / new lines in) plus
+  // a +N −M summary, instead of the raw JSON args. The diff lines are syntax-
+  // highlighted using the edited file's language.
+  const edits = toolLabel(toolCall.name) === 'Edit file' ? parseEdits(toolCall.arguments) : null
+  const stats = edits ? editStats(edits) : null
+  const editFile = edits ? toolCallFile(toolCall.name, toolCall.arguments) : null
+  const editLang = editFile ? getCodeEditorLanguageName(editFile) : 'plain text'
+
   return (
     <div className="relative rounded-lg border border-neutral-800 bg-neutral-900/50">
       <CopyButton text={toolCallCopyText(toolCall)} className="absolute right-1.5 top-1.5" />
@@ -419,6 +438,12 @@ function ToolCallBadge({
         <span className="font-jetbrains min-w-0 truncate">
           {toolCallLabel(toolCall.name, toolCall.arguments)}
         </span>
+        {stats && (
+          <span className="shrink-0 font-jetbrains">
+            <span className="text-green-400">+{stats.added}</span>{' '}
+            <span className="text-red-400">-{stats.removed}</span>
+          </span>
+        )}
         {toolCall.durationMs !== undefined && !toolCall.isExecuting && (
           <span className="shrink-0 text-neutral-600">{formatDuration(toolCall.durationMs)}</span>
         )}
@@ -441,9 +466,13 @@ function ToolCallBadge({
       </button>
       {expanded && (
         <div className="border-t border-neutral-800 px-3 py-2">
-          <pre className="font-jetbrains overflow-x-auto text-xs text-neutral-500">
-            {formatToolCallArgs(toolCall.arguments)}
-          </pre>
+          {edits ? (
+            <EditDiff blocks={edits} lang={editLang} />
+          ) : (
+            <pre className="font-jetbrains overflow-x-auto text-xs text-neutral-500">
+              {formatToolCallArgs(toolCall.arguments)}
+            </pre>
+          )}
           {toolCall.result && (
             <div className="mt-2 border-t border-neutral-800 pt-2">
               <pre className="font-jetbrains overflow-x-auto text-xs text-neutral-400">
@@ -457,6 +486,56 @@ function ToolCallBadge({
   )
 }
 
+// Renders an edit call's blocks as a diff: each block shows its old lines removed
+// (red) then its new lines added (green), with the code syntax-highlighted. A
+// block replacement, not a line-level diff — enough to read the change at a glance.
+function EditDiff({ blocks, lang }: { blocks: EditBlock[]; lang: string }): React.JSX.Element {
+  return (
+    <div className="overflow-x-auto font-jetbrains text-xs leading-relaxed text-neutral-300">
+      {blocks.map((b, i) => (
+        <div key={i} className={i > 0 ? 'mt-2 border-t border-neutral-800 pt-2' : ''}>
+          <DiffLines text={b.oldText} lang={lang} kind="remove" />
+          <DiffLines text={b.newText} lang={lang} kind="add" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// One side of a diff block (all removed, or all added), syntax-highlighted.
+// highlightCodeToHtml emits newlines separately, so its output splits cleanly
+// into per-line HTML; falls back to plain text when no parser matches.
+function DiffLines({
+  text,
+  lang,
+  kind,
+}: {
+  text: string
+  lang: string
+  kind: 'add' | 'remove'
+}): React.JSX.Element | null {
+  if (text === '') return null
+  const html = highlightCodeToHtml(text, lang)
+  const lines = (html ?? text).split('\n')
+  const rowBg = kind === 'add' ? 'bg-green-950/30' : 'bg-red-950/30'
+  const markColor = kind === 'add' ? 'text-green-400' : 'text-red-400'
+  const sign = kind === 'add' ? '+ ' : '- '
+  return (
+    <>
+      {lines.map((line, j) => (
+        <div key={j} className={clsx('whitespace-pre', rowBg)}>
+          <span className={clsx('select-none', markColor)}>{sign}</span>
+          {html !== null ? (
+            <span dangerouslySetInnerHTML={{ __html: line || ' ' }} />
+          ) : (
+            <span>{line || ' '}</span>
+          )}
+        </div>
+      ))}
+    </>
+  )
+}
+
 // ─── Tool Result Message ─────────────────────────────────────────────────────
 
 function ToolResultMessage({ message }: { message: DisplayMessage }): React.JSX.Element {
@@ -467,6 +546,19 @@ function ToolResultMessage({ message }: { message: DisplayMessage }): React.JSX.
   const firstLine = newlineIdx === -1 ? message.content : message.content.slice(0, newlineIdx)
   // Everything after the first line; that line already shows in the header row.
   const rest = newlineIdx === -1 ? '' : message.content.slice(newlineIdx + 1)
+  // Nothing beyond the first line → nothing to expand, so no chevron.
+  const expandable = rest.trim() !== ''
+
+  // Only a file-read result is the file's content, so only it renders as
+  // line-numbered, syntax-highlighted code. Everything else stays plain text —
+  // notably writes/creates, whose result is a "wrote N bytes" success line (not
+  // the file), plus CSV, command output, and fetches.
+  const label = message.toolName ? toolLabel(message.toolName) : null
+  const codeLang =
+    label === 'Read file' && message.toolFile
+      ? getCodeEditorLanguageName(message.toolFile)
+      : 'plain text'
+  const isCode = codeLang !== 'plain text'
 
   return (
     <div className="mb-4 animate-fade-in">
@@ -477,30 +569,91 @@ function ToolResultMessage({ message }: { message: DisplayMessage }): React.JSX.
         <div className="min-w-0 flex-1">
           <div className="relative rounded-lg border border-neutral-800 bg-neutral-900/50">
             <CopyButton text={message.content} className="absolute right-1.5 top-1.5" />
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="flex w-full items-center gap-2 py-2 pl-3 pr-9 text-xs text-neutral-400 hover:text-neutral-300 transition-colors"
-            >
-              <span className="font-jetbrains min-w-0 flex-1 truncate text-left">
-                {firstLine}
-              </span>
-              {expanded ? (
-                <ChevronDown size={12} className="shrink-0" />
-              ) : (
-                <ChevronRight size={12} className="shrink-0" />
-              )}
-            </button>
-            {expanded && rest.trim() && (
-              <div className="px-3 pb-2">
-                <pre className="font-jetbrains overflow-x-auto text-xs text-neutral-400">
-                  {rest.slice(0, 2000)}
-                  {rest.length > 2000 && '\n…'}
-                </pre>
+            {!expandable ? (
+              // Single line of content — nothing to expand, so no chevron.
+              <div className="flex w-full items-center py-2 pl-3 pr-9 text-xs text-neutral-400">
+                <span className="font-jetbrains min-w-0 flex-1 truncate text-left">{firstLine}</span>
               </div>
+            ) : expanded && isCode ? (
+              // Code view: no header row (its first line repeats as line 1 of the
+              // body). Float the collapse control top-right, beside copy, so the
+              // code sits flush at the top.
+              <button
+                onClick={() => setExpanded(false)}
+                className="absolute right-8 top-1.5 rounded p-1 text-neutral-500 transition-colors hover:text-neutral-300"
+                title="Collapse"
+                aria-label="Collapse"
+              >
+                <ChevronDown size={12} />
+              </button>
+            ) : (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="flex w-full items-center gap-2 py-2 pl-3 pr-9 text-xs text-neutral-400 hover:text-neutral-300 transition-colors"
+              >
+                <span className="font-jetbrains min-w-0 flex-1 truncate text-left">{firstLine}</span>
+                {expanded ? (
+                  <ChevronDown size={12} className="shrink-0" />
+                ) : (
+                  <ChevronRight size={12} className="shrink-0" />
+                )}
+              </button>
             )}
+            {expandable &&
+              expanded &&
+              (isCode ? (
+                <div className="px-3 py-2">
+                  <CodeResultView
+                    content={message.content}
+                    lang={codeLang}
+                    onCollapse={() => setExpanded(false)}
+                  />
+                </div>
+              ) : (
+                rest.trim() && (
+                  <div className="px-3 pb-2">
+                    <pre className="font-jetbrains overflow-x-auto text-xs text-neutral-400">
+                      {rest.slice(0, 2000)}
+                      {rest.length > 2000 && '\n…'}
+                    </pre>
+                  </div>
+                )
+              ))}
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Guard against re-parsing a whole huge file for highlighting; the source is
+// already truncated by Pi, this is just a ceiling.
+const MAX_CODE_RESULT_CHARS = 20000
+
+// Renders file content as line-numbered, syntax-highlighted code. highlightCodeToHtml
+// emits newlines separately from its <span> runs, so splitting on '\n' yields
+// self-contained per-line HTML; when no parser exists it falls back to plain text.
+function CodeResultView({
+  content,
+  lang,
+  onCollapse,
+}: {
+  content: string
+  lang: string
+  onCollapse: () => void
+}): React.JSX.Element {
+  const clipped = content.length > MAX_CODE_RESULT_CHARS
+  const clippedContent = clipped ? content.slice(0, MAX_CODE_RESULT_CHARS) : content
+  // Peel off Pi's "[N more lines in file…]" footer so it renders as a note, not code.
+  const { code, note } = splitReadTruncationNote(clippedContent)
+
+  return (
+    // The first line doubles as a collapse trigger (a large click target, like the
+    // collapsed header). A drag to select text isn't a click, so selection works.
+    <div className="overflow-x-auto font-jetbrains text-xs leading-relaxed text-neutral-300">
+      <LineNumberedCode content={code} lang={lang} onFirstLineClick={onCollapse} />
+      {note && <div className="mt-2 italic text-neutral-500">{note}</div>}
+      {clipped && <div className="mt-1 text-neutral-600">…</div>}
     </div>
   )
 }

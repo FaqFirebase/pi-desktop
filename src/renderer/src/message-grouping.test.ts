@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { groupToolMessages, toolLabel, toolCallLabel, type ChatRenderItem } from './message-grouping'
+import {
+  groupToolMessages,
+  toolLabel,
+  toolCallLabel,
+  toolCallFile,
+  parseEdits,
+  editStats,
+  prepareChatMessages,
+  splitReadTruncationNote,
+  type ChatRenderItem,
+} from './message-grouping'
 import type { DisplayMessage } from './message-parsing'
 
 let idCounter = 0
@@ -157,4 +167,86 @@ test('toolCallLabel truncates very long values', () => {
   assert.ok(label.startsWith('Fetched https://example.com/'))
   assert.ok(label.endsWith('…'))
   assert.ok(label.length < longUrl.length)
+})
+
+test('toolCallFile resolves the operated-on path for file tools only', () => {
+  assert.equal(toolCallFile('read_file', '{"path":"src/foo.ts"}'), 'src/foo.ts')
+  assert.equal(toolCallFile('edit_file', '{"path":"a/b.py","edits":[]}'), 'a/b.py')
+  assert.equal(toolCallFile('list_dir', '{"path":"src"}'), 'src')
+  assert.equal(toolCallFile('web_fetch', '{"url":"https://x.com"}'), null)
+  assert.equal(toolCallFile('bash', '{"command":"ls"}'), null)
+})
+
+test('parseEdits reads the edits array and editStats counts lines', () => {
+  const args = JSON.stringify({
+    path: 'x.py',
+    edits: [
+      { oldText: 'a\nb\nc', newText: 'A' },
+      { oldText: '', newText: 'new1\nnew2' },
+    ],
+  })
+  const blocks = parseEdits(args)
+  assert.equal(blocks?.length, 2)
+  assert.deepEqual(editStats(blocks!), { added: 3, removed: 3 })
+  assert.equal(parseEdits('{"path":"x"}'), null)
+  assert.equal(parseEdits('not json'), null)
+})
+
+// Helpers for prepareChatMessages: an assistant tool turn with a known call id,
+// and a toolResult that pairs to it.
+function callTurn(name: string, id: string, args: Record<string, unknown> = {}): DisplayMessage {
+  return assistant({ toolCalls: [{ id, name, arguments: JSON.stringify(args) }] })
+}
+function resultFor(id: string, content = 'output'): DisplayMessage {
+  return { id: `${id}-result`, role: 'toolResult', content, timestamp: 0, toolCallId: id }
+}
+
+test('prepareChatMessages hides follow-up reads of a just-edited file', () => {
+  const out = prepareChatMessages([
+    callTurn('edit_file', 'e1', { path: 'C:/work/btc.py', edits: [{ oldText: 'a', newText: 'b' }] }),
+    resultFor('e1', 'Successfully replaced 1 block'),
+    callTurn('read_file', 'r1', { path: 'btc.py' }), // same file (basename) -> hidden
+    resultFor('r1', 'file body'),
+    callTurn('read_file', 'r2', { path: 'other.py' }), // different file -> kept
+    resultFor('r2', 'other body'),
+  ])
+  const ids = out.map((m) => m.id)
+  assert.ok(!ids.includes('r1-result'), 'hidden read result dropped')
+  assert.ok(!out.some((m) => m.toolCalls?.some((tc) => tc.id === 'r1')), 'hidden read call dropped')
+  assert.ok(ids.includes('r2-result'), 'unrelated read kept')
+  assert.equal(out.length, 4)
+})
+
+test('prepareChatMessages enriches tool results with paired name and file', () => {
+  const out = prepareChatMessages([
+    callTurn('read_file', 'r1', { path: 'src/app/foo.ts' }),
+    resultFor('r1', 'export const x = 1'),
+  ])
+  const res = out.find((m) => m.id === 'r1-result')
+  assert.equal(res?.toolName, 'read_file')
+  assert.equal(res?.toolFile, 'src/app/foo.ts')
+})
+
+test('splitReadTruncationNote peels off Pi read footer and trailing blanks', () => {
+  const content = 'line1\nline2\n\n[262 more lines in file. Use offset=21 to continue.]'
+  const { code, note } = splitReadTruncationNote(content)
+  assert.equal(code, 'line1\nline2')
+  assert.equal(note, '[262 more lines in file. Use offset=21 to continue.]')
+})
+
+test('splitReadTruncationNote leaves untruncated content untouched', () => {
+  const content = 'line1\nline2\nline3'
+  const { code, note } = splitReadTruncationNote(content)
+  assert.equal(code, content)
+  assert.equal(note, null)
+})
+
+test('prepareChatMessages does not hide reads without a preceding edit', () => {
+  const out = prepareChatMessages([
+    callTurn('read_file', 'r1', { path: 'foo.py' }),
+    resultFor('r1'),
+    callTurn('read_file', 'r2', { path: 'foo.py' }),
+    resultFor('r2'),
+  ])
+  assert.equal(out.length, 4)
 })

@@ -4,7 +4,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useContextMenu, buildCodeBlockContextMenu, buildLinkContextMenu } from './context-menu'
 import { CopyButton } from './copy-button'
-import { highlightCodeToHtml } from './chat-code-highlight'
+import { LineNumberedCode } from './line-numbered-code'
+import { splitReadTruncationNote } from '../message-grouping'
 import { looksLikeFilePath, openFileFromChat } from './chat-file-link'
 import { ErrorBoundary } from './error-boundary'
 import { Code2, Eye } from 'lucide-react'
@@ -85,11 +86,17 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
             if (className?.includes('language-')) {
               const lang = className.replace(/^.*language-/, '').split(/\s+/)[0]
               const raw = extractCodeText(children).replace(/\n$/, '')
-              const html = highlightCodeToHtml(raw, lang)
-              if (html !== null) {
-                return <code className={className} dangerouslySetInnerHTML={{ __html: html }} />
-              }
-              return <code className={className}>{children}</code>
+              // Models often paste a truncated read verbatim; peel Pi's
+              // "[N more lines in file…]" footer out of the fence so it renders as
+              // a note rather than syntax-highlighted code. Line-numbered via the
+              // same component as file-read tool results so both look identical.
+              const { code: codeBody, note } = splitReadTruncationNote(raw)
+              return (
+                <code className={className}>
+                  <LineNumberedCode content={codeBody} lang={lang} />
+                  {note && <div className="mt-2 text-xs italic text-neutral-500">{note}</div>}
+                </code>
+              )
             }
 
             const inlineText = typeof children === 'string' ? children : ''
@@ -162,7 +169,6 @@ function isRenderableSvg(text: string): boolean {
 function SvgBlock({ raw }: { raw: string }): React.JSX.Element {
   const [showSource, setShowSource] = useState(false)
   const src = `data:image/svg+xml;utf8,${encodeURIComponent(raw)}`
-  const html = showSource ? highlightCodeToHtml(raw, 'svg') : null
 
   return (
     <div className="relative my-2 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/50">
@@ -194,12 +200,13 @@ function SvgBlock({ raw }: { raw: string }): React.JSX.Element {
         <CopyButton text={raw} />
       </div>
       {showSource ? (
-        <pre className="m-0 overflow-x-auto p-3">
-          {html !== null ? (
-            <code className="language-svg" dangerouslySetInnerHTML={{ __html: html }} />
-          ) : (
-            <code className="language-svg">{raw}</code>
-          )}
+        // No padding on the <pre>; the inner <code> gets `.markdown-body pre code`
+        // padding, matching a normal code block (avoids doubling it). Square off
+        // the `.markdown-body pre` radius/border so it sits flush under the toolbar.
+        <pre className="m-0 overflow-x-auto rounded-none border-0">
+          <code className="language-svg">
+            <LineNumberedCode content={raw} lang="svg" />
+          </code>
         </pre>
       ) : (
         <div className="flex justify-center p-3">

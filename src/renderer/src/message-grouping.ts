@@ -177,3 +177,131 @@ export function groupToolMessages(messages: DisplayMessage[]): ChatRenderItem[] 
 
   return items
 }
+
+// Tool labels whose call operates on a file/location we can resolve from args.
+const FILE_LABELS = new Set(['Read file', 'Write file', 'Edit file', 'List files'])
+
+/** The file/location a read/write/edit/list tool call operates on, or null. */
+export function toolCallFile(name: string, argumentsJson: string): string | null {
+  const label = toolLabel(name)
+  if (!FILE_LABELS.has(label)) return null
+  const v = TOOL_VERBS[label]
+  return v ? extractArg(v, argumentsJson) : null
+}
+
+export function baseName(path: string): string {
+  return (path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? path).toLowerCase()
+}
+
+// One replacement in an edit tool call: old text swapped for new.
+export interface EditBlock {
+  oldText: string
+  newText: string
+}
+
+/** The edit blocks from an edit tool call's arguments (`{ edits: [...] }`), or null. */
+export function parseEdits(argumentsJson: string): EditBlock[] | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(argumentsJson)
+  } catch {
+    return null
+  }
+  const edits = (parsed as { edits?: unknown } | null)?.edits
+  if (!Array.isArray(edits)) return null
+  const blocks: EditBlock[] = []
+  for (const e of edits) {
+    if (e && typeof e === 'object' && typeof (e as EditBlock).oldText === 'string' && typeof (e as EditBlock).newText === 'string') {
+      blocks.push({ oldText: (e as EditBlock).oldText, newText: (e as EditBlock).newText })
+    }
+  }
+  return blocks.length > 0 ? blocks : null
+}
+
+const lineCount = (text: string): number => (text === '' ? 0 : text.split('\n').length)
+
+/** Added/removed line totals across an edit's blocks (old lines out, new lines in). */
+export function editStats(blocks: EditBlock[]): { added: number; removed: number } {
+  let added = 0
+  let removed = 0
+  for (const b of blocks) {
+    removed += lineCount(b.oldText)
+    added += lineCount(b.newText)
+  }
+  return { added, removed }
+}
+
+// Pi appends a footer to a truncated read, e.g.
+// "[262 more lines in file. Use offset=21 to continue.]". Match it so it can be
+// shown as a note rather than syntax-highlighted as code.
+const READ_TRUNCATION_RE = /^\[\d+ more lines? in file\b.*\]$/
+
+/**
+ * Split a read result's trailing truncation footer (if any) from the file
+ * content, so the footer isn't highlighted as code. Trailing blank lines between
+ * the content and the footer are dropped with it.
+ */
+export function splitReadTruncationNote(content: string): { code: string; note: string | null } {
+  const lines = content.split('\n')
+  let last = lines.length - 1
+  while (last >= 0 && lines[last].trim() === '') last--
+  if (last < 0 || !READ_TRUNCATION_RE.test(lines[last].trim())) return { code: content, note: null }
+  const note = lines[last].trim()
+  let end = last - 1
+  while (end >= 0 && lines[end].trim() === '') end--
+  return { code: lines.slice(0, end + 1).join('\n'), note }
+}
+
+/**
+ * Prepare the raw message list for rendering:
+ *  - enrich each toolResult with the paired call's `toolName` + operated-on
+ *    `toolFile` (so it can highlight file reads / show a diff), matched by id.
+ *  - drop follow-up reads of a file edited earlier in the same run (verification
+ *    re-reads are noise), matching on basename; their result is dropped too.
+ *
+ * Runs before grouping. Pure; returns a new array, reusing message objects where
+ * nothing changed so memoized bubbles keep stable refs.
+ */
+export function prepareChatMessages(messages: DisplayMessage[]): DisplayMessage[] {
+  // call id -> { name, file }
+  const calls = new Map<string, { name: string; file: string | null }>()
+  for (const m of messages) {
+    if (m.role === 'assistant' && m.toolCalls) {
+      for (const tc of m.toolCalls) {
+        calls.set(tc.id, { name: tc.name, file: toolCallFile(tc.name, tc.arguments) })
+      }
+    }
+  }
+
+  // Which read calls to hide: reads of a file edited earlier in the same run.
+  const hidden = new Set<string>()
+  let edited = new Set<string>()
+  for (const m of messages) {
+    if (m.role === 'assistant' && m.content.trim() === '' && m.toolCalls) {
+      for (const tc of m.toolCalls) {
+        const label = toolLabel(tc.name)
+        const file = calls.get(tc.id)?.file
+        if (label === 'Edit file' && file) edited.add(baseName(file))
+        else if (label === 'Read file' && file && edited.has(baseName(file))) hidden.add(tc.id)
+      }
+    } else if (m.role !== 'toolResult') {
+      edited = new Set() // prose/user/system ends the run
+    }
+  }
+
+  const out: DisplayMessage[] = []
+  for (const m of messages) {
+    if (m.role === 'assistant' && m.toolCalls && m.toolCalls.some((tc) => hidden.has(tc.id))) {
+      const kept = m.toolCalls.filter((tc) => !hidden.has(tc.id))
+      if (kept.length === 0 && m.content.trim() === '') continue // whole turn was hidden reads
+      out.push({ ...m, toolCalls: kept })
+    } else if (m.role === 'toolResult' && m.toolCallId) {
+      if (hidden.has(m.toolCallId)) continue // drop the hidden read's result
+      const paired = calls.get(m.toolCallId)
+      out.push(paired ? { ...m, toolName: paired.name, toolFile: paired.file ?? undefined } : m)
+    } else {
+      out.push(m)
+    }
+  }
+  return out
+}
