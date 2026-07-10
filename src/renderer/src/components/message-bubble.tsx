@@ -1,7 +1,7 @@
 import { memo, useState, useRef } from 'react'
 import { useAppStore, type DisplayMessage } from '../store'
 import { modelDisplayName } from '../../../shared/models-config'
-import { toolLabel } from '../message-grouping'
+import { toolCallLabel } from '../message-grouping'
 import { MarkdownRenderer } from './markdown-renderer'
 import { CopyButton } from './copy-button'
 import { useContextMenu, buildMessageContextMenu } from './context-menu'
@@ -413,9 +413,11 @@ function ToolCallBadge({
         onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center gap-2 py-2 pl-3 pr-9 text-xs text-neutral-400 hover:text-neutral-300 transition-colors"
       >
-        <span className="font-jetbrains">{toolLabel(toolCall.name)}</span>
+        <span className="font-jetbrains min-w-0 truncate">
+          {toolCallLabel(toolCall.name, toolCall.arguments)}
+        </span>
         {toolCall.durationMs !== undefined && !toolCall.isExecuting && (
-          <span className="text-neutral-600">{formatDuration(toolCall.durationMs)}</span>
+          <span className="shrink-0 text-neutral-600">{formatDuration(toolCall.durationMs)}</span>
         )}
         {toolCall.isError !== undefined && (
           <span className={clsx(
