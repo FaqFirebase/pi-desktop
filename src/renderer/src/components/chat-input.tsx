@@ -230,11 +230,8 @@ export function ChatInput(): React.JSX.Element {
               e.preventDefault()
               useAppStore.getState().cycleModel()
             }
-            // Ctrl+Shift+F: open file search
-            if (e.ctrlKey && e.shiftKey && e.key === 'F') {
-              e.preventDefault()
-              useAppStore.getState().toggleFileSearch()
-            }
+            // Ctrl+Shift+F (file search) is handled at the window level in
+            // ChatPanel so it works regardless of composer focus.
           }}
         />
 

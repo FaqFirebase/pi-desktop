@@ -53,12 +53,19 @@ export function ChatPanel(): React.JSX.Element {
   useEffect(() => {
     if (currentView !== 'chat') return
     const onKey = (e: KeyboardEvent) => {
-      // Plain Ctrl/Cmd+F only. Exclude Shift so Ctrl+Shift+F stays free for the
-      // workspace file-search modal; the 'F' (uppercase) case still covers Caps Lock.
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+      // The 'F' (uppercase) case also covers Caps Lock. Ctrl/Cmd+F opens the
+      // in-conversation find bar; adding Shift opens the workspace file-search
+      // modal. Both handled here at the window level so they fire regardless of
+      // focus (the file-search shortcut used to be composer-scoped, so it only
+      // worked while the textarea had focus).
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
         e.preventDefault()
-        setSearchOpen(true)
-        setSearchNonce((n) => n + 1)
+        if (e.shiftKey) {
+          useAppStore.getState().toggleFileSearch()
+        } else {
+          setSearchOpen(true)
+          setSearchNonce((n) => n + 1)
+        }
       }
     }
     window.addEventListener('keydown', onKey)
