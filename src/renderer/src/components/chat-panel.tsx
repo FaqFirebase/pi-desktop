@@ -19,6 +19,7 @@ import {
   PanelLeft,
   PanelLeftClose,
   X,
+  ChevronDown,
 } from 'lucide-react'
 
 export function ChatPanel(): React.JSX.Element {
@@ -43,7 +44,7 @@ export function ChatPanel(): React.JSX.Element {
   const [filePaneWidth, setFilePaneWidth] = useState(280)
 
   const currentView = useAppStore((state) => state.currentView)
-  const { scrollRef, onScroll } = useChatScroll(currentView === 'chat')
+  const { scrollRef, onScroll, atBottom, scrollToBottom } = useChatScroll(currentView === 'chat')
 
   const handleRetry = useCallback(async (messageId: string) => {
     // Read from the store so this callback stays referentially stable, keeping
@@ -119,22 +120,37 @@ export function ChatPanel(): React.JSX.Element {
           </div>
 
           {/* Messages area */}
-          <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-            {messages.length === 0 && !isStreaming ? (
-              <EmptyState piStatus={piStatus} />
-            ) : (
-              <div className="mx-auto max-w-5xl px-4 py-6">
-                {messages.map((message) => (
-                  <MessageBubble key={message.id} message={message} onRetry={handleRetry} />
-                ))}
-                {isStreaming && (
-                  <StreamingBubble
-                    content={streamingContent}
-                    thinking={streamingThinking}
-                    toolCalls={streamingToolCalls}
-                  />
-                )}
-              </div>
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
+              {messages.length === 0 && !isStreaming ? (
+                <EmptyState piStatus={piStatus} />
+              ) : (
+                <div className="mx-auto max-w-5xl px-4 py-6">
+                  {messages.map((message) => (
+                    <MessageBubble key={message.id} message={message} onRetry={handleRetry} />
+                  ))}
+                  {isStreaming && (
+                    <StreamingBubble
+                      content={streamingContent}
+                      thinking={streamingThinking}
+                      toolCalls={streamingToolCalls}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Jump to bottom — shown while scrolled up, so streaming can keep
+                its position until the user opts back into following. */}
+            {!atBottom && (
+              <button
+                onClick={scrollToBottom}
+                className="absolute bottom-3 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800/90 text-neutral-300 shadow-lg shadow-black/30 backdrop-blur transition-colors hover:bg-neutral-700 hover:text-neutral-100"
+                title="Scroll to bottom"
+                aria-label="Scroll to bottom"
+              >
+                <ChevronDown size={16} />
+              </button>
             )}
           </div>
 
