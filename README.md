@@ -77,18 +77,15 @@ chmod +x Pi-Desktop-linux-x64.AppImage
 
 Download the `.dmg` (Apple Silicon / arm64) from [Releases](https://github.com/FaqFirebase/pi-desktop/releases), open it, and drag **Pi Desktop** to Applications.
 
-Builds are **not yet signed or notarized**, so on first launch macOS blocks the app ("Apple could not verify… is free of malware"). To allow it:
-
-1. Try to open **Pi Desktop** once (double-click). macOS blocks it — click **Done**.
-2. Open **System Settings → Privacy & Security**.
-3. Scroll down to the **Security** section. You'll see *"Pi Desktop was blocked to protect your Mac."* Click **Open Anyway**.
-4. Confirm with Touch ID / your password, then open the app again.
-
-You only need to do this once. If a downloaded `.zip` instead reports the app is **"damaged and can't be opened,"** that's the quarantine flag — clear it in Terminal:
+Builds are **not yet signed or notarized**. Because the download is unsigned, macOS quarantines it and, on first launch, reports **"Pi Desktop is damaged and can't be opened. You should move it to the Trash."** The app is not actually damaged — this is Gatekeeper blocking an unsigned app. macOS does **not** offer an "Open Anyway" button for this message, so clear the quarantine flag in Terminal:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/Pi Desktop.app"
 ```
+
+Then open the app normally. You only need to do this once.
+
+> If macOS instead says the app **"cannot be opened because Apple cannot check it for malicious software,"** you can allow it without Terminal: open **System Settings → Privacy & Security**, scroll to the **Security** section, and click **Open Anyway** next to the Pi Desktop notice, then confirm with Touch ID / your password.
 
 > **Prefer to skip the unsigned-app warnings entirely?** Build from source. A build you compile yourself runs locally without Gatekeeper blocking it, so there's no signing/notarization prompt and no quarantine flag to clear. See [Build it yourself → Linux / macOS](#linux--macos) below.
 
