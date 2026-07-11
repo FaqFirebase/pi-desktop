@@ -10,6 +10,12 @@
 
 @custom-variant light (.light &);
 
+/* Tailwind v4 gates the `hover:` variant behind `@media (hover: hover)`. The
+   Electron/Chromium renderer reports `(hover: hover): false`, which silently
+   disables every `hover:` utility app-wide. Redefine the variant to fire on a
+   plain `:hover` so hover states work in the desktop window as intended. */
+@custom-variant hover (&:hover);
+
 @theme {
   --color-app-bg: #0a0a0a;
   --color-app-surface: #141414;
