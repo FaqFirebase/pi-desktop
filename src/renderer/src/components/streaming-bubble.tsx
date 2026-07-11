@@ -1,8 +1,9 @@
 import { MarkdownRenderer } from './markdown-renderer'
-import { toolLabel } from './message-bubble'
+import { toolLabel } from '../message-grouping'
+import { toolCallIconFor } from './tool-call-icon'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
-import { Wrench, Brain, Bot, Loader2 } from 'lucide-react'
+import { Brain, Bot, Loader2 } from 'lucide-react'
 import { clsx } from 'clsx'
 
 interface StreamingBubbleProps {
@@ -44,27 +45,32 @@ export function StreamingBubble({ content, thinking, toolCalls }: StreamingBubbl
           {/* Tool calls */}
           {toolCalls.size > 0 && (
             <div className="mb-2 space-y-1">
-              {Array.from(toolCalls.entries()).map(([id, tc]) => (
-                <div
-                  key={id}
-                  className={clsx(
-                    'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm',
-                    tc.isExecuting
-                      ? 'border-yellow-900/30 bg-yellow-900/10 text-yellow-400'
-                      : 'border-neutral-800 bg-neutral-900/50 text-neutral-400'
-                  )}
-                >
-                  {tc.isExecuting ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <Wrench size={12} />
-                  )}
-                  <span className="font-jetbrains">{toolLabel(tc.name)}</span>
-                  {tc.isExecuting && (
-                    <span className="ml-auto text-xs text-yellow-500">executing</span>
-                  )}
-                </div>
-              ))}
+              {Array.from(toolCalls.entries()).map(([id, tc]) => {
+                // Mirror the operation icon (matching the finalized bubble); the
+                // spinner takes over while the call is executing.
+                const Icon = toolCallIconFor(tc.name)
+                return (
+                  <div
+                    key={id}
+                    className={clsx(
+                      'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm',
+                      tc.isExecuting
+                        ? 'border-yellow-900/30 bg-yellow-900/10 text-yellow-400'
+                        : 'border-neutral-800 bg-neutral-900/50 text-neutral-400'
+                    )}
+                  >
+                    {tc.isExecuting ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <Icon size={12} />
+                    )}
+                    <span className="font-jetbrains">{toolLabel(tc.name)}</span>
+                    {tc.isExecuting && (
+                      <span className="ml-auto text-xs text-yellow-500">executing</span>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
 

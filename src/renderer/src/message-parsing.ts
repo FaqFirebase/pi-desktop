@@ -25,6 +25,12 @@ export interface DisplayMessage {
   provider?: string
   cost?: number
   attachments?: DisplayAttachment[]
+  // toolResult only: the id/name of the tool call this result answers. `toolName`
+  // and `toolFile` (the operated-on file) are resolved from the paired call by
+  // prepareChatMessages so the result can render richly (highlight / diff).
+  toolCallId?: string
+  toolName?: string
+  toolFile?: string
 }
 
 let fallbackMessageCounter = 0
@@ -129,6 +135,8 @@ export function parseAgentMessage(msg: unknown): DisplayMessage | null {
       role: 'toolResult',
       content: text,
       timestamp: Number(m.timestamp) || Date.now(),
+      toolCallId: typeof m.toolCallId === 'string' ? m.toolCallId : undefined,
+      toolName: typeof m.toolName === 'string' ? m.toolName : undefined,
     }
   }
 

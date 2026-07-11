@@ -1734,6 +1734,8 @@ function handleTurnComplete(
           role: 'toolResult',
           content: tc.result,
           timestamp: Date.now(),
+          toolCallId: id,
+          toolName: tc.name,
         })
       }
     }

@@ -2,6 +2,19 @@ import { memo, useState, useRef } from 'react'
 import { useAppStore, type DisplayMessage } from '../store'
 import { modelDisplayName } from '../../../shared/models-config'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
+import {
+  toolCallLabel,
+  toolLabel,
+  toolCallFile,
+  parseEdits,
+  editStats,
+  splitReadTruncationNote,
+  type EditBlock,
+} from '../message-grouping'
+import { toolCallIconFor } from './tool-call-icon'
+import { getCodeEditorLanguageName } from './code-editor-language'
+import { highlightCodeToHtml } from './chat-code-highlight'
+import { LineNumberedCode } from './line-numbered-code'
 import { MarkdownRenderer } from './markdown-renderer'
 import { CopyButton } from './copy-button'
 import { useContextMenu, buildMessageContextMenu } from './context-menu'
@@ -11,7 +24,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Wrench,
   Brain,
   Bot,
   Edit3,
@@ -24,9 +36,13 @@ import {
 function MessageBubbleImpl({
   message,
   onRetry,
+  hideModelHeader,
 }: {
   message: DisplayMessage
   onRetry?: (messageId: string) => void
+  // When rendered inside a tool group that shows a single shared model header,
+  // suppress this message's own provider · model line to avoid repetition.
+  hideModelHeader?: boolean
 }): React.JSX.Element {
   const [copied, setCopied] = useState(false)
   const [showThinking, setShowThinking] = useState(false)
@@ -126,6 +142,7 @@ function MessageBubbleImpl({
         showThinking={showThinking}
         onToggleThinking={() => setShowThinking(!showThinking)}
         onExport={handleExport}
+        hideModelHeader={hideModelHeader}
       />
       </div>
       {MessageContextMenu}
@@ -269,6 +286,7 @@ function AssistantMessage({
   showThinking,
   onToggleThinking,
   onExport,
+  hideModelHeader,
 }: {
   message: DisplayMessage
   onCopy: () => void
@@ -276,6 +294,7 @@ function AssistantMessage({
   showThinking: boolean
   onToggleThinking: () => void
   onExport: () => void
+  hideModelHeader?: boolean
 }): React.JSX.Element {
   const customModels = useAppStore((state) => state.customModels)
   const thinkingEnabled = useAppStore(
@@ -291,22 +310,122 @@ function AssistantMessage({
     return <></>
   }
 
+  // A turn whose only body is tool calls (no prose) is a pure tool operation, so
+  // its avatar mirrors the operation (globe for a fetch, document for a read, …)
+  // instead of the Bot avatar / group spacer.
+  const ToolIcon =
+    message.content.trim().length === 0 && message.toolCalls && message.toolCalls.length > 0
+      ? toolCallIconFor(message.toolCalls[0].name)
+      : null
+
+  // Show the provider · model header whenever Pi attributes the turn — including
+  // a standalone tool call, so you can see who ran it. It's suppressed only
+  // inside a group (hideModelHeader), where the group's one shared header stands
+  // in and repeating it per row would just be noise.
+  const showModelHeader = !!message.model && !hideModelHeader
+
+  // Standalone tool call (attributed, not inside a group): render it like a group
+  // reads — the Bot avatar carries the provider · model header on its own row, and
+  // each tool-call box sits on its own row behind the operation icon. (Grouped
+  // rows have no header and fall through to the single-avatar layout below; the
+  // group already shows one shared Bot header above them.)
+  if (ToolIcon && showModelHeader) {
+    return (
+      <div className="group mb-4 animate-fade-in">
+        {/* Header row: Bot avatar + provider · model, matching a prose turn. */}
+        <div className="flex items-start gap-3">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800">
+            <Bot size={14} className="text-neutral-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex h-7 items-center gap-2 text-sm text-neutral-500">
+              <span>{message.provider}</span>
+              <span className="text-neutral-700">·</span>
+              <span>{modelDisplayName(message.model!, customModels)}</span>
+              {message.cost !== undefined && (
+                <>
+                  <span className="text-neutral-700">·</span>
+                  <span>${message.cost.toFixed(4)}</span>
+                </>
+              )}
+            </div>
+            {message.thinking && thinkingEnabled && (
+              <div className="thinking-hover mt-2">
+                <div className="flex h-7 items-center gap-1">
+                  <button
+                    onClick={onToggleThinking}
+                    className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-400 transition-colors"
+                  >
+                    <Brain size={12} />
+                    {showThinking ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    Thinking
+                  </button>
+                  <CopyButton text={message.thinking} className="thinking-copy-btn" />
+                </div>
+                {showThinking && (
+                  <div className="markdown-body font-sans italic text-sm text-neutral-400">
+                    <MarkdownRenderer content={message.thinking} />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        {/* One row per tool-call box, each behind its own operation icon. mt-2
+            sets the header→first-box gap; space-y-1 the box-to-box gap. */}
+        <div className="mt-2 space-y-1">
+          {message.toolCalls!.map((tc) => {
+            const RowIcon = toolCallIconFor(tc.name)
+            return (
+              <div key={tc.id} className="flex items-start gap-3">
+                {/* Center the icon on the box's header row (h-8 ≈ py-2 + text-xs). */}
+                <div className="flex h-8 w-7 shrink-0 items-center justify-center">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-800">
+                    <RowIcon size={14} className="text-neutral-500" />
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <ToolCallBadge toolCall={tc} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="group mb-4 animate-fade-in">
       <div className="flex items-start gap-3">
-        {/* Avatar */}
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800">
-          <Bot size={14} className="text-neutral-400" />
-        </div>
+        {/* Avatar — a grouped tool row shows its operation icon; otherwise the Bot
+            avatar, except inside a tool group (the group shows one shared header
+            above) where a prose/thinking turn keeps an empty spacer so its body
+            stays aligned with the icon-avatared rows. */}
+        {ToolIcon ? (
+          // Center the icon on the tool-call box's header row (h-8 ≈ py-2 +
+          // text-xs) instead of top-aligning, so it lines up with the box text.
+          <div className="flex h-8 w-7 shrink-0 items-center justify-center">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-800">
+              <ToolIcon size={14} className="text-neutral-500" />
+            </div>
+          </div>
+        ) : hideModelHeader ? (
+          <div className="h-7 w-7 shrink-0" />
+        ) : (
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800">
+            <Bot size={14} className="text-neutral-400" />
+          </div>
+        )}
 
         {/* Content */}
         <div className="min-w-0 flex-1">
           {/* Model info */}
-          {message.model && (
+          {showModelHeader && (
             <div className="flex h-7 items-center gap-2 text-sm text-neutral-500">
               <span>{message.provider}</span>
               <span className="text-neutral-700">·</span>
-              <span>{modelDisplayName(message.model, customModels)}</span>
+              <span>{modelDisplayName(message.model!, customModels)}</span>
               {message.cost !== undefined && (
                 <>
                   <span className="text-neutral-700">·</span>
@@ -352,23 +471,13 @@ function AssistantMessage({
             </div>
           )}
 
-          {/* Tool calls */}
-          {message.toolCalls && message.toolCalls.length > 0 && (
-            <div className={clsx(
-              'space-y-1',
-              // Only pad the top when something sits above; otherwise the box
-              // should top-align with the avatar.
-              (message.model || message.thinking || message.content) && 'mt-2'
-            )}>
-              {message.toolCalls.map((tc) => (
-                <ToolCallBadge key={tc.id} toolCall={tc} />
-              ))}
-            </div>
-          )}
-
-          {/* Actions — only when there is real response text (a tool-only
-              message's content is just whitespace/newlines, which is truthy but
-              has nothing to copy/export). Always visible when shown. */}
+          {/* Actions — copy/export the response text. Rendered directly beneath
+              the text (before any tool calls) so on a turn that mixes prose with
+              tool calls the buttons stay attached to the prose instead of landing
+              under the tool-call box and splitting a run of grouped tool badges.
+              Only shown when there's real response text — a tool-only message's
+              content is just whitespace/newlines, which is truthy but has nothing
+              to copy/export. Always visible when shown. */}
           {message.content.trim() && (
             <div className="mt-2 flex items-center gap-0.5">
               <ActionButton
@@ -378,6 +487,26 @@ function AssistantMessage({
                 label={copied ? 'Copied' : 'Copy'}
               />
               <ActionButton icon={<Download size={11} />} onClick={onExport} title="Export" />
+            </div>
+          )}
+
+          {/* Tool calls */}
+          {message.toolCalls && message.toolCalls.length > 0 && (
+            <div className={clsx(
+              'space-y-1',
+              // Pad the top only when something actually renders above the tool
+              // box — a visible model header, a thinking block, or response text.
+              // A grouped tool row has no header (showModelHeader is false), so it
+              // top-aligns with its icon avatar; that also keeps the gap between
+              // grouped call/result pairs equal to the gap within a pair (no stray
+              // 8px from an mt-2 sitting under a suppressed header).
+              (showModelHeader ||
+                (message.thinking && thinkingEnabled) ||
+                message.content.trim().length > 0) && 'mt-2'
+            )}>
+              {message.toolCalls.map((tc) => (
+                <ToolCallBadge key={tc.id} toolCall={tc} />
+              ))}
             </div>
           )}
         </div>
@@ -395,6 +524,14 @@ function ToolCallBadge({
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false)
 
+  // Edit calls render their `edits` as a diff (old lines out / new lines in) plus
+  // a +N −M summary, instead of the raw JSON args. The diff lines are syntax-
+  // highlighted using the edited file's language.
+  const edits = toolLabel(toolCall.name) === 'Edit file' ? parseEdits(toolCall.arguments) : null
+  const stats = edits ? editStats(edits) : null
+  const editFile = edits ? toolCallFile(toolCall.name, toolCall.arguments) : null
+  const editLang = editFile ? getCodeEditorLanguageName(editFile) : 'plain text'
+
   return (
     <div className="relative rounded-lg border border-neutral-800 bg-neutral-900/50">
       <CopyButton text={toolCallCopyText(toolCall)} className="absolute right-1.5 top-1.5" />
@@ -402,9 +539,17 @@ function ToolCallBadge({
         onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center gap-2 py-2 pl-3 pr-9 text-xs text-neutral-400 hover:text-neutral-300 transition-colors"
       >
-        <span className="font-jetbrains">{toolLabel(toolCall.name)}</span>
+        <span className="font-jetbrains min-w-0 truncate">
+          {toolCallLabel(toolCall.name, toolCall.arguments)}
+        </span>
+        {stats && (
+          <span className="shrink-0 font-jetbrains">
+            <span className="text-green-400">+{stats.added}</span>{' '}
+            <span className="text-red-400">-{stats.removed}</span>
+          </span>
+        )}
         {toolCall.durationMs !== undefined && !toolCall.isExecuting && (
-          <span className="text-neutral-600">{formatDuration(toolCall.durationMs)}</span>
+          <span className="shrink-0 text-neutral-600">{formatDuration(toolCall.durationMs)}</span>
         )}
         {toolCall.isError !== undefined && (
           <span className={clsx(
@@ -425,9 +570,13 @@ function ToolCallBadge({
       </button>
       {expanded && (
         <div className="border-t border-neutral-800 px-3 py-2">
-          <pre className="font-jetbrains overflow-x-auto text-xs text-neutral-500">
-            {formatToolCallArgs(toolCall.arguments)}
-          </pre>
+          {edits ? (
+            <EditDiff blocks={edits} lang={editLang} />
+          ) : (
+            <pre className="font-jetbrains overflow-x-auto text-xs text-neutral-500">
+              {formatToolCallArgs(toolCall.arguments)}
+            </pre>
+          )}
           {toolCall.result && (
             <div className="mt-2 border-t border-neutral-800 pt-2">
               <pre className="font-jetbrains overflow-x-auto text-xs text-neutral-400">
@@ -441,6 +590,56 @@ function ToolCallBadge({
   )
 }
 
+// Renders an edit call's blocks as a diff: each block shows its old lines removed
+// (red) then its new lines added (green), with the code syntax-highlighted. A
+// block replacement, not a line-level diff — enough to read the change at a glance.
+function EditDiff({ blocks, lang }: { blocks: EditBlock[]; lang: string }): React.JSX.Element {
+  return (
+    <div className="overflow-x-auto font-jetbrains text-xs leading-relaxed text-neutral-300">
+      {blocks.map((b, i) => (
+        <div key={i} className={i > 0 ? 'mt-2 border-t border-neutral-800 pt-2' : ''}>
+          <DiffLines text={b.oldText} lang={lang} kind="remove" />
+          <DiffLines text={b.newText} lang={lang} kind="add" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// One side of a diff block (all removed, or all added), syntax-highlighted.
+// highlightCodeToHtml emits newlines separately, so its output splits cleanly
+// into per-line HTML; falls back to plain text when no parser matches.
+function DiffLines({
+  text,
+  lang,
+  kind,
+}: {
+  text: string
+  lang: string
+  kind: 'add' | 'remove'
+}): React.JSX.Element | null {
+  if (text === '') return null
+  const html = highlightCodeToHtml(text, lang)
+  const lines = (html ?? text).split('\n')
+  const rowBg = kind === 'add' ? 'bg-green-950/30' : 'bg-red-950/30'
+  const markColor = kind === 'add' ? 'text-green-400' : 'text-red-400'
+  const sign = kind === 'add' ? '+ ' : '- '
+  return (
+    <>
+      {lines.map((line, j) => (
+        <div key={j} className={clsx('whitespace-pre', rowBg)}>
+          <span className={clsx('select-none', markColor)}>{sign}</span>
+          {html !== null ? (
+            <span dangerouslySetInnerHTML={{ __html: line || ' ' }} />
+          ) : (
+            <span>{line || ' '}</span>
+          )}
+        </div>
+      ))}
+    </>
+  )
+}
+
 // ─── Tool Result Message ─────────────────────────────────────────────────────
 
 function ToolResultMessage({ message }: { message: DisplayMessage }): React.JSX.Element {
@@ -451,43 +650,214 @@ function ToolResultMessage({ message }: { message: DisplayMessage }): React.JSX.
   const firstLine = newlineIdx === -1 ? message.content : message.content.slice(0, newlineIdx)
   // Everything after the first line; that line already shows in the header row.
   const rest = newlineIdx === -1 ? '' : message.content.slice(newlineIdx + 1)
+  // Nothing beyond the first line → nothing to expand, so no chevron.
+  const expandable = rest.trim() !== ''
+
+  // Only a file-read result is the file's content, so only it renders as
+  // line-numbered, syntax-highlighted code. Everything else stays plain text —
+  // notably writes/creates, whose result is a "wrote N bytes" success line (not
+  // the file), plus CSV, command output, and fetches.
+  const label = message.toolName ? toolLabel(message.toolName) : null
+  const codeLang =
+    label === 'Read file' && message.toolFile
+      ? getCodeEditorLanguageName(message.toolFile)
+      : 'plain text'
+  const isCode = codeLang !== 'plain text'
 
   return (
     <div className="mb-4 animate-fade-in">
       <div className="flex items-start gap-3">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800">
-          <Wrench size={14} className="text-neutral-500" />
-        </div>
+        {/* No result icon — an empty spacer (same width as a tool-call avatar)
+            keeps the result box left-aligned with the tool-call box above it. */}
+        <div className="w-7 shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="relative rounded-lg border border-neutral-800 bg-neutral-900/50">
             <CopyButton text={message.content} className="absolute right-1.5 top-1.5" />
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="flex w-full items-center gap-2 py-2 pl-3 pr-9 text-xs text-neutral-400 hover:text-neutral-300 transition-colors"
-            >
-              <span className="font-jetbrains min-w-0 flex-1 truncate text-left">
-                {firstLine}
-              </span>
-              {expanded ? (
-                <ChevronDown size={12} className="shrink-0" />
-              ) : (
-                <ChevronRight size={12} className="shrink-0" />
-              )}
-            </button>
-            {expanded && rest.trim() && (
-              <div className="px-3 pb-2">
-                <pre className="font-jetbrains overflow-x-auto text-xs text-neutral-400">
-                  {rest.slice(0, 2000)}
-                  {rest.length > 2000 && '\n…'}
-                </pre>
+            {!expandable ? (
+              // Single line of content — nothing to expand, so no chevron.
+              <div className="flex w-full items-center py-2 pl-3 pr-9 text-xs text-neutral-400">
+                <span className="font-jetbrains min-w-0 flex-1 truncate text-left">{firstLine}</span>
               </div>
+            ) : expanded && isCode ? (
+              // Code view: no header row (its first line repeats as line 1 of the
+              // body). Float the collapse control top-right, beside copy, so the
+              // code sits flush at the top.
+              <button
+                onClick={() => setExpanded(false)}
+                className="absolute right-8 top-1.5 rounded p-1 text-neutral-500 transition-colors hover:text-neutral-300"
+                title="Collapse"
+                aria-label="Collapse"
+              >
+                <ChevronDown size={12} />
+              </button>
+            ) : (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="flex w-full items-center gap-2 py-2 pl-3 pr-9 text-xs text-neutral-400 hover:text-neutral-300 transition-colors"
+              >
+                <span className="font-jetbrains min-w-0 flex-1 truncate text-left">{firstLine}</span>
+                {expanded ? (
+                  <ChevronDown size={12} className="shrink-0" />
+                ) : (
+                  <ChevronRight size={12} className="shrink-0" />
+                )}
+              </button>
             )}
+            {expandable &&
+              expanded &&
+              (isCode ? (
+                <div className="px-3 py-2">
+                  <CodeResultView
+                    content={message.content}
+                    lang={codeLang}
+                    onCollapse={() => setExpanded(false)}
+                  />
+                </div>
+              ) : (
+                rest.trim() && (
+                  <div className="px-3 pb-2">
+                    <pre className="font-jetbrains overflow-x-auto text-xs text-neutral-400">
+                      {rest.slice(0, 2000)}
+                      {rest.length > 2000 && '\n…'}
+                    </pre>
+                  </div>
+                )
+              ))}
           </div>
         </div>
       </div>
     </div>
   )
 }
+
+// Guard against re-parsing a whole huge file for highlighting; the source is
+// already truncated by Pi, this is just a ceiling.
+const MAX_CODE_RESULT_CHARS = 20000
+
+// Renders file content as line-numbered, syntax-highlighted code. highlightCodeToHtml
+// emits newlines separately from its <span> runs, so splitting on '\n' yields
+// self-contained per-line HTML; when no parser exists it falls back to plain text.
+function CodeResultView({
+  content,
+  lang,
+  onCollapse,
+}: {
+  content: string
+  lang: string
+  onCollapse: () => void
+}): React.JSX.Element {
+  const clipped = content.length > MAX_CODE_RESULT_CHARS
+  const clippedContent = clipped ? content.slice(0, MAX_CODE_RESULT_CHARS) : content
+  // Peel off Pi's "[N more lines in file…]" footer so it renders as a note, not code.
+  const { code, note } = splitReadTruncationNote(clippedContent)
+
+  return (
+    // The first line doubles as a collapse trigger (a large click target, like the
+    // collapsed header). A drag to select text isn't a click, so selection works.
+    <div className="overflow-x-auto font-jetbrains text-xs leading-relaxed text-neutral-300">
+      <LineNumberedCode content={code} lang={lang} onFirstLineClick={onCollapse} />
+      {note && <div className="mt-2 italic text-neutral-500">{note}</div>}
+      {clipped && <div className="mt-1 text-neutral-600">…</div>}
+    </div>
+  )
+}
+
+// ─── Tool Group ──────────────────────────────────────────────────────────────
+
+// A run of consecutive tool-activity messages (tool calls + their results, plus
+// any thinking-only turns among them) folded into one collapsed block. Collapsed
+// by default to keep repetitive runs from dominating the scrollback; expanding
+// reveals the original messages rendered exactly as they would appear ungrouped.
+function ToolGroupBubbleImpl({
+  title,
+  messages,
+  onRetry,
+}: {
+  title: string
+  messages: DisplayMessage[]
+  onRetry?: (messageId: string) => void
+}): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false)
+  const customModels = useAppStore((state) => state.customModels)
+
+  // If every assistant turn in the group used the same model, show one shared
+  // provider · model header above the body and suppress the per-turn headers. If
+  // they differ (a mid-run model switch), keep each turn's own header so the
+  // distinction isn't lost.
+  const modelKeys = new Set<string>()
+  let sharedModel: string | undefined
+  let sharedProvider: string | undefined
+  for (const m of messages) {
+    if (m.role === 'assistant' && m.model) {
+      modelKeys.add(`${m.provider ?? ''}|${m.model}`)
+      if (sharedModel === undefined) {
+        sharedModel = m.model
+        sharedProvider = m.provider
+      }
+    }
+  }
+  const showSharedHeader = modelKeys.size === 1 && sharedModel !== undefined
+
+  return (
+    <div className="group mb-4 animate-fade-in">
+      <div className="flex items-start gap-3">
+        {/* Bot avatar + model header so a grouped run reads like any other
+            assistant message, not a distinct kind of block. */}
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800">
+          <Bot size={14} className="text-neutral-400" />
+        </div>
+        <div className="min-w-0 flex-1">
+          {showSharedHeader && (
+            <div className="flex h-7 items-center gap-2 text-sm text-neutral-500">
+              <span>{sharedProvider}</span>
+              <span className="text-neutral-700">·</span>
+              <span>{modelDisplayName(sharedModel as string, customModels)}</span>
+            </div>
+          )}
+          <div
+            className={clsx(
+              'relative rounded-lg border border-neutral-800 bg-neutral-900/50',
+              showSharedHeader && 'mt-1.5'
+            )}
+          >
+            <CopyButton text={groupCopyText(messages)} className="absolute right-1.5 top-1.5" />
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="flex w-full items-center gap-2 py-2 pl-3 pr-9 text-xs text-neutral-400 hover:text-neutral-300 transition-colors"
+            >
+              <span className="font-jetbrains">{title}</span>
+              {expanded ? (
+                <ChevronDown size={12} className="ml-auto shrink-0" />
+              ) : (
+                <ChevronRight size={12} className="ml-auto shrink-0" />
+              )}
+            </button>
+          </div>
+          {/* Expanded body: the original messages, slightly indented to signal
+              they belong to the group. Per-turn model headers are suppressed since
+              the group already shows one above. mt-4 matches the mb-4 gap between
+              the rows inside, so the header→first-row gap equals the row-to-row
+              gap. Last child's bottom margin trimmed so it doesn't double up on
+              the group's own mb-4. */}
+          {expanded && (
+            <div className="mt-4 pl-3 [&>*:last-child]:mb-0">
+              {messages.map((m) => (
+                <MessageBubble
+                  key={m.id}
+                  message={m}
+                  onRetry={onRetry}
+                  hideModelHeader={showSharedHeader}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export const ToolGroupBubble = memo(ToolGroupBubbleImpl)
 
 // ─── System Message ──────────────────────────────────────────────────────────
 
@@ -529,21 +899,6 @@ function ActionButton({
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Map common Pi tool names to a friendly, user-facing label; falls back to the
-// raw name so custom/unknown tools still show something. Keyword matching
-// mirrors toolIcon() so the label and icon stay in sync.
-export function toolLabel(name: string): string {
-  const n = name.toLowerCase()
-  if (n.includes('bash') || n.includes('shell') || n.includes('exec') || n.includes('terminal')) return 'Run command'
-  if (n.includes('search') || n.includes('grep') || n.includes('find')) return 'Search'
-  if (n.includes('web') || n.includes('fetch') || n.includes('http') || n.includes('url')) return 'Fetch URL'
-  if (n.includes('edit') || n.includes('replace') || n.includes('patch')) return 'Edit file'
-  if (n.includes('write') || n.includes('create')) return 'Write file'
-  if (n.includes('list') || n.startsWith('ls') || n.includes('tree') || n.includes('dir')) return 'List files'
-  if (n.includes('read') || n.includes('view') || n.includes('cat') || n.includes('file')) return 'Read file'
-  return name
-}
-
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`
@@ -556,6 +911,20 @@ function formatToolCallArgs(args: string): string {
   } catch {
     return args
   }
+}
+
+// The group's copy button yields every call and result in order: each tool
+// call's copy text (raw command / formatted args) followed by its result.
+function groupCopyText(messages: DisplayMessage[]): string {
+  const parts: string[] = []
+  for (const m of messages) {
+    if (m.role === 'assistant') {
+      for (const tc of m.toolCalls ?? []) parts.push(toolCallCopyText(tc))
+    } else if (m.role === 'toolResult') {
+      parts.push(m.content)
+    }
+  }
+  return parts.join('\n\n')
 }
 
 // What the copy button on a tool-call box yields: the raw command for
