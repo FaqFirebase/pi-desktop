@@ -8,7 +8,9 @@ Still in alpha — expect rough edges.
 
 ## What it does
 
-- Streaming chat with thinking blocks, tool use, and rich rendering — bundled fonts + color emoji, inline SVG preview, collapsible tool-call results, clickable file links that open a preview pane
+- Streaming chat with thinking blocks, tool use, and rich rendering — bundled fonts + color emoji, inline SVG preview, clickable file links that open a preview pane. Consecutive tool calls fold into collapsible groups; file reads show as line-numbered, syntax-highlighted code and edits as diffs
+- Find within a conversation (`Ctrl/Cmd+F`); streaming follows new output only while you're at the bottom, with a jump-to-bottom control
+- Composer file mentions — type `@` to insert a path reference for Pi to read — and `Up`/`Down` to recall prompts sent in the current session
 - Home dashboard with usage stats — messages, tokens, active-day streaks, peak hour, per-model breakdown
 - [Multi-Agent Council Planning](#multi-agent-council-planning) — Pi, Claude, and Codex plan together and reach consensus before Pi builds (opt-in)
 - Command palette (`Ctrl/Cmd+K` or `/`) — run skills, prompt templates, and built-in commands
@@ -17,7 +19,7 @@ Still in alpha — expect rough edges.
 - Custom models & providers editor (Settings) — edits `~/.pi/agent/models.json`
 - Multiple workspaces, each with its own Pi process and sessions
 - Review rail (toggleable) with permissions, approvals, changed files, and session status
-- File tree, code/image/HTML preview panes, code editor (CodeMirror 6 with syntax highlighting), diff viewer, file search
+- File tree, code/image/PDF/HTML preview panes, code editor (CodeMirror 6 with syntax highlighting), diff viewer, file search
 - Terminal with ANSI colors
 - Package browser connected to pi.dev/packages, with instant local search
 - Session tags, model switching, live-preview settings, themes (Dark, Light, System, Nord, Gruvbox, Breeze Dark, Breeze Light, Breeze Claudius)
@@ -99,6 +101,8 @@ Download from [Releases](https://github.com/FaqFirebase/pi-desktop/releases): th
 |----------|-------------|
 | `Enter` | Send message |
 | `Shift+Enter` | New line |
+| `Up/Down` | Recall previous prompts |
+| `@` | Mention a workspace file |
 | `Escape` | Stop streaming |
 | `Ctrl/Cmd+K` | Open command palette |
 | `/` (start of message) | Open command palette |
