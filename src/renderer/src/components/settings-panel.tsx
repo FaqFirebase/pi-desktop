@@ -31,6 +31,7 @@ export function SettingsPanel(): React.JSX.Element {
   const [autoScroll, setAutoScroll] = useState(draft0.autoScroll ?? settings?.autoScroll ?? DEFAULT_SETTINGS.autoScroll)
   const [resumeLastSession, setResumeLastSession] = useState(draft0.resumeLastSession ?? settings?.resumeLastSession ?? DEFAULT_SETTINGS.resumeLastSession)
   const [openToHomeOnLaunch, setOpenToHomeOnLaunch] = useState(draft0.openToHomeOnLaunch ?? settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch)
+  const [runOnStartup, setRunOnStartup] = useState(draft0.runOnStartup ?? settings?.runOnStartup ?? DEFAULT_SETTINGS.runOnStartup)
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
     draft0.permissionMode ?? settings?.permissionMode ?? DEFAULT_SETTINGS.permissionMode,
   )
@@ -97,6 +98,7 @@ export function SettingsPanel(): React.JSX.Element {
     setAutoScroll(draft.autoScroll ?? settings.autoScroll)
     setResumeLastSession(draft.resumeLastSession ?? settings.resumeLastSession)
     setOpenToHomeOnLaunch(draft.openToHomeOnLaunch ?? settings.openToHomeOnLaunch)
+    setRunOnStartup(draft.runOnStartup ?? settings.runOnStartup)
     setPermissionMode(draft.permissionMode ?? settings.permissionMode)
   }, [settings])
 
@@ -119,6 +121,7 @@ export function SettingsPanel(): React.JSX.Element {
       autoScroll,
       resumeLastSession,
       openToHomeOnLaunch,
+      runOnStartup,
       permissionMode,
     }
 
@@ -154,6 +157,7 @@ export function SettingsPanel(): React.JSX.Element {
       autoScroll: DEFAULT_SETTINGS.autoScroll,
       resumeLastSession: DEFAULT_SETTINGS.resumeLastSession,
       openToHomeOnLaunch: DEFAULT_SETTINGS.openToHomeOnLaunch,
+      runOnStartup: DEFAULT_SETTINGS.runOnStartup,
       permissionMode: DEFAULT_SETTINGS.permissionMode,
     }
 
@@ -166,6 +170,7 @@ export function SettingsPanel(): React.JSX.Element {
     setAutoScroll(defaults.autoScroll!)
     setResumeLastSession(defaults.resumeLastSession!)
     setOpenToHomeOnLaunch(defaults.openToHomeOnLaunch!)
+    setRunOnStartup(defaults.runOnStartup!)
     setPermissionMode(defaults.permissionMode!)
 
     const result = await window.piDesktop.settings.save(defaults)
@@ -325,6 +330,13 @@ export function SettingsPanel(): React.JSX.Element {
             description="When opening a workspace, continue its most recent session instead of starting a new one"
           >
             <Toggle checked={resumeLastSession} onChange={(v) => { setResumeLastSession(v); setSettingsDraft({ resumeLastSession: v }) }} />
+          </SettingsRow>
+
+          <SettingsRow
+            label="Run on Startup"
+            description="Automatically start Pi Desktop when you log in to your computer (takes effect in installed builds)"
+          >
+            <Toggle checked={runOnStartup} onChange={(v) => { setRunOnStartup(v); setSettingsDraft({ runOnStartup: v }) }} />
           </SettingsRow>
         </SettingsSection>
 

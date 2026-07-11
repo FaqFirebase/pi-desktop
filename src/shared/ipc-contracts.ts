@@ -666,6 +666,10 @@ export interface AppSettings {
   // Show the Home/launcher screen on launch (Pi starts lazily on first action)
   // instead of booting straight into Chat. When false, legacy behavior applies.
   openToHomeOnLaunch: boolean
+  // Launch Pi Desktop automatically when the user logs in to their computer.
+  // Applied at the OS level: login items on macOS/Windows, a freedesktop
+  // autostart entry on Linux. Only effective in packaged builds.
+  runOnStartup: boolean
   // Multi-agent council planning configuration.
   council: CouncilConfig
 }

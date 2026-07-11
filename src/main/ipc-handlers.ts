@@ -40,6 +40,7 @@ import { detectAgents } from './agent-detection'
 import { readAttachment } from './attachment-reader'
 import { runConsultants, defaultSpawnConsultant } from './council-manager'
 import { fetchPackageCatalog } from './package-catalog'
+import { applyRunOnStartup } from './startup-launch'
 import type { SessionLineageRecord } from '../shared/session-lineage'
 import { readdir, stat, readFile, writeFile, mkdir, access, unlink } from 'fs/promises'
 import { basename, join } from 'path'
@@ -606,6 +607,12 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   ipcMain.handle(IPC_CHANNELS.SETTINGS_SAVE, async (_event, settings: unknown) => {
     if (!isObject(settings)) throw new Error('settings must be an object')
     await saveAppSettings(settings as Partial<AppSettings>)
+    // Reflect a "run on startup" change to the OS immediately (login item on
+    // macOS/Windows, autostart entry on Linux). Only applied when the field is
+    // part of this save to avoid redundant OS writes.
+    if ('runOnStartup' in settings) {
+      await applyRunOnStartup(Boolean((settings as Partial<AppSettings>).runOnStartup))
+    }
     return loadAppSettings(workspaceManager)
   })
 
@@ -613,6 +620,14 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     const settings = await loadAppSettings(workspaceManager)
     return settings.theme
   })
+
+  // Reconcile the OS-level "run on startup" state with the saved preference on
+  // launch. Self-healing: repairs a stale Linux autostart Exec path after an
+  // app update/move and re-asserts the login item on macOS/Windows. Runs in the
+  // background so a failure never blocks handler registration.
+  void loadAppSettings(workspaceManager)
+    .then((settings) => applyRunOnStartup(settings.runOnStartup))
+    .catch((err) => console.error('[startup] Failed to reconcile run-on-startup:', err))
 
   // ─── Workspace Management ───────────────────────────────────────────────
 

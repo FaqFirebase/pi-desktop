@@ -23,5 +23,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   resumeLastSession: true,
   collapsedSessionGroups: [],
   openToHomeOnLaunch: true,
+  runOnStartup: false,
   council: DEFAULT_COUNCIL_CONFIG,
 }
