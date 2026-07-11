@@ -77,7 +77,7 @@ export function PermissionSelector({
               type="button"
               disabled={saving}
               onClick={() => handleSelect(option.value)}
-              className="flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-neutral-800 disabled:opacity-60"
+              className="pi-hover-highlight flex w-full items-start gap-2 px-3 py-2 text-left transition-colors disabled:opacity-60"
             >
               <span className="mt-0.5 w-4 shrink-0">
                 {option.value === mode && <Check size={13} className="text-emerald-400" />}

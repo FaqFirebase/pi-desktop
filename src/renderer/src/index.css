@@ -16,6 +16,15 @@
    plain `:hover` so hover states work in the desktop window as intended. */
 @custom-variant hover (&:hover);
 
+/* Theme-aware hover highlight. Each theme remaps the base `bg-neutral-900`
+   class (its "current session" card surface) but NOT the `hover:bg-neutral-900`
+   variant, so a fixed hover shade would ignore the active theme. Elements that
+   should highlight to the theme's card color on hover use this utility, which
+   references the per-theme `--pi-highlight` token instead. */
+.pi-hover-highlight:hover {
+  background-color: var(--pi-highlight);
+}
+
 @theme {
   --color-app-bg: #0a0a0a;
   --color-app-surface: #141414;
@@ -39,6 +48,10 @@
 @layer base {
   :root {
     --color-bg-primary: #0a0a0a;
+    /* Hover/selected surface — matches this theme's "current session" card
+       (its bg-neutral-900). Referenced by the .pi-hover-highlight utility so
+       hover states track the theme instead of a fixed neutral shade. */
+    --pi-highlight: #171717;
     --color-bg-secondary: #141414;
     --color-bg-tertiary: #1c1c1c;
     --color-bg-elevated: #242424;
@@ -79,6 +92,7 @@
 
   .light {
     --color-bg-primary: #ffffff;
+    --pi-highlight: #f5f5f5;
     --color-bg-secondary: #f5f5f5;
     --color-bg-tertiary: #e5e5e5;
     --color-bg-elevated: #ffffff;
@@ -377,6 +391,7 @@
 @layer base {
   .nord {
     --color-bg-primary:         #2E3440;
+    --pi-highlight:             #3B4252;
     --color-bg-secondary:       #3B4252;
     --color-bg-tertiary:        #434C5E;
     --color-bg-elevated:        #4C566A;
@@ -474,6 +489,7 @@
 @layer base {
   .gruvbox {
     --color-bg-primary:         #282828;
+    --pi-highlight:             #3C3836;
     --color-bg-secondary:       #3C3836;
     --color-bg-tertiary:        #504945;
     --color-bg-elevated:        #665C54;
@@ -568,6 +584,7 @@
 @layer base {
   .breeze-dark {
     --color-bg-primary:         #232629;
+    --pi-highlight:             #31363b;
     --color-bg-secondary:       #31363b;
     --color-bg-tertiary:        #2A2E32;
     --color-bg-elevated:        #3f4347;
@@ -664,6 +681,7 @@
 @layer base {
   .breeze-claudius {
     --color-bg-primary:         #232629;
+    --pi-highlight:             #31363b;
     --color-bg-secondary:       #31363b;
     --color-bg-tertiary:        #2A2E32;
     --color-bg-elevated:        #3f4347;
@@ -768,6 +786,7 @@
 @layer base {
   .breeze-light {
     --color-bg-primary:         #ffffff;
+    --pi-highlight:             #f8f7f6;
     --color-bg-secondary:       #f8f7f6;
     --color-bg-tertiary:        #ebebeb;
     --color-bg-elevated:        #ffffff;

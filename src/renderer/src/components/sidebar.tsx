@@ -182,7 +182,7 @@ export function Sidebar(): React.JSX.Element {
           'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
           isActive
             ? 'bg-neutral-800 text-neutral-200'
-            : 'text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-300'
+            : 'pi-hover-highlight text-neutral-400 hover:text-neutral-300'
         )}
       >
         <Clock size={12} className="shrink-0" />
@@ -592,7 +592,7 @@ function SidebarItem({
         'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
         active
           ? 'bg-neutral-800 text-neutral-100'
-          : 'text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-300'
+          : 'pi-hover-highlight text-neutral-400 hover:text-neutral-300'
       )}
     >
       {icon}
