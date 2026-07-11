@@ -2,10 +2,59 @@ import { useRef, useCallback, useState, useEffect } from 'react'
 import { useAppStore } from '../store'
 import { useChatKeyboard } from '../hooks'
 import { CornerDownLeft, Square, Paperclip, X, FileText, NotebookPen, Users } from 'lucide-react'
-import { SUPPORTED_IMAGE_EXTENSIONS, type PromptImage } from '../../../shared/ipc-contracts'
+import {
+  SUPPORTED_IMAGE_EXTENSIONS,
+  type PromptImage,
+  type FileSearchResult,
+} from '../../../shared/ipc-contracts'
 
 // Max height (px) the auto-growing input expands to before scrolling.
 const MAX_INPUT_HEIGHT = 192
+
+// Max @-mention file suggestions shown at once.
+const MAX_MENTION_RESULTS = 10
+
+// An in-progress @-file mention: the caret sits just after `@<query>` and no
+// whitespace separates them. `start` is the index of the `@`.
+interface MentionState {
+  start: number
+  query: string
+}
+
+// Rank filename matches so the strongest candidates land in the visible slots:
+// exact basename first, then prefix, then any-other substring; ties broken by
+// shorter path (closer to the workspace root), then alphabetically. The backend
+// returns matches in filesystem-walk order, which otherwise buries good hits.
+function rankMentionResults(results: FileSearchResult[], query: string): FileSearchResult[] {
+  const q = query.toLowerCase()
+  const score = (r: FileSearchResult): number => {
+    const name = r.name.toLowerCase()
+    if (name === q) return 0
+    if (name.startsWith(q)) return 1
+    if (name.includes(q)) return 2
+    return 3
+  }
+  return [...results].sort((a, b) => {
+    const byScore = score(a) - score(b)
+    if (byScore !== 0) return byScore
+    const byLen = a.relativePath.length - b.relativePath.length
+    if (byLen !== 0) return byLen
+    return a.relativePath.localeCompare(b.relativePath)
+  })
+}
+
+// Detect an @-file mention immediately left of the caret: an `@` at the start of
+// the input or after whitespace, followed by a run with no spaces or further `@`.
+// Returns null when the caret isn't in such a token (or there's a selection).
+function detectMention(ta: HTMLTextAreaElement): MentionState | null {
+  if (ta.selectionStart !== ta.selectionEnd) return null
+  const pos = ta.selectionStart
+  const before = ta.value.slice(0, pos)
+  const m = before.match(/(?:^|\s)@([^\s@]*)$/)
+  if (!m) return null
+  const query = m[1]
+  return { start: pos - query.length - 1, query }
+}
 
 // A staged attachment: either inlined as text or sent to Pi as an image block.
 type Attachment =
@@ -71,6 +120,72 @@ export function ChatInput(): React.JSX.Element {
     ta.value = ''
     ta.style.height = 'auto'
   }, [])
+
+  // @-file mention autocomplete. `mention` is the token being typed (null when
+  // inactive); `mentionResults` are the workspace files matching it and
+  // `mentionIndex` is the highlighted row. The textarea keeps focus throughout —
+  // the popup is an inline overlay, not a modal — so its keys are handled in the
+  // textarea's own onKeyDown.
+  const [mention, setMention] = useState<MentionState | null>(null)
+  const [mentionResults, setMentionResults] = useState<FileSearchResult[]>([])
+  const [mentionIndex, setMentionIndex] = useState(0)
+
+  // Search the workspace for the active mention query (debounced). An empty
+  // query yields no results, so the popup stays hidden until the user types.
+  useEffect(() => {
+    if (!mention) {
+      setMentionResults([])
+      return
+    }
+    const query = mention.query
+    if (!query.trim()) {
+      setMentionResults([])
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        const results = await window.piDesktop.files.search(query)
+        if (!cancelled) {
+          setMentionResults(rankMentionResults(results, query).slice(0, MAX_MENTION_RESULTS))
+        }
+      } catch {
+        if (!cancelled) setMentionResults([])
+      }
+    }, 120)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [mention])
+
+  // Keep the highlight in range as results change.
+  useEffect(() => {
+    setMentionIndex(0)
+  }, [mentionResults])
+
+  // Replace the `@<query>` token with a path reference (`@<relativePath> `) so
+  // Pi reads the file itself with its own tools — unlike the 📎 attach button,
+  // which inlines the whole file content.
+  const selectMention = useCallback(
+    (result: FileSearchResult) => {
+      const ta = textareaRef.current
+      if (!ta || !mention) return
+      const pos = ta.selectionStart
+      const token = `@${result.relativePath} `
+      ta.value = ta.value.slice(0, mention.start) + token + ta.value.slice(pos)
+      const caret = mention.start + token.length
+      ta.setSelectionRange(caret, caret)
+      ta.style.height = 'auto'
+      ta.style.height = `${Math.min(ta.scrollHeight, MAX_INPUT_HEIGHT)}px`
+      ta.focus()
+      setMention(null)
+      setMentionResults([])
+    },
+    [mention]
+  )
+
+  const mentionOpen = mention !== null && mentionResults.length > 0
 
   const handleSend = useCallback(
     async (message: string) => {
@@ -196,6 +311,36 @@ export function ChatInput(): React.JSX.Element {
       )}
 
       <div className="relative flex items-center rounded-xl border border-neutral-700 bg-neutral-900 focus-within:border-neutral-600 transition-colors">
+        {/* @-file mention suggestions (floats above the input, keeps its focus) */}
+        {mentionOpen && (
+          <div className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900 shadow-2xl">
+            <div className="max-h-80 overflow-y-auto py-1">
+              {mentionResults.map((result, i) => (
+                <button
+                  key={result.path}
+                  // preventDefault on mousedown so clicking a row doesn't blur the
+                  // textarea (which would close the popup before onClick fires).
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => selectMention(result)}
+                  onMouseEnter={() => setMentionIndex(i)}
+                  className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors ${
+                    i === mentionIndex ? 'bg-neutral-800' : 'hover:bg-neutral-800/50'
+                  }`}
+                >
+                  <FileText size={13} className="shrink-0 text-neutral-500" />
+                  <span className="truncate text-sm text-neutral-200">{result.name}</span>
+                  <span className="ml-auto truncate pl-3 text-xs text-neutral-600">
+                    {result.relativePath}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="border-t border-neutral-800 px-3 py-1 text-[10px] text-neutral-600">
+              ↑↓ navigate · Enter/Tab insert path · Esc close
+            </div>
+          </div>
+        )}
+
         {/* Attachment button */}
         <button
           onClick={handleAttachFile}
@@ -264,7 +409,10 @@ export function ChatInput(): React.JSX.Element {
             } else {
               useAppStore.getState().setCommandPalette(false)
             }
+            // Detect / refine an @-file mention at the caret.
+            setMention(detectMention(target))
           }}
+          onBlur={() => setMention(null)}
           onKeyDown={(e) => {
             if (e.ctrlKey && e.key === 'p') {
               e.preventDefault()
@@ -272,6 +420,34 @@ export function ChatInput(): React.JSX.Element {
             }
             // Ctrl+Shift+F (file search) is handled at the window level in
             // ChatPanel so it works regardless of composer focus.
+            // @-mention popup navigation takes precedence over history recall so
+            // the arrows drive the popup while it's open, then recall runs after.
+            // stopPropagation on Enter/Tab/Esc keeps the window-level send/abort
+            // handler (useChatKeyboard) from firing.
+            if (mentionOpen) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault()
+                setMentionIndex((i) => Math.min(i + 1, mentionResults.length - 1))
+                return
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                setMentionIndex((i) => Math.max(i - 1, 0))
+                return
+              }
+              if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault()
+                e.stopPropagation()
+                selectMention(mentionResults[mentionIndex])
+                return
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                e.stopPropagation()
+                setMention(null)
+                return
+              }
+            }
             // ↑/↓: shell-style prompt-history recall. Only kicks in at the text
             // edge (↑ on the first line, ↓ on the last) with no selection and no
             // modifiers, so ordinary multi-line cursor movement is untouched. Left
