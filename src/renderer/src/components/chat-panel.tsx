@@ -376,29 +376,8 @@ function EmptyState({ piStatus }: { piStatus: string }): React.JSX.Element {
                 ? 'Failed to start Pi agent. Check settings.'
                 : 'Pi agent is not running. Start it from the sidebar or status bar.'}
         </p>
-        {piStatus === 'running' && (
-          <div className="flex flex-wrap justify-center gap-2">
-            {EXAMPLE_PROMPTS.map((prompt) => (
-              <button
-                key={prompt}
-                onClick={() => {
-                  useAppStore.getState().sendPrompt(prompt)
-                }}
-                className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-400 hover:border-neutral-600 hover:text-neutral-300 transition-colors"
-              >
-                {prompt}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   )
 }
 
-const EXAMPLE_PROMPTS = [
-  'Explain this project structure',
-  'Find all TODO comments',
-  'Run the test suite',
-  'Help me debug an error',
-]
