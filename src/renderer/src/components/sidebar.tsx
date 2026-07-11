@@ -14,7 +14,7 @@ import {
   ChevronDown,
   Check,
   Trash2,
-  NotebookPen,
+  StickyNote,
   Archive,
   Sparkles,
   Pencil,
@@ -261,7 +261,7 @@ export function Sidebar(): React.JSX.Element {
           onClick={() => setCurrentView('packages')}
         />
         <SidebarItem
-          icon={<NotebookPen size={14} />}
+          icon={<StickyNote size={14} />}
           label="Notes"
           active={currentView === 'notes'}
           onClick={() => setCurrentView('notes')}

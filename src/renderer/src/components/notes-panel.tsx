@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { clsx } from 'clsx'
-import { Plus, Search, Pencil, Trash2, CornerDownLeft, Tag, ArrowLeft } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, CornerDownLeft, Tag, ArrowLeft, StickyNote } from 'lucide-react'
 import { useAppStore } from '../store'
 import { MarkdownRenderer } from './markdown-renderer'
 import type { Note, NoteInput } from '../../../shared/ipc-contracts'
@@ -104,7 +104,8 @@ export function NotesPanel(): React.JSX.Element {
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex h-12 items-center justify-between border-b border-neutral-800 px-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <StickyNote size={16} className="text-neutral-400" />
           <h1 className="text-sm font-medium text-neutral-200">Notes</h1>
         </div>
         <button

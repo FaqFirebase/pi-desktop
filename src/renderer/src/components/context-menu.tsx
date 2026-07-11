@@ -11,7 +11,7 @@ import {
   ArchiveRestore,
   Trash2,
   MessageSquare,
-  NotebookPen,
+  StickyNote,
   Pencil,
 } from 'lucide-react'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
@@ -325,7 +325,7 @@ export function buildMessageContextMenu(
     {
       id: 'add-to-notes',
       label: hasSelection ? 'Add Selection to Notes' : 'Add Message to Notes',
-      icon: <NotebookPen size={14} />,
+      icon: <StickyNote size={14} />,
       action: () => onAddToNotes(hasSelection ? selectedText : messageContent),
     },
     {
