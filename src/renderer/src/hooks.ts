@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import { useAppStore } from './store'
 import { DEFAULT_SETTINGS } from '../../shared/default-settings'
 
@@ -132,6 +132,8 @@ function restoreAnchor(el: HTMLElement, anchor: ScrollAnchor): void {
 export function useChatScroll(active: boolean): {
   scrollRef: React.RefObject<HTMLDivElement | null>
   onScroll: () => void
+  atBottom: boolean
+  scrollToBottom: () => void
 } {
   const ref = useRef<HTMLDivElement>(null)
   const autoScroll = useAppStore(
@@ -157,6 +159,30 @@ export function useChatScroll(active: boolean): {
   const prevMsgCount = useRef(0)
   const prevStreamLen = useRef(0)
 
+  // Whether the viewport is at (or within a hair of) the bottom. `atBottom` (state)
+  // drives the jump-to-bottom button; `atBottomRef` is read synchronously in the
+  // layout effect to decide whether streamed content should keep following.
+  const [atBottom, setAtBottom] = useState(true)
+  const atBottomRef = useRef(true)
+
+  // Recompute at-bottom from the live DOM and publish it to both the ref and the
+  // button state (setState no-ops when unchanged, so this is cheap to call often).
+  const syncAtBottom = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    const next = el.scrollHeight - el.clientHeight - el.scrollTop <= AT_BOTTOM_THRESHOLD
+    atBottomRef.current = next
+    setAtBottom(next)
+  }, [])
+
+  const scrollToBottom = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+    atBottomRef.current = true
+    setAtBottom(true)
+  }, [])
+
   const onScroll = useCallback(() => {
     const el = ref.current
     if (!el) return
@@ -167,6 +193,9 @@ export function useChatScroll(active: boolean): {
     if (activeSession.current !== null && scrollable > AT_BOTTOM_THRESHOLD) {
       positions.current.set(activeSession.current, captureAnchor(el))
     }
+    const next = scrollable - el.scrollTop <= AT_BOTTOM_THRESHOLD
+    atBottomRef.current = next
+    setAtBottom(next)
   }, [])
 
   useLayoutEffect(() => {
@@ -174,8 +203,8 @@ export function useChatScroll(active: boolean): {
 
     // Did content actually grow (new message or streamed text)? Tracked even
     // while hidden so re-showing the panel isn't mistaken for new content.
-    const grew =
-      messages.length > prevMsgCount.current || streamingContent.length > prevStreamLen.current
+    const messagesGrew = messages.length > prevMsgCount.current
+    const grew = messagesGrew || streamingContent.length > prevStreamLen.current
     prevMsgCount.current = messages.length
     prevStreamLen.current = streamingContent.length
 
@@ -212,6 +241,7 @@ export function useChatScroll(active: boolean): {
         pendingRestore.current = false
         forceBottom.current = false
       }
+      syncAtBottom()
       return
     }
 
@@ -233,17 +263,24 @@ export function useChatScroll(active: boolean): {
     if (forceBottom.current) {
       el.scrollTop = el.scrollHeight
       forceBottom.current = false
+      syncAtBottom()
       return
     }
 
-    // New prompt or streamed tokens in the active session: follow the bottom
-    // when Auto Scroll is enabled. When it's off, leave the position alone.
-    if (grew && autoScroll) {
+    // A new user message means the user just sent a prompt — always reveal it.
+    const lastIsUser = messagesGrew && messages[messages.length - 1]?.role === 'user'
+
+    // Follow new/streamed content only when Auto Scroll is on AND the user was
+    // already at the bottom. If they scrolled up, leave their position put and
+    // let the jump-to-bottom button take them down on demand.
+    if (autoScroll && (lastIsUser || (grew && atBottomRef.current))) {
       el.scrollTop = el.scrollHeight
     }
-  }, [active, sessionId, messages, streamingContent, scrollBottomNonce, autoScroll])
 
-  return { scrollRef: ref, onScroll }
+    syncAtBottom()
+  }, [active, sessionId, messages, streamingContent, scrollBottomNonce, autoScroll, syncAtBottom])
+
+  return { scrollRef: ref, onScroll, atBottom, scrollToBottom }
 }
 
 /**
