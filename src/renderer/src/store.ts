@@ -109,6 +109,9 @@ interface AppState {
 
   // Messages
   messages: DisplayMessage[]
+  // Shell-style recall of prompts sent this session (oldest→newest); reset per
+  // session in clearMessages. Recorded raw (before attachment inlining).
+  promptHistory: string[]
   streamingContent: string
   streamingThinking: string
   streamingToolCalls: Map<
@@ -222,6 +225,7 @@ interface AppActions {
   addMessage: (message: DisplayMessage) => void
   setMessages: (messages: DisplayMessage[]) => void
   clearMessages: () => void
+  recordPrompt: (text: string) => void
 
   // Prompts
   sendPrompt: (message: string, options?: { images?: PromptImage[]; attachments?: DisplayAttachment[] }) => Promise<void>
@@ -393,6 +397,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   forkMessages: [],
 
   messages: [],
+  promptHistory: [],
   streamingContent: '',
   streamingThinking: '',
   streamingToolCalls: new Map(),
@@ -512,7 +517,20 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   setMessages: (messages) => set({ messages }),
 
-  clearMessages: () => set({ messages: [], streamingContent: '', streamingThinking: '', streamingToolCalls: new Map() }),
+  clearMessages: () => set({ messages: [], promptHistory: [], streamingContent: '', streamingThinking: '', streamingToolCalls: new Map() }),
+
+  // Append a sent prompt to the recall history. Ignores blanks and consecutive
+  // duplicates (shell-style), and caps the list so it can't grow unbounded.
+  recordPrompt: (text) =>
+    set((state) => {
+      const trimmed = text.trim()
+      if (!trimmed) return state
+      const history = state.promptHistory
+      if (history[history.length - 1] === trimmed) return state
+      const next = [...history, trimmed]
+      if (next.length > 200) next.shift()
+      return { promptHistory: next }
+    }),
 
   // ─── Prompts ──────────────────────────────────────────────────────────
 

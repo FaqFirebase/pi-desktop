@@ -23,6 +23,14 @@ export function ChatInput(): React.JSX.Element {
   const setNotePickerOpen = useAppStore((state) => state.setNotePickerOpen)
   const councilEnabled = useAppStore((s) => s.settings?.council?.enabled ?? false)
   const runCouncil = useAppStore((s) => s.runCouncil)
+  const recordPrompt = useAppStore((s) => s.recordPrompt)
+
+  // Prompt-history recall (shell-style ↑/↓). `historyIndex` is -1 when editing a
+  // fresh draft; while navigating it points into store.promptHistory and `draft`
+  // holds the text that was in the box before recall started (restored on ↓ past
+  // the newest entry).
+  const historyIndex = useRef(-1)
+  const draft = useRef('')
 
   // Apply a note inserted from the panel or picker: drop the text at the
   // cursor, refocus, resize, then clear so the same note can be inserted again.
@@ -66,6 +74,12 @@ export function ChatInput(): React.JSX.Element {
 
   const handleSend = useCallback(
     async (message: string) => {
+      // Record the raw prompt (pre-attachment-inlining) for ↑/↓ recall, and
+      // reset any in-progress history navigation.
+      recordPrompt(message)
+      historyIndex.current = -1
+      draft.current = ''
+
       // Text attachments are inlined into the prompt; image attachments are
       // sent as Pi image blocks so the model actually sees them.
       const textAttachments = attachments.filter((a) => a.kind === 'text')
@@ -94,12 +108,22 @@ export function ChatInput(): React.JSX.Element {
       setAttachments([])
       resetComposer()
     },
-    [sendPrompt, attachments, resetComposer]
+    [sendPrompt, attachments, recordPrompt, resetComposer]
   )
 
   const handleAbort = useCallback(() => {
     abort()
   }, [abort])
+
+  // Drop a recalled prompt into the box: set value, regrow height, caret to end.
+  const applyHistory = useCallback((text: string) => {
+    const ta = textareaRef.current
+    if (!ta) return
+    ta.value = text
+    ta.style.height = 'auto'
+    ta.style.height = `${Math.min(ta.scrollHeight, MAX_INPUT_HEIGHT)}px`
+    ta.setSelectionRange(text.length, text.length)
+  }, [])
 
   const handleAttachFile = useCallback(async () => {
     setAttachError(null)
@@ -199,6 +223,9 @@ export function ChatInput(): React.JSX.Element {
             onClick={() => {
               const value = textareaRef.current?.value.trim()
               if (value) {
+                recordPrompt(value)
+                historyIndex.current = -1
+                draft.current = ''
                 void runCouncil(value)
                 resetComposer()
               }
@@ -229,6 +256,8 @@ export function ChatInput(): React.JSX.Element {
             const target = e.currentTarget
             target.style.height = 'auto'
             target.style.height = `${Math.min(target.scrollHeight, MAX_INPUT_HEIGHT)}px`
+            // Any real edit ends history navigation; the box is a fresh draft again.
+            historyIndex.current = -1
             const value = target.value
             if (value.startsWith('/')) {
               useAppStore.getState().setCommandPalette(true, value, true)
@@ -243,6 +272,42 @@ export function ChatInput(): React.JSX.Element {
             }
             // Ctrl+Shift+F (file search) is handled at the window level in
             // ChatPanel so it works regardless of composer focus.
+            // ↑/↓: shell-style prompt-history recall. Only kicks in at the text
+            // edge (↑ on the first line, ↓ on the last) with no selection and no
+            // modifiers, so ordinary multi-line cursor movement is untouched. Left
+            // to the command palette when it's driving the arrows.
+            if (
+              (e.key === 'ArrowUp' || e.key === 'ArrowDown') &&
+              !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey &&
+              !useAppStore.getState().commandPaletteOpen
+            ) {
+              const ta = e.currentTarget
+              if (ta.selectionStart !== ta.selectionEnd) return
+              const history = useAppStore.getState().promptHistory
+              if (e.key === 'ArrowUp') {
+                const onFirstLine = ta.value.slice(0, ta.selectionStart).indexOf('\n') === -1
+                if (!onFirstLine || history.length === 0) return
+                e.preventDefault()
+                if (historyIndex.current === -1) {
+                  draft.current = ta.value
+                  historyIndex.current = history.length - 1
+                } else if (historyIndex.current > 0) {
+                  historyIndex.current -= 1
+                }
+                applyHistory(history[historyIndex.current])
+              } else {
+                const onLastLine = ta.value.slice(ta.selectionEnd).indexOf('\n') === -1
+                if (!onLastLine || historyIndex.current === -1) return
+                e.preventDefault()
+                if (historyIndex.current < history.length - 1) {
+                  historyIndex.current += 1
+                  applyHistory(history[historyIndex.current])
+                } else {
+                  historyIndex.current = -1
+                  applyHistory(draft.current)
+                }
+              }
+            }
           }}
         />
 
