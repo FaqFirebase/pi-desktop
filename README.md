@@ -103,6 +103,7 @@ Download from [Releases](https://github.com/FaqFirebase/pi-desktop/releases): th
 | `Ctrl/Cmd+K` | Open command palette |
 | `/` (start of message) | Open command palette |
 | `Ctrl+P` | Cycle model |
+| `Ctrl/Cmd+F` | Find in conversation |
 | `Ctrl+Shift+F` | File search |
 | `Ctrl+Shift+P` | Insert saved note |
 | `Ctrl+N` | New session |
