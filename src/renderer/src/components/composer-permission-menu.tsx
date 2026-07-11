@@ -68,7 +68,7 @@ export function ComposerPermissionMenu({ value, onChange }: ComposerPermissionMe
 
       {isOpen && (
         <div className="absolute bottom-full left-0 z-50 mb-1 min-w-[180px] rounded-lg border border-neutral-700 bg-neutral-950 py-1 shadow-xl shadow-black/40">
-          <div className="px-3 pb-0.5 pt-1 text-[11px] text-neutral-500">Mode</div>
+          <div className="px-3 pb-0.5 pt-1 text-[11px] text-neutral-500">Permissions</div>
           {PERMISSION_MODE_OPTIONS.map((option) => (
             <button
               key={option.value}
