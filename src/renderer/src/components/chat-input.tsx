@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect } from 'react'
 import { useAppStore } from '../store'
 import { useChatKeyboard } from '../hooks'
-import { CornerDownLeft, Square, Paperclip, X, FileText, NotebookPen, Users } from 'lucide-react'
+import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users } from 'lucide-react'
 import { SUPPORTED_IMAGE_EXTENSIONS, type PromptImage } from '../../../shared/ipc-contracts'
 
 // Max height (px) the auto-growing input expands to before scrolling.
@@ -190,7 +190,7 @@ export function ChatInput(): React.JSX.Element {
           title="Insert a saved note (Ctrl+Shift+P)"
           aria-label="Insert a saved note"
         >
-          <NotebookPen size={16} />
+          <StickyNote size={16} />
         </button>
 
         {/* Plan with Council button */}
