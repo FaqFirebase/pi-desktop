@@ -140,6 +140,72 @@ test('multiple tool calls in a single assistant turn count toward the threshold'
   assert.deepEqual(titles(items), ['Read 2 files'])
 })
 
+test('group title counts distinct targets: same file read twice reads as one', () => {
+  const items = groupToolMessages([
+    toolTurn('read_file', { path: 'src/app/foo.ts' }),
+    result(),
+    toolTurn('read_file', { path: 'src/app/foo.ts' }),
+    result(),
+  ])
+  assert.deepEqual(titles(items), ['Read a file'])
+})
+
+test('group title counts distinct targets: same URL fetched thrice reads as one', () => {
+  const items = groupToolMessages([
+    toolTurn('web_fetch', { url: 'https://cnn.com' }),
+    result(),
+    toolTurn('web_fetch', { url: 'https://cnn.com' }),
+    result(),
+    toolTurn('web_fetch', { url: 'https://cnn.com' }),
+    result(),
+  ])
+  assert.deepEqual(titles(items), ['Fetched a URL'])
+})
+
+test('group title counts same-named files in different dirs as distinct', () => {
+  const items = groupToolMessages([
+    toolTurn('read_file', { path: 'a/foo.ts' }),
+    result(),
+    toolTurn('read_file', { path: 'b/foo.ts' }),
+    result(),
+  ])
+  assert.deepEqual(titles(items), ['Read 2 files'])
+})
+
+test('group title dedupes paths across separators and case', () => {
+  const items = groupToolMessages([
+    toolTurn('read_file', { path: 'C:\\work\\Foo.ts' }),
+    result(),
+    toolTurn('read_file', { path: 'c:/work/foo.ts' }),
+    result(),
+  ])
+  assert.deepEqual(titles(items), ['Read a file'])
+})
+
+test('group title dedupes per target in a mixed run', () => {
+  const items = groupToolMessages([
+    toolTurn('web_fetch', { url: 'https://x.com' }),
+    result(),
+    toolTurn('web_fetch', { url: 'https://x.com' }),
+    result(),
+    toolTurn('read_file', { path: 'a.ts' }),
+    result(),
+    toolTurn('read_file', { path: 'b.ts' }),
+    result(),
+  ])
+  assert.deepEqual(titles(items), ['Fetched a URL, read 2 files'])
+})
+
+test('group title still counts target-less commands individually', () => {
+  const items = groupToolMessages([
+    toolTurn('bash', { command: 'ls' }),
+    result(),
+    toolTurn('bash', { command: 'ls' }),
+    result(),
+  ])
+  assert.deepEqual(titles(items), ['Ran 2 commands'])
+})
+
 test('toolLabel maps known tools and falls back to raw name', () => {
   assert.equal(toolLabel('web_fetch'), 'Fetch URL')
   assert.equal(toolLabel('bash'), 'Run command')
@@ -201,22 +267,6 @@ function resultFor(id: string, content = 'output'): DisplayMessage {
   return { id: `${id}-result`, role: 'toolResult', content, timestamp: 0, toolCallId: id }
 }
 
-test('prepareChatMessages hides follow-up reads of a just-edited file', () => {
-  const out = prepareChatMessages([
-    callTurn('edit_file', 'e1', { path: 'C:/work/btc.py', edits: [{ oldText: 'a', newText: 'b' }] }),
-    resultFor('e1', 'Successfully replaced 1 block'),
-    callTurn('read_file', 'r1', { path: 'btc.py' }), // same file (basename) -> hidden
-    resultFor('r1', 'file body'),
-    callTurn('read_file', 'r2', { path: 'other.py' }), // different file -> kept
-    resultFor('r2', 'other body'),
-  ])
-  const ids = out.map((m) => m.id)
-  assert.ok(!ids.includes('r1-result'), 'hidden read result dropped')
-  assert.ok(!out.some((m) => m.toolCalls?.some((tc) => tc.id === 'r1')), 'hidden read call dropped')
-  assert.ok(ids.includes('r2-result'), 'unrelated read kept')
-  assert.equal(out.length, 4)
-})
-
 test('prepareChatMessages enriches tool results with paired name and file', () => {
   const out = prepareChatMessages([
     callTurn('read_file', 'r1', { path: 'src/app/foo.ts' }),
@@ -241,13 +291,16 @@ test('splitReadTruncationNote leaves untruncated content untouched', () => {
   assert.equal(note, null)
 })
 
-test('prepareChatMessages does not hide reads without a preceding edit', () => {
+test('prepareChatMessages keeps every read, including a re-read of the same file', () => {
   const out = prepareChatMessages([
-    callTurn('read_file', 'r1', { path: 'foo.py' }),
-    resultFor('r1'),
-    callTurn('read_file', 'r2', { path: 'foo.py' }),
-    resultFor('r2'),
+    callTurn('edit_file', 'e1', { path: 'C:/work/btc.py', edits: [{ oldText: 'a', newText: 'b' }] }),
+    resultFor('e1', 'Successfully replaced 1 block'),
+    callTurn('read_file', 'r1', { path: 'btc.py' }), // same file re-read -> still shown
+    resultFor('r1', 'file body'),
   ])
+  const ids = out.map((m) => m.id)
+  assert.ok(ids.includes('r1-result'), 're-read result kept')
+  assert.ok(out.some((m) => m.toolCalls?.some((tc) => tc.id === 'r1')), 're-read call kept')
   assert.equal(out.length, 4)
 })
 

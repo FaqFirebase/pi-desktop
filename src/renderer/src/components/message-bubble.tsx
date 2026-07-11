@@ -318,16 +318,87 @@ function AssistantMessage({
       ? toolCallIconFor(message.toolCalls[0].name)
       : null
 
-  // A pure tool operation doesn't get its own provider · model header — that
-  // header (with the Bot avatar) belongs to the prose turn it split from, and
-  // repeating it would push the operation icon up next to the header instead of
-  // sitting in front of the tool-call box. So it's shown only for non-tool turns.
-  const showModelHeader = !!message.model && !hideModelHeader && ToolIcon === null
+  // Show the provider · model header whenever Pi attributes the turn — including
+  // a standalone tool call, so you can see who ran it. It's suppressed only
+  // inside a group (hideModelHeader), where the group's one shared header stands
+  // in and repeating it per row would just be noise.
+  const showModelHeader = !!message.model && !hideModelHeader
+
+  // Standalone tool call (attributed, not inside a group): render it like a group
+  // reads — the Bot avatar carries the provider · model header on its own row, and
+  // each tool-call box sits on its own row behind the operation icon. (Grouped
+  // rows have no header and fall through to the single-avatar layout below; the
+  // group already shows one shared Bot header above them.)
+  if (ToolIcon && showModelHeader) {
+    return (
+      <div className="group mb-4 animate-fade-in">
+        {/* Header row: Bot avatar + provider · model, matching a prose turn. */}
+        <div className="flex items-start gap-3">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800">
+            <Bot size={14} className="text-neutral-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex h-7 items-center gap-2 text-sm text-neutral-500">
+              <span>{message.provider}</span>
+              <span className="text-neutral-700">·</span>
+              <span>{modelDisplayName(message.model!, customModels)}</span>
+              {message.cost !== undefined && (
+                <>
+                  <span className="text-neutral-700">·</span>
+                  <span>${message.cost.toFixed(4)}</span>
+                </>
+              )}
+            </div>
+            {message.thinking && thinkingEnabled && (
+              <div className="thinking-hover mt-2">
+                <div className="flex h-7 items-center gap-1">
+                  <button
+                    onClick={onToggleThinking}
+                    className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-400 transition-colors"
+                  >
+                    <Brain size={12} />
+                    {showThinking ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    Thinking
+                  </button>
+                  <CopyButton text={message.thinking} className="thinking-copy-btn" />
+                </div>
+                {showThinking && (
+                  <div className="markdown-body font-sans italic text-sm text-neutral-400">
+                    <MarkdownRenderer content={message.thinking} />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        {/* One row per tool-call box, each behind its own operation icon. mt-2
+            sets the header→first-box gap; space-y-1 the box-to-box gap. */}
+        <div className="mt-2 space-y-1">
+          {message.toolCalls!.map((tc) => {
+            const RowIcon = toolCallIconFor(tc.name)
+            return (
+              <div key={tc.id} className="flex items-start gap-3">
+                {/* Center the icon on the box's header row (h-8 ≈ py-2 + text-xs). */}
+                <div className="flex h-8 w-7 shrink-0 items-center justify-center">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-800">
+                    <RowIcon size={14} className="text-neutral-500" />
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <ToolCallBadge toolCall={tc} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="group mb-4 animate-fade-in">
       <div className="flex items-start gap-3">
-        {/* Avatar — a tool-only turn shows its operation icon; otherwise the Bot
+        {/* Avatar — a grouped tool row shows its operation icon; otherwise the Bot
             avatar, except inside a tool group (the group shows one shared header
             above) where a prose/thinking turn keeps an empty spacer so its body
             stays aligned with the icon-avatared rows. */}
@@ -425,7 +496,7 @@ function AssistantMessage({
               'space-y-1',
               // Pad the top only when something actually renders above the tool
               // box — a visible model header, a thinking block, or response text.
-              // A tool-only turn has no header (showModelHeader is false), so it
+              // A grouped tool row has no header (showModelHeader is false), so it
               // top-aligns with its icon avatar; that also keeps the gap between
               // grouped call/result pairs equal to the gap within a pair (no stray
               // 8px from an mt-2 sitting under a suppressed header).
