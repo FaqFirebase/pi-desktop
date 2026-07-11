@@ -2,13 +2,19 @@ import { readFile, stat } from 'fs/promises'
 import { basename, extname } from 'path'
 import type { AttachmentReadResult } from '../shared/ipc-contracts'
 
-// Lowercase file extension -> MIME type Pi accepts as an inline image block.
+// Lowercase file extension -> MIME type for images we decode to base64 (for the
+// preview pane's image viewer, and as Pi inline-image blocks). Note: the chat
+// attachment picker is separately limited to SUPPORTED_IMAGE_EXTENSIONS, so the
+// extra preview-only formats here (avif/bmp/ico) are never sent to Pi.
 const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
   gif: 'image/gif',
   webp: 'image/webp',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
 }
 
 // Guard against accidentally base64-inlining a huge file into a prompt.

@@ -1,8 +1,9 @@
 import { useAppStore } from '../store'
 
-// Image extensions the viewer can render. png/jpg/jpeg/gif/webp arrive as base64
-// from readAttachment; svg comes back as text and is rendered from its markup.
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'])
+// Image extensions the viewer can render. png/jpg/jpeg/gif/webp/avif/bmp/ico
+// arrive as base64 from readAttachment; svg comes back as text and is rendered
+// from its markup.
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'ico', 'svg'])
 
 // Common file extensions we treat as "this inline code is a filename". Kept as an
 // allowlist (rather than "anything with a dot") so abbreviations like `e.g` and
@@ -18,6 +19,7 @@ const FILE_EXTENSIONS = new Set([
   'sh', 'bash', 'zsh', 'ps1', 'bat', 'cmd',
   'sql', 'graphql', 'gql', 'proto', 'tcl', 'gradle', 'groovy',
   'lock', 'gitignore', 'dockerignore', 'editorconfig',
+  'pdf',
   ...IMAGE_EXTENSIONS,
 ])
 

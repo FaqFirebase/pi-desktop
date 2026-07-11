@@ -119,6 +119,10 @@ function createMainWindow(): BrowserWindow {
     webPreferences.sandbox = true
     webPreferences.webSecurity = true
     webPreferences.allowRunningInsecureContent = false
+    // Enable Chromium's built-in PDF viewer (pdfium) so the preview pane can
+    // render local .pdf files. It's a bundled internal component; the guest is
+    // still confined to file:// (below), sandboxed, with no preload/node.
+    webPreferences.plugins = true
 
     if (!params.src.startsWith('file://')) {
       event.preventDefault()

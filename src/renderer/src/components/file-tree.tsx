@@ -26,7 +26,7 @@ import {
 // to a component so TS accepts the props we use. It renders the HTML preview in
 // an isolated guest process so its JavaScript runs without touching the app CSP.
 const Webview = 'webview' as unknown as React.FC<
-  React.HTMLAttributes<HTMLElement> & { src: string; partition?: string }
+  React.HTMLAttributes<HTMLElement> & { src: string; partition?: string; plugins?: boolean }
 >
 
 function toFileUrl(absolutePath: string): string {
@@ -425,11 +425,14 @@ export function FilePreview(): React.JSX.Element | null {
   const displayPath = file?.relativePath ?? file?.name ?? ''
   const isMarkdown = /\.(md|markdown|mdx)$/i.test(displayPath)
   const isHtml = /\.(html?|htm)$/i.test(displayPath)
+  // PDFs render in Chromium's built-in viewer via the <webview> — binary, so we
+  // never read them as text or offer editing.
+  const isPdf = /\.pdf$/i.test(displayPath)
   const canPreview = isMarkdown || isHtml
   const path = file?.path ?? null
 
   useEffect(() => {
-    if (!path) {
+    if (!path || isPdf) {
       setContent(null)
       setSavedContent(null)
       return
@@ -460,7 +463,7 @@ export function FilePreview(): React.JSX.Element | null {
     return () => {
       cancelled = true
     }
-  }, [path])
+  }, [path, isPdf])
 
   // Default to the rendered preview for markdown/HTML, source otherwise.
   useEffect(() => {
@@ -551,22 +554,26 @@ export function FilePreview(): React.JSX.Element | null {
               </button>
             </div>
           )}
-          <button
-            onClick={handleRevert}
-            disabled={!isDirty || saving}
-            className="rounded p-1 text-neutral-500 transition-colors hover:text-neutral-300 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Revert changes"
-          >
-            <RotateCcw size={12} />
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={!isDirty || saving}
-            className="rounded p-1 text-neutral-500 transition-colors hover:text-neutral-300 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Save file"
-          >
-            <Save size={12} />
-          </button>
+          {!isPdf && (
+            <>
+              <button
+                onClick={handleRevert}
+                disabled={!isDirty || saving}
+                className="rounded p-1 text-neutral-500 transition-colors hover:text-neutral-300 disabled:cursor-not-allowed disabled:opacity-40"
+                title="Revert changes"
+              >
+                <RotateCcw size={12} />
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={!isDirty || saving}
+                className="rounded p-1 text-neutral-500 transition-colors hover:text-neutral-300 disabled:cursor-not-allowed disabled:opacity-40"
+                title="Save file"
+              >
+                <Save size={12} />
+              </button>
+            </>
+          )}
           <button
             onClick={() => useAppStore.getState().setPreviewTarget(null)}
             className="rounded p-1 text-neutral-500 hover:text-neutral-300"
@@ -579,7 +586,17 @@ export function FilePreview(): React.JSX.Element | null {
 
       {/* Content */}
       <div className="flex flex-1 flex-col overflow-auto">
-        {loading ? (
+        {isPdf ? (
+          <Webview
+            // Ask Chromium's PDF viewer to open with both the thumbnail/bookmark
+            // sidebar and the top toolbar hidden, for a clean embedded preview.
+            src={`${toFileUrl(path)}#toolbar=0&navpanes=0`}
+            partition="persist:pdf-preview"
+            plugins
+            className="flex-1"
+            style={{ display: 'flex', width: '100%', height: '100%', border: 'none' }}
+          />
+        ) : loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 size={20} className="animate-spin text-neutral-500" />
           </div>
