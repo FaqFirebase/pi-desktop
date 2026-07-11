@@ -292,6 +292,21 @@ export function FileSearch({ isOpen, onClose }: FileSearchProps): React.JSX.Elem
     }
   }, [isOpen])
 
+  // Close on Escape. Capture phase + stopPropagation so it preempts the
+  // window-level Escape-to-abort handler while the modal is open.
+  useEffect(() => {
+    if (!isOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [isOpen, onClose])
+
   useEffect(() => {
     if (!query.trim()) {
       setResults([])
