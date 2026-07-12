@@ -5,6 +5,7 @@ import { MessageBubble, ToolGroupBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
 import { ChatSearch } from './chat-search'
 import { groupToolMessages, prepareChatMessages } from '../message-grouping'
+import { NowContext } from '../utils/relative-time'
 import { FileTree, FileSearch, FilePreview } from './file-tree'
 import { ImageViewer } from './image-viewer'
 import { DiffViewer } from './diff-viewer'
@@ -44,6 +45,14 @@ export function ChatPanel(): React.JSX.Element {
   const setSidePanel = useAppStore((state) => state.setChatSidePanel)
   const [sidePanelWidth, setSidePanelWidth] = useState(640)
   const [filePaneWidth, setFilePaneWidth] = useState(280)
+
+  // One shared clock for all relative-time labels — refresh every 30s so
+  // "5 minutes ago" stays current without each label owning a timer.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(id)
+  }, [])
 
   const currentView = useAppStore((state) => state.currentView)
   const { scrollRef, onScroll, atBottom, scrollToBottom } = useChatScroll(currentView === 'chat')
@@ -165,6 +174,7 @@ export function ChatPanel(): React.JSX.Element {
               {messages.length === 0 && !isStreaming ? (
                 <EmptyState piStatus={piStatus} />
               ) : (
+                <NowContext.Provider value={now}>
                 <div className="mx-auto max-w-5xl px-4 py-6">
                   {renderItems.map((item) =>
                     item.kind === 'toolGroup' ? (
@@ -186,6 +196,7 @@ export function ChatPanel(): React.JSX.Element {
                     />
                   )}
                 </div>
+                </NowContext.Provider>
               )}
             </div>
 

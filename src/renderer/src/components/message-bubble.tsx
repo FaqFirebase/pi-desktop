@@ -18,6 +18,7 @@ import { LineNumberedCode } from './line-numbered-code'
 import { MarkdownRenderer } from './markdown-renderer'
 import { CopyButton } from './copy-button'
 import { useContextMenu, buildMessageContextMenu } from './context-menu'
+import { RelativeTime } from '../utils/relative-time'
 import { clsx } from 'clsx'
 import {
   Copy,
@@ -348,6 +349,8 @@ function AssistantMessage({
                   <span>${message.cost.toFixed(4)}</span>
                 </>
               )}
+              <span className="text-neutral-700">·</span>
+              <RelativeTime timestamp={message.timestamp} />
             </div>
             {message.thinking && thinkingEnabled && (
               <div className="thinking-hover mt-2">
@@ -432,6 +435,8 @@ function AssistantMessage({
                   <span>${message.cost.toFixed(4)}</span>
                 </>
               )}
+              <span className="text-neutral-700">·</span>
+              <RelativeTime timestamp={message.timestamp} />
             </div>
           )}
 
@@ -797,6 +802,7 @@ function ToolGroupBubbleImpl({
     }
   }
   const showSharedHeader = modelKeys.size === 1 && sharedModel !== undefined
+  const groupTimestamp = messages[messages.length - 1]?.timestamp
 
   return (
     <div className="group mb-4 animate-fade-in">
@@ -812,6 +818,12 @@ function ToolGroupBubbleImpl({
               <span>{sharedProvider}</span>
               <span className="text-neutral-700">·</span>
               <span>{modelDisplayName(sharedModel as string, customModels)}</span>
+              {groupTimestamp !== undefined && (
+                <>
+                  <span className="text-neutral-700">·</span>
+                  <RelativeTime timestamp={groupTimestamp} />
+                </>
+              )}
             </div>
           )}
           <div
