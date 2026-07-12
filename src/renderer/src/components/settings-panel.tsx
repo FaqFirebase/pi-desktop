@@ -1,7 +1,7 @@
 import { useAppStore } from '../store'
 import { useState, useEffect, useRef } from 'react'
 import type { AppSettings, PermissionMode, CouncilConfig } from '../../../shared/ipc-contracts'
-import { Settings, Save, RotateCcw, FolderOpen, Check } from 'lucide-react'
+import { Settings, Save, RotateCcw, FolderOpen, Check, ChevronDown } from 'lucide-react'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { PermissionSelector } from './permission-selector'
 import { applyTheme } from '../utils/theme'
@@ -234,25 +234,31 @@ export function SettingsPanel(): React.JSX.Element {
         {/* Appearance */}
         <SettingsSection title="Appearance">
           <SettingsRow label="Theme" description="Application color scheme">
-            <select
-              value={theme}
-              onChange={(e) => {
-                const newTheme = e.target.value as AppSettings['theme']
-                setTheme(newTheme)
-                applyTheme(newTheme)
-                setSettingsDraft({ theme: newTheme })
-              }}
-              className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
-            >
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-              <option value="system">System</option>
-              <option value="nord">Nord</option>
-              <option value="gruvbox">Gruvbox</option>
-              <option value="breeze-dark">Breeze Dark (Kate)</option>
-              <option value="breeze-light">Breeze Light (Kate)</option>
-              <option value="breeze-claudius">Breeze Claudius</option>
-            </select>
+            <div className="relative">
+              <select
+                value={theme}
+                onChange={(e) => {
+                  const newTheme = e.target.value as AppSettings['theme']
+                  setTheme(newTheme)
+                  applyTheme(newTheme)
+                  setSettingsDraft({ theme: newTheme })
+                }}
+                className="w-full appearance-none rounded-md border border-neutral-700 bg-neutral-900 py-1.5 pl-3 pr-9 text-sm text-neutral-200 hover:border-neutral-600 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+                <option value="system">System</option>
+                <option value="nord">Nord</option>
+                <option value="gruvbox">Gruvbox</option>
+                <option value="breeze-dark">Breeze Dark (Kate)</option>
+                <option value="breeze-light">Breeze Light (Kate)</option>
+                <option value="breeze-claudius">Breeze Claudius</option>
+              </select>
+              <ChevronDown
+                size={14}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500"
+              />
+            </div>
           </SettingsRow>
 
           <SettingsRow label="UI Font Size" description="Chat, panels, and sidebar — not the terminal or code editor">
@@ -418,18 +424,24 @@ export function SettingsPanel(): React.JSX.Element {
                 label="Consensus mode"
                 description="How council members reach agreement"
               >
-                <select
-                  value={settings.council.consensusMode}
-                  onChange={(e) =>
-                    void saveCouncil({
-                      consensusMode: e.target.value as CouncilConfig['consensusMode'],
-                    })
-                  }
-                  className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
-                >
-                  <option value="arbiter">Arbiter merge (fast)</option>
-                  <option value="debate">One debate round (slower, ~2x cost)</option>
-                </select>
+                <div className="relative">
+                  <select
+                    value={settings.council.consensusMode}
+                    onChange={(e) =>
+                      void saveCouncil({
+                        consensusMode: e.target.value as CouncilConfig['consensusMode'],
+                      })
+                    }
+                    className="w-full appearance-none rounded-md border border-neutral-700 bg-neutral-900 py-1.5 pl-3 pr-9 text-sm text-neutral-200 hover:border-neutral-600 focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="arbiter">Arbiter merge (fast)</option>
+                    <option value="debate">One debate round (slower, ~2x cost)</option>
+                  </select>
+                  <ChevronDown
+                    size={14}
+                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500"
+                  />
+                </div>
               </SettingsRow>
 
               <SettingsRow
