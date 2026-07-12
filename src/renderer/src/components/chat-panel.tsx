@@ -339,7 +339,7 @@ function ToolbarButton({
         'rounded p-1 transition-colors',
         active
           ? 'bg-neutral-800 text-neutral-200'
-          : 'text-neutral-500 hover:bg-neutral-800/50 hover:text-neutral-300'
+          : 'pi-hover-highlight text-neutral-500 hover:text-neutral-300'
       )}
       title={title}
     >
