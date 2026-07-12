@@ -325,58 +325,82 @@ function AssistantMessage({
   // in and repeating it per row would just be noise.
   const showModelHeader = !!message.model && !hideModelHeader
 
-  // Standalone tool call (attributed, not inside a group): render it like a group
-  // reads — the Bot avatar carries the provider · model header on its own row, and
-  // each tool-call box sits on its own row behind the operation icon. (Grouped
-  // rows have no header and fall through to the single-avatar layout below; the
-  // group already shows one shared Bot header above them.)
-  if (ToolIcon && showModelHeader) {
+  // A pure-tool turn (body is only tool calls): render every call on its own row
+  // behind its own operation icon, so each call — including parallel calls in a
+  // single turn — is labelled with the right glyph. Standalone (attributed) turns
+  // also show a Bot avatar + provider·model header; grouped turns omit the header
+  // (the group's shared header stands in) but keep the same per-row-icon layout so
+  // a single-call and a multi-call turn align identically.
+  if (ToolIcon) {
+    const showThinkingBlock = !!message.thinking && thinkingEnabled
+    const hasHeaderArea = showModelHeader || showThinkingBlock
     return (
       <div className="group mb-4 animate-fade-in">
-        {/* Header row: Bot avatar + provider · model, matching a prose turn. */}
-        <div className="flex items-start gap-3">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800">
-            <Bot size={14} className="text-neutral-400" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex h-7 items-center gap-2 text-sm text-neutral-500">
-              <span>{message.provider}</span>
-              <span className="text-neutral-700">·</span>
-              <span>{modelDisplayName(message.model!, customModels)}</span>
-              {message.cost !== undefined && (
-                <>
-                  <span className="text-neutral-700">·</span>
-                  <span>${message.cost.toFixed(4)}</span>
-                </>
-              )}
-              <span className="text-neutral-700">·</span>
-              <RelativeTime timestamp={message.timestamp} />
-            </div>
-            {message.thinking && thinkingEnabled && (
-              <div className="thinking-hover mt-2">
-                <div className="flex h-7 items-center gap-1">
-                  <button
-                    onClick={onToggleThinking}
-                    className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-400 transition-colors"
-                  >
-                    <Brain size={12} />
-                    {showThinking ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                    Thinking
-                  </button>
-                  <CopyButton text={message.thinking} className="thinking-copy-btn" />
-                </div>
-                {showThinking && (
-                  <div className="markdown-body font-sans italic text-sm text-neutral-400">
-                    <MarkdownRenderer content={message.thinking} />
-                  </div>
-                )}
+        {hasHeaderArea && (
+          <div className="flex items-start gap-3">
+            {/* Bot avatar for an attributed turn; a spacer inside a group so the
+                header/thinking content still lines up with the tool rows. */}
+            {showModelHeader ? (
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800">
+                <Bot size={14} className="text-neutral-400" />
               </div>
+            ) : (
+              <div className="h-7 w-7 shrink-0" />
             )}
+            <div className="min-w-0 flex-1">
+              {showModelHeader && (
+                <div className="flex h-7 items-center gap-2 text-sm text-neutral-500">
+                  <span>{message.provider}</span>
+                  <span className="text-neutral-700">·</span>
+                  <span>{modelDisplayName(message.model!, customModels)}</span>
+                  {message.cost !== undefined && (
+                    <>
+                      <span className="text-neutral-700">·</span>
+                      <span>${message.cost.toFixed(4)}</span>
+                    </>
+                  )}
+                  <span className="text-neutral-700">·</span>
+                  <RelativeTime timestamp={message.timestamp} />
+                </div>
+              )}
+              {showThinkingBlock && (
+                // Grouped case: the group body already adds mt-4 (16px) above the
+                // first row; pull the thinking block up by 8px so it sits 8px below
+                // the group header — evenly matching its 8px gap to the tool rows.
+                <div className={clsx('thinking-hover', showModelHeader ? 'mt-2' : '-mt-2')}>
+                  <div className="flex h-7 items-center gap-1">
+                    <button
+                      onClick={onToggleThinking}
+                      className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-400 transition-colors"
+                    >
+                      <Brain size={12} />
+                      {showThinking ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                      Thinking
+                    </button>
+                    <CopyButton text={message.thinking!} className="thinking-copy-btn" />
+                  </div>
+                  {showThinking && (
+                    <div className="markdown-body font-sans italic text-sm text-neutral-400">
+                      <MarkdownRenderer content={message.thinking!} />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
         {/* One row per tool-call box, each behind its own operation icon. mt-2
-            sets the header→first-box gap; space-y-1 the box-to-box gap. */}
-        <div className="mt-2 space-y-1">
+            sets the header→first-box gap; a grouped thinking block above uses the
+            tighter mt-1 so its gap to the tool rows matches its (pulled-up) gap to
+            the group header. space-y-4 keeps the box-to-box gap equal to the mb-4
+            rhythm between separate call/result rows, so parallel calls don't bunch
+            up. */}
+        <div
+          className={clsx(
+            'space-y-4',
+            showThinkingBlock && !showModelHeader ? 'mt-1' : hasHeaderArea && 'mt-2'
+          )}
+        >
           {message.toolCalls!.map((tc) => {
             const RowIcon = toolCallIconFor(tc.name)
             return (
@@ -401,19 +425,11 @@ function AssistantMessage({
   return (
     <div className="group mb-4 animate-fade-in">
       <div className="flex items-start gap-3">
-        {/* Avatar — a grouped tool row shows its operation icon; otherwise the Bot
-            avatar, except inside a tool group (the group shows one shared header
-            above) where a prose/thinking turn keeps an empty spacer so its body
-            stays aligned with the icon-avatared rows. */}
-        {ToolIcon ? (
-          // Center the icon on the tool-call box's header row (h-8 ≈ py-2 +
-          // text-xs) instead of top-aligning, so it lines up with the box text.
-          <div className="flex h-8 w-7 shrink-0 items-center justify-center">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-800">
-              <ToolIcon size={14} className="text-neutral-500" />
-            </div>
-          </div>
-        ) : hideModelHeader ? (
+        {/* Avatar — the Bot avatar for a prose turn, except inside a tool group
+            (the group shows one shared header above) where it keeps an empty
+            spacer so its body stays aligned with the icon-avatared rows.
+            Pure-tool turns are handled earlier (each call gets its own icon). */}
+        {hideModelHeader ? (
           <div className="h-7 w-7 shrink-0" />
         ) : (
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800">
@@ -498,7 +514,10 @@ function AssistantMessage({
           {/* Tool calls */}
           {message.toolCalls && message.toolCalls.length > 0 && (
             <div className={clsx(
-              'space-y-1',
+              // space-y-4 so parallel calls in one turn (multiple badges here) keep
+              // the same 16px rhythm as separate call/result rows (each mb-4),
+              // rather than bunching up ~4px apart.
+              'space-y-4',
               // Pad the top only when something actually renders above the tool
               // box — a visible model header, a thinking block, or response text.
               // A grouped tool row has no header (showModelHeader is false), so it
