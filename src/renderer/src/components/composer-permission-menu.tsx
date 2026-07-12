@@ -56,7 +56,7 @@ export function ComposerPermissionMenu({ value, onChange }: ComposerPermissionMe
           'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
           isTrusted
             ? 'bg-yellow-500/15 text-yellow-300 hover:bg-yellow-500/35 hover:text-yellow-200'
-            : 'pi-hover-highlight text-neutral-300 hover:text-neutral-200'
+            : 'pi-hover-highlight-strong text-neutral-300 hover:text-neutral-200'
         )}
         title={getPermissionModeDescription(mode).replace(/\.$/, '')}
       >

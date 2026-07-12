@@ -475,7 +475,7 @@ export function ChatInput(): React.JSX.Element {
           {isStreaming ? (
             <button
               onClick={handleAbort}
-              className="flex items-center justify-center rounded-lg p-2 text-neutral-500 hover:text-neutral-300 transition-colors"
+              className="pi-hover-highlight-strong flex items-center justify-center rounded-lg p-2 text-neutral-500 hover:text-neutral-300 transition-colors"
               title="Stop (Esc)"
               aria-label="Stop generating"
             >
@@ -490,7 +490,7 @@ export function ChatInput(): React.JSX.Element {
                 }
               }}
               disabled={isDisabled}
-              className="flex items-center justify-center rounded-lg p-2 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="pi-hover-highlight-strong flex items-center justify-center rounded-lg p-2 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Send (Enter)"
               aria-label="Send message"
             >
@@ -507,7 +507,7 @@ export function ChatInput(): React.JSX.Element {
         <button
           onClick={handleAttachFile}
           disabled={isDisabled}
-          className="flex items-center justify-center rounded-md p-1 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
+          className="pi-hover-highlight-strong flex items-center justify-center rounded-md p-1 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
           title="Attach file"
           aria-label="Attach file"
         >
@@ -515,7 +515,7 @@ export function ChatInput(): React.JSX.Element {
         </button>
         <button
           onClick={() => setNotePickerOpen(true)}
-          className="flex items-center justify-center rounded-md p-1 text-neutral-500 hover:text-neutral-300 transition-colors"
+          className="pi-hover-highlight-strong flex items-center justify-center rounded-md p-1 text-neutral-500 hover:text-neutral-300 transition-colors"
           title="Insert note (Ctrl+Shift+P)"
           aria-label="Insert note"
         >
@@ -523,7 +523,7 @@ export function ChatInput(): React.JSX.Element {
         </button>
         <button
           onClick={() => toggleFileSearch()}
-          className="flex items-center justify-center rounded-md p-1 text-neutral-500 hover:text-neutral-300 transition-colors"
+          className="pi-hover-highlight-strong flex items-center justify-center rounded-md p-1 text-neutral-500 hover:text-neutral-300 transition-colors"
           title="Search workspace (Ctrl+Shift+F)"
           aria-label="Search workspace"
         >
