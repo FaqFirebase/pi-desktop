@@ -25,6 +25,13 @@
   background-color: var(--pi-highlight);
 }
 
+/* A stronger step (each theme's `bg-neutral-800`) for hover targets that sit
+   ON a `bg-neutral-900` surface — e.g. the composer action buttons inside the
+   input box, where the plain `--pi-highlight` (neutral-900) would be invisible. */
+.pi-hover-highlight-strong:hover {
+  background-color: var(--pi-highlight-strong);
+}
+
 @theme {
   --color-app-bg: #0a0a0a;
   --color-app-surface: #141414;
@@ -52,6 +59,7 @@
        (its bg-neutral-900). Referenced by the .pi-hover-highlight utility so
        hover states track the theme instead of a fixed neutral shade. */
     --pi-highlight: #171717;
+    --pi-highlight-strong: #262626;
     --color-bg-secondary: #141414;
     --color-bg-tertiary: #1c1c1c;
     --color-bg-elevated: #242424;
@@ -93,6 +101,7 @@
   .light {
     --color-bg-primary: #ffffff;
     --pi-highlight: #f5f5f5;
+    --pi-highlight-strong: #e5e5e5;
     --color-bg-secondary: #f5f5f5;
     --color-bg-tertiary: #e5e5e5;
     --color-bg-elevated: #ffffff;
@@ -392,6 +401,7 @@
   .nord {
     --color-bg-primary:         #2E3440;
     --pi-highlight:             #3B4252;
+    --pi-highlight-strong:      #434C5E;
     --color-bg-secondary:       #3B4252;
     --color-bg-tertiary:        #434C5E;
     --color-bg-elevated:        #4C566A;
@@ -490,6 +500,7 @@
   .gruvbox {
     --color-bg-primary:         #282828;
     --pi-highlight:             #3C3836;
+    --pi-highlight-strong:      #504945;
     --color-bg-secondary:       #3C3836;
     --color-bg-tertiary:        #504945;
     --color-bg-elevated:        #665C54;
@@ -585,6 +596,7 @@
   .breeze-dark {
     --color-bg-primary:         #232629;
     --pi-highlight:             #31363b;
+    --pi-highlight-strong:      #3f4347;
     --color-bg-secondary:       #31363b;
     --color-bg-tertiary:        #2A2E32;
     --color-bg-elevated:        #3f4347;
@@ -682,6 +694,7 @@
   .breeze-claudius {
     --color-bg-primary:         #232629;
     --pi-highlight:             #31363b;
+    --pi-highlight-strong:      #3f4347;
     --color-bg-secondary:       #31363b;
     --color-bg-tertiary:        #2A2E32;
     --color-bg-elevated:        #3f4347;
@@ -787,6 +800,7 @@
   .breeze-light {
     --color-bg-primary:         #ffffff;
     --pi-highlight:             #f8f7f6;
+    --pi-highlight-strong:      #ebebeb;
     --color-bg-secondary:       #f8f7f6;
     --color-bg-tertiary:        #ebebeb;
     --color-bg-elevated:        #ffffff;

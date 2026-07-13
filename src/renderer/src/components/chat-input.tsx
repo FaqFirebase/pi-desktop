@@ -1,7 +1,8 @@
 import { useRef, useCallback, useState, useEffect } from 'react'
 import { useAppStore } from '../store'
 import { useChatKeyboard } from '../hooks'
-import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users } from 'lucide-react'
+import { ComposerPermissionMenu } from './composer-permission-menu'
+import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users, Search } from 'lucide-react'
 import {
   SUPPORTED_IMAGE_EXTENSIONS,
   type PromptImage,
@@ -73,6 +74,9 @@ export function ChatInput(): React.JSX.Element {
   const councilEnabled = useAppStore((s) => s.settings?.council?.enabled ?? false)
   const runCouncil = useAppStore((s) => s.runCouncil)
   const recordPrompt = useAppStore((s) => s.recordPrompt)
+  const permissionMode = useAppStore((s) => s.settings?.permissionMode)
+  const setPermissionMode = useAppStore((s) => s.setPermissionMode)
+  const toggleFileSearch = useAppStore((s) => s.toggleFileSearch)
 
   // Prompt-history recall (shell-style ↑/↓). `historyIndex` is -1 when editing a
   // fresh draft; while navigating it points into store.promptHistory and `draft`
@@ -341,27 +345,6 @@ export function ChatInput(): React.JSX.Element {
           </div>
         )}
 
-        {/* Attachment button */}
-        <button
-          onClick={handleAttachFile}
-          disabled={isDisabled}
-          className="flex shrink-0 items-center justify-center p-3 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
-          title="Attach file"
-          aria-label="Attach file"
-        >
-          <Paperclip size={16} />
-        </button>
-
-        {/* Notes picker button */}
-        <button
-          onClick={() => setNotePickerOpen(true)}
-          className="flex shrink-0 items-center justify-center py-3 pr-3 text-neutral-500 hover:text-neutral-300 transition-colors"
-          title="Insert a saved note (Ctrl+Shift+P)"
-          aria-label="Insert a saved note"
-        >
-          <StickyNote size={16} />
-        </button>
-
         {/* Plan with Council button */}
         {councilEnabled && (
           <button
@@ -376,7 +359,7 @@ export function ChatInput(): React.JSX.Element {
               }
             }}
             disabled={isDisabled || isStreaming}
-            className="flex shrink-0 items-center justify-center py-3 pr-1 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
+            className="flex shrink-0 items-center justify-center py-3 pl-3 pr-1 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
             title="Plan with Council"
             aria-label="Plan with Council"
           >
@@ -392,11 +375,11 @@ export function ChatInput(): React.JSX.Element {
               ? 'Pi agent is not running...'
               : isStreaming
                 ? 'Type to steer the agent...'
-                : 'Ask Pi anything... (Enter to send, Shift+Enter for newline)'
+                : 'Type / for commands'
           }
           disabled={isDisabled}
           rows={1}
-          className="font-chat max-h-48 min-h-[24px] flex-1 resize-none bg-transparent py-3 text-sm text-neutral-200 placeholder:text-neutral-600 outline-none disabled:opacity-50"
+          className={`font-chat max-h-48 min-h-[24px] flex-1 resize-none bg-transparent py-3 text-sm text-neutral-200 placeholder:text-neutral-600 outline-none disabled:opacity-50 ${councilEnabled ? 'pl-1' : 'pl-4'}`}
           onInput={(e) => {
             const target = e.currentTarget
             target.style.height = 'auto'
@@ -492,7 +475,7 @@ export function ChatInput(): React.JSX.Element {
           {isStreaming ? (
             <button
               onClick={handleAbort}
-              className="flex items-center justify-center rounded-lg p-2 text-neutral-500 hover:text-neutral-300 transition-colors"
+              className="pi-hover-highlight-strong flex items-center justify-center rounded-lg p-2 text-neutral-500 hover:text-neutral-300 transition-colors"
               title="Stop (Esc)"
               aria-label="Stop generating"
             >
@@ -507,7 +490,7 @@ export function ChatInput(): React.JSX.Element {
                 }
               }}
               disabled={isDisabled}
-              className="flex items-center justify-center rounded-lg p-2 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="pi-hover-highlight-strong flex items-center justify-center rounded-lg p-2 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Send (Enter)"
               aria-label="Send message"
             >
@@ -517,19 +500,42 @@ export function ChatInput(): React.JSX.Element {
         </div>
       </div>
 
-      {/* Keyboard shortcuts hint */}
-      <div className="mt-2 flex items-center justify-between text-xs text-neutral-600">
-        <div className="flex gap-3">
-          <span>Enter: send</span>
-          <span>Shift+Enter: newline</span>
-          <span>Esc: stop</span>
-          <span>Ctrl+P: model</span>
-          <span>Ctrl+Shift+F: search</span>
-          <span>Ctrl+Shift+P: notes</span>
-        </div>
-        {isStreaming && (
-          <span className="text-yellow-500 animate-pulse">Streaming...</span>
-        )}
+      {/* Composer actions */}
+      <div className="font-chat mt-2 flex items-center gap-0.5">
+        {/* Permission-mode shortcut — same modes as the review panel */}
+        <ComposerPermissionMenu value={permissionMode} onChange={setPermissionMode} />
+        <button
+          onClick={handleAttachFile}
+          disabled={isDisabled}
+          className="pi-hover-highlight-strong flex items-center justify-center rounded-md p-1 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
+          title="Attach file"
+          aria-label="Attach file"
+        >
+          <Paperclip size={16} />
+        </button>
+        <button
+          onClick={() => setNotePickerOpen(true)}
+          className="pi-hover-highlight-strong flex items-center justify-center rounded-md p-1 text-neutral-500 hover:text-neutral-300 transition-colors"
+          title="Insert note (Ctrl+Shift+P)"
+          aria-label="Insert note"
+        >
+          <StickyNote size={16} />
+        </button>
+        <button
+          onClick={() => toggleFileSearch()}
+          className="pi-hover-highlight-strong flex items-center justify-center rounded-md p-1 text-neutral-500 hover:text-neutral-300 transition-colors"
+          title="Search workspace (Ctrl+Shift+F)"
+          aria-label="Search workspace"
+        >
+          <Search size={16} />
+        </button>
+        <span className="ml-auto text-xs text-neutral-600">
+          {isStreaming ? (
+            <span className="text-yellow-500 animate-pulse">Streaming...</span>
+          ) : (
+            'Shift+Enter for newline'
+          )}
+        </span>
       </div>
     </div>
   )
