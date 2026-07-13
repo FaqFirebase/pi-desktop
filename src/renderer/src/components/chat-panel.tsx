@@ -359,23 +359,66 @@ function ToolbarButton({
   )
 }
 
+// Keyboard shortcuts shown on the empty/new-session screen — a lightweight
+// starting affordance in place of the old static example-prompt buttons. Each
+// combo is verified against its handler (hooks.ts, chat-input.tsx, app.tsx,
+// main/index.ts); "Ctrl/Cmd" marks the ones that accept either modifier.
+const KEYBOARD_SHORTCUTS: ReadonlyArray<{ keys: string; note?: string; desc: string }> = [
+  { keys: 'Enter', desc: 'Send message' },
+  { keys: 'Shift+Enter', desc: 'New line' },
+  { keys: 'Up/Down', desc: 'Recall previous prompts' },
+  { keys: '@', desc: 'Mention a workspace file' },
+  { keys: 'Escape', desc: 'Stop streaming' },
+  { keys: 'Ctrl/Cmd+K', desc: 'Open command palette' },
+  { keys: '/', note: 'start of message', desc: 'Open command palette' },
+  { keys: 'Ctrl+P', desc: 'Cycle model' },
+  { keys: 'Ctrl/Cmd+F', desc: 'Find in conversation' },
+  { keys: 'Ctrl+Shift+F', desc: 'File search' },
+  { keys: 'Ctrl+Shift+P', desc: 'Insert saved note' },
+  { keys: 'Ctrl+N', desc: 'New session' },
+  { keys: 'Ctrl+Shift+N', desc: 'New workspace' },
+  { keys: 'Ctrl+O', desc: 'Open project' },
+]
+
 function EmptyState({ piStatus }: { piStatus: string }): React.JSX.Element {
   return (
-    <div className="flex h-full flex-col items-center justify-center px-4">
-      <div className="text-center">
-        <img src={piLogo} alt="Pi Desktop" className="mx-auto mb-4 block h-16 w-16" />
-        <h2 className="mb-6 text-2xl font-semibold text-neutral-100">
-          Pi Desktop
-        </h2>
-        <p className="mb-6 max-w-3xl text-balance text-sm text-neutral-500">
-          {piStatus === 'running'
-            ? 'Start a conversation with your coding agent. Ask it to build, debug, or explore your codebase.'
-            : piStatus === 'starting'
-              ? 'Starting Pi agent...'
-              : piStatus === 'error'
-                ? 'Failed to start Pi agent. Check settings.'
-                : 'Pi agent is not running. Start it from the sidebar or status bar.'}
-        </p>
+    <div className="flex min-h-full flex-col items-center px-4 py-10">
+      <div className="my-auto flex flex-col items-center">
+        <div className="text-center">
+          <img src={piLogo} alt="Pi Desktop" className="mx-auto mb-4 block h-16 w-16" />
+          <h2 className="mb-2 text-2xl font-semibold text-neutral-100">
+            Pi Desktop
+          </h2>
+          <p className="mb-6 whitespace-nowrap text-sm text-neutral-500">
+            {piStatus === 'running'
+              ? 'Start a conversation with your coding agent. Ask it to build, debug, or explore your codebase.'
+              : piStatus === 'starting'
+                ? 'Starting Pi agent...'
+                : piStatus === 'error'
+                  ? 'Failed to start Pi agent. Check settings.'
+                  : 'Pi agent is not running. Start it from the sidebar or status bar.'}
+          </p>
+        </div>
+
+        {piStatus === 'running' && (
+          <div className="mt-4 w-full max-w-md translate-x-4 text-left">
+            <table className="w-full border-collapse overflow-hidden rounded-lg text-[0.75em]">
+              <tbody>
+                {KEYBOARD_SHORTCUTS.map((s) => (
+                  <tr key={s.keys + s.desc} className="border-b border-neutral-800 last:border-b-0">
+                    <td className="w-1/2 py-1.5 pr-3 align-middle">
+                      <kbd className="rounded border border-neutral-700 bg-neutral-800 px-1.5 py-0.5 font-mono text-[0.9em] text-neutral-300">
+                        {s.keys}
+                      </kbd>
+                      {s.note && <span className="ml-1.5 text-[0.9em] text-neutral-600">({s.note})</span>}
+                    </td>
+                    <td className="py-1.5 align-middle text-neutral-400">{s.desc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )
