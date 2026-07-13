@@ -179,19 +179,26 @@ test('debate prompt shows other plans and asks for a revision', () => {
 })
 
 test('consultant command uses read-only flags per agent', () => {
-  const claude = buildConsultantCommand('claude', '/usr/bin/claude', 'PROMPT')
+  const claude = buildConsultantCommand('claude', '/usr/bin/claude')
   assert.equal(claude.file, '/usr/bin/claude')
   assert.ok(claude.args.includes('-p'))
-  assert.ok(claude.args.includes('PROMPT'))
 
-  const codex = buildConsultantCommand('codex', '/usr/bin/codex', 'PROMPT')
+  const codex = buildConsultantCommand('codex', '/usr/bin/codex')
   assert.equal(codex.file, '/usr/bin/codex')
   assert.ok(codex.args.includes('exec'))
-  assert.ok(codex.args.includes('PROMPT'))
+})
+
+test('consultant command never puts the prompt in argv (stdin-only delivery)', () => {
+  // Untrusted prompt text must not reach the command line — on Windows the args
+  // pass through cmd.exe and would be open to shell-metacharacter injection.
+  for (const id of ['pi', 'claude', 'codex'] as const) {
+    const { args } = buildConsultantCommand(id, '/usr/bin/agent')
+    assert.ok(!args.some((a) => /prompt/i.test(a)), `${id} argv should carry no prompt`)
+  }
 })
 
 test('claude command requests stream-json for live output', () => {
-  const claude = buildConsultantCommand('claude', '/usr/bin/claude', 'PROMPT')
+  const claude = buildConsultantCommand('claude', '/usr/bin/claude')
   assert.ok(claude.args.includes('--output-format'))
   assert.ok(claude.args.includes('stream-json'))
   assert.ok(claude.args.includes('--include-partial-messages'))
@@ -218,12 +225,11 @@ test('parseClaudeStreamLine ignores irrelevant lines and bad JSON', () => {
 })
 
 test('codex command requests JSONL streaming and read-only sandbox', () => {
-  const codex = buildConsultantCommand('codex', '/usr/bin/codex', 'PROMPT')
+  const codex = buildConsultantCommand('codex', '/usr/bin/codex')
   assert.ok(codex.args.includes('exec'))
   assert.ok(codex.args.includes('--json'))
   assert.ok(codex.args.includes('--sandbox'))
   assert.ok(codex.args.includes('read-only'))
-  assert.ok(codex.args.includes('PROMPT'))
 })
 
 test('parseCodexStreamLine extracts the agent message as plan', () => {
@@ -248,14 +254,19 @@ test('parseCodexStreamLine ignores non-item events and bad JSON', () => {
   assert.deepEqual(parseCodexStreamLine(''), {})
 })
 
-test('pi command runs read-only json mode with the prompt', () => {
-  const pi = buildConsultantCommand('pi', '/usr/bin/pi', 'PROMPT')
+test('pi command runs read-only json mode with bash excluded', () => {
+  const pi = buildConsultantCommand('pi', '/usr/bin/pi')
   assert.equal(pi.file, '/usr/bin/pi')
   assert.ok(pi.args.includes('-p'))
   assert.ok(pi.args.includes('--mode'))
   assert.ok(pi.args.includes('json'))
   assert.ok(pi.args.includes('--exclude-tools'))
-  assert.ok(pi.args.includes('PROMPT'))
+  // bash must be denied so an injected plan cannot run shell commands during
+  // the supposedly read-only planning/arbitration run.
+  const denied = pi.args[pi.args.indexOf('--exclude-tools') + 1] ?? ''
+  assert.ok(denied.split(',').includes('bash'), 'pi read-only run must exclude bash')
+  assert.ok(denied.split(',').includes('edit'))
+  assert.ok(denied.split(',').includes('write'))
 })
 
 test('parsePiStreamLine extracts assistant text as plan', () => {

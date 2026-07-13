@@ -132,17 +132,21 @@ export async function runArbiter(
 /** Default spawn: run the consultant CLI, stream output, enforce timeout. */
 export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeoutMs, onChunk) =>
   new Promise<SpawnOutcome>((resolve) => {
-    const { file, args } = buildConsultantCommand(id, resolveExecutable(id), prompt)
-    // stdin is closed ('ignore'): consultant CLIs take the prompt as an
-    // argument, but if stdin is left open as an empty pipe they block waiting
-    // for input (Claude warns "no stdin data received"; Codex reads stdin and
-    // hangs until the timeout). Closing it makes them use the prompt arg.
+    const { file, args } = buildConsultantCommand(id, resolveExecutable(id))
+    // The prompt is delivered over stdin, never as a CLI argument. On Windows
+    // the args pass through cmd.exe (shell:true is required to launch the `.cmd`
+    // shims), so untrusted plan text on the command line would be open to
+    // shell-metacharacter injection. All three CLIs read the prompt from stdin.
     const child = spawn(file, args, {
       cwd,
       shell: IS_WINDOWS,
       windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     })
+    // Ignore EPIPE if the child exits before consuming stdin; write then close
+    // so the CLI sees a complete prompt and does not block waiting for more.
+    child.stdin?.on('error', () => {})
+    child.stdin?.end(prompt)
     const outDecoder = new StringDecoder('utf8')
     const errDecoder = new StringDecoder('utf8')
     let stdout = ''

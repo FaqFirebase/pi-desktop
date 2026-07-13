@@ -203,31 +203,38 @@ export function buildDebatePrompt(
   ].join('\n')
 }
 
-/** Spawn argv for a consultant in read-only mode. Flags verified per CLI. */
+/**
+ * Spawn argv for a consultant in read-only mode. Flags verified per CLI.
+ *
+ * The prompt is NEVER included here: it is delivered to the child over stdin
+ * (see defaultSpawnConsultant). On Windows the args pass through cmd.exe (a
+ * shell is required to launch the `.cmd` shims), so putting untrusted plan text
+ * on the command line would allow shell-metacharacter injection. Keeping only
+ * static flags in argv closes that vector.
+ */
 export function buildConsultantCommand(
   id: CouncilAgentId,
   executable: string,
-  prompt: string,
 ): { file: string; args: string[] } {
   switch (id) {
     case 'pi':
       // Non-interactive JSON mode streams the same events the app already speaks.
-      // Exclude write tools so the planning run stays read-only; --no-session
+      // Exclude bash/edit/write so the planning run is genuinely read-only —
+      // bash would otherwise let an injected plan run shell commands. --no-session
       // keeps it ephemeral.
       return {
         file: executable,
-        args: ['-p', '--mode', 'json', '--no-session', '--exclude-tools', 'edit,write', prompt],
+        args: ['-p', '--mode', 'json', '--no-session', '--exclude-tools', 'bash,edit,write'],
       }
     case 'claude':
       // stream-json + partial messages let us render Claude's plan live as it
       // is generated (plain `-p` text mode only prints the final answer at the
       // end). `--verbose` is required by Claude when combining `-p` with
-      // `--output-format stream-json`.
+      // `--output-format stream-json`. `-p` reads the prompt from stdin.
       return {
         file: executable,
         args: [
           '-p',
-          prompt,
           '--permission-mode',
           'plan',
           '--output-format',
@@ -238,7 +245,8 @@ export function buildConsultantCommand(
       }
     case 'codex':
       // --json streams events as JSONL so we can show Codex's progress live.
-      return { file: executable, args: ['exec', '--json', '--sandbox', 'read-only', prompt] }
+      // `exec` reads the prompt from stdin.
+      return { file: executable, args: ['exec', '--json', '--sandbox', 'read-only'] }
   }
 }
 
