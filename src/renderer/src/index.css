@@ -22,17 +22,58 @@
    should highlight to the theme's card color on hover use this utility, which
    references the per-theme `--pi-highlight` token instead. */
 .pi-hover-highlight:hover {
-  background-color: var(--pi-highlight);
+  background-color: var(--color-highlight);
 }
 
 /* A stronger step (each theme's `bg-neutral-800`) for hover targets that sit
    ON a `bg-neutral-900` surface — e.g. the composer action buttons inside the
    input box, where the plain `--pi-highlight` (neutral-900) would be invisible. */
 .pi-hover-highlight-strong:hover {
-  background-color: var(--pi-highlight-strong);
+  background-color: var(--color-highlight-strong);
 }
 
 @theme {
+  /* Semantic tokens — pi-theme/v1. Values here are the base dark defaults;
+     the ThemeEngine overrides them on <html> at runtime. */
+  --color-app: #0a0a0a;
+  --color-surface: #171717;
+  --color-surface-hover: #262626;
+  --color-card: #262626;
+  --color-elevated: #404040;
+  --color-highlight: #171717;
+  --color-highlight-strong: #262626;
+  --color-primary: #f5f5f5;
+  --color-secondary: #d4d4d4;
+  --color-muted: #a3a3a3;
+  --color-dim: #737373;
+  --color-faint: #525252;
+  --color-ghost: #404040;
+  --color-inverse: #0a0a0a;
+  --color-border: #262626;
+  --color-border-strong: #404040;
+  --color-focus: #3b82f6;
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-fg: #60a5fa;
+  --color-accent-bg: rgba(30, 58, 138, 0.3);
+  --color-success: #34d399;
+  --color-success-bg: rgba(6, 78, 59, 0.3);
+  --color-warning: #facc15;
+  --color-warning-bg: rgba(113, 63, 18, 0.3);
+  --color-error: #f87171;
+  --color-error-bg: rgba(127, 29, 29, 0.3);
+  --color-info: #60a5fa;
+  --color-info-bg: rgba(30, 58, 138, 0.3);
+  --color-special: #c084fc;
+  --color-special-bg: rgba(88, 28, 135, 0.3);
+  --color-chat-column: var(--color-app);
+  --color-chat-column-border: var(--color-border);
+  --color-scrollbar: #2a2a2a;
+  --color-scrollbar-hover: #3a3a3a;
+  --color-md-code: #60a5fa;
+  --color-md-pre-bg: #0d1117;
+
+  /* transitional — removed in the legacy-removal task */
   --color-app-bg: #0a0a0a;
   --color-app-surface: #141414;
   --color-app-border: #2a2a2a;
@@ -142,7 +183,7 @@
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: #2a2a2a transparent;
+    scrollbar-color: var(--color-scrollbar) transparent;
   }
 
   *::-webkit-scrollbar {
@@ -155,12 +196,12 @@
   }
 
   *::-webkit-scrollbar-thumb {
-    background-color: #2a2a2a;
+    background-color: var(--color-scrollbar);
     border-radius: 3px;
   }
 
   *::-webkit-scrollbar-thumb:hover {
-    background-color: #3a3a3a;
+    background-color: var(--color-scrollbar-hover);
   }
 }
 
@@ -221,7 +262,7 @@
   .markdown-body code {
     font-family: 'Inter Variable', system-ui, sans-serif;
     font-size: 1em;
-    color: #60a5fa;
+    color: var(--color-md-code);
   }
 
   /* Clickable filename references: arrow cursor + highlight box on hover. */
@@ -233,19 +274,14 @@
   }
 
   .markdown-body code.chat-file-link:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .light .markdown-body code.chat-file-link:hover,
-  .breeze-light .markdown-body code.chat-file-link:hover {
-    background-color: rgba(0, 0, 0, 0.08);
+    background-color: color-mix(in oklab, var(--color-primary), transparent 90%);
   }
 
   .markdown-body pre {
     margin: 0.75em 0;
     border-radius: 8px;
     overflow-x: auto;
-    background: #0d1117;
+    background: var(--color-md-pre-bg);
     border: 1px solid var(--color-border);
   }
 
@@ -326,73 +362,80 @@
 
 @layer components {
   .hljs {
-    background: transparent !important;
-    color: #c9d1d9 !important;
+    background: transparent;
+    color: var(--cm-variable);
   }
 
   .hljs-comment,
   .hljs-quote {
-    color: #8b949e;
+    color: var(--cm-comment);
     font-style: italic;
   }
 
   .hljs-keyword,
   .hljs-selector-tag {
-    color: #ff7b72;
+    color: var(--cm-keyword);
   }
 
   .hljs-string,
   .hljs-attr,
   .hljs-template-variable {
-    color: #a5d6ff;
+    color: var(--cm-string);
   }
 
   .hljs-number,
   .hljs-literal,
   .hljs-variable {
-    color: #79c0ff;
+    color: var(--cm-number);
   }
 
   .hljs-built_in,
   .hljs-type {
-    color: #ffa657;
+    color: var(--cm-type);
   }
 
   .hljs-function .hljs-title,
   .hljs-title.function_ {
-    color: #d2a8ff;
+    color: var(--cm-function);
   }
 
-  .hljs-tag {
-    color: #7ee787;
-  }
-
+  .hljs-tag,
   .hljs-name {
-    color: #7ee787;
+    color: var(--cm-tag);
   }
 
   .hljs-attribute {
-    color: #79c0ff;
+    color: var(--cm-property);
   }
 
   .hljs-symbol,
   .hljs-bullet {
-    color: #f2cc60;
+    color: var(--cm-constant);
   }
 
   .hljs-meta {
-    color: #8b949e;
+    color: var(--cm-meta);
   }
 
   .hljs-deletion {
-    color: #ffa198;
-    background: #490202;
+    color: var(--cm-invalid);
+    background: var(--color-error-bg);
   }
 
   .hljs-addition {
-    color: #aff5b4;
-    background: #033a16;
+    color: var(--cm-string);
+    background: var(--color-success-bg);
   }
+}
+
+@layer components {
+  /* Chat center column: themable via tokens; defaults track the app background
+     so only themes that override --color-chat-column look different. */
+  .chat-center {
+    background-color: var(--color-chat-column);
+  }
+  .chat-center > .border-b { border-bottom-color: var(--color-chat-column-border); }
+  .chat-center > .border-t { border-top-color: var(--color-chat-column-border); }
 }
 
 /* ─── Nord Theme ─────────────────────────────────────────────────────────── */
