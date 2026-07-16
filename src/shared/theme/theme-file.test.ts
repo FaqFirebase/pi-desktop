@@ -30,9 +30,22 @@ test('accepts rgba and transparent in overrides and syntax', () => {
   assert.equal(theme.overrides?.['chat-column-border'], 'transparent')
 })
 
+test('accepts rgba with 1.0 alpha (full opacity written with trailing zero)', () => {
+  const theme = validateThemeFile({
+    ...valid,
+    overrides: { 'accent-bg': 'rgba(0, 0, 0, 1.0)' },
+  })
+  assert.equal(theme.overrides?.['accent-bg'], 'rgba(0, 0, 0, 1.0)')
+})
+
 for (const [label, mutate] of [
   ['wrong $schema', (t: Record<string, unknown>) => { t.$schema = 'pi-theme/v9' }],
-  ['missing seed', (t: Record<string, unknown>) => { t.seeds = { ...valid.seeds, accent: undefined } }],
+  ['missing seed', (t: Record<string, unknown>) => {
+    const seeds = { ...valid.seeds } as Record<string, unknown>
+    delete seeds.accent
+    t.seeds = seeds
+  }],
+  ['undefined-valued seed', (t: Record<string, unknown>) => { t.seeds = { ...valid.seeds, accent: undefined } }],
   ['bad color value', (t: Record<string, unknown>) => { t.seeds = { ...valid.seeds, app: 'url(javascript:x)' } }],
   ['unknown override key', (t: Record<string, unknown>) => { t.overrides = { 'not-a-token': '#fff' } }],
   ['unknown syntax key', (t: Record<string, unknown>) => { t.syntax = { sparkle: '#fff' } }],

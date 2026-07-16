@@ -29,7 +29,7 @@ export class ThemeValidationError extends Error {
 }
 
 const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i
-const RGB_COLOR = /^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(?:,\s*(?:0|1|0?\.\d+)\s*)?\)$/
+const RGB_COLOR = /^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(?:,\s*(?:0|1|0?\.\d+|1\.0+)\s*)?\)$/
 
 function isColorValue(value: unknown): value is string {
   return typeof value === 'string' &&
@@ -43,20 +43,23 @@ function requireColorMap(
     throw new ThemeValidationError(`${label} must be an object`)
   }
   const record = data as Record<string, unknown>
+  const validated: Record<string, string> = {}
   for (const key of Object.keys(record)) {
     if (!allowedKeys.includes(key)) {
       throw new ThemeValidationError(`${label} has unknown key "${key}"`)
     }
-    if (!isColorValue(record[key])) {
+    const value = record[key]
+    if (!isColorValue(value)) {
       throw new ThemeValidationError(`${label}.${key} is not a valid color`)
     }
+    validated[key] = value
   }
   if (requireAll) {
     for (const key of allowedKeys) {
       if (!(key in record)) throw new ThemeValidationError(`${label} is missing "${key}"`)
     }
   }
-  return record as Record<string, string>
+  return validated
 }
 
 export function validateThemeFile(data: unknown): ThemeFile {
