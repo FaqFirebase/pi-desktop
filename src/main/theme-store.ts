@@ -21,6 +21,17 @@ export async function listUserThemes(dir: string): Promise<UserThemeList> {
     const id = entry.slice(0, -THEME_FILE_EXT.length)
     try {
       const file = validateThemeFile(JSON.parse(await readFile(join(dir, entry), 'utf8')))
+      // Theme files are untrusted input (imported from disk or installed
+      // from arbitrary URLs). saveUserTheme refuses to *create* a file whose
+      // id collides with a built-in, but a colliding file can still land in
+      // this directory by other means (predates that fix, external write,
+      // future bug). If loaded, it would silently replace the real built-in
+      // in the renderer's theme registry (Map.set) on every launch, so any
+      // such file must be excluded here regardless of how it got there.
+      if ((BUILTIN_THEME_IDS as readonly string[]).includes(id)) {
+        warnings.push(`${entry}: id '${id}' collides with a built-in theme and was ignored`)
+        continue
+      }
       themes.push({ id, file })
     } catch (error) {
       warnings.push(`${entry}: ${error instanceof Error ? error.message : String(error)}`)

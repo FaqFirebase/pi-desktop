@@ -61,6 +61,19 @@ test('list skips invalid files with a warning', async () => {
   assert.equal(warnings.length, 2)
 })
 
+test('list ignores a file whose id shadows a built-in theme', async () => {
+  const dir = await freshDir()
+  // Simulate a shadow file arriving by any means other than saveUserTheme
+  // (predates the write-side fix, placed by another process, etc). The
+  // content itself is a valid theme file; only its filename collides.
+  await writeFile(join(dir, 'nord.json'), JSON.stringify(theme('Not Actually Nord')))
+  const { themes, warnings } = await listUserThemes(dir)
+  assert.ok(!themes.some((t) => t.id === 'nord'))
+  const nordWarnings = warnings.filter((w) => w.includes('nord'))
+  assert.equal(nordWarnings.length, 1)
+  assert.match(nordWarnings[0], /built-in/)
+})
+
 test('delete removes the file and rejects traversal', async () => {
   const dir = await freshDir()
   const { id } = await saveUserTheme(dir, theme('Bye'))
