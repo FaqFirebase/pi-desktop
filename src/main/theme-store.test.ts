@@ -36,6 +36,12 @@ test('name collision gets numeric suffix', async () => {
   assert.equal(second.id, 'dup-2')
 })
 
+test('saving a theme named after a built-in avoids the built-in id', async () => {
+  const dir = await freshDir()
+  const { id } = await saveUserTheme(dir, theme('Nord'))
+  assert.equal(id, 'nord-2')
+})
+
 test('saving identical id and name overwrites (editor update path)', async () => {
   const dir = await freshDir()
   await saveUserTheme(dir, theme('Same'))

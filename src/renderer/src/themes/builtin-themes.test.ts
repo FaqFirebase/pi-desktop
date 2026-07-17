@@ -6,11 +6,20 @@ import { fileURLToPath } from 'node:url'
 import { validateThemeFile } from '../../../shared/theme/theme-file'
 import { resolveThemeVars } from '../../../shared/theme/resolve'
 import { TOKEN_NAMES, cssVarForToken } from '../../../shared/theme/tokens'
+import { BUILTIN_THEME_IDS } from './index'
+import { BUILTIN_THEME_IDS as SHARED_BUILTIN_THEME_IDS } from '../../../shared/theme/builtin-ids'
 
 const themesDir = dirname(fileURLToPath(import.meta.url))
 const EXPECTED_IDS = [
   'dark', 'light', 'nord', 'gruvbox', 'breeze-dark', 'breeze-light', 'breeze-claudius',
 ]
+
+test('renderer and shared built-in theme id lists never diverge', () => {
+  assert.deepEqual(
+    new Set(BUILTIN_THEME_IDS),
+    new Set(SHARED_BUILTIN_THEME_IDS),
+  )
+})
 
 test('all 7 built-in themes exist, validate, and fully resolve', () => {
   const files = readdirSync(themesDir).filter((f) => f.endsWith('.json')).sort()
