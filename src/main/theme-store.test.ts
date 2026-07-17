@@ -85,3 +85,18 @@ test('installThemeFromUrl validates scheme, size, and content', async () => {
   await assert.rejects(
     installThemeFromUrl(dir, 'https://example.com/404.json', failFetch), /404/)
 })
+
+test('installThemeFromUrl rejects a redirect that downgrades to http', async () => {
+  const dir = await freshDir()
+  const downgradedUrl = 'http://evil.example.com/t.json'
+  const redirectFetch = (async () => {
+    const response = new Response(JSON.stringify(theme('Remote')), { status: 200 })
+    // Response.url has no writable init option; the only way to simulate
+    // undici's post-redirect response.url is to override the getter result
+    // directly, mirroring what a real https->http redirect would produce.
+    Object.defineProperty(response, 'url', { value: downgradedUrl })
+    return response
+  }) as typeof fetch
+  await assert.rejects(
+    installThemeFromUrl(dir, 'https://example.com/t.json', redirectFetch), /https/)
+})
