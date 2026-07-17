@@ -42,6 +42,16 @@ test('saving a theme named after a built-in avoids the built-in id', async () =>
   assert.equal(id, 'nord-2')
 })
 
+test('re-importing the same built-in-named theme stays on the same suffixed id', async () => {
+  const dir = await freshDir()
+  const first = await saveUserTheme(dir, theme('Nord'))
+  const second = await saveUserTheme(dir, theme('Nord'))
+  assert.equal(first.id, 'nord-2')
+  assert.equal(second.id, 'nord-2')
+  const { themes } = await listUserThemes(dir)
+  assert.deepEqual(themes.map((t) => t.id), ['nord-2'])
+})
+
 test('saving identical id and name overwrites (editor update path)', async () => {
   const dir = await freshDir()
   await saveUserTheme(dir, theme('Same'))
