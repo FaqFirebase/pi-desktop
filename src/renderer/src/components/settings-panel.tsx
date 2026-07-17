@@ -4,7 +4,8 @@ import type { AppSettings, PermissionMode, CouncilConfig } from '../../../shared
 import { Settings, Save, RotateCcw, FolderOpen, Check, ChevronDown } from 'lucide-react'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { PermissionSelector } from './permission-selector'
-import { applyTheme } from '../utils/theme'
+import { applyTheme, getRegisteredThemes, registerThemes } from '../utils/theme'
+import { BUILTIN_THEME_IDS } from '../themes'
 import { CustomModelsEditor } from './custom-models-editor'
 import {
   MIN_TIMEOUT_SECONDS as COUNCIL_MIN_TIMEOUT,
@@ -24,6 +25,8 @@ export function SettingsPanel(): React.JSX.Element {
 
   const [piPath, setPiPath] = useState(draft0.piExecutablePath ?? settings?.piExecutablePath ?? DEFAULT_SETTINGS.piExecutablePath)
   const [theme, setTheme] = useState(draft0.theme ?? settings?.theme ?? DEFAULT_SETTINGS.theme)
+  const [themeActionError, setThemeActionError] = useState<string | null>(null)
+  const [installUrl, setInstallUrl] = useState('')
   const [fontSize, setFontSize] = useState(draft0.fontSize ?? settings?.fontSize ?? DEFAULT_SETTINGS.fontSize)
   const [terminalFontSize, setTerminalFontSize] = useState(draft0.terminalFontSize ?? settings?.terminalFontSize ?? DEFAULT_SETTINGS.terminalFontSize)
   const [codeEditorFontSize, setCodeEditorFontSize] = useState(draft0.codeEditorFontSize ?? settings?.codeEditorFontSize ?? DEFAULT_SETTINGS.codeEditorFontSize)
@@ -119,6 +122,67 @@ export function SettingsPanel(): React.JSX.Element {
       setPiPath(path)
       setSettingsDraft({ piExecutablePath: path })
     }
+  }
+
+  const resolveEffectiveThemeId = (themeId: string): string => {
+    if (themeId !== 'system') return themeId
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  }
+
+  const isBuiltinTheme = (themeId: string): boolean => (BUILTIN_THEME_IDS as string[]).includes(themeId)
+
+  const handleImportTheme = async () => {
+    const result = await window.piDesktop.themes.import()
+    if (result.ok) {
+      registerThemes([result.theme])
+      applyTheme(result.theme.id)
+      setTheme(result.theme.id)
+      setSettingsDraft({ theme: result.theme.id })
+      setThemeActionError(null)
+    } else if (!('canceled' in result)) {
+      setThemeActionError(result.error)
+    }
+  }
+
+  const handleExportTheme = async () => {
+    const effectiveThemeId = resolveEffectiveThemeId(theme)
+    const currentThemeFile = getRegisteredThemes().find((t) => t.id === effectiveThemeId)?.file
+    if (!currentThemeFile) {
+      setThemeActionError('Could not find the current theme to export')
+      return
+    }
+    const result = await window.piDesktop.themes.export(currentThemeFile)
+    if (result.ok) {
+      setThemeActionError(null)
+    }
+  }
+
+  const handleInstallFromUrl = async () => {
+    if (!installUrl.trim()) return
+    const result = await window.piDesktop.themes.installFromUrl(installUrl.trim())
+    if (result.ok) {
+      registerThemes([result.theme])
+      applyTheme(result.theme.id)
+      setTheme(result.theme.id)
+      setSettingsDraft({ theme: result.theme.id })
+      setThemeActionError(null)
+      setInstallUrl('')
+    } else if (!('canceled' in result)) {
+      setThemeActionError(result.error)
+    }
+  }
+
+  const handleDeleteTheme = async () => {
+    await window.piDesktop.themes.delete(theme)
+    const { themes, warnings } = await window.piDesktop.themes.list()
+    for (const warning of warnings) {
+      console.warn(warning)
+    }
+    registerThemes(themes)
+    setTheme('dark')
+    applyTheme('dark')
+    setSettingsDraft({ theme: 'dark' })
+    setThemeActionError(null)
   }
 
   const handleSave = async () => {
@@ -245,19 +309,60 @@ export function SettingsPanel(): React.JSX.Element {
                 }}
                 className="w-full appearance-none rounded-md border border-border-strong bg-surface py-1.5 pl-3 pr-9 text-sm text-primary hover:border-border-strong-hover focus:border-focus focus:outline-none"
               >
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
                 <option value="system">System</option>
-                <option value="nord">Nord</option>
-                <option value="gruvbox">Gruvbox</option>
-                <option value="breeze-dark">Breeze Dark (Kate)</option>
-                <option value="breeze-light">Breeze Light (Kate)</option>
-                <option value="breeze-claudius">Breeze Claudius</option>
+                {getRegisteredThemes().map((registeredTheme) => (
+                  <option key={registeredTheme.id} value={registeredTheme.id}>
+                    {registeredTheme.file.name}
+                  </option>
+                ))}
               </select>
               <ChevronDown
                 size={14}
                 className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-dim"
               />
+            </div>
+          </SettingsRow>
+
+          <SettingsRow label="Theme Actions" description="Import, export, or install a theme from a URL">
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <button
+                  onClick={handleImportTheme}
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+                >
+                  Import
+                </button>
+                <button
+                  onClick={handleExportTheme}
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+                >
+                  Export
+                </button>
+                {!isBuiltinTheme(theme) && (
+                  <button
+                    onClick={handleDeleteTheme}
+                    className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={installUrl}
+                  onChange={(e) => setInstallUrl(e.target.value)}
+                  placeholder="https://example.com/theme.json"
+                  className="flex-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary focus:border-focus focus:outline-none"
+                />
+                <button
+                  onClick={handleInstallFromUrl}
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+                >
+                  Install from URL
+                </button>
+              </div>
+              {themeActionError && <p className="text-xs text-error">{themeActionError}</p>}
             </div>
           </SettingsRow>
 

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { applyTheme } from './utils/theme'
+import { applyTheme, registerThemes } from './utils/theme'
 import { buildPlanningPrompt } from './utils/planning-prompt'
 import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
 import type { PiCommand } from '../../shared/pi-command'
@@ -1009,6 +1009,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       const settings = await window.piDesktop.settings.getAll()
       set({ settings })
+
+      const { themes, warnings } = await window.piDesktop.themes.list()
+      for (const warning of warnings) {
+        console.warn(warning)
+      }
+      registerThemes(themes)
 
       applyTheme(settings.theme)
 
