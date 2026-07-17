@@ -13,7 +13,7 @@ export const TOKEN_NAMES = [
   // accent
   'accent', 'accent-hover', 'accent-fg', 'accent-bg',
   // status
-  'success', 'success-bg', 'warning', 'warning-bg', 'error', 'error-bg',
+  'success', 'success-bg', 'warning', 'warning-bg', 'error', 'error-hover', 'error-bg',
   'info', 'info-bg', 'special', 'special-bg',
   // misc
   'chat-column', 'chat-column-border', 'scrollbar', 'scrollbar-hover',
@@ -63,6 +63,7 @@ export const DERIVED_TOKENS: Record<string, string> = {
   'accent-bg': WASH('accent', 82),
   'success-bg': WASH('success', 85),
   'warning-bg': WASH('warning', 85),
+  'error-hover': MIX('error', 'primary', 15),
   'error-bg': WASH('error', 85),
   info: 'var(--color-accent-fg)',
   'info-bg': WASH('info', 85),

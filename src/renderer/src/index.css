@@ -61,6 +61,7 @@
   --color-warning: #facc15;
   --color-warning-bg: rgba(113, 63, 18, 0.3);
   --color-error: #f87171;
+  --color-error-hover: #ef4444;
   --color-error-bg: rgba(127, 29, 29, 0.3);
   --color-info: #60a5fa;
   --color-info-bg: rgba(30, 58, 138, 0.3);

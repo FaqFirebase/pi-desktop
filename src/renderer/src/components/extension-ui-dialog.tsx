@@ -290,7 +290,7 @@ export function AppConfirmDialog(): React.JSX.Element | null {
             autoFocus={!request.danger}
             className={clsx(
               'rounded-md px-4 py-2 text-sm text-white transition-colors',
-              request.danger ? 'bg-error hover:bg-error' : 'bg-accent hover:bg-accent-hover'
+              request.danger ? 'bg-error hover:bg-error-hover' : 'bg-accent hover:bg-accent-hover'
             )}
           >
             {request.confirmLabel ?? 'Confirm'}

@@ -31,6 +31,7 @@
     "accent-bg": "rgba(40, 40, 40, 0.5)",
     "success-bg": "rgba(152, 151, 26, 0.15)",
     "warning-bg": "rgba(215, 153, 33, 0.15)",
+    "error-hover": "#ef4444",
     "error-bg": "rgba(204, 36, 29, 0.15)",
     "info": "#83A598",
     "info-bg": "rgba(40, 40, 40, 0.5)",
