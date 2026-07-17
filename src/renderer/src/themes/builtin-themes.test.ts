@@ -1,0 +1,39 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { validateThemeFile } from '../../../shared/theme/theme-file'
+import { resolveThemeVars } from '../../../shared/theme/resolve'
+import { TOKEN_NAMES, cssVarForToken } from '../../../shared/theme/tokens'
+
+const themesDir = dirname(fileURLToPath(import.meta.url))
+const EXPECTED_IDS = [
+  'dark', 'light', 'nord', 'gruvbox', 'breeze-dark', 'breeze-light', 'breeze-claudius',
+]
+
+test('all 7 built-in themes exist, validate, and fully resolve', () => {
+  const files = readdirSync(themesDir).filter((f) => f.endsWith('.json')).sort()
+  assert.deepEqual(files, [...EXPECTED_IDS].sort().map((id) => `${id}.json`))
+  for (const file of files) {
+    const theme = validateThemeFile(JSON.parse(readFileSync(join(themesDir, file), 'utf8')))
+    const vars = resolveThemeVars(theme)
+    for (const token of TOKEN_NAMES) {
+      assert.ok(vars[cssVarForToken(token)], `${file}: unresolved ${token}`)
+    }
+  }
+})
+
+test('ported themes pin every token in overrides (parity guarantee)', () => {
+  for (const id of EXPECTED_IDS) {
+    if (id === 'dark' || id === 'light') continue
+    const theme = validateThemeFile(
+      JSON.parse(readFileSync(join(themesDir, `${id}.json`), 'utf8')),
+    )
+    const seedBacked = new Set(['app', 'surface', 'primary', 'accent', 'success', 'warning', 'error'])
+    for (const token of TOKEN_NAMES) {
+      if (seedBacked.has(token)) continue
+      assert.ok(theme.overrides?.[token], `${id}: token ${token} not pinned`)
+    }
+  }
+})

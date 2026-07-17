@@ -10,5 +10,5 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false
   },
-  "include": ["./**/*.ts", "./**/*.tsx", "../shared/**/*.ts"]
+  "include": ["./**/*.ts", "./**/*.tsx", "../shared/**/*.ts", "./src/themes/*.json"]
 }
