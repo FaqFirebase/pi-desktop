@@ -194,16 +194,16 @@ export function ChatSearch({
   }
 
   return (
-    <div className="absolute right-4 top-3 z-20 flex items-center gap-1 rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-2 shadow-lg shadow-black/30">
+    <div className="absolute right-4 top-3 z-20 flex items-center gap-1 rounded-lg border border-border bg-surface px-2 py-2 shadow-lg shadow-black/30">
       <input
         ref={inputRef}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Find in page"
-        className="w-48 bg-transparent px-1 py-0.5 text-base text-neutral-200 outline-none placeholder:text-neutral-600"
+        className="w-48 bg-transparent px-1 py-0.5 text-base text-primary outline-none placeholder:text-faint"
       />
-      <span className="min-w-[3rem] shrink-0 text-center text-xs tabular-nums text-neutral-500">
+      <span className="min-w-[3rem] shrink-0 text-center text-xs tabular-nums text-dim">
         {query === '' ? '' : `${count === 0 ? 0 : current + 1}/${count}`}
       </span>
       <SearchIconButton
@@ -241,7 +241,7 @@ function SearchIconButton({
       title={title}
       aria-label={title}
       disabled={disabled}
-      className="rounded p-1 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
+      className="rounded p-1 text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
     >
       {icon}
     </button>

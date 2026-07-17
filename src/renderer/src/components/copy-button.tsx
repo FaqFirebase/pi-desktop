@@ -24,7 +24,7 @@ export function CopyButton({
       title={copied ? 'Copied' : 'Copy'}
       aria-label={copied ? 'Copied' : 'Copy'}
       className={clsx(
-        'z-10 rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-200',
+        'z-10 rounded p-1 text-dim transition-colors hover:bg-surface-hover hover:text-primary',
         className
       )}
     >

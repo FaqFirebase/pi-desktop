@@ -25,7 +25,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (this.state.hasError) {
       return (
         this.props.fallback ?? (
-          <div className="flex items-center gap-1.5 rounded-md border border-red-900/40 bg-red-900/10 px-2 py-1 text-xs text-red-400">
+          <div className="flex items-center gap-1.5 rounded-md border border-error-bg bg-error-bg px-2 py-1 text-xs text-error">
             <AlertTriangle size={12} className="shrink-0" />
             Failed to render content
           </div>

@@ -55,8 +55,8 @@ export function ComposerPermissionMenu({ value, onChange }: ComposerPermissionMe
         className={clsx(
           'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
           isTrusted
-            ? 'bg-yellow-500/15 text-yellow-300 hover:bg-yellow-500/35 hover:text-yellow-200'
-            : 'pi-hover-highlight-strong text-neutral-300 hover:text-neutral-200'
+            ? 'bg-warning-bg text-warning hover:bg-warning-bg hover:text-warning'
+            : 'pi-hover-highlight-strong text-secondary hover:text-primary'
         )}
         title={getPermissionModeDescription(mode).replace(/\.$/, '')}
       >
@@ -65,25 +65,25 @@ export function ComposerPermissionMenu({ value, onChange }: ComposerPermissionMe
           size={12}
           className={clsx(
             'transition-transform',
-            isTrusted ? 'text-yellow-400/70' : 'text-neutral-500',
+            isTrusted ? 'text-warning/70' : 'text-dim',
             isOpen && 'rotate-180'
           )}
         />
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full left-0 z-50 mb-1 min-w-[180px] rounded-lg border border-neutral-700 bg-neutral-950 py-1 shadow-xl shadow-black/40">
-          <div className="px-3 pb-0.5 pt-1 text-[11px] text-neutral-500">Permissions</div>
+        <div className="absolute bottom-full left-0 z-50 mb-1 min-w-[180px] rounded-lg border border-border-strong bg-app py-1 shadow-xl shadow-black/40">
+          <div className="px-3 pb-0.5 pt-1 text-[11px] text-dim">Permissions</div>
           {PERMISSION_MODE_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
               disabled={saving}
               onClick={() => handleSelect(option.value)}
-              className="pi-hover-highlight flex w-full items-center justify-between gap-6 whitespace-nowrap px-3 py-1 text-left text-xs text-neutral-200 transition-colors disabled:opacity-60"
+              className="pi-hover-highlight flex w-full items-center justify-between gap-6 whitespace-nowrap px-3 py-1 text-left text-xs text-primary transition-colors disabled:opacity-60"
             >
               <span>{option.label}</span>
-              {option.value === mode && <Check size={12} className="shrink-0 text-neutral-400" />}
+              {option.value === mode && <Check size={12} className="shrink-0 text-muted" />}
             </button>
           ))}
         </div>

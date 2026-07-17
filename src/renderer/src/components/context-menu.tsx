@@ -134,12 +134,12 @@ export function useContextMenu(): {
       ref={menuRef}
       role="menu"
       aria-orientation="vertical"
-      className="fixed z-[9999] min-w-[180px] rounded-lg border border-neutral-700 bg-neutral-900 py-1 shadow-xl shadow-black/40 animate-fade-in"
+      className="fixed z-[9999] min-w-[180px] rounded-lg border border-border-strong bg-surface py-1 shadow-xl shadow-black/40 animate-fade-in"
       style={{ left: state.x, top: state.y }}
     >
       {state.items.map((item) => {
         if (item.divider) {
-          return <div key={item.id} className="my-1 border-t border-neutral-800" />
+          return <div key={item.id} className="my-1 border-t border-border" />
         }
 
         return (
@@ -157,18 +157,18 @@ export function useContextMenu(): {
             className={clsx(
               'flex w-full items-center gap-2.5 px-3 py-1.5 text-sm transition-colors',
               item.disabled
-                ? 'text-neutral-600 cursor-not-allowed'
-                : 'text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100'
+                ? 'text-faint cursor-not-allowed'
+                : 'text-secondary hover:bg-surface-hover hover:text-primary'
             )}
           >
             {item.icon && (
-              <span className="w-4 h-4 flex items-center justify-center text-neutral-500">
+              <span className="w-4 h-4 flex items-center justify-center text-dim">
                 {item.icon}
               </span>
             )}
             <span className="flex-1 text-left">{item.label}</span>
             {item.shortcut && (
-              <span className="text-xs text-neutral-600 ml-4">{item.shortcut}</span>
+              <span className="text-xs text-faint ml-4">{item.shortcut}</span>
             )}
           </button>
         )

@@ -279,7 +279,7 @@ export function ChatInput(): React.JSX.Element {
     <div className="mx-auto w-full max-w-3xl px-4 py-4">
       {/* Attachment error */}
       {attachError && (
-        <div className="mb-2 flex items-center gap-1.5 text-xs text-red-400">
+        <div className="mb-2 flex items-center gap-1.5 text-xs text-error">
           <X size={12} className="shrink-0" />
           <span>{attachError}</span>
         </div>
@@ -291,7 +291,7 @@ export function ChatInput(): React.JSX.Element {
           {attachments.map((att, i) => (
             <div
               key={att.path}
-              className="flex items-center gap-1.5 rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-300"
+              className="flex items-center gap-1.5 rounded-md border border-border-strong bg-card px-2 py-1 text-xs text-secondary"
             >
               {att.kind === 'image' ? (
                 <img
@@ -300,12 +300,12 @@ export function ChatInput(): React.JSX.Element {
                   className="h-5 w-5 shrink-0 rounded object-cover"
                 />
               ) : (
-                <FileText size={12} className="text-neutral-500" />
+                <FileText size={12} className="text-dim" />
               )}
               <span className="max-w-[120px] truncate">{att.name}</span>
               <button
                 onClick={() => removeAttachment(i)}
-                className="rounded p-0.5 text-neutral-500 hover:text-neutral-300"
+                className="rounded p-0.5 text-dim hover:text-secondary"
               >
                 <X size={10} />
               </button>
@@ -314,10 +314,10 @@ export function ChatInput(): React.JSX.Element {
         </div>
       )}
 
-      <div className="relative flex items-center rounded-xl border border-neutral-700 bg-neutral-900 focus-within:border-neutral-600 transition-colors">
+      <div className="relative flex items-center rounded-xl border border-border-strong bg-surface focus-within:border-border-strong transition-colors">
         {/* @-file mention suggestions (floats above the input, keeps its focus) */}
         {mentionOpen && (
-          <div className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900 shadow-2xl">
+          <div className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border border-border-strong bg-surface shadow-2xl">
             <div className="max-h-80 overflow-y-auto py-1">
               {mentionResults.map((result, i) => (
                 <button
@@ -328,18 +328,18 @@ export function ChatInput(): React.JSX.Element {
                   onClick={() => selectMention(result)}
                   onMouseEnter={() => setMentionIndex(i)}
                   className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors ${
-                    i === mentionIndex ? 'bg-neutral-800' : 'hover:bg-neutral-800/50'
+                    i === mentionIndex ? 'bg-card' : 'hover:bg-surface-hover/50'
                   }`}
                 >
-                  <FileText size={13} className="shrink-0 text-neutral-500" />
-                  <span className="truncate text-sm text-neutral-200">{result.name}</span>
-                  <span className="ml-auto truncate pl-3 text-xs text-neutral-600">
+                  <FileText size={13} className="shrink-0 text-dim" />
+                  <span className="truncate text-sm text-primary">{result.name}</span>
+                  <span className="ml-auto truncate pl-3 text-xs text-faint">
                     {result.relativePath}
                   </span>
                 </button>
               ))}
             </div>
-            <div className="border-t border-neutral-800 px-3 py-1 text-[10px] text-neutral-600">
+            <div className="border-t border-border px-3 py-1 text-[10px] text-faint">
               ↑↓ navigate · Enter/Tab insert path · Esc close
             </div>
           </div>
@@ -359,7 +359,7 @@ export function ChatInput(): React.JSX.Element {
               }
             }}
             disabled={isDisabled || isStreaming}
-            className="flex shrink-0 items-center justify-center py-3 pl-3 pr-1 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
+            className="flex shrink-0 items-center justify-center py-3 pl-3 pr-1 text-dim hover:text-secondary transition-colors disabled:opacity-50"
             title="Plan with Council"
             aria-label="Plan with Council"
           >
@@ -379,7 +379,7 @@ export function ChatInput(): React.JSX.Element {
           }
           disabled={isDisabled}
           rows={1}
-          className={`font-chat max-h-48 min-h-[24px] flex-1 resize-none bg-transparent py-3 text-sm text-neutral-200 placeholder:text-neutral-600 outline-none disabled:opacity-50 ${councilEnabled ? 'pl-1' : 'pl-4'}`}
+          className={`font-chat max-h-48 min-h-[24px] flex-1 resize-none bg-transparent py-3 text-sm text-primary placeholder:text-faint outline-none disabled:opacity-50 ${councilEnabled ? 'pl-1' : 'pl-4'}`}
           onInput={(e) => {
             const target = e.currentTarget
             target.style.height = 'auto'
@@ -475,7 +475,7 @@ export function ChatInput(): React.JSX.Element {
           {isStreaming ? (
             <button
               onClick={handleAbort}
-              className="pi-hover-highlight-strong flex items-center justify-center rounded-lg p-2 text-neutral-500 hover:text-neutral-300 transition-colors"
+              className="pi-hover-highlight-strong flex items-center justify-center rounded-lg p-2 text-dim hover:text-secondary transition-colors"
               title="Stop (Esc)"
               aria-label="Stop generating"
             >
@@ -490,7 +490,7 @@ export function ChatInput(): React.JSX.Element {
                 }
               }}
               disabled={isDisabled}
-              className="pi-hover-highlight-strong flex items-center justify-center rounded-lg p-2 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="pi-hover-highlight-strong flex items-center justify-center rounded-lg p-2 text-dim hover:text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Send (Enter)"
               aria-label="Send message"
             >
@@ -507,7 +507,7 @@ export function ChatInput(): React.JSX.Element {
         <button
           onClick={handleAttachFile}
           disabled={isDisabled}
-          className="pi-hover-highlight-strong flex items-center justify-center rounded-md p-1 text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
+          className="pi-hover-highlight-strong flex items-center justify-center rounded-md p-1 text-dim hover:text-secondary transition-colors disabled:opacity-50"
           title="Attach file"
           aria-label="Attach file"
         >
@@ -515,7 +515,7 @@ export function ChatInput(): React.JSX.Element {
         </button>
         <button
           onClick={() => setNotePickerOpen(true)}
-          className="pi-hover-highlight-strong flex items-center justify-center rounded-md p-1 text-neutral-500 hover:text-neutral-300 transition-colors"
+          className="pi-hover-highlight-strong flex items-center justify-center rounded-md p-1 text-dim hover:text-secondary transition-colors"
           title="Insert note (Ctrl+Shift+P)"
           aria-label="Insert note"
         >
@@ -523,15 +523,15 @@ export function ChatInput(): React.JSX.Element {
         </button>
         <button
           onClick={() => toggleFileSearch()}
-          className="pi-hover-highlight-strong flex items-center justify-center rounded-md p-1 text-neutral-500 hover:text-neutral-300 transition-colors"
+          className="pi-hover-highlight-strong flex items-center justify-center rounded-md p-1 text-dim hover:text-secondary transition-colors"
           title="Search workspace (Ctrl+Shift+F)"
           aria-label="Search workspace"
         >
           <Search size={16} />
         </button>
-        <span className="ml-auto text-xs text-neutral-600">
+        <span className="ml-auto text-xs text-faint">
           {isStreaming ? (
-            <span className="text-yellow-500 animate-pulse">Streaming...</span>
+            <span className="text-warning animate-pulse">Streaming...</span>
           ) : (
             'Shift+Enter for Newline'
           )}
