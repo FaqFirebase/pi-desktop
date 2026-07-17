@@ -31,10 +31,11 @@ test('ported themes pin every token in overrides (parity guarantee)', () => {
       JSON.parse(readFileSync(join(themesDir, `${id}.json`), 'utf8')),
     )
     const seedBacked = new Set(['app', 'surface', 'primary', 'accent', 'success', 'warning', 'error'])
-    // error-hover has no legacy CSS counterpart to reproduce (no theme ever
-    // remapped bg-red-500/600), so it derives via MIX('error', 'primary', 15)
-    // instead of pinning the raw value that would carry the bug forward.
-    const derivedOnly = new Set(['error-hover'])
+    // error-hover and border-strong-hover have no legacy CSS counterpart to
+    // reproduce (no theme ever remapped bg-red-500/600 or border-neutral-600),
+    // so they derive via MIX(..., 15) / MIX(..., 35) instead of pinning the
+    // raw value that would carry the theme-blind bug forward.
+    const derivedOnly = new Set(['error-hover', 'border-strong-hover'])
     for (const token of TOKEN_NAMES) {
       if (seedBacked.has(token) || derivedOnly.has(token)) continue
       assert.ok(theme.overrides?.[token], `${id}: token ${token} not pinned`)

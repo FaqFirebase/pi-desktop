@@ -314,7 +314,7 @@ export function ChatInput(): React.JSX.Element {
         </div>
       )}
 
-      <div className="relative flex items-center rounded-xl border border-border-strong bg-surface focus-within:border-border-strong transition-colors">
+      <div className="relative flex items-center rounded-xl border border-border-strong bg-surface focus-within:border-border-strong-hover transition-colors">
         {/* @-file mention suggestions (floats above the input, keeps its focus) */}
         {mentionOpen && (
           <div className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border border-border-strong bg-surface shadow-2xl">

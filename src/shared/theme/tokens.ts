@@ -9,7 +9,7 @@ export const TOKEN_NAMES = [
   // text
   'primary', 'secondary', 'muted', 'dim', 'faint', 'ghost', 'inverse',
   // border
-  'border', 'border-strong', 'focus',
+  'border', 'border-strong', 'border-strong-hover', 'focus',
   // accent
   'accent', 'accent-hover', 'accent-fg', 'accent-bg',
   // status
@@ -57,6 +57,7 @@ export const DERIVED_TOKENS: Record<string, string> = {
   inverse: 'var(--color-app)',
   border: MIX('surface', 'primary', 15),
   'border-strong': MIX('surface', 'primary', 25),
+  'border-strong-hover': MIX('surface', 'primary', 35),
   focus: 'var(--color-accent)',
   'accent-hover': MIX('accent', 'primary', 15),
   'accent-fg': MIX('accent', 'primary', 30),

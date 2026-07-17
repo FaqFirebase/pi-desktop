@@ -384,7 +384,7 @@ function EmptyState({ piStatus }: { piStatus: string }): React.JSX.Element {
                 onClick={() => {
                   useAppStore.getState().sendPrompt(prompt)
                 }}
-                className="rounded-lg border border-border-strong px-3 py-1.5 text-xs text-muted hover:border-border-strong hover:text-secondary transition-colors"
+                className="rounded-lg border border-border-strong px-3 py-1.5 text-xs text-muted hover:border-border-strong-hover hover:text-secondary transition-colors"
               >
                 {prompt}
               </button>
