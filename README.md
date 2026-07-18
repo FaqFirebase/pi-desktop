@@ -75,6 +75,8 @@ Two optional top-level objects let you pin exact values instead of relying on de
 
 User theme files live in the app's user-data directory under `themes/` — on Linux, `~/.config/pi-desktop/themes/`.
 
+**Community gallery.** Browse and share themes at [pi-desktop-themes](https://github.com/FaqFirebase/pi-desktop-themes) — copy any theme's raw URL into **Install from URL**, or submit your own with a pull request.
+
 ## Multi-Agent Council Planning
 
 Pi, Claude, and Codex each produce an initial plan, share and converge, and Pi presents the agreed consensus plan *before* anything is built. All members plan read-only; Pi is the only agent that edits files.
