@@ -31,14 +31,24 @@ export function getRegisteredThemes(): ReadonlyArray<RegisteredTheme> {
 }
 
 let systemThemeWatched = false
+let previewActive = false
+
+// While a live preview owns the document's theme variables (the theme editor),
+// external re-applies must yield or they overwrite the unsaved preview. The
+// editor sets this for its lifetime; watchSystemTheme checks it.
+export function setThemePreviewActive(active: boolean): void {
+  previewActive = active
+}
 
 // Re-applies the theme when the OS light/dark preference changes while the
-// app is open, but only when the currently-effective theme is 'system'.
-// Subscribes once for the app's lifetime; repeated calls are no-ops.
+// app is open, but only when the currently-effective theme is 'system' and no
+// live preview is in progress. Subscribes once for the app's lifetime;
+// repeated calls are no-ops.
 export function watchSystemTheme(getEffectiveThemeId: () => string): void {
   if (systemThemeWatched) return
   systemThemeWatched = true
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (previewActive) return
     if (getEffectiveThemeId() === 'system') applyTheme('system')
   })
 }

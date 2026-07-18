@@ -11,7 +11,7 @@ import {
 } from '../../../shared/theme/tokens'
 import { resolveThemeVars } from '../../../shared/theme/resolve'
 import { applyThemeVars } from '../theme/engine'
-import { applyTheme, registerThemes } from '../utils/theme'
+import { applyTheme, registerThemes, setThemePreviewActive } from '../utils/theme'
 import { forkTheme, withOverride, withSeed, withSyntax } from './theme-editor-helpers'
 
 export { forkTheme, withOverride, withSeed, withSyntax }
@@ -124,7 +124,11 @@ export function ThemeEditor({
     // closed over at mount) because a successful save updates the store's
     // settingsDraft before this component unmounts — using the mount-time
     // value here would clobber that just-saved theme with the stale one.
+    // Claim the live-preview lock so an OS light/dark change (watchSystemTheme)
+    // can't overwrite this editor's unsaved preview vars while it is open.
+    setThemePreviewActive(true)
     return () => {
+      setThemePreviewActive(false)
       applyTheme(resolveSettingsThemeId(useAppStore.getState()))
     }
   }, [])
