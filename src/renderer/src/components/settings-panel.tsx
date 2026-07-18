@@ -389,7 +389,7 @@ export function SettingsPanel(): React.JSX.Element {
             </div>
           </SettingsRow>
 
-          <SettingsRow label="Theme Actions" description="Import, export, or install a theme from a URL">
+          <SettingsRow label="Theme Actions" description="Import, export, or install a theme from a URL" stack>
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">
                 <button
@@ -423,9 +423,9 @@ export function SettingsPanel(): React.JSX.Element {
                 />
                 <button
                   onClick={handleInstallFromUrl}
-                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+                  className="shrink-0 rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
                 >
-                  Install from URL
+                  Install
                 </button>
               </div>
               {themeActionError && <p className="text-xs text-error">{themeActionError}</p>}
@@ -735,11 +735,27 @@ function SettingsRow({
   label,
   description,
   children,
+  stack = false,
 }: {
   label: string
   description: string
   children: React.ReactNode
+  // Controls that are wider than the fixed control column (e.g. a URL input
+  // beside a button) render below the label at full width instead of being
+  // crammed into the right-hand w-64 column.
+  stack?: boolean
 }): React.JSX.Element {
+  if (stack) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div>
+          <div className="text-sm text-primary">{label}</div>
+          <div className="text-xs text-dim">{description}</div>
+        </div>
+        <div>{children}</div>
+      </div>
+    )
+  }
   return (
     <div className="flex items-center justify-between gap-4">
       <div>
