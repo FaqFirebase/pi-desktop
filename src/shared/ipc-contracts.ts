@@ -144,6 +144,7 @@ export const IPC_CHANNELS = {
   THEMES_INSTALL_URL: 'themes:install-from-url',
   THEMES_EXPORT: 'themes:export',
   THEMES_IMPORT: 'themes:import',
+  THEMES_GALLERY_LIST: 'themes:gallery-list',
 
   // Events (main → renderer)
   EVENT_PI: 'event:pi',
@@ -784,6 +785,21 @@ export type ThemeImportResult =
   | { ok: true; theme: UserThemeRecord }
   | { ok: false; error: string }
   | { ok: false; canceled: true }
+
+export type ThemeExportResult =
+  | { ok: true }
+  | { ok: false; error: string }
+  | { ok: false; canceled: true }
+
+export interface GalleryTheme {
+  name: string
+  kind: 'dark' | 'light'
+  url: string
+}
+
+export type ThemeGalleryResult =
+  | { ok: true; themes: GalleryTheme[] }
+  | { ok: false; error: string }
 
 // ─── Package Types ──────────────────────────────────────────────────────────
 

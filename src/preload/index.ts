@@ -37,6 +37,8 @@ import type {
   ActivityStatsResult,
   ThemesListResult,
   ThemeImportResult,
+  ThemeExportResult,
+  ThemeGalleryResult,
 } from '../shared/ipc-contracts'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -109,8 +111,9 @@ interface PiDesktopAPI {
     save(file: ThemeFile, existingId?: string): Promise<{ id: string }>
     delete(id: string): Promise<void>
     installFromUrl(url: string): Promise<ThemeImportResult>
-    export(file: ThemeFile): Promise<{ ok: boolean }>
+    export(file: ThemeFile): Promise<ThemeExportResult>
     import(): Promise<ThemeImportResult>
+    gallery(): Promise<ThemeGalleryResult>
   }
 
   // Workspace management
@@ -297,6 +300,7 @@ const api: PiDesktopAPI = {
     installFromUrl: (url) => ipcRenderer.invoke(IPC_CHANNELS.THEMES_INSTALL_URL, url),
     export: (file) => ipcRenderer.invoke(IPC_CHANNELS.THEMES_EXPORT, file),
     import: () => ipcRenderer.invoke(IPC_CHANNELS.THEMES_IMPORT),
+    gallery: () => ipcRenderer.invoke(IPC_CHANNELS.THEMES_GALLERY_LIST),
   },
 
   workspace: {

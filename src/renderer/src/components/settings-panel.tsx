@@ -5,10 +5,12 @@ import type { ThemeFile } from '../../../shared/theme/theme-file'
 import { Settings, Save, RotateCcw, FolderOpen, Check, ChevronDown } from 'lucide-react'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { PermissionSelector } from './permission-selector'
-import { applyTheme, getRegisteredThemes, registerThemes } from '../utils/theme'
+import { applyTheme, getRegisteredThemes, registerThemes, setUserThemes } from '../utils/theme'
 import { BUILTIN_THEME_IDS } from '../themes'
 import { CustomModelsEditor } from './custom-models-editor'
 import { ThemeEditor } from './theme-editor'
+import { ThemeGallery } from './theme-gallery'
+import type { UserThemeRecord } from '../../../shared/ipc-contracts'
 import {
   MIN_TIMEOUT_SECONDS as COUNCIL_MIN_TIMEOUT,
   MAX_TIMEOUT_SECONDS as COUNCIL_MAX_TIMEOUT,
@@ -34,6 +36,7 @@ export function SettingsPanel(): React.JSX.Element {
     isUserTheme: boolean
   } | null>(null)
   const [installUrl, setInstallUrl] = useState('')
+  const [galleryOpen, setGalleryOpen] = useState(false)
   const [fontSize, setFontSize] = useState(draft0.fontSize ?? settings?.fontSize ?? DEFAULT_SETTINGS.fontSize)
   const [terminalFontSize, setTerminalFontSize] = useState(draft0.terminalFontSize ?? settings?.terminalFontSize ?? DEFAULT_SETTINGS.terminalFontSize)
   const [codeEditorFontSize, setCodeEditorFontSize] = useState(draft0.codeEditorFontSize ?? settings?.codeEditorFontSize ?? DEFAULT_SETTINGS.codeEditorFontSize)
@@ -157,7 +160,7 @@ export function SettingsPanel(): React.JSX.Element {
     setThemeEditorState({ baseTheme, baseId: theme, isUserTheme: true })
   }
 
-  const handleThemeEditorSaved = (id: string, warning?: string) => {
+  const handleThemeEditorSaved = async (id: string, warning?: string) => {
     setTheme(id)
     // A warning is a non-fatal post-save problem (rename cleanup failure).
     // It has to live in the panel's themeActionError, not the editor's own
@@ -165,6 +168,11 @@ export function SettingsPanel(): React.JSX.Element {
     // owned here survives long enough to render.
     setThemeActionError(warning ?? null)
     setThemeEditorState(null)
+    // Reconcile the registry against disk so a rename drops the old id from
+    // the dropdown (the editor already registered + applied the new one).
+    const { themes, warnings } = await window.piDesktop.themes.list()
+    for (const w of warnings) console.warn(w)
+    setUserThemes(themes)
   }
 
   const handleImportTheme = async () => {
@@ -190,6 +198,8 @@ export function SettingsPanel(): React.JSX.Element {
     const result = await window.piDesktop.themes.export(currentThemeFile)
     if (result.ok) {
       setThemeActionError(null)
+    } else if (!('canceled' in result)) {
+      setThemeActionError(result.error)
     }
   }
 
@@ -206,6 +216,13 @@ export function SettingsPanel(): React.JSX.Element {
     } else if (!('canceled' in result)) {
       setThemeActionError(result.error)
     }
+  }
+  const handleGalleryInstalled = (installed: UserThemeRecord) => {
+    registerThemes([installed])
+    applyTheme(installed.id)
+    setTheme(installed.id)
+    setSettingsDraft({ theme: installed.id })
+    setThemeActionError(null)
   }
 
   const handleDeleteTheme = async () => {
@@ -225,7 +242,7 @@ export function SettingsPanel(): React.JSX.Element {
     for (const warning of warnings) {
       console.warn(warning)
     }
-    registerThemes(themes)
+    setUserThemes(themes)
     setTheme('dark')
     applyTheme('dark')
     setSettingsDraft({ theme: 'dark' })
@@ -403,6 +420,12 @@ export function SettingsPanel(): React.JSX.Element {
                   className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
                 >
                   Export
+                </button>
+                <button
+                  onClick={() => setGalleryOpen(true)}
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+                >
+                  Browse gallery
                 </button>
                 {!isBuiltinTheme(theme) && (
                   <button
@@ -665,6 +688,13 @@ export function SettingsPanel(): React.JSX.Element {
           </button>
         </div>
       </div>
+
+      {galleryOpen && (
+        <ThemeGallery
+          onClose={() => setGalleryOpen(false)}
+          onInstalled={handleGalleryInstalled}
+        />
+      )}
 
       {themeEditorState && (
         <ThemeEditor

@@ -5,15 +5,42 @@ import { applyThemeVars } from '../theme/engine'
 
 export interface RegisteredTheme { id: string; file: ThemeFile }
 
+const BUILTIN_IDS = new Set(BUILTIN_THEMES.map((t) => t.id))
 const registry = new Map<string, ThemeFile>(BUILTIN_THEMES.map((t) => [t.id, t.file]))
 let appliedVarKeys: string[] = []
 
+// Additive: adds or updates the given themes. Use for a single fresh
+// add/update (import, URL install, editor save) where nothing needs removing.
 export function registerThemes(themes: ReadonlyArray<RegisteredTheme>): void {
+  for (const theme of themes) registry.set(theme.id, theme.file)
+}
+
+// Authoritative reconcile against the full user-theme set from themes.list():
+// drops every current user (non-built-in) entry, then re-adds the given ones,
+// so a deleted or renamed-away theme leaves the dropdown without an app
+// restart. Built-in entries are never touched.
+export function setUserThemes(themes: ReadonlyArray<RegisteredTheme>): void {
+  for (const id of [...registry.keys()]) {
+    if (!BUILTIN_IDS.has(id)) registry.delete(id)
+  }
   for (const theme of themes) registry.set(theme.id, theme.file)
 }
 
 export function getRegisteredThemes(): ReadonlyArray<RegisteredTheme> {
   return [...registry.entries()].map(([id, file]) => ({ id, file }))
+}
+
+let systemThemeWatched = false
+
+// Re-applies the theme when the OS light/dark preference changes while the
+// app is open, but only when the currently-effective theme is 'system'.
+// Subscribes once for the app's lifetime; repeated calls are no-ops.
+export function watchSystemTheme(getEffectiveThemeId: () => string): void {
+  if (systemThemeWatched) return
+  systemThemeWatched = true
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (getEffectiveThemeId() === 'system') applyTheme('system')
+  })
 }
 
 function systemThemeId(): string {

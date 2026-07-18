@@ -7,7 +7,7 @@ import { TerminalService } from './terminal-service'
 import { NotesManager } from './notes-manager'
 import { getGuiDataPath, getGuiDataDir } from './app-data-paths'
 import { getSessionsRoot } from './pi-paths'
-import { listUserThemes, saveUserTheme, deleteUserTheme, installThemeFromUrl } from './theme-store'
+import { listUserThemes, saveUserTheme, deleteUserTheme, installThemeFromUrl, fetchGalleryThemes } from './theme-store'
 import {
   validateThemeFile, themeIdFromName, MAX_THEME_FILE_BYTES, type ThemeFile,
 } from '../shared/theme/theme-file'
@@ -38,6 +38,8 @@ import type {
   ActivityStatsResult,
   ThemesListResult,
   ThemeImportResult,
+  ThemeExportResult,
+  ThemeGalleryResult,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { COUNCIL_AGENT_IDS, clampTimeoutSeconds } from '../shared/council-config'
@@ -687,21 +689,29 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.THEMES_EXPORT, async (_event, file: unknown) => {
-    const theme = validateThemeFile(file)
+  ipcMain.handle(IPC_CHANNELS.THEMES_EXPORT, async (_event, file: unknown): Promise<ThemeExportResult> => {
+    let theme: ThemeFile
+    try {
+      theme = validateThemeFile(file)
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
     const defaultName = `${themeIdFromName(theme.name) || 'theme'}.json`
     const result = await dialog.showSaveDialog({
       title: 'Export Theme',
       defaultPath: defaultName,
       filters: [THEME_FILE_FILTER],
     })
-    if (result.canceled || !result.filePath) return { ok: false }
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true }
     try {
       await writeFile(result.filePath, JSON.stringify(theme, null, 2))
       return { ok: true }
     } catch (error) {
       console.error('Failed to write exported theme file:', error)
-      return { ok: false }
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : `Could not write theme to ${result.filePath}`,
+      }
     }
   })
 
@@ -721,6 +731,15 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
       const file = validateThemeFile(JSON.parse(await readFile(filePath, 'utf8')))
       const { id } = await saveUserTheme(themesDir(), file)
       return { ok: true, theme: { id, file } }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.THEMES_GALLERY_LIST, async (): Promise<ThemeGalleryResult> => {
+    try {
+      const themes = await fetchGalleryThemes()
+      return { ok: true, themes }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
