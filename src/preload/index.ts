@@ -107,7 +107,7 @@ interface PiDesktopAPI {
   // Themes (user-created theme storage)
   themes: {
     list(): Promise<ThemesListResult>
-    save(file: ThemeFile): Promise<{ id: string }>
+    save(file: ThemeFile, existingId?: string): Promise<{ id: string }>
     delete(id: string): Promise<void>
     installFromUrl(url: string): Promise<ThemeImportResult>
     export(file: ThemeFile): Promise<{ ok: boolean }>
@@ -294,7 +294,7 @@ const api: PiDesktopAPI = {
 
   themes: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.THEMES_LIST),
-    save: (file) => ipcRenderer.invoke(IPC_CHANNELS.THEMES_SAVE, file),
+    save: (file, existingId) => ipcRenderer.invoke(IPC_CHANNELS.THEMES_SAVE, file, existingId),
     delete: (id) => ipcRenderer.invoke(IPC_CHANNELS.THEMES_DELETE, id),
     installFromUrl: (url) => ipcRenderer.invoke(IPC_CHANNELS.THEMES_INSTALL_URL, url),
     export: (file) => ipcRenderer.invoke(IPC_CHANNELS.THEMES_EXPORT, file),

@@ -150,7 +150,12 @@ export function ThemeEditor({
     setSaving(true)
     setSaveError(null)
     try {
-      const { id } = await window.piDesktop.themes.save(draft)
+      // Pass baseId as existingId only when editing an already-saved user
+      // theme: it scopes the possible overwrite to that exact file, so a
+      // rename that happens to collide with another user theme's name gets
+      // suffixed instead of silently overwriting that other theme's file.
+      // Forking a built-in or creating fresh has no existing file to protect.
+      const { id } = await window.piDesktop.themes.save(draft, isUserTheme ? baseId : undefined)
       // The theme file write has already succeeded at this point, so commit
       // it to app state unconditionally before attempting the rename cleanup
       // below. If the old-id delete throws, the catch below must not run

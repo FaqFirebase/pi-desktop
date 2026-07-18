@@ -61,6 +61,57 @@ test('saving identical id and name overwrites (editor update path)', async () =>
   assert.equal(themes[0].file.seeds.app, '#000000')
 })
 
+test('editing a theme onto another theme\'s name suffixes instead of overwriting', async () => {
+  const dir = await freshDir()
+  const fooContent = theme('Foo')
+  const barContent = { ...theme('Bar'), seeds: { ...theme('Bar').seeds, app: '#abcdef' } }
+  const foo = await saveUserTheme(dir, fooContent)
+  const bar = await saveUserTheme(dir, barContent)
+  assert.equal(foo.id, 'foo')
+  assert.equal(bar.id, 'bar')
+
+  // Editing Bar in the theme editor: rename it to "Foo" and save with
+  // existingId 'bar'. Identity (name+kind) now matches Foo's file, but the
+  // edited theme is NOT Foo — it must not overwrite foo.json.
+  const renamed = { ...barContent, name: 'Foo' }
+  const result = await saveUserTheme(dir, renamed, 'bar')
+  assert.equal(result.id, 'foo-2')
+
+  const fooOnDisk = JSON.parse(await readFile(join(dir, 'foo.json'), 'utf8'))
+  assert.equal(fooOnDisk.seeds.app, fooContent.seeds.app)
+
+  const { themes } = await listUserThemes(dir)
+  assert.deepEqual(themes.map((t) => t.id).sort(), ['bar', 'foo', 'foo-2'])
+})
+
+test('editing a theme without renaming overwrites its own file in place', async () => {
+  const dir = await freshDir()
+  await saveUserTheme(dir, theme('Foo'))
+  const bar = await saveUserTheme(dir, theme('Bar'))
+  assert.equal(bar.id, 'bar')
+
+  const edited = { ...theme('Bar'), seeds: { ...theme('Bar').seeds, app: '#000000' } }
+  const result = await saveUserTheme(dir, edited, 'bar')
+  assert.equal(result.id, 'bar')
+
+  const { themes } = await listUserThemes(dir)
+  assert.deepEqual(themes.map((t) => t.id).sort(), ['bar', 'foo'])
+  const barOnDisk = JSON.parse(await readFile(join(dir, 'bar.json'), 'utf8'))
+  assert.equal(barOnDisk.seeds.app, '#000000')
+})
+
+test('existingId must be a valid theme id', async () => {
+  const dir = await freshDir()
+  await assert.rejects(
+    saveUserTheme(dir, theme('Foo'), '../escape'), /invalid theme id/)
+})
+
+test('existingId cannot target a built-in theme id', async () => {
+  const dir = await freshDir()
+  await assert.rejects(
+    saveUserTheme(dir, theme('Foo'), 'nord'), /built-in/)
+})
+
 test('list skips invalid files with a warning', async () => {
   const dir = await freshDir()
   await saveUserTheme(dir, theme('Good'))

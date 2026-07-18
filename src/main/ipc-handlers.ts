@@ -670,8 +670,11 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     return listUserThemes(themesDir())
   })
 
-  ipcMain.handle(IPC_CHANNELS.THEMES_SAVE, async (_event, file: unknown) => {
-    return saveUserTheme(themesDir(), file as ThemeFile)
+  ipcMain.handle(IPC_CHANNELS.THEMES_SAVE, async (_event, file: unknown, existingId: unknown) => {
+    if (existingId !== undefined && !isString(existingId)) {
+      throw new Error('existingId must be a string')
+    }
+    return saveUserTheme(themesDir(), file as ThemeFile, existingId)
   })
 
   ipcMain.handle(IPC_CHANNELS.THEMES_DELETE, async (_event, id: unknown) => {

@@ -40,6 +40,19 @@ test('overrides beat seeds and derivations', () => {
   assert.equal(vars['--color-surface-hover'], '#654321')
 })
 
+test('overriding a non-identity-mapped token beats its backing seed', () => {
+  // 'surface' above is identity-named with its seed (seed 'surface' backs
+  // token 'surface'), which would still pass if override precedence only
+  // ever checked the seed name rather than the token name. 'primary' is
+  // backed by the differently-named seed 'text' (see SEED_TO_TOKEN), so this
+  // catches a regression that special-cases identity-named seeds.
+  const vars = resolveThemeVars({
+    ...base,
+    overrides: { primary: '#abcdef' },
+  })
+  assert.equal(vars['--color-primary'], '#abcdef')
+})
+
 test('syntax merges over kind defaults', () => {
   const vars = resolveThemeVars({ ...base, syntax: { keyword: '#ff0000' } })
   assert.equal(vars['--cm-keyword'], '#ff0000')

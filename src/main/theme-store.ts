@@ -56,18 +56,60 @@ function themeIdentity(file: ThemeFile): string {
 // resave is legitimately updating).
 const BUILTIN_IDENTITY_SENTINEL = '\0builtin'
 
-export async function saveUserTheme(dir: string, file: ThemeFile): Promise<{ id: string }> {
+const SUFFIX_START = 2
+
+// Finds the first id starting at `base` that `isBlocked` accepts, appending
+// `-2`, `-3`, ... until one is free. Shared by both save paths below; only
+// the definition of "blocked" differs between them.
+function nextAvailableId(base: string, isBlocked: (id: string) => boolean): string {
+  let id = base
+  for (let n = SUFFIX_START; isBlocked(id); n += 1) id = `${base}-${n}`
+  return id
+}
+
+// `existingId` is set only when the theme editor is re-saving a theme it is
+// already editing (isUserTheme === true). It must NOT be derived from
+// name+kind identity like the fresh-save path below: two different user
+// themes can share a name+kind (e.g. after one of them gets renamed to
+// match the other), and identity-matching on the *new* name would let the
+// save silently overwrite the OTHER theme's file while the editor's
+// rename-cleanup then deletes the theme actually being edited — destroying
+// both. Restricting overwrite to the exact id under edit closes that path:
+// any collision with any other id, built-in or user, is suffixed instead.
+export async function saveUserTheme(
+  dir: string, file: ThemeFile, existingId?: string,
+): Promise<{ id: string }> {
   const theme = validateThemeFile(file)
+  if (existingId !== undefined) {
+    if (!VALID_THEME_ID.test(existingId)) throw new Error(`invalid theme id: ${existingId}`)
+    if ((BUILTIN_THEME_IDS as readonly string[]).includes(existingId)) {
+      throw new Error(`cannot overwrite built-in theme id: ${existingId}`)
+    }
+  }
   await mkdir(dir, { recursive: true })
   const base = themeIdFromName(theme.name) || 'theme'
   const { themes } = await listUserThemes(dir)
-  const taken = new Map<string, string>(
-    BUILTIN_THEME_IDS.map((builtinId) => [builtinId, BUILTIN_IDENTITY_SENTINEL]),
-  )
-  for (const t of themes) taken.set(t.id, themeIdentity(t.file))
-  let id = base
-  const identity = themeIdentity(theme)
-  for (let n = 2; taken.has(id) && taken.get(id) !== identity; n += 1) id = `${base}-${n}`
+
+  let id: string
+  if (existingId !== undefined) {
+    const takenIds = new Set<string>(BUILTIN_THEME_IDS)
+    for (const t of themes) takenIds.add(t.id)
+    id = nextAvailableId(base, (candidate) => takenIds.has(candidate) && candidate !== existingId)
+  } else {
+    // Fresh create, file import, or URL install: dedupe by identity
+    // (name+kind), so re-importing/re-installing the same theme keeps
+    // updating the same file instead of piling up numbered duplicates. This
+    // is intentionally different from the existingId path above — here
+    // there is no "theme under edit" to protect, so identity is a safe and
+    // desirable match key.
+    const taken = new Map<string, string>(
+      BUILTIN_THEME_IDS.map((builtinId) => [builtinId, BUILTIN_IDENTITY_SENTINEL]),
+    )
+    for (const t of themes) taken.set(t.id, themeIdentity(t.file))
+    const identity = themeIdentity(theme)
+    id = nextAvailableId(base, (candidate) => taken.has(candidate) && taken.get(candidate) !== identity)
+  }
+
   await writeFile(join(dir, `${id}${THEME_FILE_EXT}`), JSON.stringify(theme, null, 2))
   return { id }
 }

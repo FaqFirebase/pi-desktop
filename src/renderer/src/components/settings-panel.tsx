@@ -209,6 +209,17 @@ export function SettingsPanel(): React.JSX.Element {
   }
 
   const handleDeleteTheme = async () => {
+    const themeName = getRegisteredThemes().find((t) => t.id === theme)?.file.name ?? theme
+    // Confirm before destructive action via the app's themed dialog, matching
+    // the pattern used for session delete (context-menu.tsx) rather than the
+    // native window.confirm. Deleting a theme file has no undo.
+    const ok = await useAppStore.getState().requestConfirm({
+      title: 'Delete theme',
+      message: `Delete theme "${themeName}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
     await window.piDesktop.themes.delete(theme)
     const { themes, warnings } = await window.piDesktop.themes.list()
     for (const warning of warnings) {
