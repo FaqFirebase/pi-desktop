@@ -22,7 +22,7 @@ Still in alpha — expect rough edges.
 - File tree, code/image/PDF/HTML preview panes, code editor (CodeMirror 6 with syntax highlighting), diff viewer, file search
 - Terminal with ANSI colors
 - Package browser connected to pi.dev/packages, with instant local search
-- Session tags, model switching, live-preview settings, themes (Dark, Light, System, Nord, Gruvbox, Breeze Dark, Breeze Light, Breeze Claudius)
+- Session tags, model switching, live-preview settings, themes (7 built-ins plus System, and custom themes you can create in-app, import, export, or install from a URL)
 
 ## Review rail
 
@@ -48,7 +48,7 @@ Pi Desktop ships 7 built-in themes (Dark, Light, Nord, Gruvbox, Breeze Dark, Bre
 - **Advanced** — override any of the ~30 derived tokens individually (borders, hovers, scrollbars, and so on) instead of accepting the automatic derivation.
 - **Syntax colors** — override code-highlighting colors (keywords, strings, comments, etc.) for the code editor and diff viewer.
 
-Themes you create are listed alongside the built-ins in the **Theme** dropdown, and can be renamed, duplicated, or deleted from the editor.
+Themes you create are listed alongside the built-ins in the **Theme** dropdown. Rename one by editing its name in the editor, duplicate one by selecting it and clicking **Create theme** (which forks whatever is active), and delete one with the **Delete** button that appears next to the dropdown whenever a custom theme is selected.
 
 **Import / export / URL install.** Use **Import** and **Export** to share a theme as a `.json` file, or paste an `https://` URL into **Install from URL** to fetch and install one directly (HTTP is rejected; downloads are size-capped).
 
