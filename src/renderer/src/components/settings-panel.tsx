@@ -1,12 +1,14 @@
 import { useAppStore } from '../store'
 import { useState, useEffect, useRef } from 'react'
 import type { AppSettings, PermissionMode, CouncilConfig } from '../../../shared/ipc-contracts'
+import type { ThemeFile } from '../../../shared/theme/theme-file'
 import { Settings, Save, RotateCcw, FolderOpen, Check, ChevronDown } from 'lucide-react'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { PermissionSelector } from './permission-selector'
 import { applyTheme, getRegisteredThemes, registerThemes } from '../utils/theme'
 import { BUILTIN_THEME_IDS } from '../themes'
 import { CustomModelsEditor } from './custom-models-editor'
+import { ThemeEditor } from './theme-editor'
 import {
   MIN_TIMEOUT_SECONDS as COUNCIL_MIN_TIMEOUT,
   MAX_TIMEOUT_SECONDS as COUNCIL_MAX_TIMEOUT,
@@ -26,6 +28,11 @@ export function SettingsPanel(): React.JSX.Element {
   const [piPath, setPiPath] = useState(draft0.piExecutablePath ?? settings?.piExecutablePath ?? DEFAULT_SETTINGS.piExecutablePath)
   const [theme, setTheme] = useState(draft0.theme ?? settings?.theme ?? DEFAULT_SETTINGS.theme)
   const [themeActionError, setThemeActionError] = useState<string | null>(null)
+  const [themeEditorState, setThemeEditorState] = useState<{
+    baseTheme: ThemeFile
+    baseId: string
+    isUserTheme: boolean
+  } | null>(null)
   const [installUrl, setInstallUrl] = useState('')
   const [fontSize, setFontSize] = useState(draft0.fontSize ?? settings?.fontSize ?? DEFAULT_SETTINGS.fontSize)
   const [terminalFontSize, setTerminalFontSize] = useState(draft0.terminalFontSize ?? settings?.terminalFontSize ?? DEFAULT_SETTINGS.terminalFontSize)
@@ -130,6 +137,31 @@ export function SettingsPanel(): React.JSX.Element {
   }
 
   const isBuiltinTheme = (themeId: string): boolean => (BUILTIN_THEME_IDS as string[]).includes(themeId)
+  const isEditableUserTheme = theme !== 'system' && !isBuiltinTheme(theme)
+
+  const openCreateThemeEditor = () => {
+    const effectiveId = resolveEffectiveThemeId(theme)
+    const registered = getRegisteredThemes()
+    const baseTheme =
+      registered.find((t) => t.id === effectiveId)?.file ??
+      registered.find((t) => t.id === 'dark')!.file
+    setThemeEditorState({ baseTheme, baseId: effectiveId, isUserTheme: false })
+  }
+
+  const openEditThemeEditor = () => {
+    const baseTheme = getRegisteredThemes().find((t) => t.id === theme)?.file
+    if (!baseTheme) {
+      setThemeActionError('Could not find the current theme to edit')
+      return
+    }
+    setThemeEditorState({ baseTheme, baseId: theme, isUserTheme: true })
+  }
+
+  const handleThemeEditorSaved = (id: string) => {
+    setTheme(id)
+    setThemeActionError(null)
+    setThemeEditorState(null)
+  }
 
   const handleImportTheme = async () => {
     const result = await window.piDesktop.themes.import()
@@ -320,6 +352,25 @@ export function SettingsPanel(): React.JSX.Element {
                 size={14}
                 className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-dim"
               />
+            </div>
+          </SettingsRow>
+
+          <SettingsRow label="Custom Theme" description="Fork the current theme or edit one you created">
+            <div className="flex gap-2">
+              <button
+                onClick={openCreateThemeEditor}
+                className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+              >
+                Create theme
+              </button>
+              {isEditableUserTheme && (
+                <button
+                  onClick={openEditThemeEditor}
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+                >
+                  Edit theme
+                </button>
+              )}
             </div>
           </SettingsRow>
 
@@ -599,6 +650,16 @@ export function SettingsPanel(): React.JSX.Element {
           </button>
         </div>
       </div>
+
+      {themeEditorState && (
+        <ThemeEditor
+          baseTheme={themeEditorState.baseTheme}
+          baseId={themeEditorState.baseId}
+          isUserTheme={themeEditorState.isUserTheme}
+          onClose={() => setThemeEditorState(null)}
+          onSaved={handleThemeEditorSaved}
+        />
+      )}
 
       {/* Council enable confirmation dialog */}
       {showCouncilWarning && (
