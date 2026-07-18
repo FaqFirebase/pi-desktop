@@ -5,7 +5,7 @@ import { WorkspaceManager } from './workspace-manager'
 import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
 import { fetchAllCatalogPackages } from './package-catalog'
 import { activityStatsStore } from './activity-stats'
-import { configureGuiDataDir, getCanonicalUserDataDir, migrateLegacyGuiData } from './app-data-paths'
+import { configureGuiDataDir, getCanonicalUserDataDir, getExternalGuiDataDir, migrateLegacyGuiData } from './app-data-paths'
 import { setupTray, setTrayEnabled, isTrayEnabled, isTrayAvailable, destroyTray, notifyFirstHide } from './tray-manager'
 import { shouldHideToTray } from './tray-decision'
 
@@ -68,10 +68,14 @@ if (!app.requestSingleInstanceLock()) {
   })
 }
 
-const canonicalUserDataDir = getCanonicalUserDataDir(app.getPath('appData'))
-mkdirSync(canonicalUserDataDir, { recursive: true })
-app.setPath('userData', canonicalUserDataDir)
-configureGuiDataDir(canonicalUserDataDir)
+// PI_DESKTOP_USER_DATA_DIR set by the launching process overrides the
+// canonical appData-derived directory: that exact directory holds all GUI
+// data and legacy migration is skipped, keeping it fully isolated.
+const externalUserDataDir = getExternalGuiDataDir()
+const userDataDir = externalUserDataDir ?? getCanonicalUserDataDir(app.getPath('appData'))
+mkdirSync(userDataDir, { recursive: true })
+app.setPath('userData', userDataDir)
+configureGuiDataDir(userDataDir)
 
 // ─── Window Creation ─────────────────────────────────────────────────────────
 
@@ -265,10 +269,12 @@ function createApplicationMenu(): void {
 // ─── App Lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
-  await migrateLegacyGuiData({
-    appDataDir: app.getPath('appData'),
-    userDataDir: app.getPath('userData'),
-  })
+  if (!externalUserDataDir) {
+    await migrateLegacyGuiData({
+      appDataDir: app.getPath('appData'),
+      userDataDir: app.getPath('userData'),
+    })
+  }
 
   // Set macOS dock icon (no-op on other platforms)
   if (process.platform === 'darwin' && app.dock) {

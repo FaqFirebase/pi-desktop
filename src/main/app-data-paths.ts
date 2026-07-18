@@ -1,6 +1,6 @@
 import { copyFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
-import { dirname, join } from 'path'
+import { dirname, join, resolve } from 'path'
 
 export const GUI_DATA_ENV_VAR = 'PI_DESKTOP_USER_DATA_DIR'
 export const CANONICAL_GUI_DATA_DIR_NAME = 'pi-desktop'
@@ -34,6 +34,14 @@ function getHomeDir(options?: PathOptions): string {
 
 export function configureGuiDataDir(userDataDir: string): void {
   process.env[GUI_DATA_ENV_VAR] = userDataDir
+}
+
+// Startup reads this before configureGuiDataDir() overwrites the env var, so
+// an override set by the launching process (test harness, portable install)
+// wins over the canonical appData-derived directory.
+export function getExternalGuiDataDir(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const external = env[GUI_DATA_ENV_VAR]
+  return external ? resolve(external) : undefined
 }
 
 export function getCanonicalUserDataDir(appDataDir: string): string {
