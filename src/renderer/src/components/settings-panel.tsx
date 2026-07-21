@@ -1,10 +1,12 @@
 import { useAppStore } from '../store'
 import { useState, useEffect, useRef } from 'react'
-import type { AppSettings, PermissionMode, CouncilConfig } from '../../../shared/ipc-contracts'
+import type { AppSettings, PermissionMode, CouncilConfig, PermissionRule } from '../../../shared/ipc-contracts'
 import type { ThemeFile } from '../../../shared/theme/theme-file'
 import { Settings, Save, RotateCcw, FolderOpen, Check, ChevronDown } from 'lucide-react'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { PermissionSelector } from './permission-selector'
+import { PermissionRulesEditor } from './permission-rules-editor'
+import { validateRuleList } from './permission-rules-editor-helpers'
 import { applyTheme, getRegisteredThemes, registerThemes, setUserThemes } from '../utils/theme'
 import { BUILTIN_THEME_IDS } from '../themes'
 import { CustomModelsEditor } from './custom-models-editor'
@@ -16,6 +18,17 @@ import {
   MAX_TIMEOUT_SECONDS as COUNCIL_MAX_TIMEOUT,
   clampTimeoutSeconds as clampCouncilTimeout,
 } from '../../../shared/council-config'
+
+// Empty `match` from the input means "no pattern" and must not be persisted
+// as `""` — the main-process validator rejects unknown/empty-string quirks
+// and downstream matching treats a missing key as "match anything".
+function normalizedRules(rules: PermissionRule[]): PermissionRule[] {
+  return rules.map((rule) => {
+    const tool = rule.tool.trim()
+    const match = rule.match?.trim()
+    return match ? { action: rule.action, tool, match } : { action: rule.action, tool }
+  })
+}
 
 export function SettingsPanel(): React.JSX.Element {
   const settings = useAppStore((state) => state.settings)
@@ -49,6 +62,11 @@ export function SettingsPanel(): React.JSX.Element {
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
     draft0.permissionMode ?? settings?.permissionMode ?? DEFAULT_SETTINGS.permissionMode,
   )
+  const [permissionRules, setPermissionRules] = useState<PermissionRule[]>([])
+  const [rulesLoaded, setRulesLoaded] = useState(false)
+  const [rulesLoadError, setRulesLoadError] = useState<string | null>(null)
+  const [rulesActionError, setRulesActionError] = useState<string | null>(null)
+  const [workspaceHasRules, setWorkspaceHasRules] = useState(false)
   const [saved, setSaved] = useState(false)
 
   const [showCouncilWarning, setShowCouncilWarning] = useState(false)
@@ -72,6 +90,33 @@ export function SettingsPanel(): React.JSX.Element {
       }
       setDetectedAgents(next)
     })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Load permission rules on mount. The store draft (permissionRulesDraft)
+  // wins over the saved file so unsaved edits survive view switches.
+  useEffect(() => {
+    let cancelled = false
+    const load = async (): Promise<void> => {
+      const draft = useAppStore.getState().permissionRulesDraft
+      const [saved, wsStatus] = await Promise.all([
+        window.piDesktop.permissionRules.get(),
+        window.piDesktop.permissionRules.workspaceStatus(),
+      ])
+      if (cancelled) return
+      if (saved.ok) {
+        setPermissionRules(draft ?? saved.rules)
+        setRulesLoadError(null)
+      } else {
+        setPermissionRules(draft ?? [])
+        setRulesLoadError(saved.error)
+      }
+      setWorkspaceHasRules(wsStatus.hasWorkspaceRules)
+      setRulesLoaded(true)
+    }
+    void load()
     return () => {
       cancelled = true
     }
@@ -249,6 +294,28 @@ export function SettingsPanel(): React.JSX.Element {
     setThemeActionError(null)
   }
 
+  const handleRulesChange = (rules: PermissionRule[]): void => {
+    setPermissionRules(rules)
+    setRulesActionError(null)
+    useAppStore.getState().setPermissionRulesDraft(rules)
+  }
+
+  const handleRulesImport = async (): Promise<void> => {
+    const result = await window.piDesktop.permissionRules.importFromFile()
+    if (result.ok) {
+      handleRulesChange(result.rules)
+    } else if (!result.canceled) {
+      setRulesActionError(result.error ?? 'Import failed')
+    }
+  }
+
+  const handleRulesExport = async (): Promise<void> => {
+    const result = await window.piDesktop.permissionRules.exportToFile(normalizedRules(permissionRules))
+    if (!result.ok && !result.canceled) {
+      setRulesActionError(result.error ?? 'Export failed')
+    }
+  }
+
   const handleSave = async () => {
     const updated: Partial<AppSettings> = {
       piExecutablePath: piPath,
@@ -273,6 +340,22 @@ export function SettingsPanel(): React.JSX.Element {
 
     // Reload settings in store
     await loadSettings()
+
+    // Persist permission rules too (only if the editor loaded — never
+    // overwrite the file with an empty list because loading failed).
+    if (rulesLoaded) {
+      const rulesError = validateRuleList(permissionRules)
+      if (rulesError) {
+        setRulesActionError(rulesError)
+        return
+      }
+      const rulesResult = await window.piDesktop.permissionRules.set(normalizedRules(permissionRules))
+      if (!rulesResult.ok) {
+        setRulesActionError(rulesResult.error)
+        return
+      }
+      setRulesLoadError(null)
+    }
 
     // Persisted now — drop the unsaved draft so the form and terminal/editor
     // read the saved settings (just refreshed).
@@ -314,6 +397,11 @@ export function SettingsPanel(): React.JSX.Element {
     setRunOnStartup(defaults.runOnStartup!)
     setMinimizeToTrayOnClose(defaults.minimizeToTrayOnClose!)
     setPermissionMode(defaults.permissionMode!)
+    setPermissionRules([])
+    setRulesActionError(null)
+    void window.piDesktop.permissionRules.get().then((saved) => {
+      if (saved.ok) setPermissionRules(saved.rules)
+    })
 
     const result = await window.piDesktop.settings.save(defaults)
     applyTheme(result.theme)
@@ -521,6 +609,18 @@ export function SettingsPanel(): React.JSX.Element {
                 setSettingsDraft({ permissionMode: mode })
               }}
               compact
+            />
+          </SettingsRow>
+
+          <SettingsRow label="Permission Rules" description="Fine-grained per-tool overrides for the mode above" stack>
+            <PermissionRulesEditor
+              rules={permissionRules}
+              onChange={handleRulesChange}
+              onImport={() => void handleRulesImport()}
+              onExport={() => void handleRulesExport()}
+              workspaceOverride={workspaceHasRules}
+              loadError={rulesLoadError}
+              actionError={rulesActionError}
             />
           </SettingsRow>
 

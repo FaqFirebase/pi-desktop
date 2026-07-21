@@ -43,6 +43,7 @@ import type {
   UpdateCheckResult,
   PromptImage,
   CouncilArbiterRequest,
+  PermissionRule,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -147,6 +148,9 @@ interface AppState {
   // reopen and they survive view switches; the terminal/editor read their font
   // sizes from here so unsaved changes apply on remount. Cleared on Save/Reset.
   settingsDraft: Partial<AppSettings>
+  // Unsaved permission-rules edits from the Settings panel; survives view
+  // switches like settingsDraft. null = no pending edits.
+  permissionRulesDraft: PermissionRule[] | null
   commands: PiCommand[]
 
   // Extension UI
@@ -275,6 +279,7 @@ interface AppActions {
   loadSettings: () => Promise<void>
   setSettingsDraft: (patch: Partial<AppSettings>) => void
   clearSettingsDraft: () => void
+  setPermissionRulesDraft: (rules: PermissionRule[] | null) => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   toggleSessionGroupCollapsed: (projectPath: string) => Promise<void>
   loadCommands: () => Promise<void>
@@ -456,6 +461,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   reviewOpen: false,
   settings: null,
   settingsDraft: {},
+  permissionRulesDraft: null,
   commands: [],
 
   extensionUiRequest: null,
@@ -1034,7 +1040,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   setSettingsDraft: (patch) =>
     set((state) => ({ settingsDraft: { ...state.settingsDraft, ...patch } })),
 
-  clearSettingsDraft: () => set({ settingsDraft: {} }),
+  setPermissionRulesDraft: (rules) => set({ permissionRulesDraft: rules }),
+
+  clearSettingsDraft: () => set({ settingsDraft: {}, permissionRulesDraft: null }),
 
   setPermissionMode: async (mode) => {
     const updated = await window.piDesktop.settings.save({ permissionMode: mode })
