@@ -109,12 +109,18 @@ export function SettingsPanel(): React.JSX.Element {
       if (saved.ok) {
         setPermissionRules(draft ?? saved.rules)
         setRulesLoadError(null)
+        setRulesLoaded(true)
       } else {
         setPermissionRules(draft ?? [])
         setRulesLoadError(saved.error)
+        // The saved file is corrupt: only let Save touch it if the user has
+        // already taken ownership of the list via an edit/import in this
+        // panel (a store draft exists). Otherwise an unrelated Save (e.g.
+        // font size) would silently overwrite the corrupt file with `[]`,
+        // destroying whatever the user was trying to recover.
+        setRulesLoaded(draft !== null)
       }
       setWorkspaceHasRules(wsStatus.hasWorkspaceRules)
-      setRulesLoaded(true)
     }
     void load()
     return () => {
@@ -297,6 +303,9 @@ export function SettingsPanel(): React.JSX.Element {
   const handleRulesChange = (rules: PermissionRule[]): void => {
     setPermissionRules(rules)
     setRulesActionError(null)
+    // The user edited or imported rules in this panel — Save is now allowed
+    // to persist the list even if the on-disk file failed to load.
+    setRulesLoaded(true)
     useAppStore.getState().setPermissionRulesDraft(rules)
   }
 
@@ -400,7 +409,13 @@ export function SettingsPanel(): React.JSX.Element {
     setPermissionRules([])
     setRulesActionError(null)
     void window.piDesktop.permissionRules.get().then((saved) => {
-      if (saved.ok) setPermissionRules(saved.rules)
+      if (saved.ok) {
+        setPermissionRules(saved.rules)
+        setRulesLoadError(null)
+        setRulesLoaded(true)
+      } else {
+        setRulesLoadError(saved.error)
+      }
     })
 
     const result = await window.piDesktop.settings.save(defaults)
