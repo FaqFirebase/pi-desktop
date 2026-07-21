@@ -41,11 +41,13 @@ import type {
   ThemeExportResult,
   ThemeGalleryResult,
   ThemeGalleryImageResult,
+  PermissionRulesScope,
   PermissionRulesGetResult,
   PermissionRulesSetResult,
   PermissionRulesImportResult,
   PermissionRulesExportResult,
   PermissionRulesWorkspaceStatus,
+  PermissionRulesRemoveResult,
   PermissionRulesFile,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -98,6 +100,17 @@ const PERMISSION_RULES_FILE_FILTER: Electron.FileFilter = { name: 'Permission Ru
 
 function getGlobalPermissionRulesPath(): string {
   return getGuiDataPath(PERMISSION_RULES_FILE_NAME)
+}
+
+function validatePermissionRulesScope(scope: unknown): PermissionRulesScope {
+  if (scope === 'global' || scope === 'workspace') return scope
+  throw new Error('scope must be "global" or "workspace"')
+}
+
+function activeWorkspaceRulesPath(workspaceManager: WorkspaceManager): { path: string; workspacePath: string } {
+  const activeWs = workspaceManager.getActiveWorkspace()
+  if (!activeWs) throw new Error('No active workspace')
+  return { path: workspaceRulesPath(activeWs.path), workspacePath: activeWs.path }
 }
 
 // Type guard helpers
@@ -686,23 +699,47 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
 
   // ─── Permission Rules ───────────────────────────────────────────────────
 
-  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_GET, async (): Promise<PermissionRulesGetResult> => {
-    const rulesPath = getGlobalPermissionRulesPath()
-    if (!existsSync(rulesPath)) return { ok: true, rules: [] }
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_GET, async (_event, scope: unknown): Promise<PermissionRulesGetResult> => {
     try {
+      let rulesPath: string
+      if (validatePermissionRulesScope(scope) === 'global') {
+        rulesPath = getGlobalPermissionRulesPath()
+      } else {
+        // No active workspace means no workspace file — not an error, so the
+        // panel never mistakes this state for a corrupt file.
+        const activeWs = workspaceManager.getActiveWorkspace()
+        if (!activeWs) return { ok: true, rules: [], exists: false }
+        rulesPath = workspaceRulesPath(activeWs.path)
+      }
+      if (!existsSync(rulesPath)) return { ok: true, rules: [], exists: false }
       const file = validatePermissionRulesFile(JSON.parse(await readFile(rulesPath, 'utf-8')))
-      return { ok: true, rules: file.rules }
+      return { ok: true, rules: file.rules, exists: true }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_SET, async (_event, rules: unknown): Promise<PermissionRulesSetResult> => {
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_SET, async (_event, scope: unknown, rules: unknown): Promise<PermissionRulesSetResult> => {
     try {
+      const validScope = validatePermissionRulesScope(scope)
       const file = validatePermissionRulesFile({ version: PERMISSION_RULES_VERSION, rules })
-      const rulesPath = getGlobalPermissionRulesPath()
+      if (validScope === 'global') {
+        const rulesPath = getGlobalPermissionRulesPath()
+        await mkdir(dirname(rulesPath), { recursive: true })
+        await writeFile(rulesPath, `${JSON.stringify(file, null, 2)}\n`, 'utf-8')
+        return { ok: true }
+      }
+      const { path: rulesPath, workspacePath } = activeWorkspaceRulesPath(workspaceManager)
       await mkdir(dirname(rulesPath), { recursive: true })
       await writeFile(rulesPath, `${JSON.stringify(file, null, 2)}\n`, 'utf-8')
+      // The user created this file deliberately — acknowledge the workspace so
+      // the one-time "workspace has its own rules" notice never fires for it.
+      const settings = await loadAppSettings(workspaceManager)
+      if (!settings.permissionRulesAckWorkspaces.includes(workspacePath)) {
+        await saveAppSettings({
+          permissionRulesAckWorkspaces: [...settings.permissionRulesAckWorkspaces, workspacePath],
+        })
+      }
       return { ok: true }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -759,6 +796,17 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
       hasWorkspaceRules: existsSync(workspaceRulesPath(activeWs.path)),
       workspacePath: activeWs.path,
       acknowledged: settings.permissionRulesAckWorkspaces.includes(activeWs.path),
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_REMOVE_WORKSPACE, async (): Promise<PermissionRulesRemoveResult> => {
+    try {
+      const { path: rulesPath } = activeWorkspaceRulesPath(workspaceManager)
+      if (!existsSync(rulesPath)) return { ok: true }
+      await unlink(rulesPath)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
   })
 

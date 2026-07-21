@@ -41,11 +41,13 @@ import type {
   ThemeGalleryResult,
   ThemeGalleryImageResult,
   PermissionRule,
+  PermissionRulesScope,
   PermissionRulesGetResult,
   PermissionRulesSetResult,
   PermissionRulesImportResult,
   PermissionRulesExportResult,
   PermissionRulesWorkspaceStatus,
+  PermissionRulesRemoveResult,
 } from '../shared/ipc-contracts'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -114,11 +116,12 @@ interface PiDesktopAPI {
 
   // Permission rules
   permissionRules: {
-    get(): Promise<PermissionRulesGetResult>
-    set(rules: PermissionRule[]): Promise<PermissionRulesSetResult>
+    get(scope: PermissionRulesScope): Promise<PermissionRulesGetResult>
+    set(scope: PermissionRulesScope, rules: PermissionRule[]): Promise<PermissionRulesSetResult>
     importFromFile(): Promise<PermissionRulesImportResult>
     exportToFile(rules: PermissionRule[]): Promise<PermissionRulesExportResult>
     workspaceStatus(): Promise<PermissionRulesWorkspaceStatus>
+    removeWorkspace(): Promise<PermissionRulesRemoveResult>
   }
 
   // Themes (user-created theme storage)
@@ -311,11 +314,12 @@ const api: PiDesktopAPI = {
   },
 
   permissionRules: {
-    get: () => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_GET),
-    set: (rules) => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_SET, rules),
+    get: (scope) => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_GET, scope),
+    set: (scope, rules) => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_SET, scope, rules),
     importFromFile: () => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_IMPORT),
     exportToFile: (rules) => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_EXPORT, rules),
     workspaceStatus: () => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_WORKSPACE_STATUS),
+    removeWorkspace: () => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_REMOVE_WORKSPACE),
   },
 
   themes: {

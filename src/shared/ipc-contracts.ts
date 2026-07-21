@@ -60,6 +60,7 @@ export const IPC_CHANNELS = {
   PERMISSION_RULES_IMPORT: 'permission-rules:import',
   PERMISSION_RULES_EXPORT: 'permission-rules:export',
   PERMISSION_RULES_WORKSPACE_STATUS: 'permission-rules:workspace-status',
+  PERMISSION_RULES_REMOVE_WORKSPACE: 'permission-rules:remove-workspace',
 
   // UI
   UI_SELECT_RESPONSE: 'ui:select-response',
@@ -676,11 +677,15 @@ export type PermissionMode = 'plan-readonly' | 'ask-edits' | 'ask-commands' | 't
 
 export type { PermissionRule, PermissionRuleAction, PermissionRulesFile } from '../../resources/permission-rules'
 
+export type PermissionRulesScope = 'global' | 'workspace'
+
 export type PermissionRulesGetResult =
-  | { ok: true; rules: PermissionRule[] }
+  | { ok: true; rules: PermissionRule[]; exists: boolean }
   | { ok: false; error: string }
 
 export type PermissionRulesSetResult = { ok: true } | { ok: false; error: string }
+
+export type PermissionRulesRemoveResult = { ok: true } | { ok: false; error: string }
 
 export type PermissionRulesImportResult =
   | { ok: true; rules: PermissionRule[] }
