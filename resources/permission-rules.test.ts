@@ -11,7 +11,6 @@ import {
   getPrimaryInput,
   evaluateRules,
   decideToolCall,
-  needsPermissionsExtension,
   workspaceRulesPath,
   loadEffectiveRules,
   clearRulesCache,
@@ -204,21 +203,6 @@ describe('decideToolCall', () => {
     assert.deepEqual(decideToolCall('ask-commands', [], 'edit', { path: 'a' }, 'linux'), { action: 'allow' })
     assert.deepEqual(decideToolCall('trusted', [], 'bash', { command: 'x' }, 'linux'), { action: 'allow' })
     assert.deepEqual(decideToolCall(undefined, [], 'bash', { command: 'x' }, 'linux'), { action: 'allow' })
-  })
-})
-
-describe('needsPermissionsExtension', () => {
-  it('loads for ask modes regardless of rules', () => {
-    assert.ok(needsPermissionsExtension('ask-edits', false))
-    assert.ok(needsPermissionsExtension('ask-commands', false))
-  })
-  it('loads in any mode when a rules file exists', () => {
-    assert.ok(needsPermissionsExtension('trusted', true))
-    assert.ok(needsPermissionsExtension('plan-readonly', true))
-  })
-  it('stays off for trusted/plan-readonly without rules', () => {
-    assert.ok(!needsPermissionsExtension('trusted', false))
-    assert.ok(!needsPermissionsExtension('plan-readonly', false))
   })
 })
 

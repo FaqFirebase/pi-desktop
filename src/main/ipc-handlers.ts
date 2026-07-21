@@ -67,7 +67,6 @@ import { promisify } from 'util'
 import {
   PERMISSION_RULES_FILE_NAME,
   PERMISSION_RULES_VERSION,
-  needsPermissionsExtension,
   validatePermissionRulesFile,
   workspaceRulesPath,
 } from '../../resources/permission-rules'
@@ -235,9 +234,7 @@ function applyPermissionModeToStartOptions(
     ? [...removeToolArgs(options.args ?? []), '--tools', toolList]
     : [...(options.args ?? [])]
   const globalRulesPath = getGlobalPermissionRulesPath()
-  const hasRulesFile =
-    existsSync(globalRulesPath) || (options.cwd ? existsSync(workspaceRulesPath(options.cwd)) : false)
-  if (needsPermissionsExtension(settings.permissionMode, hasRulesFile) && existsSync(PERMISSIONS_EXTENSION_PATH)) {
+  if (existsSync(PERMISSIONS_EXTENSION_PATH)) {
     args.push('-e', PERMISSIONS_EXTENSION_PATH)
   }
 

@@ -7,8 +7,6 @@
  * - the Electron main process (bundled by electron-vite).
  *
  * Must therefore import only from `node:*` — no Electron, no Pi APIs.
- * (Task 3 adds the node:fs / node:path imports when file loading lands —
- * adding them now would trip noUnusedLocals.)
  */
 import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -185,11 +183,6 @@ export function decideToolCall(
   if (mode === MODE_ASK_EDITS && ASK_EDITS_GATED_TOOLS.has(toolName)) return { action: 'prompt' }
   if (mode === MODE_ASK_COMMANDS && ASK_COMMANDS_GATED_TOOLS.has(toolName)) return { action: 'prompt' }
   return { action: 'allow' }
-}
-
-/** Whether the Pi permissions extension must be loaded for this launch. */
-export function needsPermissionsExtension(mode: string, hasRulesFile: boolean): boolean {
-  return mode === MODE_ASK_EDITS || mode === MODE_ASK_COMMANDS || hasRulesFile
 }
 
 export function workspaceRulesPath(cwd: string): string {
