@@ -2,8 +2,13 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "../../out/shared",
+    "rootDir": "../..",
     "composite": true,
     "declaration": true
   },
-  "include": ["./**/*.ts"]
+  "include": [
+    "./**/*.ts",
+    "../../resources/permission-rules.ts",
+    "../../resources/permission-rules.test.ts"
+  ]
 }

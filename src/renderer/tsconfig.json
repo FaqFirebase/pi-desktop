@@ -10,5 +10,12 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false
   },
-  "include": ["./**/*.ts", "./**/*.tsx", "../shared/**/*.ts", "./src/themes/*.json"]
+  "include": [
+    "./**/*.ts",
+    "./**/*.tsx",
+    "../shared/**/*.ts",
+    "./src/themes/*.json",
+    "../../resources/permission-rules.ts",
+    "../../resources/permission-rules.test.ts"
+  ]
 }
