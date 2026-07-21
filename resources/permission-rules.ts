@@ -89,3 +89,102 @@ export function globToRegExp(pattern: string, caseInsensitive: boolean): RegExp 
   const body = pattern.split(ANY_TOOL).map(escapeRegExp).join('.*')
   return new RegExp(`^${body}$`, caseInsensitive ? 'is' : 's')
 }
+
+export type PrimaryInputKind = 'command' | 'path' | 'json'
+
+export interface PrimaryInput {
+  value: string
+  kind: PrimaryInputKind
+}
+
+const BASH_TOOL = 'bash'
+
+/**
+ * The single string a rule's glob is tested against: the bash command, a file
+ * tool's path, or (for anything else) the JSON-stringified input.
+ */
+export function getPrimaryInput(toolName: string, input: unknown): PrimaryInput {
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    const data = input as Record<string, unknown>
+    if (toolName === BASH_TOOL && typeof data.command === 'string') {
+      return { value: data.command, kind: 'command' }
+    }
+    if (typeof data.path === 'string') {
+      return { value: data.path, kind: 'path' }
+    }
+  }
+  return { value: JSON.stringify(input ?? null), kind: 'json' }
+}
+
+export type RuleDecision =
+  | { decision: 'allow' | 'deny'; rule: PermissionRule }
+  | { decision: 'default' }
+
+// Platforms whose default filesystems are case-insensitive; path globs match
+// case-insensitively there so a deny on "*.env*" also catches ".ENV".
+const CASE_INSENSITIVE_PATH_PLATFORMS = new Set(['win32', 'darwin'])
+const BACKSLASH = /\\/g
+
+function ruleMatches(rule: PermissionRule, toolName: string, primary: PrimaryInput, platform: string): boolean {
+  if (rule.tool !== ANY_TOOL && rule.tool !== toolName) return false
+  if (rule.match === undefined) return true
+  let value = primary.value
+  let pattern = rule.match
+  const caseInsensitive = primary.kind === 'path' && CASE_INSENSITIVE_PATH_PLATFORMS.has(platform)
+  if (primary.kind === 'path') {
+    value = value.replace(BACKSLASH, '/')
+    pattern = pattern.replace(BACKSLASH, '/')
+  }
+  return globToRegExp(pattern, caseInsensitive).test(value)
+}
+
+/** Deny beats allow; rule order in the file is irrelevant. */
+export function evaluateRules(
+  rules: PermissionRule[],
+  toolName: string,
+  input: unknown,
+  platform: string
+): RuleDecision {
+  const primary = getPrimaryInput(toolName, input)
+  const deny = rules.find((rule) => rule.action === 'deny' && ruleMatches(rule, toolName, primary, platform))
+  if (deny) return { decision: 'deny', rule: deny }
+  const allow = rules.find((rule) => rule.action === 'allow' && ruleMatches(rule, toolName, primary, platform))
+  if (allow) return { decision: 'allow', rule: allow }
+  return { decision: 'default' }
+}
+
+export type ToolCallDecision =
+  | { action: 'block'; reason: string }
+  | { action: 'allow' }
+  | { action: 'prompt' }
+
+// Tools each ask mode gates when no rule decides first. Mirrors the previous
+// shouldConfirm behavior in pi-desktop-permissions.ts exactly.
+const ASK_EDITS_GATED_TOOLS = new Set(['edit', 'write', 'bash'])
+const ASK_COMMANDS_GATED_TOOLS = new Set(['bash'])
+
+const MODE_ASK_EDITS = 'ask-edits'
+const MODE_ASK_COMMANDS = 'ask-commands'
+
+export function decideToolCall(
+  mode: string | undefined,
+  rules: PermissionRule[],
+  toolName: string,
+  input: unknown,
+  platform: string
+): ToolCallDecision {
+  const result = evaluateRules(rules, toolName, input, platform)
+  if (result.decision === 'deny') {
+    const suffix = result.rule.match === undefined ? '' : ` ${result.rule.match}`
+    return { action: 'block', reason: `Blocked by permission rule: deny ${result.rule.tool}${suffix}` }
+  }
+  if (result.decision === 'allow') return { action: 'allow' }
+  if (mode === MODE_ASK_EDITS && ASK_EDITS_GATED_TOOLS.has(toolName)) return { action: 'prompt' }
+  if (mode === MODE_ASK_COMMANDS && ASK_COMMANDS_GATED_TOOLS.has(toolName)) return { action: 'prompt' }
+  return { action: 'allow' }
+}
+
+/** Whether the Pi permissions extension must be loaded for this launch. */
+export function needsPermissionsExtension(mode: string, hasRulesFile: boolean): boolean {
+  return mode === MODE_ASK_EDITS || mode === MODE_ASK_COMMANDS || hasRulesFile
+}

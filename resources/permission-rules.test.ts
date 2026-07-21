@@ -4,6 +4,10 @@ import {
   PERMISSION_RULES_VERSION,
   validatePermissionRulesFile,
   globToRegExp,
+  getPrimaryInput,
+  evaluateRules,
+  decideToolCall,
+  needsPermissionsExtension,
 } from './permission-rules'
 
 describe('validatePermissionRulesFile', () => {
@@ -93,5 +97,120 @@ describe('globToRegExp', () => {
   it('honors case sensitivity flag', () => {
     assert.ok(!globToRegExp('*.env*', false).test('.ENV'))
     assert.ok(globToRegExp('*.env*', true).test('.ENV'))
+  })
+})
+
+describe('getPrimaryInput', () => {
+  it('uses command for bash', () => {
+    assert.deepEqual(getPrimaryInput('bash', { command: 'ls -la' }), { value: 'ls -la', kind: 'command' })
+  })
+
+  it('uses path for tools with a path input', () => {
+    assert.deepEqual(getPrimaryInput('edit', { path: 'src/a.ts', old: 'x' }), { value: 'src/a.ts', kind: 'path' })
+    assert.deepEqual(getPrimaryInput('read', { path: '/etc/hosts' }), { value: '/etc/hosts', kind: 'path' })
+  })
+
+  it('falls back to JSON for anything else', () => {
+    assert.deepEqual(getPrimaryInput('fetch', { url: 'https://x' }), { value: '{"url":"https://x"}', kind: 'json' })
+    assert.deepEqual(getPrimaryInput('bash', undefined), { value: 'null', kind: 'json' })
+  })
+})
+
+describe('evaluateRules', () => {
+  const LINUX = 'linux'
+  const rules = [
+    { action: 'allow' as const, tool: 'bash', match: 'npm test*' },
+    { action: 'deny' as const, tool: 'bash', match: 'rm -rf *' },
+    { action: 'deny' as const, tool: '*', match: '*.env*' },
+    { action: 'allow' as const, tool: 'grep' },
+  ]
+
+  it('returns deny when a deny rule matches, with the matching rule', () => {
+    const result = evaluateRules(rules, 'bash', { command: 'rm -rf /tmp/x' }, LINUX)
+    assert.equal(result.decision, 'deny')
+    if (result.decision === 'deny') assert.equal(result.rule.match, 'rm -rf *')
+  })
+
+  it('deny beats allow regardless of rule order', () => {
+    const both = [
+      { action: 'allow' as const, tool: 'bash', match: 'rm *' },
+      { action: 'deny' as const, tool: 'bash', match: 'rm *' },
+    ]
+    assert.equal(evaluateRules(both, 'bash', { command: 'rm x' }, LINUX).decision, 'deny')
+    assert.equal(evaluateRules(both.slice().reverse(), 'bash', { command: 'rm x' }, LINUX).decision, 'deny')
+  })
+
+  it('returns allow when only an allow rule matches', () => {
+    assert.equal(evaluateRules(rules, 'bash', { command: 'npm test --run' }, LINUX).decision, 'allow')
+  })
+
+  it('a rule without match applies to every invocation of its tool', () => {
+    assert.equal(evaluateRules(rules, 'grep', { pattern: 'x' }, LINUX).decision, 'allow')
+  })
+
+  it('tool "*" applies the rule to every tool', () => {
+    assert.equal(evaluateRules(rules, 'write', { path: 'app/.env.local' }, LINUX).decision, 'deny')
+  })
+
+  it('returns default when nothing matches', () => {
+    assert.equal(evaluateRules(rules, 'bash', { command: 'ls' }, LINUX).decision, 'default')
+  })
+
+  it('path matching normalizes backslashes and is case-insensitive on win32/darwin', () => {
+    const pathRules = [{ action: 'deny' as const, tool: '*', match: '*/secrets/*' }]
+    assert.equal(evaluateRules(pathRules, 'read', { path: 'C:\\proj\\secrets\\k.txt' }, 'win32').decision, 'deny')
+    assert.equal(evaluateRules(pathRules, 'read', { path: 'C:\\proj\\SECRETS\\k.txt' }, 'win32').decision, 'deny')
+    assert.equal(evaluateRules(pathRules, 'read', { path: '/proj/SECRETS/k.txt' }, 'darwin').decision, 'deny')
+    assert.equal(evaluateRules(pathRules, 'read', { path: '/proj/SECRETS/k.txt' }, 'linux').decision, 'default')
+  })
+
+  it('command matching stays case-sensitive on all platforms', () => {
+    const cmdRules = [{ action: 'deny' as const, tool: 'bash', match: 'RM *' }]
+    assert.equal(evaluateRules(cmdRules, 'bash', { command: 'rm x' }, 'win32').decision, 'default')
+  })
+})
+
+describe('decideToolCall', () => {
+  const rules = [
+    { action: 'allow' as const, tool: 'bash', match: 'npm test*' },
+    { action: 'deny' as const, tool: 'bash', match: 'rm -rf *' },
+  ]
+
+  it('deny rules block in every mode, including trusted and plan-readonly', () => {
+    for (const mode of ['trusted', 'plan-readonly', 'ask-edits', 'ask-commands', undefined]) {
+      const result = decideToolCall(mode, rules, 'bash', { command: 'rm -rf /' }, 'linux')
+      assert.equal(result.action, 'block')
+      if (result.action === 'block') assert.match(result.reason, /rm -rf \*/)
+    }
+  })
+
+  it('allow rules skip the prompt in ask modes', () => {
+    assert.deepEqual(decideToolCall('ask-commands', rules, 'bash', { command: 'npm test' }, 'linux'), { action: 'allow' })
+  })
+
+  it('preserves mode defaults when no rule matches', () => {
+    assert.deepEqual(decideToolCall('ask-edits', [], 'edit', { path: 'a' }, 'linux'), { action: 'prompt' })
+    assert.deepEqual(decideToolCall('ask-edits', [], 'write', { path: 'a' }, 'linux'), { action: 'prompt' })
+    assert.deepEqual(decideToolCall('ask-edits', [], 'bash', { command: 'x' }, 'linux'), { action: 'prompt' })
+    assert.deepEqual(decideToolCall('ask-edits', [], 'read', { path: 'a' }, 'linux'), { action: 'allow' })
+    assert.deepEqual(decideToolCall('ask-commands', [], 'bash', { command: 'x' }, 'linux'), { action: 'prompt' })
+    assert.deepEqual(decideToolCall('ask-commands', [], 'edit', { path: 'a' }, 'linux'), { action: 'allow' })
+    assert.deepEqual(decideToolCall('trusted', [], 'bash', { command: 'x' }, 'linux'), { action: 'allow' })
+    assert.deepEqual(decideToolCall(undefined, [], 'bash', { command: 'x' }, 'linux'), { action: 'allow' })
+  })
+})
+
+describe('needsPermissionsExtension', () => {
+  it('loads for ask modes regardless of rules', () => {
+    assert.ok(needsPermissionsExtension('ask-edits', false))
+    assert.ok(needsPermissionsExtension('ask-commands', false))
+  })
+  it('loads in any mode when a rules file exists', () => {
+    assert.ok(needsPermissionsExtension('trusted', true))
+    assert.ok(needsPermissionsExtension('plan-readonly', true))
+  })
+  it('stays off for trusted/plan-readonly without rules', () => {
+    assert.ok(!needsPermissionsExtension('trusted', false))
+    assert.ok(!needsPermissionsExtension('plan-readonly', false))
   })
 })
