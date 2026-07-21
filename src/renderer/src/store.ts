@@ -1345,6 +1345,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   switchWorkspace: async (workspaceId) => {
     try {
       await window.piDesktop.workspace.setActive(workspaceId)
+      // The switch has committed on the main side as of this point — an
+      // unsaved workspace-rules draft belongs to the workspace being left, so
+      // discard it now rather than at the end of this chain. Doing it here
+      // (before any of the awaits below, and before loadWorkspaces() updates
+      // `activeWorkspace`) means it can't be skipped by a later throw in this
+      // chain, and the settings panel's own activeWorkspace-change effect can
+      // never observe a stale draft under the new workspace.
+      get().setPermissionRulesDraft('workspace', null)
       get().clearMessages()
       // Re-sync Pi status from main: each workspace has its own PiRpcManager,
       // so the new active workspace's Pi may be in a different state than
@@ -1363,8 +1371,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       if (get().piStatus === 'running') {
         await get().reloadActiveSession()
       }
-      // Unsaved workspace-rules edits belong to the previous workspace; discard on switch.
-      get().setPermissionRulesDraft('workspace', null)
       await get().maybeWarnWorkspacePermissionRules()
     } catch (err) {
       get().addMessage({
