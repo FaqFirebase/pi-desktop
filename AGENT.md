@@ -106,6 +106,8 @@ src/
             ├── custom-models-editor.tsx # Custom models/providers editor
             ├── permission-selector.tsx # Permission mode selector
             ├── permission-mode.ts # Permission mode helpers
+            ├── permission-rules-editor.tsx # Permission rules editor (Settings -> Behavior)
+            ├── permission-rules-editor-helpers.ts # Permission rules editor parse/validate helpers
             ├── session-panel.tsx  # Sessions grouped by project
             ├── session-menu-position.ts # Session menu placement
             ├── timeline.tsx       # Agent activity timeline
@@ -233,6 +235,7 @@ Click the status icon in the sidebar header to see:
 - Independent UI / Terminal / Code Editor font size sliders
 - Show thinking blocks, auto-scroll
 - Every field (theme, permission mode, toggles, font sizes) live-previews before Save via a unified settings draft (`store.ts` `settingsDraft`); survives view switches; Save persists, Reset restores `DEFAULT_SETTINGS`
+- Permission rules: user-defined allow/deny rules (glob per Pi tool) that overlay the permission modes. Deny beats allow beats mode default; deny applies in every mode. Global rules live in `<GUI data dir>/permission-rules.json` (edited in Settings, with JSON import/export); a workspace `.pi-desktop/permission-rules.json` fully replaces them (one-time in-app notice per workspace). Engine: `resources/permission-rules.ts`, shared by the Pi extension (jiti relative import, mtime-cached live re-read) and the main process.
 - Custom models & providers editor — edits `~/.pi/agent/models.json` (applied on Pi restart)
 - All settings persisted to `~/.pi-desktop-gui/settings.json`; defaults come from the single shared `src/shared/default-settings.ts` (used to seed the file AND for the renderer's initial/Reset values)
 
