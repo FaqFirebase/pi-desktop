@@ -10,6 +10,9 @@
  * (Task 3 adds the node:fs / node:path imports when file loading lands —
  * adding them now would trip noUnusedLocals.)
  */
+import { readFileSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+
 export const PERMISSION_RULES_VERSION = 1
 export const PERMISSION_RULES_FILE_NAME = 'permission-rules.json'
 export const WORKSPACE_RULES_DIR_NAME = '.pi-desktop'
@@ -187,4 +190,81 @@ export function decideToolCall(
 /** Whether the Pi permissions extension must be loaded for this launch. */
 export function needsPermissionsExtension(mode: string, hasRulesFile: boolean): boolean {
   return mode === MODE_ASK_EDITS || mode === MODE_ASK_COMMANDS || hasRulesFile
+}
+
+export function workspaceRulesPath(cwd: string): string {
+  return join(cwd, WORKSPACE_RULES_DIR_NAME, PERMISSION_RULES_FILE_NAME)
+}
+
+export interface EffectiveRules {
+  rules: PermissionRule[]
+  source: 'workspace' | 'global' | 'none'
+  error?: string
+}
+
+interface CachedRulesFile {
+  mtimeMs: number
+  rules: PermissionRule[]
+  error?: string
+}
+
+const rulesFileCache = new Map<string, CachedRulesFile>()
+
+/** Test isolation only. */
+export function clearRulesCache(): void {
+  rulesFileCache.clear()
+}
+
+/**
+ * Read + validate one rules file, re-parsing only when its mtime changes.
+ * Returns null when the file does not exist (or cannot be stat-ed).
+ * A malformed file is cached as "no rules + error" and logged once per mtime.
+ */
+function loadRulesFile(filePath: string): CachedRulesFile | null {
+  let mtimeMs: number
+  try {
+    mtimeMs = statSync(filePath).mtimeMs
+  } catch {
+    rulesFileCache.delete(filePath)
+    return null
+  }
+
+  const cached = rulesFileCache.get(filePath)
+  if (cached && cached.mtimeMs === mtimeMs) return cached
+
+  let entry: CachedRulesFile
+  try {
+    const parsed = JSON.parse(readFileSync(filePath, 'utf-8'))
+    entry = { mtimeMs, rules: validatePermissionRulesFile(parsed).rules }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`[pi-desktop] invalid permission rules file ${filePath}: ${message}`)
+    entry = { mtimeMs, rules: [], error: message }
+  }
+  rulesFileCache.set(filePath, entry)
+  return entry
+}
+
+/**
+ * Resolve the effective rules: a valid workspace file (under cwd) fully
+ * replaces the global file. A malformed workspace file falls back to the
+ * global file (so global deny rules keep applying) and carries the error.
+ */
+export function loadEffectiveRules(cwd: string | null, globalPath: string | null): EffectiveRules {
+  let workspaceError: string | undefined
+  if (cwd) {
+    const workspace = loadRulesFile(workspaceRulesPath(cwd))
+    if (workspace && workspace.error === undefined) {
+      return { rules: workspace.rules, source: 'workspace' }
+    }
+    workspaceError = workspace?.error
+  }
+  if (globalPath) {
+    const global = loadRulesFile(globalPath)
+    if (global) {
+      const error = workspaceError ?? global.error
+      return { rules: global.rules, source: 'global', ...(error ? { error } : {}) }
+    }
+  }
+  return { rules: [], source: 'none', ...(workspaceError ? { error: workspaceError } : {}) }
 }

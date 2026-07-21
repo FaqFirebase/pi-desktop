@@ -1,13 +1,20 @@
 import { strict as assert } from 'node:assert'
-import { describe, it } from 'node:test'
+import { describe, it, beforeEach } from 'node:test'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   PERMISSION_RULES_VERSION,
+  WORKSPACE_RULES_DIR_NAME,
   validatePermissionRulesFile,
   globToRegExp,
   getPrimaryInput,
   evaluateRules,
   decideToolCall,
   needsPermissionsExtension,
+  workspaceRulesPath,
+  loadEffectiveRules,
+  clearRulesCache,
 } from './permission-rules'
 
 describe('validatePermissionRulesFile', () => {
@@ -212,5 +219,114 @@ describe('needsPermissionsExtension', () => {
   it('stays off for trusted/plan-readonly without rules', () => {
     assert.ok(!needsPermissionsExtension('trusted', false))
     assert.ok(!needsPermissionsExtension('plan-readonly', false))
+  })
+})
+
+describe('loadEffectiveRules', () => {
+  const makeTmpDir = (): string => mkdtempSync(join(tmpdir(), 'pi-perm-rules-'))
+  const writeRules = (filePath: string, rules: unknown): void => {
+    writeFileSync(filePath, JSON.stringify({ version: 1, rules }), 'utf-8')
+  }
+
+  beforeEach(() => clearRulesCache())
+
+  it('returns none when neither file exists', () => {
+    const dir = makeTmpDir()
+    try {
+      const result = loadEffectiveRules(dir, join(dir, 'nope.json'))
+      assert.deepEqual(result, { rules: [], source: 'none' })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('loads global rules when no workspace file exists', () => {
+    const dir = makeTmpDir()
+    try {
+      const globalPath = join(dir, 'permission-rules.json')
+      writeRules(globalPath, [{ action: 'deny', tool: 'bash' }])
+      const result = loadEffectiveRules(dir, globalPath)
+      assert.equal(result.source, 'global')
+      assert.equal(result.rules.length, 1)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('workspace file fully replaces global rules', () => {
+    const dir = makeTmpDir()
+    try {
+      const globalPath = join(dir, 'global.json')
+      writeRules(globalPath, [{ action: 'deny', tool: 'bash' }])
+      mkdirSync(join(dir, WORKSPACE_RULES_DIR_NAME))
+      writeRules(workspaceRulesPath(dir), [{ action: 'allow', tool: 'grep' }])
+      const result = loadEffectiveRules(dir, globalPath)
+      assert.equal(result.source, 'workspace')
+      assert.deepEqual(result.rules, [{ action: 'allow', tool: 'grep' }])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('malformed global file yields no rules plus an error', () => {
+    const dir = makeTmpDir()
+    try {
+      const globalPath = join(dir, 'global.json')
+      writeFileSync(globalPath, '{ not json', 'utf-8')
+      const result = loadEffectiveRules(null, globalPath)
+      assert.equal(result.source, 'global')
+      assert.deepEqual(result.rules, [])
+      assert.ok(result.error)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('malformed workspace file falls back to global rules, keeping the error', () => {
+    const dir = makeTmpDir()
+    try {
+      const globalPath = join(dir, 'global.json')
+      writeRules(globalPath, [{ action: 'deny', tool: 'bash' }])
+      mkdirSync(join(dir, WORKSPACE_RULES_DIR_NAME))
+      writeFileSync(workspaceRulesPath(dir), '{ not json', 'utf-8')
+      const result = loadEffectiveRules(dir, globalPath)
+      assert.equal(result.source, 'global')
+      assert.equal(result.rules.length, 1)
+      assert.ok(result.error)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('re-reads when mtime changes and caches when it does not', () => {
+    const dir = makeTmpDir()
+    try {
+      const globalPath = join(dir, 'global.json')
+      writeRules(globalPath, [{ action: 'deny', tool: 'bash' }])
+      assert.equal(loadEffectiveRules(null, globalPath).rules.length, 1)
+      writeRules(globalPath, [
+        { action: 'deny', tool: 'bash' },
+        { action: 'deny', tool: 'edit' },
+      ])
+      // Force a distinct mtime even on coarse-grained filesystems.
+      const future = new Date(Date.now() + 5000)
+      utimesSync(globalPath, future, future)
+      assert.equal(loadEffectiveRules(null, globalPath).rules.length, 2)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('file deleted after caching falls back to none', () => {
+    const dir = makeTmpDir()
+    try {
+      const globalPath = join(dir, 'global.json')
+      writeRules(globalPath, [])
+      assert.equal(loadEffectiveRules(null, globalPath).source, 'global')
+      rmSync(globalPath)
+      assert.equal(loadEffectiveRules(null, globalPath).source, 'none')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
