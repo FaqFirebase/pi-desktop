@@ -95,7 +95,7 @@ const PERMISSIONS_EXTENSION_PATH = app.isPackaged
   : join(app.getAppPath(), 'resources', 'pi-desktop-permissions.ts')
 
 const MAX_PERMISSION_RULES_FILE_BYTES = 512 * 1024
-const PERMISSION_RULES_FILE_FILTER = { name: 'Permission Rules', extensions: ['json'] }
+const PERMISSION_RULES_FILE_FILTER: Electron.FileFilter = { name: 'Permission Rules', extensions: ['json'] }
 
 function getGlobalPermissionRulesPath(): string {
   return getGuiDataPath(PERMISSION_RULES_FILE_NAME)
@@ -749,6 +749,7 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
       await writeFile(result.filePath, `${JSON.stringify(file, null, 2)}\n`, 'utf-8')
       return { ok: true }
     } catch (error) {
+      console.error('Failed to write exported permission rules file:', error)
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
   })
@@ -906,7 +907,12 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     if (!isString(workspaceId)) throw new Error('workspaceId must be a string')
     const opts = validateStartOptions(options)
     const settings = await loadAppSettings(workspaceManager)
-    await workspaceManager.startPiForWorkspace(workspaceId, applyPermissionModeToStartOptions(opts, settings))
+    const workspace = workspaceManager.getWorkspaces().find((w) => w.id === workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    await workspaceManager.startPiForWorkspace(
+      workspaceId,
+      applyPermissionModeToStartOptions({ cwd: workspace.path, ...opts }, settings)
+    )
     const pi = workspaceManager.getPiManager(workspaceId)
     return pi?.getStatus() ?? { status: 'stopped', pid: null, error: null }
   })
