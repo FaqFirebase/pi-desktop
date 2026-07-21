@@ -51,6 +51,7 @@ export function SettingsPanel(): React.JSX.Element {
   const loadSettings = useAppStore((state) => state.loadSettings)
   const setSettingsDraft = useAppStore((state) => state.setSettingsDraft)
   const clearSettingsDraft = useAppStore((state) => state.clearSettingsDraft)
+  const activeWorkspace = useAppStore((state) => state.activeWorkspace)
 
   // Snapshot the unsaved draft once, for seeding initial local state. This is
   // what makes edits survive leaving/returning to Settings without saving.
@@ -113,24 +114,45 @@ export function SettingsPanel(): React.JSX.Element {
   }, [])
 
   // Load permission rules for one scope. The store draft for that scope wins
-  // over the saved file so unsaved edits survive view switches.
+  // over the saved file so unsaved edits survive view switches. The draft is
+  // read at resolve time (inside the functional update), not before the
+  // await, so an edit made during the round-trip isn't visually reverted by
+  // a draft snapshot that predates it.
   const loadRulesScope = useCallback(async (scope: PermissionRulesScope): Promise<void> => {
-    const draft = useAppStore.getState().permissionRulesDrafts[scope]
     const saved = await window.piDesktop.permissionRules.get(scope)
-    setScopeRules((prev) => ({
-      ...prev,
-      [scope]: saved.ok
-        ? { rules: draft ?? saved.rules, loaded: true, loadError: null, exists: saved.exists }
-        : // Corrupt file: only a pre-existing user draft keeps Save enabled —
-          // see shouldPersistScope; an unrelated Save must not clobber it.
-          { rules: draft ?? [], loaded: draft !== null, loadError: saved.error, exists: true },
-    }))
+    setScopeRules((prev) => {
+      const draft = useAppStore.getState().permissionRulesDrafts[scope]
+      return {
+        ...prev,
+        [scope]: saved.ok
+          ? { rules: draft ?? saved.rules, loaded: true, loadError: null, exists: saved.exists }
+          : // Corrupt file: only a pre-existing user draft keeps Save enabled —
+            // see shouldPersistScope; an unrelated Save must not clobber it.
+            { rules: draft ?? [], loaded: draft !== null, loadError: saved.error, exists: true },
+      }
+    })
   }, [])
 
   useEffect(() => {
     void loadRulesScope('global')
     void loadRulesScope('workspace')
   }, [loadRulesScope])
+
+  // The workspace-scope rules are keyed by scope, not by workspace, so if the
+  // active workspace changes while this panel stays mounted (e.g. switching
+  // workspaces from the sidebar without leaving Settings), the previous
+  // workspace's loaded/exists state would otherwise stick around and could
+  // pass shouldPersistScope on an unrelated Save, writing it into the new
+  // workspace's file. Reset and re-fetch whenever the path changes. Skipped
+  // on the initial mount — the load-on-mount effect above already covers it.
+  const activeWorkspacePathRef = useRef(activeWorkspace?.path ?? null)
+  useEffect(() => {
+    const path = activeWorkspace?.path ?? null
+    if (activeWorkspacePathRef.current === path) return
+    activeWorkspacePathRef.current = path
+    setScopeRules((prev) => ({ ...prev, workspace: EMPTY_SCOPE_RULES }))
+    void loadRulesScope('workspace')
+  }, [activeWorkspace?.path, loadRulesScope])
 
   // Re-read a scope's file when the user switches to its tab, so manual edits
   // to the file on disk show up — but not if there's an unsaved draft for it.

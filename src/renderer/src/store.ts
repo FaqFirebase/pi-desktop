@@ -1363,6 +1363,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       if (get().piStatus === 'running') {
         await get().reloadActiveSession()
       }
+      // Unsaved workspace-rules edits belong to the previous workspace; discard on switch.
+      get().setPermissionRulesDraft('workspace', null)
       await get().maybeWarnWorkspacePermissionRules()
     } catch (err) {
       get().addMessage({
