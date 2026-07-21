@@ -802,10 +802,12 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_REMOVE_WORKSPACE, async (): Promise<PermissionRulesRemoveResult> => {
     try {
       const { path: rulesPath } = activeWorkspaceRulesPath(workspaceManager)
-      if (!existsSync(rulesPath)) return { ok: true }
       await unlink(rulesPath)
       return { ok: true }
     } catch (error) {
+      // Already gone is still success — the caller's goal (no workspace rules
+      // file) is met either way.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { ok: true }
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
   })
