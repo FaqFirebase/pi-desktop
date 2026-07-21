@@ -17,3 +17,18 @@ export function validateRuleList(rules: PermissionRule[]): string | null {
 export function emptyRule(): PermissionRule {
   return { action: 'allow', tool: '', match: '' }
 }
+
+/**
+ * Whether Save may write a scope's rules file: the user took ownership via an
+ * edit/import (draft), or the file already exists and loaded cleanly. Guards
+ * against creating an unrequested workspace file (which would override global
+ * rules with []) and against clobbering a corrupt file (see settings-panel
+ * load-gating comment).
+ */
+export function shouldPersistScope(
+  draft: PermissionRule[] | null,
+  loaded: boolean,
+  exists: boolean
+): boolean {
+  return draft !== null || (loaded && exists)
+}

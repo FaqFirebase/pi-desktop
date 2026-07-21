@@ -1,12 +1,19 @@
 import { useAppStore } from '../store'
-import { useState, useEffect, useRef } from 'react'
-import type { AppSettings, PermissionMode, CouncilConfig, PermissionRule } from '../../../shared/ipc-contracts'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { clsx } from 'clsx'
+import type {
+  AppSettings,
+  PermissionMode,
+  CouncilConfig,
+  PermissionRule,
+  PermissionRulesScope,
+} from '../../../shared/ipc-contracts'
 import type { ThemeFile } from '../../../shared/theme/theme-file'
 import { Settings, Save, RotateCcw, FolderOpen, Check, ChevronDown } from 'lucide-react'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { PermissionSelector } from './permission-selector'
 import { PermissionRulesEditor } from './permission-rules-editor'
-import { validateRuleList } from './permission-rules-editor-helpers'
+import { validateRuleList, shouldPersistScope } from './permission-rules-editor-helpers'
 import { applyTheme, getRegisteredThemes, registerThemes, setUserThemes } from '../utils/theme'
 import { BUILTIN_THEME_IDS } from '../themes'
 import { CustomModelsEditor } from './custom-models-editor'
@@ -29,6 +36,15 @@ function normalizedRules(rules: PermissionRule[]): PermissionRule[] {
     return match ? { action: rule.action, tool, match } : { action: rule.action, tool }
   })
 }
+
+interface ScopeRulesState {
+  rules: PermissionRule[]
+  loaded: boolean
+  loadError: string | null
+  exists: boolean
+}
+
+const EMPTY_SCOPE_RULES: ScopeRulesState = { rules: [], loaded: false, loadError: null, exists: false }
 
 export function SettingsPanel(): React.JSX.Element {
   const settings = useAppStore((state) => state.settings)
@@ -62,11 +78,12 @@ export function SettingsPanel(): React.JSX.Element {
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
     draft0.permissionMode ?? settings?.permissionMode ?? DEFAULT_SETTINGS.permissionMode,
   )
-  const [permissionRules, setPermissionRules] = useState<PermissionRule[]>([])
-  const [rulesLoaded, setRulesLoaded] = useState(false)
-  const [rulesLoadError, setRulesLoadError] = useState<string | null>(null)
+  const [rulesScope, setRulesScope] = useState<PermissionRulesScope>('global')
+  const [scopeRules, setScopeRules] = useState<Record<PermissionRulesScope, ScopeRulesState>>({
+    global: EMPTY_SCOPE_RULES,
+    workspace: EMPTY_SCOPE_RULES,
+  })
   const [rulesActionError, setRulesActionError] = useState<string | null>(null)
-  const [workspaceHasRules, setWorkspaceHasRules] = useState(false)
   const [saved, setSaved] = useState(false)
 
   const [showCouncilWarning, setShowCouncilWarning] = useState(false)
@@ -95,38 +112,33 @@ export function SettingsPanel(): React.JSX.Element {
     }
   }, [])
 
-  // Load permission rules on mount. The store draft (permissionRulesDraft)
-  // wins over the saved file so unsaved edits survive view switches.
-  useEffect(() => {
-    let cancelled = false
-    const load = async (): Promise<void> => {
-      const draft = useAppStore.getState().permissionRulesDraft
-      const [saved, wsStatus] = await Promise.all([
-        window.piDesktop.permissionRules.get(),
-        window.piDesktop.permissionRules.workspaceStatus(),
-      ])
-      if (cancelled) return
-      if (saved.ok) {
-        setPermissionRules(draft ?? saved.rules)
-        setRulesLoadError(null)
-        setRulesLoaded(true)
-      } else {
-        setPermissionRules(draft ?? [])
-        setRulesLoadError(saved.error)
-        // The saved file is corrupt: only let Save touch it if the user has
-        // already taken ownership of the list via an edit/import in this
-        // panel (a store draft exists). Otherwise an unrelated Save (e.g.
-        // font size) would silently overwrite the corrupt file with `[]`,
-        // destroying whatever the user was trying to recover.
-        setRulesLoaded(draft !== null)
-      }
-      setWorkspaceHasRules(wsStatus.hasWorkspaceRules)
-    }
-    void load()
-    return () => {
-      cancelled = true
-    }
+  // Load permission rules for one scope. The store draft for that scope wins
+  // over the saved file so unsaved edits survive view switches.
+  const loadRulesScope = useCallback(async (scope: PermissionRulesScope): Promise<void> => {
+    const draft = useAppStore.getState().permissionRulesDrafts[scope]
+    const saved = await window.piDesktop.permissionRules.get(scope)
+    setScopeRules((prev) => ({
+      ...prev,
+      [scope]: saved.ok
+        ? { rules: draft ?? saved.rules, loaded: true, loadError: null, exists: saved.exists }
+        : // Corrupt file: only a pre-existing user draft keeps Save enabled —
+          // see shouldPersistScope; an unrelated Save must not clobber it.
+          { rules: draft ?? [], loaded: draft !== null, loadError: saved.error, exists: true },
+    }))
   }, [])
+
+  useEffect(() => {
+    void loadRulesScope('global')
+    void loadRulesScope('workspace')
+  }, [loadRulesScope])
+
+  // Re-read a scope's file when the user switches to its tab, so manual edits
+  // to the file on disk show up — but not if there's an unsaved draft for it.
+  const handleRulesScopeChange = (scope: PermissionRulesScope): void => {
+    setRulesScope(scope)
+    setRulesActionError(null)
+    if (useAppStore.getState().permissionRulesDrafts[scope] === null) void loadRulesScope(scope)
+  }
 
   // Keep the timeout draft in sync with the persisted value (e.g. after a save
   // clamps it, or when settings first load).
@@ -301,12 +313,14 @@ export function SettingsPanel(): React.JSX.Element {
   }
 
   const handleRulesChange = (rules: PermissionRule[]): void => {
-    setPermissionRules(rules)
+    setScopeRules((prev) => ({
+      ...prev,
+      [rulesScope]: { ...prev[rulesScope], rules, loaded: true },
+    }))
     setRulesActionError(null)
     // The user edited or imported rules in this panel — Save is now allowed
     // to persist the list even if the on-disk file failed to load.
-    setRulesLoaded(true)
-    useAppStore.getState().setPermissionRulesDraft(rules)
+    useAppStore.getState().setPermissionRulesDraft(rulesScope, rules)
   }
 
   const handleRulesImport = async (): Promise<void> => {
@@ -319,19 +333,49 @@ export function SettingsPanel(): React.JSX.Element {
   }
 
   const handleRulesExport = async (): Promise<void> => {
-    const result = await window.piDesktop.permissionRules.exportToFile(normalizedRules(permissionRules))
+    const result = await window.piDesktop.permissionRules.exportToFile(normalizedRules(scopeRules[rulesScope].rules))
     if (!result.ok && !result.canceled) {
       setRulesActionError(result.error ?? 'Export failed')
     }
   }
 
+  // Only reachable from the workspace tab (the button is scope-gated in the
+  // editor), so `rulesScope` is 'workspace' when this runs.
+  const handleCopyFromGlobal = (): void => {
+    handleRulesChange(scopeRules.global.rules.map((rule) => ({ ...rule })))
+  }
+
+  const handleRemoveWorkspaceRules = async (): Promise<void> => {
+    const confirmed = await useAppStore.getState().requestConfirm({
+      title: 'Remove workspace rules',
+      message:
+        'Delete this workspace\'s .pi-desktop/permission-rules.json? Global permission rules will apply again.',
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (!confirmed) return
+    const result = await window.piDesktop.permissionRules.removeWorkspace()
+    if (!result.ok) {
+      setRulesActionError(result.error)
+      return
+    }
+    useAppStore.getState().setPermissionRulesDraft('workspace', null)
+    setScopeRules((prev) => ({ ...prev, workspace: { ...EMPTY_SCOPE_RULES, loaded: true } }))
+  }
+
   const handleSave = async () => {
     // Validate rules before anything persists, so invalid rules abort the
-    // whole save cleanly (only if the editor loaded — never validate an
-    // empty list caused by a failed load as if the user cleared the rules).
-    if (rulesLoaded) {
-      const rulesError = validateRuleList(permissionRules)
+    // whole save cleanly. Only scopes shouldPersistScope would actually
+    // write are validated — never validate an empty list caused by a failed
+    // load as if the user cleared the rules.
+    const drafts = useAppStore.getState().permissionRulesDrafts
+    const scopesToPersist = (['global', 'workspace'] as const).filter((scope) =>
+      shouldPersistScope(drafts[scope], scopeRules[scope].loaded, scopeRules[scope].exists)
+    )
+    for (const scope of scopesToPersist) {
+      const rulesError = validateRuleList(scopeRules[scope].rules)
       if (rulesError) {
+        setRulesScope(scope)
         setRulesActionError(rulesError)
         return
       }
@@ -361,18 +405,23 @@ export function SettingsPanel(): React.JSX.Element {
     // Reload settings in store
     await loadSettings()
 
-    // Persist permission rules too (only if the editor loaded — never
-    // overwrite the file with an empty list because loading failed).
-    if (rulesLoaded) {
-      const rulesResult = await window.piDesktop.permissionRules.set(normalizedRules(permissionRules))
+    // Persist permission rules too (only the scopes shouldPersistScope
+    // allowed — never overwrite a scope's file with an empty list because
+    // loading failed and the user never touched it).
+    for (const scope of scopesToPersist) {
+      const rulesResult = await window.piDesktop.permissionRules.set(scope, normalizedRules(scopeRules[scope].rules))
       if (!rulesResult.ok) {
         // Settings already saved above; do not report overall success and
         // do not clear either draft, so the user's rules edits survive and
         // can be retried.
-        setRulesActionError(`Settings saved, but permission rules were not saved: ${rulesResult.error}`)
+        setRulesScope(scope)
+        setRulesActionError(`Settings saved, but ${scope} permission rules were not saved: ${rulesResult.error}`)
         return
       }
-      setRulesLoadError(null)
+      setScopeRules((prev) => ({
+        ...prev,
+        [scope]: { ...prev[scope], loadError: null, exists: true },
+      }))
     }
 
     // Persisted now — drop the unsaved draft so the form and terminal/editor
@@ -415,17 +464,12 @@ export function SettingsPanel(): React.JSX.Element {
     setRunOnStartup(defaults.runOnStartup!)
     setMinimizeToTrayOnClose(defaults.minimizeToTrayOnClose!)
     setPermissionMode(defaults.permissionMode!)
-    setPermissionRules([])
+    setScopeRules({ global: EMPTY_SCOPE_RULES, workspace: EMPTY_SCOPE_RULES })
     setRulesActionError(null)
-    void window.piDesktop.permissionRules.get().then((saved) => {
-      if (saved.ok) {
-        setPermissionRules(saved.rules)
-        setRulesLoadError(null)
-        setRulesLoaded(true)
-      } else {
-        setRulesLoadError(saved.error)
-      }
-    })
+    useAppStore.getState().setPermissionRulesDraft('global', null)
+    useAppStore.getState().setPermissionRulesDraft('workspace', null)
+    void loadRulesScope('global')
+    void loadRulesScope('workspace')
 
     const result = await window.piDesktop.settings.save(defaults)
     applyTheme(result.theme)
@@ -637,13 +681,36 @@ export function SettingsPanel(): React.JSX.Element {
           </SettingsRow>
 
           <SettingsRow label="Permission Rules" description="Fine-grained per-tool overrides for the mode above" stack>
+            <div className="mb-2 flex gap-1" role="tablist" aria-label="Permission rules scope">
+              {(['global', 'workspace'] as const).map((scope) => (
+                <button
+                  key={scope}
+                  type="button"
+                  role="tab"
+                  aria-selected={rulesScope === scope}
+                  onClick={() => handleRulesScopeChange(scope)}
+                  className={clsx(
+                    'rounded-md px-2 py-1 text-xs transition-colors',
+                    rulesScope === scope
+                      ? 'bg-surface border border-border-strong text-primary'
+                      : 'text-dim hover:text-primary'
+                  )}
+                >
+                  {scope === 'global' ? 'Global' : 'This workspace'}
+                </button>
+              ))}
+            </div>
             <PermissionRulesEditor
-              rules={permissionRules}
+              rules={scopeRules[rulesScope].rules}
               onChange={handleRulesChange}
               onImport={() => void handleRulesImport()}
               onExport={() => void handleRulesExport()}
-              workspaceOverride={workspaceHasRules}
-              loadError={rulesLoadError}
+              scope={rulesScope}
+              workspaceExists={scopeRules.workspace.exists}
+              onCopyFromGlobal={handleCopyFromGlobal}
+              onRemoveWorkspace={() => void handleRemoveWorkspaceRules()}
+              workspaceOverride={scopeRules.workspace.exists}
+              loadError={scopeRules[rulesScope].loadError}
               actionError={rulesActionError}
             />
           </SettingsRow>

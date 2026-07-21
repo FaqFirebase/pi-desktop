@@ -1,5 +1,5 @@
-import { Plus, Trash2, Upload, Download } from 'lucide-react'
-import type { PermissionRule, PermissionRuleAction } from '../../../shared/ipc-contracts'
+import { Plus, Trash2, Upload, Download, Copy } from 'lucide-react'
+import type { PermissionRule, PermissionRuleAction, PermissionRulesScope } from '../../../shared/ipc-contracts'
 import { emptyRule } from './permission-rules-editor-helpers'
 
 const TOOL_SUGGESTIONS = ['*', 'bash', 'edit', 'write', 'read', 'grep'] as const
@@ -10,6 +10,10 @@ interface PermissionRulesEditorProps {
   onChange: (rules: PermissionRule[]) => void
   onImport: () => void
   onExport: () => void
+  scope: PermissionRulesScope
+  workspaceExists: boolean
+  onCopyFromGlobal: () => void
+  onRemoveWorkspace: () => void
   workspaceOverride: boolean
   loadError: string | null
   actionError: string | null
@@ -20,6 +24,10 @@ export function PermissionRulesEditor({
   onChange,
   onImport,
   onExport,
+  scope,
+  workspaceExists,
+  onCopyFromGlobal,
+  onRemoveWorkspace,
   workspaceOverride,
   loadError,
   actionError,
@@ -39,6 +47,16 @@ export function PermissionRulesEditor({
           Deny always wins, then allow, then the mode above decides. Use * as a wildcard.
         </span>
         <div className="flex gap-1">
+          {scope === 'workspace' && (
+            <button
+              type="button"
+              onClick={onCopyFromGlobal}
+              className="flex items-center gap-1 rounded-md border border-border-strong px-2 py-1 text-xs text-primary transition-colors hover:border-border-strong-hover"
+              title="Copy the global rules list into this workspace (replaces the list below until you save)"
+            >
+              <Copy size={12} /> Copy from global
+            </button>
+          )}
           <button
             type="button"
             onClick={onImport}
@@ -58,10 +76,21 @@ export function PermissionRulesEditor({
         </div>
       </div>
 
-      {workspaceOverride && (
+      {scope === 'workspace' && workspaceExists && (
+        <button
+          type="button"
+          onClick={onRemoveWorkspace}
+          className="flex items-center gap-1 rounded-md border border-error-bg px-2 py-1 text-xs text-error transition-colors hover:bg-error-bg"
+          title="Delete this workspace's .pi-desktop/permission-rules.json; global rules apply again"
+        >
+          <Trash2 size={12} /> Remove workspace rules
+        </button>
+      )}
+
+      {workspaceOverride && scope === 'global' && (
         <p className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-xs text-dim">
           This workspace has its own rules file (.pi-desktop/permission-rules.json), which replaces
-          the global rules below while you work here.
+          the global rules below — see the This workspace tab.
         </p>
       )}
 

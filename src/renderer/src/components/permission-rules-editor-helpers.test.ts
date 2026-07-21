@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
-import { validateRuleList, emptyRule } from './permission-rules-editor-helpers'
+import { validateRuleList, emptyRule, shouldPersistScope } from './permission-rules-editor-helpers'
 
 describe('validateRuleList', () => {
   it('returns null for a valid list', () => {
@@ -24,5 +24,21 @@ describe('validateRuleList', () => {
 describe('emptyRule', () => {
   it('creates a fresh ask-nothing allow rule for the add button', () => {
     assert.deepEqual(emptyRule(), { action: 'allow', tool: '', match: '' })
+  })
+})
+
+describe('shouldPersistScope', () => {
+  it('persists when the user has a draft, regardless of file state', () => {
+    assert.ok(shouldPersistScope([], false, false))
+    assert.ok(shouldPersistScope([{ action: 'deny', tool: 'bash' }], false, true))
+  })
+  it('persists an existing, successfully loaded file (row deletions save)', () => {
+    assert.ok(shouldPersistScope(null, true, true))
+  })
+  it('never creates a file the user did not edit', () => {
+    assert.ok(!shouldPersistScope(null, true, false))
+  })
+  it('never overwrites a corrupt file the user has not taken ownership of', () => {
+    assert.ok(!shouldPersistScope(null, false, true))
   })
 })
