@@ -295,6 +295,10 @@ interface AppActions {
   requestConfirm: (options: ConfirmOptions) => Promise<boolean>
   resolveConfirm: (confirmed: boolean) => void
 
+  // Shows the one-time "this workspace has its own permission rules" notice
+  // and records the acknowledgment in settings.
+  maybeWarnWorkspacePermissionRules: () => Promise<void>
+
   // Workspaces
   loadWorkspaces: () => Promise<void>
   createWorkspace: (name: string, path: string) => Promise<void>
@@ -521,6 +525,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         await get().refreshSessionState()
         await get().refreshSessionStats()
         await get().refreshSessionList()
+        await get().maybeWarnWorkspacePermissionRules()
       }
     } catch (err) {
       set({ piStatus: 'error', piError: err instanceof Error ? err.message : String(err) })
@@ -1279,6 +1284,31 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     set({ confirmRequest: null })
   },
 
+  maybeWarnWorkspacePermissionRules: async () => {
+    try {
+      const status = await window.piDesktop.permissionRules.workspaceStatus()
+      if (!status.hasWorkspaceRules || status.acknowledged || !status.workspacePath) return
+      await get().requestConfirm({
+        title: 'Workspace permission rules',
+        message:
+          'This workspace defines its own permission rules (.pi-desktop/permission-rules.json). ' +
+          'They replace your global permission rules while you work in this workspace.',
+        confirmLabel: 'OK',
+        cancelLabel: 'Dismiss',
+      })
+      // Either button acknowledges — this is a notice, not a choice.
+      const acked = get().settings?.permissionRulesAckWorkspaces ?? []
+      if (!acked.includes(status.workspacePath)) {
+        const updated = await window.piDesktop.settings.save({
+          permissionRulesAckWorkspaces: [...acked, status.workspacePath],
+        })
+        set({ settings: updated })
+      }
+    } catch {
+      // Non-fatal: the warning tries again on the next Pi start.
+    }
+  },
+
   // ─── Workspaces ──────────────────────────────────────────────────────
 
   loadWorkspaces: async () => {
@@ -1326,6 +1356,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       if (get().piStatus === 'running') {
         await get().reloadActiveSession()
       }
+      await get().maybeWarnWorkspacePermissionRules()
     } catch (err) {
       get().addMessage({
         id: generateId(),
