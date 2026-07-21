@@ -4,6 +4,7 @@
  * Every channel has a strictly typed request/response shape.
  * The preload bridge validates payloads against these contracts.
  */
+import type { PermissionRule } from '../../resources/permission-rules'
 
 // ─── IPC Channel Names ──────────────────────────────────────────────────────
 
@@ -52,6 +53,13 @@ export const IPC_CHANNELS = {
   // Settings
   SETTINGS_GET_ALL: 'settings:get-all',
   SETTINGS_SAVE: 'settings:save',
+
+  // Permission rules
+  PERMISSION_RULES_GET: 'permission-rules:get',
+  PERMISSION_RULES_SET: 'permission-rules:set',
+  PERMISSION_RULES_IMPORT: 'permission-rules:import',
+  PERMISSION_RULES_EXPORT: 'permission-rules:export',
+  PERMISSION_RULES_WORKSPACE_STATUS: 'permission-rules:workspace-status',
 
   // UI
   UI_SELECT_RESPONSE: 'ui:select-response',
@@ -666,6 +674,28 @@ export type AgentMessage = AgentUserMessage | AgentAssistantMessage | AgentToolR
 
 export type PermissionMode = 'plan-readonly' | 'ask-edits' | 'ask-commands' | 'trusted'
 
+export type { PermissionRule, PermissionRuleAction, PermissionRulesFile } from '../../resources/permission-rules'
+
+export type PermissionRulesGetResult =
+  | { ok: true; rules: PermissionRule[] }
+  | { ok: false; error: string }
+
+export type PermissionRulesSetResult = { ok: true } | { ok: false; error: string }
+
+export type PermissionRulesImportResult =
+  | { ok: true; rules: PermissionRule[] }
+  | { ok: false; canceled?: boolean; error?: string }
+
+export type PermissionRulesExportResult =
+  | { ok: true }
+  | { ok: false; canceled?: boolean; error?: string }
+
+export interface PermissionRulesWorkspaceStatus {
+  hasWorkspaceRules: boolean
+  workspacePath: string | null
+  acknowledged: boolean
+}
+
 export interface AppSettings {
   piExecutablePath: string
   defaultArgs: string[]
@@ -682,6 +712,9 @@ export interface AppSettings {
   showThinking: boolean
   autoScroll: boolean
   permissionMode: PermissionMode
+  // Workspace paths whose "this workspace has its own permission rules"
+  // notice has been acknowledged. Not exposed in the Settings UI.
+  permissionRulesAckWorkspaces: string[]
   // Resume the most recent session for the workspace on launch (via Pi's
   // --continue) instead of starting a fresh session.
   resumeLastSession: boolean
