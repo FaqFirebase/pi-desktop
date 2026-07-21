@@ -242,6 +242,7 @@ function loadRulesFile(filePath: string): CachedRulesFile | null {
  * Resolve the effective rules: a valid workspace file (under cwd) fully
  * replaces the global file. A malformed workspace file falls back to the
  * global file (so global deny rules keep applying) and carries the error.
+ * If both files are malformed, the workspace file's error is the one reported.
  */
 export function loadEffectiveRules(cwd: string | null, globalPath: string | null): EffectiveRules {
   let workspaceError: string | undefined

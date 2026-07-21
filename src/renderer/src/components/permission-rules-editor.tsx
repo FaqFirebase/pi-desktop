@@ -66,7 +66,10 @@ export function PermissionRulesEditor({
       )}
 
       {loadError && (
-        <p className="rounded-md border border-error-bg bg-error-bg px-2 py-1.5 text-xs text-error">
+        <p
+          role="alert"
+          className="rounded-md border border-error-bg bg-error-bg px-2 py-1.5 text-xs text-error"
+        >
           Saved rules file is invalid and is being ignored: {loadError}
         </p>
       )}
@@ -129,7 +132,11 @@ export function PermissionRulesEditor({
         <Plus size={12} /> Add rule
       </button>
 
-      {actionError && <p className="text-xs text-error">{actionError}</p>}
+      {actionError && (
+        <p role="alert" className="text-xs text-error">
+          {actionError}
+        </p>
+      )}
     </div>
   )
 }

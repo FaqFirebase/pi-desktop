@@ -326,6 +326,17 @@ export function SettingsPanel(): React.JSX.Element {
   }
 
   const handleSave = async () => {
+    // Validate rules before anything persists, so invalid rules abort the
+    // whole save cleanly (only if the editor loaded — never validate an
+    // empty list caused by a failed load as if the user cleared the rules).
+    if (rulesLoaded) {
+      const rulesError = validateRuleList(permissionRules)
+      if (rulesError) {
+        setRulesActionError(rulesError)
+        return
+      }
+    }
+
     const updated: Partial<AppSettings> = {
       piExecutablePath: piPath,
       theme,
@@ -353,14 +364,12 @@ export function SettingsPanel(): React.JSX.Element {
     // Persist permission rules too (only if the editor loaded — never
     // overwrite the file with an empty list because loading failed).
     if (rulesLoaded) {
-      const rulesError = validateRuleList(permissionRules)
-      if (rulesError) {
-        setRulesActionError(rulesError)
-        return
-      }
       const rulesResult = await window.piDesktop.permissionRules.set(normalizedRules(permissionRules))
       if (!rulesResult.ok) {
-        setRulesActionError(rulesResult.error)
+        // Settings already saved above; do not report overall success and
+        // do not clear either draft, so the user's rules edits survive and
+        // can be retried.
+        setRulesActionError(`Settings saved, but permission rules were not saved: ${rulesResult.error}`)
         return
       }
       setRulesLoadError(null)

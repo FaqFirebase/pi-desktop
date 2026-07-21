@@ -1296,8 +1296,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         confirmLabel: 'OK',
         cancelLabel: 'Dismiss',
       })
-      // Either button acknowledges — this is a notice, not a choice.
-      const acked = get().settings?.permissionRulesAckWorkspaces ?? []
+      // Either button acknowledges — this is a notice, not a choice. Fetch
+      // fresh settings rather than trusting the possibly-stale store snapshot,
+      // so a concurrent settings save elsewhere can't be clobbered by an ack
+      // list built from data that predates it.
+      const current = await window.piDesktop.settings.getAll()
+      const acked = current.permissionRulesAckWorkspaces ?? []
       if (!acked.includes(status.workspacePath)) {
         const updated = await window.piDesktop.settings.save({
           permissionRulesAckWorkspaces: [...acked, status.workspacePath],
