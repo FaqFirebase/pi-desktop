@@ -41,6 +41,12 @@ import type {
   ThemeExportResult,
   ThemeGalleryResult,
   ThemeGalleryImageResult,
+  PermissionRulesGetResult,
+  PermissionRulesSetResult,
+  PermissionRulesImportResult,
+  PermissionRulesExportResult,
+  PermissionRulesWorkspaceStatus,
+  PermissionRulesFile,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { COUNCIL_AGENT_IDS, clampTimeoutSeconds } from '../shared/council-config'
@@ -54,10 +60,17 @@ import { applyRunOnStartup } from './startup-launch'
 import { setTrayEnabled } from './tray-manager'
 import type { SessionLineageRecord } from '../shared/session-lineage'
 import { readdir, stat, readFile, writeFile, mkdir, access, unlink } from 'fs/promises'
-import { basename, join } from 'path'
+import { basename, dirname, join } from 'path'
 import { existsSync } from 'fs'
 import { execFile, spawnSync } from 'child_process'
 import { promisify } from 'util'
+import {
+  PERMISSION_RULES_FILE_NAME,
+  PERMISSION_RULES_VERSION,
+  needsPermissionsExtension,
+  validatePermissionRulesFile,
+  workspaceRulesPath,
+} from '../../resources/permission-rules'
 
 const execFileAsync = promisify(execFile)
 
@@ -80,6 +93,13 @@ function themesDir(): string {
 const PERMISSIONS_EXTENSION_PATH = app.isPackaged
   ? join(process.resourcesPath, 'resources', 'pi-desktop-permissions.ts')
   : join(app.getAppPath(), 'resources', 'pi-desktop-permissions.ts')
+
+const MAX_PERMISSION_RULES_FILE_BYTES = 512 * 1024
+const PERMISSION_RULES_FILE_FILTER = { name: 'Permission Rules', extensions: ['json'] }
+
+function getGlobalPermissionRulesPath(): string {
+  return getGuiDataPath(PERMISSION_RULES_FILE_NAME)
+}
 
 // Type guard helpers
 function isString(value: unknown): value is string {
@@ -214,8 +234,10 @@ function applyPermissionModeToStartOptions(
   const args = toolList
     ? [...removeToolArgs(options.args ?? []), '--tools', toolList]
     : [...(options.args ?? [])]
-  const needsApprovalExtension = settings.permissionMode === 'ask-edits' || settings.permissionMode === 'ask-commands'
-  if (needsApprovalExtension && existsSync(PERMISSIONS_EXTENSION_PATH)) {
+  const globalRulesPath = getGlobalPermissionRulesPath()
+  const hasRulesFile =
+    existsSync(globalRulesPath) || (options.cwd ? existsSync(workspaceRulesPath(options.cwd)) : false)
+  if (needsPermissionsExtension(settings.permissionMode, hasRulesFile) && existsSync(PERMISSIONS_EXTENSION_PATH)) {
     args.push('-e', PERMISSIONS_EXTENSION_PATH)
   }
 
@@ -225,6 +247,9 @@ function applyPermissionModeToStartOptions(
     env: {
       ...options.env,
       PI_DESKTOP_PERMISSION_MODE: settings.permissionMode,
+      // Resolved here because the extension cannot re-derive the GUI data
+      // dir (env override / canonical appData / legacy fallback).
+      PI_DESKTOP_PERMISSION_RULES_PATH: globalRulesPath,
     },
   }
 }
@@ -661,6 +686,83 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   void loadAppSettings(workspaceManager)
     .then((settings) => applyRunOnStartup(settings.runOnStartup))
     .catch((err) => console.error('[startup] Failed to reconcile run-on-startup:', err))
+
+  // ─── Permission Rules ───────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_GET, async (): Promise<PermissionRulesGetResult> => {
+    const rulesPath = getGlobalPermissionRulesPath()
+    if (!existsSync(rulesPath)) return { ok: true, rules: [] }
+    try {
+      const file = validatePermissionRulesFile(JSON.parse(await readFile(rulesPath, 'utf-8')))
+      return { ok: true, rules: file.rules }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_SET, async (_event, rules: unknown): Promise<PermissionRulesSetResult> => {
+    try {
+      const file = validatePermissionRulesFile({ version: PERMISSION_RULES_VERSION, rules })
+      const rulesPath = getGlobalPermissionRulesPath()
+      await mkdir(dirname(rulesPath), { recursive: true })
+      await writeFile(rulesPath, `${JSON.stringify(file, null, 2)}\n`, 'utf-8')
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_IMPORT, async (): Promise<PermissionRulesImportResult> => {
+    const result = await dialog.showOpenDialog({
+      title: 'Import Permission Rules',
+      properties: ['openFile'],
+      filters: [PERMISSION_RULES_FILE_FILTER],
+    })
+    if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true }
+    try {
+      const filePath = result.filePaths[0]
+      const { size } = await stat(filePath)
+      if (size > MAX_PERMISSION_RULES_FILE_BYTES) {
+        return { ok: false, error: `rules file too large (limit ${MAX_PERMISSION_RULES_FILE_BYTES} bytes)` }
+      }
+      const file = validatePermissionRulesFile(JSON.parse(await readFile(filePath, 'utf-8')))
+      return { ok: true, rules: file.rules }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_EXPORT, async (_event, rules: unknown): Promise<PermissionRulesExportResult> => {
+    let file: PermissionRulesFile
+    try {
+      file = validatePermissionRulesFile({ version: PERMISSION_RULES_VERSION, rules })
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+    const result = await dialog.showSaveDialog({
+      title: 'Export Permission Rules',
+      defaultPath: PERMISSION_RULES_FILE_NAME,
+      filters: [PERMISSION_RULES_FILE_FILTER],
+    })
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+    try {
+      await writeFile(result.filePath, `${JSON.stringify(file, null, 2)}\n`, 'utf-8')
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_WORKSPACE_STATUS, async (): Promise<PermissionRulesWorkspaceStatus> => {
+    const activeWs = workspaceManager.getActiveWorkspace()
+    if (!activeWs) return { hasWorkspaceRules: false, workspacePath: null, acknowledged: false }
+    const settings = await loadAppSettings(workspaceManager)
+    return {
+      hasWorkspaceRules: existsSync(workspaceRulesPath(activeWs.path)),
+      workspacePath: activeWs.path,
+      acknowledged: settings.permissionRulesAckWorkspaces.includes(activeWs.path),
+    }
+  })
 
   // ─── Themes ─────────────────────────────────────────────────────────────
 
