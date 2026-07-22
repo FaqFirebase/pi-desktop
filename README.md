@@ -145,7 +145,11 @@ chmod +x Pi-Desktop-linux-x64.AppImage
 
 Download the `.dmg` (Apple Silicon / arm64) from [Releases](https://github.com/FaqFirebase/pi-desktop/releases), open it, and drag **Pi Desktop** to Applications.
 
-Builds are **not yet signed or notarized**. Because the download is unsigned, macOS quarantines it and, on first launch, reports **"Pi Desktop is damaged and can't be opened. You should move it to the Trash."** The app is not actually damaged — this is Gatekeeper blocking an unsigned app. macOS does **not** offer an "Open Anyway" button for this message, so clear the quarantine flag in Terminal:
+Builds are **not yet signed or notarized**. Because the download is unsigned, macOS quarantines it, and on first launch Gatekeeper shows this dialog (this is macOS's message, not our advice):
+
+> Pi Desktop is damaged and can't be opened. You should move it to the Trash.
+
+**Do not move it to the Trash.** The app is not damaged — this is how Gatekeeper phrases its block on any unsigned app. macOS offers no "Open Anyway" button for this particular dialog, so clear the quarantine flag in Terminal instead:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/Pi Desktop.app"
