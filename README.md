@@ -19,6 +19,7 @@ Still in alpha — expect rough edges.
 - Custom models & providers editor (Settings) — edits `~/.pi/agent/models.json`
 - Multiple workspaces, each with its own Pi process and sessions
 - Review rail (toggleable) with permissions, approvals, changed files, and session status
+- Custom permission rules — allow/deny glob rules per Pi tool that refine the permission modes, with per-workspace rule files, import/export, and live edits (no Pi restart)
 - File tree, code/image/PDF/HTML preview panes, code editor (CodeMirror 6 with syntax highlighting), diff viewer, file search
 - Terminal with ANSI colors
 - Package browser connected to pi.dev/packages, with instant local search
@@ -38,6 +39,33 @@ Changed files use readable status badges:
 | `ADD` | New file staged in git |
 | `STG` | Modified file staged in git |
 | `REN` | File was renamed |
+
+## Permissions
+
+Four base modes control what Pi may do, selectable from the Review rail or **Settings → Behavior**:
+
+| Mode | Behavior |
+|------|----------|
+| Plan / Read-only | Only read/search/list tools are enabled; edits and shell commands are blocked |
+| Ask before edits | Pi asks before file edits and shell commands |
+| Ask before commands | Pi asks before shell commands |
+| Trusted | All tools enabled |
+
+**Custom permission rules** refine the modes with allow/deny rules per Pi tool, edited in **Settings → Behavior → Permission rules**:
+
+- A rule is an action (`allow`/`deny`), a tool name (`bash`, `edit`, `write`, `read`, … or `*` for any), and an optional glob pattern matched against the tool's input — the shell command for `bash`, the file path for file tools. `*` is the only wildcard.
+- Precedence: **deny beats allow beats the mode default**. Deny rules are enforced in every mode — a `deny * *.env*` rule holds even in Trusted. Allow rules skip the confirmation prompt in the ask modes.
+- Rule edits apply to the next tool call immediately — no Pi restart.
+- **Global vs workspace**: the **Global | This workspace** tabs edit either your global rules or the active workspace's `.pi-desktop/permission-rules.json`, which fully replaces the global list while you work there (a one-time notice appears for workspace rule files you didn't create in the app). Import/Export moves rule lists as JSON files, and the workspace file can be hand-edited or committed with a repo — the app picks up changes live.
+- Honest scope: rules match raw strings and workspace rule files are trusted repo content — treat rules as a guardrail against accidents, not a security sandbox.
+
+Example rules:
+
+```json
+{ "action": "allow", "tool": "bash", "match": "npm test*" }
+{ "action": "deny",  "tool": "bash", "match": "rm -rf *" }
+{ "action": "deny",  "tool": "*",    "match": "*.env*" }
+```
 
 ## Custom themes
 
