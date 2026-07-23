@@ -54,6 +54,11 @@ export const IPC_CHANNELS = {
   SETTINGS_GET_ALL: 'settings:get-all',
   SETTINGS_SAVE: 'settings:save',
 
+  // LAN remote (phone / other devices on the network)
+  LAN_GET_STATUS: 'lan:get-status',
+  LAN_APPLY: 'lan:apply',
+  LAN_REGENERATE_TOKEN: 'lan:regenerate-token',
+
   // Permission rules
   PERMISSION_RULES_GET: 'permission-rules:get',
   PERMISSION_RULES_SET: 'permission-rules:set',
@@ -742,6 +747,20 @@ export interface AppSettings {
   hasSeenTrayHint: boolean
   // Multi-agent council planning configuration.
   council: CouncilConfig
+  // LAN remote access: HTTP server so phones/other devices can chat with Pi.
+  lanServerEnabled: boolean
+  lanServerPort: number
+  // Shared secret for the LAN remote UI. Generated on first enable if empty.
+  lanServerToken: string
+}
+
+/** Runtime status of the LAN remote HTTP server. */
+export interface LanServerStatus {
+  running: boolean
+  port: number
+  token: string
+  urls: string[]
+  error: string | null
 }
 
 // ─── Update Check Types ─────────────────────────────────────────────────────

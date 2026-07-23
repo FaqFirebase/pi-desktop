@@ -53,6 +53,13 @@ import type {
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { COUNCIL_AGENT_IDS, clampTimeoutSeconds } from '../shared/council-config'
 import { DEFAULT_SETTINGS } from '../shared/default-settings'
+import {
+  createLanServer,
+  generateLanToken,
+  DEFAULT_LAN_PORT,
+  type LanServer,
+} from './lan-server'
+import type { LanServerStatus } from '../shared/ipc-contracts'
 import type { CouncilAgentId, ConsensusMode, ConsultantResult } from '../shared/council-config'
 import { detectAgents } from './agent-detection'
 import { readAttachment } from './attachment-reader'
@@ -373,6 +380,7 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   const archivedSessions = new ArchivedSessionsManager()
   const terminalService = new TerminalService()
   const notesManager = new NotesManager()
+  const lanServer: LanServer = createLanServer(workspaceManager)
 
   // Helper: get Pi manager for active workspace
   function getActivePi(): PiRpcManager {
@@ -389,6 +397,10 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
         win.webContents.send(channel, data)
       }
     }
+  }
+
+  function publishLan(event: unknown): void {
+    lanServer.publishPiEvent(event as PiRpcEvent)
   }
 
   // ─── Pi Process Lifecycle ───────────────────────────────────────────────
@@ -674,20 +686,97 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
 
   ipcMain.handle(IPC_CHANNELS.SETTINGS_SAVE, async (_event, settings: unknown) => {
     if (!isObject(settings)) throw new Error('settings must be an object')
-    await saveAppSettings(settings as Partial<AppSettings>)
+    const partial = settings as Partial<AppSettings>
+    // Ensure a token exists before enabling LAN remote.
+    if (partial.lanServerEnabled === true) {
+      const current = await loadAppSettings(workspaceManager)
+      if (!(partial.lanServerToken ?? current.lanServerToken)) {
+        partial.lanServerToken = generateLanToken()
+      }
+    }
+    await saveAppSettings(partial)
     // Reflect a "run on startup" change to the OS immediately (login item on
     // macOS/Windows, autostart entry on Linux). Only applied when the field is
     // part of this save to avoid redundant OS writes.
-    if ('runOnStartup' in settings) {
-      await applyRunOnStartup(Boolean((settings as Partial<AppSettings>).runOnStartup))
+    if ('runOnStartup' in partial) {
+      await applyRunOnStartup(Boolean(partial.runOnStartup))
     }
     // Reflect a "minimize to tray" change immediately: create/destroy the tray
     // icon so the close behavior matches the new setting without a restart.
-    if ('minimizeToTrayOnClose' in settings) {
-      setTrayEnabled(Boolean((settings as Partial<AppSettings>).minimizeToTrayOnClose))
+    if ('minimizeToTrayOnClose' in partial) {
+      setTrayEnabled(Boolean(partial.minimizeToTrayOnClose))
+    }
+    if (
+      'lanServerEnabled' in partial ||
+      'lanServerPort' in partial ||
+      'lanServerToken' in partial
+    ) {
+      const saved = await loadAppSettings(workspaceManager)
+      try {
+        await lanServer.applyConfig({
+          enabled: saved.lanServerEnabled,
+          port: saved.lanServerPort || DEFAULT_LAN_PORT,
+          token: saved.lanServerToken,
+        })
+      } catch (err) {
+        console.error('[lan] failed to apply config:', err)
+      }
     }
     return loadAppSettings(workspaceManager)
   })
+
+  // ─── LAN Remote ─────────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.LAN_GET_STATUS, async (): Promise<LanServerStatus> => {
+    return lanServer.getStatus()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.LAN_APPLY, async (_event, options?: unknown): Promise<LanServerStatus> => {
+    const current = await loadAppSettings(workspaceManager)
+    const opts = isObject(options) ? options as Partial<AppSettings> : {}
+    const enabled = typeof opts.lanServerEnabled === 'boolean' ? opts.lanServerEnabled : current.lanServerEnabled
+    const port = typeof opts.lanServerPort === 'number' ? opts.lanServerPort : current.lanServerPort
+    let token = typeof opts.lanServerToken === 'string' ? opts.lanServerToken : current.lanServerToken
+    if (enabled && !token) token = generateLanToken()
+    await saveAppSettings({
+      lanServerEnabled: enabled,
+      lanServerPort: port || DEFAULT_LAN_PORT,
+      lanServerToken: token,
+    })
+    return lanServer.applyConfig({
+      enabled,
+      port: port || DEFAULT_LAN_PORT,
+      token,
+    })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.LAN_REGENERATE_TOKEN, async (): Promise<LanServerStatus> => {
+    const token = generateLanToken()
+    const current = await loadAppSettings(workspaceManager)
+    await saveAppSettings({ lanServerToken: token })
+    return lanServer.applyConfig({
+      enabled: current.lanServerEnabled,
+      port: current.lanServerPort || DEFAULT_LAN_PORT,
+      token,
+    })
+  })
+
+  // Start LAN server from saved settings (background; never blocks IPC setup).
+  void loadAppSettings(workspaceManager)
+    .then(async (settings) => {
+      if (!settings.lanServerEnabled) return
+      let token = settings.lanServerToken
+      if (!token) {
+        token = generateLanToken()
+        await saveAppSettings({ lanServerToken: token })
+      }
+      await lanServer.applyConfig({
+        enabled: true,
+        port: settings.lanServerPort || DEFAULT_LAN_PORT,
+        token,
+      })
+    })
+    .catch((err) => console.error('[lan] failed to start from settings:', err))
 
   // Reconcile the OS-level "run on startup" state with the saved preference on
   // launch. Self-healing: repairs a stale Linux autostart Exec path after an
@@ -1404,15 +1493,18 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     piManager.on('event', (event: PiRpcEvent) => {
       if (isActiveManager(piManager)) {
         broadcast(IPC_CHANNELS.EVENT_PI, event)
+        publishLan(event)
       }
     })
 
     piManager.on('status-change', () => {
       if (isActiveManager(piManager)) {
-        broadcast(IPC_CHANNELS.EVENT_PI, {
+        const payload = {
           type: 'status_change',
           ...piManager.getStatus(),
-        })
+        }
+        broadcast(IPC_CHANNELS.EVENT_PI, payload)
+        publishLan(payload)
       }
     })
   })
@@ -1423,10 +1515,12 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   const broadcastActiveStatus = (): void => {
     const pi = workspaceManager.getActivePiManager()
     if (!pi) return
-    broadcast(IPC_CHANNELS.EVENT_PI, {
+    const payload = {
       type: 'status_change',
       ...pi.getStatus(),
-    })
+    }
+    broadcast(IPC_CHANNELS.EVENT_PI, payload)
+    publishLan(payload)
   }
   workspaceManager.onActiveWorkspaceChanged(broadcastActiveStatus)
 

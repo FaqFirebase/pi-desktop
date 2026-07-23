@@ -48,6 +48,7 @@ import type {
   PermissionRulesExportResult,
   PermissionRulesWorkspaceStatus,
   PermissionRulesRemoveResult,
+  LanServerStatus,
 } from '../shared/ipc-contracts'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -112,6 +113,13 @@ interface PiDesktopAPI {
   settings: {
     getAll(): Promise<AppSettings>
     save(settings: Partial<AppSettings>): Promise<AppSettings>
+  }
+
+  // LAN remote
+  lan: {
+    getStatus(): Promise<LanServerStatus>
+    apply(options?: Partial<AppSettings>): Promise<LanServerStatus>
+    regenerateToken(): Promise<LanServerStatus>
   }
 
   // Permission rules
@@ -311,6 +319,12 @@ const api: PiDesktopAPI = {
   settings: {
     getAll: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_ALL),
     save: (settings) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SAVE, settings),
+  },
+
+  lan: {
+    getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.LAN_GET_STATUS),
+    apply: (options) => ipcRenderer.invoke(IPC_CHANNELS.LAN_APPLY, options),
+    regenerateToken: () => ipcRenderer.invoke(IPC_CHANNELS.LAN_REGENERATE_TOKEN),
   },
 
   permissionRules: {

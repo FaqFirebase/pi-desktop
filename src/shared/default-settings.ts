@@ -28,4 +28,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   minimizeToTrayOnClose: false,
   hasSeenTrayHint: false,
   council: DEFAULT_COUNCIL_CONFIG,
+  lanServerEnabled: false,
+  lanServerPort: 4747,
+  lanServerToken: '',
 }

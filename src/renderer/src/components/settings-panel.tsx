@@ -7,6 +7,7 @@ import type {
   CouncilConfig,
   PermissionRule,
   PermissionRulesScope,
+  LanServerStatus,
 } from '../../../shared/ipc-contracts'
 import type { ThemeFile } from '../../../shared/theme/theme-file'
 import { Settings, Save, RotateCcw, FolderOpen, Check, ChevronDown } from 'lucide-react'
@@ -76,6 +77,11 @@ export function SettingsPanel(): React.JSX.Element {
   const [openToHomeOnLaunch, setOpenToHomeOnLaunch] = useState(draft0.openToHomeOnLaunch ?? settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch)
   const [runOnStartup, setRunOnStartup] = useState(draft0.runOnStartup ?? settings?.runOnStartup ?? DEFAULT_SETTINGS.runOnStartup)
   const [minimizeToTrayOnClose, setMinimizeToTrayOnClose] = useState(draft0.minimizeToTrayOnClose ?? settings?.minimizeToTrayOnClose ?? DEFAULT_SETTINGS.minimizeToTrayOnClose)
+  const [lanEnabled, setLanEnabled] = useState(draft0.lanServerEnabled ?? settings?.lanServerEnabled ?? DEFAULT_SETTINGS.lanServerEnabled)
+  const [lanPort, setLanPort] = useState(String(draft0.lanServerPort ?? settings?.lanServerPort ?? DEFAULT_SETTINGS.lanServerPort))
+  const [lanStatus, setLanStatus] = useState<LanServerStatus | null>(null)
+  const [lanBusy, setLanBusy] = useState(false)
+  const [lanCopied, setLanCopied] = useState(false)
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
     draft0.permissionMode ?? settings?.permissionMode ?? DEFAULT_SETTINGS.permissionMode,
   )
@@ -208,8 +214,34 @@ export function SettingsPanel(): React.JSX.Element {
     setOpenToHomeOnLaunch(draft.openToHomeOnLaunch ?? settings.openToHomeOnLaunch)
     setRunOnStartup(draft.runOnStartup ?? settings.runOnStartup)
     setMinimizeToTrayOnClose(draft.minimizeToTrayOnClose ?? settings.minimizeToTrayOnClose)
+    setLanEnabled(draft.lanServerEnabled ?? settings.lanServerEnabled)
+    setLanPort(String(draft.lanServerPort ?? settings.lanServerPort))
     setPermissionMode(draft.permissionMode ?? settings.permissionMode)
+    void window.piDesktop.lan.getStatus().then(setLanStatus).catch(() => setLanStatus(null))
   }, [settings])
+
+  const refreshLanStatus = useCallback(async (): Promise<void> => {
+    try {
+      setLanStatus(await window.piDesktop.lan.getStatus())
+    } catch {
+      setLanStatus(null)
+    }
+  }, [])
+
+  const applyLan = async (patch: {
+    lanServerEnabled?: boolean
+    lanServerPort?: number
+  }): Promise<void> => {
+    setLanBusy(true)
+    try {
+      const status = await window.piDesktop.lan.apply(patch)
+      setLanStatus(status)
+      setLanEnabled(status.running || Boolean(patch.lanServerEnabled))
+      await loadSettings()
+    } finally {
+      setLanBusy(false)
+    }
+  }
 
   const handleSelectPath = async () => {
     const path = await window.piDesktop.system.openDialog({ title: 'Select Pi Executable', mode: 'file' })
@@ -772,6 +804,105 @@ export function SettingsPanel(): React.JSX.Element {
           >
             <Toggle checked={minimizeToTrayOnClose} onChange={(v) => { setMinimizeToTrayOnClose(v); void applyImmediate({ minimizeToTrayOnClose: v }) }} />
           </SettingsRow>
+        </SettingsSection>
+
+        <SettingsSection title="LAN Remote">
+          <SettingsRow
+            label="Enable LAN Server"
+            description="Serve a mobile-friendly chat UI on your local network so phones and other devices can talk to Pi"
+          >
+            <Toggle
+              checked={lanEnabled}
+              onChange={(v) => {
+                setLanEnabled(v)
+                void applyLan({ lanServerEnabled: v })
+              }}
+            />
+          </SettingsRow>
+          <SettingsRow label="Port" description="HTTP port (default 4747). Applied when you enable or save.">
+            <input
+              type="number"
+              min={1}
+              max={65535}
+              value={lanPort}
+              disabled={lanBusy}
+              onChange={(e) => setLanPort(e.target.value)}
+              onBlur={() => {
+                const n = Number(lanPort)
+                if (!Number.isFinite(n) || n < 1 || n > 65535) {
+                  setLanPort(String(DEFAULT_SETTINGS.lanServerPort))
+                  return
+                }
+                void applyLan({ lanServerPort: Math.floor(n), lanServerEnabled: lanEnabled })
+              }}
+              className="w-24 rounded-md border border-border bg-card px-2 py-1 text-sm text-primary"
+            />
+          </SettingsRow>
+          {(lanStatus?.running || lanEnabled) && (
+            <>
+              <SettingsRow label="Access URLs" description="Open one of these on your phone (same Wi‑Fi). Token is required." stack>
+                <div className="space-y-1.5 w-full">
+                  {(lanStatus?.urls ?? []).length === 0 ? (
+                    <p className="text-xs text-dim">Server not running yet.</p>
+                  ) : (
+                    lanStatus!.urls.map((url) => (
+                      <div key={url} className="flex items-center gap-2">
+                        <code className="min-w-0 flex-1 truncate rounded bg-card px-2 py-1 text-xs text-accent-fg">
+                          {url}
+                        </code>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted hover:text-primary"
+                          onClick={async () => {
+                            const full = `${url}/?token=${encodeURIComponent(lanStatus?.token ?? '')}`
+                            await navigator.clipboard.writeText(full)
+                            setLanCopied(true)
+                            setTimeout(() => setLanCopied(false), 1500)
+                          }}
+                        >
+                          {lanCopied ? 'Copied' : 'Copy link'}
+                        </button>
+                      </div>
+                    ))
+                  )}
+                  {lanStatus?.error && (
+                    <p className="text-xs text-error">{lanStatus.error}</p>
+                  )}
+                </div>
+              </SettingsRow>
+              <SettingsRow label="Access Token" description="Required to use the remote UI. Keep this private on shared networks." stack>
+                <div className="flex w-full items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded bg-card px-2 py-1 text-xs text-secondary">
+                    {lanStatus?.token || settings?.lanServerToken || '—'}
+                  </code>
+                  <button
+                    type="button"
+                    disabled={lanBusy}
+                    className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted hover:text-primary"
+                    onClick={async () => {
+                      setLanBusy(true)
+                      try {
+                        const status = await window.piDesktop.lan.regenerateToken()
+                        setLanStatus(status)
+                        await loadSettings()
+                      } finally {
+                        setLanBusy(false)
+                      }
+                    }}
+                  >
+                    Rotate
+                  </button>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted hover:text-primary"
+                    onClick={() => void refreshLanStatus()}
+                  >
+                    Refresh
+                  </button>
+                </div>
+              </SettingsRow>
+            </>
+          )}
         </SettingsSection>
 
         {/* Multi-Agent Council Planning */}

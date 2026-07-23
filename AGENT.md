@@ -65,6 +65,7 @@ src/
 │   ├── archived-sessions.ts      # Archived session persistence
 │   ├── app-data-paths.ts         # Resolve app data directories
 │   ├── attachment-reader.ts      # Read chat attachments (image base64 / text)
+│   ├── lan-server.ts             # LAN HTTP + SSE remote chat server
 │   └── fs-errors.ts              # Friendly file-system error messages
 ├── preload/
 │   └── index.ts                  # contextBridge API
@@ -195,6 +196,12 @@ src/
 - Full ANSI/VT100 support including 256-color and true-color
 - Runs the user's shell directly — independent of the Pi process
 - PTY managed by `terminal-service.ts`; IPC channels relay input/output/resize
+
+### LAN Remote
+
+- Optional HTTP server (default port `4747`) so phones/other devices on the LAN can chat with the active Pi session
+- Token-authenticated mobile web UI under `resources/lan-web/` (SSE for live events)
+- Toggle/port/token in Settings → LAN Remote; copy a full URL with token for easy phone access
 
 ### Home / Activity Dashboard
 
