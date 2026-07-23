@@ -362,7 +362,7 @@ function AssistantMessage({
           <CopyButton text={message.thinking!} className="thinking-copy-btn" />
         </div>
         {showThinking && (
-          <div className="markdown-body font-sans italic text-sm text-muted">
+          <div className="markdown-body min-w-0 font-sans italic text-sm text-muted break-words [overflow-wrap:anywhere]">
             <MarkdownRenderer content={message.thinking!} />
           </div>
         )}
@@ -487,7 +487,7 @@ function AssistantMessage({
                 <CopyButton text={message.thinking} className="thinking-copy-btn" />
               </div>
               {showThinking && (
-                <div className="markdown-body font-sans italic text-sm text-muted">
+                <div className="markdown-body min-w-0 font-sans italic text-sm text-muted break-words [overflow-wrap:anywhere]">
                   <MarkdownRenderer content={message.thinking} />
                 </div>
               )}
@@ -562,22 +562,30 @@ function ToolCallBadge({
 }: {
   toolCall: NonNullable<DisplayMessage['toolCalls']>[number]
 }): React.JSX.Element {
-  const [expanded, setExpanded] = useState(false)
-
-  // Edit calls render their `edits` as a diff (old lines out / new lines in) plus
-  // a +N −M summary, instead of the raw JSON args. The diff lines are syntax-
-  // highlighted using the edited file's language.
+  // Edit calls render their edits as a diff (old lines out / new lines in) plus
+  // a +N −M summary, instead of the raw JSON args. Open expanded by default so
+  // the change is visible in chat without an extra success/failure pill.
   const edits = toolLabel(toolCall.name) === 'Edit file' ? parseEdits(toolCall.arguments) : null
   const stats = edits ? editStats(edits) : null
   const editFile = edits ? toolCallFile(toolCall.name, toolCall.arguments) : null
   const editLang = editFile ? getCodeEditorLanguageName(editFile) : 'plain text'
+  const [expanded, setExpanded] = useState(() => Boolean(edits))
+
+  const status = toolCall.isExecuting
+    ? 'running'
+    : toolCall.isError === true
+      ? 'error'
+      : toolCall.isError === false || toolCall.result !== undefined
+        ? 'done'
+        : null
 
   return (
-    <div className="relative rounded-lg border border-border bg-surface/50">
-      <CopyButton text={toolCallCopyText(toolCall)} className="absolute right-1.5 top-1.5" />
+    <div className="relative min-w-0 overflow-hidden rounded-lg border border-border bg-surface/50">
+      <CopyButton text={toolCallCopyText(toolCall)} className="absolute right-1.5 top-1.5 z-10" />
       <button
+        type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 py-2 pl-3 pr-9 text-xs text-muted hover:text-secondary transition-colors"
+        className="flex w-full min-w-0 items-center gap-2 py-2 pl-3 pr-9 text-xs text-muted hover:text-secondary transition-colors"
       >
         <span className="font-jetbrains min-w-0 truncate">
           {toolCallLabel(toolCall.name, toolCall.arguments)}
@@ -591,16 +599,17 @@ function ToolCallBadge({
         {toolCall.durationMs !== undefined && !toolCall.isExecuting && (
           <span className="shrink-0 text-faint">{formatDuration(toolCall.durationMs)}</span>
         )}
-        {toolCall.isError !== undefined && (
-          <span className={clsx(
-            'rounded px-1.5 py-0.5',
-            toolCall.isError ? 'bg-error-bg text-error' : 'bg-success-bg text-success'
-          )}>
-            {toolCall.isError ? 'error' : 'done'}
+        {status && (
+          <span
+            className={clsx(
+              'shrink-0 capitalize',
+              status === 'running' && 'text-warning animate-pulse',
+              status === 'error' && 'text-error',
+              status === 'done' && 'text-success'
+            )}
+          >
+            {status}
           </span>
-        )}
-        {toolCall.isExecuting && (
-          <span className="text-warning animate-pulse">running</span>
         )}
         {expanded ? (
           <ChevronDown size={12} className="ml-auto shrink-0" />

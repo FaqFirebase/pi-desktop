@@ -31,6 +31,7 @@ export interface DisplayMessage {
   toolCallId?: string
   toolName?: string
   toolFile?: string
+  isError?: boolean
 }
 
 let fallbackMessageCounter = 0
@@ -155,6 +156,7 @@ export function parseAgentMessage(msg: unknown): DisplayMessage | null {
       timestamp: parseTimestamp(m.timestamp),
       toolCallId: typeof m.toolCallId === 'string' ? m.toolCallId : undefined,
       toolName: typeof m.toolName === 'string' ? m.toolName : undefined,
+      isError: typeof m.isError === 'boolean' ? m.isError : undefined,
     }
   }
 

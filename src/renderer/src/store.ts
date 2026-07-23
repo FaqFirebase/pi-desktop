@@ -122,7 +122,7 @@ interface AppState {
   streamingThinking: string
   streamingToolCalls: Map<
     string,
-    { name: string; args: string; result?: string; isExecuting: boolean; startedAt?: number; durationMs?: number }
+    { name: string; args: string; result?: string; isExecuting: boolean; isError?: boolean; startedAt?: number; durationMs?: number }
   >
   isStreaming: boolean
 
@@ -1853,6 +1853,8 @@ function handleTurnComplete(
         id,
         name: tc.name,
         arguments: tc.args,
+        result: tc.result,
+        isError: tc.isError,
         isExecuting: false,
         durationMs: tc.durationMs,
       }))
@@ -1955,6 +1957,7 @@ function handleToolEnd(
       newMap.set(event.toolCallId, {
         ...existing,
         isExecuting: false,
+        isError: event.isError,
         result: resultText || existing.result,
         durationMs: existing.startedAt ? Date.now() - existing.startedAt : existing.durationMs,
       })
