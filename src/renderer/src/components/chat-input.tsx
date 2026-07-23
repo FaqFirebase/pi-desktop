@@ -17,6 +17,17 @@ const MIN_INPUT_HEIGHT = 40
 // Max @-mention file suggestions shown at once.
 const MAX_MENTION_RESULTS = 10
 
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result)
+      else reject(new Error('Could not read image data'))
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read image data'))
+    reader.readAsDataURL(file)
+  })
+}
 
 // An in-progress @-file mention: the caret sits just after `@<query>` and no
 // whitespace separates them. `start` is the index of the `@`.
@@ -270,14 +281,85 @@ export function ChatInput(): React.JSX.Element {
     }
   }, [])
 
+  /** Stage a browser File (clipboard paste or drag) as an image attachment. */
+  const attachImageFile = useCallback(async (file: File): Promise<void> => {
+    const mime = file.type.toLowerCase()
+    if (!mime.startsWith('image/')) {
+      setAttachError('Only images can be pasted into the composer')
+      return
+    }
+    // Match the picker’s supported set (png/jpg/jpeg/gif/webp).
+    const subtype = mime.slice('image/'.length).replace('jpeg', 'jpg')
+    const allowed = new Set(SUPPORTED_IMAGE_EXTENSIONS.map((e) => e.toLowerCase()))
+    // image/jpg is nonstandard; browsers usually send image/jpeg.
+    const ok =
+      allowed.has(subtype) ||
+      (subtype === 'jpeg' && allowed.has('jpg')) ||
+      (subtype === 'jpg' && allowed.has('jpeg'))
+    if (!ok) {
+      setAttachError(`Unsupported image type (${mime || 'unknown'}). Use PNG, JPEG, GIF, or WebP.`)
+      return
+    }
+
+    setAttachError(null)
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      const comma = dataUrl.indexOf(',')
+      const data = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl
+      const ext = subtype === 'jpeg' ? 'jpg' : subtype
+      const name = file.name && file.name !== 'image.png' ? file.name : `pasted-image.${ext}`
+      const path = `clipboard://${name}-${file.size}-${file.lastModified}`
+      const next: Attachment = {
+        kind: 'image',
+        name,
+        path,
+        image: {
+          type: 'image',
+          mimeType: mime === 'image/jpg' ? 'image/jpeg' : mime,
+          data,
+        },
+      }
+      setAttachments((prev) => (prev.some((a) => a.path === path) ? prev : [...prev, next]))
+    } catch (err) {
+      setAttachError(err instanceof Error ? err.message : 'Could not paste image')
+    }
+  }, [])
+
+  const isDisabled = piStatus !== 'running'
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (isDisabled) return
+      const dt = e.clipboardData
+      if (!dt) return
+
+      // Prefer clipboard items (screenshots, copy-from-browser). Fall back to files.
+      const imageFiles: File[] = []
+      for (const item of Array.from(dt.items ?? [])) {
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile()
+          if (file) imageFiles.push(file)
+        }
+      }
+      if (imageFiles.length === 0) {
+        for (const file of Array.from(dt.files ?? [])) {
+          if (file.type.startsWith('image/')) imageFiles.push(file)
+        }
+      }
+      if (imageFiles.length === 0) return
+
+      // Don't also insert a file path / binary garbage as text.
+      e.preventDefault()
+      void Promise.all(imageFiles.map((f) => attachImageFile(f)))
+    },
+    [attachImageFile, isDisabled]
+  )
 
   const removeAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index))
   }, [])
 
   useChatKeyboard(handleSend, handleAbort, textareaRef)
-
-  const isDisabled = piStatus !== 'running'
 
   const resizeTextarea = useCallback((ta: HTMLTextAreaElement): void => {
     ta.style.height = 'auto'
@@ -371,6 +453,7 @@ export function ChatInput(): React.JSX.Element {
           rows={1}
           style={{ minHeight: MIN_INPUT_HEIGHT }}
           className="font-chat max-h-40 min-h-[40px] w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-sm leading-relaxed text-primary placeholder:text-faint outline-none disabled:opacity-50"
+          onPaste={handlePaste}
           onInput={(e) => {
             const target = e.currentTarget
             resizeTextarea(target)
