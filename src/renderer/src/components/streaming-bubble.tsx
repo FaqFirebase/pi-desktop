@@ -30,7 +30,6 @@ export function StreamingBubble({ content, thinking, toolCalls }: StreamingBubbl
   )
   const thinkingScrollRef = useRef<HTMLDivElement>(null)
 
-  // Keep the live thinking tail in view as tokens arrive.
   useEffect(() => {
     const el = thinkingScrollRef.current
     if (!el) return
@@ -40,16 +39,11 @@ export function StreamingBubble({ content, thinking, toolCalls }: StreamingBubbl
   return (
     <div className="mb-4 animate-fade-in">
       <div className="flex items-start gap-3">
-        {/* Avatar with pulse */}
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-bg">
           <Bot size={14} className="text-accent-fg animate-pulse" />
         </div>
 
-        {/* Content */}
         <div className="min-w-0 flex-1">
-          {/* Thinking — match finalized bubble chrome; scrollable full text
-              (no jumbled last-N-char preview). Collapsed finalize still uses
-              the Thinking dropdown; live stream always shows the tail. */}
           {thinking && thinkingEnabled && (
             <div className="thinking-hover mb-2 min-w-0">
               <div className="flex h-7 items-center gap-1.5 text-sm text-dim">
@@ -68,12 +62,9 @@ export function StreamingBubble({ content, thinking, toolCalls }: StreamingBubbl
             </div>
           )}
 
-          {/* Tool calls */}
           {toolCalls.size > 0 && (
             <div className="mb-2 space-y-1">
               {Array.from(toolCalls.entries()).map(([id, tc]) => {
-                // Mirror the operation icon (matching the finalized bubble); the
-                // spinner takes over while the call is executing.
                 const Icon = toolCallIconFor(tc.name)
                 return (
                   <div
@@ -109,7 +100,6 @@ export function StreamingBubble({ content, thinking, toolCalls }: StreamingBubbl
             </div>
           )}
 
-          {/* Streaming text */}
           {content && (
             <div className="markdown-body min-w-0 text-sm break-words [overflow-wrap:anywhere]">
               <MarkdownRenderer content={content} />
@@ -117,8 +107,6 @@ export function StreamingBubble({ content, thinking, toolCalls }: StreamingBubbl
             </div>
           )}
 
-          {/* Empty state while waiting — sized like the Thinking header and
-              vertically centered against the avatar (h-7). */}
           {!content && !thinking && toolCalls.size === 0 && (
             <div className="flex h-7 items-center gap-2 text-sm text-dim">
               <Loader2 size={12} className="animate-spin" />

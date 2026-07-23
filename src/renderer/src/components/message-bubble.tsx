@@ -562,9 +562,7 @@ function ToolCallBadge({
 }: {
   toolCall: NonNullable<DisplayMessage['toolCalls']>[number]
 }): React.JSX.Element {
-  // Edit calls render their edits as a diff (old lines out / new lines in) plus
-  // a +N −M summary, instead of the raw JSON args. Open expanded by default so
-  // the change is visible in chat without an extra success/failure pill.
+  // Edit diffs open expanded so the change is visible without a second result pill.
   const edits = toolLabel(toolCall.name) === 'Edit file' ? parseEdits(toolCall.arguments) : null
   const stats = edits ? editStats(edits) : null
   const editFile = edits ? toolCallFile(toolCall.name, toolCall.arguments) : null

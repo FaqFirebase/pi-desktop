@@ -228,9 +228,7 @@ function stringField(obj: Record<string, unknown>, keys: string[]): string | und
   return undefined
 }
 
-/** The edit blocks from an edit tool call's arguments, or null.
- *  Supports Pi's `{ edits: [{ oldText, newText }] }` shape and common
- *  single-edit aliases (`old_string`/`new_string`, etc.). */
+/** Edit blocks from tool args ({ edits: [...] } or old_string/new_string). */
 export function parseEdits(argumentsJson: string): EditBlock[] | null {
   let parsed: unknown
   try {
@@ -256,7 +254,6 @@ export function parseEdits(argumentsJson: string): EditBlock[] | null {
     if (blocks.length > 0) return blocks
   }
 
-  // Single top-level replacement (many agents use this shape).
   const oldText = stringField(obj, ['oldText', 'old_text', 'old_string', 'oldString', 'old_str', 'before'])
   const newText = stringField(obj, ['newText', 'new_text', 'new_string', 'newString', 'new_str', 'after'])
   if (oldText !== undefined && newText !== undefined) {
@@ -299,20 +296,8 @@ export function splitReadTruncationNote(content: string): { code: string; note: 
   return { code: lines.slice(0, end + 1).join('\n'), note }
 }
 
-/**
- * Prepare the raw message list for rendering:
- *  - enrich each toolResult with the paired call's `toolName` + operated-on
- *    `toolFile` (so it can highlight file reads / show a diff), matched by id.
- *  - split a turn that mixes prose with tool calls into a prose-only message
- *    followed by a tool-only message, so the prose renders on its own (with its
- *    copy/export actions) and the tool calls can join an adjacent tool run and
- *    fold into a group instead of stranding a lone badge under the prose.
- *
- * Runs before grouping. Pure; returns a new array, reusing message objects where
- * nothing changed so memoized bubbles keep stable refs.
- */
+/** Enrich toolResults, fold edit/write into calls, split prose+tools for grouping. */
 export function prepareChatMessages(messages: DisplayMessage[]): DisplayMessage[] {
-  // call id -> { name, file }
   const calls = new Map<string, { name: string; file: string | null }>()
   for (const m of messages) {
     if (m.role === 'assistant' && m.toolCalls) {
@@ -322,7 +307,6 @@ export function prepareChatMessages(messages: DisplayMessage[]): DisplayMessage[
     }
   }
 
-  // toolCallId -> result payload (first wins)
   const results = new Map<string, { content: string; isError?: boolean }>()
   for (const m of messages) {
     if (m.role === 'toolResult' && m.toolCallId && !results.has(m.toolCallId)) {
@@ -332,17 +316,12 @@ export function prepareChatMessages(messages: DisplayMessage[]): DisplayMessage[
 
   const out: DisplayMessage[] = []
 
-  // Emit an assistant turn, splitting prose+tools into two messages so the tool
-  // calls can group. A pure-prose or pure-tool turn is pushed unchanged (same
-  // object ref when nothing to attach). The tool-only half drops the prose-owned
-  // bits (thinking, cost, attachments) and takes a derived id; it keeps
-  // model/provider so a resulting group can still show its shared header.
+  // Split prose+tools so tools can join a group; pure turns stay as-is.
   const pushAssistant = (m: DisplayMessage): void => {
     const hasProse = m.content.trim().length > 0
     const hasTools = (m.toolCalls?.length ?? 0) > 0
 
-    // Fold paired results onto toolCalls so the badge can show status/diff without
-    // a second pill when we suppress the result row for edit/write.
+    // Attach paired results onto toolCalls (edit/write drop the separate result row).
     let toolCalls = m.toolCalls
     if (toolCalls && results.size > 0) {
       let changed = false
@@ -380,8 +359,7 @@ export function prepareChatMessages(messages: DisplayMessage[]): DisplayMessage[
       pushAssistant(m)
     } else if (m.role === 'toolResult' && m.toolCallId) {
       const paired = calls.get(m.toolCallId)
-      // Edit/write: the call badge already owns the diff / write preview — skip the
-      // separate success/failure pill. Read/bash/etc. keep their result row.
+      // Edit/write: result lives on the call badge. Read/bash keep a result row.
       if (paired) {
         const label = toolLabel(paired.name)
         if (label === 'Edit file' || label === 'Write file') continue

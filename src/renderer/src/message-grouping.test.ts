@@ -298,7 +298,6 @@ test('prepareChatMessages keeps every read, including a re-read of the same file
     callTurn('read_file', 'r1', { path: 'btc.py' }), // same file re-read -> still shown
     resultFor('r1', 'file body'),
   ])
-  // Edit toolResults fold into the call (no separate success pill); read results stay.
   assert.equal(out.length, 3)
   assert.ok(!out.some((m) => m.id === 'e1-result'), 'edit result pill dropped')
   assert.ok(out.some((m) => m.toolCalls?.some((tc) => tc.id === 'e1' && tc.result === 'Successfully replaced 1 block')))

@@ -161,9 +161,6 @@ export function ChatPanel(): React.JSX.Element {
             </div>
           </div>
 
-          {/* Messages + floating composer. The pill overlays the bottom of the
-              scroll view with transparent sides so wider message content stays
-              visible beside it; pb-on-messages keeps the last turn readable above. */}
           <div className="relative flex min-h-0 flex-1 flex-col">
             {searchOpen && (
               <ChatSearch
@@ -177,8 +174,7 @@ export function ChatPanel(): React.JSX.Element {
                 <EmptyState piStatus={piStatus} />
               ) : (
                 <NowContext.Provider value={now}>
-                {/* pb reserves space so the last message can scroll fully above
-                    the floating composer (~compact pill + padding). */}
+                {/* pb-36: room for the floating composer so the last turn stays readable. */}
                 <div className="mx-auto max-w-5xl px-4 pb-36 pt-6">
                   {renderItems.map((item) =>
                     item.kind === 'toolGroup' ? (
@@ -204,7 +200,6 @@ export function ChatPanel(): React.JSX.Element {
               )}
             </div>
 
-            {/* Jump to bottom — sits above the floating composer */}
             {!atBottom && (
               <button
                 onClick={scrollToBottom}
@@ -216,8 +211,7 @@ export function ChatPanel(): React.JSX.Element {
               </button>
             )}
 
-            {/* Floating composer: only the pill paints; sides stay clear so
-                message text wider than max-w-3xl is not covered. */}
+            {/* Transparent sides so wider message text isn't covered by the pill. */}
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 pb-3 pt-8 bg-gradient-to-t from-chat-column via-chat-column/80 to-transparent">
               <div className="pointer-events-auto mx-auto w-full max-w-5xl px-4">
                 <CouncilPanels />

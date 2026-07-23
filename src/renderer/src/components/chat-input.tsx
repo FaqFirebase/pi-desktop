@@ -9,9 +9,7 @@ import {
   type FileSearchResult,
 } from '../../../shared/ipc-contracts'
 
-// Max height (px) the auto-growing input expands to before scrolling.
 const MAX_INPUT_HEIGHT = 160
-// Idle height — roughly two text lines; room for the in-pill toolbar below.
 const MIN_INPUT_HEIGHT = 40
 
 // Max @-mention file suggestions shown at once.
@@ -129,9 +127,7 @@ export function ChatInput(): React.JSX.Element {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
 
-  // Clear the composer and collapse it back to the idle height. The textarea is
-  // uncontrolled and auto-grows in onInput, so clearing the value alone leaves it
-  // at its expanded height until the next keystroke.
+  // Uncontrolled textarea: reset height with the value or it stays expanded.
   const resetComposer = useCallback(() => {
     const ta = textareaRef.current
     if (!ta) return
@@ -281,17 +277,14 @@ export function ChatInput(): React.JSX.Element {
     }
   }, [])
 
-  /** Stage a browser File (clipboard paste or drag) as an image attachment. */
   const attachImageFile = useCallback(async (file: File): Promise<void> => {
     const mime = file.type.toLowerCase()
     if (!mime.startsWith('image/')) {
       setAttachError('Only images can be pasted into the composer')
       return
     }
-    // Match the picker’s supported set (png/jpg/jpeg/gif/webp).
     const subtype = mime.slice('image/'.length).replace('jpeg', 'jpg')
     const allowed = new Set(SUPPORTED_IMAGE_EXTENSIONS.map((e) => e.toLowerCase()))
-    // image/jpg is nonstandard; browsers usually send image/jpeg.
     const ok =
       allowed.has(subtype) ||
       (subtype === 'jpeg' && allowed.has('jpg')) ||
@@ -333,7 +326,6 @@ export function ChatInput(): React.JSX.Element {
       const dt = e.clipboardData
       if (!dt) return
 
-      // Prefer clipboard items (screenshots, copy-from-browser). Fall back to files.
       const imageFiles: File[] = []
       for (const item of Array.from(dt.items ?? [])) {
         if (item.kind === 'file' && item.type.startsWith('image/')) {
@@ -348,7 +340,6 @@ export function ChatInput(): React.JSX.Element {
       }
       if (imageFiles.length === 0) return
 
-      // Don't also insert a file path / binary garbage as text.
       e.preventDefault()
       void Promise.all(imageFiles.map((f) => attachImageFile(f)))
     },
@@ -368,7 +359,6 @@ export function ChatInput(): React.JSX.Element {
 
   return (
     <div className="pointer-events-none mx-auto w-full max-w-3xl px-4">
-      {/* Attachment error */}
       {attachError && (
         <div className="pointer-events-auto mb-2 flex items-center gap-1.5 text-xs text-error">
           <X size={12} className="shrink-0" />
@@ -376,11 +366,7 @@ export function ChatInput(): React.JSX.Element {
         </div>
       )}
 
-      {/* Single composer pill: text above, actions inside the bottom edge.
-          pointer-events restored so the transparent sides of the overlay don't
-          block scrolling/selecting chat text that is wider than the pill. */}
       <div className="pointer-events-auto relative flex flex-col rounded-2xl border border-border-strong bg-surface/95 shadow-lg shadow-black/25 backdrop-blur-sm focus-within:border-border-strong-hover transition-colors">
-        {/* @-file mention suggestions (floats above the input, keeps its focus) */}
         {mentionOpen && (
           <div className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border border-border-strong bg-surface shadow-2xl">
             <div className="max-h-80 overflow-y-auto py-1">
@@ -410,7 +396,6 @@ export function ChatInput(): React.JSX.Element {
           </div>
         )}
 
-        {/* Attachments inside the pill (above the text) */}
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-1 border-b border-border/60 px-3 pt-2.5 pb-2">
             {attachments.map((att, i) => (
@@ -439,7 +424,6 @@ export function ChatInput(): React.JSX.Element {
           </div>
         )}
 
-        {/* Text input — sits above the in-pill toolbar */}
         <textarea
           ref={textareaRef}
           placeholder={
@@ -543,7 +527,6 @@ export function ChatInput(): React.JSX.Element {
           }}
         />
 
-        {/* In-pill toolbar: actions that used to sit under the composer */}
         <div className="font-chat flex items-center gap-0.5 px-1.5 pb-1.5 pt-0">
           <ComposerPermissionMenu value={permissionMode} onChange={setPermissionMode} />
           <button

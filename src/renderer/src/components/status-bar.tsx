@@ -212,7 +212,6 @@ function ModelSelector(): React.JSX.Element {
     setQuery('')
   }
 
-  // Load models when opened
   useEffect(() => {
     if (!isOpen || piStatus !== 'running') return
 
@@ -227,7 +226,7 @@ function ModelSelector(): React.JSX.Element {
           setModels(response.data.models)
         }
       } catch {
-        // Silent failure
+        // ignore
       } finally {
         setLoading(false)
       }
@@ -236,15 +235,12 @@ function ModelSelector(): React.JSX.Element {
     loadModels()
   }, [isOpen, piStatus])
 
-  // Focus search when the menu opens
   useEffect(() => {
     if (!isOpen) return
-    // Defer so the input is mounted before focusing.
     const id = requestAnimationFrame(() => searchRef.current?.focus())
     return () => cancelAnimationFrame(id)
   }, [isOpen])
 
-  // Close on click outside
   useEffect(() => {
     if (!isOpen) return
 
@@ -284,10 +280,8 @@ function ModelSelector(): React.JSX.Element {
         <ChevronUp size={10} className={clsx('transition-transform', isOpen && 'rotate-180')} />
       </button>
 
-      {/* Dropdown */}
       {isOpen && (
         <div className="absolute bottom-full right-0 mb-1 w-72 rounded-lg border border-border-strong bg-surface shadow-xl shadow-black/40 py-1 animate-fade-in z-50">
-          {/* Current model */}
           {currentModel && (
             <div className="px-3 py-2 border-b border-border">
               <div className="text-xs text-muted">Current</div>
@@ -298,7 +292,6 @@ function ModelSelector(): React.JSX.Element {
             </div>
           )}
 
-          {/* Search */}
           <div className="border-b border-border px-2 py-1.5">
             <div className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1">
               <Search size={12} className="shrink-0 text-dim" />
@@ -321,7 +314,6 @@ function ModelSelector(): React.JSX.Element {
             </div>
           </div>
 
-          {/* Model list */}
           <div className="max-h-64 overflow-y-auto py-1">
             {loading ? (
               <div className="flex items-center justify-center py-4">
@@ -362,7 +354,6 @@ function ModelSelector(): React.JSX.Element {
             )}
           </div>
 
-          {/* Footer */}
           <div className="border-t border-border px-3 py-1.5 flex items-center justify-between">
             <span className="text-[10px] text-faint">
               {query.trim()

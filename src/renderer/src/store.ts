@@ -1876,9 +1876,6 @@ function handleTurnComplete(
         provider,
       })
 
-      // Emit a standalone toolResult message per tool call so the live view
-      // matches what reloading from history produces (Pi persists tool output
-      // as separate toolResult messages, not folded into the assistant turn).
       for (const [id, tc] of entries) {
         if (!tc.result) continue
         newMessages.push({
