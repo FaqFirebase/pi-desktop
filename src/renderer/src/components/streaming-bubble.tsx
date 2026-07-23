@@ -30,10 +30,15 @@ export function StreamingBubble({ content, thinking, toolCalls }: StreamingBubbl
   )
   const thinkingScrollRef = useRef<HTMLDivElement>(null)
 
+  // Follow the thinking tail only when the user is already at/near the bottom,
+  // so scrolling up mid-stream to re-read is not yanked back down.
   useEffect(() => {
     const el = thinkingScrollRef.current
     if (!el) return
-    el.scrollTop = el.scrollHeight
+    const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop
+    if (distanceFromBottom <= 48) {
+      el.scrollTop = el.scrollHeight
+    }
   }, [thinking])
 
   return (

@@ -127,7 +127,9 @@ export function ChatInput(): React.JSX.Element {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
 
-  // Uncontrolled textarea: reset height with the value or it stays expanded.
+  // Clear the composer and collapse it back to the idle height. The textarea is
+  // uncontrolled and auto-grows in onInput, so clearing the value alone leaves it
+  // at its expanded height until the next keystroke.
   const resetComposer = useCallback(() => {
     const ta = textareaRef.current
     if (!ta) return
@@ -283,13 +285,10 @@ export function ChatInput(): React.JSX.Element {
       setAttachError('Only images can be pasted into the composer')
       return
     }
-    const subtype = mime.slice('image/'.length).replace('jpeg', 'jpg')
+    // Browsers send image/jpeg; our allow-list includes both "jpeg" and "jpg".
+    const subtype = mime.slice('image/'.length)
     const allowed = new Set(SUPPORTED_IMAGE_EXTENSIONS.map((e) => e.toLowerCase()))
-    const ok =
-      allowed.has(subtype) ||
-      (subtype === 'jpeg' && allowed.has('jpg')) ||
-      (subtype === 'jpg' && allowed.has('jpeg'))
-    if (!ok) {
+    if (!allowed.has(subtype)) {
       setAttachError(`Unsupported image type (${mime || 'unknown'}). Use PNG, JPEG, GIF, or WebP.`)
       return
     }
@@ -431,7 +430,7 @@ export function ChatInput(): React.JSX.Element {
               ? 'Pi agent is not running...'
               : isStreaming
                 ? 'Type to steer the agent...'
-                : 'Ask Pi anything…'
+                : 'Ask Pi anything — / for commands'
           }
           disabled={isDisabled}
           rows={1}

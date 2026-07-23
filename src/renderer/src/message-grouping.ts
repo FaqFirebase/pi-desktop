@@ -147,7 +147,7 @@ function groupTitle(run: DisplayMessage[]): string {
         targets.set(key, new Set())
       }
       const target = toolTarget(label, TOOL_VERBS[label] ?? GENERIC_VERB, tc.arguments)
-      targets.get(key)!.add(target ?? `${uniqueSeq++}`)
+      targets.get(key)!.add(target ?? `\0${uniqueSeq++}`)
     }
   }
 
@@ -296,7 +296,14 @@ export function splitReadTruncationNote(content: string): { code: string; note: 
   return { code: lines.slice(0, end + 1).join('\n'), note }
 }
 
-/** Enrich toolResults, fold edit/write into calls, split prose+tools for grouping. */
+/**
+ * Prepare the raw message list for rendering:
+ *  - enrich each toolResult with the paired call's toolName + operated-on toolFile
+ *  - fold edit/write results into the call badge (drop the separate success pill)
+ *  - split prose+tools so tool calls can join an adjacent tool run for grouping
+ *
+ * Pure; reuses message objects when nothing changed so memoized bubbles stay stable.
+ */
 export function prepareChatMessages(messages: DisplayMessage[]): DisplayMessage[] {
   const calls = new Map<string, { name: string; file: string | null }>()
   for (const m of messages) {
@@ -321,17 +328,20 @@ export function prepareChatMessages(messages: DisplayMessage[]): DisplayMessage[
     const hasProse = m.content.trim().length > 0
     const hasTools = (m.toolCalls?.length ?? 0) > 0
 
-    // Attach paired results onto toolCalls (edit/write drop the separate result row).
+    // Fold result bodies onto edit/write calls only. Read/bash keep a standalone
+    // result pill — putting the body on the badge as well would show it twice.
     let toolCalls = m.toolCalls
     if (toolCalls && results.size > 0) {
       let changed = false
       const next = toolCalls.map((tc) => {
         const r = results.get(tc.id)
         if (!r) return tc
+        const label = toolLabel(tc.name)
+        const foldIntoBadge = label === 'Edit file' || label === 'Write file'
         changed = true
         return {
           ...tc,
-          result: tc.result ?? r.content,
+          result: foldIntoBadge ? (tc.result ?? r.content) : tc.result,
           isError: tc.isError ?? r.isError ?? false,
         }
       })
