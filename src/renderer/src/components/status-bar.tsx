@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useAppStore } from '../store'
 import type { ModelInfo } from '../../../shared/ipc-contracts'
+import { filterModels } from '../utils/model-search'
 import { clsx } from 'clsx'
 import {
   PanelLeft,
@@ -191,29 +192,6 @@ export function StatusBar(): React.JSX.Element {
 }
 
 // ─── Model Selector ──────────────────────────────────────────────────────────
-
-/** Collapse case/punctuation so "sonnet 4" matches "claude-sonnet-4". */
-function normalizeModelSearchText(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[_\-./:]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-/**
- * Token AND match against name, id, and provider. Every whitespace-separated
- * query term must appear somewhere (as a substring) in the normalized haystack,
- * so partial names work without typing the exact model slug.
- */
-function filterModels(models: ModelInfo[], query: string): ModelInfo[] {
-  const tokens = normalizeModelSearchText(query).split(' ').filter(Boolean)
-  if (tokens.length === 0) return models
-  return models.filter((m) => {
-    const haystack = normalizeModelSearchText(`${m.name} ${m.id} ${m.provider}`)
-    return tokens.every((t) => haystack.includes(t))
-  })
-}
 
 function ModelSelector(): React.JSX.Element {
   const sessionState = useAppStore((state) => state.sessionState)
