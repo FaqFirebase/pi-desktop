@@ -15,7 +15,7 @@ interface ComposerPermissionMenuProps {
 }
 
 /**
- * A compact, label-only permission-mode picker for the composer footer — a
+ * A compact, label-only permission-mode picker for the in-composer toolbar — a
  * shortcut for the same modes offered in the review panel. The current mode
  * shows as a plain label; the menu opens upward (the composer sits at the
  * bottom of the window). Selecting a mode applies it via `onChange`, the same

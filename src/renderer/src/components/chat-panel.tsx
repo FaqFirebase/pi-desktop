@@ -161,7 +161,9 @@ export function ChatPanel(): React.JSX.Element {
             </div>
           </div>
 
-          {/* Messages area */}
+          {/* Messages + floating composer. The pill overlays the bottom of the
+              scroll view with transparent sides so wider message content stays
+              visible beside it; pb-on-messages keeps the last turn readable above. */}
           <div className="relative flex min-h-0 flex-1 flex-col">
             {searchOpen && (
               <ChatSearch
@@ -175,7 +177,9 @@ export function ChatPanel(): React.JSX.Element {
                 <EmptyState piStatus={piStatus} />
               ) : (
                 <NowContext.Provider value={now}>
-                <div className="mx-auto max-w-5xl px-4 py-6">
+                {/* pb reserves space so the last message can scroll fully above
+                    the floating composer (~compact pill + padding). */}
+                <div className="mx-auto max-w-5xl px-4 pb-36 pt-6">
                   {renderItems.map((item) =>
                     item.kind === 'toolGroup' ? (
                       <ToolGroupBubble
@@ -200,26 +204,26 @@ export function ChatPanel(): React.JSX.Element {
               )}
             </div>
 
-            {/* Jump to bottom — shown while scrolled up, so streaming can keep
-                its position until the user opts back into following. */}
+            {/* Jump to bottom — sits above the floating composer */}
             {!atBottom && (
               <button
                 onClick={scrollToBottom}
-                className="absolute bottom-3 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border-strong bg-card/90 text-secondary shadow-lg shadow-black/30 backdrop-blur transition-colors hover:bg-elevated hover:text-primary"
+                className="absolute bottom-28 left-1/2 z-20 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border-strong bg-card/90 text-secondary shadow-lg shadow-black/30 backdrop-blur transition-colors hover:bg-elevated hover:text-primary"
                 title="Scroll to bottom"
                 aria-label="Scroll to bottom"
               >
                 <ChevronDown size={16} />
               </button>
             )}
-          </div>
 
-          {/* Input area */}
-          <div className="border-t border-border bg-chat-column">
-            <div className="mx-auto w-full max-w-5xl px-4">
-              <CouncilPanels />
+            {/* Floating composer: only the pill paints; sides stay clear so
+                message text wider than max-w-3xl is not covered. */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 pb-3 pt-8 bg-gradient-to-t from-chat-column via-chat-column/80 to-transparent">
+              <div className="pointer-events-auto mx-auto w-full max-w-5xl px-4">
+                <CouncilPanels />
+              </div>
+              <ChatInput />
             </div>
-            <ChatInput />
           </div>
         </div>
 
