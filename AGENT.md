@@ -81,6 +81,7 @@ src/
         │   ├── planning-prompt.ts # Plan/read-only prompt wrapper
         │   ├── session-title.ts  # Distinguishable fallback session titles
         │   ├── heatmap-grid.ts   # Weeks/intensity layout for the stats mini-heatmap
+        │   ├── model-search.ts   # Tokenized model-picker search (treats -_./: as spaces)
         │   └── theme.ts          # Theme application
         └── components/
             ├── sidebar.tsx        # Workspace switcher, nav, sessions, inline rename
@@ -153,16 +154,16 @@ src/
 - Message editing (edit & resend)
 - Conversation branching
 - Copy/export messages (Markdown format), per-message copy button
-- File attachments (text inlined into prompt; images sent as Pi image blocks)
+- File attachments (text inlined into prompt; images sent as Pi image blocks); images can also be pasted directly into the composer
 - Markdown rendering with syntax highlighting; bundled Inter/JetBrains Mono variable fonts + OpenMoji color emoji so rendering doesn't depend on system fonts
 - Fenced SVG documents render as a sandboxed `data:` image with a source/render toggle (browser "secure static mode" — no scripts, no external loads)
 - Filenames mentioned in chat text become clickable links that open a code/image preview pane
-- Tool-call results are collapsible (first line as header, expand for the rest); per-message model label
+- Tool-call results are collapsible (first line as header, expand for the rest); edit/write results fold into the call badge with an inline diff instead of a separate pill; per-message model label
 - `#tag` extraction from messages
 
 ### Model & Thinking
 
-- Model selector dropdown in status bar
+- Model selector dropdown in status bar, with tokenized search ("sonnet 4" matches `claude-sonnet-4`)
 - `Ctrl+P` to cycle models
 - Thinking level selector (off/minimal/low/medium/high/xhigh)
 - Token usage and cost tracking in status bar
