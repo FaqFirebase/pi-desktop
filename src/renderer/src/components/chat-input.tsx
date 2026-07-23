@@ -9,11 +9,23 @@ import {
   type FileSearchResult,
 } from '../../../shared/ipc-contracts'
 
-// Max height (px) the auto-growing input expands to before scrolling.
-const MAX_INPUT_HEIGHT = 192
+const MAX_INPUT_HEIGHT = 160
+const MIN_INPUT_HEIGHT = 40
 
 // Max @-mention file suggestions shown at once.
 const MAX_MENTION_RESULTS = 10
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result)
+      else reject(new Error('Could not read image data'))
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read image data'))
+    reader.readAsDataURL(file)
+  })
+}
 
 // An in-progress @-file mention: the caret sits just after `@<query>` and no
 // whitespace separates them. `start` is the index of the `@`.
@@ -107,7 +119,7 @@ export function ChatInput(): React.JSX.Element {
     ta.focus()
     ta.setSelectionRange(caret, caret)
     ta.style.height = 'auto'
-    ta.style.height = `${Math.min(ta.scrollHeight, MAX_INPUT_HEIGHT)}px`
+    ta.style.height = `${Math.min(Math.max(ta.scrollHeight, MIN_INPUT_HEIGHT), MAX_INPUT_HEIGHT)}px`
 
     clearPendingInsert()
   }, [pendingInsert, clearPendingInsert])
@@ -115,14 +127,14 @@ export function ChatInput(): React.JSX.Element {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
 
-  // Clear the composer and collapse it back to a single row. The textarea is
+  // Clear the composer and collapse it back to the idle height. The textarea is
   // uncontrolled and auto-grows in onInput, so clearing the value alone leaves it
   // at its expanded height until the next keystroke.
   const resetComposer = useCallback(() => {
     const ta = textareaRef.current
     if (!ta) return
     ta.value = ''
-    ta.style.height = 'auto'
+    ta.style.height = `${MIN_INPUT_HEIGHT}px`
   }, [])
 
   // @-file mention autocomplete. `mention` is the token being typed (null when
@@ -181,7 +193,7 @@ export function ChatInput(): React.JSX.Element {
       const caret = mention.start + token.length
       ta.setSelectionRange(caret, caret)
       ta.style.height = 'auto'
-      ta.style.height = `${Math.min(ta.scrollHeight, MAX_INPUT_HEIGHT)}px`
+      ta.style.height = `${Math.min(Math.max(ta.scrollHeight, MIN_INPUT_HEIGHT), MAX_INPUT_HEIGHT)}px`
       ta.focus()
       setMention(null)
       setMentionResults([])
@@ -240,7 +252,7 @@ export function ChatInput(): React.JSX.Element {
     if (!ta) return
     ta.value = text
     ta.style.height = 'auto'
-    ta.style.height = `${Math.min(ta.scrollHeight, MAX_INPUT_HEIGHT)}px`
+    ta.style.height = `${Math.min(Math.max(ta.scrollHeight, MIN_INPUT_HEIGHT), MAX_INPUT_HEIGHT)}px`
     ta.setSelectionRange(text.length, text.length)
   }, [])
 
@@ -267,55 +279,93 @@ export function ChatInput(): React.JSX.Element {
     }
   }, [])
 
+  const attachImageFile = useCallback(async (file: File): Promise<void> => {
+    const mime = file.type.toLowerCase()
+    if (!mime.startsWith('image/')) {
+      setAttachError('Only images can be pasted into the composer')
+      return
+    }
+    // Browsers send image/jpeg; our allow-list includes both "jpeg" and "jpg".
+    const subtype = mime.slice('image/'.length)
+    const allowed = new Set(SUPPORTED_IMAGE_EXTENSIONS.map((e) => e.toLowerCase()))
+    if (!allowed.has(subtype)) {
+      setAttachError(`Unsupported image type (${mime || 'unknown'}). Use PNG, JPEG, GIF, or WebP.`)
+      return
+    }
+
+    setAttachError(null)
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      const comma = dataUrl.indexOf(',')
+      const data = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl
+      const ext = subtype === 'jpeg' ? 'jpg' : subtype
+      const name = file.name && file.name !== 'image.png' ? file.name : `pasted-image.${ext}`
+      const path = `clipboard://${name}-${file.size}-${file.lastModified}`
+      const next: Attachment = {
+        kind: 'image',
+        name,
+        path,
+        image: {
+          type: 'image',
+          mimeType: mime === 'image/jpg' ? 'image/jpeg' : mime,
+          data,
+        },
+      }
+      setAttachments((prev) => (prev.some((a) => a.path === path) ? prev : [...prev, next]))
+    } catch (err) {
+      setAttachError(err instanceof Error ? err.message : 'Could not paste image')
+    }
+  }, [])
+
+  const isDisabled = piStatus !== 'running'
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (isDisabled) return
+      const dt = e.clipboardData
+      if (!dt) return
+
+      const imageFiles: File[] = []
+      for (const item of Array.from(dt.items ?? [])) {
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile()
+          if (file) imageFiles.push(file)
+        }
+      }
+      if (imageFiles.length === 0) {
+        for (const file of Array.from(dt.files ?? [])) {
+          if (file.type.startsWith('image/')) imageFiles.push(file)
+        }
+      }
+      if (imageFiles.length === 0) return
+
+      e.preventDefault()
+      void Promise.all(imageFiles.map((f) => attachImageFile(f)))
+    },
+    [attachImageFile, isDisabled]
+  )
+
   const removeAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index))
   }, [])
 
   useChatKeyboard(handleSend, handleAbort, textareaRef)
 
-  const isDisabled = piStatus !== 'running'
+  const resizeTextarea = useCallback((ta: HTMLTextAreaElement): void => {
+    ta.style.height = 'auto'
+    ta.style.height = `${Math.min(Math.max(ta.scrollHeight, MIN_INPUT_HEIGHT), MAX_INPUT_HEIGHT)}px`
+  }, [])
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-4">
-      {/* Attachment error */}
+    <div className="pointer-events-none mx-auto w-full max-w-3xl px-4">
       {attachError && (
-        <div className="mb-2 flex items-center gap-1.5 text-xs text-error">
+        <div className="pointer-events-auto mb-2 flex items-center gap-1.5 text-xs text-error">
           <X size={12} className="shrink-0" />
           <span>{attachError}</span>
         </div>
       )}
 
-      {/* Attachments */}
-      {attachments.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-1">
-          {attachments.map((att, i) => (
-            <div
-              key={att.path}
-              className="flex items-center gap-1.5 rounded-md border border-border-strong bg-card px-2 py-1 text-xs text-secondary"
-            >
-              {att.kind === 'image' ? (
-                <img
-                  src={`data:${att.image.mimeType};base64,${att.image.data}`}
-                  alt={att.name}
-                  className="h-5 w-5 shrink-0 rounded object-cover"
-                />
-              ) : (
-                <FileText size={12} className="text-dim" />
-              )}
-              <span className="max-w-[120px] truncate">{att.name}</span>
-              <button
-                onClick={() => removeAttachment(i)}
-                className="rounded p-0.5 text-dim hover:text-secondary"
-              >
-                <X size={10} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="relative flex items-center rounded-xl border border-border-strong bg-surface focus-within:border-border-strong-hover transition-colors">
-        {/* @-file mention suggestions (floats above the input, keeps its focus) */}
+      <div className="pointer-events-auto relative flex flex-col rounded-2xl border border-border-strong bg-surface/95 shadow-lg shadow-black/25 backdrop-blur-sm focus-within:border-border-strong-hover transition-colors">
         {mentionOpen && (
           <div className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border border-border-strong bg-surface shadow-2xl">
             <div className="max-h-80 overflow-y-auto py-1">
@@ -345,29 +395,34 @@ export function ChatInput(): React.JSX.Element {
           </div>
         )}
 
-        {/* Plan with Council button */}
-        {councilEnabled && (
-          <button
-            onClick={() => {
-              const value = textareaRef.current?.value.trim()
-              if (value) {
-                recordPrompt(value)
-                historyIndex.current = -1
-                draft.current = ''
-                void runCouncil(value)
-                resetComposer()
-              }
-            }}
-            disabled={isDisabled || isStreaming}
-            className="flex shrink-0 items-center justify-center py-3 pl-3 pr-1 text-dim hover:text-secondary transition-colors disabled:opacity-50"
-            title="Plan with Council"
-            aria-label="Plan with Council"
-          >
-            <Users size={16} />
-          </button>
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1 border-b border-border/60 px-3 pt-2.5 pb-2">
+            {attachments.map((att, i) => (
+              <div
+                key={att.path}
+                className="flex items-center gap-1.5 rounded-md border border-border-strong bg-card px-2 py-1 text-xs text-secondary"
+              >
+                {att.kind === 'image' ? (
+                  <img
+                    src={`data:${att.image.mimeType};base64,${att.image.data}`}
+                    alt={att.name}
+                    className="h-5 w-5 shrink-0 rounded object-cover"
+                  />
+                ) : (
+                  <FileText size={12} className="text-dim" />
+                )}
+                <span className="max-w-[120px] truncate">{att.name}</span>
+                <button
+                  onClick={() => removeAttachment(i)}
+                  className="rounded p-0.5 text-dim hover:text-secondary"
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
         )}
 
-        {/* Text input */}
         <textarea
           ref={textareaRef}
           placeholder={
@@ -375,15 +430,16 @@ export function ChatInput(): React.JSX.Element {
               ? 'Pi agent is not running...'
               : isStreaming
                 ? 'Type to steer the agent...'
-                : 'Type / for commands'
+                : 'Ask Pi anything — / for commands'
           }
           disabled={isDisabled}
           rows={1}
-          className={`font-chat max-h-48 min-h-[24px] flex-1 resize-none bg-transparent py-3 text-sm text-primary placeholder:text-faint outline-none disabled:opacity-50 ${councilEnabled ? 'pl-1' : 'pl-4'}`}
+          style={{ minHeight: MIN_INPUT_HEIGHT }}
+          className="font-chat max-h-40 min-h-[40px] w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-sm leading-relaxed text-primary placeholder:text-faint outline-none disabled:opacity-50"
+          onPaste={handlePaste}
           onInput={(e) => {
             const target = e.currentTarget
-            target.style.height = 'auto'
-            target.style.height = `${Math.min(target.scrollHeight, MAX_INPUT_HEIGHT)}px`
+            resizeTextarea(target)
             // Any real edit ends history navigation; the box is a fresh draft again.
             historyIndex.current = -1
             const value = target.value
@@ -470,12 +526,66 @@ export function ChatInput(): React.JSX.Element {
           }}
         />
 
-        {/* Send/Abort button */}
-        <div className="flex shrink-0 items-center p-2">
+        <div className="font-chat flex items-center gap-0.5 px-1.5 pb-1.5 pt-0">
+          <ComposerPermissionMenu value={permissionMode} onChange={setPermissionMode} />
+          <button
+            onClick={handleAttachFile}
+            disabled={isDisabled}
+            className="hover:bg-highlight-strong flex items-center justify-center rounded-md p-1.5 text-dim hover:text-secondary transition-colors disabled:opacity-50"
+            title="Attach file"
+            aria-label="Attach file"
+          >
+            <Paperclip size={15} />
+          </button>
+          <button
+            onClick={() => setNotePickerOpen(true)}
+            className="hover:bg-highlight-strong flex items-center justify-center rounded-md p-1.5 text-dim hover:text-secondary transition-colors"
+            title="Insert note (Ctrl+Shift+P)"
+            aria-label="Insert note"
+          >
+            <StickyNote size={15} />
+          </button>
+          <button
+            onClick={() => toggleFileSearch()}
+            className="hover:bg-highlight-strong flex items-center justify-center rounded-md p-1.5 text-dim hover:text-secondary transition-colors"
+            title="Search workspace (Ctrl+Shift+F)"
+            aria-label="Search workspace"
+          >
+            <Search size={15} />
+          </button>
+          {councilEnabled && (
+            <button
+              onClick={() => {
+                const value = textareaRef.current?.value.trim()
+                if (value) {
+                  recordPrompt(value)
+                  historyIndex.current = -1
+                  draft.current = ''
+                  void runCouncil(value)
+                  resetComposer()
+                }
+              }}
+              disabled={isDisabled || isStreaming}
+              className="hover:bg-highlight-strong flex items-center justify-center rounded-md p-1.5 text-dim hover:text-secondary transition-colors disabled:opacity-50"
+              title="Plan with Council"
+              aria-label="Plan with Council"
+            >
+              <Users size={15} />
+            </button>
+          )}
+
+          <span className="ml-auto mr-1 text-[11px] text-faint">
+            {isStreaming ? (
+              <span className="text-warning animate-pulse">Streaming…</span>
+            ) : (
+              'Shift+Enter newline'
+            )}
+          </span>
+
           {isStreaming ? (
             <button
               onClick={handleAbort}
-              className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-2 text-dim hover:text-secondary transition-colors"
+              className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors"
               title="Stop (Esc)"
               aria-label="Stop generating"
             >
@@ -490,7 +600,7 @@ export function ChatInput(): React.JSX.Element {
                 }
               }}
               disabled={isDisabled}
-              className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-2 text-dim hover:text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Send (Enter)"
               aria-label="Send message"
             >
@@ -498,44 +608,6 @@ export function ChatInput(): React.JSX.Element {
             </button>
           )}
         </div>
-      </div>
-
-      {/* Composer actions */}
-      <div className="font-chat mt-2 flex items-center gap-0.5">
-        {/* Permission-mode shortcut — same modes as the review panel */}
-        <ComposerPermissionMenu value={permissionMode} onChange={setPermissionMode} />
-        <button
-          onClick={handleAttachFile}
-          disabled={isDisabled}
-          className="hover:bg-highlight-strong flex items-center justify-center rounded-md p-1 text-dim hover:text-secondary transition-colors disabled:opacity-50"
-          title="Attach file"
-          aria-label="Attach file"
-        >
-          <Paperclip size={16} />
-        </button>
-        <button
-          onClick={() => setNotePickerOpen(true)}
-          className="hover:bg-highlight-strong flex items-center justify-center rounded-md p-1 text-dim hover:text-secondary transition-colors"
-          title="Insert note (Ctrl+Shift+P)"
-          aria-label="Insert note"
-        >
-          <StickyNote size={16} />
-        </button>
-        <button
-          onClick={() => toggleFileSearch()}
-          className="hover:bg-highlight-strong flex items-center justify-center rounded-md p-1 text-dim hover:text-secondary transition-colors"
-          title="Search workspace (Ctrl+Shift+F)"
-          aria-label="Search workspace"
-        >
-          <Search size={16} />
-        </button>
-        <span className="ml-auto text-xs text-faint">
-          {isStreaming ? (
-            <span className="text-warning animate-pulse">Streaming...</span>
-          ) : (
-            'Shift+Enter for Newline'
-          )}
-        </span>
       </div>
     </div>
   )

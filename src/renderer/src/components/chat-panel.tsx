@@ -11,7 +11,7 @@ import { ImageViewer } from './image-viewer'
 import { DiffViewer } from './diff-viewer'
 import { TerminalPanel } from './terminal'
 import { useChatScroll } from '../hooks'
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { clsx } from 'clsx'
 import piLogo from '../assets/pi-logo.svg'
 import {
@@ -25,9 +25,28 @@ import {
   ChevronDown,
 } from 'lucide-react'
 
+// Fallback padding when the composer has not measured yet (~idle pill + gradient).
+const DEFAULT_COMPOSER_PAD_PX = 144
+
 export function ChatPanel(): React.JSX.Element {
   const messages = useAppStore((state) => state.messages)
   const isStreaming = useAppStore((state) => state.isStreaming)
+  const composerWrapRef = useRef<HTMLDivElement>(null)
+  const [composerPadPx, setComposerPadPx] = useState(DEFAULT_COMPOSER_PAD_PX)
+
+  // Drive message-list bottom padding from the real floating composer height so
+  // a tall draft / attachments row never permanently covers the last message.
+  useEffect(() => {
+    const el = composerWrapRef.current
+    if (!el) return
+    const measure = (): void => {
+      setComposerPadPx(Math.max(el.offsetHeight, DEFAULT_COMPOSER_PAD_PX))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   const streamingContent = useAppStore((state) => state.streamingContent)
   const streamingThinking = useAppStore((state) => state.streamingThinking)
   const streamingToolCalls = useAppStore((state) => state.streamingToolCalls)
@@ -161,7 +180,6 @@ export function ChatPanel(): React.JSX.Element {
             </div>
           </div>
 
-          {/* Messages area */}
           <div className="relative flex min-h-0 flex-1 flex-col">
             {searchOpen && (
               <ChatSearch
@@ -175,7 +193,10 @@ export function ChatPanel(): React.JSX.Element {
                 <EmptyState piStatus={piStatus} />
               ) : (
                 <NowContext.Provider value={now}>
-                <div className="mx-auto max-w-5xl px-4 py-6">
+                <div
+                  className="mx-auto max-w-5xl px-4 pt-6"
+                  style={{ paddingBottom: composerPadPx }}
+                >
                   {renderItems.map((item) =>
                     item.kind === 'toolGroup' ? (
                       <ToolGroupBubble
@@ -200,26 +221,28 @@ export function ChatPanel(): React.JSX.Element {
               )}
             </div>
 
-            {/* Jump to bottom — shown while scrolled up, so streaming can keep
-                its position until the user opts back into following. */}
             {!atBottom && (
               <button
                 onClick={scrollToBottom}
-                className="absolute bottom-3 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border-strong bg-card/90 text-secondary shadow-lg shadow-black/30 backdrop-blur transition-colors hover:bg-elevated hover:text-primary"
+                className="absolute left-1/2 z-20 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border-strong bg-card/90 text-secondary shadow-lg shadow-black/30 backdrop-blur transition-colors hover:bg-elevated hover:text-primary"
+                style={{ bottom: composerPadPx + 12 }}
                 title="Scroll to bottom"
                 aria-label="Scroll to bottom"
               >
                 <ChevronDown size={16} />
               </button>
             )}
-          </div>
 
-          {/* Input area */}
-          <div className="border-t border-border bg-chat-column">
-            <div className="mx-auto w-full max-w-5xl px-4">
-              <CouncilPanels />
+            {/* Transparent sides so wider message text isn't covered by the pill. */}
+            <div
+              ref={composerWrapRef}
+              className="pointer-events-none absolute inset-x-0 bottom-0 z-10 pb-3 pt-8 bg-gradient-to-t from-chat-column via-chat-column/80 to-transparent"
+            >
+              <div className="pointer-events-auto mx-auto w-full max-w-5xl px-4">
+                <CouncilPanels />
+              </div>
+              <ChatInput />
             </div>
-            <ChatInput />
           </div>
         </div>
 

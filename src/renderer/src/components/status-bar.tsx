@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useAppStore } from '../store'
 import type { ModelInfo } from '../../../shared/ipc-contracts'
+import { filterModels } from '../utils/model-search'
 import { clsx } from 'clsx'
 import {
   PanelLeft,
@@ -16,6 +17,7 @@ import {
   ChevronUp,
   Check,
   GitBranch,
+  Search,
 } from 'lucide-react'
 
 export function StatusBar(): React.JSX.Element {
@@ -199,11 +201,17 @@ function ModelSelector(): React.JSX.Element {
   const [isOpen, setIsOpen] = useState(false)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [loading, setLoading] = useState(false)
+  const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
 
   const currentModel = sessionState?.model
 
-  // Load models when opened
+  const close = (): void => {
+    setIsOpen(false)
+    setQuery('')
+  }
+
   useEffect(() => {
     if (!isOpen || piStatus !== 'running') return
 
@@ -218,7 +226,7 @@ function ModelSelector(): React.JSX.Element {
           setModels(response.data.models)
         }
       } catch {
-        // Silent failure
+        // ignore
       } finally {
         setLoading(false)
       }
@@ -227,13 +235,18 @@ function ModelSelector(): React.JSX.Element {
     loadModels()
   }, [isOpen, piStatus])
 
-  // Close on click outside
+  useEffect(() => {
+    if (!isOpen) return
+    const id = requestAnimationFrame(() => searchRef.current?.focus())
+    return () => cancelAnimationFrame(id)
+  }, [isOpen])
+
   useEffect(() => {
     if (!isOpen) return
 
     const handleClick = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
-        setIsOpen(false)
+        close()
       }
     }
 
@@ -241,9 +254,14 @@ function ModelSelector(): React.JSX.Element {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [isOpen])
 
+  const filteredModels = useMemo(
+    () => filterModels(models, query),
+    [models, query]
+  )
+
   const handleSelect = async (model: ModelInfo) => {
     await setModel(model.provider, model.id)
-    setIsOpen(false)
+    close()
   }
 
   if (piStatus !== 'running') return <></>
@@ -251,7 +269,7 @@ function ModelSelector(): React.JSX.Element {
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => (isOpen ? close() : setIsOpen(true))}
         className="flex items-center gap-1 text-dim hover:text-secondary transition-colors"
         title="Select model (Ctrl+P to cycle)"
       >
@@ -262,10 +280,8 @@ function ModelSelector(): React.JSX.Element {
         <ChevronUp size={10} className={clsx('transition-transform', isOpen && 'rotate-180')} />
       </button>
 
-      {/* Dropdown */}
       {isOpen && (
         <div className="absolute bottom-full right-0 mb-1 w-72 rounded-lg border border-border-strong bg-surface shadow-xl shadow-black/40 py-1 animate-fade-in z-50">
-          {/* Current model */}
           {currentModel && (
             <div className="px-3 py-2 border-b border-border">
               <div className="text-xs text-muted">Current</div>
@@ -276,7 +292,28 @@ function ModelSelector(): React.JSX.Element {
             </div>
           )}
 
-          {/* Model list */}
+          <div className="border-b border-border px-2 py-1.5">
+            <div className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1">
+              <Search size={12} className="shrink-0 text-dim" />
+              <input
+                ref={searchRef}
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.stopPropagation()
+                    if (query) setQuery('')
+                    else close()
+                  }
+                }}
+                placeholder="Search models..."
+                className="min-w-0 flex-1 bg-transparent text-xs text-primary placeholder:text-faint outline-none"
+                aria-label="Search models"
+              />
+            </div>
+          </div>
+
           <div className="max-h-64 overflow-y-auto py-1">
             {loading ? (
               <div className="flex items-center justify-center py-4">
@@ -286,20 +323,24 @@ function ModelSelector(): React.JSX.Element {
               <div className="px-3 py-4 text-center text-xs text-faint">
                 No models available
               </div>
+            ) : filteredModels.length === 0 ? (
+              <div className="px-3 py-4 text-center text-xs text-faint">
+                No models match “{query.trim()}”
+              </div>
             ) : (
-              models.map((model) => (
+              filteredModels.map((model) => (
                 <button
                   key={`${model.provider}/${model.id}`}
                   onClick={() => handleSelect(model)}
                   className={clsx(
                     'flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-hover transition-colors',
-                    currentModel?.id === model.id && 'bg-card'
+                    currentModel?.id === model.id && currentModel?.provider === model.provider && 'bg-card'
                   )}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-primary">{model.name}</span>
-                      {currentModel?.id === model.id && (
+                      {currentModel?.id === model.id && currentModel?.provider === model.provider && (
                         <Check size={12} className="text-success shrink-0" />
                       )}
                     </div>
@@ -313,11 +354,14 @@ function ModelSelector(): React.JSX.Element {
             )}
           </div>
 
-          {/* Footer */}
           <div className="border-t border-border px-3 py-1.5 flex items-center justify-between">
-            <span className="text-[10px] text-faint">Ctrl+P to cycle</span>
+            <span className="text-[10px] text-faint">
+              {query.trim()
+                ? `${filteredModels.length} of ${models.length}`
+                : 'Ctrl+P to cycle'}
+            </span>
             <button
-              onClick={() => setIsOpen(false)}
+              onClick={close}
               className="text-[10px] text-faint hover:text-muted"
             >
               Close

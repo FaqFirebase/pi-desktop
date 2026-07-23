@@ -298,10 +298,11 @@ test('prepareChatMessages keeps every read, including a re-read of the same file
     callTurn('read_file', 'r1', { path: 'btc.py' }), // same file re-read -> still shown
     resultFor('r1', 'file body'),
   ])
-  const ids = out.map((m) => m.id)
-  assert.ok(ids.includes('r1-result'), 're-read result kept')
+  assert.equal(out.length, 3)
+  assert.ok(!out.some((m) => m.id === 'e1-result'), 'edit result pill dropped')
+  assert.ok(out.some((m) => m.toolCalls?.some((tc) => tc.id === 'e1' && tc.result === 'Successfully replaced 1 block')))
+  assert.ok(out.some((m) => m.id === 'r1-result'), 're-read result kept')
   assert.ok(out.some((m) => m.toolCalls?.some((tc) => tc.id === 'r1')), 're-read call kept')
-  assert.equal(out.length, 4)
 })
 
 test('prepareChatMessages splits a prose+tools turn so its tool call can group', () => {
@@ -350,4 +351,41 @@ test('prepareChatMessages leaves a pure-prose or pure-tool turn as the same obje
   const out = prepareChatMessages([p, t])
   assert.equal(out[0], p) // same ref — nothing to split
   assert.equal(out[1], t)
+})
+
+test('parseEdits accepts top-level old_string/new_string aliases', () => {
+  const blocks = parseEdits(JSON.stringify({
+    path: 'a.ts',
+    old_string: 'foo',
+    new_string: 'bar',
+  }))
+  assert.deepEqual(blocks, [{ oldText: 'foo', newText: 'bar' }])
+})
+
+test('prepareChatMessages drops edit toolResult pills after folding', () => {
+  const out = prepareChatMessages([
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      timestamp: 0,
+      toolCalls: [{
+        id: 't1',
+        name: 'edit',
+        arguments: JSON.stringify({ path: 'a.ts', edits: [{ oldText: 'a', newText: 'b' }] }),
+      }],
+    },
+    {
+      id: 'r1',
+      role: 'toolResult',
+      content: 'ok',
+      timestamp: 0,
+      toolCallId: 't1',
+      isError: false,
+    },
+  ])
+  assert.equal(out.length, 1)
+  assert.equal(out[0].role, 'assistant')
+  assert.equal(out[0].toolCalls?.[0].result, 'ok')
+  assert.equal(out[0].toolCalls?.[0].isError, false)
 })
