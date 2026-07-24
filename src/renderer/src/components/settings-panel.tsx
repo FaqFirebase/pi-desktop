@@ -20,7 +20,7 @@ import { BUILTIN_THEME_IDS } from '../themes'
 import { CustomModelsEditor } from './custom-models-editor'
 import { ThemeEditor } from './theme-editor'
 import { ThemeGallery } from './theme-gallery'
-import { HomeInfoSummary } from './home-screen'
+import { StatsPanel } from './stats-panel'
 import type { UserThemeRecord } from '../../../shared/ipc-contracts'
 import {
   MIN_TIMEOUT_SECONDS as COUNCIL_MIN_TIMEOUT,
@@ -536,11 +536,39 @@ export function SettingsPanel(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Activity overview (info-home content without Open/New Session buttons) */}
+        {/* Activity stats (calendar / models) — not the full info-home recents list */}
         <SettingsSection title="Activity">
-          <div className="px-1 pb-2">
-            <HomeInfoSummary compact />
+          <div className="px-1 pb-1">
+            <StatsPanel />
           </div>
+          <SettingsRow
+            label="Home Layout"
+            description="Info: classic splash with recents. Minimal: center prompt with project picker (sidebar stays visible)."
+          >
+            <div className="flex gap-0.5 rounded-md bg-card/60 p-0.5">
+              {([
+                { id: 'info' as const, label: 'Info' },
+                { id: 'minimal' as const, label: 'Minimal' },
+              ]).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    setHomeLayout(opt.id)
+                    // Live-preview immediately (same pattern as theme), then persist.
+                    setSettingsDraft({ homeLayout: opt.id })
+                    void applyImmediate({ homeLayout: opt.id })
+                  }}
+                  className={clsx(
+                    'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                    homeLayout === opt.id ? 'bg-elevated text-primary' : 'text-dim hover:text-secondary'
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </SettingsRow>
         </SettingsSection>
 
         {/* Pi Configuration */}
@@ -783,33 +811,6 @@ export function SettingsPanel(): React.JSX.Element {
             description="Show the Home launcher on startup; Pi starts only when you open a workspace or session"
           >
             <Toggle checked={openToHomeOnLaunch} onChange={(v) => { setOpenToHomeOnLaunch(v); setSettingsDraft({ openToHomeOnLaunch: v }) }} />
-          </SettingsRow>
-
-          <SettingsRow
-            label="Home Layout"
-            description="Info shows activity and recents. Minimal is a center prompt with project picker (sidebar stays visible)."
-          >
-            <div className="flex gap-0.5 rounded-md bg-card/60 p-0.5">
-              {([
-                { id: 'info' as const, label: 'Info' },
-                { id: 'minimal' as const, label: 'Minimal' },
-              ]).map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => {
-                    setHomeLayout(opt.id)
-                    setSettingsDraft({ homeLayout: opt.id })
-                  }}
-                  className={clsx(
-                    'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-                    homeLayout === opt.id ? 'bg-elevated text-primary' : 'text-dim hover:text-secondary'
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
           </SettingsRow>
 
           <SettingsRow
