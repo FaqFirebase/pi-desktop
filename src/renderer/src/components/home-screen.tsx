@@ -46,6 +46,18 @@ type HomeAttachment =
   | { kind: 'text'; name: string; path: string; content: string }
   | { kind: 'image'; name: string; path: string; image: PromptImage }
 
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result)
+      else reject(new Error('Could not read image data'))
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read image data'))
+    reader.readAsDataURL(file)
+  })
+}
+
 function useHomeLayout(): 'info' | 'minimal' {
   return useAppStore(
     (s) => s.settingsDraft.homeLayout ?? s.settings?.homeLayout ?? DEFAULT_SETTINGS.homeLayout
@@ -420,6 +432,12 @@ function HomeScreenMinimal(): React.JSX.Element {
   const permissionMode = useAppStore((s) => s.settings?.permissionMode)
   const setPermissionMode = useAppStore((s) => s.setPermissionMode)
   const recordPrompt = useAppStore((s) => s.recordPrompt)
+  const selectLatestFolder = useAppStore(
+    (s) =>
+      s.settingsDraft.homeSelectLatestFolder ??
+      s.settings?.homeSelectLatestFolder ??
+      DEFAULT_SETTINGS.homeSelectLatestFolder
+  )
 
   const sortedWorkspaces = useMemo(
     () => [...workspaces].sort((a, b) => b.lastActiveAt - a.lastActiveAt),
@@ -428,9 +446,9 @@ function HomeScreenMinimal(): React.JSX.Element {
 
   // `null` = no project → session runs in the user home directory.
   // A workspace id selects that project before starting the session.
-  const [selectedId, setSelectedId] = useState<string | null>(
-    () => activeWorkspace?.id ?? sortedWorkspaces[0]?.id ?? null
-  )
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Once the user touches the picker, stop re-applying the launch default.
+  const userPickedRef = useRef(false)
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -450,13 +468,32 @@ function HomeScreenMinimal(): React.JSX.Element {
     }
   }, [])
 
-  // If the chosen workspace disappears, fall back to active / first — but never
-  // overwrite an intentional "no project" (selectedId === null).
+  // Launch / setting default: latest folder, or No project when the option is off.
+  useEffect(() => {
+    if (userPickedRef.current) return
+    if (selectLatestFolder) {
+      setSelectedId(activeWorkspace?.id ?? sortedWorkspaces[0]?.id ?? null)
+    } else {
+      setSelectedId(null)
+    }
+  }, [selectLatestFolder, activeWorkspace?.id, sortedWorkspaces])
+
+  // Toggling the setting re-arms the default so the new preference applies immediately.
+  useEffect(() => {
+    userPickedRef.current = false
+  }, [selectLatestFolder])
+
+  // If the chosen workspace disappears, fall back to latest / none per setting.
   useEffect(() => {
     if (selectedId === null) return
     if (workspaces.some((w) => w.id === selectedId)) return
-    setSelectedId(activeWorkspace?.id ?? sortedWorkspaces[0]?.id ?? null)
-  }, [activeWorkspace?.id, selectedId, sortedWorkspaces, workspaces])
+    userPickedRef.current = false
+    if (selectLatestFolder) {
+      setSelectedId(activeWorkspace?.id ?? sortedWorkspaces[0]?.id ?? null)
+    } else {
+      setSelectedId(null)
+    }
+  }, [activeWorkspace?.id, selectedId, sortedWorkspaces, workspaces, selectLatestFolder])
 
   useEffect(() => {
     if (!pickerOpen) return
@@ -511,6 +548,7 @@ function HomeScreenMinimal(): React.JSX.Element {
         ws = useAppStore.getState().workspaces.find((w) => pathMatches(w.path, path))
       }
       if (ws) {
+        userPickedRef.current = true
         setSelectedId(ws.id)
         setPickerOpen(false)
       }
@@ -541,6 +579,70 @@ function HomeScreenMinimal(): React.JSX.Element {
       setAttachError(err instanceof Error ? err.message : 'Could not attach file')
     }
   }, [])
+
+  // Clipboard paste (screenshots / copied images) — same allow-list as chat-input.
+  const attachImageFile = useCallback(async (file: File): Promise<void> => {
+    const mime = file.type.toLowerCase()
+    if (!mime.startsWith('image/')) {
+      setAttachError('Only images can be pasted into the composer')
+      return
+    }
+    const subtype = mime.slice('image/'.length)
+    const allowed = new Set(SUPPORTED_IMAGE_EXTENSIONS.map((e) => e.toLowerCase()))
+    if (!allowed.has(subtype)) {
+      setAttachError(`Unsupported image type (${mime || 'unknown'}). Use PNG, JPEG, GIF, or WebP.`)
+      return
+    }
+
+    setAttachError(null)
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      const comma = dataUrl.indexOf(',')
+      const data = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl
+      const ext = subtype === 'jpeg' ? 'jpg' : subtype
+      const name = file.name && file.name !== 'image.png' ? file.name : `pasted-image.${ext}`
+      const path = `clipboard://${name}-${file.size}-${file.lastModified}`
+      const next: HomeAttachment = {
+        kind: 'image',
+        name,
+        path,
+        image: {
+          type: 'image',
+          mimeType: mime === 'image/jpg' ? 'image/jpeg' : mime,
+          data,
+        },
+      }
+      setAttachments((prev) => (prev.some((a) => a.path === path) ? prev : [...prev, next]))
+    } catch (err) {
+      setAttachError(err instanceof Error ? err.message : 'Could not paste image')
+    }
+  }, [])
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (busy) return
+      const dt = e.clipboardData
+      if (!dt) return
+
+      const imageFiles: File[] = []
+      for (const item of Array.from(dt.items ?? [])) {
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile()
+          if (file) imageFiles.push(file)
+        }
+      }
+      if (imageFiles.length === 0) {
+        for (const file of Array.from(dt.files ?? [])) {
+          if (file.type.startsWith('image/')) imageFiles.push(file)
+        }
+      }
+      if (imageFiles.length === 0) return
+
+      e.preventDefault()
+      void Promise.all(imageFiles.map((f) => attachImageFile(f)))
+    },
+    [attachImageFile, busy]
+  )
 
   const submit = async (): Promise<void> => {
     const text = prompt.trim()
@@ -668,6 +770,7 @@ function HomeScreenMinimal(): React.JSX.Element {
               setPrompt(e.target.value)
               resizeTextarea(e.currentTarget)
             }}
+            onPaste={handlePaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
@@ -742,6 +845,7 @@ function HomeScreenMinimal(): React.JSX.Element {
               <button
                 type="button"
                 onClick={() => {
+                  userPickedRef.current = true
                   setSelectedId(null)
                   setPickerOpen(false)
                 }}
@@ -765,6 +869,7 @@ function HomeScreenMinimal(): React.JSX.Element {
                   key={ws.id}
                   type="button"
                   onClick={() => {
+                    userPickedRef.current = true
                     setSelectedId(ws.id)
                     setPickerOpen(false)
                   }}

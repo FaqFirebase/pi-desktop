@@ -79,6 +79,9 @@ export function SettingsPanel(): React.JSX.Element {
   const [homeLayout, setHomeLayout] = useState<'info' | 'minimal'>(
     draft0.homeLayout ?? settings?.homeLayout ?? DEFAULT_SETTINGS.homeLayout
   )
+  const [homeSelectLatestFolder, setHomeSelectLatestFolder] = useState(
+    draft0.homeSelectLatestFolder ?? settings?.homeSelectLatestFolder ?? DEFAULT_SETTINGS.homeSelectLatestFolder
+  )
   const [runOnStartup, setRunOnStartup] = useState(draft0.runOnStartup ?? settings?.runOnStartup ?? DEFAULT_SETTINGS.runOnStartup)
   const [minimizeToTrayOnClose, setMinimizeToTrayOnClose] = useState(draft0.minimizeToTrayOnClose ?? settings?.minimizeToTrayOnClose ?? DEFAULT_SETTINGS.minimizeToTrayOnClose)
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
@@ -225,6 +228,9 @@ export function SettingsPanel(): React.JSX.Element {
     setResumeLastSession(draft.resumeLastSession ?? settings.resumeLastSession)
     setOpenToHomeOnLaunch(draft.openToHomeOnLaunch ?? settings.openToHomeOnLaunch)
     setHomeLayout(draft.homeLayout ?? settings.homeLayout ?? DEFAULT_SETTINGS.homeLayout)
+    setHomeSelectLatestFolder(
+      draft.homeSelectLatestFolder ?? settings.homeSelectLatestFolder ?? DEFAULT_SETTINGS.homeSelectLatestFolder
+    )
     setRunOnStartup(draft.runOnStartup ?? settings.runOnStartup)
     setMinimizeToTrayOnClose(draft.minimizeToTrayOnClose ?? settings.minimizeToTrayOnClose)
     setPermissionMode(draft.permissionMode ?? settings.permissionMode)
@@ -433,6 +439,7 @@ export function SettingsPanel(): React.JSX.Element {
       resumeLastSession,
       openToHomeOnLaunch,
       homeLayout,
+      homeSelectLatestFolder,
       runOnStartup,
       minimizeToTrayOnClose,
       permissionMode,
@@ -490,6 +497,7 @@ export function SettingsPanel(): React.JSX.Element {
       resumeLastSession: DEFAULT_SETTINGS.resumeLastSession,
       openToHomeOnLaunch: DEFAULT_SETTINGS.openToHomeOnLaunch,
       homeLayout: DEFAULT_SETTINGS.homeLayout,
+      homeSelectLatestFolder: DEFAULT_SETTINGS.homeSelectLatestFolder,
       runOnStartup: DEFAULT_SETTINGS.runOnStartup,
       minimizeToTrayOnClose: DEFAULT_SETTINGS.minimizeToTrayOnClose,
       permissionMode: DEFAULT_SETTINGS.permissionMode,
@@ -505,6 +513,7 @@ export function SettingsPanel(): React.JSX.Element {
     setResumeLastSession(defaults.resumeLastSession!)
     setOpenToHomeOnLaunch(defaults.openToHomeOnLaunch!)
     setHomeLayout(defaults.homeLayout!)
+    setHomeSelectLatestFolder(defaults.homeSelectLatestFolder!)
     setRunOnStartup(defaults.runOnStartup!)
     setMinimizeToTrayOnClose(defaults.minimizeToTrayOnClose!)
     setPermissionMode(defaults.permissionMode!)
@@ -569,6 +578,21 @@ export function SettingsPanel(): React.JSX.Element {
               ))}
             </div>
           </SettingsRow>
+          {homeLayout === 'minimal' && (
+            <SettingsRow
+              label="Select latest folder"
+              description="Pre-select your most recently used project in the minimal home picker. Off = start on No project (home directory)."
+            >
+              <Toggle
+                checked={homeSelectLatestFolder}
+                onChange={(v) => {
+                  setHomeSelectLatestFolder(v)
+                  setSettingsDraft({ homeSelectLatestFolder: v })
+                  void applyImmediate({ homeSelectLatestFolder: v })
+                }}
+              />
+            </SettingsRow>
+          )}
         </SettingsSection>
 
         {/* Pi Configuration */}

@@ -58,6 +58,25 @@ const IGNORED_DIRS = new Set([
   'node_modules', '.git', '.next', 'dist', 'build', 'out',
   '.cache', '__pycache__', '.venv', 'venv', '.tox',
   'target', 'coverage', '.nyc_output',
+  // Windows profile junctions / protected folders — watching these under a
+  // home-directory workspace throws EPERM (often reparse points into AppData).
+  'AppData',
+  'Application Data',
+  'Local Settings',
+  'Cookies',
+  'Recent',
+  'SendTo',
+  'Start Menu',
+  'Templates',
+  'NetHood',
+  'PrintHood',
+  'My Documents',
+  'My Music',
+  'My Pictures',
+  'My Videos',
+  'NTUSER.DAT',
+  'ntuser.dat.LOG1',
+  'ntuser.dat.LOG2',
 ])
 
 // Watcher tuning. Depth matches the tree view (getFileTree default), so the
@@ -351,6 +370,9 @@ export class FileService {
     this.watcher = watch(this.workspacePath, {
       ignored: (path) => this.isIgnoredPath(path),
       ignoreInitial: true,
+      // Home-directory workspaces contain Windows junctions; following them
+      // walks into protected system trees and floods EPERM errors.
+      followSymlinks: false,
       depth: WATCH_DEPTH,
       awaitWriteFinish: { stabilityThreshold: WATCH_DEBOUNCE_MS, pollInterval: 50 },
       persistent: true,
@@ -373,9 +395,19 @@ export class FileService {
       .on('unlink', emit('unlink'))
       .on('addDir', emit('addDir'))
       .on('unlinkDir', emit('unlinkDir'))
-      // Tolerate watch failures (e.g. inotify limit ENOSPC on large trees):
-      // the renderer's safety-net poll still keeps the tree fresh.
-      .on('error', (err) => console.error('[FileService] watch error:', err))
+      // Tolerate watch failures (EPERM on Windows protected dirs, ENOSPC on
+      // large trees): the renderer's safety-net poll still keeps the tree fresh.
+      .on('error', (err: unknown) => {
+        const code =
+          err && typeof err === 'object' && 'code' in err
+            ? String((err as { code?: unknown }).code ?? '')
+            : ''
+        if (code === 'EPERM' || code === 'EACCES' || code === 'ENOENT') {
+          // Expected when watching a user home dir; don't spam the console.
+          return
+        }
+        console.error('[FileService] watch error:', err)
+      })
   }
 
   /**
@@ -399,7 +431,18 @@ export class FileService {
   private isIgnoredPath(absolutePath: string): boolean {
     const rel = relative(this.workspacePath, absolutePath)
     if (!rel || rel.startsWith('..')) return false
-    return rel.split(/[\\/]/).some((segment) => IGNORED_DIRS.has(segment))
+    return rel.split(/[\\/]/).some((segment) => {
+      if (IGNORED_DIRS.has(segment)) return true
+      // Case-insensitive match for Windows protected profile folders.
+      const lower = segment.toLowerCase()
+      return (
+        lower === 'appdata' ||
+        lower === 'application data' ||
+        lower === 'local settings' ||
+        lower === 'cookies' ||
+        lower.startsWith('ntuser.')
+      )
+    })
   }
 
   /**
