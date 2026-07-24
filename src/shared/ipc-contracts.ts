@@ -735,6 +735,13 @@ export interface AppSettings {
   // Show the Home/launcher screen on launch (Pi starts lazily on first action)
   // instead of booting straight into Chat. When false, legacy behavior applies.
   openToHomeOnLaunch: boolean
+  // Home layout: 'info' = stats/recents launcher (splash chrome); 'minimal' =
+  // Codex-style center composer with project picker (sidebar stays visible).
+  homeLayout: 'info' | 'minimal'
+  // Minimal home only: when true, the project picker pre-selects the most
+  // recently used workspace on launch. When false, starts on "No project"
+  // (home directory) until the user picks a folder.
+  homeSelectLatestFolder: boolean
   // Launch Pi Desktop automatically when the user logs in to their computer.
   // Applied at the OS level: login items on macOS/Windows, a freedesktop
   // autostart entry on Linux. Only effective in packaged builds.

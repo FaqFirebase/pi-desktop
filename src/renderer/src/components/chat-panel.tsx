@@ -4,6 +4,7 @@ import { CouncilPanels } from './council-panels'
 import { MessageBubble, ToolGroupBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
 import { ChatSearch } from './chat-search'
+
 import { groupToolMessages, prepareChatMessages } from '../message-grouping'
 import { NowContext } from '../utils/relative-time'
 import { FileTree, FileSearch, FilePreview } from './file-tree'
@@ -30,6 +31,7 @@ const DEFAULT_COMPOSER_PAD_PX = 144
 
 export function ChatPanel(): React.JSX.Element {
   const messages = useAppStore((state) => state.messages)
+  const sessionLoading = useAppStore((state) => state.sessionLoading)
   const isStreaming = useAppStore((state) => state.isStreaming)
   const composerWrapRef = useRef<HTMLDivElement>(null)
   const [composerPadPx, setComposerPadPx] = useState(DEFAULT_COMPOSER_PAD_PX)
@@ -189,7 +191,12 @@ export function ChatPanel(): React.JSX.Element {
               />
             )}
             <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-              {messages.length === 0 && !isStreaming ? (
+              {sessionLoading && messages.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-dim">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
+                  Loading session…
+                </div>
+              ) : messages.length === 0 && !isStreaming ? (
                 <EmptyState piStatus={piStatus} />
               ) : (
                 <NowContext.Provider value={now}>

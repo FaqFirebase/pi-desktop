@@ -125,6 +125,8 @@ interface AppState {
     { name: string; args: string; result?: string; isExecuting: boolean; isError?: boolean; startedAt?: number; durationMs?: number }
   >
   isStreaming: boolean
+  /** True while a session history load is in flight (switch/reload). */
+  sessionLoading: boolean
 
   // Queue
   pendingSteering: string[]
@@ -156,6 +158,33 @@ interface AppState {
 
   // Extension UI
   extensionUiRequest: PiExtensionUiRequest | null
+  // Extension widgets (setWidget fire-and-forget). Keyed by widgetKey.
+  extensionWidgets: Record<string, { lines: string[]; placement?: string }>
+  // Extension status entries (setStatus fire-and-forget). Keyed by statusKey.
+  extensionStatuses: Record<string, string>
+  // Live subagent progress from tool_execution_update events (subagent tool).
+  subagentProgress: Array<{
+    toolCallId: string
+    agent: string
+    status: string
+    task: string
+    toolCount: number
+    tokens: number
+    turnCount?: number
+    durationMs: number
+    currentTool?: string
+    /** Parallel/chain children when the tool streams a progress list. */
+    children?: Array<{
+      id: string
+      agent: string
+      status: string
+      task: string
+      toolCount: number
+      tokens: number
+      durationMs: number
+      currentTool?: string
+    }>
+  }>
 
   // App-level confirmation dialog (themed replacement for window.confirm)
   confirmRequest: ConfirmRequest | null
@@ -249,7 +278,7 @@ interface AppActions {
   // Session
   createNewSession: () => Promise<void>
   switchSession: (path: string) => Promise<void>
-  reloadActiveSession: () => Promise<void>
+  reloadActiveSession: (options?: { refreshList?: boolean }) => Promise<void>
   refreshSessionState: () => Promise<void>
   refreshSessionStats: () => Promise<void>
   refreshSessionList: () => Promise<void>
@@ -303,7 +332,9 @@ interface AppActions {
   // Workspaces
   loadWorkspaces: () => Promise<void>
   createWorkspace: (name: string, path: string) => Promise<void>
-  switchWorkspace: (workspaceId: string) => Promise<void>
+  // skipSessionLoad: when opening a specific session next (sidebar/session
+  // panel), skip the expensive resume+history load — switchSession will load.
+  switchWorkspace: (workspaceId: string, options?: { skipSessionLoad?: boolean }) => Promise<void>
   removeWorkspace: (workspaceId: string) => Promise<void>
   renameWorkspace: (workspaceId: string, name: string) => Promise<void>
   changeWorkspaceFolder: (workspaceId: string, newPath: string) => Promise<void>
@@ -372,6 +403,52 @@ interface AppActions {
 let messageCounter = 0
 function generateId(): string {
   return `msg-${Date.now()}-${++messageCounter}`
+}
+
+// Bumps on every session switch / explicit reload so in-flight getMessages
+// results from a previous switch are dropped instead of fighting the UI.
+let sessionLoadGeneration = 0
+
+// Latest path requested for switch — rapid clicks only run the final one.
+let pendingSwitchPath: string | null = null
+let switchCoalesceTimer: ReturnType<typeof setTimeout> | null = null
+// Only one get_messages/switch pipeline at a time (Pi + IPC can't keep up).
+let switchPipeline: Promise<void> = Promise.resolve()
+
+// Coalesce filesystem session-list walks: rapid switches used to stack N full
+// directory scans and freeze the renderer/main.
+let sessionListRefreshInFlight = false
+let sessionListRefreshQueued = false
+let sessionListRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleSessionListRefresh(get: () => AppState & AppActions): void {
+  if (sessionListRefreshTimer) clearTimeout(sessionListRefreshTimer)
+  sessionListRefreshTimer = setTimeout(() => {
+    sessionListRefreshTimer = null
+    void get().refreshSessionList()
+  }, 250)
+}
+
+const PARSE_CHUNK = 50
+
+/** Parse history in chunks, yielding to the event loop so the UI can paint. */
+async function parseMessagesChunked(
+  raw: unknown[],
+  gen: number
+): Promise<DisplayMessage[] | null> {
+  const out: DisplayMessage[] = []
+  for (let i = 0; i < raw.length; i += PARSE_CHUNK) {
+    if (gen !== sessionLoadGeneration) return null
+    const end = Math.min(i + PARSE_CHUNK, raw.length)
+    for (let j = i; j < end; j++) {
+      const parsed = parseAgentMessage(raw[j])
+      if (parsed) out.push(parsed)
+    }
+    // Yield so Windows doesn't mark the window "Not Responding".
+    await new Promise<void>((r) => setTimeout(r, 0))
+  }
+  if (gen !== sessionLoadGeneration) return null
+  return out
 }
 
 /**
@@ -452,6 +529,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   streamingThinking: '',
   streamingToolCalls: new Map(),
   isStreaming: false,
+  sessionLoading: false,
 
   pendingSteering: [],
   pendingFollowUp: [],
@@ -470,6 +548,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   commands: [],
 
   extensionUiRequest: null,
+  extensionWidgets: {},
+  extensionStatuses: {},
+  subagentProgress: [],
   confirmRequest: null,
 
   workspaces: [],
@@ -569,7 +650,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   setMessages: (messages) => set({ messages }),
 
-  clearMessages: () => set({ messages: [], promptHistory: [], streamingContent: '', streamingThinking: '', streamingToolCalls: new Map() }),
+  clearMessages: () => set({ messages: [], promptHistory: [], streamingContent: '', streamingThinking: '', streamingToolCalls: new Map(), subagentProgress: [] }),
 
   // Append a sent prompt to the recall history. Ignores blanks and consecutive
   // duplicates (shell-style), and caps the list so it can't grow unbounded.
@@ -780,8 +861,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Session ──────────────────────────────────────────────────────────
 
   createNewSession: async () => {
+    const gen = ++sessionLoadGeneration
     try {
       const result = await window.piDesktop.session.createNew() as { success?: boolean; error?: string } | null
+      if (gen !== sessionLoadGeneration) return
       if (result && result.success === false) {
         get().addMessage({
           id: generateId(),
@@ -792,10 +875,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         return
       }
       get().clearMessages()
+      set({ isStreaming: false })
       await get().refreshSessionState()
       await get().refreshSessionStats()
-      await get().refreshSessionList()
+      if (gen !== sessionLoadGeneration) return
+      scheduleSessionListRefresh(get)
     } catch (err) {
+      if (gen !== sessionLoadGeneration) return
       get().addMessage({
         id: generateId(),
         role: 'system',
@@ -806,43 +892,95 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   switchSession: async (path) => {
-    try {
-      const result = await window.piDesktop.session.switch(path) as { success?: boolean; error?: string } | null
-      if (result && result.success === false) {
+    // Already on this session — avoid a full history reload.
+    if (get().sessionState?.sessionFile === path && !get().sessionLoading) return
+
+    // Coalesce rapid clicks: only the last path within the window runs.
+    pendingSwitchPath = path
+    const gen = ++sessionLoadGeneration
+    set({ sessionLoading: true, isStreaming: false })
+    get().clearMessages()
+
+    if (switchCoalesceTimer) clearTimeout(switchCoalesceTimer)
+    await new Promise<void>((resolve) => {
+      switchCoalesceTimer = setTimeout(() => {
+        switchCoalesceTimer = null
+        resolve()
+      }, 80)
+    })
+
+    // Superseded by a newer click.
+    if (gen !== sessionLoadGeneration || pendingSwitchPath !== path) return
+
+    // Serialize against other in-flight switches so Pi never gets N concurrent
+    // get_messages (each multi‑MB IPC clone freezes the app).
+    const run = async (): Promise<void> => {
+      if (gen !== sessionLoadGeneration || pendingSwitchPath !== path) return
+      try {
+        const result = await window.piDesktop.session.switch(path) as {
+          success?: boolean
+          error?: string
+        } | null
+        if (gen !== sessionLoadGeneration) return
+        if (result && result.success === false) {
+          set({ sessionLoading: false })
+          get().addMessage({
+            id: generateId(),
+            role: 'system',
+            content: result.error ?? 'Cannot switch session — Pi not running',
+            timestamp: Date.now(),
+          })
+          return
+        }
+        await get().reloadActiveSession({ refreshList: false })
+        if (gen !== sessionLoadGeneration) return
+        scheduleSessionListRefresh(get)
+      } catch (err) {
+        if (gen !== sessionLoadGeneration) return
+        set({ sessionLoading: false })
         get().addMessage({
           id: generateId(),
           role: 'system',
-          content: result.error ?? 'Cannot switch session — Pi not running',
+          content: `Switch session error: ${err instanceof Error ? err.message : String(err)}`,
           timestamp: Date.now(),
         })
-        return
       }
-      await get().reloadActiveSession()
-    } catch (err) {
-      get().addMessage({
-        id: generateId(),
-        role: 'system',
-        content: `Switch session error: ${err instanceof Error ? err.message : String(err)}`,
-        timestamp: Date.now(),
-      })
     }
+
+    switchPipeline = switchPipeline.then(run, run)
+    await switchPipeline
   },
 
-  reloadActiveSession: async () => {
+  reloadActiveSession: async (options) => {
+    const gen = sessionLoadGeneration
+    const refreshList = options?.refreshList ?? true
+
     get().clearMessages()
-    get().refreshSessionState()
-    get().refreshSessionStats()
-    const response = await window.piDesktop.session.getMessages()
-    if (response && typeof response === 'object') {
-      const resp = response as { success?: boolean; data?: { messages?: unknown[] } }
-      if (resp.success && resp.data?.messages) {
-        const loaded = (resp.data.messages as unknown[])
-          .map(parseAgentMessage)
-          .filter((m): m is DisplayMessage => m !== null)
-        set({ messages: loaded })
+    set({ isStreaming: false, sessionLoading: true })
+    void get().refreshSessionState()
+    void get().refreshSessionStats()
+
+    try {
+      const response = await window.piDesktop.session.getMessages()
+      // A newer switch/reload started while we waited — discard this history.
+      if (gen !== sessionLoadGeneration) return
+
+      if (response && typeof response === 'object') {
+        const resp = response as { success?: boolean; data?: { messages?: unknown[] } }
+        if (resp.success && resp.data?.messages) {
+          const loaded = await parseMessagesChunked(resp.data.messages as unknown[], gen)
+          if (loaded === null || gen !== sessionLoadGeneration) return
+          set({ messages: loaded, sessionLoading: false })
+        } else {
+          set({ sessionLoading: false })
+        }
+      } else {
+        set({ sessionLoading: false })
       }
+      if (refreshList) scheduleSessionListRefresh(get)
+    } catch {
+      if (gen === sessionLoadGeneration) set({ sessionLoading: false })
     }
-    get().refreshSessionList()
   },
 
   refreshSessionState: async () => {
@@ -874,6 +1012,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   refreshSessionList: async () => {
+    if (sessionListRefreshInFlight) {
+      sessionListRefreshQueued = true
+      return
+    }
+    sessionListRefreshInFlight = true
     try {
       const list = await window.piDesktop.session.list()
       const sessionState = get().sessionState
@@ -902,6 +1045,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       set({ sessionList })
     } catch {
       // Silent failure
+    } finally {
+      sessionListRefreshInFlight = false
+      if (sessionListRefreshQueued) {
+        sessionListRefreshQueued = false
+        void get().refreshSessionList()
+      }
     }
   },
 
@@ -944,6 +1093,16 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   setModel: async (provider, modelId) => {
     try {
       await window.piDesktop.model.set(provider, modelId)
+      // Remember for next Pi start / home composer (settings defaults).
+      try {
+        const updated = await window.piDesktop.settings.save({
+          defaultProvider: provider,
+          defaultModel: modelId,
+        })
+        set({ settings: updated })
+      } catch {
+        // Non-fatal — model still applied for this session.
+      }
       get().refreshSessionState()
     } catch (err) {
       get().addMessage({
@@ -1208,9 +1367,44 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         })
         break
 
-      case 'extension_ui_request':
-        set({ extensionUiRequest: event as PiExtensionUiRequest })
+      case 'extension_ui_request': {
+        const uiEvent = event as PiExtensionUiRequest
+        if (uiEvent.method === 'setWidget') {
+          set((state) => {
+            const key = uiEvent.widgetKey ?? 'default'
+            if (uiEvent.widgetLines === undefined) {
+              const { [key]: _removed, ...rest } = state.extensionWidgets
+              return { extensionWidgets: rest }
+            }
+            return {
+              extensionWidgets: {
+                ...state.extensionWidgets,
+                [key]: { lines: uiEvent.widgetLines ?? [], placement: uiEvent.widgetPlacement },
+              },
+            }
+          })
+        } else if (uiEvent.method === 'setStatus') {
+          set((state) => {
+            const key = uiEvent.statusKey ?? 'default'
+            if (uiEvent.statusText === undefined) {
+              const { [key]: _removed, ...rest } = state.extensionStatuses
+              return { extensionStatuses: rest }
+            }
+            return {
+              extensionStatuses: {
+                ...state.extensionStatuses,
+                [key]: uiEvent.statusText,
+              },
+            }
+          })
+        } else if (uiEvent.method === 'setTitle' || uiEvent.method === 'set_editor_text') {
+          // Fire-and-forget: nothing to store in state.
+        } else {
+          // Dialog methods (select, confirm, input, editor, notify).
+          set({ extensionUiRequest: uiEvent })
+        }
         break
+      }
 
       case 'session_info_changed': {
         // Live title update (auto-title extension, /name, or our rename).
@@ -1361,7 +1555,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
-  switchWorkspace: async (workspaceId) => {
+  switchWorkspace: async (workspaceId, options) => {
+    const skipSessionLoad = options?.skipSessionLoad === true
     try {
       await window.piDesktop.workspace.setActive(workspaceId)
       // The switch has committed on the main side as of this point — an
@@ -1373,6 +1568,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // never observe a stale draft under the new workspace.
       get().setPermissionRulesDraft('workspace', null)
       get().clearMessages()
+      set({ isStreaming: false })
       // Re-sync Pi status from main: each workspace has its own PiRpcManager,
       // so the new active workspace's Pi may be in a different state than
       // what piStatus is currently showing. Without this, the `if running return`
@@ -1380,15 +1576,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       const status = await window.piDesktop.pi.getStatus()
       set({ piStatus: status.status, piPid: status.pid, piError: status.error })
       await get().loadWorkspaces()
-      await get().refreshSessionState()
-      await get().refreshSessionStats()
-      await get().refreshSessionList()
+      // Session list + Pi start; skip full history when a follow-up switchSession
+      // will load the target session (sidebar/session panel open flow).
+      scheduleSessionListRefresh(get)
       await get().startPi()
-      // Load the resumed session's history into the chat. Unlike selecting a
-      // session (which goes through reloadActiveSession), the workspace path
-      // never fetched messages, so the recent session opened with an empty chat.
-      if (get().piStatus === 'running') {
-        await get().reloadActiveSession()
+      if (!skipSessionLoad && get().piStatus === 'running') {
+        sessionLoadGeneration += 1
+        await get().reloadActiveSession({ refreshList: false })
+      } else if (get().piStatus === 'running') {
+        // Still refresh metadata so chrome (model/name) isn't stale.
+        void get().refreshSessionState()
+        void get().refreshSessionStats()
       }
       await get().maybeWarnWorkspacePermissionRules()
     } catch (err) {
@@ -1726,11 +1924,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   insertPrompt: (text, replace = false) =>
-    set({
-      currentView: 'chat',
+    set((state) => ({
+      // Keep minimal home so slash/skill inserts land in that composer; every
+      // other surface still jumps to chat (notes/palette, etc.).
+      currentView: state.currentView === 'home' ? 'home' : 'chat',
       notePickerOpen: false,
       pendingInsert: { text, nonce: Date.now(), replace },
-    }),
+    })),
 
   clearPendingInsert: () => set({ pendingInsert: null }),
 
@@ -1913,6 +2113,7 @@ function handleTurnComplete(
       streamingContent: '',
       streamingThinking: '',
       streamingToolCalls: new Map(),
+      subagentProgress: [],
     }
   })
 }
@@ -1929,6 +2130,25 @@ function handleToolStart(
       isExecuting: true,
       startedAt: Date.now(),
     })
+    // Track subagent calls in subagentProgress
+    if (event.toolName === 'subagent' || event.toolName === 'subagent_wait') {
+      const args = event.args as Record<string, unknown>
+      const agent = typeof args.agent === 'string' ? args.agent : 'subagent'
+      const task = typeof args.task === 'string' ? args.task : ''
+      const newProgress = {
+        toolCallId: event.toolCallId,
+        agent,
+        status: 'running',
+        task: task.slice(0, 120),
+        toolCount: 0,
+        tokens: 0,
+        durationMs: 0,
+      }
+      return {
+        streamingToolCalls: newMap,
+        subagentProgress: [...state.subagentProgress, newProgress],
+      }
+    }
     return { streamingToolCalls: newMap }
   })
 }
@@ -1946,13 +2166,29 @@ function handleToolUpdate(
     const newMap = new Map(state.streamingToolCalls)
     const existing = newMap.get(event.toolCallId)
     if (existing) {
-      // Accumulate partial output into `result`; keep `args` as the real
-      // arguments so the finalized tool-call badge shows the invocation.
       newMap.set(event.toolCallId, {
         ...existing,
         result: text || existing.result,
       })
     }
+
+    // Update subagent progress from details
+    if (event.toolName === 'subagent' || event.toolName === 'subagent_wait') {
+      const details = event.partialResult.details as Record<string, unknown> | undefined
+      const progressList = details?.progress as Array<Record<string, unknown>> | undefined
+      const results = details?.results as Array<Record<string, unknown>> | undefined
+      if (progressList || results) {
+        const newProgress = state.subagentProgress.map((p) => {
+          if (p.toolCallId !== event.toolCallId) return p
+          return {
+            ...p,
+            ...aggregateSubagentDetails(p, progressList, results),
+          }
+        })
+        return { streamingToolCalls: newMap, subagentProgress: newProgress }
+      }
+    }
+
     return { streamingToolCalls: newMap }
   })
 }
@@ -1978,8 +2214,118 @@ function handleToolEnd(
         durationMs: existing.startedAt ? Date.now() - existing.startedAt : existing.durationMs,
       })
     }
-    return { streamingToolCalls: newMap }
+
+    // Finalize subagent progress: mark done and capture final stats
+    const newProgress = state.subagentProgress.map((p) => {
+      if (p.toolCallId !== event.toolCallId) return p
+      const details = (event.toolName === 'subagent' || event.toolName === 'subagent_wait')
+        ? (event.result.details as Record<string, unknown> | undefined)
+        : undefined
+      const progressList = details?.progress as Array<Record<string, unknown>> | undefined
+      const results = details?.results as Array<Record<string, unknown>> | undefined
+      const agg = aggregateSubagentDetails(p, progressList, results)
+      const elapsed =
+        agg.durationMs ||
+        (p.durationMs > 0 ? p.durationMs : existing?.startedAt ? Date.now() - existing.startedAt : 0)
+
+      return {
+        ...p,
+        ...agg,
+        status: event.isError ? 'error' : 'done',
+        durationMs: elapsed,
+        currentTool: undefined,
+      }
+    })
+
+    return { streamingToolCalls: newMap, subagentProgress: newProgress }
   })
+}
+
+/** Fold tool details.progress / results into a single progress row (+ children). */
+function aggregateSubagentDetails(
+  prev: AppState['subagentProgress'][number],
+  progressList: Array<Record<string, unknown>> | undefined,
+  results: Array<Record<string, unknown>> | undefined
+): Partial<AppState['subagentProgress'][number]> {
+  let toolCount = 0
+  let tokens = 0
+  let durationMs = 0
+  let currentTool: string | undefined
+  const statuses: string[] = []
+  const children: NonNullable<AppState['subagentProgress'][number]['children']> = []
+
+  if (progressList) {
+    progressList.forEach((prog, index) => {
+      const tc = typeof prog.toolCount === 'number' ? prog.toolCount : 0
+      const tok = typeof prog.tokens === 'number' ? prog.tokens : 0
+      const dur = typeof prog.durationMs === 'number' ? prog.durationMs : 0
+      toolCount += tc
+      tokens += tok
+      durationMs = Math.max(durationMs, dur)
+      if (typeof prog.status === 'string') statuses.push(prog.status)
+      const tool =
+        typeof prog.currentTool === 'string'
+          ? prog.currentTool
+          : typeof prog.tool === 'string'
+            ? prog.tool
+            : undefined
+      if (tool) currentTool = tool
+
+      const agent =
+        typeof prog.agent === 'string'
+          ? prog.agent
+          : typeof prog.name === 'string'
+            ? prog.name
+            : prev.agent
+      const task =
+        typeof prog.task === 'string'
+          ? prog.task
+          : typeof prog.label === 'string'
+            ? prog.label
+            : ''
+      const st = typeof prog.status === 'string' ? prog.status : 'running'
+      const id =
+        typeof prog.id === 'string'
+          ? prog.id
+          : typeof prog.runId === 'string'
+            ? prog.runId
+            : `${prev.toolCallId}-${index}`
+
+      children.push({
+        id,
+        agent,
+        status: st === 'completed' || st === 'done' ? 'done' : st === 'failed' || st === 'error' ? 'error' : 'running',
+        task: task.slice(0, 160),
+        toolCount: tc,
+        tokens: tok,
+        durationMs: dur,
+        currentTool: tool,
+      })
+    })
+  }
+
+  if (results) {
+    for (const r of results) {
+      const usage = r.usage as Record<string, number> | undefined
+      if (usage) {
+        tokens += (usage.input ?? 0) + (usage.output ?? 0)
+      }
+    }
+  }
+
+  const running = statuses.some((s) => s === 'running' || s === 'starting')
+  const allDone =
+    statuses.length > 0 &&
+    statuses.every((s) => s === 'completed' || s === 'failed' || s === 'done' || s === 'error' || s === 'stopped')
+
+  return {
+    status: allDone ? 'done' : running ? 'running' : prev.status,
+    toolCount: toolCount || prev.toolCount,
+    tokens: tokens || prev.tokens,
+    durationMs: durationMs || prev.durationMs,
+    currentTool,
+    children: children.length > 0 ? children : prev.children,
+  }
 }
 
 function handleQueueUpdate(

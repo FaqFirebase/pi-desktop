@@ -20,6 +20,7 @@ import { BUILTIN_THEME_IDS } from '../themes'
 import { CustomModelsEditor } from './custom-models-editor'
 import { ThemeEditor } from './theme-editor'
 import { ThemeGallery } from './theme-gallery'
+import { StatsPanel } from './stats-panel'
 import type { UserThemeRecord } from '../../../shared/ipc-contracts'
 import {
   MIN_TIMEOUT_SECONDS as COUNCIL_MIN_TIMEOUT,
@@ -75,6 +76,12 @@ export function SettingsPanel(): React.JSX.Element {
   const [autoScroll, setAutoScroll] = useState(draft0.autoScroll ?? settings?.autoScroll ?? DEFAULT_SETTINGS.autoScroll)
   const [resumeLastSession, setResumeLastSession] = useState(draft0.resumeLastSession ?? settings?.resumeLastSession ?? DEFAULT_SETTINGS.resumeLastSession)
   const [openToHomeOnLaunch, setOpenToHomeOnLaunch] = useState(draft0.openToHomeOnLaunch ?? settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch)
+  const [homeLayout, setHomeLayout] = useState<'info' | 'minimal'>(
+    draft0.homeLayout ?? settings?.homeLayout ?? DEFAULT_SETTINGS.homeLayout
+  )
+  const [homeSelectLatestFolder, setHomeSelectLatestFolder] = useState(
+    draft0.homeSelectLatestFolder ?? settings?.homeSelectLatestFolder ?? DEFAULT_SETTINGS.homeSelectLatestFolder
+  )
   const [runOnStartup, setRunOnStartup] = useState(draft0.runOnStartup ?? settings?.runOnStartup ?? DEFAULT_SETTINGS.runOnStartup)
   const [minimizeToTrayOnClose, setMinimizeToTrayOnClose] = useState(draft0.minimizeToTrayOnClose ?? settings?.minimizeToTrayOnClose ?? DEFAULT_SETTINGS.minimizeToTrayOnClose)
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
@@ -220,6 +227,10 @@ export function SettingsPanel(): React.JSX.Element {
     setAutoScroll(draft.autoScroll ?? settings.autoScroll)
     setResumeLastSession(draft.resumeLastSession ?? settings.resumeLastSession)
     setOpenToHomeOnLaunch(draft.openToHomeOnLaunch ?? settings.openToHomeOnLaunch)
+    setHomeLayout(draft.homeLayout ?? settings.homeLayout ?? DEFAULT_SETTINGS.homeLayout)
+    setHomeSelectLatestFolder(
+      draft.homeSelectLatestFolder ?? settings.homeSelectLatestFolder ?? DEFAULT_SETTINGS.homeSelectLatestFolder
+    )
     setRunOnStartup(draft.runOnStartup ?? settings.runOnStartup)
     setMinimizeToTrayOnClose(draft.minimizeToTrayOnClose ?? settings.minimizeToTrayOnClose)
     setPermissionMode(draft.permissionMode ?? settings.permissionMode)
@@ -427,6 +438,8 @@ export function SettingsPanel(): React.JSX.Element {
       autoScroll,
       resumeLastSession,
       openToHomeOnLaunch,
+      homeLayout,
+      homeSelectLatestFolder,
       runOnStartup,
       minimizeToTrayOnClose,
       permissionMode,
@@ -483,6 +496,8 @@ export function SettingsPanel(): React.JSX.Element {
       autoScroll: DEFAULT_SETTINGS.autoScroll,
       resumeLastSession: DEFAULT_SETTINGS.resumeLastSession,
       openToHomeOnLaunch: DEFAULT_SETTINGS.openToHomeOnLaunch,
+      homeLayout: DEFAULT_SETTINGS.homeLayout,
+      homeSelectLatestFolder: DEFAULT_SETTINGS.homeSelectLatestFolder,
       runOnStartup: DEFAULT_SETTINGS.runOnStartup,
       minimizeToTrayOnClose: DEFAULT_SETTINGS.minimizeToTrayOnClose,
       permissionMode: DEFAULT_SETTINGS.permissionMode,
@@ -497,6 +512,8 @@ export function SettingsPanel(): React.JSX.Element {
     setAutoScroll(defaults.autoScroll!)
     setResumeLastSession(defaults.resumeLastSession!)
     setOpenToHomeOnLaunch(defaults.openToHomeOnLaunch!)
+    setHomeLayout(defaults.homeLayout!)
+    setHomeSelectLatestFolder(defaults.homeSelectLatestFolder!)
     setRunOnStartup(defaults.runOnStartup!)
     setMinimizeToTrayOnClose(defaults.minimizeToTrayOnClose!)
     setPermissionMode(defaults.permissionMode!)
@@ -527,6 +544,56 @@ export function SettingsPanel(): React.JSX.Element {
             <h1 className="text-lg font-semibold text-primary">Settings</h1>
           </div>
         </div>
+
+        {/* Activity stats (calendar / models) — not the full info-home recents list */}
+        <SettingsSection title="Activity">
+          <div className="px-1 pb-1">
+            <StatsPanel />
+          </div>
+          <SettingsRow
+            label="Home Layout"
+            description="Info: classic splash with recents. Minimal: center prompt with project picker (sidebar stays visible)."
+          >
+            <div className="ml-auto inline-flex w-fit gap-0.5 rounded-md bg-card/60 p-0.5">
+              {([
+                { id: 'info' as const, label: 'Info' },
+                { id: 'minimal' as const, label: 'Minimal' },
+              ]).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    setHomeLayout(opt.id)
+                    // Live-preview immediately (same pattern as theme), then persist.
+                    setSettingsDraft({ homeLayout: opt.id })
+                    void applyImmediate({ homeLayout: opt.id })
+                  }}
+                  className={clsx(
+                    'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                    homeLayout === opt.id ? 'bg-elevated text-primary' : 'text-dim hover:text-secondary'
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </SettingsRow>
+          {homeLayout === 'minimal' && (
+            <SettingsRow
+              label="Select latest folder"
+              description="Pre-select your most recently used project in the minimal home picker. Off = start on No project (home directory)."
+            >
+              <Toggle
+                checked={homeSelectLatestFolder}
+                onChange={(v) => {
+                  setHomeSelectLatestFolder(v)
+                  setSettingsDraft({ homeSelectLatestFolder: v })
+                  void applyImmediate({ homeSelectLatestFolder: v })
+                }}
+              />
+            </SettingsRow>
+          )}
+        </SettingsSection>
 
         {/* Pi Configuration */}
         <SettingsSection title="Pi Configuration">

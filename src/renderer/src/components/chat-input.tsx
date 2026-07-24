@@ -2,6 +2,7 @@ import { useRef, useCallback, useState, useEffect } from 'react'
 import { useAppStore } from '../store'
 import { useChatKeyboard } from '../hooks'
 import { ComposerPermissionMenu } from './composer-permission-menu'
+import { SubagentProgress } from './subagent-progress'
 import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users, Search } from 'lucide-react'
 import {
   SUPPORTED_IMAGE_EXTENSIONS,
@@ -105,8 +106,11 @@ export function ChatInput(): React.JSX.Element {
 
   // Apply a note inserted from the panel or picker: drop the text at the
   // cursor, refocus, resize, then clear so the same note can be inserted again.
+  // Only consume when Chat is the active surface — minimal home has its own
+  // composer and also listens for pendingInsert.
   useEffect(() => {
     if (!pendingInsert) return
+    if (useAppStore.getState().currentView !== 'chat') return
     const ta = textareaRef.current
     if (!ta) return
 
@@ -372,6 +376,12 @@ export function ChatInput(): React.JSX.Element {
       )}
 
       <div className="pointer-events-auto relative flex flex-col rounded-2xl border border-border-strong bg-surface/95 shadow-lg shadow-black/25 backdrop-blur-sm focus-within:border-border-strong-hover transition-colors">
+        {/* Subagent strip sits on the top edge, inset ~5% each side so the pill
+            width doesn't look like it grew with the fleet UI. */}
+        <div className="pointer-events-auto absolute bottom-full left-[5%] right-[5%] z-20 mb-0">
+          <SubagentProgress />
+        </div>
+
         {mentionOpen && (
           <div className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border border-border-strong bg-surface shadow-2xl">
             <div className="max-h-80 overflow-y-auto py-1">

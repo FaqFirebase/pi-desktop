@@ -16,9 +16,8 @@ import {
   sessionDirName,
   desanitizeSessionDir,
   projectNameFromPath,
-  pathsEqual,
 } from './session-paths'
-import { readSessionName } from './session-name'
+import { readSessionNameCached } from './session-name'
 import { activityStatsStore } from './activity-stats'
 import type {
   PiStartOptions,
@@ -439,9 +438,16 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
       cwd = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()
     }
 
+    // Prefer explicit start options, else last model chosen in the GUI.
+    const withDefaults: PiStartOptions = {
+      ...opts,
+      cwd,
+      provider: opts.provider ?? settings.defaultProvider ?? undefined,
+      model: opts.model ?? settings.defaultModel ?? undefined,
+    }
     await workspaceManager.startPiForWorkspace(
       activeWs.id,
-      applyPermissionModeToStartOptions(applyResumePreference({ ...opts, cwd }, settings), settings)
+      applyPermissionModeToStartOptions(applyResumePreference(withDefaults, settings), settings)
     )
     const pi = workspaceManager.getPiManager(activeWs.id)
     if (!pi) throw new Error('Failed to create Pi manager')
@@ -469,7 +475,15 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     pi.stop()
     return pi.start(
       applyPermissionModeToStartOptions(
-        applyResumePreference({ cwd: activeWs.path, ...opts }, settings),
+        applyResumePreference(
+          {
+            cwd: activeWs.path,
+            ...opts,
+            provider: opts.provider ?? settings.defaultProvider ?? undefined,
+            model: opts.model ?? settings.defaultModel ?? undefined,
+          },
+          settings
+        ),
         settings
       )
     )
@@ -602,7 +616,10 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_MESSAGES, async () => {
     const pi = workspaceManager.getActivePiManager()
     if (!pi || pi.getStatus().status !== 'running') return null
-    return pi.sendCommand({ type: 'get_messages' })
+    const response = await pi.sendCommand({ type: 'get_messages' })
+    // Cap + trim before crossing IPC. Full multi‑MB histories clone onto the
+    // renderer and freeze both processes ("Not Responding" on Windows).
+    return trimGetMessagesResponse(response)
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_STATS, async () => {
@@ -1572,6 +1589,102 @@ function validateStartOptions(value: unknown): PiStartOptions {
   return opts
 }
 
+// ─── Session history trim (get_messages) ─────────────────────────────────────
+
+/** How many messages to ship to the renderer (most recent). */
+const MAX_MESSAGES_FOR_UI = 150
+/** Cap individual text/tool blobs so one bash dump can't freeze paint. */
+const MAX_CONTENT_CHARS = 80_000
+
+/**
+ * Shrink a Pi `get_messages` response before IPC. Drops old turns and truncates
+ * huge tool outputs / assistant bodies. Shape is preserved for the renderer parser.
+ */
+function trimGetMessagesResponse(response: unknown): unknown {
+  if (!response || typeof response !== 'object') return response
+  const root = response as Record<string, unknown>
+  const data = root.data
+  if (!data || typeof data !== 'object') return response
+  const dataObj = data as Record<string, unknown>
+  const messages = dataObj.messages
+  if (!Array.isArray(messages)) return response
+
+  const sliced =
+    messages.length > MAX_MESSAGES_FOR_UI
+      ? messages.slice(messages.length - MAX_MESSAGES_FOR_UI)
+      : messages
+
+  const trimmed = sliced.map((msg) => trimMessagePayload(msg))
+  return {
+    ...root,
+    data: {
+      ...dataObj,
+      messages: trimmed,
+      // Hint for UI if we dropped older turns (optional; renderer may ignore).
+      truncatedFromStart: messages.length > MAX_MESSAGES_FOR_UI,
+      totalMessageCount: messages.length,
+    },
+  }
+}
+
+function trimMessagePayload(msg: unknown): unknown {
+  if (!msg || typeof msg !== 'object') return msg
+  const m = msg as Record<string, unknown>
+  const next: Record<string, unknown> = { ...m }
+
+  if (typeof next.content === 'string' && next.content.length > MAX_CONTENT_CHARS) {
+    next.content =
+      next.content.slice(0, MAX_CONTENT_CHARS) +
+      `\n\n… truncated ${next.content.length - MAX_CONTENT_CHARS} characters for UI performance`
+  } else if (Array.isArray(next.content)) {
+    next.content = next.content.map((block) => {
+      if (!block || typeof block !== 'object') return block
+      const b = block as Record<string, unknown>
+      if (typeof b.text === 'string' && b.text.length > MAX_CONTENT_CHARS) {
+        return {
+          ...b,
+          text:
+            b.text.slice(0, MAX_CONTENT_CHARS) +
+            `\n\n… truncated ${b.text.length - MAX_CONTENT_CHARS} characters for UI performance`,
+        }
+      }
+      // Drop huge base64 image reloads in history if somehow embedded as data.
+      if (b.type === 'image' && typeof b.data === 'string' && b.data.length > 200_000) {
+        return { ...b, data: '', mimeType: b.mimeType, _omitted: true }
+      }
+      return block
+    })
+  }
+
+  // Tool call arguments / results often hold the worst offenders.
+  if (Array.isArray(next.toolCalls)) {
+    next.toolCalls = next.toolCalls.map((tc) => {
+      if (!tc || typeof tc !== 'object') return tc
+      const t = tc as Record<string, unknown>
+      const out = { ...t }
+      if (typeof out.arguments === 'string' && out.arguments.length > MAX_CONTENT_CHARS) {
+        out.arguments = out.arguments.slice(0, MAX_CONTENT_CHARS) + '…'
+      }
+      if (typeof out.result === 'string' && out.result.length > MAX_CONTENT_CHARS) {
+        out.result =
+          out.result.slice(0, MAX_CONTENT_CHARS) +
+          `\n\n… truncated ${String(t.result).length - MAX_CONTENT_CHARS} characters`
+      }
+      return out
+    })
+  }
+  if (typeof next.result === 'string' && next.result.length > MAX_CONTENT_CHARS) {
+    next.result =
+      next.result.slice(0, MAX_CONTENT_CHARS) +
+      `\n\n… truncated ${String(m.result).length - MAX_CONTENT_CHARS} characters`
+  }
+  if (typeof next.thinking === 'string' && next.thinking.length > MAX_CONTENT_CHARS) {
+    next.thinking = next.thinking.slice(0, MAX_CONTENT_CHARS) + '…'
+  }
+
+  return next
+}
+
 // ─── Session Listing ─────────────────────────────────────────────────────────
 
 interface SessionEntry {
@@ -1584,9 +1697,9 @@ interface SessionEntry {
   projectName: string
 }
 
-// How many session files to read names from in parallel. Mirrors Pi's own
-// bounded concurrency so a large session store doesn't spawn hundreds of reads.
-const SESSION_NAME_READ_CONCURRENCY = 10
+// How many session files to read names from in parallel. Each read is now
+// bounded (head+tail only), so we can run more without freezing main.
+const SESSION_NAME_READ_CONCURRENCY = 24
 
 /** Populate `entry.name` from each session file's latest `session_info`, bounded. */
 async function fillSessionNames(entries: SessionEntry[]): Promise<void> {
@@ -1594,7 +1707,7 @@ async function fillSessionNames(entries: SessionEntry[]): Promise<void> {
   async function worker(): Promise<void> {
     while (cursor < entries.length) {
       const entry = entries[cursor++]
-      entry.name = await readSessionName(entry.path)
+      entry.name = await readSessionNameCached(entry.path, entry.lastModified)
     }
   }
   const workers = Array.from(
@@ -1609,7 +1722,11 @@ function createListSessions(wm: WorkspaceManager) {
     try {
       const sessionsDir = getSessionsRoot()
       const entries: SessionEntry[] = []
-      await collectSessionFiles(sessionsDir, entries, sessionsDir, wm)
+      // Precompute workspace match map once (was O(workspaces) per file).
+      const workspaceBySanitized = new Map(
+        wm.getWorkspaces().map((ws) => [sanitizePath(ws.path).toLowerCase(), ws] as const)
+      )
+      await collectSessionFiles(sessionsDir, entries, sessionsDir, workspaceBySanitized)
       entries.sort((a, b) => b.lastModified - a.lastModified)
       // Only read names for the sessions we actually return (avoids reading the
       // whole store), then surface each session's latest session_info name.
@@ -1629,57 +1746,73 @@ function createListAllSessions(wm: WorkspaceManager) {
   }
 }
 
+/**
+ * Collect top-level parent sessions only.
+ *
+ * Layout under the Pi session store:
+ *   sessions/<sanitized-project>/<timestamp>_<id>.jsonl     ← parent (list these)
+ *   sessions/<sanitized-project>/<timestamp>_<id>/<child>…  ← subagent runs
+ *
+ * Extensions like pi-subagents nest each run under the parent session folder.
+ * Recursing into those folders flooded Recent Sessions with ephemeral child
+ * runs. We only index `.jsonl` files that sit directly in a project directory.
+ */
 async function collectSessionFiles(
-  dir: string,
+  _dir: string,
   entries: SessionEntry[],
   sessionsRoot: string,
-  wm: WorkspaceManager
+  workspaceBySanitized: Map<string, { path: string; name: string }>
 ): Promise<void> {
   try {
-    const items = await readdir(dir, { withFileTypes: true })
-    for (const item of items) {
-      const fullPath = join(dir, item.name)
-      if (item.isDirectory()) {
-        await collectSessionFiles(fullPath, entries, sessionsRoot, wm)
-      } else if (item.isFile() && item.name.endsWith(JSONL_EXTENSION)) {
-        try {
-          const fileStat = await stat(fullPath)
+    const projectDirs = await readdir(sessionsRoot, { withFileTypes: true })
+    await Promise.all(
+      projectDirs
+        .filter((d) => d.isDirectory())
+        .map(async (projectDir) => {
+          const projectFull = join(sessionsRoot, projectDir.name)
+          const relativeToRoot = sessionDirName(projectFull, sessionsRoot) || projectDir.name
 
-          // Determine project path from the directory structure. Normalized so
-          // Windows session dirs (backslash-separated) compare correctly.
-          const relativeToRoot = sessionDirName(dir, sessionsRoot)
           let projectPath = ''
           let projectName = 'Unknown'
-
-          if (relativeToRoot) {
-            // Try to match against known workspace paths
-            const workspaces = wm.getWorkspaces()
-            const matched = workspaces.find((ws) => pathsEqual(sanitizePath(ws.path), relativeToRoot))
-
-            if (matched) {
-              projectPath = matched.path
-              projectName = matched.name
-            } else {
-              // Fallback: desanitize (lossy) and derive a clean basename.
-              projectPath = desanitizeSessionDir(relativeToRoot)
-              projectName = projectNameFromPath(projectPath)
-            }
+          const matched =
+            workspaceBySanitized.get(relativeToRoot.toLowerCase()) ??
+            workspaceBySanitized.get(sanitizePath(relativeToRoot).toLowerCase())
+          if (matched) {
+            projectPath = matched.path
+            projectName = matched.name
+          } else {
+            projectPath = desanitizeSessionDir(relativeToRoot)
+            projectName = projectNameFromPath(projectPath)
           }
 
-          entries.push({
-            path: fullPath,
-            name: null,
-            sessionId: item.name.replace(JSONL_EXTENSION, ''),
-            lastModified: fileStat.mtimeMs,
-            messageCount: 0,
-            projectPath,
-            projectName,
-          })
-        } catch {
-          // Skip unreadable files
-        }
-      }
-    }
+          let items: Array<{ name: string; isFile: () => boolean }>
+          try {
+            items = await readdir(projectFull, { withFileTypes: true })
+          } catch {
+            return
+          }
+
+          for (const item of items) {
+            // Parent sessions only — skip directories (subagent nests) and non-jsonl.
+            if (!item.isFile() || !item.name.endsWith(JSONL_EXTENSION)) continue
+            const fullPath = join(projectFull, item.name)
+            try {
+              const fileStat = await stat(fullPath)
+              entries.push({
+                path: fullPath,
+                name: null,
+                sessionId: item.name.replace(JSONL_EXTENSION, ''),
+                lastModified: fileStat.mtimeMs,
+                messageCount: 0,
+                projectPath,
+                projectName,
+              })
+            } catch {
+              // Skip unreadable files
+            }
+          }
+        })
+    )
   } catch {
     // Directory doesn't exist or isn't readable
   }

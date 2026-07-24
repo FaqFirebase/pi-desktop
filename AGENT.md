@@ -94,8 +94,8 @@ src/
         └── components/
             ├── sidebar.tsx        # Workspace switcher, nav, sessions, inline rename
             ├── sidebar-session-labels.ts # Session row label helpers
-            ├── home-screen.tsx    # Home/launcher screen
-            ├── stats-panel.tsx    # Persistent activity-stats dashboard (Home)
+            ├── home-screen.tsx    # Home launcher (info splash or minimal Codex-style; layout via settings)
+            ├── stats-panel.tsx    # Activity stats (Home info + Settings Activity)
             ├── chat-panel.tsx     # Main streaming chat
             ├── chat-input.tsx     # Input with #tag support
             ├── chat-code-highlight.ts # Fenced-code syntax highlighting -> HTML
@@ -207,6 +207,8 @@ src/
 
 ### Home / Activity Dashboard
 
+- `homeLayout` setting (`info` | `minimal`, default `info`): Info is the classic stats/recents splash; Minimal is a Codex-style center composer with project picker and sidebar chrome
+- Settings opens with **Activity** (calendar/model stats only) and a **Home Layout** toggle (Info | Minimal) next to it
 - Range-selectable (7d–1y) stats: sessions, messages, tokens, active days, current/longest streak, peak hour, per-model input/output token usage
 - Persisted per-day aggregate store (`activity-stats.ts`) survives session deletion (captured before the file is removed); only aggregate numbers are stored, never prompt/response text
 - Baseline-scanned on launch (non-blocking) so stats are accurate even if Home is never opened that run

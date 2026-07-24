@@ -19,11 +19,23 @@ import {
   Sparkles,
   Pencil,
 } from 'lucide-react'
-import { useState, useRef } from 'react'
+import { useMemo, useState, useRef } from 'react'
 import { StatusPopover } from './status-popover'
 import { useContextMenu, buildSessionContextMenu } from './context-menu'
 import { getSessionRowLabels } from './sidebar-session-labels'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
+
+/** Cap how many workspace groups appear in the Recent list. */
+const MAX_RECENT_GROUPS = 12
+/** Cap sessions shown inside an expanded workspace group. */
+const MAX_SESSIONS_PER_GROUP = 12
+
+interface RecentSessionGroup {
+  projectPath: string
+  projectName: string
+  sessions: SessionListItem[]
+  latest: SessionListItem
+}
 
 export function Sidebar(): React.JSX.Element {
   const currentView = useAppStore((state) => state.currentView)
@@ -96,23 +108,89 @@ export function Sidebar(): React.JSX.Element {
   )
 
   // Archived sessions live in their own collapsible section; Recent excludes them.
-  const recentSessions = sessionList.filter((s) => !(s.sessionId in archivedSessions)).slice(0, 20)
-  const archivedList = sessionList.filter((s) => s.sessionId in archivedSessions)
+  const activeSessions = useMemo(
+    () => sessionList.filter((s) => !(s.sessionId in archivedSessions)),
+    [sessionList, archivedSessions]
+  )
+  const archivedList = useMemo(
+    () => sessionList.filter((s) => s.sessionId in archivedSessions),
+    [sessionList, archivedSessions]
+  )
+
+  // Group recents by project folder (path). Display name = folder basename.
+  const recentGroups = useMemo((): RecentSessionGroup[] => {
+    // Normalize path casing so Windows paths don't split the same folder.
+    const byProject = new Map<string, { displayPath: string; sessions: SessionListItem[] }>()
+    for (const session of activeSessions) {
+      const displayPath = session.projectPath || 'unknown'
+      const key = displayPath.toLowerCase()
+      const existing = byProject.get(key)
+      if (existing) existing.sessions.push(session)
+      else byProject.set(key, { displayPath, sessions: [session] })
+    }
+
+    const groups: RecentSessionGroup[] = []
+    for (const { displayPath, sessions } of byProject.values()) {
+      const sorted = [...sessions].sort((a, b) => b.lastModified - a.lastModified)
+      const latest = sorted[0]
+      if (!latest) continue
+      const folderName =
+        latest.projectName?.trim() ||
+        displayPath.split(/[\\/]/).filter(Boolean).pop() ||
+        displayPath
+      groups.push({
+        projectPath: displayPath,
+        projectName: folderName,
+        sessions: sorted.slice(0, MAX_SESSIONS_PER_GROUP),
+        latest,
+      })
+    }
+
+    groups.sort((a, b) => b.latest.lastModified - a.latest.lastModified)
+    return groups.slice(0, MAX_RECENT_GROUPS)
+  }, [activeSessions])
+
+  // Explicit expand/collapse overrides. Folders default to collapsed except the
+  // one that contains the active session (until the user toggles).
+  const [expandOverride, setExpandOverride] = useState<Record<string, boolean>>({})
+
+  const activeProjectKey = useMemo(() => {
+    if (!sessionState?.sessionFile) return null
+    const active = activeSessions.find((s) => s.path === sessionState.sessionFile)
+    return active ? (active.projectPath || 'unknown').toLowerCase() : null
+  }, [activeSessions, sessionState?.sessionFile])
+
+  const isGroupExpanded = (projectPath: string): boolean => {
+    const key = projectPath.toLowerCase()
+    if (Object.prototype.hasOwnProperty.call(expandOverride, key)) {
+      return expandOverride[key]
+    }
+    return activeProjectKey === key
+  }
+
+  const toggleGroup = (projectPath: string): void => {
+    const key = projectPath.toLowerCase()
+    setExpandOverride((prev) => ({
+      ...prev,
+      [key]: !isGroupExpanded(projectPath),
+    }))
+  }
 
   const openSession = async (session: SessionListItem): Promise<void> => {
-    // Auto-switch workspace if session is from a different project
+    // Auto-switch workspace if session is from a different project. Skip the
+    // resume+history load — switchSession below loads the target session once.
     if (session.projectPath && session.projectPath !== activeWorkspace?.path) {
       const matchingWs = workspaces.find((w) => w.path === session.projectPath)
       if (matchingWs) {
-        await switchWorkspace(matchingWs.id)
+        await switchWorkspace(matchingWs.id, { skipSessionLoad: true })
       } else {
         await useAppStore.getState().createWorkspace(session.projectName, session.projectPath)
         const updated = useAppStore.getState().workspaces
         const newWs = updated.find((w) => w.path === session.projectPath)
-        if (newWs) await switchWorkspace(newWs.id)
+        if (newWs) await switchWorkspace(newWs.id, { skipSessionLoad: true })
       }
     }
-    switchSession(session.path)
+    await switchSession(session.path)
     // Bring the chat into view (may be on Settings/Notes/etc.). In-app switches
     // keep their remembered scroll position, so no force-to-bottom here.
     setCurrentView('chat')
@@ -152,16 +230,23 @@ export function Sidebar(): React.JSX.Element {
     ])
   }
 
-  const renderSessionRow = (session: SessionListItem): React.JSX.Element => {
+  const renderSessionRow = (
+    session: SessionListItem,
+    options?: { nested?: boolean }
+  ): React.JSX.Element => {
     const labels = getSessionRowLabels(session)
     const isActive = sessionState?.sessionFile === session.path
+    const nested = options?.nested ?? false
 
     // Inline rename for the active row.
     if (isActive && renamingWhere === 'recent') {
       return (
         <div
           key={session.path}
-          className="flex w-full items-center gap-2 rounded bg-card px-2 py-1.5"
+          className={clsx(
+            'flex w-full items-center gap-2 rounded bg-card px-2 py-1.5',
+            nested && 'pl-2'
+          )}
         >
           <Clock size={12} className="shrink-0 text-muted" />
           {renderRenameInput()}
@@ -180,6 +265,7 @@ export function Sidebar(): React.JSX.Element {
           : 'Click to open · right-click for actions'}
         className={clsx(
           'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
+          nested && 'pl-2',
           isActive
             ? 'bg-card text-primary'
             : 'hover:bg-highlight text-muted hover:text-secondary'
@@ -188,11 +274,60 @@ export function Sidebar(): React.JSX.Element {
         <Clock size={12} className="shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="truncate">{labels.title}</div>
-          {labels.subtitle && (
-            <div className="text-[10px] text-faint truncate">{labels.subtitle}</div>
-          )}
         </div>
       </button>
+    )
+  }
+
+  const renderRecentGroup = (group: RecentSessionGroup): React.JSX.Element => {
+    const expanded = isGroupExpanded(group.projectPath)
+    const isCurrentFolder =
+      !!activeWorkspace?.path &&
+      activeWorkspace.path.toLowerCase() === group.projectPath.toLowerCase()
+    const count = group.sessions.length
+
+    return (
+      <div key={group.projectPath.toLowerCase()} className="mb-1">
+        {/* Folder header — primary grouping unit */}
+        <button
+          type="button"
+          onClick={() => toggleGroup(group.projectPath)}
+          title={group.projectPath}
+          aria-expanded={expanded}
+          className={clsx(
+            'flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left transition-colors',
+            isCurrentFolder
+              ? 'bg-accent-bg/40 text-primary'
+              : 'text-secondary hover:bg-highlight hover:text-primary'
+          )}
+        >
+          <ChevronDown
+            size={12}
+            className={clsx(
+              'shrink-0 text-dim transition-transform',
+              !expanded && '-rotate-90'
+            )}
+          />
+          <FolderOpen
+            size={12}
+            className={clsx('shrink-0', isCurrentFolder ? 'text-accent-fg' : 'text-dim')}
+          />
+          <span className="min-w-0 flex-1 truncate text-xs font-medium">
+            {group.projectName}
+          </span>
+          <span className="shrink-0 text-[10px] text-faint">
+            {count}
+          </span>
+        </button>
+
+        {expanded && (
+          <div className="mt-0.5 space-y-0.5 border-l border-border/70 ml-3 pl-1">
+            {group.sessions.map((session) =>
+              renderSessionRow(session, { nested: true })
+            )}
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -316,15 +451,15 @@ export function Sidebar(): React.JSX.Element {
         )
       )}
 
-      {/* Recent sessions */}
+      {/* Recent sessions — one dropdown per workspace */}
       <div className="mt-4 flex-1 overflow-y-auto px-2">
         <div className="px-2 py-1 text-xs font-medium text-dim uppercase tracking-wider">
           Recent Sessions
         </div>
-        {recentSessions.length === 0 ? (
+        {recentGroups.length === 0 ? (
           <div className="px-2 py-2 text-xs text-faint">No sessions yet</div>
         ) : (
-          recentSessions.map(renderSessionRow)
+          recentGroups.map(renderRecentGroup)
         )}
       </div>
 
@@ -345,7 +480,7 @@ export function Sidebar(): React.JSX.Element {
           </button>
           {archivedOpen && (
             <div className="max-h-48 overflow-y-auto pb-1">
-              {archivedList.map(renderSessionRow)}
+              {archivedList.map((session) => renderSessionRow(session))}
             </div>
           )}
         </div>

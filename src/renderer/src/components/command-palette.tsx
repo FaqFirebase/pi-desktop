@@ -105,13 +105,26 @@ export function CommandPalette(): React.JSX.Element | null {
 
   if (!open) return null
 
+  // Close the palette. When opened from a composer slash (`replace`), also
+  // clear that slash draft so the user does not have to delete `/` twice.
+  const dismiss = (clearSlashDraft: boolean): void => {
+    if (clearSlashDraft && replace) {
+      insertPrompt('', true)
+    }
+    setCommandPalette(false)
+  }
+
   const choose = (cmd: PiCommand | undefined): void => {
     if (cmd) {
       if (cmd.source === BUILTIN_SOURCE) {
         builtins.find((b) => b.name === cmd.name)?.run()
+        // Built-ins don't insert text; drop the composer's `/…` draft.
+        if (replace) insertPrompt('', true)
       } else {
         insertPrompt(invocationToken(cmd.name, cmd.source), replace)
       }
+    } else if (replace) {
+      insertPrompt('', true)
     }
     setCommandPalette(false)
   }
@@ -119,7 +132,7 @@ export function CommandPalette(): React.JSX.Element | null {
   const handleKeyDown = (e: React.KeyboardEvent): void => {
     if (e.key === 'Escape') {
       e.preventDefault()
-      setCommandPalette(false)
+      dismiss(true)
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
       setActiveIndex((i) => Math.min(i + 1, flat.length - 1))
@@ -132,10 +145,20 @@ export function CommandPalette(): React.JSX.Element | null {
     }
   }
 
+  const handleQueryChange = (value: string): void => {
+    setQuery(value)
+    // Composer-driven opens always start with `/`. If the user deletes the
+    // slash (or the whole token), close and put any remaining text back.
+    if (replace && !value.startsWith('/')) {
+      insertPrompt(value, true)
+      setCommandPalette(false)
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-24"
-      onClick={() => setCommandPalette(false)}
+      onClick={() => dismiss(true)}
     >
       <div
         className="w-full max-w-lg overflow-hidden rounded-lg border border-border-strong bg-surface shadow-2xl"
@@ -147,7 +170,7 @@ export function CommandPalette(): React.JSX.Element | null {
             ref={inputRef}
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => handleQueryChange(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Run a skill, prompt, or command..."
             className="flex-1 bg-transparent text-sm text-primary placeholder:text-faint outline-none"

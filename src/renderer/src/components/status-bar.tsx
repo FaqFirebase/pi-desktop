@@ -1,13 +1,11 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '../store'
-import type { ModelInfo } from '../../../shared/ipc-contracts'
-import { filterModels } from '../utils/model-search'
+import { ModelSelector } from './model-selector'
 import { clsx } from 'clsx'
 import {
   PanelLeft,
   PanelLeftClose,
   Terminal,
-  Cpu,
   Zap,
   DollarSign,
   Layers,
@@ -17,7 +15,6 @@ import {
   ChevronUp,
   Check,
   GitBranch,
-  Search,
 } from 'lucide-react'
 
 export function StatusBar(): React.JSX.Element {
@@ -112,7 +109,7 @@ export function StatusBar(): React.JSX.Element {
       {/* Right section */}
       <div className="flex items-center gap-3">
         {/* Model selector */}
-        <ModelSelector />
+        <ModelSelector placement="up" variant="status" />
 
         {/* Thinking level */}
         <ThinkingLevelSelector />
@@ -187,188 +184,6 @@ export function StatusBar(): React.JSX.Element {
           <Settings size={12} />
         </button>
       </div>
-    </div>
-  )
-}
-
-// ─── Model Selector ──────────────────────────────────────────────────────────
-
-function ModelSelector(): React.JSX.Element {
-  const sessionState = useAppStore((state) => state.sessionState)
-  const setModel = useAppStore((state) => state.setModel)
-  const piStatus = useAppStore((state) => state.piStatus)
-
-  const [isOpen, setIsOpen] = useState(false)
-  const [models, setModels] = useState<ModelInfo[]>([])
-  const [loading, setLoading] = useState(false)
-  const [query, setQuery] = useState('')
-  const ref = useRef<HTMLDivElement>(null)
-  const searchRef = useRef<HTMLInputElement>(null)
-
-  const currentModel = sessionState?.model
-
-  const close = (): void => {
-    setIsOpen(false)
-    setQuery('')
-  }
-
-  useEffect(() => {
-    if (!isOpen || piStatus !== 'running') return
-
-    const loadModels = async () => {
-      setLoading(true)
-      try {
-        const response = await window.piDesktop.model.listAvailable() as {
-          success?: boolean
-          data?: { models?: ModelInfo[] }
-        } | null
-        if (response?.success && response.data?.models) {
-          setModels(response.data.models)
-        }
-      } catch {
-        // ignore
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadModels()
-  }, [isOpen, piStatus])
-
-  useEffect(() => {
-    if (!isOpen) return
-    const id = requestAnimationFrame(() => searchRef.current?.focus())
-    return () => cancelAnimationFrame(id)
-  }, [isOpen])
-
-  useEffect(() => {
-    if (!isOpen) return
-
-    const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        close()
-      }
-    }
-
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [isOpen])
-
-  const filteredModels = useMemo(
-    () => filterModels(models, query),
-    [models, query]
-  )
-
-  const handleSelect = async (model: ModelInfo) => {
-    await setModel(model.provider, model.id)
-    close()
-  }
-
-  if (piStatus !== 'running') return <></>
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => (isOpen ? close() : setIsOpen(true))}
-        className="flex items-center gap-1 text-dim hover:text-secondary transition-colors"
-        title="Select model (Ctrl+P to cycle)"
-      >
-        <Cpu size={10} />
-        <span className="max-w-[140px] truncate">
-          {currentModel?.name ?? 'No model'}
-        </span>
-        <ChevronUp size={10} className={clsx('transition-transform', isOpen && 'rotate-180')} />
-      </button>
-
-      {isOpen && (
-        <div className="absolute bottom-full right-0 mb-1 w-72 rounded-lg border border-border-strong bg-surface shadow-xl shadow-black/40 py-1 animate-fade-in z-50">
-          {currentModel && (
-            <div className="px-3 py-2 border-b border-border">
-              <div className="text-xs text-muted">Current</div>
-              <div className="text-sm text-primary font-medium">{currentModel.name}</div>
-              <div className="text-xs text-dim mt-0.5">
-                {currentModel.provider} · {currentModel.id}
-              </div>
-            </div>
-          )}
-
-          <div className="border-b border-border px-2 py-1.5">
-            <div className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1">
-              <Search size={12} className="shrink-0 text-dim" />
-              <input
-                ref={searchRef}
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    e.stopPropagation()
-                    if (query) setQuery('')
-                    else close()
-                  }
-                }}
-                placeholder="Search models..."
-                className="min-w-0 flex-1 bg-transparent text-xs text-primary placeholder:text-faint outline-none"
-                aria-label="Search models"
-              />
-            </div>
-          </div>
-
-          <div className="max-h-64 overflow-y-auto py-1">
-            {loading ? (
-              <div className="flex items-center justify-center py-4">
-                <Loader2 size={16} className="animate-spin text-dim" />
-              </div>
-            ) : models.length === 0 ? (
-              <div className="px-3 py-4 text-center text-xs text-faint">
-                No models available
-              </div>
-            ) : filteredModels.length === 0 ? (
-              <div className="px-3 py-4 text-center text-xs text-faint">
-                No models match “{query.trim()}”
-              </div>
-            ) : (
-              filteredModels.map((model) => (
-                <button
-                  key={`${model.provider}/${model.id}`}
-                  onClick={() => handleSelect(model)}
-                  className={clsx(
-                    'flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-hover transition-colors',
-                    currentModel?.id === model.id && currentModel?.provider === model.provider && 'bg-card'
-                  )}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-primary">{model.name}</span>
-                      {currentModel?.id === model.id && currentModel?.provider === model.provider && (
-                        <Check size={12} className="text-success shrink-0" />
-                      )}
-                    </div>
-                    <div className="text-[10px] text-faint mt-0.5">
-                      {model.provider} · ctx: {(model.contextWindow / 1000).toFixed(0)}k
-                      {model.reasoning && ' · reasoning'}
-                    </div>
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-
-          <div className="border-t border-border px-3 py-1.5 flex items-center justify-between">
-            <span className="text-[10px] text-faint">
-              {query.trim()
-                ? `${filteredModels.length} of ${models.length}`
-                : 'Ctrl+P to cycle'}
-            </span>
-            <button
-              onClick={close}
-              className="text-[10px] text-faint hover:text-muted"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

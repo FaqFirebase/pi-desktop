@@ -135,6 +135,20 @@
     margin-bottom: 0;
   }
 
+  /* Live stream caret: attach to the last block so it tracks the end of the
+     current chunk instead of rendering as a sibling one line below. */
+  .markdown-body.streaming-md > *:last-child::after {
+    content: '';
+    display: inline-block;
+    width: 0.375rem;
+    height: 1em;
+    margin-left: 0.125rem;
+    vertical-align: text-bottom;
+    background: var(--color-accent);
+    border-radius: 1px;
+    animation: pulse-dot 1.5s ease-in-out infinite;
+  }
+
   .markdown-body h1,
   .markdown-body h2,
   .markdown-body h3,
@@ -336,6 +350,11 @@
 
   .animate-fade-in {
     animation: fade-in 0.2s ease-out;
+  }
+
+  @keyframes fleet-shimmer {
+    0% { transform: translateX(-120%); }
+    100% { transform: translateX(320%); }
   }
 }
 
