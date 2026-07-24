@@ -117,24 +117,30 @@ export function Sidebar(): React.JSX.Element {
     [sessionList, archivedSessions]
   )
 
-  // Group recents by workspace so each project is a dropdown of its sessions.
+  // Group recents by project folder (path). Display name = folder basename.
   const recentGroups = useMemo((): RecentSessionGroup[] => {
-    const byProject = new Map<string, SessionListItem[]>()
+    // Normalize path casing so Windows paths don't split the same folder.
+    const byProject = new Map<string, { displayPath: string; sessions: SessionListItem[] }>()
     for (const session of activeSessions) {
-      const key = session.projectPath || 'unknown'
-      const list = byProject.get(key)
-      if (list) list.push(session)
-      else byProject.set(key, [session])
+      const displayPath = session.projectPath || 'unknown'
+      const key = displayPath.toLowerCase()
+      const existing = byProject.get(key)
+      if (existing) existing.sessions.push(session)
+      else byProject.set(key, { displayPath, sessions: [session] })
     }
 
     const groups: RecentSessionGroup[] = []
-    for (const [projectPath, sessions] of byProject) {
+    for (const { displayPath, sessions } of byProject.values()) {
       const sorted = [...sessions].sort((a, b) => b.lastModified - a.lastModified)
       const latest = sorted[0]
       if (!latest) continue
+      const folderName =
+        latest.projectName?.trim() ||
+        displayPath.split(/[\\/]/).filter(Boolean).pop() ||
+        displayPath
       groups.push({
-        projectPath,
-        projectName: latest.projectName || projectPath,
+        projectPath: displayPath,
+        projectName: folderName,
         sessions: sorted.slice(0, MAX_SESSIONS_PER_GROUP),
         latest,
       })
@@ -144,27 +150,29 @@ export function Sidebar(): React.JSX.Element {
     return groups.slice(0, MAX_RECENT_GROUPS)
   }, [activeSessions])
 
-  // Explicit expand/collapse overrides. Groups default to collapsed except the
+  // Explicit expand/collapse overrides. Folders default to collapsed except the
   // one that contains the active session (until the user toggles).
   const [expandOverride, setExpandOverride] = useState<Record<string, boolean>>({})
 
-  const activeProjectPath = useMemo(() => {
+  const activeProjectKey = useMemo(() => {
     if (!sessionState?.sessionFile) return null
     const active = activeSessions.find((s) => s.path === sessionState.sessionFile)
-    return active ? active.projectPath || 'unknown' : null
+    return active ? (active.projectPath || 'unknown').toLowerCase() : null
   }, [activeSessions, sessionState?.sessionFile])
 
   const isGroupExpanded = (projectPath: string): boolean => {
-    if (Object.prototype.hasOwnProperty.call(expandOverride, projectPath)) {
-      return expandOverride[projectPath]
+    const key = projectPath.toLowerCase()
+    if (Object.prototype.hasOwnProperty.call(expandOverride, key)) {
+      return expandOverride[key]
     }
-    return activeProjectPath === projectPath
+    return activeProjectKey === key
   }
 
   const toggleGroup = (projectPath: string): void => {
+    const key = projectPath.toLowerCase()
     setExpandOverride((prev) => ({
       ...prev,
-      [projectPath]: !isGroupExpanded(projectPath),
+      [key]: !isGroupExpanded(projectPath),
     }))
   }
 
@@ -223,12 +231,11 @@ export function Sidebar(): React.JSX.Element {
 
   const renderSessionRow = (
     session: SessionListItem,
-    options?: { nested?: boolean; hideProjectSubtitle?: boolean }
+    options?: { nested?: boolean }
   ): React.JSX.Element => {
     const labels = getSessionRowLabels(session)
     const isActive = sessionState?.sessionFile === session.path
     const nested = options?.nested ?? false
-    const hideProjectSubtitle = options?.hideProjectSubtitle ?? false
 
     // Inline rename for the active row.
     if (isActive && renamingWhere === 'recent') {
@@ -237,7 +244,7 @@ export function Sidebar(): React.JSX.Element {
           key={session.path}
           className={clsx(
             'flex w-full items-center gap-2 rounded bg-card px-2 py-1.5',
-            nested && 'pl-6'
+            nested && 'pl-2'
           )}
         >
           <Clock size={12} className="shrink-0 text-muted" />
@@ -257,7 +264,7 @@ export function Sidebar(): React.JSX.Element {
           : 'Click to open · right-click for actions'}
         className={clsx(
           'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
-          nested && 'pl-6',
+          nested && 'pl-2',
           isActive
             ? 'bg-card text-primary'
             : 'hover:bg-highlight text-muted hover:text-secondary'
@@ -266,9 +273,6 @@ export function Sidebar(): React.JSX.Element {
         <Clock size={12} className="shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="truncate">{labels.title}</div>
-          {!hideProjectSubtitle && labels.subtitle && (
-            <div className="text-[10px] text-faint truncate">{labels.subtitle}</div>
-          )}
         </div>
       </button>
     )
@@ -276,40 +280,49 @@ export function Sidebar(): React.JSX.Element {
 
   const renderRecentGroup = (group: RecentSessionGroup): React.JSX.Element => {
     const expanded = isGroupExpanded(group.projectPath)
-    const hasMultiple = group.sessions.length > 1
+    const isCurrentFolder =
+      !!activeWorkspace?.path &&
+      activeWorkspace.path.toLowerCase() === group.projectPath.toLowerCase()
+    const count = group.sessions.length
 
     return (
-      <div key={group.projectPath} className="mb-0.5">
-        <div className="flex items-stretch gap-0.5">
-          {hasMultiple ? (
-            <button
-              type="button"
-              onClick={() => toggleGroup(group.projectPath)}
-              className="flex shrink-0 items-center rounded px-1 text-dim hover:bg-highlight hover:text-secondary transition-colors"
-              title={
-                expanded
-                  ? 'Collapse sessions'
-                  : `Show ${group.sessions.length - 1} more in ${group.projectName}`
-              }
-              aria-expanded={expanded}
-              aria-label={expanded ? `Collapse ${group.projectName}` : `Expand ${group.projectName}`}
-            >
-              <ChevronDown
-                size={12}
-                className={clsx('transition-transform', !expanded && '-rotate-90')}
-              />
-            </button>
-          ) : (
-            <span className="w-5 shrink-0" aria-hidden />
+      <div key={group.projectPath.toLowerCase()} className="mb-1">
+        {/* Folder header — primary grouping unit */}
+        <button
+          type="button"
+          onClick={() => toggleGroup(group.projectPath)}
+          title={group.projectPath}
+          aria-expanded={expanded}
+          className={clsx(
+            'flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left transition-colors',
+            isCurrentFolder
+              ? 'bg-accent-bg/40 text-primary'
+              : 'text-secondary hover:bg-highlight hover:text-primary'
           )}
-          <div className="min-w-0 flex-1">
-            {renderSessionRow(group.latest, { hideProjectSubtitle: false })}
-          </div>
-        </div>
-        {hasMultiple && expanded && (
-          <div className="mt-0.5 space-y-0.5 border-l border-border/60 ml-2.5">
-            {group.sessions.slice(1).map((session) =>
-              renderSessionRow(session, { nested: true, hideProjectSubtitle: true })
+        >
+          <ChevronDown
+            size={12}
+            className={clsx(
+              'shrink-0 text-dim transition-transform',
+              !expanded && '-rotate-90'
+            )}
+          />
+          <FolderOpen
+            size={12}
+            className={clsx('shrink-0', isCurrentFolder ? 'text-accent-fg' : 'text-dim')}
+          />
+          <span className="min-w-0 flex-1 truncate text-xs font-medium">
+            {group.projectName}
+          </span>
+          <span className="shrink-0 text-[10px] text-faint">
+            {count}
+          </span>
+        </button>
+
+        {expanded && (
+          <div className="mt-0.5 space-y-0.5 border-l border-border/70 ml-3 pl-1">
+            {group.sessions.map((session) =>
+              renderSessionRow(session, { nested: true })
             )}
           </div>
         )}
