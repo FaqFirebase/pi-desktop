@@ -27,7 +27,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc -b --noEmit",
-    "lint": "eslint src bin scripts && node scripts/check-semantic-colors.mjs",
+    "lint": "eslint src bin scripts resources && node scripts/check-semantic-colors.mjs",
     "package": "electron-vite build && electron-builder",
     "package:linux": "electron-vite build && electron-builder --linux",
     "package:linux:appimage": "electron-vite build && electron-builder --linux AppImage",
@@ -107,7 +107,8 @@
         "from": "resources/",
         "to": "resources/",
         "filter": [
-          "**/*"
+          "**/*",
+          "!**/*.test.ts"
         ]
       }
     ],
