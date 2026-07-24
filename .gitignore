@@ -84,6 +84,7 @@ builder-effective-config.yaml
 # Pi project-level settings — created if Pi is ever run with this repo
 # itself as a workspace (see AGENT.md Data Storage: .pi/settings.json)
 .pi/
+.pi-desktop/
 
 # Agent context — local-only memory and architecture notes
 MEMORY.md
