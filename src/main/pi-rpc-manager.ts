@@ -1,5 +1,5 @@
 import { ChildProcess, SpawnOptions, spawn, spawnSync } from 'child_process'
-import { existsSync } from 'fs'
+import { existsSync, mkdirSync } from 'fs'
 import { join, delimiter as PATH_DELIMITER } from 'path'
 import { EventEmitter } from 'events'
 import { StringDecoder } from 'string_decoder'
@@ -10,6 +10,7 @@ import type {
   PiStatus,
   PiResponseEvent,
 } from '../shared/ipc-contracts'
+import { getGuiDataPath } from './app-data-paths'
 
 /**
  * Manages a Pi RPC child process.
@@ -262,6 +263,37 @@ export const PI_CLI = {
 const MAX_PENDING_RESPONSES = 64
 const RESPONSE_TIMEOUT_MS = 30_000
 
+/**
+ * Writable temp directory for the Pi child process. Prefer the GUI data dir so
+ * extensions (pi-subagents, etc.) don't depend on a locked %TEMP% tree.
+ */
+function resolvePiChildTempDir(): string {
+  try {
+    const dir = getGuiDataPath('tmp')
+    mkdirSync(dir, { recursive: true })
+    return dir
+  } catch {
+    // Fall back to home — still more reliable than a broken Local\Temp ACL.
+    const home = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()
+    const dir = join(home, '.pi', 'tmp')
+    try {
+      mkdirSync(dir, { recursive: true })
+    } catch {
+      // Last resort: leave system TEMP as-is via process.env
+    }
+    return dir
+  }
+}
+
+function buildPiChildEnv(): NodeJS.ProcessEnv {
+  const tmp = resolvePiChildTempDir()
+  return {
+    TEMP: tmp,
+    TMP: tmp,
+    TMPDIR: tmp,
+  }
+}
+
 interface PendingResponse {
   resolve: (event: PiResponseEvent) => void
   reject: (error: Error) => void
@@ -379,7 +411,10 @@ export class PiRpcManager extends EventEmitter {
     const spawnOptions: SpawnOptions = {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: options.cwd,
-      env: { ...process.env, ...options.env },
+      // Give Pi (and extensions like pi-subagents) a known-writable temp root.
+      // On Windows, %TEMP%\pi-subagents-* can hit EPERM (Controlled Folder Access,
+      // multi-profile ACLs, AV locks) and abort extension load before ready.
+      env: { ...process.env, ...buildPiChildEnv(), ...options.env },
       // .cmd/.bat/.ps1 shims on Windows can't be invoked directly from
       // spawn — they need the cmd.exe interpreter via shell:true.
       shell: NEEDS_SHELL,
