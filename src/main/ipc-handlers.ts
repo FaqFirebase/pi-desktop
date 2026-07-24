@@ -1,12 +1,16 @@
-import { ipcMain, dialog, shell, app, BrowserWindow } from 'electron'
+import { ipcMain, dialog, shell, app, BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { PiRpcManager, PI_CLI } from './pi-rpc-manager'
 import { WorkspaceManager } from './workspace-manager'
 import { SessionTagManager } from './session-tags'
 import { ArchivedSessionsManager } from './archived-sessions'
 import { TerminalService } from './terminal-service'
 import { NotesManager } from './notes-manager'
-import { getGuiDataPath } from './app-data-paths'
+import { getGuiDataPath, getGuiDataDir } from './app-data-paths'
 import { getSessionsRoot } from './pi-paths'
+import { listUserThemes, saveUserTheme, deleteUserTheme, installThemeFromUrl, fetchGalleryThemes, fetchGalleryImage } from './theme-store'
+import {
+  validateThemeFile, themeIdFromName, MAX_THEME_FILE_BYTES, type ThemeFile,
+} from '../shared/theme/theme-file'
 import {
   sanitizePath,
   sessionDirName,
@@ -30,22 +34,49 @@ import type {
   ModelsReadResult,
   CouncilRunResult,
   CouncilDetectResult,
+  CouncilArbiterResult,
   ActivityStatsResult,
+  ThemesListResult,
+  ThemeImportResult,
+  ThemeExportResult,
+  ThemeGalleryResult,
+  ThemeGalleryImageResult,
+  PermissionRulesScope,
+  PermissionRulesGetResult,
+  PermissionRulesSetResult,
+  PermissionRulesImportResult,
+  PermissionRulesExportResult,
+  PermissionRulesWorkspaceStatus,
+  PermissionRulesRemoveResult,
+  PermissionRulesFile,
 } from '../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { COUNCIL_AGENT_IDS, clampTimeoutSeconds } from '../shared/council-config'
 import { DEFAULT_SETTINGS } from '../shared/default-settings'
-import type { CouncilAgentId, ConsensusMode } from '../shared/council-config'
+import { isValidPackageSpec } from '../shared/package-spec'
+import type { CouncilAgentId, ConsensusMode, ConsultantResult } from '../shared/council-config'
 import { detectAgents } from './agent-detection'
 import { readAttachment } from './attachment-reader'
-import { runConsultants, defaultSpawnConsultant } from './council-manager'
+import { runConsultants, runArbiter, defaultSpawnConsultant, type ArbiterRequest } from './council-manager'
 import { fetchPackageCatalog } from './package-catalog'
+import { applyRunOnStartup } from './startup-launch'
+import { setTrayEnabled } from './tray-manager'
 import type { SessionLineageRecord } from '../shared/session-lineage'
 import { readdir, stat, readFile, writeFile, mkdir, access, unlink } from 'fs/promises'
-import { basename, join } from 'path'
+import { basename, dirname, join, resolve } from 'path'
+import { isPathWithin, isAuthorizedAttachmentPath } from './path-authorization'
+import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
+import { workspaceTrustStore } from './workspace-trust'
 import { existsSync } from 'fs'
 import { execFile, spawnSync } from 'child_process'
 import { promisify } from 'util'
+import {
+  PERMISSION_RULES_FILE_NAME,
+  PERMISSION_RULES_VERSION,
+  loadEffectiveRules,
+  validatePermissionRulesFile,
+  workspaceRulesPath,
+} from '../../resources/permission-rules'
 
 const execFileAsync = promisify(execFile)
 
@@ -59,9 +90,50 @@ const execFileAsync = promisify(execFile)
 const JSONL_EXTENSION = '.jsonl'
 const MAX_SESSION_LIST = 100
 const READ_ONLY_TOOLS = 'read,grep,find,ls'
+const THEMES_DIR_NAME = 'themes'
+const THEME_FILE_FILTER: Electron.FileFilter = { name: 'Theme', extensions: ['json'] }
+
+function themesDir(): string {
+  return join(getGuiDataDir(), THEMES_DIR_NAME)
+}
 const PERMISSIONS_EXTENSION_PATH = app.isPackaged
   ? join(process.resourcesPath, 'resources', 'pi-desktop-permissions.ts')
   : join(app.getAppPath(), 'resources', 'pi-desktop-permissions.ts')
+
+const MAX_PERMISSION_RULES_FILE_BYTES = 512 * 1024
+const PERMISSION_RULES_FILE_FILTER: Electron.FileFilter = { name: 'Permission Rules', extensions: ['json'] }
+
+function getGlobalPermissionRulesPath(): string {
+  return getGuiDataPath(PERMISSION_RULES_FILE_NAME)
+}
+
+function validatePermissionRulesScope(scope: unknown): PermissionRulesScope {
+  if (scope === 'global' || scope === 'workspace') return scope
+  throw new Error('scope must be "global" or "workspace"')
+}
+
+function activeWorkspaceRulesPath(workspaceManager: WorkspaceManager): { path: string; workspacePath: string } {
+  const activeWs = workspaceManager.getActiveWorkspace()
+  if (!activeWs) throw new Error('No active workspace')
+  return { path: workspaceRulesPath(activeWs.path), workspacePath: activeWs.path }
+}
+
+// Reject privileged IPC calls whose sender frame is not the app's own renderer.
+// A belt-and-suspenders check: navigation is already pinned (see index.ts) and
+// preview <webview> guests have no preload, so nothing else should be able to
+// reach these channels — this makes that guarantee explicit at the boundary.
+function assertTrustedSender(event: IpcMainInvokeEvent): void {
+  const url = event.senderFrame?.url
+  if (
+    !url ||
+    !isTrustedRendererUrl(url, {
+      devServerUrl: process.env.ELECTRON_RENDERER_URL,
+      rendererIndexPath: RENDERER_INDEX_PATH,
+    })
+  ) {
+    throw new Error('Unauthorized IPC sender')
+  }
+}
 
 // Type guard helpers
 function isString(value: unknown): value is string {
@@ -172,6 +244,22 @@ function applyResumePreference(options: PiStartOptions, settings: AppSettings): 
   return options
 }
 
+/**
+ * Resolve the working directory for council runs: the active workspace, never
+ * the renderer's input, so agents plan against the real project tree. Falls back
+ * to the home directory if the workspace path is inaccessible.
+ */
+async function resolveCouncilCwd(workspaceManager: WorkspaceManager): Promise<string> {
+  const activeWs = workspaceManager.getActiveWorkspace()
+  if (!activeWs) throw new Error('No active workspace')
+  try {
+    await access(activeWs.path)
+    return activeWs.path
+  } catch {
+    return process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()
+  }
+}
+
 function applyPermissionModeToStartOptions(
   options: PiStartOptions,
   settings: AppSettings
@@ -180,8 +268,8 @@ function applyPermissionModeToStartOptions(
   const args = toolList
     ? [...removeToolArgs(options.args ?? []), '--tools', toolList]
     : [...(options.args ?? [])]
-  const needsApprovalExtension = settings.permissionMode === 'ask-edits' || settings.permissionMode === 'ask-commands'
-  if (needsApprovalExtension && existsSync(PERMISSIONS_EXTENSION_PATH)) {
+  const globalRulesPath = getGlobalPermissionRulesPath()
+  if (existsSync(PERMISSIONS_EXTENSION_PATH)) {
     args.push('-e', PERMISSIONS_EXTENSION_PATH)
   }
 
@@ -191,6 +279,14 @@ function applyPermissionModeToStartOptions(
     env: {
       ...options.env,
       PI_DESKTOP_PERMISSION_MODE: settings.permissionMode,
+      // Resolved here because the extension cannot re-derive the GUI data
+      // dir (env override / canonical appData / legacy fallback).
+      PI_DESKTOP_PERMISSION_RULES_PATH: globalRulesPath,
+      // Gates whether this workspace's own permission-rules.json allow rules
+      // take effect. Untrusted repos may only tighten (deny) — the user grants
+      // trust explicitly (see workspace-trust.ts).
+      PI_DESKTOP_WORKSPACE_TRUSTED:
+        options.cwd && workspaceTrustStore.isTrusted(options.cwd) ? '1' : '0',
     },
   }
 }
@@ -304,6 +400,11 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   const archivedSessions = new ArchivedSessionsManager()
   const terminalService = new TerminalService()
   const notesManager = new NotesManager()
+
+  // Absolute paths the user explicitly picked via the native open dialog. The
+  // attachment reader will only read these (or files inside the workspace), so a
+  // renderer cannot ask it to read arbitrary files by path.
+  const approvedAttachmentPaths = new Set<string>()
 
   // Helper: get Pi manager for active workspace
   function getActivePi(): PiRpcManager {
@@ -419,7 +520,8 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
 
   // ─── Terminal ──────────────────────────────────────────────────────────
 
-  ipcMain.handle(IPC_CHANNELS.TERMINAL_START, async (_event, options: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.TERMINAL_START, async (event, options: unknown) => {
+    assertTrustedSender(event)
     const opts = isObject(options) ? options : {}
     return terminalService.start(
       {
@@ -432,7 +534,8 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     )
   })
 
-  ipcMain.handle(IPC_CHANNELS.TERMINAL_INPUT, async (_event, data: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.TERMINAL_INPUT, async (event, data: unknown) => {
+    assertTrustedSender(event)
     if (!isString(data)) throw new Error('terminal input must be a string')
     terminalService.write(data)
   })
@@ -523,10 +626,16 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     return getActivePi().sendCommand({ type: 'get_fork_messages' })
   })
 
-  ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, async (_event, sessionPath: unknown): Promise<SessionDeleteResult> => {
+  ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, async (event, sessionPath: unknown): Promise<SessionDeleteResult> => {
+    assertTrustedSender(event)
     if (!isString(sessionPath)) throw new Error('sessionPath must be a string')
     if (!sessionPath.endsWith(SESSION_FILE_EXTENSION)) {
       throw new Error('sessionPath must point to a .jsonl session file')
+    }
+    // Confine deletion to Pi's session store so a renderer cannot delete an
+    // arbitrary .jsonl file elsewhere on disk.
+    if (!isPathWithin(getSessionsRoot(), sessionPath)) {
+      throw new Error('sessionPath must be inside the Pi sessions directory')
     }
 
     // Roll this session into the persisted stats store *before* removing the
@@ -606,12 +715,279 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   ipcMain.handle(IPC_CHANNELS.SETTINGS_SAVE, async (_event, settings: unknown) => {
     if (!isObject(settings)) throw new Error('settings must be an object')
     await saveAppSettings(settings as Partial<AppSettings>)
+    // Reflect a "run on startup" change to the OS immediately (login item on
+    // macOS/Windows, autostart entry on Linux). Only applied when the field is
+    // part of this save to avoid redundant OS writes.
+    if ('runOnStartup' in settings) {
+      await applyRunOnStartup(Boolean((settings as Partial<AppSettings>).runOnStartup))
+    }
+    // Reflect a "minimize to tray" change immediately: create/destroy the tray
+    // icon so the close behavior matches the new setting without a restart.
+    if ('minimizeToTrayOnClose' in settings) {
+      setTrayEnabled(Boolean((settings as Partial<AppSettings>).minimizeToTrayOnClose))
+    }
     return loadAppSettings(workspaceManager)
   })
 
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_THEME, async () => {
+  // Reconcile the OS-level "run on startup" state with the saved preference on
+  // launch. Self-healing: repairs a stale Linux autostart Exec path after an
+  // app update/move and re-asserts the login item on macOS/Windows. Runs in the
+  // background so a failure never blocks handler registration.
+  void loadAppSettings(workspaceManager)
+    .then((settings) => applyRunOnStartup(settings.runOnStartup))
+    .catch((err) => console.error('[startup] Failed to reconcile run-on-startup:', err))
+
+  // ─── Permission Rules ───────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_GET, async (_event, scope: unknown): Promise<PermissionRulesGetResult> => {
+    try {
+      let rulesPath: string
+      if (validatePermissionRulesScope(scope) === 'global') {
+        rulesPath = getGlobalPermissionRulesPath()
+      } else {
+        // No active workspace means no workspace file — not an error, so the
+        // panel never mistakes this state for a corrupt file.
+        const activeWs = workspaceManager.getActiveWorkspace()
+        if (!activeWs) return { ok: true, rules: [], exists: false }
+        rulesPath = workspaceRulesPath(activeWs.path)
+      }
+      if (!existsSync(rulesPath)) return { ok: true, rules: [], exists: false }
+      const file = validatePermissionRulesFile(JSON.parse(await readFile(rulesPath, 'utf-8')))
+      return { ok: true, rules: file.rules, exists: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_SET, async (_event, scope: unknown, rules: unknown): Promise<PermissionRulesSetResult> => {
+    try {
+      const validScope = validatePermissionRulesScope(scope)
+      const file = validatePermissionRulesFile({ version: PERMISSION_RULES_VERSION, rules })
+      if (validScope === 'global') {
+        const rulesPath = getGlobalPermissionRulesPath()
+        await mkdir(dirname(rulesPath), { recursive: true })
+        await writeFile(rulesPath, `${JSON.stringify(file, null, 2)}\n`, 'utf-8')
+        return { ok: true }
+      }
+      const { path: rulesPath, workspacePath } = activeWorkspaceRulesPath(workspaceManager)
+      await mkdir(dirname(rulesPath), { recursive: true })
+      await writeFile(rulesPath, `${JSON.stringify(file, null, 2)}\n`, 'utf-8')
+      // The user created this file deliberately — acknowledge the workspace so
+      // the one-time "workspace has its own rules" notice never fires for it.
+      const settings = await loadAppSettings(workspaceManager)
+      if (!settings.permissionRulesAckWorkspaces.includes(workspacePath)) {
+        await saveAppSettings({
+          permissionRulesAckWorkspaces: [...settings.permissionRulesAckWorkspaces, workspacePath],
+        })
+      }
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_IMPORT, async (): Promise<PermissionRulesImportResult> => {
+    const result = await dialog.showOpenDialog({
+      title: 'Import Permission Rules',
+      properties: ['openFile'],
+      filters: [PERMISSION_RULES_FILE_FILTER],
+    })
+    if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true }
+    try {
+      const filePath = result.filePaths[0]
+      const { size } = await stat(filePath)
+      if (size > MAX_PERMISSION_RULES_FILE_BYTES) {
+        return { ok: false, error: `rules file too large (limit ${MAX_PERMISSION_RULES_FILE_BYTES} bytes)` }
+      }
+      const file = validatePermissionRulesFile(JSON.parse(await readFile(filePath, 'utf-8')))
+      return { ok: true, rules: file.rules }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_EXPORT, async (_event, rules: unknown): Promise<PermissionRulesExportResult> => {
+    let file: PermissionRulesFile
+    try {
+      file = validatePermissionRulesFile({ version: PERMISSION_RULES_VERSION, rules })
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+    const result = await dialog.showSaveDialog({
+      title: 'Export Permission Rules',
+      defaultPath: PERMISSION_RULES_FILE_NAME,
+      filters: [PERMISSION_RULES_FILE_FILTER],
+    })
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+    try {
+      await writeFile(result.filePath, `${JSON.stringify(file, null, 2)}\n`, 'utf-8')
+      return { ok: true }
+    } catch (error) {
+      console.error('Failed to write exported permission rules file:', error)
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  async function buildWorkspaceRulesStatus(): Promise<PermissionRulesWorkspaceStatus> {
+    const activeWs = workspaceManager.getActiveWorkspace()
+    if (!activeWs) {
+      return { hasWorkspaceRules: false, workspacePath: null, acknowledged: false, trusted: false, hasAllowRules: false }
+    }
     const settings = await loadAppSettings(workspaceManager)
-    return settings.theme
+    // Read the workspace's own rules (as if trusted, no global) purely to detect
+    // whether it contains allow rules — the only case where trust matters.
+    const workspaceOwnRules = loadEffectiveRules(activeWs.path, null, { workspaceTrusted: true })
+    const hasAllowRules =
+      workspaceOwnRules.source === 'workspace' && workspaceOwnRules.rules.some((r) => r.action === 'allow')
+    return {
+      hasWorkspaceRules: existsSync(workspaceRulesPath(activeWs.path)),
+      workspacePath: activeWs.path,
+      acknowledged: settings.permissionRulesAckWorkspaces.includes(activeWs.path),
+      trusted: workspaceTrustStore.isTrusted(activeWs.path),
+      hasAllowRules,
+    }
+  }
+
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_WORKSPACE_STATUS, async (): Promise<PermissionRulesWorkspaceStatus> => {
+    return buildWorkspaceRulesStatus()
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.PERMISSION_RULES_SET_WORKSPACE_TRUST,
+    async (event, trusted: unknown): Promise<PermissionRulesWorkspaceStatus> => {
+      assertTrustedSender(event)
+      if (typeof trusted !== 'boolean') throw new Error('trusted must be a boolean')
+      const activeWs = workspaceManager.getActiveWorkspace()
+      if (!activeWs) throw new Error('No active workspace')
+
+      if (trusted !== workspaceTrustStore.isTrusted(activeWs.path)) {
+        if (trusted) {
+          await workspaceTrustStore.trust(activeWs.path)
+        } else {
+          await workspaceTrustStore.revoke(activeWs.path)
+        }
+
+        // Trust is read into PI_DESKTOP_WORKSPACE_TRUSTED at spawn time and gates
+        // the preview guest at attach time, so restart this workspace's Pi to
+        // apply the change to a live session. (Open previews reflect it on reopen.)
+        const pi = workspaceManager.getPiManager(activeWs.id)
+        if (pi && pi.getStatus().status === 'running') {
+          const fresh = await loadAppSettings(workspaceManager)
+          pi.stop()
+          await pi.start(
+            applyPermissionModeToStartOptions(applyResumePreference({ cwd: activeWs.path }, fresh), fresh)
+          )
+        }
+      }
+      return buildWorkspaceRulesStatus()
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_REMOVE_WORKSPACE, async (): Promise<PermissionRulesRemoveResult> => {
+    try {
+      const { path: rulesPath } = activeWorkspaceRulesPath(workspaceManager)
+      await unlink(rulesPath)
+      return { ok: true }
+    } catch (error) {
+      // Already gone is still success — the caller's goal (no workspace rules
+      // file) is met either way.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { ok: true }
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  // ─── Themes ─────────────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.THEMES_LIST, async (): Promise<ThemesListResult> => {
+    return listUserThemes(themesDir())
+  })
+
+  ipcMain.handle(IPC_CHANNELS.THEMES_SAVE, async (_event, file: unknown, existingId: unknown) => {
+    if (existingId !== undefined && !isString(existingId)) {
+      throw new Error('existingId must be a string')
+    }
+    return saveUserTheme(themesDir(), file as ThemeFile, existingId)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.THEMES_DELETE, async (_event, id: unknown) => {
+    if (!isString(id)) throw new Error('id must be a string')
+    await deleteUserTheme(themesDir(), id)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.THEMES_INSTALL_URL, async (_event, url: unknown): Promise<ThemeImportResult> => {
+    if (!isString(url)) throw new Error('url must be a string')
+    try {
+      const { id, file } = await installThemeFromUrl(themesDir(), url)
+      return { ok: true, theme: { id, file } }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.THEMES_EXPORT, async (_event, file: unknown): Promise<ThemeExportResult> => {
+    let theme: ThemeFile
+    try {
+      theme = validateThemeFile(file)
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+    const defaultName = `${themeIdFromName(theme.name) || 'theme'}.json`
+    const result = await dialog.showSaveDialog({
+      title: 'Export Theme',
+      defaultPath: defaultName,
+      filters: [THEME_FILE_FILTER],
+    })
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+    try {
+      await writeFile(result.filePath, JSON.stringify(theme, null, 2))
+      return { ok: true }
+    } catch (error) {
+      console.error('Failed to write exported theme file:', error)
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : `Could not write theme to ${result.filePath}`,
+      }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.THEMES_IMPORT, async (): Promise<ThemeImportResult> => {
+    const result = await dialog.showOpenDialog({
+      title: 'Import Theme',
+      properties: ['openFile'],
+      filters: [THEME_FILE_FILTER],
+    })
+    if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true }
+    try {
+      const filePath = result.filePaths[0]
+      const { size } = await stat(filePath)
+      if (size > MAX_THEME_FILE_BYTES) {
+        return { ok: false, error: `theme file too large (limit ${MAX_THEME_FILE_BYTES} bytes)` }
+      }
+      const file = validateThemeFile(JSON.parse(await readFile(filePath, 'utf8')))
+      const { id } = await saveUserTheme(themesDir(), file)
+      return { ok: true, theme: { id, file } }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.THEMES_GALLERY_LIST, async (): Promise<ThemeGalleryResult> => {
+    try {
+      const themes = await fetchGalleryThemes()
+      return { ok: true, themes }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.THEMES_GALLERY_IMAGE, async (_event, url: unknown): Promise<ThemeGalleryImageResult> => {
+    if (!isString(url)) return { ok: false, error: 'url must be a string' }
+    try {
+      const { dataUri } = await fetchGalleryImage(url)
+      return { ok: true, dataUri }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
   })
 
   // ─── Workspace Management ───────────────────────────────────────────────
@@ -662,7 +1038,12 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     if (!isString(workspaceId)) throw new Error('workspaceId must be a string')
     const opts = validateStartOptions(options)
     const settings = await loadAppSettings(workspaceManager)
-    await workspaceManager.startPiForWorkspace(workspaceId, applyPermissionModeToStartOptions(opts, settings))
+    const workspace = workspaceManager.getWorkspaces().find((w) => w.id === workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    await workspaceManager.startPiForWorkspace(
+      workspaceId,
+      applyPermissionModeToStartOptions({ cwd: workspace.path, ...opts }, settings)
+    )
     const pi = workspaceManager.getPiManager(workspaceId)
     return pi?.getStatus() ?? { status: 'stopped', pid: null, error: null }
   })
@@ -681,21 +1062,29 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     return listInstalledPackages(cwd)
   })
 
-  ipcMain.handle(IPC_CHANNELS.PACKAGE_INSTALL, async (_event, packageSpec: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.PACKAGE_INSTALL, async (event, packageSpec: unknown) => {
+    assertTrustedSender(event)
     if (!isString(packageSpec)) throw new Error('packageSpec must be a string')
+    if (!isValidPackageSpec(packageSpec)) throw new Error('Invalid package specification')
     const ws = workspaceManager.getActiveWorkspace()
     const cwd = ws?.path ?? process.cwd()
     return installPackage(packageSpec, cwd)
   })
 
-  ipcMain.handle(IPC_CHANNELS.PACKAGE_REMOVE, async (_event, packageSpec: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.PACKAGE_REMOVE, async (event, packageSpec: unknown) => {
+    assertTrustedSender(event)
     if (!isString(packageSpec)) throw new Error('packageSpec must be a string')
+    if (!isValidPackageSpec(packageSpec)) throw new Error('Invalid package specification')
     const ws = workspaceManager.getActiveWorkspace()
     const cwd = ws?.path ?? process.cwd()
     return removePackage(packageSpec, cwd)
   })
 
-  ipcMain.handle(IPC_CHANNELS.PACKAGE_UPDATE, async (_event, packageSpec?: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.PACKAGE_UPDATE, async (event, packageSpec?: unknown) => {
+    assertTrustedSender(event)
+    if (isString(packageSpec) && !isValidPackageSpec(packageSpec)) {
+      throw new Error('Invalid package specification')
+    }
     const ws = workspaceManager.getActiveWorkspace()
     const cwd = ws?.path ?? process.cwd()
     return updatePackage(isString(packageSpec) ? packageSpec : undefined, cwd)
@@ -800,14 +1189,7 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
 
       // The working directory is the active workspace, never the renderer's
       // input — consultants must plan against the real project tree.
-      const activeWs = workspaceManager.getActiveWorkspace()
-      if (!activeWs) throw new Error('No active workspace')
-      let cwd = activeWs.path
-      try {
-        await access(cwd)
-      } catch {
-        cwd = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()
-      }
+      const cwd = await resolveCouncilCwd(workspaceManager)
 
       const results = await runConsultants(
         { request: payload.request, members, cwd, timeoutSeconds, consensusMode },
@@ -817,6 +1199,54 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
         },
       )
       return { results }
+    },
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.COUNCIL_ARBITER,
+    async (_event, payload: unknown): Promise<CouncilArbiterResult> => {
+      if (!isObject(payload)) throw new Error('Council arbiter payload must be an object')
+      if (!isString(payload.request) || payload.request.trim().length === 0) {
+        throw new Error('Council arbiter request must be a non-empty string')
+      }
+      const timeoutSeconds = clampTimeoutSeconds(Number(payload.timeoutSeconds))
+
+      let input: ArbiterRequest
+      if (payload.kind === 'merge') {
+        if (!Array.isArray(payload.results)) {
+          throw new Error('Council arbiter merge requires a results array')
+        }
+        input = {
+          kind: 'merge',
+          request: payload.request,
+          results: payload.results as ConsultantResult[],
+        }
+      } else if (payload.kind === 'revise') {
+        if (!isString(payload.plan) || payload.plan.trim().length === 0) {
+          throw new Error('Council arbiter revise requires a non-empty plan')
+        }
+        if (!isString(payload.feedback) || payload.feedback.trim().length === 0) {
+          throw new Error('Council arbiter revise requires non-empty feedback')
+        }
+        input = {
+          kind: 'revise',
+          request: payload.request,
+          plan: payload.plan,
+          feedback: payload.feedback,
+        }
+      } else {
+        throw new Error('Council arbiter kind must be "merge" or "revise"')
+      }
+
+      const cwd = await resolveCouncilCwd(workspaceManager)
+      const outcome = await runArbiter(input, cwd, timeoutSeconds, {
+        spawnConsultant: defaultSpawnConsultant,
+        onProgress: (chunk) => broadcast(IPC_CHANNELS.EVENT_COUNCIL_PROGRESS, { id: 'pi', chunk }),
+      })
+      if (!outcome.ok) {
+        throw new Error(outcome.timedOut ? 'Arbiter timed out' : outcome.error ?? 'Arbiter failed')
+      }
+      return { plan: outcome.output.trim() }
     },
   )
 
@@ -934,10 +1364,15 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   // open dialog, so it may live outside the workspace).
   ipcMain.handle(IPC_CHANNELS.FILE_READ_ATTACHMENT, async (_event, filePath: unknown) => {
     if (!isString(filePath)) throw new Error('filePath must be a string')
+    const workspaceRoot = workspaceManager.getActiveWorkspace()?.path ?? null
+    if (!isAuthorizedAttachmentPath(filePath, { workspaceRoot, approvedPaths: approvedAttachmentPaths })) {
+      throw new Error('Attachment path is not permitted')
+    }
     return readAttachment(filePath)
   })
 
-  ipcMain.handle(IPC_CHANNELS.FILE_WRITE, async (_event, filePath: unknown, content: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.FILE_WRITE, async (event, filePath: unknown, content: unknown) => {
+    assertTrustedSender(event)
     if (!isString(filePath)) throw new Error('filePath must be a string')
     if (!isString(content)) throw new Error('content must be a string')
     const fs = workspaceManager.getActiveFileService()
@@ -960,7 +1395,10 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
 
   ipcMain.handle(IPC_CHANNELS.GIT_STATUS, async () => {
     const fs = workspaceManager.getActiveFileService()
-    if (!fs) throw new Error('No active workspace')
+    // No active workspace (e.g. the home screen before any workspace is opened)
+    // is an expected state, not an error — report no changes rather than throwing
+    // (which Electron would log as an unhandled handler error every poll).
+    if (!fs) return {}
     const statusMap = await fs.getGitStatus()
     // Convert Map to plain object for IPC
     const result: Record<string, unknown> = {}
@@ -972,7 +1410,9 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
 
   ipcMain.handle(IPC_CHANNELS.GIT_BRANCH, async () => {
     const fs = workspaceManager.getActiveFileService()
-    if (!fs) throw new Error('No active workspace')
+    // No active workspace: report "no branch" rather than throwing (matches the
+    // Promise<string | null> contract; keeps the no-workspace state error-free).
+    if (!fs) return null
     return fs.getGitBranch()
   })
 
@@ -992,7 +1432,12 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
       }
     }
     const result = await dialog.showOpenDialog(dialogOptions)
-    return result.canceled ? null : result.filePaths[0]
+    if (result.canceled || result.filePaths.length === 0) return null
+    const picked = result.filePaths[0]
+    // Remember file picks so the attachment reader will accept this exact path
+    // even when it lives outside the workspace.
+    if (pickFile) approvedAttachmentPaths.add(resolve(picked))
+    return picked
   })
 
   ipcMain.handle(IPC_CHANNELS.SYSTEM_GET_PATH, async (_event, name: unknown) => {
@@ -1534,7 +1979,7 @@ function getSettingsPath(): string {
   return getGuiDataPath(SETTINGS_FILE_NAME)
 }
 
-async function loadAppSettings(workspaceManager: WorkspaceManager): Promise<AppSettings> {
+export async function loadAppSettings(workspaceManager: WorkspaceManager): Promise<AppSettings> {
   try {
     const settingsPath = getSettingsPath()
     if (existsSync(settingsPath)) {
@@ -1552,7 +1997,7 @@ async function loadAppSettings(workspaceManager: WorkspaceManager): Promise<AppS
   }
 }
 
-async function saveAppSettings(settings: Partial<AppSettings>): Promise<void> {
+export async function saveAppSettings(settings: Partial<AppSettings>): Promise<void> {
   const settingsPath = getSettingsPath()
   const dir = join(settingsPath, '..')
 

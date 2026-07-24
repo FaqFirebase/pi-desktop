@@ -60,8 +60,8 @@ export function CodeEditor({
         EditorView.theme({
           '&': {
             height: '100%',
-            backgroundColor: 'var(--color-bg-primary)',
-            color: 'var(--color-text-primary)',
+            backgroundColor: 'var(--color-app)',
+            color: 'var(--color-primary)',
             fontSize: `${fontSize ?? DEFAULT_SETTINGS.codeEditorFontSize}px`,
           },
           '.cm-editor': {
@@ -71,11 +71,11 @@ export function CodeEditor({
             fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', 'OpenMoji Color', 'Fira Code', 'Cascadia Code', monospace",
           },
           '.cm-content': {
-            caretColor: 'var(--color-text-primary)',
+            caretColor: 'var(--color-primary)',
           },
           '.cm-gutters': {
-            backgroundColor: 'var(--color-bg-primary)',
-            color: 'var(--color-text-muted)',
+            backgroundColor: 'var(--color-app)',
+            color: 'var(--color-muted)',
             borderRight: '1px solid var(--color-border)',
           },
           '.cm-activeLine': {

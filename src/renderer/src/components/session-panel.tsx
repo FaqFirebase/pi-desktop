@@ -125,22 +125,22 @@ export function SessionPanel(): React.JSX.Element {
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <FolderOpen size={20} className="text-neutral-400" />
-            <h1 className="text-lg font-semibold text-neutral-200">Sessions</h1>
-            <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-neutral-500">
+            <FolderOpen size={20} className="text-muted" />
+            <h1 className="text-lg font-semibold text-primary">Sessions</h1>
+            <span className="rounded-full bg-card px-2 py-0.5 text-xs text-dim">
               {totalSessions} sessions · {totalProjects} projects
             </span>
           </div>
           <div className="flex gap-2">
             <button
               onClick={refreshSessionList}
-              className="rounded-md px-3 py-1.5 text-sm text-neutral-400 hover:text-neutral-200 transition-colors"
+              className="rounded-md px-3 py-1.5 text-sm text-muted hover:text-primary transition-colors"
             >
               Refresh
             </button>
             <button
               onClick={createNewSession}
-              className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500 transition-colors"
+              className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover transition-colors"
             >
               <Plus size={14} />
               New Session
@@ -151,13 +151,13 @@ export function SessionPanel(): React.JSX.Element {
         {/* Filter controls */}
         <div className="mb-4 flex items-center gap-3">
           <div className="relative flex-1">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
             <input
               type="text"
               placeholder="Search sessions or projects..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-lg border border-neutral-700 bg-neutral-900 py-2 pl-9 pr-4 text-sm text-neutral-200 placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none"
+              className="w-full rounded-lg border border-border-strong bg-surface py-2 pl-9 pr-4 text-sm text-primary placeholder:text-faint focus:border-focus focus:outline-none"
             />
           </div>
           <button
@@ -165,8 +165,8 @@ export function SessionPanel(): React.JSX.Element {
             className={clsx(
               'rounded-md px-3 py-2 text-xs transition-colors',
               showAllProjects
-                ? 'bg-blue-900/30 text-blue-400'
-                : 'bg-neutral-800 text-neutral-400 hover:text-neutral-300'
+                ? 'bg-accent-bg text-accent-fg'
+                : 'bg-card text-muted hover:text-secondary'
             )}
           >
             {showAllProjects ? 'All Projects' : 'Current Only'}
@@ -177,8 +177,8 @@ export function SessionPanel(): React.JSX.Element {
             className={clsx(
               'flex items-center gap-1.5 rounded-md px-3 py-2 text-xs transition-colors',
               showArchived
-                ? 'bg-amber-900/30 text-amber-400'
-                : 'bg-neutral-800 text-neutral-400 hover:text-neutral-300'
+                ? 'bg-warning-bg text-warning'
+                : 'bg-card text-muted hover:text-secondary'
             )}
           >
             <Archive size={12} />
@@ -188,25 +188,25 @@ export function SessionPanel(): React.JSX.Element {
 
         {/* Current workspace indicator */}
         {activeWorkspace && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg bg-neutral-900 border border-neutral-800 px-4 py-2">
-            <FolderTree size={14} className="text-neutral-500" />
-            <span className="text-xs text-neutral-400">Current workspace:</span>
-            <span className="text-sm text-neutral-200 font-medium">{activeWorkspace.name}</span>
-            <span className="text-xs text-neutral-500 truncate">{activeWorkspace.path}</span>
+          <div className="mb-4 flex items-center gap-2 rounded-lg bg-surface border border-border px-4 py-2">
+            <FolderTree size={14} className="text-dim" />
+            <span className="text-xs text-muted">Current workspace:</span>
+            <span className="text-sm text-primary font-medium">{activeWorkspace.name}</span>
+            <span className="text-xs text-dim truncate">{activeWorkspace.path}</span>
           </div>
         )}
 
         {/* Sessions grouped by project */}
         {filteredGroups.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-neutral-500">
-            <FolderOpen size={32} className="mb-3 text-neutral-600" />
+          <div className="flex flex-col items-center justify-center py-12 text-dim">
+            <FolderOpen size={32} className="mb-3 text-faint" />
             <p className="text-sm">
               {searchQuery ? 'No sessions match your search' : 'No sessions yet'}
             </p>
             {!searchQuery && (
               <button
                 onClick={createNewSession}
-                className="mt-3 text-sm text-blue-400 hover:text-blue-300"
+                className="mt-3 text-sm text-accent-fg/80 hover:text-accent-fg"
               >
                 Create your first session
               </button>
@@ -228,53 +228,53 @@ export function SessionPanel(): React.JSX.Element {
                   className={clsx(
                     'rounded-lg border overflow-hidden',
                     isCurrentProject
-                      ? 'border-blue-800/40 bg-blue-950/10'
-                      : 'border-neutral-800 bg-neutral-900/30'
+                      ? 'border-accent-bg bg-accent-bg'
+                      : 'border-border bg-surface/30'
                   )}
                 >
                   {/* Project header */}
                   <button
                     onClick={() => toggleProject(projectPath)}
-                    className="flex w-full items-center gap-2 px-4 py-2.5 hover:bg-neutral-800/30 transition-colors"
+                    className="flex w-full items-center gap-2 px-4 py-2.5 hover:bg-surface-hover/30 transition-colors"
                   >
                     {isExpanded ? (
-                      <ChevronDown size={14} className="text-neutral-500 shrink-0" />
+                      <ChevronDown size={14} className="text-dim shrink-0" />
                     ) : (
-                      <ChevronRight size={14} className="text-neutral-500 shrink-0" />
+                      <ChevronRight size={14} className="text-dim shrink-0" />
                     )}
                     <FolderTree
                       size={14}
                       className={clsx(
                         'shrink-0',
-                        isCurrentProject ? 'text-blue-400' : 'text-neutral-500'
+                        isCurrentProject ? 'text-accent-fg' : 'text-dim'
                       )}
                     />
                     <div className="min-w-0 flex-1 text-left">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-neutral-200">
+                        <span className="text-sm font-medium text-primary">
                           {projectName}
                         </span>
                         {isCurrentProject && (
-                          <span className="rounded bg-blue-900/40 px-1.5 py-0.5 text-[10px] text-blue-400">
+                          <span className="rounded bg-accent-bg px-1.5 py-0.5 text-[10px] text-accent-fg">
                             current
                           </span>
                         )}
-                        <span className="text-xs text-neutral-600">
+                        <span className="text-xs text-faint">
                           {sessions.length} session{sessions.length !== 1 ? 's' : ''}
                         </span>
                       </div>
-                      <div className="text-[11px] text-neutral-600 truncate">
+                      <div className="text-[11px] text-faint truncate">
                         {projectPath}
                       </div>
                     </div>
-                    <div className="text-[10px] text-neutral-600 shrink-0">
+                    <div className="text-[10px] text-faint shrink-0">
                       {formatRelativeTime(latestSession.lastModified)}
                     </div>
                   </button>
 
                   {/* Sessions in this project */}
                   {isExpanded && (
-                    <div className="border-t border-neutral-800/50">
+                    <div className="border-t border-border/50">
                       {sessions.map((session) => (
                         <SessionEntry
                           key={session.path}
@@ -443,10 +443,10 @@ function SessionEntry({
       className={clsx(
         'group py-2 pl-10 pr-10 transition-colors relative',
         isActive
-          ? 'bg-blue-900/20'
+          ? 'bg-accent-bg'
           : isArchived
-            ? 'bg-neutral-900/40 opacity-60 hover:opacity-100 hover:bg-neutral-800/30'
-            : 'hover:bg-neutral-800/30',
+            ? 'bg-surface/40 opacity-60 hover:opacity-100 hover:bg-surface-hover/30'
+            : 'hover:bg-surface-hover/30',
         busy && 'pointer-events-none opacity-40'
       )}
     >
@@ -462,9 +462,9 @@ function SessionEntry({
         }}
         className="flex w-full cursor-pointer items-center gap-3 text-left"
       >
-        <Clock size={12} className="shrink-0 text-neutral-600" />
+        <Clock size={12} className="shrink-0 text-faint" />
         <div className="min-w-0 flex-1">
-          <div className={clsx('text-sm truncate', isActive ? 'text-blue-300' : 'text-neutral-400')}>
+          <div className={clsx('text-sm truncate', isActive ? 'text-accent-fg' : 'text-muted')}>
             {getSessionTitle(session.name, session.sessionId)}
           </div>
           {(tags.length > 0 || autoTag) && (
@@ -472,7 +472,7 @@ function SessionEntry({
               {tags.map((tag) => (
                 <span
                   key={tag}
-                  className="inline-flex items-center gap-0.5 rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-400"
+                  className="inline-flex items-center gap-0.5 rounded bg-card px-1.5 py-0.5 text-[10px] text-muted"
                 >
                   <Tag size={8} />
                   {tag}
@@ -483,7 +483,7 @@ function SessionEntry({
                     }}
                     title={`Remove tag ${tag}`}
                     aria-label={`Remove tag ${tag}`}
-                    className="ml-0.5 hover:text-neutral-200"
+                    className="ml-0.5 hover:text-primary"
                   >
                     <X size={8} />
                   </button>
@@ -492,7 +492,7 @@ function SessionEntry({
               {autoTag && (
                 <span
                   title="Auto-tagged from chat context — add your own tag to replace it"
-                  className="inline-flex items-center gap-0.5 rounded border border-dashed border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-500"
+                  className="inline-flex items-center gap-0.5 rounded border border-dashed border-border-strong px-1.5 py-0.5 text-[10px] text-dim"
                 >
                   <Sparkles size={8} />
                   {autoTag}
@@ -503,7 +503,7 @@ function SessionEntry({
                     }}
                     title={`Remove auto-tag ${autoTag}`}
                     aria-label={`Remove auto-tag ${autoTag}`}
-                    className="ml-0.5 hover:text-neutral-300"
+                    className="ml-0.5 hover:text-secondary"
                   >
                     <X size={8} />
                   </button>
@@ -512,16 +512,16 @@ function SessionEntry({
             </div>
           )}
         </div>
-        <div className="text-[10px] text-neutral-600 shrink-0">
+        <div className="text-[10px] text-faint shrink-0">
           {formatRelativeTime(session.lastModified)}
         </div>
         {isArchived && (
-          <span className="rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] text-amber-400">
+          <span className="rounded bg-warning-bg px-1.5 py-0.5 text-[10px] text-warning">
             archived
           </span>
         )}
         {isActive && (
-          <span className="rounded bg-blue-900/40 px-1.5 py-0.5 text-[10px] text-blue-400">
+          <span className="rounded bg-accent-bg px-1.5 py-0.5 text-[10px] text-accent-fg">
             active
           </span>
         )}
@@ -534,7 +534,7 @@ function SessionEntry({
         <button
           ref={menuButtonRef}
           onClick={toggleMenu}
-          className="rounded p-1 text-neutral-400 hover:bg-neutral-700/60 hover:text-neutral-200"
+          className="rounded p-1 text-muted hover:bg-elevated/60 hover:text-primary"
           aria-label="Session actions"
           aria-expanded={menuOpen}
           title="Session actions (or right-click the row)"
@@ -545,12 +545,12 @@ function SessionEntry({
       {menuOpen && menuPosition && createPortal(
         <div
           ref={menuPopupRef}
-          className="fixed z-[9999] min-w-[150px] rounded-md border border-neutral-700 bg-neutral-900 py-1 text-sm shadow-xl shadow-black/40"
+          className="fixed z-[9999] min-w-[150px] rounded-md border border-border-strong bg-surface py-1 text-sm shadow-xl shadow-black/40"
           style={{ left: menuPosition.x, top: menuPosition.y }}
         >
           <button
             onClick={handleArchive}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-neutral-300 hover:bg-neutral-800"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-secondary hover:bg-surface-hover"
           >
             {isArchived ? <><ArchiveRestore size={13} /> Unarchive</> : <><Archive size={13} /> Archive</>}
           </button>
@@ -559,7 +559,7 @@ function SessionEntry({
               setMenuOpen(false)
               setConfirmingDelete(true)
             }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-red-400 hover:bg-red-900/30"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-error hover:bg-error-bg"
           >
             <Trash2 size={13} /> Delete...
           </button>
@@ -569,20 +569,20 @@ function SessionEntry({
 
       {/* Inline delete confirmation */}
       {confirmingDelete && (
-        <div className="mt-2 flex items-center gap-2 rounded border border-red-900/50 bg-red-950/30 px-2 py-1.5 text-[11px] text-red-300">
+        <div className="mt-2 flex items-center gap-2 rounded border border-error-bg bg-error-bg px-2 py-1.5 text-[11px] text-error">
           <Trash2 size={12} className="shrink-0" />
           <span className="flex-1">
-            Delete this session? Will use <code className="text-red-200">trash</code> if available, otherwise permanent.
+            Delete this session? Will use <code className="text-error">trash</code> if available, otherwise permanent.
           </span>
           <button
             onClick={() => setConfirmingDelete(false)}
-            className="rounded px-2 py-0.5 text-neutral-400 hover:text-neutral-200"
+            className="rounded px-2 py-0.5 text-muted hover:text-primary"
           >
             Cancel
           </button>
           <button
             onClick={handleDelete}
-            className="rounded bg-red-700 px-2 py-0.5 text-white hover:bg-red-600"
+            className="rounded bg-error px-2 py-0.5 text-white hover:bg-error-hover"
           >
             Delete
           </button>
@@ -603,12 +603,12 @@ function SessionEntry({
                   if (e.key === 'Escape') setShowTagInput(false)
                 }}
                 placeholder="Add tag..."
-                className="flex-1 rounded border border-neutral-700 bg-neutral-800 px-2 py-0.5 text-[10px] text-neutral-300 placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none"
+                className="flex-1 rounded border border-border-strong bg-card px-2 py-0.5 text-[10px] text-secondary placeholder:text-faint focus:border-focus focus:outline-none"
                 autoFocus
               />
               <button
                 onClick={handleAddTag}
-                className="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] text-white"
+                className="rounded bg-accent px-1.5 py-0.5 text-[10px] text-white"
               >
                 Add
               </button>
@@ -616,7 +616,7 @@ function SessionEntry({
           ) : (
             <button
               onClick={() => setShowTagInput(true)}
-              className="flex items-center gap-1 text-[10px] text-neutral-600 hover:text-neutral-400"
+              className="flex items-center gap-1 text-[10px] text-faint hover:text-muted"
             >
               <Tag size={10} />
               Add tag

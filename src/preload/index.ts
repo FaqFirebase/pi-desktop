@@ -28,12 +28,28 @@ import type {
   CouncilDetectResult,
   CouncilRunRequest,
   CouncilRunResult,
+  CouncilArbiterRequest,
+  CouncilArbiterResult,
   CouncilProgressEvent,
   AttachmentReadResult,
   OpenDialogOptions,
   PromptImage,
   ActivityStatsResult,
+  ThemesListResult,
+  ThemeImportResult,
+  ThemeExportResult,
+  ThemeGalleryResult,
+  ThemeGalleryImageResult,
+  PermissionRule,
+  PermissionRulesScope,
+  PermissionRulesGetResult,
+  PermissionRulesSetResult,
+  PermissionRulesImportResult,
+  PermissionRulesExportResult,
+  PermissionRulesWorkspaceStatus,
+  PermissionRulesRemoveResult,
 } from '../shared/ipc-contracts'
+import type { ThemeFile } from '../shared/theme/theme-file'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 
 // ─── Type Definitions for the Exposed API ────────────────────────────────────
@@ -96,7 +112,29 @@ interface PiDesktopAPI {
   settings: {
     getAll(): Promise<AppSettings>
     save(settings: Partial<AppSettings>): Promise<AppSettings>
-    getTheme(): Promise<string>
+  }
+
+  // Permission rules
+  permissionRules: {
+    get(scope: PermissionRulesScope): Promise<PermissionRulesGetResult>
+    set(scope: PermissionRulesScope, rules: PermissionRule[]): Promise<PermissionRulesSetResult>
+    importFromFile(): Promise<PermissionRulesImportResult>
+    exportToFile(rules: PermissionRule[]): Promise<PermissionRulesExportResult>
+    workspaceStatus(): Promise<PermissionRulesWorkspaceStatus>
+    removeWorkspace(): Promise<PermissionRulesRemoveResult>
+    setWorkspaceTrust(trusted: boolean): Promise<PermissionRulesWorkspaceStatus>
+  }
+
+  // Themes (user-created theme storage)
+  themes: {
+    list(): Promise<ThemesListResult>
+    save(file: ThemeFile, existingId?: string): Promise<{ id: string }>
+    delete(id: string): Promise<void>
+    installFromUrl(url: string): Promise<ThemeImportResult>
+    export(file: ThemeFile): Promise<ThemeExportResult>
+    import(): Promise<ThemeImportResult>
+    gallery(): Promise<ThemeGalleryResult>
+    galleryImage(url: string): Promise<ThemeGalleryImageResult>
   }
 
   // Workspace management
@@ -131,6 +169,7 @@ interface PiDesktopAPI {
   council: {
     detect(): Promise<CouncilDetectResult>
     runConsultants(payload: CouncilRunRequest): Promise<CouncilRunResult>
+    arbiter(payload: CouncilArbiterRequest): Promise<CouncilArbiterResult>
     onProgress(callback: (event: CouncilProgressEvent) => void): () => void
   }
 
@@ -273,7 +312,27 @@ const api: PiDesktopAPI = {
   settings: {
     getAll: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_ALL),
     save: (settings) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SAVE, settings),
-    getTheme: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_THEME),
+  },
+
+  permissionRules: {
+    get: (scope) => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_GET, scope),
+    set: (scope, rules) => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_SET, scope, rules),
+    importFromFile: () => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_IMPORT),
+    exportToFile: (rules) => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_EXPORT, rules),
+    workspaceStatus: () => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_WORKSPACE_STATUS),
+    removeWorkspace: () => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_REMOVE_WORKSPACE),
+    setWorkspaceTrust: (trusted) => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_SET_WORKSPACE_TRUST, trusted),
+  },
+
+  themes: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.THEMES_LIST),
+    save: (file, existingId) => ipcRenderer.invoke(IPC_CHANNELS.THEMES_SAVE, file, existingId),
+    delete: (id) => ipcRenderer.invoke(IPC_CHANNELS.THEMES_DELETE, id),
+    installFromUrl: (url) => ipcRenderer.invoke(IPC_CHANNELS.THEMES_INSTALL_URL, url),
+    export: (file) => ipcRenderer.invoke(IPC_CHANNELS.THEMES_EXPORT, file),
+    import: () => ipcRenderer.invoke(IPC_CHANNELS.THEMES_IMPORT),
+    gallery: () => ipcRenderer.invoke(IPC_CHANNELS.THEMES_GALLERY_LIST),
+    galleryImage: (url) => ipcRenderer.invoke(IPC_CHANNELS.THEMES_GALLERY_IMAGE, url),
   },
 
   workspace: {
@@ -305,6 +364,7 @@ const api: PiDesktopAPI = {
   council: {
     detect: () => ipcRenderer.invoke(IPC_CHANNELS.COUNCIL_DETECT),
     runConsultants: (payload) => ipcRenderer.invoke(IPC_CHANNELS.COUNCIL_RUN_CONSULTANTS, payload),
+    arbiter: (payload) => ipcRenderer.invoke(IPC_CHANNELS.COUNCIL_ARBITER, payload),
     onProgress: (callback) => {
       const handler = (_event: Electron.IpcRendererEvent, data: CouncilProgressEvent) => callback(data)
       ipcRenderer.on(IPC_CHANNELS.EVENT_COUNCIL_PROGRESS, handler)

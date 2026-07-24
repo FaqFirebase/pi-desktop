@@ -52,16 +52,16 @@ export function ImageViewer(): React.JSX.Element | null {
   if (!image) return null
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-[var(--color-bg-primary)]">
+    <div className="flex flex-1 flex-col overflow-hidden bg-[var(--color-app)]">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-2">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
-          <ImageIcon size={14} className="shrink-0 text-neutral-500" />
-          <span className="truncate text-xs text-neutral-300">{image.name}</span>
+          <ImageIcon size={14} className="shrink-0 text-dim" />
+          <span className="truncate text-xs text-secondary">{image.name}</span>
         </div>
         <button
           onClick={() => useAppStore.getState().setPreviewTarget(null)}
-          className="rounded p-1 text-neutral-500 hover:text-neutral-300"
+          className="rounded p-1 text-dim hover:text-secondary"
           title="Close image"
         >
           <X size={12} />
@@ -71,9 +71,9 @@ export function ImageViewer(): React.JSX.Element | null {
       {/* Content */}
       <div className="flex flex-1 items-center justify-center overflow-auto p-4">
         {loading ? (
-          <Loader2 size={20} className="animate-spin text-neutral-500" />
+          <Loader2 size={20} className="animate-spin text-dim" />
         ) : error ? (
-          <div className="text-xs text-red-400">{error}</div>
+          <div className="text-xs text-error">{error}</div>
         ) : dataUrl ? (
           <img
             src={dataUrl}

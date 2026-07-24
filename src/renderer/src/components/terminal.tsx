@@ -24,8 +24,8 @@ function buildTerminalTheme(): ITheme {
     return value || fallback
   }
 
-  const bg = v('--color-bg-primary', '#0a0a0a')
-  const fg = v('--color-text-primary', '#d4d4d4')
+  const bg = v('--color-app', '#0a0a0a')
+  const fg = v('--color-primary', '#d4d4d4')
 
   return {
     background: bg,
@@ -40,14 +40,14 @@ function buildTerminalTheme(): ITheme {
     magenta: v('--cm-keyword', '#a855f7'),
     cyan: v('--cm-link', '#06b6d4'),
     white: fg,
-    brightBlack: v('--color-text-muted', '#525252'),
+    brightBlack: v('--color-muted', '#525252'),
     brightRed: v('--color-error', '#f87171'),
     brightGreen: v('--color-success', '#4ade80'),
     brightYellow: v('--color-warning', '#facc15'),
     brightBlue: v('--color-accent', '#60a5fa'),
     brightMagenta: v('--cm-keyword', '#c084fc'),
     brightCyan: v('--cm-link', '#22d3ee'),
-    brightWhite: v('--color-text-secondary', '#ffffff'),
+    brightWhite: v('--color-secondary', '#ffffff'),
   }
 }
 
@@ -156,20 +156,20 @@ export function TerminalPanel(): React.JSX.Element | null {
   return (
     <div
       className={clsx(
-        'flex flex-col border-t border-neutral-800 bg-neutral-950',
+        'flex flex-col border-t border-border bg-app',
         maximized ? 'flex-1' : 'h-64'
       )}
     >
-      <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-1.5">
+      <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <div className="flex items-center gap-2">
-          <TerminalIcon size={14} className="text-neutral-500" />
-          <span className="text-xs text-neutral-400">Terminal</span>
-          <span className="text-[10px] text-neutral-600">{shellLabel}</span>
+          <TerminalIcon size={14} className="text-dim" />
+          <span className="text-xs text-muted">Terminal</span>
+          <span className="text-[10px] text-faint">{shellLabel}</span>
         </div>
         <div className="flex items-center gap-1">
           <button
             onClick={() => terminalRef.current?.clear()}
-            className="rounded p-1 text-neutral-600 hover:text-neutral-400 transition-colors"
+            className="rounded p-1 text-faint hover:text-muted transition-colors"
             title="Clear"
             aria-label="Clear terminal"
           >
@@ -177,7 +177,7 @@ export function TerminalPanel(): React.JSX.Element | null {
           </button>
           <button
             onClick={() => setMaximized(!maximized)}
-            className="rounded p-1 text-neutral-600 hover:text-neutral-400 transition-colors"
+            className="rounded p-1 text-faint hover:text-muted transition-colors"
             title={maximized ? 'Restore terminal' : 'Maximize terminal'}
             aria-label={maximized ? 'Restore terminal' : 'Maximize terminal'}
           >
@@ -185,7 +185,7 @@ export function TerminalPanel(): React.JSX.Element | null {
           </button>
           <button
             onClick={toggleTerminal}
-            className="rounded p-1 text-neutral-600 hover:text-neutral-400 transition-colors"
+            className="rounded p-1 text-faint hover:text-muted transition-colors"
             title="Close terminal"
             aria-label="Close terminal"
           >

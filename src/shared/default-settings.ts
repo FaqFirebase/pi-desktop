@@ -20,8 +20,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showThinking: true,
   autoScroll: true,
   permissionMode: 'ask-edits',
+  permissionRulesAckWorkspaces: [],
   resumeLastSession: true,
   collapsedSessionGroups: [],
   openToHomeOnLaunch: true,
+  runOnStartup: false,
+  minimizeToTrayOnClose: false,
+  hasSeenTrayHint: false,
   council: DEFAULT_COUNCIL_CONFIG,
 }

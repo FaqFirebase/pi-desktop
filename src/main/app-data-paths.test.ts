@@ -2,11 +2,13 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { mkdir, mkdtemp, readFile, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { tmpdir } from 'os'
 import {
+  GUI_DATA_ENV_VAR,
   GUI_DATA_FILES,
   getCanonicalUserDataDir,
+  getExternalGuiDataDir,
   getGuiDataPath,
   getLegacyGuiDataPath,
   getLegacyGuiDataDirs,
@@ -33,6 +35,19 @@ test('getLegacyGuiDataDirs lists home and electron legacy dirs', () => {
       '/home/test/.config/PI Desktop',
       '/home/test/.config/pi-desktop-gui',
     ]
+  )
+})
+
+test('getExternalGuiDataDir returns the externally-set override as an absolute path', () => {
+  assert.equal(getExternalGuiDataDir({}), undefined)
+  assert.equal(getExternalGuiDataDir({ [GUI_DATA_ENV_VAR]: '' }), undefined)
+  assert.equal(
+    getExternalGuiDataDir({ [GUI_DATA_ENV_VAR]: '/tmp/pi-desktop-scratch' }),
+    '/tmp/pi-desktop-scratch'
+  )
+  assert.equal(
+    getExternalGuiDataDir({ [GUI_DATA_ENV_VAR]: 'scratch-profile' }),
+    resolve('scratch-profile')
   )
 })
 

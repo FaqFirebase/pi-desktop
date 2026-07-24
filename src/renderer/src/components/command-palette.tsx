@@ -10,10 +10,10 @@ import { filterCommands, type PiCommand } from '../../../shared/pi-command'
 const BUILTIN_SOURCE = 'builtin'
 
 const SOURCE_BADGE: Record<string, string> = {
-  skill: 'bg-purple-900/40 text-purple-300',
-  prompt: 'bg-blue-900/40 text-blue-300',
-  [BUILTIN_SOURCE]: 'bg-amber-900/40 text-amber-300',
-  extension: 'bg-emerald-900/40 text-emerald-300',
+  skill: 'bg-special-bg text-special',
+  prompt: 'bg-accent-bg text-accent-fg',
+  [BUILTIN_SOURCE]: 'bg-warning-bg text-warning',
+  extension: 'bg-success-bg text-success',
 }
 
 const GROUPS: Array<{ source: string; label: string }> = [
@@ -138,11 +138,11 @@ export function CommandPalette(): React.JSX.Element | null {
       onClick={() => setCommandPalette(false)}
     >
       <div
-        className="w-full max-w-lg overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 shadow-2xl"
+        className="w-full max-w-lg overflow-hidden rounded-lg border border-border-strong bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2.5">
-          <Terminal size={15} className="shrink-0 text-neutral-500" />
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+          <Terminal size={15} className="shrink-0 text-dim" />
           <input
             ref={inputRef}
             type="text"
@@ -150,16 +150,16 @@ export function CommandPalette(): React.JSX.Element | null {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Run a skill, prompt, or command..."
-            className="flex-1 bg-transparent text-sm text-neutral-200 placeholder:text-neutral-600 outline-none"
+            className="flex-1 bg-transparent text-sm text-primary placeholder:text-faint outline-none"
           />
         </div>
         <div className="max-h-72 overflow-y-auto py-1">
           {flat.length === 0 ? (
-            <div className="px-3 py-6 text-center text-sm text-neutral-600">No matching commands</div>
+            <div className="px-3 py-6 text-center text-sm text-faint">No matching commands</div>
           ) : (
             grouped.map((group) => (
               <div key={group.label}>
-                <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
+                <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-faint">
                   {group.label}
                 </div>
                 {group.items.map((cmd) => {
@@ -171,21 +171,21 @@ export function CommandPalette(): React.JSX.Element | null {
                       onMouseEnter={() => setActiveIndex(index)}
                       className={clsx(
                         'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors',
-                        index === activeIndex ? 'bg-neutral-800' : 'hover:bg-neutral-800/50'
+                        index === activeIndex ? 'bg-card' : 'hover:bg-surface-hover/50'
                       )}
                     >
                       <span
                         className={clsx(
                           'shrink-0 rounded px-1.5 py-0.5 text-[10px] uppercase',
-                          SOURCE_BADGE[cmd.source] ?? 'bg-neutral-800 text-neutral-400'
+                          SOURCE_BADGE[cmd.source] ?? 'bg-card text-muted'
                         )}
                       >
                         {cmd.source}
                       </span>
-                      <span className="truncate text-sm text-neutral-200">
+                      <span className="truncate text-sm text-primary">
                         {cmd.source === BUILTIN_SOURCE ? `/${cmd.name}` : cmd.name}
                       </span>
-                      <span className="ml-auto line-clamp-1 text-xs text-neutral-500">
+                      <span className="ml-auto line-clamp-1 text-xs text-dim">
                         {cmd.description}
                       </span>
                     </button>
@@ -195,7 +195,7 @@ export function CommandPalette(): React.JSX.Element | null {
             ))
           )}
         </div>
-        <div className="border-t border-neutral-800 px-3 py-1.5 text-[10px] text-neutral-600">
+        <div className="border-t border-border px-3 py-1.5 text-[10px] text-faint">
           ↑↓ navigate · Enter/Tab run · Esc close
         </div>
       </div>

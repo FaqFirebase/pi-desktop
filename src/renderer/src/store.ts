@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { applyTheme } from './utils/theme'
+import { applyTheme, setUserThemes, watchSystemTheme } from './utils/theme'
 import { buildPlanningPrompt } from './utils/planning-prompt'
 import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
 import type { PiCommand } from '../../shared/pi-command'
@@ -9,8 +9,7 @@ import { validateModelsConfig, mergeModelsConfig, type ModelsConfig } from '../.
 import {
   resolveActiveMembers,
   hasQuorum,
-  buildConsensusPrompt,
-  buildRevisionPrompt,
+  buildImplementationPrompt,
   type CouncilAgentId,
   type ConsultantResult,
 } from '../../shared/council-config'
@@ -43,6 +42,9 @@ import type {
   NoteUpdate,
   UpdateCheckResult,
   PromptImage,
+  CouncilArbiterRequest,
+  PermissionRule,
+  PermissionRulesScope,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -76,6 +78,10 @@ export interface CouncilRunState {
   // Epoch ms when the consulting phase started (drives the elapsed indicator).
   startedAt?: number
   reason?: string
+  // The arbiter's consensus plan text: streamed live during 'merging', then the
+  // final plan shown at 'awaiting-approval'. Produced by an isolated read-only
+  // Pi subprocess, so untrusted consultant output never reaches the live session.
+  consensus?: string
 }
 
 // ─── Confirmation Dialog ─────────────────────────────────────────────────────
@@ -109,11 +115,14 @@ interface AppState {
 
   // Messages
   messages: DisplayMessage[]
+  // Shell-style recall of prompts sent this session (oldest→newest); reset per
+  // session in clearMessages. Recorded raw (before attachment inlining).
+  promptHistory: string[]
   streamingContent: string
   streamingThinking: string
   streamingToolCalls: Map<
     string,
-    { name: string; args: string; result?: string; isExecuting: boolean; startedAt?: number; durationMs?: number }
+    { name: string; args: string; result?: string; isExecuting: boolean; isError?: boolean; startedAt?: number; durationMs?: number }
   >
   isStreaming: boolean
 
@@ -140,6 +149,9 @@ interface AppState {
   // reopen and they survive view switches; the terminal/editor read their font
   // sizes from here so unsaved changes apply on remount. Cleared on Save/Reset.
   settingsDraft: Partial<AppSettings>
+  // Unsaved per-scope permission-rules edits from the Settings panel; survive
+  // view switches like settingsDraft. null = no pending edits for that scope.
+  permissionRulesDrafts: Record<PermissionRulesScope, PermissionRule[] | null>
   commands: PiCommand[]
 
   // Extension UI
@@ -177,8 +189,6 @@ interface AppState {
   // is absolute (readable via readAttachment / file:// even outside the
   // workspace); `relativePath` drives the code editor's language + header.
   previewTarget: PreviewTarget | null
-  // Legacy code-only file selection (still used by the chat file-link handler).
-  selectedFile: { relativePath: string; path: string } | null
 
   // File search
   fileSearchOpen: boolean
@@ -224,6 +234,7 @@ interface AppActions {
   addMessage: (message: DisplayMessage) => void
   setMessages: (messages: DisplayMessage[]) => void
   clearMessages: () => void
+  recordPrompt: (text: string) => void
 
   // Prompts
   sendPrompt: (message: string, options?: { images?: PromptImage[]; attachments?: DisplayAttachment[] }) => Promise<void>
@@ -269,6 +280,7 @@ interface AppActions {
   loadSettings: () => Promise<void>
   setSettingsDraft: (patch: Partial<AppSettings>) => void
   clearSettingsDraft: () => void
+  setPermissionRulesDraft: (scope: PermissionRulesScope, rules: PermissionRule[] | null) => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   toggleSessionGroupCollapsed: (projectPath: string) => Promise<void>
   loadCommands: () => Promise<void>
@@ -283,6 +295,10 @@ interface AppActions {
   // App confirmation dialog (promise-based; resolves true on confirm)
   requestConfirm: (options: ConfirmOptions) => Promise<boolean>
   resolveConfirm: (confirmed: boolean) => void
+
+  // Shows the one-time "this workspace has its own permission rules" notice
+  // and records the acknowledgment in settings.
+  maybeWarnWorkspacePermissionRules: () => Promise<void>
 
   // Workspaces
   loadWorkspaces: () => Promise<void>
@@ -312,7 +328,6 @@ interface AppActions {
 
   // File preview
   setPreviewTarget: (target: PreviewTarget | null) => void
-  setSelectedFile: (relativePath: string | null, path: string | null) => void
 
   // File search
   toggleFileSearch: () => void
@@ -383,6 +398,42 @@ function closeMostRecentRunning(
 
 // ─── Store ───────────────────────────────────────────────────────────────────
 
+type CouncilStoreGet = () => AppState & AppActions
+type CouncilStoreSet = (partial: Partial<AppState & AppActions>) => void
+
+interface ArbiterStepBase {
+  request: string
+  results: ConsultantResult[]
+}
+
+/**
+ * Drive one arbiter round (merge or revise) through the isolated read-only Pi
+ * subprocess, streaming its output live into councilRun.consensus. Returns the
+ * final plan text, or an error string if the arbiter failed. Callers own the
+ * resulting phase transition.
+ */
+async function runArbiterStep(
+  payload: CouncilArbiterRequest,
+  base: ArbiterStepBase,
+  get: CouncilStoreGet,
+  set: CouncilStoreSet,
+): Promise<{ plan?: string; error?: string }> {
+  set({ councilRun: { phase: 'merging', request: base.request, results: base.results, consensus: '' } })
+  const unsubscribe = window.piDesktop.council.onProgress(({ chunk }) => {
+    const run = get().councilRun
+    if (!run || run.phase !== 'merging') return
+    set({ councilRun: { ...run, consensus: (run.consensus ?? '') + chunk } })
+  })
+  try {
+    const { plan } = await window.piDesktop.council.arbiter(payload)
+    return { plan }
+  } catch (err) {
+    return { error: `Arbiter failed: ${err instanceof Error ? err.message : String(err)}` }
+  } finally {
+    unsubscribe()
+  }
+}
+
 export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Initial State ────────────────────────────────────────────────────
 
@@ -396,6 +447,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   forkMessages: [],
 
   messages: [],
+  promptHistory: [],
   streamingContent: '',
   streamingThinking: '',
   streamingToolCalls: new Map(),
@@ -414,6 +466,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   reviewOpen: false,
   settings: null,
   settingsDraft: {},
+  permissionRulesDrafts: { global: null, workspace: null },
   commands: [],
 
   extensionUiRequest: null,
@@ -437,7 +490,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   councilRun: null,
 
   previewTarget: null,
-  selectedFile: null,
 
   fileSearchOpen: false,
 
@@ -474,6 +526,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         await get().refreshSessionState()
         await get().refreshSessionStats()
         await get().refreshSessionList()
+        await get().maybeWarnWorkspacePermissionRules()
       }
     } catch (err) {
       set({ piStatus: 'error', piError: err instanceof Error ? err.message : String(err) })
@@ -493,6 +546,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       const status = await window.piDesktop.pi.restart(options as Record<string, unknown> | undefined)
       set({ piStatus: status.status, piPid: status.pid, piError: status.error })
+
+      // Re-read session state after a restart so the status bar's model label
+      // and stats reflect a changed models.json (mirrors startPi). Without this
+      // the label keeps the pre-restart model.
+      if (status.status === 'running') {
+        await get().refreshSessionState()
+        await get().refreshSessionStats()
+        await get().refreshSessionList()
+      }
     } catch (err) {
       set({ piStatus: 'error', piError: err instanceof Error ? err.message : String(err) })
     }
@@ -507,7 +569,20 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   setMessages: (messages) => set({ messages }),
 
-  clearMessages: () => set({ messages: [], streamingContent: '', streamingThinking: '', streamingToolCalls: new Map() }),
+  clearMessages: () => set({ messages: [], promptHistory: [], streamingContent: '', streamingThinking: '', streamingToolCalls: new Map() }),
+
+  // Append a sent prompt to the recall history. Ignores blanks and consecutive
+  // duplicates (shell-style), and caps the list so it can't grow unbounded.
+  recordPrompt: (text) =>
+    set((state) => {
+      const trimmed = text.trim()
+      if (!trimmed) return state
+      const history = state.promptHistory
+      if (history[history.length - 1] === trimmed) return state
+      const next = [...history, trimmed]
+      if (next.length > 200) next.shift()
+      return { promptHistory: next }
+    }),
 
   // ─── Prompts ──────────────────────────────────────────────────────────
 
@@ -645,24 +720,50 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       return
     }
 
-    set({ councilRun: { phase: 'merging', request, results } })
-    const consensusPrompt = buildConsensusPrompt(request, results)
-    await get().sendPrompt(consensusPrompt)
-    set({ councilRun: { phase: 'awaiting-approval', request, results } })
+    // The arbiter runs in an isolated read-only Pi subprocess. Consultant plans
+    // are untrusted input, so they are never fed to the live (writable) session —
+    // only the vetted consensus plan is, and only after the user approves it.
+    const merged = await runArbiterStep(
+      { kind: 'merge', request, results, timeoutSeconds: config.timeoutSeconds },
+      { request, results },
+      get,
+      set,
+    )
+    if (merged.error) {
+      set({ councilRun: { phase: 'refused', request, results, reason: merged.error } })
+      return
+    }
+    set({ councilRun: { phase: 'awaiting-approval', request, results, consensus: merged.plan } })
   },
 
   approveCouncilPlan: async () => {
     const run = get().councilRun
-    if (!run || run.phase !== 'awaiting-approval') return
+    if (!run || run.phase !== 'awaiting-approval' || !run.consensus?.trim()) return
+    const plan = run.consensus
     set({ councilRun: null })
-    await get().sendFollowUp('Approved. Implement the consensus plan above now.')
+    // Only the approved plan crosses into the writable session — never raw
+    // consultant output — so it cannot drive tools before this approval gate.
+    await get().sendPrompt(buildImplementationPrompt(plan))
   },
 
   reviseCouncilPlan: async (feedback) => {
     const run = get().councilRun
-    if (!run || run.phase !== 'awaiting-approval' || !feedback.trim()) return
-    // Pi revises the consensus plan in-place; the run stays at the approval gate.
-    await get().sendPrompt(buildRevisionPrompt(feedback))
+    if (!run || run.phase !== 'awaiting-approval' || !feedback.trim() || !run.consensus) return
+    const { request, results, consensus } = run
+    const config = get().settings?.council
+    if (!config) return
+    const revised = await runArbiterStep(
+      { kind: 'revise', request, plan: consensus, feedback, timeoutSeconds: config.timeoutSeconds },
+      { request, results },
+      get,
+      set,
+    )
+    if (revised.error) {
+      // Keep the previous plan at the approval gate and surface the failure.
+      set({ councilRun: { phase: 'awaiting-approval', request, results, consensus, reason: revised.error } })
+      return
+    }
+    set({ councilRun: { phase: 'awaiting-approval', request, results, consensus: revised.plan } })
   },
 
   cancelCouncil: () => set({ councilRun: null }),
@@ -921,7 +1022,19 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       const settings = await window.piDesktop.settings.getAll()
       set({ settings })
 
+      const { themes, warnings } = await window.piDesktop.themes.list()
+      for (const warning of warnings) {
+        console.warn(warning)
+      }
+      setUserThemes(themes)
+
       applyTheme(settings.theme)
+      // Re-apply on OS light/dark changes while the app is open, but only
+      // when the effective (draft or saved) theme is 'system'.
+      watchSystemTheme(() => {
+        const state = get()
+        return state.settingsDraft.theme ?? state.settings?.theme ?? 'system'
+      })
 
       // Apply font size
       document.documentElement.style.fontSize = `${settings.fontSize}px`
@@ -933,7 +1046,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   setSettingsDraft: (patch) =>
     set((state) => ({ settingsDraft: { ...state.settingsDraft, ...patch } })),
 
-  clearSettingsDraft: () => set({ settingsDraft: {} }),
+  setPermissionRulesDraft: (scope, rules) =>
+    set((state) => ({ permissionRulesDrafts: { ...state.permissionRulesDrafts, [scope]: rules } })),
+
+  clearSettingsDraft: () =>
+    set({ settingsDraft: {}, permissionRulesDrafts: { global: null, workspace: null } }),
 
   setPermissionMode: async (mode) => {
     const updated = await window.piDesktop.settings.save({ permissionMode: mode })
@@ -1170,6 +1287,54 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     set({ confirmRequest: null })
   },
 
+  maybeWarnWorkspacePermissionRules: async () => {
+    try {
+      const status = await window.piDesktop.permissionRules.workspaceStatus()
+      if (!status.hasWorkspaceRules || status.acknowledged || !status.workspacePath) return
+
+      if (status.hasAllowRules && !status.trusted) {
+        // The repo defines allow rules that would let Pi skip permission prompts.
+        // They stay inert until the user explicitly trusts this workspace.
+        const trust = await get().requestConfirm({
+          title: 'Trust this workspace?',
+          message:
+            'This workspace defines permission rules (.pi-desktop/permission-rules.json) with allow ' +
+            'rules that would let Pi skip confirmation prompts. They are ignored until you trust this ' +
+            'workspace; its deny rules always apply. Only trust workspaces from a source you trust.',
+          confirmLabel: 'Trust workspace',
+          cancelLabel: 'Keep untrusted',
+        })
+        if (trust) {
+          await window.piDesktop.permissionRules.setWorkspaceTrust(true)
+        }
+      } else {
+        await get().requestConfirm({
+          title: 'Workspace permission rules',
+          message:
+            'This workspace defines its own permission rules (.pi-desktop/permission-rules.json). ' +
+            'Its deny rules restrict Pi while you work here; your global rules apply otherwise.',
+          confirmLabel: 'OK',
+          cancelLabel: 'Dismiss',
+        })
+      }
+
+      // Acknowledge so the prompt does not fire on every Pi start. Fetch fresh
+      // settings rather than trusting the possibly-stale store snapshot, so a
+      // concurrent settings save elsewhere can't be clobbered by an ack list
+      // built from data that predates it.
+      const current = await window.piDesktop.settings.getAll()
+      const acked = current.permissionRulesAckWorkspaces ?? []
+      if (!acked.includes(status.workspacePath)) {
+        const updated = await window.piDesktop.settings.save({
+          permissionRulesAckWorkspaces: [...acked, status.workspacePath],
+        })
+        set({ settings: updated })
+      }
+    } catch {
+      // Non-fatal: the warning tries again on the next Pi start.
+    }
+  },
+
   // ─── Workspaces ──────────────────────────────────────────────────────
 
   loadWorkspaces: async () => {
@@ -1199,6 +1364,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   switchWorkspace: async (workspaceId) => {
     try {
       await window.piDesktop.workspace.setActive(workspaceId)
+      // The switch has committed on the main side as of this point — an
+      // unsaved workspace-rules draft belongs to the workspace being left, so
+      // discard it now rather than at the end of this chain. Doing it here
+      // (before any of the awaits below, and before loadWorkspaces() updates
+      // `activeWorkspace`) means it can't be skipped by a later throw in this
+      // chain, and the settings panel's own activeWorkspace-change effect can
+      // never observe a stale draft under the new workspace.
+      get().setPermissionRulesDraft('workspace', null)
       get().clearMessages()
       // Re-sync Pi status from main: each workspace has its own PiRpcManager,
       // so the new active workspace's Pi may be in a different state than
@@ -1217,6 +1390,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       if (get().piStatus === 'running') {
         await get().reloadActiveSession()
       }
+      await get().maybeWarnWorkspacePermissionRules()
     } catch (err) {
       get().addMessage({
         id: generateId(),
@@ -1372,10 +1546,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   setPreviewTarget: (target) => {
     set({ previewTarget: target })
-  },
-
-  setSelectedFile: (relativePath, path) => {
-    set({ selectedFile: relativePath && path ? { relativePath, path } : null })
   },
 
   toggleFileSearch: () => {
@@ -1702,6 +1872,8 @@ function handleTurnComplete(
         id,
         name: tc.name,
         arguments: tc.args,
+        result: tc.result,
+        isError: tc.isError,
         isExecuting: false,
         durationMs: tc.durationMs,
       }))
@@ -1723,9 +1895,6 @@ function handleTurnComplete(
         provider,
       })
 
-      // Emit a standalone toolResult message per tool call so the live view
-      // matches what reloading from history produces (Pi persists tool output
-      // as separate toolResult messages, not folded into the assistant turn).
       for (const [id, tc] of entries) {
         if (!tc.result) continue
         newMessages.push({
@@ -1733,6 +1902,8 @@ function handleTurnComplete(
           role: 'toolResult',
           content: tc.result,
           timestamp: Date.now(),
+          toolCallId: id,
+          toolName: tc.name,
         })
       }
     }
@@ -1802,6 +1973,7 @@ function handleToolEnd(
       newMap.set(event.toolCallId, {
         ...existing,
         isExecuting: false,
+        isError: event.isError,
         result: resultText || existing.result,
         durationMs: existing.startedAt ? Date.now() - existing.startedAt : existing.durationMs,
       })

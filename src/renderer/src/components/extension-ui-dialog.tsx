@@ -75,17 +75,17 @@ function NotifyToast({
   }, [onDismiss])
 
   const iconMap: Record<string, React.ReactNode> = {
-    info: <AlertCircle size={16} className="text-blue-400" />,
-    warning: <AlertCircle size={16} className="text-yellow-400" />,
-    error: <AlertCircle size={16} className="text-red-400" />,
+    info: <AlertCircle size={16} className="text-accent-fg" />,
+    warning: <AlertCircle size={16} className="text-warning" />,
+    error: <AlertCircle size={16} className="text-error" />,
   }
 
   return (
     <div className="fixed bottom-10 right-4 z-50 animate-fade-in">
-      <div className="flex items-center gap-3 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 shadow-lg">
+      <div className="flex items-center gap-3 rounded-lg border border-border-strong bg-surface px-4 py-3 shadow-lg">
         {iconMap[request.notifyType ?? 'info'] ?? iconMap.info}
-        <span className="text-sm text-neutral-200">{request.message ?? 'Notification'}</span>
-        <button onClick={onDismiss} className="ml-2 text-neutral-500 hover:text-neutral-300">
+        <span className="text-sm text-primary">{request.message ?? 'Notification'}</span>
+        <button onClick={onDismiss} className="ml-2 text-dim hover:text-secondary">
           <X size={14} />
         </button>
       </div>
@@ -112,9 +112,9 @@ function SelectDialog({
             <button
               key={option}
               onClick={() => onSelect(option)}
-              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-700 transition-colors"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-primary hover:bg-elevated transition-colors"
             >
-              <HelpCircle size={14} className="text-neutral-500" />
+              <HelpCircle size={14} className="text-dim" />
               {option}
             </button>
           ))}
@@ -141,18 +141,18 @@ function ConfirmDialog({
     <DialogOverlay onCancel={onCancel}>
       <DialogBox title={request.title ?? 'Confirm'} onCancel={onCancel}>
         {request.message && (
-          <p className="mb-4 text-sm text-neutral-400">{request.message}</p>
+          <p className="mb-4 text-sm text-muted">{request.message}</p>
         )}
         <div className="flex justify-end gap-2">
           <button
             onClick={onDeny}
-            className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:bg-neutral-800 transition-colors"
+            className="rounded-md border border-border-strong px-4 py-2 text-sm text-muted hover:bg-surface-hover transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 transition-colors"
+            className="rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover transition-colors"
           >
             Confirm
           </button>
@@ -184,7 +184,7 @@ function InputDialog({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           autoFocus
-          className="mb-4 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-200 placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none"
+          className="mb-4 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-primary placeholder:text-faint focus:border-focus focus:outline-none"
           onKeyDown={(e) => {
             if (e.key === 'Enter') onSubmit(value)
           }}
@@ -192,13 +192,13 @@ function InputDialog({
         <div className="flex justify-end gap-2">
           <button
             onClick={onCancel}
-            className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:bg-neutral-800 transition-colors"
+            className="rounded-md border border-border-strong px-4 py-2 text-sm text-muted hover:bg-surface-hover transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={() => onSubmit(value)}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 transition-colors"
+            className="rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover transition-colors"
           >
             Submit
           </button>
@@ -229,18 +229,18 @@ function EditorDialog({
           onChange={(e) => setValue(e.target.value)}
           autoFocus
           rows={12}
-          className="mb-4 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 font-mono text-sm text-neutral-200 focus:border-blue-500 focus:outline-none resize-y"
+          className="mb-4 w-full rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-sm text-primary focus:border-focus focus:outline-none resize-y"
         />
         <div className="flex justify-end gap-2">
           <button
             onClick={onCancel}
-            className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:bg-neutral-800 transition-colors"
+            className="rounded-md border border-border-strong px-4 py-2 text-sm text-muted hover:bg-surface-hover transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={() => onSubmit(value)}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 transition-colors"
+            className="rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover transition-colors"
           >
             Save
           </button>
@@ -276,12 +276,12 @@ export function AppConfirmDialog(): React.JSX.Element | null {
   return (
     <DialogOverlay onCancel={() => resolveConfirm(false)}>
       <DialogBox title={request.title ?? 'Confirm'} onCancel={() => resolveConfirm(false)}>
-        <p className="mb-4 whitespace-pre-line text-sm text-neutral-400">{request.message}</p>
+        <p className="mb-4 whitespace-pre-line text-sm text-muted">{request.message}</p>
         <div className="flex justify-end gap-2">
           <button
             onClick={() => resolveConfirm(false)}
             autoFocus={request.danger}
-            className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:bg-neutral-800 transition-colors"
+            className="rounded-md border border-border-strong px-4 py-2 text-sm text-muted hover:bg-surface-hover transition-colors"
           >
             {request.cancelLabel ?? 'Cancel'}
           </button>
@@ -290,7 +290,7 @@ export function AppConfirmDialog(): React.JSX.Element | null {
             autoFocus={!request.danger}
             className={clsx(
               'rounded-md px-4 py-2 text-sm text-white transition-colors',
-              request.danger ? 'bg-red-600 hover:bg-red-500' : 'bg-blue-600 hover:bg-blue-500'
+              request.danger ? 'bg-error hover:bg-error-hover' : 'bg-accent hover:bg-accent-hover'
             )}
           >
             {request.confirmLabel ?? 'Confirm'}
@@ -336,14 +336,14 @@ function DialogBox({
   return (
     <div
       className={clsx(
-        'mx-4 rounded-xl border border-neutral-700 bg-neutral-900 shadow-2xl',
+        'mx-4 rounded-xl border border-border-strong bg-surface shadow-2xl',
         wide ? 'w-full max-w-2xl' : 'w-full max-w-md'
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
-        <h3 className="text-sm font-medium text-neutral-200">{title}</h3>
-        <button onClick={onCancel} className="text-neutral-500 hover:text-neutral-300">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <h3 className="text-sm font-medium text-primary">{title}</h3>
+        <button onClick={onCancel} className="text-dim hover:text-secondary">
           <X size={14} />
         </button>
       </div>

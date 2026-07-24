@@ -20,13 +20,14 @@ import {
   RotateCcw,
   Eye,
   Code2,
+  ShieldAlert,
 } from 'lucide-react'
 
 // `<webview>` (enabled via webviewTag) isn't a typed JSX intrinsic; cast the tag
 // to a component so TS accepts the props we use. It renders the HTML preview in
 // an isolated guest process so its JavaScript runs without touching the app CSP.
 const Webview = 'webview' as unknown as React.FC<
-  React.HTMLAttributes<HTMLElement> & { src: string; partition?: string }
+  React.HTMLAttributes<HTMLElement> & { src: string; partition?: string; plugins?: boolean }
 >
 
 function toFileUrl(absolutePath: string): string {
@@ -120,7 +121,7 @@ export function FileTree(): React.JSX.Element {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <Loader2 size={20} className="animate-spin text-neutral-500" />
+        <Loader2 size={20} className="animate-spin text-dim" />
       </div>
     )
   }
@@ -130,11 +131,11 @@ export function FileTree(): React.JSX.Element {
     // (e.g. the folder was moved/deleted or the saved path is wrong).
     if (activeWorkspace && !pathExists) {
       return (
-        <div className="flex flex-col items-center justify-center px-4 py-8 text-center text-neutral-500">
-          <FolderOpen size={24} className="mb-2 text-amber-500/70" />
-          <p className="text-xs text-amber-400">Folder not found</p>
-          <p className="mt-1 break-all text-[11px] text-neutral-500">{activeWorkspace.path}</p>
-          <p className="mt-2 text-[11px] text-neutral-600">
+        <div className="flex flex-col items-center justify-center px-4 py-8 text-center text-dim">
+          <FolderOpen size={24} className="mb-2 text-warning/70" />
+          <p className="text-xs text-warning">Folder not found</p>
+          <p className="mt-1 break-all text-[11px] text-dim">{activeWorkspace.path}</p>
+          <p className="mt-2 text-[11px] text-faint">
             The folder may have moved or been deleted. Right-click the workspace in the
             sidebar and choose “Change folder…” to point it somewhere else.
           </p>
@@ -142,10 +143,10 @@ export function FileTree(): React.JSX.Element {
       )
     }
     return (
-      <div className="flex flex-col items-center justify-center px-4 py-8 text-center text-neutral-500">
-        <FolderOpen size={24} className="mb-2 text-neutral-600" />
+      <div className="flex flex-col items-center justify-center px-4 py-8 text-center text-dim">
+        <FolderOpen size={24} className="mb-2 text-faint" />
         <p className="text-xs">No workspace open</p>
-        <p className="mt-1 text-[11px] text-neutral-600">
+        <p className="mt-1 text-[11px] text-faint">
           Switch to a project folder from the workspace switcher in the sidebar.
         </p>
       </div>
@@ -156,7 +157,7 @@ export function FileTree(): React.JSX.Element {
     <div className="flex flex-col h-full">
       {/* Branch indicator */}
       {gitBranch && (
-        <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-neutral-500 border-b border-neutral-800">
+        <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-dim border-b border-border">
           <GitBranch size={12} />
           <span>{gitBranch}</span>
         </div>
@@ -201,14 +202,14 @@ function TreeNodeComponent({
       <div>
         <button
           onClick={() => setExpanded(!expanded)}
-          className="flex w-full items-center gap-1 py-0.5 px-2 text-sm text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-300 transition-colors"
+          className="flex w-full items-center gap-1 py-0.5 px-2 text-sm text-muted hover:bg-surface-hover/50 hover:text-secondary transition-colors"
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
         >
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           {expanded ? (
-            <FolderOpen size={12} className="text-blue-400 shrink-0" />
+            <FolderOpen size={12} className="text-accent-fg shrink-0" />
           ) : (
-            <FolderClosed size={12} className="text-neutral-500 shrink-0" />
+            <FolderClosed size={12} className="text-dim shrink-0" />
           )}
           <span className="truncate">{node.name}</span>
         </button>
@@ -232,12 +233,12 @@ function TreeNodeComponent({
       className={clsx(
         'flex w-full items-center gap-1.5 py-0.5 px-2 text-sm transition-colors',
         isSelected
-          ? 'bg-blue-900/30 text-blue-300'
-          : 'text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-300'
+          ? 'bg-accent-bg text-accent-fg'
+          : 'text-muted hover:bg-surface-hover/50 hover:text-secondary'
       )}
       style={{ paddingLeft: `${depth * 12 + 20}px` }}
     >
-      <File size={12} className="shrink-0 text-neutral-500" />
+      <File size={12} className="shrink-0 text-dim" />
       <span className="truncate">{node.name}</span>
       {status && <GitStatusBadge status={status} />}
     </button>
@@ -249,7 +250,7 @@ function GitStatusBadge({ status }: { status: GitFileStatus }): React.JSX.Elemen
   if (label === ' ' || label === '?') {
     if (label === '?') {
       return (
-        <span className="ml-auto rounded px-1 py-0.5 text-[9px] bg-green-900/30 text-green-400">
+        <span className="ml-auto rounded px-1 py-0.5 text-[9px] bg-success-bg text-success">
           U
         </span>
       )
@@ -258,15 +259,15 @@ function GitStatusBadge({ status }: { status: GitFileStatus }): React.JSX.Elemen
   }
 
   const colorMap: Record<string, string> = {
-    M: 'bg-yellow-900/30 text-yellow-400',
-    A: 'bg-green-900/30 text-green-400',
-    D: 'bg-red-900/30 text-red-400',
-    R: 'bg-purple-900/30 text-purple-400',
-    C: 'bg-blue-900/30 text-blue-400',
+    M: 'bg-warning-bg text-warning',
+    A: 'bg-success-bg text-success',
+    D: 'bg-error-bg text-error',
+    R: 'bg-special-bg text-special',
+    C: 'bg-accent-bg text-accent-fg',
   }
 
   return (
-    <span className={clsx('ml-auto rounded px-1 py-0.5 text-[9px]', colorMap[label] ?? 'bg-neutral-800 text-neutral-500')}>
+    <span className={clsx('ml-auto rounded px-1 py-0.5 text-[9px]', colorMap[label] ?? 'bg-card text-dim')}>
       {label}
     </span>
   )
@@ -291,6 +292,21 @@ export function FileSearch({ isOpen, onClose }: FileSearchProps): React.JSX.Elem
       setResults([])
     }
   }, [isOpen])
+
+  // Close on Escape. Capture phase + stopPropagation so it preempts the
+  // window-level Escape-to-abort handler while the modal is open.
+  useEffect(() => {
+    if (!isOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [isOpen, onClose])
 
   useEffect(() => {
     if (!query.trim()) {
@@ -329,16 +345,16 @@ export function FileSearch({ isOpen, onClose }: FileSearchProps): React.JSX.Elem
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-lg rounded-xl border border-neutral-700 bg-neutral-900 shadow-2xl overflow-hidden">
+      <div className="w-full max-w-lg rounded-xl border border-border-strong bg-surface shadow-2xl overflow-hidden">
         {/* Search input */}
-        <div className="flex items-center border-b border-neutral-800 px-4 py-3">
-          <Search size={16} className="text-neutral-500 shrink-0" />
+        <div className="flex items-center border-b border-border px-4 py-3">
+          <Search size={16} className="text-dim shrink-0" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={contentMode ? 'Search file contents...' : 'Search files by name...'}
-            className="flex-1 ml-3 bg-transparent text-sm text-neutral-200 placeholder:text-neutral-600 outline-none"
+            className="flex-1 ml-3 bg-transparent text-sm text-primary placeholder:text-faint outline-none"
             autoFocus
           />
           <button
@@ -346,15 +362,15 @@ export function FileSearch({ isOpen, onClose }: FileSearchProps): React.JSX.Elem
             className={clsx(
               'rounded px-2 py-0.5 text-[10px] transition-colors',
               contentMode
-                ? 'bg-blue-900/30 text-blue-400'
-                : 'bg-neutral-800 text-neutral-500 hover:text-neutral-300'
+                ? 'bg-accent-bg text-accent-fg'
+                : 'bg-card text-dim hover:text-secondary'
             )}
           >
             {contentMode ? 'CONTENT' : 'FILES'}
           </button>
           <button
             onClick={onClose}
-            className="ml-2 rounded p-1 text-neutral-500 hover:text-neutral-300"
+            className="ml-2 rounded p-1 text-dim hover:text-secondary"
           >
             <X size={14} />
           </button>
@@ -364,10 +380,10 @@ export function FileSearch({ isOpen, onClose }: FileSearchProps): React.JSX.Elem
         <div className="max-h-80 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 size={20} className="animate-spin text-neutral-500" />
+              <Loader2 size={20} className="animate-spin text-dim" />
             </div>
           ) : results.length === 0 ? (
-            <div className="py-8 text-center text-xs text-neutral-600">
+            <div className="py-8 text-center text-xs text-faint">
               {query.trim() ? 'No results found' : 'Type to search...'}
             </div>
           ) : (
@@ -376,15 +392,15 @@ export function FileSearch({ isOpen, onClose }: FileSearchProps): React.JSX.Elem
                 <button
                   key={`${result.path}-${i}`}
                   onClick={() => handleSelect(result)}
-                  className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-neutral-800 transition-colors"
+                  className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-surface-hover transition-colors"
                 >
-                  <FileText size={14} className="shrink-0 text-neutral-500" />
+                  <FileText size={14} className="shrink-0 text-dim" />
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm text-neutral-200 truncate">
+                    <div className="text-sm text-primary truncate">
                       {result.relativePath}
                     </div>
                     {result.matchType === 'content' && result.snippet && (
-                      <div className="text-xs text-neutral-500 truncate mt-0.5">
+                      <div className="text-xs text-dim truncate mt-0.5">
                         Line {result.line}: {result.snippet}
                       </div>
                     )}
@@ -396,7 +412,7 @@ export function FileSearch({ isOpen, onClose }: FileSearchProps): React.JSX.Elem
         </div>
 
         {/* Footer */}
-        <div className="border-t border-neutral-800 px-4 py-2 flex items-center justify-between text-xs text-neutral-600">
+        <div className="border-t border-border px-4 py-2 flex items-center justify-between text-xs text-faint">
           <span>{results.length} results</span>
           <span>Esc to close</span>
         </div>
@@ -419,17 +435,22 @@ export function FilePreview(): React.JSX.Element | null {
   const [viewMode, setViewMode] = useState<'source' | 'preview'>('preview')
   // Bumped after a save so the HTML <webview> remounts and reloads from disk.
   const [reloadKey, setReloadKey] = useState(0)
+  // null until resolved; false means the HTML preview runs without scripts.
+  const [workspaceTrusted, setWorkspaceTrusted] = useState<boolean | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isDirty = content !== null && savedContent !== null && content !== savedContent
 
   const displayPath = file?.relativePath ?? file?.name ?? ''
   const isMarkdown = /\.(md|markdown|mdx)$/i.test(displayPath)
   const isHtml = /\.(html?|htm)$/i.test(displayPath)
+  // PDFs render in Chromium's built-in viewer via the <webview> — binary, so we
+  // never read them as text or offer editing.
+  const isPdf = /\.pdf$/i.test(displayPath)
   const canPreview = isMarkdown || isHtml
   const path = file?.path ?? null
 
   useEffect(() => {
-    if (!path) {
+    if (!path || isPdf) {
       setContent(null)
       setSavedContent(null)
       return
@@ -460,12 +481,35 @@ export function FilePreview(): React.JSX.Element | null {
     return () => {
       cancelled = true
     }
-  }, [path])
+  }, [path, isPdf])
 
   // Default to the rendered preview for markdown/HTML, source otherwise.
   useEffect(() => {
     setViewMode(canPreview ? 'preview' : 'source')
   }, [path, canPreview])
+
+  // The HTML preview runs scripts only for a trusted workspace; fetch that state
+  // so we can offer to trust it when scripts are disabled.
+  useEffect(() => {
+    if (!isHtml) {
+      setWorkspaceTrusted(null)
+      return
+    }
+    let cancelled = false
+    void window.piDesktop.permissionRules.workspaceStatus().then((status) => {
+      if (!cancelled) setWorkspaceTrusted(status.trusted)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [isHtml, path])
+
+  const handleTrustWorkspace = useCallback(async () => {
+    const status = await window.piDesktop.permissionRules.setWorkspaceTrust(true)
+    setWorkspaceTrusted(status.trusted)
+    // Remount the <webview> so it re-attaches with scripts enabled.
+    setReloadKey((k) => k + 1)
+  }, [])
 
   // Cleanup pending debounce on unmount
   useEffect(() => {
@@ -510,30 +554,30 @@ export function FilePreview(): React.JSX.Element | null {
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-[var(--color-bg-primary)]">
+    <div className="flex flex-1 flex-col overflow-hidden bg-[var(--color-app)]">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-2">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="flex items-center gap-2 min-w-0">
-          <FileText size={14} className="shrink-0 text-neutral-500" />
-          <span className="text-xs text-neutral-300 truncate">{displayPath}</span>
+          <FileText size={14} className="shrink-0 text-dim" />
+          <span className="text-xs text-secondary truncate">{displayPath}</span>
           {saveSuccess ? (
-            <span className="rounded bg-green-900/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-green-400">
+            <span className="rounded bg-success-bg px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-success">
               saved
             </span>
           ) : isDirty ? (
-            <span className="rounded bg-yellow-900/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-yellow-400">
+            <span className="rounded bg-warning-bg px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-warning">
               modified
             </span>
           ) : null}
         </div>
         <div className="flex items-center gap-1">
           {canPreview && (
-            <div className="mr-1 flex items-center rounded bg-neutral-900 p-0.5">
+            <div className="mr-1 flex items-center rounded bg-surface p-0.5">
               <button
                 onClick={() => setViewMode('source')}
                 className={clsx(
                   'rounded p-1 transition-colors',
-                  viewMode === 'source' ? 'bg-neutral-700 text-neutral-100' : 'text-neutral-500 hover:text-neutral-300'
+                  viewMode === 'source' ? 'bg-elevated text-primary' : 'text-dim hover:text-secondary'
                 )}
                 title="Source"
               >
@@ -543,7 +587,7 @@ export function FilePreview(): React.JSX.Element | null {
                 onClick={() => setViewMode('preview')}
                 className={clsx(
                   'rounded p-1 transition-colors',
-                  viewMode === 'preview' ? 'bg-neutral-700 text-neutral-100' : 'text-neutral-500 hover:text-neutral-300'
+                  viewMode === 'preview' ? 'bg-elevated text-primary' : 'text-dim hover:text-secondary'
                 )}
                 title="Preview"
               >
@@ -551,25 +595,29 @@ export function FilePreview(): React.JSX.Element | null {
               </button>
             </div>
           )}
-          <button
-            onClick={handleRevert}
-            disabled={!isDirty || saving}
-            className="rounded p-1 text-neutral-500 transition-colors hover:text-neutral-300 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Revert changes"
-          >
-            <RotateCcw size={12} />
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={!isDirty || saving}
-            className="rounded p-1 text-neutral-500 transition-colors hover:text-neutral-300 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Save file"
-          >
-            <Save size={12} />
-          </button>
+          {!isPdf && (
+            <>
+              <button
+                onClick={handleRevert}
+                disabled={!isDirty || saving}
+                className="rounded p-1 text-dim transition-colors hover:text-secondary disabled:cursor-not-allowed disabled:opacity-40"
+                title="Revert changes"
+              >
+                <RotateCcw size={12} />
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={!isDirty || saving}
+                className="rounded p-1 text-dim transition-colors hover:text-secondary disabled:cursor-not-allowed disabled:opacity-40"
+                title="Save file"
+              >
+                <Save size={12} />
+              </button>
+            </>
+          )}
           <button
             onClick={() => useAppStore.getState().setPreviewTarget(null)}
-            className="rounded p-1 text-neutral-500 hover:text-neutral-300"
+            className="rounded p-1 text-dim hover:text-secondary"
             title="Close editor"
           >
             <X size={12} />
@@ -579,24 +627,51 @@ export function FilePreview(): React.JSX.Element | null {
 
       {/* Content */}
       <div className="flex flex-1 flex-col overflow-auto">
-        {loading ? (
+        {isPdf ? (
+          <Webview
+            // Ask Chromium's PDF viewer to open with both the thumbnail/bookmark
+            // sidebar and the top toolbar hidden, for a clean embedded preview.
+            src={`${toFileUrl(path)}#toolbar=0&navpanes=0`}
+            partition="persist:pdf-preview"
+            plugins
+            className="flex-1"
+            style={{ display: 'flex', width: '100%', height: '100%', border: 'none' }}
+          />
+        ) : loading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 size={20} className="animate-spin text-neutral-500" />
+            <Loader2 size={20} className="animate-spin text-dim" />
           </div>
         ) : error ? (
-          <div className="p-4 text-xs text-red-400">{error}</div>
+          <div className="p-4 text-xs text-error">{error}</div>
         ) : content === null ? null : viewMode === 'preview' && isMarkdown ? (
           <div className="markdown-body text-sm p-4">
             <MarkdownRenderer content={content} />
           </div>
         ) : viewMode === 'preview' && isHtml ? (
-          <Webview
-            key={reloadKey}
-            src={toFileUrl(path)}
-            partition="preview"
-            className="flex-1"
-            style={{ display: 'flex', width: '100%', height: '100%', border: 'none' }}
-          />
+          <div className="flex flex-1 flex-col">
+            {workspaceTrusted === false && (
+              <div className="flex items-center justify-between gap-2 border-b border-warning-bg bg-warning-bg px-3 py-1.5 text-xs text-warning">
+                <span className="flex items-center gap-1.5">
+                  <ShieldAlert size={13} className="shrink-0" />
+                  Scripts are disabled for this untrusted workspace&apos;s preview.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleTrustWorkspace()}
+                  className="shrink-0 rounded-md border border-border-strong bg-surface px-2 py-1 text-primary transition-colors hover:border-border-strong-hover"
+                >
+                  Trust workspace
+                </button>
+              </div>
+            )}
+            <Webview
+              key={reloadKey}
+              src={toFileUrl(path)}
+              partition="preview"
+              className="flex-1"
+              style={{ display: 'flex', width: '100%', height: '100%', border: 'none' }}
+            />
+          </div>
         ) : (
           <CodeEditor
             filePath={displayPath}

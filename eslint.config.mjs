@@ -7,7 +7,7 @@ import globals from 'globals'
 // shared/main/preload run in Node, renderer runs in the browser with React.
 export default tseslint.config(
   {
-    ignores: ['out/**', 'release/**', 'node_modules/**', 'resources/**'],
+    ignores: ['out/**', 'release/**', 'node_modules/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -26,9 +26,11 @@ export default tseslint.config(
       ],
     },
   },
-  // Node-side code: main process, preload bridge, shared contracts.
+  // Node-side code: main process, preload bridge, shared contracts, and the
+  // bundled Pi extension / shared permission engine under resources/ (loaded by
+  // Pi via jiti; imports only from node:*).
   {
-    files: ['src/{main,preload,shared}/**/*.ts'],
+    files: ['src/{main,preload,shared}/**/*.ts', 'resources/**/*.ts'],
     languageOptions: {
       globals: { ...globals.node },
     },

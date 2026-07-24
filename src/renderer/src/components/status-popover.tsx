@@ -115,10 +115,10 @@ export function StatusPopover(): React.JSX.Element {
   const skillCommands = commands.filter((c) => c.source === 'skill')
 
   const statusColor = {
-    running: 'bg-emerald-500',
-    starting: 'bg-yellow-500 animate-pulse',
-    error: 'bg-red-500',
-    stopped: 'bg-neutral-600',
+    running: 'bg-success',
+    starting: 'bg-warning animate-pulse',
+    error: 'bg-error',
+    stopped: 'bg-elevated',
   }[piStatus]
 
   return (
@@ -126,21 +126,21 @@ export function StatusPopover(): React.JSX.Element {
       {/* Status trigger */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-neutral-800 transition-colors"
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-surface-hover transition-colors"
         title="System status"
       >
         <div className={clsx('h-2 w-2 rounded-full', statusColor)} />
-        <Activity size={12} className="text-neutral-400" />
+        <Activity size={12} className="text-muted" />
       </button>
 
       {/* Popover */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 w-80 rounded-xl border border-neutral-700 bg-neutral-900 shadow-2xl shadow-black/50 overflow-hidden animate-fade-in z-50">
+        <div className="absolute top-full left-0 mt-1 w-80 rounded-xl border border-border-strong bg-surface shadow-2xl shadow-black/50 overflow-hidden animate-fade-in z-50">
           {/* Header */}
-          <div className="px-4 py-3 border-b border-neutral-800 bg-neutral-900/50">
+          <div className="px-4 py-3 border-b border-border bg-surface/50">
             <div className="flex items-center gap-2">
-              <Activity size={16} className="text-neutral-400" />
-              <span className="text-sm font-medium text-neutral-200">System Status</span>
+              <Activity size={16} className="text-muted" />
+              <span className="text-sm font-medium text-primary">System Status</span>
             </div>
           </div>
 
@@ -153,14 +153,14 @@ export function StatusPopover(): React.JSX.Element {
                   <span className="flex items-center gap-1.5">
                     <span className={clsx('h-1.5 w-1.5 rounded-full', statusColor)} />
                     {piStatus}
-                    {piPid && <span className="text-neutral-600">(PID: {piPid})</span>}
+                    {piPid && <span className="text-faint">(PID: {piPid})</span>}
                   </span>
                 }
               />
               {piError && (
-                <div className="mt-2 rounded-md border border-red-800/50 bg-red-950/30 p-2">
+                <div className="mt-2 rounded-md border border-error-bg bg-error-bg p-2">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] uppercase tracking-wide text-red-400 font-semibold">Error</span>
+                    <span className="text-[10px] uppercase tracking-wide text-error font-semibold">Error</span>
                     <button
                       type="button"
                       onClick={() => {
@@ -168,12 +168,12 @@ export function StatusPopover(): React.JSX.Element {
                         setErrorCopied(true)
                         setTimeout(() => setErrorCopied(false), 1500)
                       }}
-                      className="text-[10px] text-red-300 hover:text-red-200"
+                      className="text-[10px] text-error/80 hover:text-error"
                     >
                       {errorCopied ? 'copied' : 'copy'}
                     </button>
                   </div>
-                  <pre className="text-[11px] text-red-200 whitespace-pre-wrap break-words max-h-40 overflow-y-auto font-mono">
+                  <pre className="text-[11px] text-error whitespace-pre-wrap break-words max-h-40 overflow-y-auto font-mono">
                     {piError}
                   </pre>
                 </div>
@@ -185,7 +185,7 @@ export function StatusPopover(): React.JSX.Element {
                     <span className="flex items-center gap-1">
                       {sessionState.model.name}
                       {sessionState.model.reasoning && (
-                        <Brain size={10} className="text-purple-400" />
+                        <Brain size={10} className="text-special" />
                       )}
                     </span>
                   }
@@ -199,7 +199,7 @@ export function StatusPopover(): React.JSX.Element {
                   label="Thinking"
                   value={
                     <span className="flex items-center gap-1">
-                      <Zap size={10} className="text-yellow-400" />
+                      <Zap size={10} className="text-warning" />
                       {sessionState.thinkingLevel}
                     </span>
                   }
@@ -223,15 +223,15 @@ export function StatusPopover(): React.JSX.Element {
                       label="Usage"
                       value={
                         <div className="flex items-center gap-2">
-                          <div className="flex-1 h-1.5 bg-neutral-800 rounded-full overflow-hidden">
+                          <div className="flex-1 h-1.5 bg-card rounded-full overflow-hidden">
                             <div
                               className={clsx(
                                 'h-full rounded-full transition-all',
                                 contextPct > 80
-                                  ? 'bg-red-500'
+                                  ? 'bg-error'
                                   : contextPct > 60
-                                    ? 'bg-yellow-500'
-                                    : 'bg-emerald-500'
+                                    ? 'bg-warning'
+                                    : 'bg-success'
                               )}
                               style={{ width: `${contextPct}%` }}
                             />
@@ -253,7 +253,7 @@ export function StatusPopover(): React.JSX.Element {
                 <button
                   onClick={() => compactContext()}
                   disabled={isCompacting}
-                  className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-md bg-neutral-800 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-md bg-card px-3 py-1.5 text-xs text-secondary hover:bg-elevated disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   title="Summarize and compact the conversation to free up context"
                 >
                   {isCompacting ? (
@@ -279,15 +279,15 @@ export function StatusPopover(): React.JSX.Element {
               <StatusSection title="Extensions" icon={<Plug size={13} />} count={extensionCommands.length}>
                 {extensionCommands.slice(0, 10).map((cmd) => (
                   <div key={cmd.name} className="flex items-center gap-2 py-0.5">
-                    <CheckCircle2 size={10} className="text-emerald-500 shrink-0" />
-                    <span className="text-xs text-neutral-300 truncate">/{cmd.name}</span>
+                    <CheckCircle2 size={10} className="text-success shrink-0" />
+                    <span className="text-xs text-secondary truncate">/{cmd.name}</span>
                     {cmd.description && (
-                      <span className="text-[10px] text-neutral-600 truncate ml-auto">{cmd.description}</span>
+                      <span className="text-[10px] text-faint truncate ml-auto">{cmd.description}</span>
                     )}
                   </div>
                 ))}
                 {extensionCommands.length > 10 && (
-                  <div className="text-[10px] text-neutral-600 mt-1">
+                  <div className="text-[10px] text-faint mt-1">
                     +{extensionCommands.length - 10} more
                   </div>
                 )}
@@ -299,20 +299,20 @@ export function StatusPopover(): React.JSX.Element {
               <StatusSection title="Skills" icon={<Puzzle size={13} />} count={skills.length}>
                 {skills.slice(0, 8).map((skill) => (
                   <div key={skill.path} className="flex items-center gap-2 py-0.5">
-                    <Puzzle size={10} className="text-purple-400 shrink-0" />
-                    <span className="text-xs text-neutral-300 truncate">{skill.name}</span>
+                    <Puzzle size={10} className="text-special shrink-0" />
+                    <span className="text-xs text-secondary truncate">{skill.name}</span>
                     <span className={clsx(
                       'ml-auto text-[10px] px-1 rounded',
                       skill.source === 'global'
-                        ? 'bg-blue-900/20 text-blue-500'
-                        : 'bg-emerald-900/20 text-emerald-500'
+                        ? 'bg-accent-bg text-accent-fg'
+                        : 'bg-success-bg text-success'
                     )}>
                       {skill.source}
                     </span>
                   </div>
                 ))}
                 {skills.length > 8 && (
-                  <div className="text-[10px] text-neutral-600 mt-1">
+                  <div className="text-[10px] text-faint mt-1">
                     +{skills.length - 8} more
                   </div>
                 )}
@@ -322,22 +322,22 @@ export function StatusPopover(): React.JSX.Element {
             {/* MCP Servers */}
             <StatusSection title="MCP Servers" icon={<Plug size={13} />} count={mcpServers.length > 0 ? mcpServers.length : undefined}>
               {mcpServers.length === 0 ? (
-                <div className="text-xs text-neutral-600 py-1">
+                <div className="text-xs text-faint py-1">
                   No MCP servers configured
                 </div>
               ) : (
                 mcpServers.map((server) => (
                   <div key={server.name} className="flex items-center gap-2 py-1">
-                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <div className="h-1.5 w-1.5 rounded-full bg-success shrink-0" />
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs text-neutral-300 font-medium">{server.name}</div>
-                      <div className="text-[10px] text-neutral-600 truncate">{server.command} {server.args.join(' ')}</div>
+                      <div className="text-xs text-secondary font-medium">{server.name}</div>
+                      <div className="text-[10px] text-faint truncate">{server.command} {server.args.join(' ')}</div>
                     </div>
                     <span className={clsx(
                       'text-[10px] px-1 rounded',
                       server.source === 'global'
-                        ? 'bg-blue-900/20 text-blue-500'
-                        : 'bg-emerald-900/20 text-emerald-500'
+                        ? 'bg-accent-bg text-accent-fg'
+                        : 'bg-success-bg text-success'
                     )}>
                       {server.source}
                     </span>
@@ -351,8 +351,8 @@ export function StatusPopover(): React.JSX.Element {
               <StatusSection title="Prompt Templates" icon={<FileText size={13} />} count={promptCommands.length}>
                 {promptCommands.slice(0, 6).map((cmd) => (
                   <div key={cmd.name} className="flex items-center gap-2 py-0.5">
-                    <FileText size={10} className="text-cyan-400 shrink-0" />
-                    <span className="text-xs text-neutral-300 truncate">/{cmd.name}</span>
+                    <FileText size={10} className="text-info shrink-0" />
+                    <span className="text-xs text-secondary truncate">/{cmd.name}</span>
                   </div>
                 ))}
               </StatusSection>
@@ -363,8 +363,8 @@ export function StatusPopover(): React.JSX.Element {
               <StatusSection title="Skill Commands" icon={<BookOpen size={13} />} count={skillCommands.length}>
                 {skillCommands.slice(0, 6).map((cmd) => (
                   <div key={cmd.name} className="flex items-center gap-2 py-0.5">
-                    <BookOpen size={10} className="text-amber-400 shrink-0" />
-                    <span className="text-xs text-neutral-300 truncate">/skill:{cmd.name}</span>
+                    <BookOpen size={10} className="text-warning shrink-0" />
+                    <span className="text-xs text-secondary truncate">/skill:{cmd.name}</span>
                   </div>
                 ))}
               </StatusSection>
@@ -373,26 +373,26 @@ export function StatusPopover(): React.JSX.Element {
             {/* Loading */}
             {loading && (
               <div className="flex items-center justify-center py-4">
-                <Loader2 size={16} className="animate-spin text-neutral-500" />
+                <Loader2 size={16} className="animate-spin text-dim" />
               </div>
             )}
 
             {/* Empty state */}
             {!loading && commands.length === 0 && skills.length === 0 && (
-              <div className="py-6 text-center text-xs text-neutral-600">
+              <div className="py-6 text-center text-xs text-faint">
                 No extensions or skills loaded
               </div>
             )}
           </div>
 
           {/* Footer */}
-          <div className="px-4 py-2 border-t border-neutral-800 flex items-center justify-between text-[10px] text-neutral-600">
+          <div className="px-4 py-2 border-t border-border flex items-center justify-between text-[10px] text-faint">
             <span>v{__APP_VERSION__}</span>
             <button
               onClick={() => {
                 useAppStore.getState().refreshSessionStats()
               }}
-              className="flex items-center gap-1 hover:text-neutral-400 transition-colors"
+              className="flex items-center gap-1 hover:text-muted transition-colors"
             >
               <RefreshCw size={10} />
               Refresh
@@ -420,22 +420,22 @@ function StatusSection({
   const [expanded, setExpanded] = useState(true)
 
   return (
-    <div className="border-b border-neutral-800/50">
+    <div className="border-b border-border/50">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 px-4 py-2 hover:bg-neutral-800/30 transition-colors"
+        className="flex w-full items-center gap-2 px-4 py-2 hover:bg-surface-hover/30 transition-colors"
       >
-        <span className="text-neutral-500">{icon}</span>
-        <span className="text-xs font-medium text-neutral-300 flex-1 text-left">{title}</span>
+        <span className="text-dim">{icon}</span>
+        <span className="text-xs font-medium text-secondary flex-1 text-left">{title}</span>
         {count !== undefined && (
-          <span className="text-[10px] text-neutral-600 bg-neutral-800 rounded px-1.5 py-0.5">
+          <span className="text-[10px] text-faint bg-card rounded px-1.5 py-0.5">
             {count}
           </span>
         )}
         <ChevronRight
           size={12}
           className={clsx(
-            'text-neutral-600 transition-transform',
+            'text-faint transition-transform',
             expanded && 'rotate-90'
           )}
         />
@@ -460,8 +460,8 @@ function StatusRow({
 }): React.JSX.Element {
   return (
     <div className="flex items-center justify-between py-0.5">
-      <span className="text-[11px] text-neutral-500">{label}</span>
-      <span className="text-[11px] text-neutral-300">{value}</span>
+      <span className="text-[11px] text-dim">{label}</span>
+      <span className="text-[11px] text-secondary">{value}</span>
     </div>
   )
 }

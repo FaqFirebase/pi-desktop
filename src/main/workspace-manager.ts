@@ -142,11 +142,13 @@ export class WorkspaceManager {
   async initialize(): Promise<void> {
     await this.loadWorkspaces()
 
-    // Auto-create default workspace from home dir if none exist
-    if (this.workspaces.length === 0) {
-      const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()
-      await this.createWorkspace('Home', homeDir)
-    }
+    // No workspace is auto-created. On a fresh install (or empty state) the app
+    // opens to the home screen with no active workspace; the user opens a folder
+    // or resumes a session, each of which creates + activates a workspace on
+    // demand. This avoids fabricating a "Home" workspace pointed at the entire
+    // home directory — unnecessary setup the user may never use, and a costly
+    // recursive file watcher over the home tree (which also trips over
+    // permission-protected Windows system paths).
 
     // Workspaces loaded from disk don't go through emitActiveWorkspaceChanged,
     // so attach the watcher to the active workspace explicitly here.

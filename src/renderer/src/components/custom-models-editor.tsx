@@ -112,14 +112,14 @@ export function CustomModelsEditor(): React.JSX.Element {
 
   if (customModelsError) {
     return (
-      <div className="flex items-start gap-2 text-sm text-amber-400">
+      <div className="flex items-start gap-2 text-sm text-warning">
         <AlertTriangle size={16} className="mt-0.5 shrink-0" />
         <div>
           <p>Could not load models.json safely, so editing is disabled to avoid overwriting it.</p>
-          <p className="mt-1 text-xs text-neutral-500">{customModelsError}</p>
+          <p className="mt-1 text-xs text-dim">{customModelsError}</p>
           <button
             onClick={() => loadCustomModels()}
-            className="mt-2 rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800"
+            className="mt-2 rounded border border-border-strong px-2 py-1 text-xs text-secondary hover:bg-surface-hover"
           >
             Retry
           </button>
@@ -130,27 +130,27 @@ export function CustomModelsEditor(): React.JSX.Element {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-dim">
         Custom providers and models in <code>~/.pi/agent/models.json</code>. Applied when Pi restarts.
       </p>
-      <p className="text-xs text-neutral-600">
+      <p className="text-xs text-faint">
         Heads-up: imported models may load without capability flags set. If a model supports
-        thinking, tick <span className="text-neutral-400">reasoning</span>; if it accepts images,
-        tick <span className="text-neutral-400">vision</span>. Restart Pi to apply.
+        thinking, tick <span className="text-muted">reasoning</span>; if it accepts images,
+        tick <span className="text-muted">vision</span>. Restart Pi to apply.
       </p>
 
       {rows.map((row, pi) => (
-        <div key={pi} className="rounded-md border border-neutral-800 p-3">
+        <div key={pi} className="rounded-md border border-border p-3">
           <div className="flex items-center gap-2">
             <input
               value={row.key}
               onChange={(e) => patchProvider(pi, { key: e.target.value })}
               placeholder="provider-key (e.g. ollama)"
-              className="flex-1 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
+              className="flex-1 rounded border border-border-strong bg-surface px-2 py-1 text-sm text-primary focus:border-focus focus:outline-none"
             />
             <button
               onClick={() => removeProvider(pi)}
-              className="rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-red-400"
+              className="rounded p-1 text-dim hover:bg-surface-hover hover:text-error"
               title="Remove provider"
             >
               <Trash2 size={14} />
@@ -162,24 +162,24 @@ export function CustomModelsEditor(): React.JSX.Element {
               value={row.baseUrl}
               onChange={(e) => patchProvider(pi, { baseUrl: e.target.value })}
               placeholder="baseUrl"
-              className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
+              className="rounded border border-border-strong bg-surface px-2 py-1 text-sm text-primary focus:border-focus focus:outline-none"
             />
             <select
               value={row.api}
               onChange={(e) => patchProvider(pi, { api: e.target.value })}
-              className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
+              className="rounded border border-border-strong bg-surface px-2 py-1 text-sm text-primary focus:border-focus focus:outline-none"
             >
               {API_OPTIONS.map((opt) => (
                 <option key={opt} value={opt}>{opt}</option>
               ))}
             </select>
           </div>
-          <label className="mt-2 flex items-center gap-2 text-[11px] text-neutral-500">
+          <label className="mt-2 flex items-center gap-2 text-[11px] text-dim">
             <input
               type="checkbox"
               checked={row.compat?.supportsReasoningEffort ?? false}
               onChange={(e) => patchProviderCompat(pi, { supportsReasoningEffort: e.target.checked })}
-              className="accent-blue-500"
+              className="accent-accent"
             />
             supports reasoning effort
           </label>
@@ -187,35 +187,35 @@ export function CustomModelsEditor(): React.JSX.Element {
             value={row.apiKey}
             onChange={(e) => patchProvider(pi, { apiKey: e.target.value })}
             placeholder="apiKey — literal, $ENV_VAR, or !shell-command"
-            className="mt-2 w-full rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
+            className="mt-2 w-full rounded border border-border-strong bg-surface px-2 py-1 text-sm text-primary focus:border-focus focus:outline-none"
           />
 
           <div className="mt-3 space-y-2">
             {row.models.map((model, mi) => (
-              <div key={mi} className="rounded border border-neutral-800 bg-neutral-900/50 p-2">
+              <div key={mi} className="rounded border border-border bg-surface/50 p-2">
                 <div className="flex items-center gap-2">
                   <input
                     value={model.id ?? ''}
                     onChange={(e) => patchModel(pi, mi, { id: e.target.value })}
                     placeholder="model id (required)"
-                    className="flex-1 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-200 focus:border-blue-500 focus:outline-none"
+                    className="flex-1 rounded border border-border-strong bg-surface px-2 py-1 text-xs text-primary focus:border-focus focus:outline-none"
                   />
                   <input
                     value={model.name ?? ''}
                     onChange={(e) => patchModel(pi, mi, { name: e.target.value })}
                     placeholder="name"
-                    className="flex-1 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-200 focus:border-blue-500 focus:outline-none"
+                    className="flex-1 rounded border border-border-strong bg-surface px-2 py-1 text-xs text-primary focus:border-focus focus:outline-none"
                   />
                   <button
                     onClick={() => removeModel(pi, mi)}
-                    className="rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-red-400"
+                    className="rounded p-1 text-dim hover:bg-surface-hover hover:text-error"
                     title="Remove model"
                   >
                     <Trash2 size={12} />
                   </button>
                 </div>
                 <div className="mt-2 grid grid-cols-4 gap-2">
-                  <label className="flex items-center gap-1 text-[11px] text-neutral-500">
+                  <label className="flex items-center gap-1 text-[11px] text-dim">
                     ctx
                     <input
                       type="number"
@@ -225,10 +225,10 @@ export function CustomModelsEditor(): React.JSX.Element {
                           contextWindow: e.target.value === '' ? undefined : Number(e.target.value),
                         })
                       }
-                      className="w-full rounded border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-200 focus:border-blue-500 focus:outline-none"
+                      className="w-full rounded border border-border-strong bg-surface px-1 py-0.5 text-xs text-primary focus:border-focus focus:outline-none"
                     />
                   </label>
-                  <label className="flex items-center gap-1 text-[11px] text-neutral-500">
+                  <label className="flex items-center gap-1 text-[11px] text-dim">
                     max
                     <input
                       type="number"
@@ -238,26 +238,26 @@ export function CustomModelsEditor(): React.JSX.Element {
                           maxTokens: e.target.value === '' ? undefined : Number(e.target.value),
                         })
                       }
-                      className="w-full rounded border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-200 focus:border-blue-500 focus:outline-none"
+                      className="w-full rounded border border-border-strong bg-surface px-1 py-0.5 text-xs text-primary focus:border-focus focus:outline-none"
                     />
                   </label>
-                  <label className="flex items-center gap-1 text-[11px] text-neutral-500">
+                  <label className="flex items-center gap-1 text-[11px] text-dim">
                     <input
                       type="checkbox"
                       checked={model.reasoning ?? false}
                       onChange={(e) => patchModel(pi, mi, { reasoning: e.target.checked })}
-                      className="accent-blue-500"
+                      className="accent-accent"
                     />
                     reasoning
                   </label>
-                  <label className="flex items-center gap-1 text-[11px] text-neutral-500">
+                  <label className="flex items-center gap-1 text-[11px] text-dim">
                     <input
                       type="checkbox"
                       checked={model.input?.includes('image') ?? false}
                       onChange={(e) =>
                         patchModel(pi, mi, { input: withImageInput(model.input, e.target.checked) })
                       }
-                      className="accent-blue-500"
+                      className="accent-accent"
                     />
                     vision
                   </label>
@@ -266,7 +266,7 @@ export function CustomModelsEditor(): React.JSX.Element {
             ))}
             <button
               onClick={() => addModel(pi)}
-              className="flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-200"
+              className="flex items-center gap-1 text-xs text-muted hover:text-primary"
             >
               <Plus size={12} /> Add model
             </button>
@@ -276,13 +276,13 @@ export function CustomModelsEditor(): React.JSX.Element {
 
       <button
         onClick={addProvider}
-        className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
+        className="flex items-center gap-1 text-sm text-muted hover:text-primary"
       >
         <Plus size={14} /> Add provider
       </button>
 
       {errors.length > 0 && (
-        <ul className="space-y-1 text-xs text-red-400">
+        <ul className="space-y-1 text-xs text-error">
           {errors.map((e, i) => (
             <li key={i}>• {e}</li>
           ))}
@@ -292,7 +292,7 @@ export function CustomModelsEditor(): React.JSX.Element {
       <div className="flex items-center gap-3">
         <button
           onClick={handleSave}
-          className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 transition-colors"
+          className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover transition-colors"
         >
           <Save size={14} />
           Save models.json
@@ -301,8 +301,8 @@ export function CustomModelsEditor(): React.JSX.Element {
           <button
             onClick={() => restartPi()}
             className={clsx(
-              'flex items-center gap-2 rounded-md border border-neutral-700 px-3 py-2 text-sm',
-              'text-neutral-300 hover:bg-neutral-800 transition-colors'
+              'flex items-center gap-2 rounded-md border border-border-strong px-3 py-2 text-sm',
+              'text-secondary hover:bg-surface-hover transition-colors'
             )}
           >
             <RefreshCw size={14} />

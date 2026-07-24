@@ -1,11 +1,15 @@
-import { app, BrowserWindow, Menu, nativeImage, shell } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, session, shell } from 'electron'
 import { existsSync, mkdirSync } from 'fs'
 import { basename, join, resolve as resolvePath } from 'path'
+import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
+import { workspaceTrustStore } from './workspace-trust'
 import { WorkspaceManager } from './workspace-manager'
-import { registerIpcHandlers } from './ipc-handlers'
+import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
 import { fetchAllCatalogPackages } from './package-catalog'
 import { activityStatsStore } from './activity-stats'
-import { configureGuiDataDir, getCanonicalUserDataDir, migrateLegacyGuiData } from './app-data-paths'
+import { configureGuiDataDir, getCanonicalUserDataDir, getExternalGuiDataDir, migrateLegacyGuiData } from './app-data-paths'
+import { setupTray, setTrayEnabled, isTrayEnabled, isTrayAvailable, destroyTray, notifyFirstHide } from './tray-manager'
+import { shouldHideToTray } from './tray-decision'
 
 // Env var honored on startup: if set, the named directory becomes the active
 // workspace (created on first run, switched to on subsequent runs). The CLI
@@ -29,6 +33,11 @@ const MIN_WINDOW_WIDTH = 800
 const MIN_WINDOW_HEIGHT = 600
 const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL
 const PRELOAD_PATH = join(__dirname, '../preload/index.js')
+// <webview> partitions used by the file preview (see file-tree.tsx). The HTML
+// preview renders untrusted workspace files with scripts and network disabled;
+// the PDF preview needs pdfium (plugins) and is confined to file:// only.
+const HTML_PREVIEW_PARTITION = 'preview'
+const PDF_PREVIEW_PARTITION = 'persist:pdf-preview'
 
 // In dev: resources/ sits at the project root (app.getAppPath()).
 // In packaged: extraResources config copies resources/ into process.resourcesPath/resources/.
@@ -48,12 +57,69 @@ function getAppIconPath(): string {
 
 let workspaceManager: WorkspaceManager | null = null
 
-const canonicalUserDataDir = getCanonicalUserDataDir(app.getPath('appData'))
-mkdirSync(canonicalUserDataDir, { recursive: true })
-app.setPath('userData', canonicalUserDataDir)
-configureGuiDataDir(canonicalUserDataDir)
+// The single main window, tracked so the tray, single-instance relaunch, and
+// macOS dock-activate can all bring it back. `isQuitting` distinguishes a real
+// quit (menu/tray Quit, Cmd-Ctrl+Q) from a window close that should hide to tray.
+let mainWindow: BrowserWindow | null = null
+let isQuitting = false
+
+// Single-instance lock: with "minimize to tray" the window can be hidden while
+// the app keeps running, so a relaunch (taskbar, launcher, `pi-desktop <path>`)
+// must focus the existing instance instead of spawning a second one. The second
+// process exits immediately; the first receives 'second-instance'.
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    showMainWindow()
+  })
+}
+
+// PI_DESKTOP_USER_DATA_DIR set by the launching process overrides the
+// canonical appData-derived directory: that exact directory holds all GUI
+// data and legacy migration is skipped, keeping it fully isolated.
+const externalUserDataDir = getExternalGuiDataDir()
+const userDataDir = externalUserDataDir ?? getCanonicalUserDataDir(app.getPath('appData'))
+mkdirSync(userDataDir, { recursive: true })
+app.setPath('userData', userDataDir)
+configureGuiDataDir(userDataDir)
 
 // ─── Window Creation ─────────────────────────────────────────────────────────
+
+/**
+ * The main window must never navigate to arbitrary content: its privileged
+ * preload (terminal + full IPC) attaches to whatever loads. In production only
+ * the exact packaged renderer file is allowed; in development only the dev
+ * server's own origin (parsed, not a fragile string prefix).
+ */
+function isAllowedMainWindowNavigation(targetUrl: string): boolean {
+  return isTrustedRendererUrl(targetUrl, {
+    devServerUrl: DEV_SERVER_URL,
+    rendererIndexPath: RENDERER_INDEX_PATH,
+  })
+}
+
+/** Whether the active workspace has been trusted by the user (see workspace-trust.ts). */
+function isActiveWorkspaceTrusted(): boolean {
+  const path = workspaceManager?.getActiveWorkspace()?.path
+  return path ? workspaceTrustStore.isTrusted(path) : false
+}
+
+/**
+ * For an untrusted workspace, confine the HTML file-preview guest to local files:
+ * block every non-file request on its partition so malicious workspace HTML
+ * cannot beacon out or pull remote resources. Combined with scripts-disabled for
+ * untrusted previews (see will-attach-webview), this closes the exfiltration path.
+ * A trusted workspace's own pages may load resources normally (interactive preview).
+ */
+function hardenPreviewSession(): void {
+  session
+    .fromPartition(HTML_PREVIEW_PARTITION)
+    .webRequest.onBeforeRequest((details, callback) => {
+      const blocked = !details.url.startsWith('file://') && !isActiveWorkspaceTrusted()
+      callback({ cancel: blocked })
+    })
+}
 
 function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -92,6 +158,21 @@ function createMainWindow(): BrowserWindow {
     window.focus()
   })
 
+  // Minimize-to-tray: when enabled (Windows/Linux), a window close hides the
+  // window and keeps the app running instead of quitting. A real quit sets
+  // `isQuitting` first (see before-quit), so this only intercepts user closes.
+  window.on('close', (event) => {
+    if (shouldHideToTray({ isQuitting, enabled: isTrayEnabled(), platform: process.platform, trayAvailable: isTrayAvailable() })) {
+      event.preventDefault()
+      window.hide()
+      notifyFirstHide()
+    }
+  })
+
+  window.on('closed', () => {
+    if (mainWindow === window) mainWindow = null
+  })
+
   // Open external links in default browser
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://') || url.startsWith('http://')) {
@@ -100,10 +181,9 @@ function createMainWindow(): BrowserWindow {
     return { action: 'deny' }
   })
 
-  // Block navigation to external URLs
+  // Block navigation to anything but the pinned renderer (see helper).
   window.webContents.on('will-navigate', (event, url) => {
-    if (DEV_SERVER_URL && url.startsWith(DEV_SERVER_URL)) return
-    if (!DEV_SERVER_URL && url.startsWith('file://')) return
+    if (isAllowedMainWindowNavigation(url)) return
     event.preventDefault()
   })
 
@@ -120,6 +200,18 @@ function createMainWindow(): BrowserWindow {
     webPreferences.webSecurity = true
     webPreferences.allowRunningInsecureContent = false
 
+    // Only the PDF preview needs pdfium (plugins). For the HTML preview, scripts
+    // run only when the workspace is trusted (interactive preview of your own
+    // project); for an untrusted workspace scripts are disabled so — with sandbox
+    // + webSecurity above and the partition's network block — malicious preview
+    // HTML cannot read other local files or exfiltrate data.
+    const isPdfPreview =
+      params.partition === PDF_PREVIEW_PARTITION || /\.pdf(?:[?#]|$)/i.test(params.src)
+    webPreferences.plugins = isPdfPreview
+    if (!isPdfPreview && !isActiveWorkspaceTrusted()) {
+      webPreferences.javascript = false
+    }
+
     if (!params.src.startsWith('file://')) {
       event.preventDefault()
     }
@@ -129,7 +221,7 @@ function createMainWindow(): BrowserWindow {
   if (DEV_SERVER_URL) {
     window.loadURL(DEV_SERVER_URL)
   } else {
-    window.loadFile(join(__dirname, '../renderer/index.html'))
+    window.loadFile(RENDERER_INDEX_PATH)
   }
 
   // Dev tools in development
@@ -137,7 +229,20 @@ function createMainWindow(): BrowserWindow {
     window.webContents.openDevTools({ mode: 'detach' })
   }
 
+  mainWindow = window
   return window
+}
+
+// Bring the main window to the foreground, re-creating it if it was fully
+// closed. Used by the tray, single-instance relaunch, and macOS dock activate.
+function showMainWindow(): void {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  } else {
+    createMainWindow()
+  }
 }
 
 // ─── Application Menu ────────────────────────────────────────────────────────
@@ -213,10 +318,12 @@ function createApplicationMenu(): void {
 // ─── App Lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
-  await migrateLegacyGuiData({
-    appDataDir: app.getPath('appData'),
-    userDataDir: app.getPath('userData'),
-  })
+  if (!externalUserDataDir) {
+    await migrateLegacyGuiData({
+      appDataDir: app.getPath('appData'),
+      userDataDir: app.getPath('userData'),
+    })
+  }
 
   // Set macOS dock icon (no-op on other platforms)
   if (process.platform === 'darwin' && app.dock) {
@@ -230,6 +337,9 @@ app.whenReady().then(async () => {
   // Honor PI_DESKTOP_WORKSPACE if set: switch to (or create) the named workspace.
   await applyWorkspaceFromEnv(workspaceManager)
 
+  // Lock the HTML preview partition to local files before any preview can load.
+  hardenPreviewSession()
+
   // Register IPC handlers before creating windows
   registerIpcHandlers(workspaceManager)
 
@@ -239,6 +349,20 @@ app.whenReady().then(async () => {
   // Create main window
   createMainWindow()
 
+  // System tray: inject deps once, then enable it if the setting is on. The
+  // one-time "still running" hint reads/persists via app settings.
+  const settings = await loadAppSettings(workspaceManager)
+  setupTray({
+    getWindow: () => mainWindow,
+    quit: () => app.quit(),
+    iconPath: getAppIconPath(),
+    hasSeenHint: settings.hasSeenTrayHint,
+    onHintShown: () => {
+      void saveAppSettings({ hasSeenTrayHint: true })
+    },
+  })
+  setTrayEnabled(settings.minimizeToTrayOnClose)
+
   // Warm the package catalog cache in the background so the Catalog tab is
   // instant when first opened. Non-blocking; failures are ignored (offline etc).
   void fetchAllCatalogPackages().catch(() => {})
@@ -247,11 +371,10 @@ app.whenReady().then(async () => {
   // even if the home screen is never opened this run. Non-blocking.
   void activityStatsStore.refresh()
 
-  // macOS: re-create window when dock icon clicked
+  // macOS: re-show (or re-create) the window when the dock icon is clicked.
+  // showMainWindow handles both a hidden window and a fully-closed one.
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow()
-    }
+    showMainWindow()
   })
 })
 
@@ -264,17 +387,33 @@ app.on('window-all-closed', () => {
 
 // Cleanup on quit
 app.on('before-quit', () => {
+  // Mark a real quit so the window `close` handler stops hiding to tray and lets
+  // the window actually close. This is the single choke point every quit path
+  // flows through (menu/tray Quit, Cmd-Ctrl+Q).
+  isQuitting = true
+  // Release the tray icon so it doesn't linger in the notification area.
+  destroyTray()
   // Synchronous incremental scan + write: captures every session touched this
   // run before we exit (async I/O isn't guaranteed to finish during shutdown).
   activityStatsStore.flushSync()
   workspaceManager?.stopAll()
 })
 
-// Security: prevent new window creation
+// Security: prevent new window creation, and stop preview <webview> guests from
+// navigating away from their local file (e.g. a malicious HTML file redirecting
+// itself to a remote URL to phone home).
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(() => {
     return { action: 'deny' }
   })
+  if (contents.getType() === 'webview') {
+    contents.on('will-navigate', (event, url) => {
+      // An untrusted preview may not navigate away from its local file (e.g. a
+      // malicious page redirecting itself to a remote URL). Trusted previews of
+      // your own project may navigate freely.
+      if (!url.startsWith('file://') && !isActiveWorkspaceTrusted()) event.preventDefault()
+    })
+  }
 })
 
 async function applyWorkspaceFromEnv(manager: WorkspaceManager): Promise<void> {

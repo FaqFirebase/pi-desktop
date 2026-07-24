@@ -8,112 +8,63 @@
   font-display: swap;
 }
 
-@custom-variant light (.light &);
+/* Tailwind v4 gates the `hover:` variant behind `@media (hover: hover)`. The
+   Electron/Chromium renderer reports `(hover: hover): false`, which silently
+   disables every `hover:` utility app-wide. Redefine the variant to fire on a
+   plain `:hover` so hover states work in the desktop window as intended. */
+@custom-variant hover (&:hover);
 
 @theme {
-  --color-app-bg: #0a0a0a;
-  --color-app-surface: #141414;
-  --color-app-border: #2a2a2a;
-  --color-app-text: #e5e5e5;
-  --color-app-text-secondary: #a3a3a3;
-  --color-app-text-muted: #737373;
+  /* Semantic tokens — pi-theme/v1. Values here are the base dark defaults;
+     the ThemeEngine overrides them on <html> at runtime. */
+  --color-app: #0a0a0a;
+  --color-surface: #171717;
+  --color-surface-hover: #262626;
+  --color-card: #262626;
+  --color-elevated: #404040;
+  --color-highlight: #171717;
+  --color-highlight-strong: #262626;
+  --color-primary: #f5f5f5;
+  --color-secondary: #d4d4d4;
+  --color-muted: #a3a3a3;
+  --color-dim: #737373;
+  --color-faint: #525252;
+  --color-ghost: #404040;
+  --color-inverse: #0a0a0a;
+  --color-border: #262626;
+  --color-border-strong: #404040;
+  --color-border-strong-hover: #525252;
+  --color-focus: #3b82f6;
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-fg: #60a5fa;
+  --color-accent-bg: rgba(30, 58, 138, 0.3);
+  --color-success: #34d399;
+  --color-success-bg: rgba(6, 78, 59, 0.3);
+  --color-warning: #facc15;
+  --color-warning-bg: rgba(113, 63, 18, 0.3);
+  --color-error: #f87171;
+  --color-error-hover: #ef4444;
+  --color-error-bg: rgba(127, 29, 29, 0.3);
+  --color-info: #60a5fa;
+  --color-info-bg: rgba(30, 58, 138, 0.3);
+  --color-special: #c084fc;
+  --color-special-bg: rgba(88, 28, 135, 0.3);
+  --color-chat-column: var(--color-app);
+  --color-chat-column-border: var(--color-border);
+  --color-scrollbar: #2a2a2a;
+  --color-scrollbar-hover: #3a3a3a;
+  --color-md-code: #60a5fa;
+  --color-md-pre-bg: #0d1117;
 }
 
-.light {
-  --color-app-bg: #ffffff;
-  --color-app-surface: #f5f5f5;
-  --color-app-border: #e5e5e5;
-  --color-app-text: #171717;
-  --color-app-text-secondary: #525252;
-  --color-app-text-muted: #a3a3a3;
-}
-
-/* ─── Base Dark Theme ────────────────────────────────────────────────────── */
+/* ─── Scrollbars ─────────────────────────────────────────────────────────── */
+/* Structural rules only; colors come from the token vars the engine writes. */
 
 @layer base {
-  :root {
-    --color-bg-primary: #0a0a0a;
-    --color-bg-secondary: #141414;
-    --color-bg-tertiary: #1c1c1c;
-    --color-bg-elevated: #242424;
-    --color-border: #2a2a2a;
-    --color-border-focus: #3b82f6;
-    --color-text-primary: #e5e5e5;
-    --color-text-secondary: #a3a3a3;
-    --color-text-muted: #737373;
-    --color-accent: #3b82f6;
-    --color-accent-hover: #2563eb;
-    --color-success: #22c55e;
-    --color-warning: #eab308;
-    --color-error: #ef4444;
-
-    /* CodeMirror syntax tokens (Dark — Kate-inspired vivid palette) */
-    --cm-keyword:  #c678dd;  /* purple */
-    --cm-string:   #98c379;  /* green */
-    --cm-comment:  #7f848e;  /* gray */
-    --cm-function: #61afef;  /* blue */
-    --cm-type:     #e5c07b;  /* yellow */
-    --cm-number:   #d19a66;  /* orange */
-    --cm-operator: #56b6c2;  /* cyan */
-    --cm-property: #d19a66;  /* orange — inline code */
-    --cm-tag:      #e06c75;  /* red */
-    --cm-variable: #abb2bf;  /* light gray */
-    --cm-constant: #d19a66;  /* orange — list bullets, atoms, bools */
-    --cm-heading:  #c678dd;  /* purple — Kate-style (was red) */
-    --cm-link:     #98c379;  /* green — link text */
-    --cm-list:     #d19a66;  /* orange — list markers */
-    --cm-quote:    #abb2bf;  /* light gray */
-    --cm-meta:     #abb2bf;  /* light gray */
-    --cm-mark:     #c678dd;  /* purple — matches heading */
-    --cm-invalid:  #f44747;  /* bright red */
-    --cm-active-line-bg:     rgba(255, 255, 255, 0.04);
-    --cm-selection-bg:       rgba(61, 90, 254, 0.35);
-    --cm-selection-match-bg: rgba(255, 255, 255, 0.06);
-  }
-
-  .light {
-    --color-bg-primary: #ffffff;
-    --color-bg-secondary: #f5f5f5;
-    --color-bg-tertiary: #e5e5e5;
-    --color-bg-elevated: #ffffff;
-    --color-border: #e5e5e5;
-    --color-border-focus: #3b82f6;
-    --color-text-primary: #171717;
-    --color-text-secondary: #525252;
-    --color-text-muted: #a3a3a3;
-    --color-accent: #2563eb;
-    --color-accent-hover: #1d4ed8;
-    --color-success: #16a34a;
-    --color-warning: #ca8a04;
-    --color-error: #dc2626;
-
-    /* CodeMirror syntax tokens (Light — Kate-inspired vivid palette) */
-    --cm-keyword:  #a626a4;  /* purple */
-    --cm-string:   #50a14f;  /* green */
-    --cm-comment:  #696c77;  /* gray */
-    --cm-function: #4078f2;  /* blue */
-    --cm-type:     #c18401;  /* yellow */
-    --cm-number:   #986801;  /* orange */
-    --cm-operator: #0184bc;  /* cyan */
-    --cm-property: #986801;  /* orange — inline code */
-    --cm-tag:      #e45649;  /* red */
-    --cm-variable: #383a42;  /* dark gray */
-    --cm-constant: #986801;  /* orange — list bullets, atoms, bools */
-    --cm-heading:  #a626a4;  /* purple — Kate-style (was red) */
-    --cm-link:     #50a14f;  /* green — link text */
-    --cm-list:     #986801;  /* orange — list markers */
-    --cm-quote:    #696c77;  /* gray */
-    --cm-meta:     #696c77;  /* gray */
-    --cm-mark:     #a626a4;  /* purple — matches heading */
-    --cm-invalid:  #d52753;  /* red */
-    --cm-active-line-bg:     rgba(0, 0, 0, 0.035);
-    --cm-selection-bg:       rgba(37, 99, 235, 0.22);
-    --cm-selection-match-bg: rgba(0, 0, 0, 0.05);
-  }
-
   * {
     scrollbar-width: thin;
-    scrollbar-color: #2a2a2a transparent;
+    scrollbar-color: var(--color-scrollbar) transparent;
   }
 
   *::-webkit-scrollbar {
@@ -126,12 +77,12 @@
   }
 
   *::-webkit-scrollbar-thumb {
-    background-color: #2a2a2a;
+    background-color: var(--color-scrollbar);
     border-radius: 3px;
   }
 
   *::-webkit-scrollbar-thumb:hover {
-    background-color: #3a3a3a;
+    background-color: var(--color-scrollbar-hover);
   }
 }
 
@@ -150,6 +101,14 @@
     font-family: 'JetBrains Mono Variable', 'JetBrains Mono', 'OpenMoji Color', ui-monospace, 'Cascadia Mono', Consolas, monospace;
   }
 
+  /* Chat center column: themable via tokens; defaults track the app background
+     so only themes that override --color-chat-column look different. */
+  .chat-center {
+    background-color: var(--color-chat-column);
+  }
+  .chat-center > .border-b { border-bottom-color: var(--color-chat-column-border); }
+  .chat-center > .border-t { border-top-color: var(--color-chat-column-border); }
+
   /* Reveal the thinking copy button on hover. Plain CSS avoids the nested-group
      ambiguity with the message-level `group` (Tailwind group-hover didn't fire). */
   .thinking-copy-btn {
@@ -165,7 +124,7 @@
     font-family: 'Inter Variable', 'OpenMoji Color', system-ui, sans-serif;
     font-size: 0.9375rem;
     line-height: 1.6;
-    color: var(--color-text-primary);
+    color: var(--color-primary);
   }
 
   .markdown-body p {
@@ -186,13 +145,13 @@
     font-weight: 600;
     margin-top: 1.25em;
     margin-bottom: 0.5em;
-    color: var(--color-text-primary);
+    color: var(--color-primary);
   }
 
   .markdown-body code {
     font-family: 'Inter Variable', system-ui, sans-serif;
     font-size: 1em;
-    color: #60a5fa;
+    color: var(--color-md-code);
   }
 
   /* Clickable filename references: arrow cursor + highlight box on hover. */
@@ -204,19 +163,14 @@
   }
 
   .markdown-body code.chat-file-link:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .light .markdown-body code.chat-file-link:hover,
-  .breeze-light .markdown-body code.chat-file-link:hover {
-    background-color: rgba(0, 0, 0, 0.08);
+    background-color: color-mix(in oklab, var(--color-primary), transparent 90%);
   }
 
   .markdown-body pre {
     margin: 0.75em 0;
     border-radius: 8px;
     overflow-x: auto;
-    background: #0d1117;
+    background: var(--color-md-pre-bg);
     border: 1px solid var(--color-border);
   }
 
@@ -224,7 +178,7 @@
     display: block;
     padding: 0.875em 1em;
     background: transparent;
-    color: var(--color-text-primary);
+    color: var(--color-primary);
     font-family: 'JetBrains Mono Variable', 'JetBrains Mono', 'OpenMoji Color', 'Fira Code', 'Cascadia Code', monospace;
     font-size: 0.75rem;
     line-height: 1.6;
@@ -244,7 +198,7 @@
     border-left: 3px solid var(--color-border);
     padding-left: 1em;
     margin: 0.75em 0;
-    color: var(--color-text-secondary);
+    color: var(--color-secondary);
   }
 
   .markdown-body a {
@@ -272,7 +226,7 @@
   }
 
   .markdown-body th {
-    background: var(--color-bg-tertiary);
+    background: var(--color-card);
     font-weight: 600;
   }
 
@@ -289,7 +243,7 @@
 
   .markdown-body strong {
     font-weight: 600;
-    color: var(--color-text-primary);
+    color: var(--color-primary);
   }
 }
 
@@ -297,611 +251,70 @@
 
 @layer components {
   .hljs {
-    background: transparent !important;
-    color: #c9d1d9 !important;
+    background: transparent;
+    color: var(--cm-variable);
   }
 
   .hljs-comment,
   .hljs-quote {
-    color: #8b949e;
+    color: var(--cm-comment);
     font-style: italic;
   }
 
   .hljs-keyword,
   .hljs-selector-tag {
-    color: #ff7b72;
+    color: var(--cm-keyword);
   }
 
   .hljs-string,
   .hljs-attr,
   .hljs-template-variable {
-    color: #a5d6ff;
+    color: var(--cm-string);
   }
 
   .hljs-number,
   .hljs-literal,
   .hljs-variable {
-    color: #79c0ff;
+    color: var(--cm-number);
   }
 
   .hljs-built_in,
   .hljs-type {
-    color: #ffa657;
+    color: var(--cm-type);
   }
 
   .hljs-function .hljs-title,
   .hljs-title.function_ {
-    color: #d2a8ff;
+    color: var(--cm-function);
   }
 
-  .hljs-tag {
-    color: #7ee787;
-  }
-
+  .hljs-tag,
   .hljs-name {
-    color: #7ee787;
+    color: var(--cm-tag);
   }
 
   .hljs-attribute {
-    color: #79c0ff;
+    color: var(--cm-property);
   }
 
   .hljs-symbol,
   .hljs-bullet {
-    color: #f2cc60;
+    color: var(--cm-constant);
   }
 
   .hljs-meta {
-    color: #8b949e;
+    color: var(--cm-meta);
   }
 
   .hljs-deletion {
-    color: #ffa198;
-    background: #490202;
+    color: var(--cm-invalid);
+    background: var(--color-error-bg);
   }
 
   .hljs-addition {
-    color: #aff5b4;
-    background: #033a16;
+    color: var(--cm-string);
+    background: var(--color-success-bg);
   }
-}
-
-/* ─── Nord Theme ─────────────────────────────────────────────────────────── */
-
-@layer base {
-  .nord {
-    --color-bg-primary:         #2E3440;
-    --color-bg-secondary:       #3B4252;
-    --color-bg-tertiary:        #434C5E;
-    --color-bg-elevated:        #4C566A;
-    --color-border:             #434C5E;
-    --color-border-focus:       #88C0D0;
-    --color-text-primary:       #ECEFF4;
-    --color-text-secondary:     #D8DEE9;
-    --color-text-muted:         #9599A3;
-    --color-accent:             #5E81AC;
-    --color-accent-hover:       #81A1C1;
-    --color-success:            #A3BE8C;
-    --color-warning:            #EBCB8B;
-    --color-error:              #BF616A;
-    --color-app-bg:             #2E3440;
-    --color-app-surface:        #3B4252;
-    --color-app-border:         #434C5E;
-    --color-app-text:           #ECEFF4;
-    --color-app-text-secondary: #D8DEE9;
-    --color-app-text-muted:     #9599A3;
-
-    /* CodeMirror syntax tokens (Nord-themed chrome, vivid syntax colors).
-       Pure Nord Aurora colors are too desaturated for syntax highlighting;
-       we use brighter Material/Tokyo-Night-inspired hues in the same cool
-       family so the editor still feels Nord-adjacent. */
-    --cm-keyword:  #C792EA;  /* vivid purple */
-    --cm-string:   #C3E88D;  /* vivid green */
-    --cm-comment:  #7B88A1;  /* polar night light — visible gray */
-    --cm-function: #82AAFF;  /* vivid blue */
-    --cm-type:     #FFCB6B;  /* vivid yellow */
-    --cm-number:   #F78C6C;  /* vivid orange */
-    --cm-operator: #89DDFF;  /* vivid cyan */
-    --cm-property: #F78C6C;  /* vivid orange — inline code */
-    --cm-tag:      #F07178;  /* vivid red-pink */
-    --cm-variable: #EEFFFF;  /* near-white */
-    --cm-constant: #F78C6C;  /* vivid orange — atoms, list bullets */
-    --cm-heading:  #C792EA;  /* vivid purple — Kate-style */
-    --cm-link:     #C3E88D;  /* vivid green — link text */
-    --cm-list:     #F78C6C;  /* vivid orange — list markers */
-    --cm-quote:    #7B88A1;  /* polar night light */
-    --cm-meta:     #B2CCD6;  /* pale cyan */
-    --cm-mark:     #C792EA;  /* vivid purple — matches heading */
-    --cm-invalid:  #F07178;  /* vivid red */
-    --cm-active-line-bg:     rgba(216, 222, 233, 0.05);
-    --cm-selection-bg:       rgba(94, 129, 172, 0.40);
-    --cm-selection-match-bg: rgba(216, 222, 233, 0.08);
-  }
-
-  .nord body { background-color: #2E3440; color: #ECEFF4; }
-
-  .nord .bg-neutral-950 { background-color: #2E3440 !important; }
-  .nord .bg-neutral-900 { background-color: #3B4252 !important; }
-  .nord .bg-neutral-900\/50 { background-color: rgba(59, 66, 82, 0.5) !important; }
-  .nord .bg-neutral-800 { background-color: #434C5E !important; }
-  .nord .bg-neutral-800\/50 { background-color: rgba(67, 76, 94, 0.5) !important; }
-  .nord .bg-neutral-700 { background-color: #4C566A !important; }
-  .nord .text-neutral-100 { color: #ECEFF4 !important; }
-  .nord .text-neutral-200 { color: #E5E9F0 !important; }
-  .nord .text-neutral-300 { color: #D8DEE9 !important; }
-  .nord .text-neutral-400 { color: #9599A3 !important; }
-  .nord .text-neutral-500 { color: #616E88 !important; }
-  .nord .text-neutral-600 { color: #4C566A !important; }
-  .nord .text-neutral-700 { color: #434C5E !important; }
-  .nord .border-neutral-800 { border-color: #434C5E !important; }
-  .nord .border-neutral-700 { border-color: #4C566A !important; }
-  .nord .bg-blue-600 { background-color: #5E81AC !important; }
-  .nord .bg-blue-900\/30 { background-color: rgba(46, 52, 64, 0.5) !important; }
-  .nord .text-blue-400 { color: #81A1C1 !important; }
-  .nord .bg-red-900\/30 { background-color: rgba(191, 97, 106, 0.15) !important; }
-  .nord .text-red-400 { color: #BF616A !important; }
-  .nord .bg-emerald-900\/30 { background-color: rgba(163, 190, 140, 0.15) !important; }
-  .nord .text-emerald-400 { color: #A3BE8C !important; }
-  .nord .bg-yellow-900\/30 { background-color: rgba(235, 203, 139, 0.15) !important; }
-  .nord .text-yellow-400 { color: #EBCB8B !important; }
-  .nord .bg-purple-900\/30 { background-color: rgba(180, 142, 173, 0.15) !important; }
-  .nord .text-purple-400 { color: #B48EAD !important; }
-  .nord .bg-green-950\/30 { background-color: rgba(163, 190, 140, 0.1) !important; }
-  .nord .bg-red-950\/30 { background-color: rgba(191, 97, 106, 0.1) !important; }
-  .nord .bg-emerald-950\/40 { background-color: rgba(163, 190, 140, 0.12) !important; }
-  .nord .border-emerald-800\/50 { border-color: rgba(163, 190, 140, 0.3) !important; }
-  .nord .text-emerald-300 { color: #A3BE8C !important; }
-  .nord .bg-red-950\/40 { background-color: rgba(191, 97, 106, 0.12) !important; }
-  .nord .border-red-800\/50 { border-color: rgba(191, 97, 106, 0.3) !important; }
-  .nord .text-red-300 { color: #BF616A !important; }
-
-  .nord *::-webkit-scrollbar-thumb { background-color: #434C5E !important; }
-  .nord *::-webkit-scrollbar-thumb:hover { background-color: #4C566A !important; }
-
-  .nord .markdown-body pre { background: #242932 !important; border-color: #434C5E !important; }
-  .nord .markdown-body code { color: #B48EAD !important; }
-  .nord .markdown-body pre code { color: #D8DEE9 !important; }
-}
-
-/* ─── Gruvbox Theme ──────────────────────────────────────────────────────── */
-
-@layer base {
-  .gruvbox {
-    --color-bg-primary:         #282828;
-    --color-bg-secondary:       #3C3836;
-    --color-bg-tertiary:        #504945;
-    --color-bg-elevated:        #665C54;
-    --color-border:             #504945;
-    --color-border-focus:       #D79921;
-    --color-text-primary:       #EBDBB2;
-    --color-text-secondary:     #D5C4A1;
-    --color-text-muted:         #928374;
-    --color-accent:             #458588;
-    --color-accent-hover:       #689D6A;
-    --color-success:            #98971A;
-    --color-warning:            #D79921;
-    --color-error:              #CC241D;
-    --color-app-bg:             #282828;
-    --color-app-surface:        #3C3836;
-    --color-app-border:         #504945;
-    --color-app-text:           #EBDBB2;
-    --color-app-text-secondary: #D5C4A1;
-    --color-app-text-muted:     #928374;
-
-    /* CodeMirror syntax tokens (Gruvbox — Kate-inspired vivid palette) */
-    --cm-keyword:  #D3869B;  /* purple */
-    --cm-string:   #B8BB26;  /* green */
-    --cm-comment:  #A89984;  /* gray */
-    --cm-function: #FABD2F;  /* yellow */
-    --cm-type:     #FABD2F;  /* yellow */
-    --cm-number:   #FE8019;  /* orange */
-    --cm-operator: #83A598;  /* blue */
-    --cm-property: #FE8019;  /* orange — inline code */
-    --cm-tag:      #FB4934;  /* red */
-    --cm-variable: #EBDBB2;  /* cream */
-    --cm-constant: #FE8019;  /* orange — list bullets, atoms, bools */
-    --cm-heading:  #D3869B;  /* purple — Kate-style (was yellow) */
-    --cm-link:     #B8BB26;  /* green — link text */
-    --cm-list:     #FE8019;  /* orange — list markers */
-    --cm-quote:    #A89984;  /* gray */
-    --cm-meta:     #BDAE93;  /* gray */
-    --cm-mark:     #D3869B;  /* purple — matches heading */
-    --cm-invalid:  #FB4934;  /* red */
-    --cm-active-line-bg:     rgba(235, 219, 178, 0.04);
-    --cm-selection-bg:       rgba(69, 133, 136, 0.40);
-    --cm-selection-match-bg: rgba(235, 219, 178, 0.08);
-  }
-
-  .gruvbox body { background-color: #282828; color: #EBDBB2; }
-
-  .gruvbox .bg-neutral-950 { background-color: #282828 !important; }
-  .gruvbox .bg-neutral-900 { background-color: #3C3836 !important; }
-  .gruvbox .bg-neutral-900\/50 { background-color: rgba(60, 56, 54, 0.5) !important; }
-  .gruvbox .bg-neutral-800 { background-color: #504945 !important; }
-  .gruvbox .bg-neutral-800\/50 { background-color: rgba(80, 73, 69, 0.5) !important; }
-  .gruvbox .bg-neutral-700 { background-color: #665C54 !important; }
-  .gruvbox .text-neutral-100 { color: #EBDBB2 !important; }
-  .gruvbox .text-neutral-200 { color: #D5C4A1 !important; }
-  .gruvbox .text-neutral-300 { color: #BDAE93 !important; }
-  .gruvbox .text-neutral-400 { color: #A89984 !important; }
-  .gruvbox .text-neutral-500 { color: #928374 !important; }
-  .gruvbox .text-neutral-600 { color: #7C6F64 !important; }
-  .gruvbox .text-neutral-700 { color: #665C54 !important; }
-  .gruvbox .border-neutral-800 { border-color: #504945 !important; }
-  .gruvbox .border-neutral-700 { border-color: #665C54 !important; }
-  .gruvbox .bg-blue-600 { background-color: #458588 !important; }
-  .gruvbox .bg-blue-900\/30 { background-color: rgba(40, 40, 40, 0.5) !important; }
-  .gruvbox .text-blue-400 { color: #83A598 !important; }
-  .gruvbox .bg-red-900\/30 { background-color: rgba(204, 36, 29, 0.15) !important; }
-  .gruvbox .text-red-400 { color: #FB4934 !important; }
-  .gruvbox .bg-emerald-900\/30 { background-color: rgba(152, 151, 26, 0.15) !important; }
-  .gruvbox .text-emerald-400 { color: #B8BB26 !important; }
-  .gruvbox .bg-yellow-900\/30 { background-color: rgba(215, 153, 33, 0.15) !important; }
-  .gruvbox .text-yellow-400 { color: #FABD2F !important; }
-  .gruvbox .bg-purple-900\/30 { background-color: rgba(177, 98, 134, 0.15) !important; }
-  .gruvbox .text-purple-400 { color: #D3869B !important; }
-  .gruvbox .bg-green-950\/30 { background-color: rgba(152, 151, 26, 0.1) !important; }
-  .gruvbox .bg-red-950\/30 { background-color: rgba(204, 36, 29, 0.1) !important; }
-  .gruvbox .bg-emerald-950\/40 { background-color: rgba(152, 151, 26, 0.12) !important; }
-  .gruvbox .border-emerald-800\/50 { border-color: rgba(152, 151, 26, 0.3) !important; }
-  .gruvbox .text-emerald-300 { color: #B8BB26 !important; }
-  .gruvbox .bg-red-950\/40 { background-color: rgba(204, 36, 29, 0.12) !important; }
-  .gruvbox .border-red-800\/50 { border-color: rgba(204, 36, 29, 0.3) !important; }
-  .gruvbox .text-red-300 { color: #FB4934 !important; }
-
-  .gruvbox *::-webkit-scrollbar-thumb { background-color: #504945 !important; }
-  .gruvbox *::-webkit-scrollbar-thumb:hover { background-color: #665C54 !important; }
-
-  .gruvbox .markdown-body pre { background: #1D2021 !important; border-color: #504945 !important; }
-  .gruvbox .markdown-body code { color: #D3869B !important; }
-  .gruvbox .markdown-body pre code { color: #EBDBB2 !important; }
-}
-
-/* ─── Breeze Dark Theme (Kate) ───────────────────────────────────────────── */
-
-@layer base {
-  .breeze-dark {
-    --color-bg-primary:         #232629;
-    --color-bg-secondary:       #31363b;
-    --color-bg-tertiary:        #2A2E32;
-    --color-bg-elevated:        #3f4347;
-    --color-border:             #3f4347;
-    --color-border-focus:       #3daee9;
-    --color-text-primary:       #cfcfc2;
-    --color-text-secondary:     #a5a6a8;
-    --color-text-muted:         #7a7c7d;
-    --color-accent:             #2980b9;
-    --color-accent-hover:       #3daee9;
-    --color-success:            #1c8042;
-    --color-warning:            #f67400;
-    --color-error:              #da4453;
-    --color-app-bg:             #232629;
-    --color-app-surface:        #31363b;
-    --color-app-border:         #3f4347;
-    --color-app-text:           #cfcfc2;
-    --color-app-text-secondary: #a5a6a8;
-    --color-app-text-muted:     #7a7c7d;
-
-    /* CodeMirror syntax tokens — Kate Breeze Dark palette */
-    --cm-keyword:  #fdbc4b;  /* Kate ControlFlow yellow */
-    --cm-string:   #f44f4f;  /* Kate String red */
-    --cm-comment:  #7a7c7d;  /* Kate Comment */
-    --cm-function: #8e44ad;  /* Kate Function purple */
-    --cm-type:     #2980b9;  /* Kate DataType blue */
-    --cm-number:   #f67400;  /* Kate DecVal orange */
-    --cm-operator: #3f8058;  /* Kate Operator dark green */
-    --cm-property: #27aeae;  /* Kate Variable teal */
-    --cm-tag:      #2980b9;  /* Kate Attribute */
-    --cm-variable: #cfcfc2;  /* Kate Normal */
-    --cm-constant: #27aeae;  /* Kate Constant */
-    --cm-heading:  #8e44ad;  /* Kate Function purple */
-    --cm-link:     #0099ff;  /* Kate Extension */
-    --cm-list:     #da4453;  /* Kate SpecialString red */
-    --cm-quote:    #7a7c7d;
-    --cm-meta:     #a5a6a8;
-    --cm-mark:     #8e44ad;  /* matches heading */
-    --cm-invalid:  #da4453;
-    --cm-active-line-bg:     #2A2E32;
-    --cm-selection-bg:       rgba(45, 92, 118, 0.65);  /* Kate TextSelection */
-    --cm-selection-match-bg: rgba(65, 72, 87, 0.5);
-  }
-
-  .breeze-dark body { background-color: #232629; color: #cfcfc2; }
-
-  .breeze-dark .bg-neutral-950 { background-color: #232629 !important; }
-  .breeze-dark .bg-neutral-900 { background-color: #31363b !important; }
-  .breeze-dark .bg-neutral-900\/50 { background-color: rgba(49, 54, 59, 0.5) !important; }
-  .breeze-dark .bg-neutral-800 { background-color: #3f4347 !important; }
-  .breeze-dark .bg-neutral-800\/50 { background-color: rgba(63, 67, 71, 0.5) !important; }
-  .breeze-dark .bg-neutral-700 { background-color: #4d5358 !important; }
-  .breeze-dark .text-neutral-100 { color: #cfcfc2 !important; }
-  .breeze-dark .text-neutral-200 { color: #c0c0b5 !important; }
-  .breeze-dark .text-neutral-300 { color: #a5a6a8 !important; }
-  .breeze-dark .text-neutral-400 { color: #898a8c !important; }
-  .breeze-dark .text-neutral-500 { color: #7a7c7d !important; }
-  .breeze-dark .text-neutral-600 { color: #5f6266 !important; }
-  .breeze-dark .text-neutral-700 { color: #4d5358 !important; }
-  .breeze-dark .border-neutral-800 { border-color: #3f4347 !important; }
-  .breeze-dark .border-neutral-700 { border-color: #4d5358 !important; }
-  .breeze-dark .bg-blue-600 { background-color: #2980b9 !important; }
-  .breeze-dark .bg-blue-900\/30 { background-color: rgba(45, 92, 118, 0.5) !important; }
-  .breeze-dark .text-blue-400 { color: #3daee9 !important; }
-  .breeze-dark .bg-red-900\/30 { background-color: rgba(218, 68, 83, 0.15) !important; }
-  .breeze-dark .text-red-400 { color: #da4453 !important; }
-  .breeze-dark .bg-emerald-900\/30 { background-color: rgba(28, 128, 66, 0.15) !important; }
-  .breeze-dark .text-emerald-400 { color: #1c8042 !important; }
-  .breeze-dark .bg-yellow-900\/30 { background-color: rgba(246, 116, 0, 0.15) !important; }
-  .breeze-dark .text-yellow-400 { color: #fdbc4b !important; }
-  .breeze-dark .bg-purple-900\/30 { background-color: rgba(142, 68, 173, 0.15) !important; }
-  .breeze-dark .text-purple-400 { color: #8e44ad !important; }
-  .breeze-dark .bg-green-950\/30 { background-color: rgba(28, 128, 66, 0.1) !important; }
-  .breeze-dark .bg-red-950\/30 { background-color: rgba(218, 68, 83, 0.1) !important; }
-  .breeze-dark .bg-emerald-950\/40 { background-color: rgba(28, 128, 66, 0.12) !important; }
-  .breeze-dark .border-emerald-800\/50 { border-color: rgba(28, 128, 66, 0.3) !important; }
-  .breeze-dark .text-emerald-300 { color: #1c8042 !important; }
-  .breeze-dark .bg-red-950\/40 { background-color: rgba(218, 68, 83, 0.12) !important; }
-  .breeze-dark .border-red-800\/50 { border-color: rgba(218, 68, 83, 0.3) !important; }
-  .breeze-dark .text-red-300 { color: #da4453 !important; }
-
-  .breeze-dark *::-webkit-scrollbar-thumb { background-color: #3f4347 !important; }
-  .breeze-dark *::-webkit-scrollbar-thumb:hover { background-color: #4d5358 !important; }
-
-  .breeze-dark .markdown-body pre { background: #1d2024 !important; border-color: #3f4347 !important; }
-  .breeze-dark .markdown-body code { color: #60a5fa !important; }
-  .breeze-dark .markdown-body pre code { color: #cfcfc2 !important; }
-}
-
-/* ─── Breeze Claudius Theme ───────────────────────────────────────────────── */
-/* Breeze Dark with a custom chat center-column background and hidden chat
-   toolbar/input borders. Color rules mirror Breeze Dark; only .chat-center is new. */
-
-@layer base {
-  .breeze-claudius {
-    --color-bg-primary:         #232629;
-    --color-bg-secondary:       #31363b;
-    --color-bg-tertiary:        #2A2E32;
-    --color-bg-elevated:        #3f4347;
-    --color-border:             #3f4347;
-    --color-border-focus:       #3daee9;
-    --color-text-primary:       #cfcfc2;
-    --color-text-secondary:     #a5a6a8;
-    --color-text-muted:         #7a7c7d;
-    --color-accent:             #2980b9;
-    --color-accent-hover:       #3daee9;
-    --color-success:            #1c8042;
-    --color-warning:            #f67400;
-    --color-error:              #da4453;
-    --color-app-bg:             #232629;
-    --color-app-surface:        #31363b;
-    --color-app-border:         #3f4347;
-    --color-app-text:           #cfcfc2;
-    --color-app-text-secondary: #a5a6a8;
-    --color-app-text-muted:     #7a7c7d;
-
-    /* CodeMirror syntax tokens — Kate Breeze Dark palette */
-    --cm-keyword:  #fdbc4b;  /* Kate ControlFlow yellow */
-    --cm-string:   #f44f4f;  /* Kate String red */
-    --cm-comment:  #7a7c7d;  /* Kate Comment */
-    --cm-function: #8e44ad;  /* Kate Function purple */
-    --cm-type:     #2980b9;  /* Kate DataType blue */
-    --cm-number:   #f67400;  /* Kate DecVal orange */
-    --cm-operator: #3f8058;  /* Kate Operator dark green */
-    --cm-property: #27aeae;  /* Kate Variable teal */
-    --cm-tag:      #2980b9;  /* Kate Attribute */
-    --cm-variable: #cfcfc2;  /* Kate Normal */
-    --cm-constant: #27aeae;  /* Kate Constant */
-    --cm-heading:  #8e44ad;  /* Kate Function purple */
-    --cm-link:     #0099ff;  /* Kate Extension */
-    --cm-list:     #da4453;  /* Kate SpecialString red */
-    --cm-quote:    #7a7c7d;
-    --cm-meta:     #a5a6a8;
-    --cm-mark:     #8e44ad;  /* matches heading */
-    --cm-invalid:  #da4453;
-    --cm-active-line-bg:     #2A2E32;
-    --cm-selection-bg:       rgba(45, 92, 118, 0.65);  /* Kate TextSelection */
-    --cm-selection-match-bg: rgba(65, 72, 87, 0.5);
-  }
-
-  .breeze-claudius body { background-color: #232629; color: #cfcfc2; }
-
-  .breeze-claudius .bg-neutral-950 { background-color: #232629 !important; }
-  .breeze-claudius .bg-neutral-900 { background-color: #31363b !important; }
-  .breeze-claudius .bg-neutral-900\/50 { background-color: rgba(49, 54, 59, 0.5) !important; }
-  .breeze-claudius .bg-neutral-800 { background-color: #3f4347 !important; }
-  .breeze-claudius .bg-neutral-800\/50 { background-color: rgba(63, 67, 71, 0.5) !important; }
-  .breeze-claudius .bg-neutral-700 { background-color: #4d5358 !important; }
-  .breeze-claudius .text-neutral-100 { color: #cfcfc2 !important; }
-  .breeze-claudius .text-neutral-200 { color: #c0c0b5 !important; }
-  .breeze-claudius .text-neutral-300 { color: #a5a6a8 !important; }
-  .breeze-claudius .text-neutral-400 { color: #898a8c !important; }
-  .breeze-claudius .text-neutral-500 { color: #7a7c7d !important; }
-  .breeze-claudius .text-neutral-600 { color: #5f6266 !important; }
-  .breeze-claudius .text-neutral-700 { color: #4d5358 !important; }
-  .breeze-claudius .border-neutral-800 { border-color: #3f4347 !important; }
-  .breeze-claudius .border-neutral-700 { border-color: #4d5358 !important; }
-  .breeze-claudius .bg-blue-600 { background-color: #2980b9 !important; }
-  .breeze-claudius .bg-blue-900\/30 { background-color: rgba(45, 92, 118, 0.5) !important; }
-  .breeze-claudius .text-blue-400 { color: #3daee9 !important; }
-  .breeze-claudius .bg-red-900\/30 { background-color: rgba(218, 68, 83, 0.15) !important; }
-  .breeze-claudius .text-red-400 { color: #da4453 !important; }
-  .breeze-claudius .bg-emerald-900\/30 { background-color: rgba(28, 128, 66, 0.15) !important; }
-  .breeze-claudius .text-emerald-400 { color: #1c8042 !important; }
-  .breeze-claudius .bg-yellow-900\/30 { background-color: rgba(246, 116, 0, 0.15) !important; }
-  .breeze-claudius .text-yellow-400 { color: #fdbc4b !important; }
-  .breeze-claudius .bg-purple-900\/30 { background-color: rgba(142, 68, 173, 0.15) !important; }
-  .breeze-claudius .text-purple-400 { color: #8e44ad !important; }
-  .breeze-claudius .bg-green-950\/30 { background-color: rgba(28, 128, 66, 0.1) !important; }
-  .breeze-claudius .bg-red-950\/30 { background-color: rgba(218, 68, 83, 0.1) !important; }
-  .breeze-claudius .bg-emerald-950\/40 { background-color: rgba(28, 128, 66, 0.12) !important; }
-  .breeze-claudius .border-emerald-800\/50 { border-color: rgba(28, 128, 66, 0.3) !important; }
-  .breeze-claudius .text-emerald-300 { color: #1c8042 !important; }
-  .breeze-claudius .bg-red-950\/40 { background-color: rgba(218, 68, 83, 0.12) !important; }
-  .breeze-claudius .border-red-800\/50 { border-color: rgba(218, 68, 83, 0.3) !important; }
-  .breeze-claudius .text-red-300 { color: #da4453 !important; }
-
-  .breeze-claudius *::-webkit-scrollbar-thumb { background-color: #3f4347 !important; }
-  .breeze-claudius *::-webkit-scrollbar-thumb:hover { background-color: #4d5358 !important; }
-
-  .breeze-claudius .markdown-body pre { background: #1d2024 !important; border-color: #3f4347 !important; }
-  .breeze-claudius .markdown-body code { color: #60a5fa !important; }
-  .breeze-claudius .markdown-body pre code { color: #cfcfc2 !important; }
-
-  /* Chat center column: custom background, distinct from the left sidebar,
-     right side panel, and terminal (all siblings, so unaffected). The nested
-     rule recolors the input strip wrapper (.bg-neutral-950) to match. */
-  .breeze-claudius .chat-center { background-color: #1e1e1e; }
-  .breeze-claudius .chat-center .bg-neutral-950 { background-color: #1e1e1e !important; }
-  /* Hide the toolbar bottom border and the input-area top border (direct
-     children only, so message/tool cards keep their borders). */
-  .breeze-claudius .chat-center > .border-b { border-bottom-color: transparent !important; }
-  .breeze-claudius .chat-center > .border-t { border-top-color: transparent !important; }
-}
-
-/* ─── Breeze Light Theme (Kate) ──────────────────────────────────────────── */
-
-@layer base {
-  .breeze-light {
-    --color-bg-primary:         #ffffff;
-    --color-bg-secondary:       #f8f7f6;
-    --color-bg-tertiary:        #ebebeb;
-    --color-bg-elevated:        #ffffff;
-    --color-border:             #d8d8d8;
-    --color-border-focus:       #0057ae;
-    --color-text-primary:       #1f1c1b;
-    --color-text-secondary:     #444444;
-    --color-text-muted:         #898887;
-    --color-accent:             #0057ae;
-    --color-accent-hover:       #2980b9;
-    --color-success:            #006e28;
-    --color-warning:            #b08000;
-    --color-error:              #bf0303;
-    --color-app-bg:             #ffffff;
-    --color-app-surface:        #f8f7f6;
-    --color-app-border:         #d8d8d8;
-    --color-app-text:           #1f1c1b;
-    --color-app-text-secondary: #444444;
-    --color-app-text-muted:     #898887;
-
-    /* CodeMirror syntax tokens — Kate Breeze Light palette */
-    --cm-keyword:  #b08000;  /* yellow-orange for visibility */
-    --cm-string:   #bf0303;  /* Kate String red */
-    --cm-comment:  #898887;  /* Kate Comment */
-    --cm-function: #644a9b;  /* Kate Function purple */
-    --cm-type:     #0057ae;  /* Kate DataType blue */
-    --cm-number:   #b08000;  /* Kate DecVal */
-    --cm-operator: #ca60ca;  /* Kate Operator magenta */
-    --cm-property: #0057ae;  /* Kate Attribute blue */
-    --cm-tag:      #0057ae;
-    --cm-variable: #1f1c1b;  /* Kate Normal */
-    --cm-constant: #aa5500;  /* Kate Constant brown-orange */
-    --cm-heading:  #644a9b;  /* Kate Function purple */
-    --cm-link:     #0095ff;  /* Kate Extension */
-    --cm-list:     #bf0303;  /* Kate SpecialString red */
-    --cm-quote:    #898887;
-    --cm-meta:     #898887;
-    --cm-mark:     #644a9b;  /* matches heading */
-    --cm-invalid:  #bf0303;
-    --cm-active-line-bg:     #f8f7f6;
-    --cm-selection-bg:       rgba(148, 202, 239, 0.6);  /* Kate TextSelection */
-    --cm-selection-match-bg: rgba(0, 0, 0, 0.05);
-  }
-
-  .breeze-light body { background-color: #ffffff; color: #1f1c1b; }
-
-  .breeze-light .bg-neutral-950 { background-color: #ffffff !important; }
-  .breeze-light .bg-neutral-900 { background-color: #f8f7f6 !important; }
-  .breeze-light .bg-neutral-900\/50 { background-color: rgba(248, 247, 246, 0.5) !important; }
-  .breeze-light .bg-neutral-800 { background-color: #ebebeb !important; }
-  .breeze-light .bg-neutral-800\/50 { background-color: rgba(235, 235, 235, 0.5) !important; }
-  .breeze-light .bg-neutral-700 { background-color: #d8d8d8 !important; }
-  .breeze-light .text-neutral-100 { color: #1f1c1b !important; }
-  .breeze-light .text-neutral-200 { color: #232629 !important; }
-  .breeze-light .text-neutral-300 { color: #444444 !important; }
-  .breeze-light .text-neutral-400 { color: #5d5d5d !important; }
-  .breeze-light .text-neutral-500 { color: #7a7c7d !important; }
-  .breeze-light .text-neutral-600 { color: #898887 !important; }
-  .breeze-light .text-neutral-700 { color: #d8d8d8 !important; }
-  .breeze-light .border-neutral-800 { border-color: #d8d8d8 !important; }
-  .breeze-light .border-neutral-700 { border-color: #c0c0bf !important; }
-  .breeze-light .bg-blue-600 { background-color: #0057ae !important; }
-  .breeze-light .bg-blue-900\/30 { background-color: rgba(0, 87, 174, 0.12) !important; }
-  .breeze-light .text-blue-400 { color: #0057ae !important; }
-  .breeze-light .bg-red-900\/30 { background-color: rgba(191, 3, 3, 0.12) !important; }
-  .breeze-light .text-red-400 { color: #bf0303 !important; }
-  .breeze-light .bg-emerald-900\/30 { background-color: rgba(0, 110, 40, 0.12) !important; }
-  .breeze-light .text-emerald-400 { color: #006e28 !important; }
-  .breeze-light .bg-yellow-900\/30 { background-color: rgba(176, 128, 0, 0.12) !important; }
-  .breeze-light .text-yellow-400 { color: #b08000 !important; }
-  .breeze-light .bg-purple-900\/30 { background-color: rgba(100, 74, 155, 0.12) !important; }
-  .breeze-light .text-purple-400 { color: #644a9b !important; }
-  .breeze-light .bg-green-950\/30 { background-color: rgba(0, 110, 40, 0.1) !important; }
-  .breeze-light .bg-red-950\/30 { background-color: rgba(191, 3, 3, 0.1) !important; }
-  .breeze-light .bg-emerald-950\/40 { background-color: rgba(0, 110, 40, 0.12) !important; }
-  .breeze-light .border-emerald-800\/50 { border-color: rgba(0, 110, 40, 0.3) !important; }
-  .breeze-light .text-emerald-300 { color: #006e28 !important; }
-  .breeze-light .bg-red-950\/40 { background-color: rgba(191, 3, 3, 0.12) !important; }
-  .breeze-light .border-red-800\/50 { border-color: rgba(191, 3, 3, 0.3) !important; }
-  .breeze-light .text-red-300 { color: #bf0303 !important; }
-
-  .breeze-light *::-webkit-scrollbar-thumb { background-color: #d8d8d8 !important; }
-  .breeze-light *::-webkit-scrollbar-thumb:hover { background-color: #898887 !important; }
-
-  .breeze-light .markdown-body pre { background: #f8f7f6 !important; border-color: #d8d8d8 !important; }
-  .breeze-light .markdown-body code { color: #644a9b !important; }
-  .breeze-light .markdown-body pre code { color: #1f1c1b !important; }
-}
-
-/* ─── Light Mode Overrides ────────────────────────────────────────────────── */
-
-@layer base {
-  .light body {
-    background-color: #ffffff;
-    color: #171717;
-  }
-
-  .light .bg-neutral-950 { background-color: #ffffff !important; }
-  .light .bg-neutral-900 { background-color: #f5f5f5 !important; }
-  .light .bg-neutral-900\/50 { background-color: rgba(245, 245, 245, 0.5) !important; }
-  .light .bg-neutral-800 { background-color: #e5e5e5 !important; }
-  .light .bg-neutral-800\/50 { background-color: rgba(229, 229, 229, 0.5) !important; }
-  .light .bg-neutral-700 { background-color: #d4d4d4 !important; }
-  .light .text-neutral-100 { color: #171717 !important; }
-  .light .text-neutral-200 { color: #262626 !important; }
-  .light .text-neutral-300 { color: #404040 !important; }
-  .light .text-neutral-400 { color: #525252 !important; }
-  .light .text-neutral-500 { color: #737373 !important; }
-  .light .text-neutral-600 { color: #a3a3a3 !important; }
-  .light .text-neutral-700 { color: #d4d4d4 !important; }
-  .light .border-neutral-800 { border-color: #e5e5e5 !important; }
-  .light .border-neutral-700 { border-color: #d4d4d4 !important; }
-  .light .bg-blue-600 { background-color: #2563eb !important; }
-  .light .bg-blue-900\/30 { background-color: rgba(30, 64, 175, 0.15) !important; }
-  .light .text-blue-400 { color: #3b82f6 !important; }
-  .light .bg-red-900\/30 { background-color: rgba(153, 27, 27, 0.15) !important; }
-  .light .text-red-400 { color: #ef4444 !important; }
-  .light .bg-emerald-900\/30 { background-color: rgba(6, 95, 70, 0.15) !important; }
-  .light .text-emerald-400 { color: #10b981 !important; }
-  .light .bg-yellow-900\/30 { background-color: rgba(113, 63, 18, 0.15) !important; }
-  .light .text-yellow-400 { color: #f59e0b !important; }
-  .light .bg-purple-900\/30 { background-color: rgba(88, 28, 135, 0.15) !important; }
-  .light .text-purple-400 { color: #a855f7 !important; }
-  .light .bg-green-950\/30 { background-color: rgba(5, 46, 22, 0.15) !important; }
-  .light .bg-red-950\/30 { background-color: rgba(69, 10, 10, 0.15) !important; }
-
-  /* Markdown in light mode */
-  .light .markdown-body pre { background: #f8f9fa !important; border-color: #e5e5e5 !important; }
-  .light .markdown-body code { color: #a855f7 !important; }
-  .light .markdown-body pre code { color: #171717 !important; }
-  .light .hljs { background: #f8f9fa !important; color: #24292e !important; }
-  .light .hljs-comment, .light .hljs-quote { color: #6a737d !important; }
-  .light .hljs-keyword, .light .hljs-selector-tag { color: #d73a49 !important; }
-  .light .hljs-string, .light .hljs-attr { color: #032f62 !important; }
-  .light .hljs-number, .light .hljs-literal { color: #005cc5 !important; }
-  .light .hljs-built_in, .light .hljs-type { color: #e36209 !important; }
-
-  /* Scrollbar in light mode */
-  .light *::-webkit-scrollbar-thumb { background-color: #d4d4d4 !important; }
-  .light *::-webkit-scrollbar-thumb:hover { background-color: #a3a3a3 !important; }
 }
 
 /* ─── Animations ─────────────────────────────────────────────────────────── */
@@ -925,3 +338,8 @@
     animation: fade-in 0.2s ease-out;
   }
 }
+
+/* In-conversation search highlights (the ::highlight() rules for the CSS Custom
+   Highlight API) are injected at runtime from chat-search.tsx — Tailwind's
+   Lightning CSS transformer drops the unrecognized ::highlight() pseudo-element
+   at build time, so they can't live here. */

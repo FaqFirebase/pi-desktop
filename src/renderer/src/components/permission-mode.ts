@@ -45,3 +45,10 @@ export function isPermissionMode(value: unknown): value is PermissionMode {
 export function getPermissionModeLabel(mode: PermissionMode): string {
   return PERMISSION_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? 'Ask before edits'
 }
+
+export function getPermissionModeDescription(mode: PermissionMode): string {
+  return (
+    PERMISSION_MODE_OPTIONS.find((option) => option.value === mode)?.description ??
+    'Pi will ask before file edits and shell commands that can change files.'
+  )
+}

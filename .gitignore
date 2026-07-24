@@ -34,6 +34,18 @@ $RECYCLE.BIN/
 .env.development
 .env.production
 
+# Signing & secrets — code-signing material and credentials, never commit.
+# The app ships signed macOS/Windows binaries (see AGENT.md Distribution);
+# a leaked signing key or cert bundle is a security incident.
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+secrets/
+.npmrc.local
+
 # Logs
 *.log
 npm-debug.log*
@@ -53,6 +65,8 @@ coverage/
 # Electron / packaging artifacts
 *.dmg
 *.AppImage
+# AppImage extraction dir (created by `AppImage --appimage-extract`)
+squashfs-root/
 *.exe
 *.msi
 *.pkg
@@ -72,6 +86,7 @@ builder-effective-config.yaml
 # Pi project-level settings — created if Pi is ever run with this repo
 # itself as a workspace (see AGENT.md Data Storage: .pi/settings.json)
 .pi/
+.pi-desktop/
 
 # Agent context — local-only memory and architecture notes
 MEMORY.md

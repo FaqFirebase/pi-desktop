@@ -39,8 +39,9 @@ jobs:
       - name: Unit tests
         # `**` glob file-args to `--test` need a newer Node than the pinned
         # runner version supports, so enumerate files with `find` instead of
-        # relying on the shell/runtime to expand the pattern.
-        run: npx tsx --test $(find src -name '*.test.ts')
+        # relying on the shell/runtime to expand the pattern. `resources/` holds
+        # the shared permission-rules engine's tests, so include it too.
+        run: npx tsx --test $(find src resources -name '*.test.ts')
 
   build:
     name: Build (${{ matrix.os }})

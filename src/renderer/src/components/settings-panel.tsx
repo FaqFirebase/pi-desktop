@@ -1,22 +1,58 @@
 import { useAppStore } from '../store'
-import { useState, useEffect, useRef } from 'react'
-import type { AppSettings, PermissionMode, CouncilConfig } from '../../../shared/ipc-contracts'
-import { Settings, Save, RotateCcw, FolderOpen, Check } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { clsx } from 'clsx'
+import type {
+  AppSettings,
+  PermissionMode,
+  CouncilConfig,
+  PermissionRule,
+  PermissionRulesScope,
+  PermissionRulesWorkspaceStatus,
+} from '../../../shared/ipc-contracts'
+import type { ThemeFile } from '../../../shared/theme/theme-file'
+import { Settings, Save, RotateCcw, FolderOpen, Check, ChevronDown } from 'lucide-react'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { PermissionSelector } from './permission-selector'
-import { applyTheme } from '../utils/theme'
+import { PermissionRulesEditor } from './permission-rules-editor'
+import { validateRuleList, shouldPersistScope } from './permission-rules-editor-helpers'
+import { applyTheme, getRegisteredThemes, registerThemes, setUserThemes } from '../utils/theme'
+import { BUILTIN_THEME_IDS } from '../themes'
 import { CustomModelsEditor } from './custom-models-editor'
+import { ThemeEditor } from './theme-editor'
+import { ThemeGallery } from './theme-gallery'
+import type { UserThemeRecord } from '../../../shared/ipc-contracts'
 import {
   MIN_TIMEOUT_SECONDS as COUNCIL_MIN_TIMEOUT,
   MAX_TIMEOUT_SECONDS as COUNCIL_MAX_TIMEOUT,
   clampTimeoutSeconds as clampCouncilTimeout,
 } from '../../../shared/council-config'
 
+// Empty `match` from the input means "no pattern" and must not be persisted
+// as `""` — the main-process validator rejects unknown/empty-string quirks
+// and downstream matching treats a missing key as "match anything".
+function normalizedRules(rules: PermissionRule[]): PermissionRule[] {
+  return rules.map((rule) => {
+    const tool = rule.tool.trim()
+    const match = rule.match?.trim()
+    return match ? { action: rule.action, tool, match } : { action: rule.action, tool }
+  })
+}
+
+interface ScopeRulesState {
+  rules: PermissionRule[]
+  loaded: boolean
+  loadError: string | null
+  exists: boolean
+}
+
+const EMPTY_SCOPE_RULES: ScopeRulesState = { rules: [], loaded: false, loadError: null, exists: false }
+
 export function SettingsPanel(): React.JSX.Element {
   const settings = useAppStore((state) => state.settings)
   const loadSettings = useAppStore((state) => state.loadSettings)
   const setSettingsDraft = useAppStore((state) => state.setSettingsDraft)
   const clearSettingsDraft = useAppStore((state) => state.clearSettingsDraft)
+  const activeWorkspace = useAppStore((state) => state.activeWorkspace)
 
   // Snapshot the unsaved draft once, for seeding initial local state. This is
   // what makes edits survive leaving/returning to Settings without saving.
@@ -24,6 +60,14 @@ export function SettingsPanel(): React.JSX.Element {
 
   const [piPath, setPiPath] = useState(draft0.piExecutablePath ?? settings?.piExecutablePath ?? DEFAULT_SETTINGS.piExecutablePath)
   const [theme, setTheme] = useState(draft0.theme ?? settings?.theme ?? DEFAULT_SETTINGS.theme)
+  const [themeActionError, setThemeActionError] = useState<string | null>(null)
+  const [themeEditorState, setThemeEditorState] = useState<{
+    baseTheme: ThemeFile
+    baseId: string
+    isUserTheme: boolean
+  } | null>(null)
+  const [installUrl, setInstallUrl] = useState('')
+  const [galleryOpen, setGalleryOpen] = useState(false)
   const [fontSize, setFontSize] = useState(draft0.fontSize ?? settings?.fontSize ?? DEFAULT_SETTINGS.fontSize)
   const [terminalFontSize, setTerminalFontSize] = useState(draft0.terminalFontSize ?? settings?.terminalFontSize ?? DEFAULT_SETTINGS.terminalFontSize)
   const [codeEditorFontSize, setCodeEditorFontSize] = useState(draft0.codeEditorFontSize ?? settings?.codeEditorFontSize ?? DEFAULT_SETTINGS.codeEditorFontSize)
@@ -31,9 +75,18 @@ export function SettingsPanel(): React.JSX.Element {
   const [autoScroll, setAutoScroll] = useState(draft0.autoScroll ?? settings?.autoScroll ?? DEFAULT_SETTINGS.autoScroll)
   const [resumeLastSession, setResumeLastSession] = useState(draft0.resumeLastSession ?? settings?.resumeLastSession ?? DEFAULT_SETTINGS.resumeLastSession)
   const [openToHomeOnLaunch, setOpenToHomeOnLaunch] = useState(draft0.openToHomeOnLaunch ?? settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch)
+  const [runOnStartup, setRunOnStartup] = useState(draft0.runOnStartup ?? settings?.runOnStartup ?? DEFAULT_SETTINGS.runOnStartup)
+  const [minimizeToTrayOnClose, setMinimizeToTrayOnClose] = useState(draft0.minimizeToTrayOnClose ?? settings?.minimizeToTrayOnClose ?? DEFAULT_SETTINGS.minimizeToTrayOnClose)
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
     draft0.permissionMode ?? settings?.permissionMode ?? DEFAULT_SETTINGS.permissionMode,
   )
+  const [rulesScope, setRulesScope] = useState<PermissionRulesScope>('global')
+  const [scopeRules, setScopeRules] = useState<Record<PermissionRulesScope, ScopeRulesState>>({
+    global: EMPTY_SCOPE_RULES,
+    workspace: EMPTY_SCOPE_RULES,
+  })
+  const [rulesActionError, setRulesActionError] = useState<string | null>(null)
+  const [workspaceRulesStatus, setWorkspaceRulesStatus] = useState<PermissionRulesWorkspaceStatus | null>(null)
   const [saved, setSaved] = useState(false)
 
   const [showCouncilWarning, setShowCouncilWarning] = useState(false)
@@ -62,6 +115,67 @@ export function SettingsPanel(): React.JSX.Element {
     }
   }, [])
 
+  // Load permission rules for one scope. The store draft for that scope wins
+  // over the saved file so unsaved edits survive view switches. The draft is
+  // read at resolve time (inside the functional update), not before the
+  // await, so an edit made during the round-trip isn't visually reverted by
+  // a draft snapshot that predates it.
+  const loadRulesScope = useCallback(async (scope: PermissionRulesScope): Promise<void> => {
+    const saved = await window.piDesktop.permissionRules.get(scope)
+    setScopeRules((prev) => {
+      const draft = useAppStore.getState().permissionRulesDrafts[scope]
+      return {
+        ...prev,
+        [scope]: saved.ok
+          ? { rules: draft ?? saved.rules, loaded: true, loadError: null, exists: saved.exists }
+          : // Corrupt file: only a pre-existing user draft keeps Save enabled —
+            // see shouldPersistScope; an unrelated Save must not clobber it.
+            { rules: draft ?? [], loaded: draft !== null, loadError: saved.error, exists: true },
+      }
+    })
+  }, [])
+
+  const loadWorkspaceRulesStatus = useCallback(async (): Promise<void> => {
+    const status = await window.piDesktop.permissionRules.workspaceStatus()
+    setWorkspaceRulesStatus(status)
+  }, [])
+
+  const handleSetWorkspaceTrust = useCallback(async (trusted: boolean): Promise<void> => {
+    const status = await window.piDesktop.permissionRules.setWorkspaceTrust(trusted)
+    setWorkspaceRulesStatus(status)
+  }, [])
+
+  useEffect(() => {
+    void loadRulesScope('global')
+    void loadRulesScope('workspace')
+    void loadWorkspaceRulesStatus()
+  }, [loadRulesScope, loadWorkspaceRulesStatus])
+
+  // The workspace-scope rules are keyed by scope, not by workspace, so if the
+  // active workspace changes while this panel stays mounted (e.g. switching
+  // workspaces from the sidebar without leaving Settings), the previous
+  // workspace's loaded/exists state would otherwise stick around and could
+  // pass shouldPersistScope on an unrelated Save, writing it into the new
+  // workspace's file. Reset and re-fetch whenever the path changes. Skipped
+  // on the initial mount — the load-on-mount effect above already covers it.
+  const activeWorkspacePathRef = useRef(activeWorkspace?.path ?? null)
+  useEffect(() => {
+    const path = activeWorkspace?.path ?? null
+    if (activeWorkspacePathRef.current === path) return
+    activeWorkspacePathRef.current = path
+    setScopeRules((prev) => ({ ...prev, workspace: EMPTY_SCOPE_RULES }))
+    void loadRulesScope('workspace')
+    void loadWorkspaceRulesStatus()
+  }, [activeWorkspace?.path, loadRulesScope, loadWorkspaceRulesStatus])
+
+  // Re-read a scope's file when the user switches to its tab, so manual edits
+  // to the file on disk show up — but not if there's an unsaved draft for it.
+  const handleRulesScopeChange = (scope: PermissionRulesScope): void => {
+    setRulesScope(scope)
+    setRulesActionError(null)
+    if (useAppStore.getState().permissionRulesDrafts[scope] === null) void loadRulesScope(scope)
+  }
+
   // Keep the timeout draft in sync with the persisted value (e.g. after a save
   // clamps it, or when settings first load).
   const councilTimeout = settings?.council?.timeoutSeconds
@@ -74,6 +188,15 @@ export function SettingsPanel(): React.JSX.Element {
     if (!settings) return
     const nextCouncil: CouncilConfig = { ...settings.council, ...patch }
     await window.piDesktop.settings.save({ council: nextCouncil })
+    await loadSettings()
+  }
+
+  // Persist and apply a setting immediately, for toggles with an OS-level side
+  // effect (tray behavior, login item). These must take effect the instant they
+  // are flipped — staging them behind the Save button makes a toggle look "on"
+  // while the behavior is still off, which is surprising and easy to miss.
+  const applyImmediate = async (patch: Partial<AppSettings>): Promise<void> => {
+    await window.piDesktop.settings.save(patch)
     await loadSettings()
   }
 
@@ -97,6 +220,8 @@ export function SettingsPanel(): React.JSX.Element {
     setAutoScroll(draft.autoScroll ?? settings.autoScroll)
     setResumeLastSession(draft.resumeLastSession ?? settings.resumeLastSession)
     setOpenToHomeOnLaunch(draft.openToHomeOnLaunch ?? settings.openToHomeOnLaunch)
+    setRunOnStartup(draft.runOnStartup ?? settings.runOnStartup)
+    setMinimizeToTrayOnClose(draft.minimizeToTrayOnClose ?? settings.minimizeToTrayOnClose)
     setPermissionMode(draft.permissionMode ?? settings.permissionMode)
   }, [settings])
 
@@ -108,10 +233,193 @@ export function SettingsPanel(): React.JSX.Element {
     }
   }
 
+  const resolveEffectiveThemeId = (themeId: string): string => {
+    if (themeId !== 'system') return themeId
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  }
+
+  const isBuiltinTheme = (themeId: string): boolean => (BUILTIN_THEME_IDS as string[]).includes(themeId)
+  const isEditableUserTheme = theme !== 'system' && !isBuiltinTheme(theme)
+
+  const openCreateThemeEditor = () => {
+    const effectiveId = resolveEffectiveThemeId(theme)
+    const registered = getRegisteredThemes()
+    const baseTheme =
+      registered.find((t) => t.id === effectiveId)?.file ??
+      registered.find((t) => t.id === 'dark')!.file
+    setThemeEditorState({ baseTheme, baseId: effectiveId, isUserTheme: false })
+  }
+
+  const openEditThemeEditor = () => {
+    const baseTheme = getRegisteredThemes().find((t) => t.id === theme)?.file
+    if (!baseTheme) {
+      setThemeActionError('Could not find the current theme to edit')
+      return
+    }
+    setThemeEditorState({ baseTheme, baseId: theme, isUserTheme: true })
+  }
+
+  const handleThemeEditorSaved = async (id: string, warning?: string) => {
+    setTheme(id)
+    // A warning is a non-fatal post-save problem (rename cleanup failure).
+    // It has to live in the panel's themeActionError, not the editor's own
+    // saveError: the editor unmounts in this same commit, so only state
+    // owned here survives long enough to render.
+    setThemeActionError(warning ?? null)
+    setThemeEditorState(null)
+    // Reconcile the registry against disk so a rename drops the old id from
+    // the dropdown (the editor already registered + applied the new one).
+    const { themes, warnings } = await window.piDesktop.themes.list()
+    for (const w of warnings) console.warn(w)
+    setUserThemes(themes)
+  }
+
+  const handleImportTheme = async () => {
+    const result = await window.piDesktop.themes.import()
+    if (result.ok) {
+      registerThemes([result.theme])
+      applyTheme(result.theme.id)
+      setTheme(result.theme.id)
+      setSettingsDraft({ theme: result.theme.id })
+      setThemeActionError(null)
+    } else if (!('canceled' in result)) {
+      setThemeActionError(result.error)
+    }
+  }
+
+  const handleExportTheme = async () => {
+    const effectiveThemeId = resolveEffectiveThemeId(theme)
+    const currentThemeFile = getRegisteredThemes().find((t) => t.id === effectiveThemeId)?.file
+    if (!currentThemeFile) {
+      setThemeActionError('Could not find the current theme to export')
+      return
+    }
+    const result = await window.piDesktop.themes.export(currentThemeFile)
+    if (result.ok) {
+      setThemeActionError(null)
+    } else if (!('canceled' in result)) {
+      setThemeActionError(result.error)
+    }
+  }
+
+  const handleInstallFromUrl = async () => {
+    if (!installUrl.trim()) return
+    const result = await window.piDesktop.themes.installFromUrl(installUrl.trim())
+    if (result.ok) {
+      registerThemes([result.theme])
+      applyTheme(result.theme.id)
+      setTheme(result.theme.id)
+      setSettingsDraft({ theme: result.theme.id })
+      setThemeActionError(null)
+      setInstallUrl('')
+    } else if (!('canceled' in result)) {
+      setThemeActionError(result.error)
+    }
+  }
+  const handleGalleryInstalled = (installed: UserThemeRecord) => {
+    registerThemes([installed])
+    applyTheme(installed.id)
+    setTheme(installed.id)
+    setSettingsDraft({ theme: installed.id })
+    setThemeActionError(null)
+  }
+
+  const handleDeleteTheme = async () => {
+    const themeName = getRegisteredThemes().find((t) => t.id === theme)?.file.name ?? theme
+    // Confirm before destructive action via the app's themed dialog, matching
+    // the pattern used for session delete (context-menu.tsx) rather than the
+    // native window.confirm. Deleting a theme file has no undo.
+    const ok = await useAppStore.getState().requestConfirm({
+      title: 'Delete theme',
+      message: `Delete theme "${themeName}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
+    await window.piDesktop.themes.delete(theme)
+    const { themes, warnings } = await window.piDesktop.themes.list()
+    for (const warning of warnings) {
+      console.warn(warning)
+    }
+    setUserThemes(themes)
+    setTheme('dark')
+    applyTheme('dark')
+    setSettingsDraft({ theme: 'dark' })
+    setThemeActionError(null)
+  }
+
+  const handleRulesChange = (rules: PermissionRule[]): void => {
+    setScopeRules((prev) => ({
+      ...prev,
+      [rulesScope]: { ...prev[rulesScope], rules, loaded: true },
+    }))
+    setRulesActionError(null)
+    // The user edited or imported rules in this panel — Save is now allowed
+    // to persist the list even if the on-disk file failed to load.
+    useAppStore.getState().setPermissionRulesDraft(rulesScope, rules)
+  }
+
+  const handleRulesImport = async (): Promise<void> => {
+    const result = await window.piDesktop.permissionRules.importFromFile()
+    if (result.ok) {
+      handleRulesChange(result.rules)
+    } else if (!result.canceled) {
+      setRulesActionError(result.error ?? 'Import failed')
+    }
+  }
+
+  const handleRulesExport = async (): Promise<void> => {
+    const result = await window.piDesktop.permissionRules.exportToFile(normalizedRules(scopeRules[rulesScope].rules))
+    if (!result.ok && !result.canceled) {
+      setRulesActionError(result.error ?? 'Export failed')
+    }
+  }
+
+  // Only reachable from the workspace tab (the button is scope-gated in the
+  // editor), so `rulesScope` is 'workspace' when this runs.
+  const handleCopyFromGlobal = (): void => {
+    handleRulesChange(scopeRules.global.rules.map((rule) => ({ ...rule })))
+  }
+
+  const handleRemoveWorkspaceRules = async (): Promise<void> => {
+    const confirmed = await useAppStore.getState().requestConfirm({
+      title: 'Remove workspace rules',
+      message:
+        'Delete this workspace\'s .pi-desktop/permission-rules.json? Global permission rules will apply again.',
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (!confirmed) return
+    const result = await window.piDesktop.permissionRules.removeWorkspace()
+    if (!result.ok) {
+      setRulesActionError(result.error)
+      return
+    }
+    useAppStore.getState().setPermissionRulesDraft('workspace', null)
+    setScopeRules((prev) => ({ ...prev, workspace: { ...EMPTY_SCOPE_RULES, loaded: true } }))
+  }
+
   const handleSave = async () => {
+    // Validate rules before anything persists, so invalid rules abort the
+    // whole save cleanly. Only scopes shouldPersistScope would actually
+    // write are validated — never validate an empty list caused by a failed
+    // load as if the user cleared the rules.
+    const drafts = useAppStore.getState().permissionRulesDrafts
+    const scopesToPersist = (['global', 'workspace'] as const).filter((scope) =>
+      shouldPersistScope(drafts[scope], scopeRules[scope].loaded, scopeRules[scope].exists)
+    )
+    for (const scope of scopesToPersist) {
+      const rulesError = validateRuleList(scopeRules[scope].rules)
+      if (rulesError) {
+        setRulesScope(scope)
+        setRulesActionError(rulesError)
+        return
+      }
+    }
+
     const updated: Partial<AppSettings> = {
       piExecutablePath: piPath,
-      theme: theme as AppSettings['theme'],
+      theme,
       fontSize,
       terminalFontSize,
       codeEditorFontSize,
@@ -119,6 +427,8 @@ export function SettingsPanel(): React.JSX.Element {
       autoScroll,
       resumeLastSession,
       openToHomeOnLaunch,
+      runOnStartup,
+      minimizeToTrayOnClose,
       permissionMode,
     }
 
@@ -130,6 +440,25 @@ export function SettingsPanel(): React.JSX.Element {
 
     // Reload settings in store
     await loadSettings()
+
+    // Persist permission rules too (only the scopes shouldPersistScope
+    // allowed — never overwrite a scope's file with an empty list because
+    // loading failed and the user never touched it).
+    for (const scope of scopesToPersist) {
+      const rulesResult = await window.piDesktop.permissionRules.set(scope, normalizedRules(scopeRules[scope].rules))
+      if (!rulesResult.ok) {
+        // Settings already saved above; do not report overall success and
+        // do not clear either draft, so the user's rules edits survive and
+        // can be retried.
+        setRulesScope(scope)
+        setRulesActionError(`Settings saved, but ${scope} permission rules were not saved: ${rulesResult.error}`)
+        return
+      }
+      setScopeRules((prev) => ({
+        ...prev,
+        [scope]: { ...prev[scope], loadError: null, exists: true },
+      }))
+    }
 
     // Persisted now — drop the unsaved draft so the form and terminal/editor
     // read the saved settings (just refreshed).
@@ -154,6 +483,8 @@ export function SettingsPanel(): React.JSX.Element {
       autoScroll: DEFAULT_SETTINGS.autoScroll,
       resumeLastSession: DEFAULT_SETTINGS.resumeLastSession,
       openToHomeOnLaunch: DEFAULT_SETTINGS.openToHomeOnLaunch,
+      runOnStartup: DEFAULT_SETTINGS.runOnStartup,
+      minimizeToTrayOnClose: DEFAULT_SETTINGS.minimizeToTrayOnClose,
       permissionMode: DEFAULT_SETTINGS.permissionMode,
     }
 
@@ -166,7 +497,15 @@ export function SettingsPanel(): React.JSX.Element {
     setAutoScroll(defaults.autoScroll!)
     setResumeLastSession(defaults.resumeLastSession!)
     setOpenToHomeOnLaunch(defaults.openToHomeOnLaunch!)
+    setRunOnStartup(defaults.runOnStartup!)
+    setMinimizeToTrayOnClose(defaults.minimizeToTrayOnClose!)
     setPermissionMode(defaults.permissionMode!)
+    setScopeRules({ global: EMPTY_SCOPE_RULES, workspace: EMPTY_SCOPE_RULES })
+    setRulesActionError(null)
+    useAppStore.getState().setPermissionRulesDraft('global', null)
+    useAppStore.getState().setPermissionRulesDraft('workspace', null)
+    void loadRulesScope('global')
+    void loadRulesScope('workspace')
 
     const result = await window.piDesktop.settings.save(defaults)
     applyTheme(result.theme)
@@ -184,8 +523,8 @@ export function SettingsPanel(): React.JSX.Element {
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Settings size={20} className="text-neutral-400" />
-            <h1 className="text-lg font-semibold text-neutral-200">Settings</h1>
+            <Settings size={20} className="text-muted" />
+            <h1 className="text-lg font-semibold text-primary">Settings</h1>
           </div>
         </div>
 
@@ -200,11 +539,11 @@ export function SettingsPanel(): React.JSX.Element {
                   setPiPath(e.target.value)
                   setSettingsDraft({ piExecutablePath: e.target.value })
                 }}
-                className="flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
+                className="flex-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary focus:border-focus focus:outline-none"
               />
               <button
                 onClick={handleSelectPath}
-                className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-400 hover:bg-neutral-800 transition-colors"
+                className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
               >
                 <FolderOpen size={14} />
               </button>
@@ -215,25 +554,97 @@ export function SettingsPanel(): React.JSX.Element {
         {/* Appearance */}
         <SettingsSection title="Appearance">
           <SettingsRow label="Theme" description="Application color scheme">
-            <select
-              value={theme}
-              onChange={(e) => {
-                const newTheme = e.target.value as AppSettings['theme']
-                setTheme(newTheme)
-                applyTheme(newTheme)
-                setSettingsDraft({ theme: newTheme })
-              }}
-              className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
-            >
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-              <option value="system">System</option>
-              <option value="nord">Nord</option>
-              <option value="gruvbox">Gruvbox</option>
-              <option value="breeze-dark">Breeze Dark (Kate)</option>
-              <option value="breeze-light">Breeze Light (Kate)</option>
-              <option value="breeze-claudius">Breeze Claudius</option>
-            </select>
+            <div className="relative">
+              <select
+                value={theme}
+                onChange={(e) => {
+                  const newTheme = e.target.value
+                  setTheme(newTheme)
+                  applyTheme(newTheme)
+                  setSettingsDraft({ theme: newTheme })
+                }}
+                className="w-full appearance-none rounded-md border border-border-strong bg-surface py-1.5 pl-3 pr-9 text-sm text-primary hover:border-border-strong-hover focus:border-focus focus:outline-none"
+              >
+                <option value="system">System</option>
+                {getRegisteredThemes().map((registeredTheme) => (
+                  <option key={registeredTheme.id} value={registeredTheme.id}>
+                    {registeredTheme.file.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={14}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-dim"
+              />
+            </div>
+          </SettingsRow>
+
+          <SettingsRow label="Custom Theme" description="Fork the current theme or edit one you created">
+            <div className="flex gap-2">
+              <button
+                onClick={openCreateThemeEditor}
+                className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+              >
+                Create theme
+              </button>
+              {isEditableUserTheme && (
+                <button
+                  onClick={openEditThemeEditor}
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+                >
+                  Edit theme
+                </button>
+              )}
+            </div>
+          </SettingsRow>
+
+          <SettingsRow label="Theme Actions" description="Import, export, or install a theme from a URL" stack>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <button
+                  onClick={handleImportTheme}
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+                >
+                  Import
+                </button>
+                <button
+                  onClick={handleExportTheme}
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+                >
+                  Export
+                </button>
+                <button
+                  onClick={() => setGalleryOpen(true)}
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+                >
+                  Browse gallery
+                </button>
+                {!isBuiltinTheme(theme) && (
+                  <button
+                    onClick={handleDeleteTheme}
+                    className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={installUrl}
+                  onChange={(e) => setInstallUrl(e.target.value)}
+                  placeholder="https://example.com/theme.json"
+                  className="flex-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary focus:border-focus focus:outline-none"
+                />
+                <button
+                  onClick={handleInstallFromUrl}
+                  className="shrink-0 rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+                >
+                  Install
+                </button>
+              </div>
+              {themeActionError && <p className="text-xs text-error">{themeActionError}</p>}
+            </div>
           </SettingsRow>
 
           <SettingsRow label="UI Font Size" description="Chat, panels, and sidebar — not the terminal or code editor">
@@ -249,9 +660,9 @@ export function SettingsPanel(): React.JSX.Element {
                   document.documentElement.style.fontSize = `${size}px`
                   setSettingsDraft({ fontSize: size })
                 }}
-                className="flex-1 accent-blue-500"
+                className="flex-1 accent-accent"
               />
-              <span className="w-8 text-right text-sm text-neutral-400">{fontSize}</span>
+              <span className="w-8 text-right text-sm text-muted">{fontSize}</span>
             </div>
           </SettingsRow>
 
@@ -267,9 +678,9 @@ export function SettingsPanel(): React.JSX.Element {
                   setTerminalFontSize(size)
                   setSettingsDraft({ terminalFontSize: size })
                 }}
-                className="flex-1 accent-blue-500"
+                className="flex-1 accent-accent"
               />
-              <span className="w-8 text-right text-sm text-neutral-400">{terminalFontSize}</span>
+              <span className="w-8 text-right text-sm text-muted">{terminalFontSize}</span>
             </div>
           </SettingsRow>
 
@@ -285,9 +696,9 @@ export function SettingsPanel(): React.JSX.Element {
                   setCodeEditorFontSize(size)
                   setSettingsDraft({ codeEditorFontSize: size })
                 }}
-                className="flex-1 accent-blue-500"
+                className="flex-1 accent-accent"
               />
-              <span className="w-8 text-right text-sm text-neutral-400">{codeEditorFontSize}</span>
+              <span className="w-8 text-right text-sm text-muted">{codeEditorFontSize}</span>
             </div>
           </SettingsRow>
         </SettingsSection>
@@ -302,6 +713,45 @@ export function SettingsPanel(): React.JSX.Element {
                 setSettingsDraft({ permissionMode: mode })
               }}
               compact
+            />
+          </SettingsRow>
+
+          <SettingsRow label="Permission Rules" description="Fine-grained per-tool overrides for the mode above" stack>
+            <div className="mb-2 flex gap-1" role="tablist" aria-label="Permission rules scope">
+              {(['global', 'workspace'] as const).map((scope) => (
+                <button
+                  key={scope}
+                  type="button"
+                  role="tab"
+                  aria-selected={rulesScope === scope}
+                  onClick={() => handleRulesScopeChange(scope)}
+                  className={clsx(
+                    'rounded-md px-2 py-1 text-xs transition-colors',
+                    rulesScope === scope
+                      ? 'bg-surface border border-border-strong text-primary'
+                      : 'text-dim hover:text-primary'
+                  )}
+                >
+                  {scope === 'global' ? 'Global' : 'This workspace'}
+                </button>
+              ))}
+            </div>
+            <PermissionRulesEditor
+              rules={scopeRules[rulesScope].rules}
+              onChange={handleRulesChange}
+              onImport={() => void handleRulesImport()}
+              onExport={() => void handleRulesExport()}
+              scope={rulesScope}
+              workspaceExists={scopeRules.workspace.exists}
+              onCopyFromGlobal={handleCopyFromGlobal}
+              onRemoveWorkspace={() => void handleRemoveWorkspaceRules()}
+              workspaceOverride={scopeRules.workspace.exists}
+              workspaceActive={!!activeWorkspace}
+              workspaceTrusted={workspaceRulesStatus?.trusted ?? false}
+              workspaceHasAllowRules={workspaceRulesStatus?.hasAllowRules ?? false}
+              onSetWorkspaceTrust={(trusted) => void handleSetWorkspaceTrust(trusted)}
+              loadError={scopeRules[rulesScope].loadError}
+              actionError={rulesActionError}
             />
           </SettingsRow>
 
@@ -325,6 +775,20 @@ export function SettingsPanel(): React.JSX.Element {
             description="When opening a workspace, continue its most recent session instead of starting a new one"
           >
             <Toggle checked={resumeLastSession} onChange={(v) => { setResumeLastSession(v); setSettingsDraft({ resumeLastSession: v }) }} />
+          </SettingsRow>
+
+          <SettingsRow
+            label="Run on Startup"
+            description="Automatically start Pi Desktop when you log in to your computer (takes effect in installed builds)"
+          >
+            <Toggle checked={runOnStartup} onChange={(v) => { setRunOnStartup(v); void applyImmediate({ runOnStartup: v }) }} />
+          </SettingsRow>
+
+          <SettingsRow
+            label="Minimize to Tray on Close"
+            description="Keep Pi Desktop running in the system tray when you close the window instead of quitting (Windows and Linux)"
+          >
+            <Toggle checked={minimizeToTrayOnClose} onChange={(v) => { setMinimizeToTrayOnClose(v); void applyImmediate({ minimizeToTrayOnClose: v }) }} />
           </SettingsRow>
         </SettingsSection>
 
@@ -357,7 +821,7 @@ export function SettingsPanel(): React.JSX.Element {
                       <label
                         key={id}
                         className={`flex items-center gap-2 text-sm ${
-                          detected ? 'text-neutral-200' : 'text-neutral-500'
+                          detected ? 'text-primary' : 'text-dim'
                         }`}
                       >
                         <input
@@ -369,11 +833,11 @@ export function SettingsPanel(): React.JSX.Element {
                               members: { ...settings.council.members, [id]: e.target.checked },
                             })
                           }
-                          className="accent-blue-500 disabled:opacity-50"
+                          className="accent-accent disabled:opacity-50"
                         />
                         <span>
                           {label}
-                          {!detected && <span className="text-neutral-600"> (not detected)</span>}
+                          {!detected && <span className="text-faint"> (not detected)</span>}
                         </span>
                       </label>
                     )
@@ -385,18 +849,24 @@ export function SettingsPanel(): React.JSX.Element {
                 label="Consensus mode"
                 description="How council members reach agreement"
               >
-                <select
-                  value={settings.council.consensusMode}
-                  onChange={(e) =>
-                    void saveCouncil({
-                      consensusMode: e.target.value as CouncilConfig['consensusMode'],
-                    })
-                  }
-                  className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
-                >
-                  <option value="arbiter">Arbiter merge (fast)</option>
-                  <option value="debate">One debate round (slower, ~2x cost)</option>
-                </select>
+                <div className="relative">
+                  <select
+                    value={settings.council.consensusMode}
+                    onChange={(e) =>
+                      void saveCouncil({
+                        consensusMode: e.target.value as CouncilConfig['consensusMode'],
+                      })
+                    }
+                    className="w-full appearance-none rounded-md border border-border-strong bg-surface py-1.5 pl-3 pr-9 text-sm text-primary hover:border-border-strong-hover focus:border-focus focus:outline-none"
+                  >
+                    <option value="arbiter">Arbiter merge (fast)</option>
+                    <option value="debate">One debate round (slower, ~2x cost)</option>
+                  </select>
+                  <ChevronDown
+                    size={14}
+                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-dim"
+                  />
+                </div>
               </SettingsRow>
 
               <SettingsRow
@@ -419,7 +889,7 @@ export function SettingsPanel(): React.JSX.Element {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
                   }}
-                  className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
+                  className="w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary focus:border-focus focus:outline-none"
                 />
               </SettingsRow>
             </>
@@ -435,14 +905,14 @@ export function SettingsPanel(): React.JSX.Element {
         <div className="mt-8 flex gap-3">
           <button
             onClick={handleSave}
-            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 transition-colors"
+            className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover transition-colors"
           >
             {saved ? <Check size={14} /> : <Save size={14} />}
             {saved ? 'Saved!' : 'Save Settings'}
           </button>
           <button
             onClick={handleReset}
-            className="flex items-center gap-2 rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:bg-neutral-800 transition-colors"
+            className="flex items-center gap-2 rounded-md border border-border-strong px-4 py-2 text-sm text-muted hover:bg-surface-hover transition-colors"
           >
             <RotateCcw size={14} />
             Reset to Defaults
@@ -450,14 +920,31 @@ export function SettingsPanel(): React.JSX.Element {
         </div>
       </div>
 
+      {galleryOpen && (
+        <ThemeGallery
+          onClose={() => setGalleryOpen(false)}
+          onInstalled={handleGalleryInstalled}
+        />
+      )}
+
+      {themeEditorState && (
+        <ThemeEditor
+          baseTheme={themeEditorState.baseTheme}
+          baseId={themeEditorState.baseId}
+          isUserTheme={themeEditorState.isUserTheme}
+          onClose={() => setThemeEditorState(null)}
+          onSaved={handleThemeEditorSaved}
+        />
+      )}
+
       {/* Council enable confirmation dialog */}
       {showCouncilWarning && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-lg border border-neutral-700 bg-neutral-900 p-6 shadow-xl">
-            <h3 className="mb-3 text-base font-semibold text-neutral-100">
+          <div className="w-full max-w-md rounded-lg border border-border-strong bg-surface p-6 shadow-xl">
+            <h3 className="mb-3 text-base font-semibold text-primary">
               Enable council planning?
             </h3>
-            <p className="mb-6 text-sm text-neutral-400">
+            <p className="mb-6 text-sm text-muted">
               Each run spawns Claude and Codex in addition to Pi. This can significantly increase
               token usage and credit/API costs. Only enable this if you are comfortable with the
               extra spend.
@@ -465,7 +952,7 @@ export function SettingsPanel(): React.JSX.Element {
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowCouncilWarning(false)}
-                className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:bg-neutral-800 transition-colors"
+                className="rounded-md border border-border-strong px-4 py-2 text-sm text-muted hover:bg-surface-hover transition-colors"
               >
                 Cancel
               </button>
@@ -474,7 +961,7 @@ export function SettingsPanel(): React.JSX.Element {
                   setShowCouncilWarning(false)
                   void saveCouncil({ enabled: true })
                 }}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 transition-colors"
+                className="rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover transition-colors"
               >
                 Enable
               </button>
@@ -497,8 +984,8 @@ function SettingsSection({
 }): React.JSX.Element {
   return (
     <div className="mb-8">
-      <h2 className="mb-4 text-sm font-medium text-neutral-300">{title}</h2>
-      <div className="space-y-4 rounded-lg border border-neutral-800 bg-neutral-900/50 p-4">
+      <h2 className="mb-4 text-sm font-medium text-secondary">{title}</h2>
+      <div className="space-y-4 rounded-lg border border-border bg-surface/50 p-4">
         {children}
       </div>
     </div>
@@ -509,16 +996,32 @@ function SettingsRow({
   label,
   description,
   children,
+  stack = false,
 }: {
   label: string
   description: string
   children: React.ReactNode
+  // Controls that are wider than the fixed control column (e.g. a URL input
+  // beside a button) render below the label at full width instead of being
+  // crammed into the right-hand w-64 column.
+  stack?: boolean
 }): React.JSX.Element {
+  if (stack) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div>
+          <div className="text-sm text-primary">{label}</div>
+          <div className="text-xs text-dim">{description}</div>
+        </div>
+        <div>{children}</div>
+      </div>
+    )
+  }
   return (
     <div className="flex items-center justify-between gap-4">
       <div>
-        <div className="text-sm text-neutral-200">{label}</div>
-        <div className="text-xs text-neutral-500">{description}</div>
+        <div className="text-sm text-primary">{label}</div>
+        <div className="text-xs text-dim">{description}</div>
       </div>
       <div className="w-64">{children}</div>
     </div>
@@ -536,7 +1039,7 @@ function Toggle({
     <button
       onClick={() => onChange(!checked)}
       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-        checked ? 'bg-blue-600' : 'bg-neutral-700'
+        checked ? 'bg-accent' : 'bg-elevated'
       }`}
     >
       <span

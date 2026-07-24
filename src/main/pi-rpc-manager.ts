@@ -33,13 +33,24 @@ const CONTINUE_FLAG = '--continue'
 const IS_WINDOWS = process.platform === 'win32'
 const PI_FALLBACK_BINARY = IS_WINDOWS ? 'pi.cmd' : 'pi'
 const SPAWN_STARTUP_TIMEOUT_MS = 15_000
+// Spawn attempts per start(): the initial try plus one retry, used ONLY when Pi
+// crashes before becoming ready (spawn error / early exit) — a transient hiccup
+// (AV lock, momentary ENOENT) often clears on a second spawn. A no-response
+// timeout is not retried: respawning would just burn another full timeout.
+const STARTUP_MAX_ATTEMPTS = 2
 // Pi's RPC mode emits nothing on connect — it only replies to requests. So
 // instead of a blind settle wait, we send a cheap read-only probe after spawn
-// and treat Pi's first stdout (the probe's response) as "ready". The probe is
-// resent on this interval until Pi answers, in case the first write raced Pi's
-// stdin reader; SPAWN_STARTUP_TIMEOUT_MS bounds the retries.
+// and treat its CORRELATED response (matched by STARTUP_PROBE_ID in handleLine,
+// success OR error) as "ready". Keying off the correlated response — not merely
+// the first stdout byte — confirms the request→response loop works and stays
+// robust even if the probe command is renamed (Pi echoes our id on an "unknown
+// command" error too). The probe is resent on this interval in case the first
+// write raced Pi's stdin reader; SPAWN_STARTUP_TIMEOUT_MS bounds the wait.
 const STARTUP_PROBE_ID = '__startup_probe__'
-const STARTUP_PROBE_COMMAND = 'get_available_models' // read-only, no side effects
+// get_state is the cheapest liveness command: a handful of in-memory session
+// field reads — no I/O, no model/provider calls, O(1). (get_session_stats is
+// O(messages) and get_available_models filters the model list.)
+const STARTUP_PROBE_COMMAND = 'get_state'
 const STARTUP_PROBE_INTERVAL_MS = 750
 const FORCE_KILL_TIMEOUT_MS = 3_000
 const PI_PACKAGE = '@earendil-works/pi-coding-agent'
@@ -266,6 +277,9 @@ export class PiRpcManager extends EventEmitter {
   private nextRequestId = 1
   private decoder = new StringDecoder('utf8')
   private startInFlight: Promise<PiStatus> | null = null
+  // Set while a spawn attempt awaits readiness; handleLine invokes it when the
+  // startup probe's correlated response arrives. Cleared once the attempt settles.
+  private markReady: (() => void) | null = null
 
   getStatus(): PiStatus {
     return {
@@ -315,121 +329,151 @@ export class PiRpcManager extends EventEmitter {
       return this.getStatus()
     }
 
-    const args = this.buildArgs(options)
+    // Spawn, with one retry reserved for a crash before readiness. See
+    // STARTUP_MAX_ATTEMPTS: a crash is often transient; a timeout is not.
+    for (let attempt = 1; attempt <= STARTUP_MAX_ATTEMPTS; attempt++) {
+      const outcome = await this.spawnAndAwaitReady(options)
+      if (outcome === 'ready') return this.getStatus()
 
-    try {
-      const spawnOptions: SpawnOptions = {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        cwd: options.cwd,
-        env: { ...process.env, ...options.env },
-        // .cmd/.bat/.ps1 shims on Windows can't be invoked directly from
-        // spawn — they need the cmd.exe interpreter via shell:true.
-        shell: NEEDS_SHELL,
-        // On POSIX, make the child its own process-group leader so kill()'s
-        // negative-PID group kill reaps Pi and all its descendants. Skipped on
-        // Windows, where it would spawn a detached console window with shell:true.
-        detached: !IS_WINDOWS,
+      if (outcome === 'crashed' && attempt < STARTUP_MAX_ATTEMPTS) {
+        console.log(
+          `[Pi] Startup crashed before ready (attempt ${attempt}/${STARTUP_MAX_ATTEMPTS}); retrying once…`
+        )
+        this.kill()
+        this.setStatus('starting')
+        continue
       }
 
-      console.log('[Pi] Spawning with cwd:', options.cwd)
-      console.log('[Pi] Spawn argv     :', USE_NODE ? [NODE_BINARY, PI_SCRIPT, ...args] : [PI_SCRIPT, ...args])
-      const proc = USE_NODE
-        ? spawn(NODE_BINARY, [PI_SCRIPT, ...args], spawnOptions)
-        : spawn(PI_SCRIPT, args, spawnOptions)
-      this.process = proc
-
-      this.setupStreams()
-
-      return new Promise<PiStatus>((resolve) => {
-        let resolved = false
-        let probeTimer: NodeJS.Timeout | null = null
-        const startedAt = Date.now()
-        const done = (): void => {
-          if (resolved) return
-          resolved = true
-          if (probeTimer) {
-            clearInterval(probeTimer)
-            probeTimer = null
-          }
-          resolve(this.getStatus())
-        }
-
-        // Pi's RPC emits nothing until asked, so the first stdout we see is its
-        // reply to the readiness probe (sent below) — that's our ready signal.
-        const onFirstData = (): void => {
-          this.process?.stdout?.removeListener('data', onFirstData)
-          if (this.status === 'starting') {
-            console.log(`[Pi] Ready after ${Date.now() - startedAt}ms`)
-            this.setStatus('running')
-          }
-          done()
-        }
-        this.process!.stdout?.on('data', onFirstData)
-
-        proc.on('error', (err) => {
-          console.error('[Pi] Spawn error:', err.message)
-          // Surface to the renderer status popover so users see something
-          // useful instead of a blank 'error' state.
-          this.stderrBuffer += `Spawn error: ${err.message}\n`
-          this.setStatus('error')
-          done()
-        })
-
-        proc.on('exit', (code, signal) => {
-          console.log('[Pi] Process exited with code:', code, 'signal:', signal, 'pid:', proc.pid)
-          // If Pi exited non-zero before reaching 'running', preserve that as
-          // the error reason so the popover can show it; otherwise it stopped.
-          if (this.status !== 'running' && code !== 0 && code !== null) {
-            this.stderrBuffer = (this.stderrBuffer || '') + `Pi exited with code ${code} before becoming ready.`
-            this.setStatus('error')
-          } else {
-            this.setStatus('stopped')
-          }
-          this.emit('exit', { code, signal })
-          this.rejectAllPending('Pi process exited')
-          done()
-        })
-
-        // Actively probe for readiness instead of blindly waiting: send a cheap
-        // read-only command; onFirstData (its response) flips us to 'running'.
-        // Resend on an interval in case the first write raced Pi's stdin reader.
-        const sendProbe = (): void => {
-          if (this.status !== 'starting') return
-          try {
-            this.process?.stdin?.write(
-              JSON.stringify({ type: STARTUP_PROBE_COMMAND, id: STARTUP_PROBE_ID }) + JSONL_NEWLINE
-            )
-          } catch {
-            // stdin not writable yet / EPIPE — a retry or the exit handler covers it.
-          }
-        }
-        sendProbe()
-        probeTimer = setInterval(sendProbe, STARTUP_PROBE_INTERVAL_MS)
-
-        // Hard deadline: something is seriously wrong if we're still stuck in
-        // 'starting' after the full timeout (the settle timer should have fired).
-        setTimeout(() => {
-          if (this.status === 'starting') {
-            const captured = this.stderrBuffer.trim()
-            // Reap the hung process before flipping to 'error' so we don't
-            // leave a zombie buffering on stdio. kill() resets buffers, so
-            // build the message first and restore it after.
-            this.kill()
-            this.setStatus('error')
-            this.stderrBuffer =
-              `Pi did not respond within ${SPAWN_STARTUP_TIMEOUT_MS / 1000}s.\n\n` +
-              (captured
-                ? `Pi stderr captured during startup:\n${captured}`
-                : 'No output captured. Likely causes: Pi launched but stdio piping is broken (common with shell:true on Windows), or Pi is waiting on input. Try running `pi --mode rpc` directly in cmd to see if RPC mode works standalone.')
-            done()
-          }
-        }, SPAWN_STARTUP_TIMEOUT_MS)
-      })
-    } catch (err) {
+      // Terminal failure — surface a useful error. kill() reaps any hung
+      // process; it clears stdout but leaves stderrBuffer intact, so the
+      // captured reason survives.
+      const captured = this.stderrBuffer.trim()
+      this.kill()
       this.setStatus('error')
-      this.stderrBuffer = err instanceof Error ? err.message : String(err)
+      this.stderrBuffer =
+        outcome === 'timeout'
+          ? `Pi did not respond within ${SPAWN_STARTUP_TIMEOUT_MS / 1000}s.\n\n` +
+            (captured
+              ? `Pi stderr captured during startup:\n${captured}`
+              : 'No output captured. Likely causes: Pi launched but stdio piping is broken (common with shell:true on Windows), or Pi is waiting on input. Try running `pi --mode rpc` directly in cmd to see if RPC mode works standalone.')
+          : captured || 'Pi crashed before becoming ready.'
       return this.getStatus()
     }
+
+    // Unreachable — the loop always returns — but satisfies the type checker.
+    return this.getStatus()
+  }
+
+  /**
+   * Spawn one Pi process and wait for it to become RPC-ready. Resolves:
+   *  - 'ready'   — the readiness probe's correlated response arrived; status is
+   *                now 'running'.
+   *  - 'crashed' — spawn error, or the process exited before becoming ready.
+   *  - 'timeout' — no response within SPAWN_STARTUP_TIMEOUT_MS.
+   * It does NOT set the terminal 'error' status — doStart owns that, so it can
+   * retry a crash without flipping the UI to 'error' between attempts.
+   */
+  private spawnAndAwaitReady(options: PiStartOptions): Promise<'ready' | 'crashed' | 'timeout'> {
+    const args = this.buildArgs(options)
+
+    const spawnOptions: SpawnOptions = {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: options.cwd,
+      env: { ...process.env, ...options.env },
+      // .cmd/.bat/.ps1 shims on Windows can't be invoked directly from
+      // spawn — they need the cmd.exe interpreter via shell:true.
+      shell: NEEDS_SHELL,
+      // On POSIX, make the child its own process-group leader so kill()'s
+      // negative-PID group kill reaps Pi and all its descendants. Skipped on
+      // Windows, where it would spawn a detached console window with shell:true.
+      detached: !IS_WINDOWS,
+    }
+
+    let proc: ChildProcess
+    try {
+      console.log('[Pi] Spawning with cwd:', options.cwd)
+      console.log('[Pi] Spawn argv     :', USE_NODE ? [NODE_BINARY, PI_SCRIPT, ...args] : [PI_SCRIPT, ...args])
+      proc = USE_NODE
+        ? spawn(NODE_BINARY, [PI_SCRIPT, ...args], spawnOptions)
+        : spawn(PI_SCRIPT, args, spawnOptions)
+    } catch (err) {
+      this.stderrBuffer += (err instanceof Error ? err.message : String(err)) + '\n'
+      return Promise.resolve('crashed')
+    }
+    this.process = proc
+    this.setupStreams()
+
+    return new Promise<'ready' | 'crashed' | 'timeout'>((resolve) => {
+      let settled = false
+      let probeTimer: NodeJS.Timeout | null = null
+      const startedAt = Date.now()
+      const finish = (outcome: 'ready' | 'crashed' | 'timeout'): void => {
+        if (settled) return
+        settled = true
+        this.markReady = null
+        if (probeTimer) {
+          clearInterval(probeTimer)
+          probeTimer = null
+        }
+        resolve(outcome)
+      }
+
+      // Readiness signal: handleLine invokes this when the probe's correlated
+      // response (success OR "unknown command" error) arrives — proof the
+      // request→response loop is live.
+      this.markReady = (): void => {
+        if (this.status === 'starting') {
+          console.log(`[Pi] Ready after ${Date.now() - startedAt}ms`)
+          this.setStatus('running')
+        }
+        finish('ready')
+      }
+
+      proc.on('error', (err) => {
+        console.error('[Pi] Spawn error:', err.message)
+        this.stderrBuffer += `Spawn error: ${err.message}\n`
+        finish('crashed')
+      })
+
+      proc.on('exit', (code, signal) => {
+        console.log('[Pi] Process exited with code:', code, 'signal:', signal, 'pid:', proc.pid)
+        if (this.status === 'running') {
+          // Exited after becoming ready → normal lifecycle stop.
+          this.setStatus('stopped')
+          this.emit('exit', { code, signal })
+          this.rejectAllPending('Pi process exited')
+          return
+        }
+        // Exited before ready → a startup crash (doStart may retry once).
+        if (code !== 0 && code !== null) {
+          this.stderrBuffer = (this.stderrBuffer || '') + `Pi exited with code ${code} before becoming ready.`
+        }
+        finish('crashed')
+      })
+
+      // Send the readiness probe, resent on an interval in case the first write
+      // raced Pi's stdin reader (Pi doesn't read stdin until its session is
+      // bound, so early writes just buffer harmlessly until then).
+      const sendProbe = (): void => {
+        if (this.status !== 'starting') return
+        try {
+          this.process?.stdin?.write(
+            JSON.stringify({ type: STARTUP_PROBE_COMMAND, id: STARTUP_PROBE_ID }) + JSONL_NEWLINE
+          )
+        } catch {
+          // stdin not writable yet / EPIPE — a resend or the exit handler covers it.
+        }
+      }
+      sendProbe()
+      probeTimer = setInterval(sendProbe, STARTUP_PROBE_INTERVAL_MS)
+
+      // Hard deadline: give up if still 'starting' after the full timeout.
+      setTimeout(() => {
+        if (!settled && this.status === 'starting') {
+          finish('timeout')
+        }
+      }, SPAWN_STARTUP_TIMEOUT_MS)
+    })
   }
 
   stop(): void {
@@ -596,9 +640,14 @@ export class PiRpcManager extends EventEmitter {
     // Correlate responses with pending requests
     if (event.type === 'response') {
       const responseEvent = event as PiResponseEvent
-      // Startup readiness probe (see doStart): consume its response silently so
-      // it doesn't surface as a stray model-list event.
-      if (responseEvent.id === STARTUP_PROBE_ID) return
+      // Startup readiness probe (see spawnAndAwaitReady): its correlated
+      // response — success OR an "unknown command" error, both echoing our id —
+      // means Pi is answering RPC. Flip to ready, then consume it silently so
+      // it never surfaces as a stray event.
+      if (responseEvent.id === STARTUP_PROBE_ID) {
+        this.markReady?.()
+        return
+      }
       if (responseEvent.id) {
         const pending = this.pendingResponses.get(responseEvent.id)
         if (pending) {

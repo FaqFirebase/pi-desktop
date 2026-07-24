@@ -79,9 +79,9 @@ export function App(): React.JSX.Element {
   const showUpdateBanner = !!updateInfo?.updateAvailable && !updateDismissed
 
   return (
-    <div className="flex h-screen flex-col bg-neutral-950 text-neutral-100">
+    <div className="flex h-screen flex-col bg-app text-primary">
       {showUpdateBanner && updateInfo && (
-        <div className="flex shrink-0 items-center justify-center gap-3 bg-blue-600 px-4 py-1.5 text-xs text-white">
+        <div className="flex shrink-0 items-center justify-center gap-3 bg-accent px-4 py-1.5 text-xs text-white">
           <ArrowUpCircle size={14} className="shrink-0" />
           <span>
             Pi Desktop <strong>v{updateInfo.latestVersion}</strong> is available — you&apos;re on v{updateInfo.currentVersion}.

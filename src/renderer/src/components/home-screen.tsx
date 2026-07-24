@@ -165,18 +165,18 @@ export function HomeScreen(): React.JSX.Element {
       <div className={clsx('mx-auto max-w-[952px] px-8 py-12', busy && 'pointer-events-none opacity-60')}>
         {/* Pi-not-found / start error */}
         {piStatus === 'error' && piError && (
-          <div className="mb-6 flex items-start gap-3 rounded-lg border border-red-900/50 bg-red-950/30 px-4 py-3 text-sm text-red-300">
+          <div className="mb-6 flex items-start gap-3 rounded-lg border border-error-bg bg-error-bg px-4 py-3 text-sm text-error">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
             <div className="flex-1">
               <div className="font-medium">Couldn&apos;t start Pi</div>
-              <div className="mt-0.5 text-red-300/80">{piError}</div>
-              <div className="mt-1 text-xs text-red-300/70">
+              <div className="mt-0.5 text-error/80">{piError}</div>
+              <div className="mt-1 text-xs text-error/70">
                 Check that Pi is installed and its path is correct.
               </div>
             </div>
             <button
               onClick={() => setCurrentView('settings')}
-              className="flex shrink-0 items-center gap-1.5 rounded-md bg-red-900/40 px-2.5 py-1 text-xs text-red-200 hover:bg-red-900/60"
+              className="flex shrink-0 items-center gap-1.5 rounded-md bg-error/25 px-2.5 py-1 text-xs text-error hover:bg-error/40"
             >
               <SettingsIcon size={12} />
               Settings
@@ -187,8 +187,8 @@ export function HomeScreen(): React.JSX.Element {
         {/* Header */}
         <div className="mb-6 flex flex-col items-center text-center">
           <img src={piLogo} alt="Pi Desktop" className="h-16 w-16" />
-          <h1 className="mt-4 text-2xl font-semibold text-neutral-100">Pi Desktop</h1>
-          <p className="mt-1 text-sm text-neutral-500">Open a workspace or pick up where you left off.</p>
+          <h1 className="mt-4 text-2xl font-semibold text-primary">Pi Desktop</h1>
+          <p className="mt-1 text-sm text-dim">Open a workspace or pick up where you left off.</p>
         </div>
 
         <StatsPanel />
@@ -199,49 +199,49 @@ export function HomeScreen(): React.JSX.Element {
             <SectionLabel>Open</SectionLabel>
             <button
               onClick={openFolder}
-              className="flex w-full items-center gap-3 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 text-left transition-colors hover:border-neutral-600 hover:bg-neutral-800"
+              className="flex w-full items-center gap-3 rounded-lg border border-border-strong bg-surface px-4 py-3 text-left transition-colors hover:border-border-strong-hover hover:bg-surface-hover"
             >
-              <FolderOpen size={18} className="shrink-0 text-neutral-400" />
+              <FolderOpen size={18} className="shrink-0 text-muted" />
               <div className="min-w-0">
-                <div className="text-sm font-medium text-neutral-200">Open Folder</div>
-                <div className="text-xs text-neutral-500">Browse for a project to open as a workspace</div>
+                <div className="text-sm font-medium text-primary">Open Folder</div>
+                <div className="text-xs text-dim">Browse for a project to open as a workspace</div>
               </div>
             </button>
             <button
               onClick={newSession}
-              className="flex w-full items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-3 text-left transition-colors hover:border-neutral-700 hover:bg-neutral-800/60"
+              className="flex w-full items-center gap-3 rounded-lg border border-border bg-surface/50 px-4 py-3 text-left transition-colors hover:border-border-strong hover:bg-surface-hover/60"
             >
-              <Plus size={18} className="shrink-0 text-neutral-400" />
+              <Plus size={18} className="shrink-0 text-muted" />
               <div className="min-w-0">
-                <div className="text-sm font-medium text-neutral-200">New Session</div>
-                <div className="truncate text-xs text-neutral-500">
+                <div className="text-sm font-medium text-primary">New Session</div>
+                <div className="truncate text-xs text-dim">
                   {activeWorkspace ? `In ${activeWorkspace.name}` : 'Pick a folder first'}
                 </div>
               </div>
             </button>
 
             {/* Changed files for the most-recent workspace */}
-            <div className="rounded-lg border border-neutral-800 bg-neutral-900/50">
+            <div className="rounded-lg border border-border bg-surface/50">
               <div className="flex items-center justify-between px-4 py-2.5">
                 <SectionLabel className="mb-0">Changed Files</SectionLabel>
-                <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-[10px] text-neutral-400">
+                <span className="rounded-full bg-card px-2 py-0.5 text-[10px] text-muted">
                   {changedFiles.length}
                 </span>
               </div>
               {changedFiles.length === 0 ? (
-                <div className="px-4 pb-3 text-xs text-neutral-600">
+                <div className="px-4 pb-3 text-xs text-faint">
                   {activeWorkspace ? 'No working tree changes.' : 'No workspace selected.'}
                 </div>
               ) : (
-                <div className="max-h-40 overflow-y-auto border-t border-neutral-800/60 py-1">
+                <div className="max-h-40 overflow-y-auto border-t border-border/60 py-1">
                   {changedFiles.slice(0, MAX_CHANGED_FILES).map((file) => (
                     <button
                       key={file.path}
                       onClick={openChangedFiles}
                       title={file.path}
-                      className="flex w-full items-center gap-2 px-4 py-1.5 text-left text-xs text-neutral-300 transition-colors hover:bg-neutral-800"
+                      className="flex w-full items-center gap-2 px-4 py-1.5 text-left text-xs text-secondary transition-colors hover:bg-surface-hover"
                     >
-                      <span className="shrink-0 rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[10px] text-neutral-400">
+                      <span className="shrink-0 rounded bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted">
                         {formatGitStatus(file.status)}
                       </span>
                       <span className="min-w-0 flex-1 truncate">{file.path}</span>
@@ -250,7 +250,7 @@ export function HomeScreen(): React.JSX.Element {
                   {changedFiles.length > MAX_CHANGED_FILES && (
                     <button
                       onClick={openChangedFiles}
-                      className="flex w-full items-center gap-1.5 px-4 py-1.5 text-xs text-neutral-500 hover:text-neutral-300"
+                      className="flex w-full items-center gap-1.5 px-4 py-1.5 text-xs text-dim hover:text-secondary"
                     >
                       <GitCompare size={11} />
                       +{changedFiles.length - MAX_CHANGED_FILES} more — open diff review
@@ -273,15 +273,15 @@ export function HomeScreen(): React.JSX.Element {
                     <button
                       key={ws.id}
                       onClick={() => openWorkspace(ws.id)}
-                      className="group flex w-full items-center gap-3 rounded-md border border-neutral-800 bg-neutral-900/40 px-3 py-2 text-left transition-colors hover:border-neutral-700 hover:bg-neutral-800/60"
+                      className="group flex w-full items-center gap-3 rounded-md border border-border bg-surface/40 px-3 py-2 text-left transition-colors hover:border-border-strong hover:bg-surface-hover/60"
                     >
                       <Layers size={14} className="shrink-0" style={{ color: ws.color }} />
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm text-neutral-200">{ws.name}</div>
-                        <div className="truncate text-[11px] text-neutral-600">{ws.path}</div>
+                        <div className="truncate text-sm text-primary">{ws.name}</div>
+                        <div className="truncate text-[11px] text-faint">{ws.path}</div>
                       </div>
                       {ws.id === activeWorkspace?.id && (
-                        <span className="shrink-0 rounded bg-blue-900/40 px-1.5 py-0.5 text-[10px] text-blue-400">
+                        <span className="shrink-0 rounded bg-accent-bg px-1.5 py-0.5 text-[10px] text-accent-fg">
                           last
                         </span>
                       )}
@@ -301,14 +301,14 @@ export function HomeScreen(): React.JSX.Element {
                     <button
                       key={session.path}
                       onClick={() => openSession(session)}
-                      className="flex w-full items-center gap-3 rounded-md border border-neutral-800 bg-neutral-900/40 px-3 py-2 text-left transition-colors hover:border-neutral-700 hover:bg-neutral-800/60"
+                      className="flex w-full items-center gap-3 rounded-md border border-border bg-surface/40 px-3 py-2 text-left transition-colors hover:border-border-strong hover:bg-surface-hover/60"
                     >
-                      <Clock size={13} className="shrink-0 text-neutral-600" />
+                      <Clock size={13} className="shrink-0 text-faint" />
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm text-neutral-300">
+                        <div className="truncate text-sm text-secondary">
                           {getSessionTitle(session.name, session.sessionId)}
                         </div>
-                        <div className="truncate text-[11px] text-neutral-600">{session.projectName}</div>
+                        <div className="truncate text-[11px] text-faint">{session.projectName}</div>
                       </div>
                     </button>
                   ))
@@ -330,12 +330,12 @@ function SectionLabel({
   className?: string
 }): React.JSX.Element {
   return (
-    <div className={clsx('mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500', className)}>
+    <div className={clsx('mb-2 text-xs font-medium uppercase tracking-wide text-dim', className)}>
       {children}
     </div>
   )
 }
 
 function EmptyHint({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return <div className="rounded-md border border-neutral-800 bg-neutral-900/40 px-3 py-2 text-xs text-neutral-600">{children}</div>
+  return <div className="rounded-md border border-border bg-surface/40 px-3 py-2 text-xs text-faint">{children}</div>
 }

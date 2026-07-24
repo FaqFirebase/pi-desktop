@@ -63,10 +63,10 @@ export function PackageBrowser(): React.JSX.Element {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="border-b border-neutral-800 px-4 py-3">
+      <div className="border-b border-border px-4 py-3">
         <div className="flex items-center gap-2 mb-3">
-          <Package size={16} className="text-neutral-400" />
-          <h2 className="text-sm font-medium text-neutral-200">Packages & Skills</h2>
+          <Package size={16} className="text-muted" />
+          <h2 className="text-sm font-medium text-primary">Packages & Skills</h2>
         </div>
 
         {/* Tabs */}
@@ -102,8 +102,8 @@ export function PackageBrowser(): React.JSX.Element {
         <div className={clsx(
           'flex items-start gap-2 px-4 py-2.5 text-sm border-b',
           packageNotification.type === 'success'
-            ? 'bg-emerald-950/40 border-emerald-800/50 text-emerald-300'
-            : 'bg-red-950/40 border-red-800/50 text-red-300'
+            ? 'bg-success-bg border-success-bg text-success'
+            : 'bg-error-bg border-error-bg text-error'
         )}>
           {packageNotification.type === 'success'
             ? <CheckCircle2 size={15} className="mt-0.5 shrink-0" />
@@ -165,14 +165,14 @@ function InstallBar(): React.JSX.Element {
   }
 
   return (
-    <div className="border-b border-neutral-800 px-4 py-3">
+    <div className="border-b border-border px-4 py-3">
       <div className="flex gap-2">
         <input
           type="text"
           value={installInput}
           onChange={(e) => setInstallInput(e.target.value)}
           placeholder="npm:package-name or git:github.com/user/repo"
-          className="flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none"
+          className="flex-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary placeholder:text-faint focus:border-focus focus:outline-none"
           onKeyDown={(e) => {
             if (e.key === 'Enter') handleInstall()
           }}
@@ -181,7 +181,7 @@ function InstallBar(): React.JSX.Element {
           type="button"
           onClick={handleInstall}
           disabled={installing || !installInput.trim()}
-          className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {installing ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
           Install
@@ -213,14 +213,14 @@ function TabButton({
       className={clsx(
         'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors',
         active
-          ? 'bg-neutral-800 text-neutral-200'
-          : 'text-neutral-500 hover:bg-neutral-800/50 hover:text-neutral-300'
+          ? 'bg-card text-primary'
+          : 'text-dim hover:bg-surface-hover/50 hover:text-secondary'
       )}
     >
       {icon}
       {label}
       {count !== undefined && count > 0 && (
-        <span className="rounded-full bg-neutral-700 px-1.5 py-0.5 text-[10px]">{count}</span>
+        <span className="rounded-full bg-elevated px-1.5 py-0.5 text-[10px]">{count}</span>
       )}
     </button>
   )
@@ -240,17 +240,17 @@ const InstalledTab = memo(function InstalledTab({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 size={24} className="animate-spin text-neutral-500" />
+        <Loader2 size={24} className="animate-spin text-dim" />
       </div>
     )
   }
 
   if (packages.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-neutral-500">
-        <Package size={32} className="mb-3 text-neutral-600" />
+      <div className="flex flex-col items-center justify-center py-12 text-dim">
+        <Package size={32} className="mb-3 text-faint" />
         <p className="text-sm">No packages installed</p>
-        <p className="mt-1 text-xs text-neutral-600">Browse the catalog or use the install bar above</p>
+        <p className="mt-1 text-xs text-faint">Browse the catalog or use the install bar above</p>
       </div>
     )
   }
@@ -260,27 +260,27 @@ const InstalledTab = memo(function InstalledTab({
       {packages.map((pkg) => (
         <div
           key={pkg.source}
-          className="flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-3"
+          className="flex items-center justify-between rounded-lg border border-border bg-surface/50 px-4 py-3"
         >
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-neutral-200">{pkg.name}</span>
+              <span className="text-sm font-medium text-primary">{pkg.name}</span>
               {pkg.version && (
-                <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500">
+                <span className="rounded bg-card px-1.5 py-0.5 text-[10px] text-dim">
                   v{pkg.version}
                 </span>
               )}
-              <span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-[10px] text-blue-400">
+              <span className="rounded bg-accent-bg px-1.5 py-0.5 text-[10px] text-accent-fg">
                 {pkg.type}
               </span>
             </div>
-            <div className="mt-0.5 text-xs text-neutral-500 truncate">{pkg.source}</div>
+            <div className="mt-0.5 text-xs text-dim truncate">{pkg.source}</div>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => window.piDesktop.system.openExternal(`https://www.npmjs.com/package/${pkg.name}`)}
-              className="rounded p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+              className="rounded p-1.5 text-dim hover:bg-surface-hover hover:text-secondary transition-colors"
               title="View on npm"
             >
               <ExternalLink size={14} />
@@ -288,7 +288,7 @@ const InstalledTab = memo(function InstalledTab({
             <button
               type="button"
               onClick={() => onRemove(pkg.source)}
-              className="rounded p-1.5 text-neutral-500 hover:bg-red-900/30 hover:text-red-400 transition-colors"
+              className="rounded p-1.5 text-dim hover:bg-error-bg hover:text-error transition-colors"
               title="Remove package"
             >
               <Trash2 size={14} />
@@ -328,31 +328,31 @@ const CatalogTab = memo(function CatalogTab({
       {/* Search */}
       <div className="mb-4">
         <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search packages..."
-            className="w-full rounded-lg border border-neutral-700 bg-neutral-900 py-2 pl-9 pr-4 text-sm text-neutral-200 placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none"
+            className="w-full rounded-lg border border-border-strong bg-surface py-2 pl-9 pr-4 text-sm text-primary placeholder:text-faint focus:border-focus focus:outline-none"
           />
         </div>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 size={24} className="animate-spin text-neutral-500" />
+          <Loader2 size={24} className="animate-spin text-dim" />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-neutral-500">
-          <Store size={32} className="mb-3 text-neutral-600" />
+        <div className="flex flex-col items-center justify-center py-12 text-dim">
+          <Store size={32} className="mb-3 text-faint" />
           <p className="text-sm">No packages found</p>
-          <p className="mt-1 text-xs text-neutral-600">
+          <p className="mt-1 text-xs text-faint">
             Visit{' '}
             <button
               type="button"
               onClick={() => window.piDesktop.system.openExternal('https://pi.dev/packages')}
-              className="text-blue-400 hover:underline"
+              className="text-accent-fg hover:underline"
             >
               pi.dev/packages
             </button>{' '}
@@ -364,25 +364,25 @@ const CatalogTab = memo(function CatalogTab({
           {shown.map((pkg, index) => (
             <div
               key={`${pkg.name}-${index}`}
-              className="rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-3"
+              className="rounded-lg border border-border bg-surface/50 px-4 py-3"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-neutral-200">{pkg.name}</span>
+                    <span className="text-sm font-medium text-primary">{pkg.name}</span>
                     <span className={clsx(
                       'rounded px-1.5 py-0.5 text-[10px]',
                       pkg.type === 'extension'
-                        ? 'bg-emerald-900/30 text-emerald-400'
-                        : 'bg-blue-900/30 text-blue-400'
+                        ? 'bg-success-bg text-success'
+                        : 'bg-accent-bg text-accent-fg'
                     )}>
                       {pkg.type}
                     </span>
                   </div>
                   {pkg.description && (
-                    <p className="mt-1 text-xs text-neutral-400 line-clamp-2">{pkg.description}</p>
+                    <p className="mt-1 text-xs text-muted line-clamp-2">{pkg.description}</p>
                   )}
-                  <div className="mt-1.5 flex items-center gap-3 text-[11px] text-neutral-600">
+                  <div className="mt-1.5 flex items-center gap-3 text-[11px] text-faint">
                     {pkg.author && <span>{pkg.author}</span>}
                     {pkg.downloadsDisplay && <span>{pkg.downloadsDisplay}</span>}
                   </div>
@@ -392,7 +392,7 @@ const CatalogTab = memo(function CatalogTab({
                     <button
                       type="button"
                       onClick={() => window.piDesktop.system.openExternal(pkg.npmUrl!)}
-                      className="rounded p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+                      className="rounded p-1.5 text-dim hover:bg-surface-hover hover:text-secondary transition-colors"
                       title="View on npm"
                     >
                       <ExternalLink size={13} />
@@ -402,14 +402,14 @@ const CatalogTab = memo(function CatalogTab({
                     <button
                       type="button"
                       onClick={() => window.piDesktop.system.openExternal(pkg.repoUrl!)}
-                      className="rounded p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+                      className="rounded p-1.5 text-dim hover:bg-surface-hover hover:text-secondary transition-colors"
                       title="View repo"
                     >
                       <ExternalLink size={13} />
                     </button>
                   )}
                   {installedNames.has(pkg.name) ? (
-                    <span className="flex items-center gap-1 rounded bg-emerald-900/30 px-2.5 py-1 text-xs text-emerald-400">
+                    <span className="flex items-center gap-1 rounded bg-success-bg px-2.5 py-1 text-xs text-success">
                       <CheckCircle2 size={12} />
                       Installed
                     </span>
@@ -417,7 +417,7 @@ const CatalogTab = memo(function CatalogTab({
                     <button
                       type="button"
                       onClick={() => onInstall(pkg.installCommand)}
-                      className="flex items-center gap-1 rounded bg-blue-600 px-2.5 py-1 text-xs text-white hover:bg-blue-500 transition-colors"
+                      className="flex items-center gap-1 rounded bg-accent px-2.5 py-1 text-xs text-white hover:bg-accent-hover transition-colors"
                     >
                       <Download size={12} />
                       Install
@@ -428,7 +428,7 @@ const CatalogTab = memo(function CatalogTab({
             </div>
           ))}
           {filtered.length > shown.length && (
-            <div className="py-3 text-center text-xs text-neutral-600">
+            <div className="py-3 text-center text-xs text-faint">
               Showing {shown.length} of {filtered.length} — refine your search to narrow results.
             </div>
           )}
@@ -447,10 +447,10 @@ const SkillsTab = memo(function SkillsTab({
 }): React.JSX.Element {
   if (skills.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-neutral-500">
-        <Puzzle size={32} className="mb-3 text-neutral-600" />
+      <div className="flex flex-col items-center justify-center py-12 text-dim">
+        <Puzzle size={32} className="mb-3 text-faint" />
         <p className="text-sm">No skills found</p>
-        <p className="mt-1 text-xs text-neutral-600">
+        <p className="mt-1 text-xs text-faint">
           Install skill packages or create skills in .pi/skills/
         </p>
       </div>
@@ -462,20 +462,20 @@ const SkillsTab = memo(function SkillsTab({
       {skills.map((skill) => (
         <div
           key={skill.path}
-          className="rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-3"
+          className="rounded-lg border border-border bg-surface/50 px-4 py-3"
         >
           <div className="flex items-center gap-2">
-            <Puzzle size={14} className="text-purple-400" />
-            <span className="text-sm font-medium text-neutral-200">{skill.name}</span>
+            <Puzzle size={14} className="text-special" />
+            <span className="text-sm font-medium text-primary">{skill.name}</span>
             <span className={clsx(
               'rounded px-1.5 py-0.5 text-[10px]',
-              skill.source === 'global' ? 'bg-blue-900/30 text-blue-400' : 'bg-emerald-900/30 text-emerald-400'
+              skill.source === 'global' ? 'bg-accent-bg text-accent-fg' : 'bg-success-bg text-success'
             )}>
               {skill.source}
             </span>
           </div>
-          <p className="mt-1 text-xs text-neutral-500">{skill.description}</p>
-          <div className="mt-2 flex items-center gap-2 text-xs text-neutral-600">
+          <p className="mt-1 text-xs text-dim">{skill.description}</p>
+          <div className="mt-2 flex items-center gap-2 text-xs text-faint">
             <span className="truncate">{skill.path}</span>
           </div>
         </div>

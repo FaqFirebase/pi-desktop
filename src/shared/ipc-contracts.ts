@@ -4,6 +4,7 @@
  * Every channel has a strictly typed request/response shape.
  * The preload bridge validates payloads against these contracts.
  */
+import type { PermissionRule } from '../../resources/permission-rules'
 
 // ─── IPC Channel Names ──────────────────────────────────────────────────────
 
@@ -52,7 +53,15 @@ export const IPC_CHANNELS = {
   // Settings
   SETTINGS_GET_ALL: 'settings:get-all',
   SETTINGS_SAVE: 'settings:save',
-  SETTINGS_GET_THEME: 'settings:get-theme',
+
+  // Permission rules
+  PERMISSION_RULES_GET: 'permission-rules:get',
+  PERMISSION_RULES_SET: 'permission-rules:set',
+  PERMISSION_RULES_IMPORT: 'permission-rules:import',
+  PERMISSION_RULES_EXPORT: 'permission-rules:export',
+  PERMISSION_RULES_WORKSPACE_STATUS: 'permission-rules:workspace-status',
+  PERMISSION_RULES_REMOVE_WORKSPACE: 'permission-rules:remove-workspace',
+  PERMISSION_RULES_SET_WORKSPACE_TRUST: 'permission-rules:set-workspace-trust',
 
   // UI
   UI_SELECT_RESPONSE: 'ui:select-response',
@@ -101,6 +110,7 @@ export const IPC_CHANNELS = {
   // Council planning
   COUNCIL_DETECT: 'council:detect',
   COUNCIL_RUN_CONSULTANTS: 'council:run-consultants',
+  COUNCIL_ARBITER: 'council:arbiter',
 
   // File operations
   FILE_TREE: 'file:tree',
@@ -136,6 +146,16 @@ export const IPC_CHANNELS = {
   NOTES_CREATE: 'notes:create',
   NOTES_UPDATE: 'notes:update',
   NOTES_REMOVE: 'notes:remove',
+
+  // Themes (user-created theme storage)
+  THEMES_LIST: 'themes:list',
+  THEMES_SAVE: 'themes:save',
+  THEMES_DELETE: 'themes:delete',
+  THEMES_INSTALL_URL: 'themes:install-from-url',
+  THEMES_EXPORT: 'themes:export',
+  THEMES_IMPORT: 'themes:import',
+  THEMES_GALLERY_LIST: 'themes:gallery-list',
+  THEMES_GALLERY_IMAGE: 'themes:gallery-image',
 
   // Events (main → renderer)
   EVENT_PI: 'event:pi',
@@ -555,6 +575,21 @@ export interface CouncilRunResult {
 }
 
 /**
+ * Request payload for COUNCIL_ARBITER. Pi merges (`merge`) or revises (`revise`)
+ * the consensus plan in an isolated read-only subprocess. As with
+ * COUNCIL_RUN_CONSULTANTS, the working directory is resolved from the active
+ * workspace in the main process, never from the renderer.
+ */
+export type CouncilArbiterRequest =
+  | { kind: 'merge'; request: string; results: ConsultantResultType[]; timeoutSeconds: number }
+  | { kind: 'revise'; request: string; plan: string; feedback: string; timeoutSeconds: number }
+
+/** Result of COUNCIL_ARBITER: the merged or revised consensus plan text. */
+export interface CouncilArbiterResult {
+  plan: string
+}
+
+/**
  * Streamed live during a council run (main → renderer on EVENT_COUNCIL_PROGRESS).
  * `chunk` is human-readable text appended to the consultant's live output:
  * raw stdout for Codex, parsed text deltas for Claude.
@@ -641,10 +676,41 @@ export type AgentMessage = AgentUserMessage | AgentAssistantMessage | AgentToolR
 
 export type PermissionMode = 'plan-readonly' | 'ask-edits' | 'ask-commands' | 'trusted'
 
+export type { PermissionRule, PermissionRuleAction, PermissionRulesFile } from '../../resources/permission-rules'
+
+export type PermissionRulesScope = 'global' | 'workspace'
+
+export type PermissionRulesGetResult =
+  | { ok: true; rules: PermissionRule[]; exists: boolean }
+  | { ok: false; error: string }
+
+export type PermissionRulesSetResult = { ok: true } | { ok: false; error: string }
+
+export type PermissionRulesRemoveResult = { ok: true } | { ok: false; error: string }
+
+export type PermissionRulesImportResult =
+  | { ok: true; rules: PermissionRule[] }
+  | { ok: false; canceled?: boolean; error?: string }
+
+export type PermissionRulesExportResult =
+  | { ok: true }
+  | { ok: false; canceled?: boolean; error?: string }
+
+export interface PermissionRulesWorkspaceStatus {
+  hasWorkspaceRules: boolean
+  workspacePath: string | null
+  acknowledged: boolean
+  // Whether the user has trusted this workspace (so its allow rules apply).
+  trusted: boolean
+  // Whether the workspace rules file actually contains any allow rules — the
+  // only case where trust changes behavior.
+  hasAllowRules: boolean
+}
+
 export interface AppSettings {
   piExecutablePath: string
   defaultArgs: string[]
-  theme: 'dark' | 'light' | 'system' | 'nord' | 'gruvbox' | 'breeze-dark' | 'breeze-light' | 'breeze-claudius'
+  theme: string // 'system' or a theme id (built-in or user theme)
   defaultModel: string | null
   defaultProvider: string | null
   defaultCwd: string | null
@@ -657,6 +723,9 @@ export interface AppSettings {
   showThinking: boolean
   autoScroll: boolean
   permissionMode: PermissionMode
+  // Workspace paths whose "this workspace has its own permission rules"
+  // notice has been acknowledged. Not exposed in the Settings UI.
+  permissionRulesAckWorkspaces: string[]
   // Resume the most recent session for the workspace on launch (via Pi's
   // --continue) instead of starting a fresh session.
   resumeLastSession: boolean
@@ -666,6 +735,17 @@ export interface AppSettings {
   // Show the Home/launcher screen on launch (Pi starts lazily on first action)
   // instead of booting straight into Chat. When false, legacy behavior applies.
   openToHomeOnLaunch: boolean
+  // Launch Pi Desktop automatically when the user logs in to their computer.
+  // Applied at the OS level: login items on macOS/Windows, a freedesktop
+  // autostart entry on Linux. Only effective in packaged builds.
+  runOnStartup: boolean
+  // Hide the window to the system tray when closed instead of quitting, keeping
+  // the app running in the background. Windows/Linux only; on macOS the window
+  // close already keeps the app alive in the Dock (native equivalent).
+  minimizeToTrayOnClose: boolean
+  // Internal: whether the one-time "still running in the tray" hint has been
+  // shown. Not exposed in the Settings UI.
+  hasSeenTrayHint: boolean
   // Multi-agent council planning configuration.
   council: CouncilConfig
 }
@@ -724,6 +804,61 @@ export interface NoteInput {
 
 /** Mutable fields when updating a note. */
 export type NoteUpdate = Partial<NoteInput>
+
+// ─── Theme Types ────────────────────────────────────────────────────────────
+
+import type { ThemeFile } from './theme/theme-file'
+
+/** A user-created theme as stored on disk, keyed by its file-derived id. */
+export interface UserThemeRecord {
+  id: string
+  file: ThemeFile
+}
+
+/** Result of listing user themes; `warnings` reports files that failed validation. */
+export interface ThemesListResult {
+  themes: UserThemeRecord[]
+  warnings: string[]
+}
+
+/**
+ * Result of an operation that produces (or fails to produce) a saved theme:
+ * installing from a URL, or importing from a file. `canceled` distinguishes a
+ * user-initiated dialog cancellation from a genuine error.
+ */
+export type ThemeImportResult =
+  | { ok: true; theme: UserThemeRecord }
+  | { ok: false; error: string }
+  | { ok: false; canceled: true }
+
+export type ThemeExportResult =
+  | { ok: true }
+  | { ok: false; error: string }
+  | { ok: false; canceled: true }
+
+export interface GalleryTheme {
+  name: string
+  kind: 'dark' | 'light'
+  url: string
+  author?: string
+  description?: string
+  // Full validated theme content embedded in the gallery index, used to
+  // render a live preview card without fetching each theme file. Absent when
+  // the index predates embedding; the card then renders without a preview.
+  theme?: ThemeFile
+  // Optional author-provided screenshot URL (pinned to the gallery repo). The
+  // renderer fetches it lazily via THEMES_GALLERY_IMAGE, which returns a data
+  // URI (the renderer CSP forbids remote images).
+  screenshotUrl?: string
+}
+
+export type ThemeGalleryResult =
+  | { ok: true; themes: GalleryTheme[] }
+  | { ok: false; error: string }
+
+export type ThemeGalleryImageResult =
+  | { ok: true; dataUri: string }
+  | { ok: false; error: string }
 
 // ─── Package Types ──────────────────────────────────────────────────────────
 

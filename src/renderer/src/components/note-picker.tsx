@@ -87,12 +87,12 @@ export function NotePicker(): React.JSX.Element | null {
       onClick={() => setNotePickerOpen(false)}
     >
       <div
-        className="w-full max-w-lg overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 shadow-2xl"
+        className="w-full max-w-lg overflow-hidden rounded-lg border border-border-strong bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search */}
-        <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2.5">
-          <Search size={15} className="shrink-0 text-neutral-500" />
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+          <Search size={15} className="shrink-0 text-dim" />
           <input
             ref={inputRef}
             type="text"
@@ -100,14 +100,14 @@ export function NotePicker(): React.JSX.Element | null {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Search saved notes to insert..."
-            className="flex-1 bg-transparent text-sm text-neutral-200 placeholder:text-neutral-600 outline-none"
+            className="flex-1 bg-transparent text-sm text-primary placeholder:text-faint outline-none"
           />
         </div>
 
         {/* Results */}
         <div className="max-h-72 overflow-y-auto py-1">
           {results.length === 0 ? (
-            <div className="px-3 py-6 text-center text-sm text-neutral-600">
+            <div className="px-3 py-6 text-center text-sm text-faint">
               {available.length === 0 ? (
                 <>
                   <p>No saved notes yet.</p>
@@ -116,7 +116,7 @@ export function NotePicker(): React.JSX.Element | null {
                   </p>
                   <button
                     onClick={openNotesTab}
-                    className="mt-3 rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-500 transition-colors"
+                    className="mt-3 rounded-md bg-accent px-3 py-1.5 text-xs text-white hover:bg-accent-hover transition-colors"
                   >
                     Create a note
                   </button>
@@ -133,18 +133,18 @@ export function NotePicker(): React.JSX.Element | null {
                 onMouseEnter={() => setActiveIndex(index)}
                 className={clsx(
                   'flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors',
-                  index === activeIndex ? 'bg-neutral-800' : 'hover:bg-neutral-800/50'
+                  index === activeIndex ? 'bg-card' : 'hover:bg-surface-hover/50'
                 )}
               >
-                <span className="truncate text-sm text-neutral-200">{note.title}</span>
-                <span className="line-clamp-1 text-xs text-neutral-500">{note.body}</span>
+                <span className="truncate text-sm text-primary">{note.title}</span>
+                <span className="line-clamp-1 text-xs text-dim">{note.body}</span>
               </button>
             ))
           )}
         </div>
 
         {/* Hint */}
-        <div className="border-t border-neutral-800 px-3 py-1.5 text-[10px] text-neutral-600">
+        <div className="border-t border-border px-3 py-1.5 text-[10px] text-faint">
           ↑↓ navigate · Enter insert · Esc close
         </div>
       </div>

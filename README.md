@@ -8,7 +8,9 @@ Still in alpha — expect rough edges.
 
 ## What it does
 
-- Streaming chat with thinking blocks, tool use, and rich rendering — bundled fonts + color emoji, inline SVG preview, collapsible tool-call results, clickable file links that open a preview pane
+- Streaming chat with thinking blocks, tool use, and rich rendering — bundled fonts + color emoji, inline SVG preview, clickable file links that open a preview pane. Consecutive tool calls fold into collapsible groups; file reads show as line-numbered, syntax-highlighted code and edits as diffs
+- Find within a conversation (`Ctrl/Cmd+F`); streaming follows new output only while you're at the bottom, with a jump-to-bottom control
+- Composer file mentions — type `@` to insert a path reference for Pi to read — and `Up`/`Down` to recall prompts sent in the current session
 - Home dashboard with usage stats — messages, tokens, active-day streaks, peak hour, per-model breakdown
 - [Multi-Agent Council Planning](#multi-agent-council-planning) — Pi, Claude, and Codex plan together and reach consensus before Pi builds (opt-in)
 - Command palette (`Ctrl/Cmd+K` or `/`) — run skills, prompt templates, and built-in commands
@@ -17,10 +19,11 @@ Still in alpha — expect rough edges.
 - Custom models & providers editor (Settings) — edits `~/.pi/agent/models.json`
 - Multiple workspaces, each with its own Pi process and sessions
 - Review rail (toggleable) with permissions, approvals, changed files, and session status
-- File tree, code/image/HTML preview panes, code editor (CodeMirror 6 with syntax highlighting), diff viewer, file search
+- Custom permission rules — allow/deny glob rules per Pi tool that refine the permission modes, with per-workspace rule files, import/export, and live edits (no Pi restart)
+- File tree, code/image/PDF/HTML preview panes, code editor (CodeMirror 6 with syntax highlighting), diff viewer, file search
 - Terminal with ANSI colors
 - Package browser connected to pi.dev/packages, with instant local search
-- Session tags, model switching, live-preview settings, themes (Dark, Light, System, Nord, Gruvbox, Breeze Dark, Breeze Light, Breeze Claudius)
+- Session tags, model switching, live-preview settings, themes (7 built-ins plus System, and custom themes you can create in-app, import, export, or install from a URL)
 
 ## Review rail
 
@@ -36,6 +39,71 @@ Changed files use readable status badges:
 | `ADD` | New file staged in git |
 | `STG` | Modified file staged in git |
 | `REN` | File was renamed |
+
+## Permissions
+
+Four base modes control what Pi may do, selectable from the Review rail or **Settings → Behavior**:
+
+| Mode | Behavior |
+|------|----------|
+| Plan / Read-only | Only read/search/list tools are enabled; edits and shell commands are blocked |
+| Ask before edits | Pi asks before file edits and shell commands |
+| Ask before commands | Pi asks before shell commands |
+| Trusted | All tools enabled |
+
+**Custom permission rules** refine the modes with allow/deny rules per Pi tool, edited in **Settings → Behavior → Permission rules**:
+
+- A rule is an action (`allow`/`deny`), a tool name (`bash`, `edit`, `write`, `read`, … or `*` for any), and an optional glob pattern matched against the tool's input — the shell command for `bash`, the file path for file tools. `*` is the only wildcard.
+- Precedence: **deny beats allow beats the mode default**. Deny rules are enforced in every mode — a `deny * *.env*` rule holds even in Trusted. Allow rules skip the confirmation prompt in the ask modes.
+- Rule edits apply to the next tool call immediately — no Pi restart.
+- **Global vs workspace**: the **Global | This workspace** tabs edit either your global rules or the active workspace's `.pi-desktop/permission-rules.json`. A workspace file is gated by **workspace trust**: once you trust the workspace it fully replaces the global list while you work there; until then (the default for a repo you just opened) only its *deny* rules apply, layered on top of your global rules, and its *allow* rules are ignored — so a cloned repo can tighten your permissions but never loosen them. Opening a workspace whose file contains allow rules prompts you to trust it; you can also Trust/Revoke from the **This workspace** tab. Import/Export moves rule lists as JSON files, and the workspace file can be hand-edited or committed with a repo — the app picks up changes live.
+- Honest scope: rules match raw strings (no path canonicalization or command parsing), so treat them as a guardrail against accidents, not a security sandbox — keep even a trusted workspace's allow rules narrow.
+
+Example rules:
+
+```json
+{ "action": "allow", "tool": "bash", "match": "npm test*" }
+{ "action": "deny",  "tool": "bash", "match": "rm -rf *" }
+{ "action": "deny",  "tool": "*",    "match": "*.env*" }
+```
+
+## Custom themes
+
+Pi Desktop ships 7 built-in themes (Dark, Light, Nord, Gruvbox, Breeze Dark, Breeze Light, Breeze Claudius) plus System, and you can create your own from **Settings → Appearance**.
+
+**In-app editor.** Click **Create theme** to fork the currently active theme, or **Edit theme** to keep editing one you already created. Pick 7 seed colors — app background, surface, text, accent, success, warning, error — and a dark/light **kind**; every other color in the app is derived from those seeds. Changes preview live across the whole window as you edit. Two disclosures cover finer control:
+
+- **Advanced** — override any of the ~30 derived tokens individually (borders, hovers, scrollbars, and so on) instead of accepting the automatic derivation.
+- **Syntax colors** — override code-highlighting colors (keywords, strings, comments, etc.) for the code editor and diff viewer.
+
+Themes you create are listed alongside the built-ins in the **Theme** dropdown. Rename one by editing its name in the editor, duplicate one by selecting it and clicking **Create theme** (which forks whatever is active), and delete one with the **Delete** button that appears next to the dropdown whenever a custom theme is selected.
+
+**Import / export / URL install.** Use **Import** and **Export** to share a theme as a `.json` file, or paste an `https://` URL into **Install from URL** to fetch and install one directly (HTTP is rejected; downloads are size-capped).
+
+**The `pi-theme/v1` format.** A theme file is JSON with a `$schema`, a `name`, a `kind` (`"dark"` or `"light"`), and 7 `seeds`. That's enough for a complete, valid theme — everything else is derived automatically via CSS `color-mix()`:
+
+```json
+{
+  "$schema": "pi-theme/v1",
+  "name": "My Theme",
+  "kind": "dark",
+  "seeds": {
+    "app": "#0a0a0a",
+    "surface": "#171717",
+    "text": "#f5f5f5",
+    "accent": "#2563eb",
+    "success": "#34d399",
+    "warning": "#facc15",
+    "error": "#f87171"
+  }
+}
+```
+
+Two optional top-level objects let you pin exact values instead of relying on derivation: `overrides` (any derived token, e.g. `border`, `scrollbar`, `accent-hover`) and `syntax` (code-highlighting colors, e.g. `keyword`, `string`, `comment`). Both are entirely optional — omit them and the theme still renders correctly from the 7 seeds alone.
+
+User theme files live in the app's user-data directory under `themes/` — on Linux, `~/.config/pi-desktop/themes/`.
+
+**Community gallery.** Browse and share themes at [pi-desktop-themes](https://github.com/FaqFirebase/pi-desktop-themes) — copy any theme's raw URL into **Install from URL**, or submit your own with a pull request.
 
 ## Multi-Agent Council Planning
 
@@ -77,7 +145,11 @@ chmod +x Pi-Desktop-linux-x64.AppImage
 
 Download the `.dmg` (Apple Silicon / arm64) from [Releases](https://github.com/FaqFirebase/pi-desktop/releases), open it, and drag **Pi Desktop** to Applications.
 
-Builds are **not yet signed or notarized**. Because the download is unsigned, macOS quarantines it and, on first launch, reports **"Pi Desktop is damaged and can't be opened. You should move it to the Trash."** The app is not actually damaged — this is Gatekeeper blocking an unsigned app. macOS does **not** offer an "Open Anyway" button for this message, so clear the quarantine flag in Terminal:
+Builds are **not yet signed or notarized**. Because the download is unsigned, macOS quarantines it, and on first launch Gatekeeper shows this dialog (this is macOS's message, not our advice):
+
+> Pi Desktop is damaged and can't be opened. You should move it to the Trash.
+
+**Do not move it to the Trash.** The app is not damaged — this is how Gatekeeper phrases its block on any unsigned app. macOS offers no "Open Anyway" button for this particular dialog, so clear the quarantine flag in Terminal instead:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/Pi Desktop.app"
@@ -99,10 +171,13 @@ Download from [Releases](https://github.com/FaqFirebase/pi-desktop/releases): th
 |----------|-------------|
 | `Enter` | Send message |
 | `Shift+Enter` | New line |
+| `Up/Down` | Recall previous prompts |
+| `@` | Mention a workspace file |
 | `Escape` | Stop streaming |
 | `Ctrl/Cmd+K` | Open command palette |
 | `/` (start of message) | Open command palette |
 | `Ctrl+P` | Cycle model |
+| `Ctrl/Cmd+F` | Find in conversation |
 | `Ctrl+Shift+F` | File search |
 | `Ctrl+Shift+P` | Insert saved note |
 | `Ctrl+N` | New session |
@@ -199,7 +274,7 @@ If you must keep code under Documents/Desktop, allow the app instead:
 
 If `npm install` completes but the app won't launch because Electron is missing or corrupted, download it directly from GitHub and unpack it into place. This is the known-good fallback when `node_modules\electron\dist` contains only partial contents, such as `locales`, and no `electron.exe`.
 
-Replace `39.8.10` with the version in `node_modules/electron/package.json` if it differs.
+Replace `43.0.0` with the version in `node_modules/electron/package.json` if it differs.
 
 ```powershell
 $ver = "43.0.0"

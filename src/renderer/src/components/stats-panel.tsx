@@ -30,23 +30,23 @@ const CHART_TICKS = 4 // y-axis intervals (→ 5 labels)
 
 // Intensity buckets for the heatmap (0 = empty).
 const LEVEL_CLASSES: Record<IntensityLevel, string> = {
-  0: 'bg-neutral-800/60',
-  1: 'bg-blue-900',
-  2: 'bg-blue-700',
-  3: 'bg-blue-500',
-  4: 'bg-blue-400',
+  0: 'bg-card/60',
+  1: 'bg-accent/30',
+  2: 'bg-accent/50',
+  3: 'bg-accent/70',
+  4: 'bg-accent',
 }
 
 // Legend dot colors, cycled by model rank.
 const MODEL_DOT_COLORS = [
-  'bg-emerald-500',
-  'bg-blue-500',
-  'bg-sky-400',
-  'bg-violet-500',
-  'bg-amber-500',
-  'bg-rose-500',
-  'bg-teal-400',
-  'bg-neutral-500',
+  'bg-emerald-500', /* theme-exempt: categorical palette */
+  'bg-blue-500', /* theme-exempt: categorical palette */
+  'bg-sky-400', /* theme-exempt: categorical palette */
+  'bg-violet-500', /* theme-exempt: categorical palette */
+  'bg-amber-500', /* theme-exempt: categorical palette */
+  'bg-rose-500', /* theme-exempt: categorical palette */
+  'bg-teal-400', /* theme-exempt: categorical palette */
+  'bg-neutral-500', /* theme-exempt: categorical palette */
 ]
 
 /** Display label for a model: its models.json name, or the raw id as fallback. */
@@ -104,9 +104,9 @@ function bucketTokens(days: ActivityStatsDay[]): TokenBucket[] {
 
 function StatCard({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
-    <div className="rounded-lg bg-neutral-800/40 px-3 py-2.5">
-      <div className="text-[11px] uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className="mt-0.5 truncate text-lg font-semibold text-neutral-100" title={value}>
+    <div className="rounded-lg bg-card/40 px-3 py-2.5">
+      <div className="text-[11px] uppercase tracking-wide text-dim">{label}</div>
+      <div className="mt-0.5 truncate text-lg font-semibold text-primary" title={value}>
         {value}
       </div>
     </div>
@@ -154,7 +154,7 @@ function TokenChart({
   const buckets = useMemo(() => bucketTokens(days), [days])
 
   if (buckets.length === 0) {
-    return <div className="py-10 text-center text-xs text-neutral-600">No token usage in this range.</div>
+    return <div className="py-10 text-center text-xs text-faint">No token usage in this range.</div>
   }
 
   const max = buckets.reduce((m, b) => Math.max(m, b.total), 0)
@@ -164,7 +164,7 @@ function TokenChart({
   return (
     <div className="flex gap-2">
       {/* Y-axis tick labels */}
-      <div className="flex h-40 w-12 shrink-0 flex-col justify-between text-right text-[10px] tabular-nums text-neutral-600">
+      <div className="flex h-40 w-12 shrink-0 flex-col justify-between text-right text-[10px] tabular-nums text-faint">
         {ticks.map((t, i) => (
           <div key={i}>{formatCompact(Math.round(t))}</div>
         ))}
@@ -177,7 +177,7 @@ function TokenChart({
           {ticks.map((_, i) => (
             <div
               key={i}
-              className="absolute inset-x-0 border-t border-neutral-800/70"
+              className="absolute inset-x-0 border-t border-border/70"
               style={{ top: `${(i / CHART_TICKS) * 100}%` }}
             />
           ))}
@@ -196,7 +196,7 @@ function TokenChart({
                   return (
                     <div
                       key={model}
-                      className={clsx('w-full', modelColor.get(model) ?? 'bg-blue-500')}
+                      className={clsx('w-full', modelColor.get(model) ?? 'bg-accent')}
                       style={{ height: `${(t / b.total) * 100}%` }}
                     />
                   )
@@ -206,7 +206,7 @@ function TokenChart({
           </div>
         </div>
         {/* X-axis labels */}
-        <div className="mt-1 flex gap-[3px] text-[10px] text-neutral-600">
+        <div className="mt-1 flex gap-[3px] text-[10px] text-faint">
           {buckets.map((b, i) => (
             <div key={i} className="min-w-[2px] flex-1 text-center">
               {i % labelStep === 0 ? b.label : ''}
@@ -227,7 +227,7 @@ function ModelLegend({
 }): React.JSX.Element {
   const grandTotal = models.reduce((s, m) => s + m.input + m.output, 0)
   if (models.length === 0) {
-    return <div className="py-4 text-center text-xs text-neutral-600">No model usage in this range.</div>
+    return <div className="py-4 text-center text-xs text-faint">No model usage in this range.</div>
   }
   return (
     <div className="space-y-1.5">
@@ -237,13 +237,16 @@ function ModelLegend({
         return (
           <div key={m.model} className="flex items-center gap-2 text-xs">
             <span
-              className={clsx('h-2 w-2 shrink-0 rounded-full', modelColor.get(m.model) ?? 'bg-neutral-500')}
+              className={clsx(
+              'h-2 w-2 shrink-0 rounded-full',
+              modelColor.get(m.model) ?? 'bg-neutral-500' /* theme-exempt: categorical palette */
+            )}
             />
-            <span className="min-w-0 flex-1 truncate text-neutral-300">{modelLabel(m)}</span>
-            <span className="shrink-0 tabular-nums text-neutral-500">
+            <span className="min-w-0 flex-1 truncate text-secondary">{modelLabel(m)}</span>
+            <span className="shrink-0 tabular-nums text-dim">
               {formatCompact(m.input)} in · {formatCompact(m.output)} out
             </span>
-            <span className="w-12 shrink-0 text-right tabular-nums text-neutral-400">{pct.toFixed(1)}%</span>
+            <span className="w-12 shrink-0 text-right tabular-nums text-muted">{pct.toFixed(1)}%</span>
           </div>
         )
       })}
@@ -289,7 +292,7 @@ export function StatsPanel(): React.JSX.Element | null {
   )
 
   return (
-    <div className="mb-8 rounded-lg border border-neutral-800 bg-neutral-900/50 p-4">
+    <div className="mb-8 rounded-lg border border-border bg-surface/50 p-4">
       {/* Tabs + range toggle */}
       <div className="mb-4 flex items-center justify-between">
         <div className="flex gap-1">
@@ -299,21 +302,21 @@ export function StatsPanel(): React.JSX.Element | null {
               onClick={() => setTab(t)}
               className={clsx(
                 'rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors',
-                tab === t ? 'bg-neutral-700 text-neutral-100' : 'text-neutral-500 hover:text-neutral-300'
+                tab === t ? 'bg-elevated text-primary' : 'text-dim hover:text-secondary'
               )}
             >
               {t}
             </button>
           ))}
         </div>
-        <div className="flex gap-0.5 rounded-md bg-neutral-800/60 p-0.5">
+        <div className="flex gap-0.5 rounded-md bg-card/60 p-0.5">
           {RANGE_LABELS.map(({ key, label }) => (
             <button
               key={key}
               onClick={() => setRange(key)}
               className={clsx(
                 'rounded px-2 py-0.5 text-xs font-medium tabular-nums transition-colors',
-                range === key ? 'bg-neutral-700 text-neutral-100' : 'text-neutral-500 hover:text-neutral-300'
+                range === key ? 'bg-elevated text-primary' : 'text-dim hover:text-secondary'
               )}
             >
               {label}
@@ -339,7 +342,7 @@ export function StatsPanel(): React.JSX.Element | null {
       ) : (
         <>
           <TokenChart days={rangedDays} orderedModels={orderedModels} modelColor={modelColor} />
-          <div className="mt-4 border-t border-neutral-800 pt-3">
+          <div className="mt-4 border-t border-border pt-3">
             <ModelLegend models={stats.models} modelColor={modelColor} />
           </div>
         </>

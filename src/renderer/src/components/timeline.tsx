@@ -39,15 +39,15 @@ export function Timeline(): React.JSX.Element {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Branches */}
-      <div className="border-b border-neutral-800 px-4 py-3">
+      <div className="border-b border-border px-4 py-3">
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <GitFork size={15} className="text-neutral-400" />
-            <h3 className="text-sm font-medium text-neutral-200">Branches</h3>
+            <GitFork size={15} className="text-muted" />
+            <h3 className="text-sm font-medium text-primary">Branches</h3>
           </div>
           <button
             onClick={() => cloneBranch()}
-            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-primary transition-colors"
             title="Clone the current branch into a new session"
           >
             <Copy size={12} />
@@ -55,18 +55,18 @@ export function Timeline(): React.JSX.Element {
           </button>
         </div>
         {forkMessages.length === 0 ? (
-          <p className="text-xs text-neutral-600">No earlier messages to fork from.</p>
+          <p className="text-xs text-faint">No earlier messages to fork from.</p>
         ) : (
           <div className="space-y-1">
             {forkMessages.map((fp) => (
               <div
                 key={fp.entryId}
-                className="group flex items-center gap-2 rounded px-2 py-1.5 hover:bg-neutral-800/50"
+                className="group flex items-center gap-2 rounded px-2 py-1.5 hover:bg-surface-hover/50"
               >
-                <span className="line-clamp-1 flex-1 text-xs text-neutral-400">{fp.text}</span>
+                <span className="line-clamp-1 flex-1 text-xs text-muted">{fp.text}</span>
                 <button
                   onClick={() => forkFrom(fp.entryId)}
-                  className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[11px] text-neutral-500 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-neutral-700 hover:text-neutral-200"
+                  className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[11px] text-dim opacity-0 transition-opacity group-hover:opacity-100 hover:bg-elevated hover:text-primary"
                   title="Fork a new session from this message"
                 >
                   <GitFork size={11} />
@@ -77,8 +77,8 @@ export function Timeline(): React.JSX.Element {
           </div>
         )}
         {lineage.length > 0 && (
-          <div className="mt-3 border-t border-neutral-800 pt-2">
-            <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-600">
+          <div className="mt-3 border-t border-border pt-2">
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-faint">
               Session tree
             </div>
             <LineageTree nodes={lineage} currentPath={currentSessionFile} onSwitch={switchSession} />
@@ -86,17 +86,17 @@ export function Timeline(): React.JSX.Element {
         )}
       </div>
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
-          <Activity size={16} className="text-neutral-400" />
-          <h2 className="text-sm font-medium text-neutral-200">Agent Timeline</h2>
-          <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-neutral-500">
+          <Activity size={16} className="text-muted" />
+          <h2 className="text-sm font-medium text-primary">Agent Timeline</h2>
+          <span className="rounded-full bg-card px-2 py-0.5 text-xs text-dim">
             {timelineEvents.length}
           </span>
         </div>
         <button
           onClick={clearTimeline}
-          className="flex items-center gap-1 rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+          className="flex items-center gap-1 rounded px-2 py-1 text-xs text-dim hover:bg-surface-hover hover:text-secondary transition-colors"
         >
           <Trash2 size={12} />
           Clear
@@ -106,15 +106,15 @@ export function Timeline(): React.JSX.Element {
       {/* Timeline */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {timelineEvents.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-neutral-500">
-            <Activity size={32} className="mb-3 text-neutral-600" />
+          <div className="flex flex-col items-center justify-center py-12 text-dim">
+            <Activity size={32} className="mb-3 text-faint" />
             <p className="text-sm">No activity yet</p>
-            <p className="mt-1 text-xs text-neutral-600">Agent events will appear here in real-time</p>
+            <p className="mt-1 text-xs text-faint">Agent events will appear here in real-time</p>
           </div>
         ) : (
           <div className="relative">
             {/* Timeline line */}
-            <div className="absolute left-4 top-0 bottom-0 w-px bg-neutral-800" />
+            <div className="absolute left-4 top-0 bottom-0 w-px bg-card" />
 
             {/* Events */}
             <div className="space-y-1">
@@ -148,22 +148,22 @@ function TimelineEntry({ event }: { event: StoreTimelineEvent }): React.JSX.Elem
       {/* Content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-neutral-200">{event.title}</span>
+          <span className="text-sm font-medium text-primary">{event.title}</span>
           {event.status === 'running' && (
-            <Loader2 size={12} className="animate-spin text-blue-400" />
+            <Loader2 size={12} className="animate-spin text-accent-fg" />
           )}
         </div>
 
         {event.detail && (
-          <p className="mt-0.5 text-xs text-neutral-500 line-clamp-2">{event.detail}</p>
+          <p className="mt-0.5 text-xs text-dim line-clamp-2">{event.detail}</p>
         )}
 
-        <div className="mt-1 flex items-center gap-2 text-xs text-neutral-600">
+        <div className="mt-1 flex items-center gap-2 text-xs text-faint">
           <Clock size={10} />
           <span>{formatTimestamp(event.timestamp)}</span>
           {event.duration !== undefined && (
             <>
-              <span className="text-neutral-700">·</span>
+              <span className="text-ghost">·</span>
               <span>{formatDuration(event.duration)}</span>
             </>
           )}
@@ -200,25 +200,25 @@ function getEventIcon(type: StoreTimelineEvent['type'], status?: string): React.
 }
 
 function getEventColor(type: StoreTimelineEvent['type'], status?: string): string {
-  if (status === 'error') return 'border-red-800 bg-red-900/20 text-red-400'
-  if (status === 'running') return 'border-blue-800 bg-blue-900/20 text-blue-400'
+  if (status === 'error') return 'border-error-bg bg-error-bg text-error'
+  if (status === 'running') return 'border-accent-bg bg-accent-bg text-accent-fg'
 
   switch (type) {
     case 'user_message':
-      return 'border-blue-800 bg-blue-900/20 text-blue-400'
+      return 'border-accent-bg bg-accent-bg text-accent-fg'
     case 'assistant_message':
-      return 'border-emerald-800 bg-emerald-900/20 text-emerald-400'
+      return 'border-success-bg bg-success-bg text-success'
     case 'tool_start':
     case 'tool_end':
-      return 'border-yellow-800 bg-yellow-900/20 text-yellow-400'
+      return 'border-warning-bg bg-warning-bg text-warning'
     case 'thinking':
-      return 'border-purple-800 bg-purple-900/20 text-purple-400'
+      return 'border-special-bg bg-special-bg text-special'
     case 'compaction':
-      return 'border-orange-800 bg-orange-900/20 text-orange-400'
+      return 'border-warning-bg bg-warning-bg text-warning'
     case 'retry':
-      return 'border-amber-800 bg-amber-900/20 text-amber-400'
+      return 'border-warning-bg bg-warning-bg text-warning'
     default:
-      return 'border-neutral-700 bg-neutral-800/50 text-neutral-400'
+      return 'border-border-strong bg-card/50 text-muted'
   }
 }
 
@@ -258,11 +258,11 @@ function LineageTree({
             className={clsx(
               'flex w-full items-center gap-2 rounded py-1 pr-2 text-left text-xs transition-colors',
               node.path === currentPath
-                ? 'bg-blue-900/30 text-blue-300'
-                : 'text-neutral-400 hover:bg-neutral-800/50'
+                ? 'bg-accent-bg text-accent-fg'
+                : 'text-muted hover:bg-surface-hover/50'
             )}
           >
-            <GitBranch size={11} className="shrink-0 text-neutral-600" />
+            <GitBranch size={11} className="shrink-0 text-faint" />
             <span className="truncate">{node.name ?? node.sessionId.slice(0, 8)}</span>
           </button>
           {node.children.length > 0 && (

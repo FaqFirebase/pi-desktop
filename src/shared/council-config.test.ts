@@ -98,7 +98,8 @@ import {
   buildConsensusPrompt,
   buildDebatePrompt,
   buildConsultantCommand,
-  buildRevisionPrompt,
+  buildArbiterRevisionPrompt,
+  buildImplementationPrompt,
   parseClaudeStreamLine,
   parseCodexStreamLine,
   parsePiStreamLine,
@@ -141,6 +142,8 @@ test('consensus prompt includes request and every contributed plan, labeled', ()
   assert.ok(p.toLowerCase().includes('claude'))
   assert.ok(p.toLowerCase().includes('codex'))
   assert.ok(/do not (implement|start|build|write)/i.test(p))
+  // Consultant output is delimited as untrusted data, not blended in as instructions.
+  assert.ok(p.includes('BEGIN UNTRUSTED'), 'consultant plans should be delimited as untrusted data')
 })
 
 test('consensus prompt excludes non-contributed plans', () => {
@@ -153,11 +156,21 @@ test('consensus prompt excludes non-contributed plans', () => {
   assert.ok(!p.includes('timed-out'))
 })
 
-test('revision prompt embeds feedback and forbids implementing yet', () => {
-  const p = buildRevisionPrompt('Use Postgres instead of SQLite')
+test('arbiter revision prompt embeds request, prior plan, and feedback; forbids implementing', () => {
+  const p = buildArbiterRevisionPrompt('Original request', 'PRIOR PLAN TEXT', 'Use Postgres instead of SQLite')
+  assert.ok(p.includes('Original request'))
+  assert.ok(p.includes('PRIOR PLAN TEXT'))
   assert.ok(p.includes('Use Postgres instead of SQLite'))
   assert.ok(/revise/i.test(p))
   assert.ok(/do not (implement|build|write)/i.test(p))
+})
+
+test('implementation prompt embeds the approved plan and asks to implement', () => {
+  const p = buildImplementationPrompt('APPROVED PLAN BODY')
+  assert.ok(p.includes('APPROVED PLAN BODY'))
+  assert.ok(/implement/i.test(p))
+  // The vetted plan is all that crosses over — no reference to consultant output.
+  assert.ok(/approved/i.test(p))
 })
 
 test('debate prompt shows other plans and asks for a revision', () => {
@@ -165,22 +178,30 @@ test('debate prompt shows other plans and asks for a revision', () => {
   const p = buildDebatePrompt('req', 'claude', others)
   assert.ok(p.includes('OTHER PLAN'))
   assert.ok(/revis|critiq/i.test(p))
+  assert.ok(p.includes('BEGIN UNTRUSTED'), "other agents' plans should be delimited as untrusted data")
 })
 
 test('consultant command uses read-only flags per agent', () => {
-  const claude = buildConsultantCommand('claude', '/usr/bin/claude', 'PROMPT')
+  const claude = buildConsultantCommand('claude', '/usr/bin/claude')
   assert.equal(claude.file, '/usr/bin/claude')
   assert.ok(claude.args.includes('-p'))
-  assert.ok(claude.args.includes('PROMPT'))
 
-  const codex = buildConsultantCommand('codex', '/usr/bin/codex', 'PROMPT')
+  const codex = buildConsultantCommand('codex', '/usr/bin/codex')
   assert.equal(codex.file, '/usr/bin/codex')
   assert.ok(codex.args.includes('exec'))
-  assert.ok(codex.args.includes('PROMPT'))
+})
+
+test('consultant command never puts the prompt in argv (stdin-only delivery)', () => {
+  // Untrusted prompt text must not reach the command line — on Windows the args
+  // pass through cmd.exe and would be open to shell-metacharacter injection.
+  for (const id of ['pi', 'claude', 'codex'] as const) {
+    const { args } = buildConsultantCommand(id, '/usr/bin/agent')
+    assert.ok(!args.some((a) => /prompt/i.test(a)), `${id} argv should carry no prompt`)
+  }
 })
 
 test('claude command requests stream-json for live output', () => {
-  const claude = buildConsultantCommand('claude', '/usr/bin/claude', 'PROMPT')
+  const claude = buildConsultantCommand('claude', '/usr/bin/claude')
   assert.ok(claude.args.includes('--output-format'))
   assert.ok(claude.args.includes('stream-json'))
   assert.ok(claude.args.includes('--include-partial-messages'))
@@ -207,12 +228,11 @@ test('parseClaudeStreamLine ignores irrelevant lines and bad JSON', () => {
 })
 
 test('codex command requests JSONL streaming and read-only sandbox', () => {
-  const codex = buildConsultantCommand('codex', '/usr/bin/codex', 'PROMPT')
+  const codex = buildConsultantCommand('codex', '/usr/bin/codex')
   assert.ok(codex.args.includes('exec'))
   assert.ok(codex.args.includes('--json'))
   assert.ok(codex.args.includes('--sandbox'))
   assert.ok(codex.args.includes('read-only'))
-  assert.ok(codex.args.includes('PROMPT'))
 })
 
 test('parseCodexStreamLine extracts the agent message as plan', () => {
@@ -237,14 +257,19 @@ test('parseCodexStreamLine ignores non-item events and bad JSON', () => {
   assert.deepEqual(parseCodexStreamLine(''), {})
 })
 
-test('pi command runs read-only json mode with the prompt', () => {
-  const pi = buildConsultantCommand('pi', '/usr/bin/pi', 'PROMPT')
+test('pi command runs read-only json mode with bash excluded', () => {
+  const pi = buildConsultantCommand('pi', '/usr/bin/pi')
   assert.equal(pi.file, '/usr/bin/pi')
   assert.ok(pi.args.includes('-p'))
   assert.ok(pi.args.includes('--mode'))
   assert.ok(pi.args.includes('json'))
   assert.ok(pi.args.includes('--exclude-tools'))
-  assert.ok(pi.args.includes('PROMPT'))
+  // bash must be denied so an injected plan cannot run shell commands during
+  // the supposedly read-only planning/arbitration run.
+  const denied = pi.args[pi.args.indexOf('--exclude-tools') + 1] ?? ''
+  assert.ok(denied.split(',').includes('bash'), 'pi read-only run must exclude bash')
+  assert.ok(denied.split(',').includes('edit'))
+  assert.ok(denied.split(',').includes('write'))
 })
 
 test('parsePiStreamLine extracts assistant text as plan', () => {

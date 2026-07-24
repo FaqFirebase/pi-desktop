@@ -68,11 +68,11 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
-          <GitCompare size={16} className="text-neutral-400" />
-          <h2 className="text-sm font-medium text-neutral-200">Diff Viewer</h2>
-          <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-neutral-500">
+          <GitCompare size={16} className="text-muted" />
+          <h2 className="text-sm font-medium text-primary">Diff Viewer</h2>
+          <span className="rounded-full bg-card px-2 py-0.5 text-xs text-dim">
             {files.length} file{files.length !== 1 ? 's' : ''}
           </span>
         </div>
@@ -82,15 +82,15 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
             className={clsx(
               'rounded px-2 py-1 text-xs transition-colors',
               stagedMode
-                ? 'bg-green-900/30 text-green-400'
-                : 'bg-neutral-800 text-neutral-400 hover:text-neutral-300'
+                ? 'bg-success-bg text-success'
+                : 'bg-card text-muted hover:text-secondary'
             )}
           >
             {stagedMode ? 'Staged' : 'Working'}
           </button>
           <button
             onClick={loadDiff}
-            className="rounded p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+            className="rounded p-1.5 text-dim hover:bg-surface-hover hover:text-secondary transition-colors"
           >
             <RefreshCw size={14} />
           </button>
@@ -102,7 +102,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
                 setCurrentView('chat')
               }
             }}
-            className="rounded p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+            className="rounded p-1.5 text-dim hover:bg-surface-hover hover:text-secondary transition-colors"
           >
             <X size={14} />
           </button>
@@ -113,13 +113,13 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
       <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 size={24} className="animate-spin text-neutral-500" />
+            <Loader2 size={24} className="animate-spin text-dim" />
           </div>
         ) : files.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-neutral-500">
-            <GitCompare size={32} className="mb-3 text-neutral-600" />
+          <div className="flex flex-col items-center justify-center py-12 text-dim">
+            <GitCompare size={32} className="mb-3 text-faint" />
             <p className="text-sm">No changes</p>
-            <p className="mt-1 text-xs text-neutral-600">
+            <p className="mt-1 text-xs text-faint">
               {stagedMode ? 'No staged changes' : 'Working tree is clean'}
             </p>
           </div>
@@ -157,34 +157,34 @@ function DiffFileEntry({
   )
 
   return (
-    <div className="rounded-lg border border-neutral-800 overflow-hidden">
+    <div className="rounded-lg border border-border overflow-hidden">
       {/* File header */}
       <button
         onClick={onToggle}
-        className="flex w-full items-center gap-2 px-3 py-2 bg-neutral-900/50 hover:bg-neutral-800/50 transition-colors"
+        className="flex w-full items-center gap-2 px-3 py-2 bg-surface/50 hover:bg-surface-hover/50 transition-colors"
       >
         {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <File size={14} className="shrink-0 text-neutral-500" />
-        <span className="text-xs text-neutral-200 truncate">{file.newPath}</span>
+        <File size={14} className="shrink-0 text-dim" />
+        <span className="text-xs text-primary truncate">{file.newPath}</span>
         <div className="ml-auto flex items-center gap-2 text-xs">
           {file.isNew && (
-            <span className="rounded bg-green-900/30 px-1.5 py-0.5 text-green-400">NEW</span>
+            <span className="rounded bg-success-bg px-1.5 py-0.5 text-success">NEW</span>
           )}
           {file.isDeleted && (
-            <span className="rounded bg-red-900/30 px-1.5 py-0.5 text-red-400">DELETED</span>
+            <span className="rounded bg-error-bg px-1.5 py-0.5 text-error">DELETED</span>
           )}
           {additions > 0 && (
-            <span className="text-green-400">+{additions}</span>
+            <span className="text-success">+{additions}</span>
           )}
           {deletions > 0 && (
-            <span className="text-red-400">-{deletions}</span>
+            <span className="text-error">-{deletions}</span>
           )}
         </div>
       </button>
 
       {/* Diff content */}
       {expanded && (
-        <div className="border-t border-neutral-800 overflow-x-auto">
+        <div className="border-t border-border overflow-x-auto">
           <table className="font-jetbrains w-full" style={{ fontSize: `${codeFontSize}px` }}>
             <tbody>
               {file.hunks.map((hunk, hunkIdx) => (
@@ -205,24 +205,24 @@ function DiffHunk({ lines }: { lines: DiffLine[] }): React.JSX.Element {
         <tr
           key={`${line.type}-${line.oldLine ?? ''}-${line.newLine ?? ''}-${i}`}
           className={clsx(
-            line.type === 'add' && 'bg-green-950/30',
-            line.type === 'remove' && 'bg-red-950/30',
-            line.type === 'hunk' && 'bg-blue-950/20',
+            line.type === 'add' && 'bg-success-bg',
+            line.type === 'remove' && 'bg-error-bg',
+            line.type === 'hunk' && 'bg-accent-bg',
           )}
         >
-          <td className="w-10 px-2 py-0.5 text-right text-neutral-600 select-none border-r border-neutral-800">
+          <td className="w-10 px-2 py-0.5 text-right text-faint select-none border-r border-border">
             {line.oldLine ?? ''}
           </td>
-          <td className="w-10 px-2 py-0.5 text-right text-neutral-600 select-none border-r border-neutral-800">
+          <td className="w-10 px-2 py-0.5 text-right text-faint select-none border-r border-border">
             {line.newLine ?? ''}
           </td>
           <td className="w-6 px-1 py-0.5 text-center select-none">
-            {line.type === 'add' && <span className="text-green-400">+</span>}
-            {line.type === 'remove' && <span className="text-red-400">-</span>}
-            {line.type === 'context' && <span className="text-neutral-700"> </span>}
-            {line.type === 'hunk' && <span className="text-blue-400">@</span>}
+            {line.type === 'add' && <span className="text-success">+</span>}
+            {line.type === 'remove' && <span className="text-error">-</span>}
+            {line.type === 'context' && <span className="text-ghost"> </span>}
+            {line.type === 'hunk' && <span className="text-accent-fg">@</span>}
           </td>
-          <td className="px-2 py-0.5 whitespace-pre text-neutral-300">
+          <td className="px-2 py-0.5 whitespace-pre text-secondary">
             {line.content}
           </td>
         </tr>
