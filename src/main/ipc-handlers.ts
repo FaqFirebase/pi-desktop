@@ -1746,61 +1746,73 @@ function createListAllSessions(wm: WorkspaceManager) {
   }
 }
 
+/**
+ * Collect top-level parent sessions only.
+ *
+ * Layout under the Pi session store:
+ *   sessions/<sanitized-project>/<timestamp>_<id>.jsonl     ← parent (list these)
+ *   sessions/<sanitized-project>/<timestamp>_<id>/<child>…  ← subagent runs
+ *
+ * Extensions like pi-subagents nest each run under the parent session folder.
+ * Recursing into those folders flooded Recent Sessions with ephemeral child
+ * runs. We only index `.jsonl` files that sit directly in a project directory.
+ */
 async function collectSessionFiles(
-  dir: string,
+  _dir: string,
   entries: SessionEntry[],
   sessionsRoot: string,
   workspaceBySanitized: Map<string, { path: string; name: string }>
 ): Promise<void> {
   try {
-    const items = await readdir(dir, { withFileTypes: true })
-    const subdirs: string[] = []
+    const projectDirs = await readdir(sessionsRoot, { withFileTypes: true })
+    await Promise.all(
+      projectDirs
+        .filter((d) => d.isDirectory())
+        .map(async (projectDir) => {
+          const projectFull = join(sessionsRoot, projectDir.name)
+          const relativeToRoot = sessionDirName(projectFull, sessionsRoot) || projectDir.name
 
-    // Resolve project once per directory (not per file).
-    const relativeToRoot = sessionDirName(dir, sessionsRoot)
-    let projectPath = ''
-    let projectName = 'Unknown'
-    if (relativeToRoot) {
-      const matched = workspaceBySanitized.get(relativeToRoot.toLowerCase())
-        ?? workspaceBySanitized.get(sanitizePath(relativeToRoot).toLowerCase())
-      if (matched) {
-        projectPath = matched.path
-        projectName = matched.name
-      } else {
-        projectPath = desanitizeSessionDir(relativeToRoot)
-        projectName = projectNameFromPath(projectPath)
-      }
-    }
+          let projectPath = ''
+          let projectName = 'Unknown'
+          const matched =
+            workspaceBySanitized.get(relativeToRoot.toLowerCase()) ??
+            workspaceBySanitized.get(sanitizePath(relativeToRoot).toLowerCase())
+          if (matched) {
+            projectPath = matched.path
+            projectName = matched.name
+          } else {
+            projectPath = desanitizeSessionDir(relativeToRoot)
+            projectName = projectNameFromPath(projectPath)
+          }
 
-    for (const item of items) {
-      const fullPath = join(dir, item.name)
-      if (item.isDirectory()) {
-        subdirs.push(fullPath)
-      } else if (item.isFile() && item.name.endsWith(JSONL_EXTENSION)) {
-        try {
-          const fileStat = await stat(fullPath)
-          entries.push({
-            path: fullPath,
-            name: null,
-            sessionId: item.name.replace(JSONL_EXTENSION, ''),
-            lastModified: fileStat.mtimeMs,
-            messageCount: 0,
-            projectPath,
-            projectName,
-          })
-        } catch {
-          // Skip unreadable files
-        }
-      }
-    }
+          let items: Array<{ name: string; isFile: () => boolean }>
+          try {
+            items = await readdir(projectFull, { withFileTypes: true })
+          } catch {
+            return
+          }
 
-    // Walk project subtrees in parallel — sequential recursion was a major
-    // boot cost on large ~/.pi/agent/sessions trees (esp. Windows).
-    if (subdirs.length > 0) {
-      await Promise.all(
-        subdirs.map((sub) => collectSessionFiles(sub, entries, sessionsRoot, workspaceBySanitized))
-      )
-    }
+          for (const item of items) {
+            // Parent sessions only — skip directories (subagent nests) and non-jsonl.
+            if (!item.isFile() || !item.name.endsWith(JSONL_EXTENSION)) continue
+            const fullPath = join(projectFull, item.name)
+            try {
+              const fileStat = await stat(fullPath)
+              entries.push({
+                path: fullPath,
+                name: null,
+                sessionId: item.name.replace(JSONL_EXTENSION, ''),
+                lastModified: fileStat.mtimeMs,
+                messageCount: 0,
+                projectPath,
+                projectName,
+              })
+            } catch {
+              // Skip unreadable files
+            }
+          }
+        })
+    )
   } catch {
     // Directory doesn't exist or isn't readable
   }
