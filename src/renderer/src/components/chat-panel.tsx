@@ -4,6 +4,7 @@ import { CouncilPanels } from './council-panels'
 import { MessageBubble, ToolGroupBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
 import { ChatSearch } from './chat-search'
+
 import { groupToolMessages, prepareChatMessages } from '../message-grouping'
 import { NowContext } from '../utils/relative-time'
 import { FileTree, FileSearch, FilePreview } from './file-tree'

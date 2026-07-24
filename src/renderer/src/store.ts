@@ -158,6 +158,33 @@ interface AppState {
 
   // Extension UI
   extensionUiRequest: PiExtensionUiRequest | null
+  // Extension widgets (setWidget fire-and-forget). Keyed by widgetKey.
+  extensionWidgets: Record<string, { lines: string[]; placement?: string }>
+  // Extension status entries (setStatus fire-and-forget). Keyed by statusKey.
+  extensionStatuses: Record<string, string>
+  // Live subagent progress from tool_execution_update events (subagent tool).
+  subagentProgress: Array<{
+    toolCallId: string
+    agent: string
+    status: string
+    task: string
+    toolCount: number
+    tokens: number
+    turnCount?: number
+    durationMs: number
+    currentTool?: string
+    /** Parallel/chain children when the tool streams a progress list. */
+    children?: Array<{
+      id: string
+      agent: string
+      status: string
+      task: string
+      toolCount: number
+      tokens: number
+      durationMs: number
+      currentTool?: string
+    }>
+  }>
 
   // App-level confirmation dialog (themed replacement for window.confirm)
   confirmRequest: ConfirmRequest | null
@@ -521,6 +548,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   commands: [],
 
   extensionUiRequest: null,
+  extensionWidgets: {},
+  extensionStatuses: {},
+  subagentProgress: [],
   confirmRequest: null,
 
   workspaces: [],
@@ -620,7 +650,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   setMessages: (messages) => set({ messages }),
 
-  clearMessages: () => set({ messages: [], promptHistory: [], streamingContent: '', streamingThinking: '', streamingToolCalls: new Map() }),
+  clearMessages: () => set({ messages: [], promptHistory: [], streamingContent: '', streamingThinking: '', streamingToolCalls: new Map(), subagentProgress: [] }),
 
   // Append a sent prompt to the recall history. Ignores blanks and consecutive
   // duplicates (shell-style), and caps the list so it can't grow unbounded.
@@ -1337,9 +1367,44 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         })
         break
 
-      case 'extension_ui_request':
-        set({ extensionUiRequest: event as PiExtensionUiRequest })
+      case 'extension_ui_request': {
+        const uiEvent = event as PiExtensionUiRequest
+        if (uiEvent.method === 'setWidget') {
+          set((state) => {
+            const key = uiEvent.widgetKey ?? 'default'
+            if (uiEvent.widgetLines === undefined) {
+              const { [key]: _removed, ...rest } = state.extensionWidgets
+              return { extensionWidgets: rest }
+            }
+            return {
+              extensionWidgets: {
+                ...state.extensionWidgets,
+                [key]: { lines: uiEvent.widgetLines ?? [], placement: uiEvent.widgetPlacement },
+              },
+            }
+          })
+        } else if (uiEvent.method === 'setStatus') {
+          set((state) => {
+            const key = uiEvent.statusKey ?? 'default'
+            if (uiEvent.statusText === undefined) {
+              const { [key]: _removed, ...rest } = state.extensionStatuses
+              return { extensionStatuses: rest }
+            }
+            return {
+              extensionStatuses: {
+                ...state.extensionStatuses,
+                [key]: uiEvent.statusText,
+              },
+            }
+          })
+        } else if (uiEvent.method === 'setTitle' || uiEvent.method === 'set_editor_text') {
+          // Fire-and-forget: nothing to store in state.
+        } else {
+          // Dialog methods (select, confirm, input, editor, notify).
+          set({ extensionUiRequest: uiEvent })
+        }
         break
+      }
 
       case 'session_info_changed': {
         // Live title update (auto-title extension, /name, or our rename).
@@ -2048,6 +2113,7 @@ function handleTurnComplete(
       streamingContent: '',
       streamingThinking: '',
       streamingToolCalls: new Map(),
+      subagentProgress: [],
     }
   })
 }
@@ -2064,6 +2130,25 @@ function handleToolStart(
       isExecuting: true,
       startedAt: Date.now(),
     })
+    // Track subagent calls in subagentProgress
+    if (event.toolName === 'subagent' || event.toolName === 'subagent_wait') {
+      const args = event.args as Record<string, unknown>
+      const agent = typeof args.agent === 'string' ? args.agent : 'subagent'
+      const task = typeof args.task === 'string' ? args.task : ''
+      const newProgress = {
+        toolCallId: event.toolCallId,
+        agent,
+        status: 'running',
+        task: task.slice(0, 120),
+        toolCount: 0,
+        tokens: 0,
+        durationMs: 0,
+      }
+      return {
+        streamingToolCalls: newMap,
+        subagentProgress: [...state.subagentProgress, newProgress],
+      }
+    }
     return { streamingToolCalls: newMap }
   })
 }
@@ -2081,13 +2166,29 @@ function handleToolUpdate(
     const newMap = new Map(state.streamingToolCalls)
     const existing = newMap.get(event.toolCallId)
     if (existing) {
-      // Accumulate partial output into `result`; keep `args` as the real
-      // arguments so the finalized tool-call badge shows the invocation.
       newMap.set(event.toolCallId, {
         ...existing,
         result: text || existing.result,
       })
     }
+
+    // Update subagent progress from details
+    if (event.toolName === 'subagent' || event.toolName === 'subagent_wait') {
+      const details = event.partialResult.details as Record<string, unknown> | undefined
+      const progressList = details?.progress as Array<Record<string, unknown>> | undefined
+      const results = details?.results as Array<Record<string, unknown>> | undefined
+      if (progressList || results) {
+        const newProgress = state.subagentProgress.map((p) => {
+          if (p.toolCallId !== event.toolCallId) return p
+          return {
+            ...p,
+            ...aggregateSubagentDetails(p, progressList, results),
+          }
+        })
+        return { streamingToolCalls: newMap, subagentProgress: newProgress }
+      }
+    }
+
     return { streamingToolCalls: newMap }
   })
 }
@@ -2113,8 +2214,118 @@ function handleToolEnd(
         durationMs: existing.startedAt ? Date.now() - existing.startedAt : existing.durationMs,
       })
     }
-    return { streamingToolCalls: newMap }
+
+    // Finalize subagent progress: mark done and capture final stats
+    const newProgress = state.subagentProgress.map((p) => {
+      if (p.toolCallId !== event.toolCallId) return p
+      const details = (event.toolName === 'subagent' || event.toolName === 'subagent_wait')
+        ? (event.result.details as Record<string, unknown> | undefined)
+        : undefined
+      const progressList = details?.progress as Array<Record<string, unknown>> | undefined
+      const results = details?.results as Array<Record<string, unknown>> | undefined
+      const agg = aggregateSubagentDetails(p, progressList, results)
+      const elapsed =
+        agg.durationMs ||
+        (p.durationMs > 0 ? p.durationMs : existing?.startedAt ? Date.now() - existing.startedAt : 0)
+
+      return {
+        ...p,
+        ...agg,
+        status: event.isError ? 'error' : 'done',
+        durationMs: elapsed,
+        currentTool: undefined,
+      }
+    })
+
+    return { streamingToolCalls: newMap, subagentProgress: newProgress }
   })
+}
+
+/** Fold tool details.progress / results into a single progress row (+ children). */
+function aggregateSubagentDetails(
+  prev: AppState['subagentProgress'][number],
+  progressList: Array<Record<string, unknown>> | undefined,
+  results: Array<Record<string, unknown>> | undefined
+): Partial<AppState['subagentProgress'][number]> {
+  let toolCount = 0
+  let tokens = 0
+  let durationMs = 0
+  let currentTool: string | undefined
+  const statuses: string[] = []
+  const children: NonNullable<AppState['subagentProgress'][number]['children']> = []
+
+  if (progressList) {
+    progressList.forEach((prog, index) => {
+      const tc = typeof prog.toolCount === 'number' ? prog.toolCount : 0
+      const tok = typeof prog.tokens === 'number' ? prog.tokens : 0
+      const dur = typeof prog.durationMs === 'number' ? prog.durationMs : 0
+      toolCount += tc
+      tokens += tok
+      durationMs = Math.max(durationMs, dur)
+      if (typeof prog.status === 'string') statuses.push(prog.status)
+      const tool =
+        typeof prog.currentTool === 'string'
+          ? prog.currentTool
+          : typeof prog.tool === 'string'
+            ? prog.tool
+            : undefined
+      if (tool) currentTool = tool
+
+      const agent =
+        typeof prog.agent === 'string'
+          ? prog.agent
+          : typeof prog.name === 'string'
+            ? prog.name
+            : prev.agent
+      const task =
+        typeof prog.task === 'string'
+          ? prog.task
+          : typeof prog.label === 'string'
+            ? prog.label
+            : ''
+      const st = typeof prog.status === 'string' ? prog.status : 'running'
+      const id =
+        typeof prog.id === 'string'
+          ? prog.id
+          : typeof prog.runId === 'string'
+            ? prog.runId
+            : `${prev.toolCallId}-${index}`
+
+      children.push({
+        id,
+        agent,
+        status: st === 'completed' || st === 'done' ? 'done' : st === 'failed' || st === 'error' ? 'error' : 'running',
+        task: task.slice(0, 160),
+        toolCount: tc,
+        tokens: tok,
+        durationMs: dur,
+        currentTool: tool,
+      })
+    })
+  }
+
+  if (results) {
+    for (const r of results) {
+      const usage = r.usage as Record<string, number> | undefined
+      if (usage) {
+        tokens += (usage.input ?? 0) + (usage.output ?? 0)
+      }
+    }
+  }
+
+  const running = statuses.some((s) => s === 'running' || s === 'starting')
+  const allDone =
+    statuses.length > 0 &&
+    statuses.every((s) => s === 'completed' || s === 'failed' || s === 'done' || s === 'error' || s === 'stopped')
+
+  return {
+    status: allDone ? 'done' : running ? 'running' : prev.status,
+    toolCount: toolCount || prev.toolCount,
+    tokens: tokens || prev.tokens,
+    durationMs: durationMs || prev.durationMs,
+    currentTool,
+    children: children.length > 0 ? children : prev.children,
+  }
 }
 
 function handleQueueUpdate(

@@ -351,6 +351,11 @@
   .animate-fade-in {
     animation: fade-in 0.2s ease-out;
   }
+
+  @keyframes fleet-shimmer {
+    0% { transform: translateX(-120%); }
+    100% { transform: translateX(320%); }
+  }
 }
 
 /* In-conversation search highlights (the ::highlight() rules for the CSS Custom
