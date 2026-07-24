@@ -122,6 +122,7 @@ interface PiDesktopAPI {
     exportToFile(rules: PermissionRule[]): Promise<PermissionRulesExportResult>
     workspaceStatus(): Promise<PermissionRulesWorkspaceStatus>
     removeWorkspace(): Promise<PermissionRulesRemoveResult>
+    setWorkspaceTrust(trusted: boolean): Promise<PermissionRulesWorkspaceStatus>
   }
 
   // Themes (user-created theme storage)
@@ -320,6 +321,7 @@ const api: PiDesktopAPI = {
     exportToFile: (rules) => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_EXPORT, rules),
     workspaceStatus: () => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_WORKSPACE_STATUS),
     removeWorkspace: () => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_REMOVE_WORKSPACE),
+    setWorkspaceTrust: (trusted) => ipcRenderer.invoke(IPC_CHANNELS.PERMISSION_RULES_SET_WORKSPACE_TRUST, trusted),
   },
 
   themes: {

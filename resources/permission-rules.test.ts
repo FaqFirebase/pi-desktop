@@ -237,16 +237,51 @@ describe('loadEffectiveRules', () => {
     }
   })
 
-  it('workspace file fully replaces global rules', () => {
+  it('a trusted workspace file fully replaces global rules', () => {
     const dir = makeTmpDir()
     try {
       const globalPath = join(dir, 'global.json')
       writeRules(globalPath, [{ action: 'deny', tool: 'bash' }])
       mkdirSync(join(dir, WORKSPACE_RULES_DIR_NAME))
       writeRules(workspaceRulesPath(dir), [{ action: 'allow', tool: 'grep' }])
-      const result = loadEffectiveRules(dir, globalPath)
+      const result = loadEffectiveRules(dir, globalPath, { workspaceTrusted: true })
       assert.equal(result.source, 'workspace')
       assert.deepEqual(result.rules, [{ action: 'allow', tool: 'grep' }])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('ignores an untrusted workspace allow rule but keeps global rules', () => {
+    const dir = makeTmpDir()
+    try {
+      const globalPath = join(dir, 'global.json')
+      writeRules(globalPath, [{ action: 'deny', tool: 'bash' }])
+      mkdirSync(join(dir, WORKSPACE_RULES_DIR_NAME))
+      writeRules(workspaceRulesPath(dir), [{ action: 'allow', tool: 'bash' }])
+      // Untrusted by default: the repo's allow rule must not take effect.
+      const result = loadEffectiveRules(dir, globalPath)
+      assert.deepEqual(result.rules, [{ action: 'deny', tool: 'bash' }])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps an untrusted workspace deny rule layered on top of global', () => {
+    const dir = makeTmpDir()
+    try {
+      const globalPath = join(dir, 'global.json')
+      writeRules(globalPath, [{ action: 'allow', tool: 'grep' }])
+      mkdirSync(join(dir, WORKSPACE_RULES_DIR_NAME))
+      writeRules(workspaceRulesPath(dir), [
+        { action: 'deny', tool: 'bash' },
+        { action: 'allow', tool: 'edit' },
+      ])
+      const result = loadEffectiveRules(dir, globalPath)
+      // Repo deny is honored; repo allow is dropped; global rules remain.
+      assert.ok(result.rules.some((r) => r.action === 'deny' && r.tool === 'bash'))
+      assert.ok(result.rules.some((r) => r.action === 'allow' && r.tool === 'grep'))
+      assert.ok(!result.rules.some((r) => r.action === 'allow' && r.tool === 'edit'))
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

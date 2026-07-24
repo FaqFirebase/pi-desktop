@@ -239,26 +239,50 @@ function loadRulesFile(filePath: string): CachedRulesFile | null {
 }
 
 /**
- * Resolve the effective rules: a valid workspace file (under cwd) fully
- * replaces the global file. A malformed workspace file falls back to the
- * global file (so global deny rules keep applying) and carries the error.
- * If both files are malformed, the workspace file's error is the one reported.
+ * Resolve the effective rules.
+ *
+ * A workspace file may come from an untrusted cloned repository, so its `allow`
+ * rules — which could silently bypass ask-mode prompts — take effect only when
+ * the workspace is trusted (`options.workspaceTrusted`). Concretely:
+ * - Trusted workspace: a valid workspace file fully replaces the global file.
+ * - Untrusted workspace (default): only its `deny` rules are honored, layered on
+ *   top of the global rules, so a repo can tighten permissions but never grant.
+ *
+ * A malformed workspace file falls back to the global file (so global deny rules
+ * keep applying) and carries the error. If both files are malformed, the
+ * workspace file's error is the one reported.
  */
-export function loadEffectiveRules(cwd: string | null, globalPath: string | null): EffectiveRules {
+export function loadEffectiveRules(
+  cwd: string | null,
+  globalPath: string | null,
+  options?: { workspaceTrusted?: boolean }
+): EffectiveRules {
+  const workspaceTrusted = options?.workspaceTrusted ?? false
   let workspaceError: string | undefined
+  let workspaceDenyRules: PermissionRule[] = []
   if (cwd) {
     const workspace = loadRulesFile(workspaceRulesPath(cwd))
     if (workspace && workspace.error === undefined) {
-      return { rules: workspace.rules, source: 'workspace' }
+      if (workspaceTrusted) {
+        return { rules: workspace.rules, source: 'workspace' }
+      }
+      // Untrusted: keep only deny rules (a repo may tighten, never grant).
+      workspaceDenyRules = workspace.rules.filter((rule) => rule.action === 'deny')
+    } else {
+      workspaceError = workspace?.error
     }
-    workspaceError = workspace?.error
   }
   if (globalPath) {
     const global = loadRulesFile(globalPath)
     if (global) {
       const error = workspaceError ?? global.error
-      return { rules: global.rules, source: 'global', ...(error ? { error } : {}) }
+      const rules = [...global.rules, ...workspaceDenyRules]
+      return { rules, source: 'global', ...(error ? { error } : {}) }
     }
+  }
+  // No global file: still honor an untrusted workspace's deny rules if present.
+  if (workspaceDenyRules.length > 0) {
+    return { rules: workspaceDenyRules, source: 'workspace', ...(workspaceError ? { error: workspaceError } : {}) }
   }
   return { rules: [], source: 'none', ...(workspaceError ? { error: workspaceError } : {}) }
 }

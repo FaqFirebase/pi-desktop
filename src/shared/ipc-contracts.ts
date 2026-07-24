@@ -61,6 +61,7 @@ export const IPC_CHANNELS = {
   PERMISSION_RULES_EXPORT: 'permission-rules:export',
   PERMISSION_RULES_WORKSPACE_STATUS: 'permission-rules:workspace-status',
   PERMISSION_RULES_REMOVE_WORKSPACE: 'permission-rules:remove-workspace',
+  PERMISSION_RULES_SET_WORKSPACE_TRUST: 'permission-rules:set-workspace-trust',
 
   // UI
   UI_SELECT_RESPONSE: 'ui:select-response',
@@ -699,6 +700,11 @@ export interface PermissionRulesWorkspaceStatus {
   hasWorkspaceRules: boolean
   workspacePath: string | null
   acknowledged: boolean
+  // Whether the user has trusted this workspace (so its allow rules apply).
+  trusted: boolean
+  // Whether the workspace rules file actually contains any allow rules — the
+  // only case where trust changes behavior.
+  hasAllowRules: boolean
 }
 
 export interface AppSettings {

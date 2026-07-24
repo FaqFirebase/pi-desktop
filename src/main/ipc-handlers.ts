@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell, app, BrowserWindow } from 'electron'
+import { ipcMain, dialog, shell, app, BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { PiRpcManager, PI_CLI } from './pi-rpc-manager'
 import { WorkspaceManager } from './workspace-manager'
 import { SessionTagManager } from './session-tags'
@@ -53,6 +53,7 @@ import type {
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { COUNCIL_AGENT_IDS, clampTimeoutSeconds } from '../shared/council-config'
 import { DEFAULT_SETTINGS } from '../shared/default-settings'
+import { isValidPackageSpec } from '../shared/package-spec'
 import type { CouncilAgentId, ConsensusMode, ConsultantResult } from '../shared/council-config'
 import { detectAgents } from './agent-detection'
 import { readAttachment } from './attachment-reader'
@@ -62,13 +63,17 @@ import { applyRunOnStartup } from './startup-launch'
 import { setTrayEnabled } from './tray-manager'
 import type { SessionLineageRecord } from '../shared/session-lineage'
 import { readdir, stat, readFile, writeFile, mkdir, access, unlink } from 'fs/promises'
-import { basename, dirname, join } from 'path'
+import { basename, dirname, join, resolve } from 'path'
+import { isPathWithin, isAuthorizedAttachmentPath } from './path-authorization'
+import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
+import { workspaceTrustStore } from './workspace-trust'
 import { existsSync } from 'fs'
 import { execFile, spawnSync } from 'child_process'
 import { promisify } from 'util'
 import {
   PERMISSION_RULES_FILE_NAME,
   PERMISSION_RULES_VERSION,
+  loadEffectiveRules,
   validatePermissionRulesFile,
   workspaceRulesPath,
 } from '../../resources/permission-rules'
@@ -111,6 +116,23 @@ function activeWorkspaceRulesPath(workspaceManager: WorkspaceManager): { path: s
   const activeWs = workspaceManager.getActiveWorkspace()
   if (!activeWs) throw new Error('No active workspace')
   return { path: workspaceRulesPath(activeWs.path), workspacePath: activeWs.path }
+}
+
+// Reject privileged IPC calls whose sender frame is not the app's own renderer.
+// A belt-and-suspenders check: navigation is already pinned (see index.ts) and
+// preview <webview> guests have no preload, so nothing else should be able to
+// reach these channels — this makes that guarantee explicit at the boundary.
+function assertTrustedSender(event: IpcMainInvokeEvent): void {
+  const url = event.senderFrame?.url
+  if (
+    !url ||
+    !isTrustedRendererUrl(url, {
+      devServerUrl: process.env.ELECTRON_RENDERER_URL,
+      rendererIndexPath: RENDERER_INDEX_PATH,
+    })
+  ) {
+    throw new Error('Unauthorized IPC sender')
+  }
 }
 
 // Type guard helpers
@@ -260,6 +282,11 @@ function applyPermissionModeToStartOptions(
       // Resolved here because the extension cannot re-derive the GUI data
       // dir (env override / canonical appData / legacy fallback).
       PI_DESKTOP_PERMISSION_RULES_PATH: globalRulesPath,
+      // Gates whether this workspace's own permission-rules.json allow rules
+      // take effect. Untrusted repos may only tighten (deny) — the user grants
+      // trust explicitly (see workspace-trust.ts).
+      PI_DESKTOP_WORKSPACE_TRUSTED:
+        options.cwd && workspaceTrustStore.isTrusted(options.cwd) ? '1' : '0',
     },
   }
 }
@@ -373,6 +400,11 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   const archivedSessions = new ArchivedSessionsManager()
   const terminalService = new TerminalService()
   const notesManager = new NotesManager()
+
+  // Absolute paths the user explicitly picked via the native open dialog. The
+  // attachment reader will only read these (or files inside the workspace), so a
+  // renderer cannot ask it to read arbitrary files by path.
+  const approvedAttachmentPaths = new Set<string>()
 
   // Helper: get Pi manager for active workspace
   function getActivePi(): PiRpcManager {
@@ -488,7 +520,8 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
 
   // ─── Terminal ──────────────────────────────────────────────────────────
 
-  ipcMain.handle(IPC_CHANNELS.TERMINAL_START, async (_event, options: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.TERMINAL_START, async (event, options: unknown) => {
+    assertTrustedSender(event)
     const opts = isObject(options) ? options : {}
     return terminalService.start(
       {
@@ -501,7 +534,8 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     )
   })
 
-  ipcMain.handle(IPC_CHANNELS.TERMINAL_INPUT, async (_event, data: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.TERMINAL_INPUT, async (event, data: unknown) => {
+    assertTrustedSender(event)
     if (!isString(data)) throw new Error('terminal input must be a string')
     terminalService.write(data)
   })
@@ -592,10 +626,16 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     return getActivePi().sendCommand({ type: 'get_fork_messages' })
   })
 
-  ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, async (_event, sessionPath: unknown): Promise<SessionDeleteResult> => {
+  ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, async (event, sessionPath: unknown): Promise<SessionDeleteResult> => {
+    assertTrustedSender(event)
     if (!isString(sessionPath)) throw new Error('sessionPath must be a string')
     if (!sessionPath.endsWith(SESSION_FILE_EXTENSION)) {
       throw new Error('sessionPath must point to a .jsonl session file')
+    }
+    // Confine deletion to Pi's session store so a renderer cannot delete an
+    // arbitrary .jsonl file elsewhere on disk.
+    if (!isPathWithin(getSessionsRoot(), sessionPath)) {
+      throw new Error('sessionPath must be inside the Pi sessions directory')
     }
 
     // Roll this session into the persisted stats store *before* removing the
@@ -788,16 +828,60 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_WORKSPACE_STATUS, async (): Promise<PermissionRulesWorkspaceStatus> => {
+  async function buildWorkspaceRulesStatus(): Promise<PermissionRulesWorkspaceStatus> {
     const activeWs = workspaceManager.getActiveWorkspace()
-    if (!activeWs) return { hasWorkspaceRules: false, workspacePath: null, acknowledged: false }
+    if (!activeWs) {
+      return { hasWorkspaceRules: false, workspacePath: null, acknowledged: false, trusted: false, hasAllowRules: false }
+    }
     const settings = await loadAppSettings(workspaceManager)
+    // Read the workspace's own rules (as if trusted, no global) purely to detect
+    // whether it contains allow rules — the only case where trust matters.
+    const workspaceOwnRules = loadEffectiveRules(activeWs.path, null, { workspaceTrusted: true })
+    const hasAllowRules =
+      workspaceOwnRules.source === 'workspace' && workspaceOwnRules.rules.some((r) => r.action === 'allow')
     return {
       hasWorkspaceRules: existsSync(workspaceRulesPath(activeWs.path)),
       workspacePath: activeWs.path,
       acknowledged: settings.permissionRulesAckWorkspaces.includes(activeWs.path),
+      trusted: workspaceTrustStore.isTrusted(activeWs.path),
+      hasAllowRules,
     }
+  }
+
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_WORKSPACE_STATUS, async (): Promise<PermissionRulesWorkspaceStatus> => {
+    return buildWorkspaceRulesStatus()
   })
+
+  ipcMain.handle(
+    IPC_CHANNELS.PERMISSION_RULES_SET_WORKSPACE_TRUST,
+    async (event, trusted: unknown): Promise<PermissionRulesWorkspaceStatus> => {
+      assertTrustedSender(event)
+      if (typeof trusted !== 'boolean') throw new Error('trusted must be a boolean')
+      const activeWs = workspaceManager.getActiveWorkspace()
+      if (!activeWs) throw new Error('No active workspace')
+
+      if (trusted !== workspaceTrustStore.isTrusted(activeWs.path)) {
+        if (trusted) {
+          await workspaceTrustStore.trust(activeWs.path)
+        } else {
+          await workspaceTrustStore.revoke(activeWs.path)
+        }
+
+        // Trust is read into PI_DESKTOP_WORKSPACE_TRUSTED at spawn time and gates
+        // the preview guest at attach time, so restart this workspace's Pi to
+        // apply the change to a live session. (Open previews reflect it on reopen.)
+        const pi = workspaceManager.getPiManager(activeWs.id)
+        if (pi && pi.getStatus().status === 'running') {
+          const fresh = await loadAppSettings(workspaceManager)
+          pi.stop()
+          await pi.start(
+            applyPermissionModeToStartOptions(applyResumePreference({ cwd: activeWs.path }, fresh), fresh)
+          )
+        }
+      }
+      return buildWorkspaceRulesStatus()
+    }
+  )
 
   ipcMain.handle(IPC_CHANNELS.PERMISSION_RULES_REMOVE_WORKSPACE, async (): Promise<PermissionRulesRemoveResult> => {
     try {
@@ -978,21 +1062,29 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     return listInstalledPackages(cwd)
   })
 
-  ipcMain.handle(IPC_CHANNELS.PACKAGE_INSTALL, async (_event, packageSpec: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.PACKAGE_INSTALL, async (event, packageSpec: unknown) => {
+    assertTrustedSender(event)
     if (!isString(packageSpec)) throw new Error('packageSpec must be a string')
+    if (!isValidPackageSpec(packageSpec)) throw new Error('Invalid package specification')
     const ws = workspaceManager.getActiveWorkspace()
     const cwd = ws?.path ?? process.cwd()
     return installPackage(packageSpec, cwd)
   })
 
-  ipcMain.handle(IPC_CHANNELS.PACKAGE_REMOVE, async (_event, packageSpec: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.PACKAGE_REMOVE, async (event, packageSpec: unknown) => {
+    assertTrustedSender(event)
     if (!isString(packageSpec)) throw new Error('packageSpec must be a string')
+    if (!isValidPackageSpec(packageSpec)) throw new Error('Invalid package specification')
     const ws = workspaceManager.getActiveWorkspace()
     const cwd = ws?.path ?? process.cwd()
     return removePackage(packageSpec, cwd)
   })
 
-  ipcMain.handle(IPC_CHANNELS.PACKAGE_UPDATE, async (_event, packageSpec?: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.PACKAGE_UPDATE, async (event, packageSpec?: unknown) => {
+    assertTrustedSender(event)
+    if (isString(packageSpec) && !isValidPackageSpec(packageSpec)) {
+      throw new Error('Invalid package specification')
+    }
     const ws = workspaceManager.getActiveWorkspace()
     const cwd = ws?.path ?? process.cwd()
     return updatePackage(isString(packageSpec) ? packageSpec : undefined, cwd)
@@ -1272,10 +1364,15 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   // open dialog, so it may live outside the workspace).
   ipcMain.handle(IPC_CHANNELS.FILE_READ_ATTACHMENT, async (_event, filePath: unknown) => {
     if (!isString(filePath)) throw new Error('filePath must be a string')
+    const workspaceRoot = workspaceManager.getActiveWorkspace()?.path ?? null
+    if (!isAuthorizedAttachmentPath(filePath, { workspaceRoot, approvedPaths: approvedAttachmentPaths })) {
+      throw new Error('Attachment path is not permitted')
+    }
     return readAttachment(filePath)
   })
 
-  ipcMain.handle(IPC_CHANNELS.FILE_WRITE, async (_event, filePath: unknown, content: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.FILE_WRITE, async (event, filePath: unknown, content: unknown) => {
+    assertTrustedSender(event)
     if (!isString(filePath)) throw new Error('filePath must be a string')
     if (!isString(content)) throw new Error('content must be a string')
     const fs = workspaceManager.getActiveFileService()
@@ -1335,7 +1432,12 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
       }
     }
     const result = await dialog.showOpenDialog(dialogOptions)
-    return result.canceled ? null : result.filePaths[0]
+    if (result.canceled || result.filePaths.length === 0) return null
+    const picked = result.filePaths[0]
+    // Remember file picks so the attachment reader will accept this exact path
+    // even when it lives outside the workspace.
+    if (pickFile) approvedAttachmentPaths.add(resolve(picked))
+    return picked
   })
 
   ipcMain.handle(IPC_CHANNELS.SYSTEM_GET_PATH, async (_event, name: unknown) => {

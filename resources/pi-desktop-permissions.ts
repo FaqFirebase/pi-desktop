@@ -3,6 +3,10 @@ import { decideToolCall, loadEffectiveRules } from './permission-rules'
 
 const mode = process.env.PI_DESKTOP_PERMISSION_MODE
 const globalRulesPath = process.env.PI_DESKTOP_PERMISSION_RULES_PATH ?? null
+// Set by the GUI when spawning Pi for a workspace the user has trusted. Only
+// then do this repo's own `allow` rules take effect; otherwise its allow rules
+// are ignored and only its deny rules apply (see loadEffectiveRules).
+const workspaceTrusted = process.env.PI_DESKTOP_WORKSPACE_TRUSTED === '1'
 const MAX_INPUT_SUMMARY_LENGTH = 2000
 
 function summarizeInput(input: unknown): string {
@@ -21,7 +25,7 @@ export default function piDesktopPermissions(pi: ExtensionAPI): void {
   pi.on('tool_call', async (event, ctx) => {
     // Rules are re-read per call (mtime-cached), so edits apply without a
     // Pi restart. cwd is the workspace Pi was spawned in.
-    const effective = loadEffectiveRules(process.cwd(), globalRulesPath)
+    const effective = loadEffectiveRules(process.cwd(), globalRulesPath, { workspaceTrusted })
     const decision = decideToolCall(mode, effective.rules, event.toolName, event.input, process.platform)
 
     if (decision.action === 'block') {

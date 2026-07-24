@@ -1291,18 +1291,37 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       const status = await window.piDesktop.permissionRules.workspaceStatus()
       if (!status.hasWorkspaceRules || status.acknowledged || !status.workspacePath) return
-      await get().requestConfirm({
-        title: 'Workspace permission rules',
-        message:
-          'This workspace defines its own permission rules (.pi-desktop/permission-rules.json). ' +
-          'They replace your global permission rules while you work in this workspace.',
-        confirmLabel: 'OK',
-        cancelLabel: 'Dismiss',
-      })
-      // Either button acknowledges — this is a notice, not a choice. Fetch
-      // fresh settings rather than trusting the possibly-stale store snapshot,
-      // so a concurrent settings save elsewhere can't be clobbered by an ack
-      // list built from data that predates it.
+
+      if (status.hasAllowRules && !status.trusted) {
+        // The repo defines allow rules that would let Pi skip permission prompts.
+        // They stay inert until the user explicitly trusts this workspace.
+        const trust = await get().requestConfirm({
+          title: 'Trust this workspace?',
+          message:
+            'This workspace defines permission rules (.pi-desktop/permission-rules.json) with allow ' +
+            'rules that would let Pi skip confirmation prompts. They are ignored until you trust this ' +
+            'workspace; its deny rules always apply. Only trust workspaces from a source you trust.',
+          confirmLabel: 'Trust workspace',
+          cancelLabel: 'Keep untrusted',
+        })
+        if (trust) {
+          await window.piDesktop.permissionRules.setWorkspaceTrust(true)
+        }
+      } else {
+        await get().requestConfirm({
+          title: 'Workspace permission rules',
+          message:
+            'This workspace defines its own permission rules (.pi-desktop/permission-rules.json). ' +
+            'Its deny rules restrict Pi while you work here; your global rules apply otherwise.',
+          confirmLabel: 'OK',
+          cancelLabel: 'Dismiss',
+        })
+      }
+
+      // Acknowledge so the prompt does not fire on every Pi start. Fetch fresh
+      // settings rather than trusting the possibly-stale store snapshot, so a
+      // concurrent settings save elsewhere can't be clobbered by an ack list
+      // built from data that predates it.
       const current = await window.piDesktop.settings.getAll()
       const acked = current.permissionRulesAckWorkspaces ?? []
       if (!acked.includes(status.workspacePath)) {

@@ -142,6 +142,8 @@ test('consensus prompt includes request and every contributed plan, labeled', ()
   assert.ok(p.toLowerCase().includes('claude'))
   assert.ok(p.toLowerCase().includes('codex'))
   assert.ok(/do not (implement|start|build|write)/i.test(p))
+  // Consultant output is delimited as untrusted data, not blended in as instructions.
+  assert.ok(p.includes('BEGIN UNTRUSTED'), 'consultant plans should be delimited as untrusted data')
 })
 
 test('consensus prompt excludes non-contributed plans', () => {
@@ -176,6 +178,7 @@ test('debate prompt shows other plans and asks for a revision', () => {
   const p = buildDebatePrompt('req', 'claude', others)
   assert.ok(p.includes('OTHER PLAN'))
   assert.ok(/revis|critiq/i.test(p))
+  assert.ok(p.includes('BEGIN UNTRUSTED'), "other agents' plans should be delimited as untrusted data")
 })
 
 test('consultant command uses read-only flags per agent', () => {

@@ -20,6 +20,7 @@ import {
   RotateCcw,
   Eye,
   Code2,
+  ShieldAlert,
 } from 'lucide-react'
 
 // `<webview>` (enabled via webviewTag) isn't a typed JSX intrinsic; cast the tag
@@ -434,6 +435,8 @@ export function FilePreview(): React.JSX.Element | null {
   const [viewMode, setViewMode] = useState<'source' | 'preview'>('preview')
   // Bumped after a save so the HTML <webview> remounts and reloads from disk.
   const [reloadKey, setReloadKey] = useState(0)
+  // null until resolved; false means the HTML preview runs without scripts.
+  const [workspaceTrusted, setWorkspaceTrusted] = useState<boolean | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isDirty = content !== null && savedContent !== null && content !== savedContent
 
@@ -484,6 +487,29 @@ export function FilePreview(): React.JSX.Element | null {
   useEffect(() => {
     setViewMode(canPreview ? 'preview' : 'source')
   }, [path, canPreview])
+
+  // The HTML preview runs scripts only for a trusted workspace; fetch that state
+  // so we can offer to trust it when scripts are disabled.
+  useEffect(() => {
+    if (!isHtml) {
+      setWorkspaceTrusted(null)
+      return
+    }
+    let cancelled = false
+    void window.piDesktop.permissionRules.workspaceStatus().then((status) => {
+      if (!cancelled) setWorkspaceTrusted(status.trusted)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [isHtml, path])
+
+  const handleTrustWorkspace = useCallback(async () => {
+    const status = await window.piDesktop.permissionRules.setWorkspaceTrust(true)
+    setWorkspaceTrusted(status.trusted)
+    // Remount the <webview> so it re-attaches with scripts enabled.
+    setReloadKey((k) => k + 1)
+  }, [])
 
   // Cleanup pending debounce on unmount
   useEffect(() => {
@@ -622,13 +648,30 @@ export function FilePreview(): React.JSX.Element | null {
             <MarkdownRenderer content={content} />
           </div>
         ) : viewMode === 'preview' && isHtml ? (
-          <Webview
-            key={reloadKey}
-            src={toFileUrl(path)}
-            partition="preview"
-            className="flex-1"
-            style={{ display: 'flex', width: '100%', height: '100%', border: 'none' }}
-          />
+          <div className="flex flex-1 flex-col">
+            {workspaceTrusted === false && (
+              <div className="flex items-center justify-between gap-2 border-b border-warning-bg bg-warning-bg px-3 py-1.5 text-xs text-warning">
+                <span className="flex items-center gap-1.5">
+                  <ShieldAlert size={13} className="shrink-0" />
+                  Scripts are disabled for this untrusted workspace&apos;s preview.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleTrustWorkspace()}
+                  className="shrink-0 rounded-md border border-border-strong bg-surface px-2 py-1 text-primary transition-colors hover:border-border-strong-hover"
+                >
+                  Trust workspace
+                </button>
+              </div>
+            )}
+            <Webview
+              key={reloadKey}
+              src={toFileUrl(path)}
+              partition="preview"
+              className="flex-1"
+              style={{ display: 'flex', width: '100%', height: '100%', border: 'none' }}
+            />
+          </div>
         ) : (
           <CodeEditor
             filePath={displayPath}

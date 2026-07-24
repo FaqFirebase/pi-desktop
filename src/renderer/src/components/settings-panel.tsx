@@ -7,6 +7,7 @@ import type {
   CouncilConfig,
   PermissionRule,
   PermissionRulesScope,
+  PermissionRulesWorkspaceStatus,
 } from '../../../shared/ipc-contracts'
 import type { ThemeFile } from '../../../shared/theme/theme-file'
 import { Settings, Save, RotateCcw, FolderOpen, Check, ChevronDown } from 'lucide-react'
@@ -85,6 +86,7 @@ export function SettingsPanel(): React.JSX.Element {
     workspace: EMPTY_SCOPE_RULES,
   })
   const [rulesActionError, setRulesActionError] = useState<string | null>(null)
+  const [workspaceRulesStatus, setWorkspaceRulesStatus] = useState<PermissionRulesWorkspaceStatus | null>(null)
   const [saved, setSaved] = useState(false)
 
   const [showCouncilWarning, setShowCouncilWarning] = useState(false)
@@ -133,10 +135,21 @@ export function SettingsPanel(): React.JSX.Element {
     })
   }, [])
 
+  const loadWorkspaceRulesStatus = useCallback(async (): Promise<void> => {
+    const status = await window.piDesktop.permissionRules.workspaceStatus()
+    setWorkspaceRulesStatus(status)
+  }, [])
+
+  const handleSetWorkspaceTrust = useCallback(async (trusted: boolean): Promise<void> => {
+    const status = await window.piDesktop.permissionRules.setWorkspaceTrust(trusted)
+    setWorkspaceRulesStatus(status)
+  }, [])
+
   useEffect(() => {
     void loadRulesScope('global')
     void loadRulesScope('workspace')
-  }, [loadRulesScope])
+    void loadWorkspaceRulesStatus()
+  }, [loadRulesScope, loadWorkspaceRulesStatus])
 
   // The workspace-scope rules are keyed by scope, not by workspace, so if the
   // active workspace changes while this panel stays mounted (e.g. switching
@@ -152,7 +165,8 @@ export function SettingsPanel(): React.JSX.Element {
     activeWorkspacePathRef.current = path
     setScopeRules((prev) => ({ ...prev, workspace: EMPTY_SCOPE_RULES }))
     void loadRulesScope('workspace')
-  }, [activeWorkspace?.path, loadRulesScope])
+    void loadWorkspaceRulesStatus()
+  }, [activeWorkspace?.path, loadRulesScope, loadWorkspaceRulesStatus])
 
   // Re-read a scope's file when the user switches to its tab, so manual edits
   // to the file on disk show up — but not if there's an unsaved draft for it.
@@ -732,6 +746,10 @@ export function SettingsPanel(): React.JSX.Element {
               onCopyFromGlobal={handleCopyFromGlobal}
               onRemoveWorkspace={() => void handleRemoveWorkspaceRules()}
               workspaceOverride={scopeRules.workspace.exists}
+              workspaceActive={!!activeWorkspace}
+              workspaceTrusted={workspaceRulesStatus?.trusted ?? false}
+              workspaceHasAllowRules={workspaceRulesStatus?.hasAllowRules ?? false}
+              onSetWorkspaceTrust={(trusted) => void handleSetWorkspaceTrust(trusted)}
               loadError={scopeRules[rulesScope].loadError}
               actionError={rulesActionError}
             />

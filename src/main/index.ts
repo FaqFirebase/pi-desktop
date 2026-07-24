@@ -1,6 +1,8 @@
-import { app, BrowserWindow, Menu, nativeImage, shell } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, session, shell } from 'electron'
 import { existsSync, mkdirSync } from 'fs'
 import { basename, join, resolve as resolvePath } from 'path'
+import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
+import { workspaceTrustStore } from './workspace-trust'
 import { WorkspaceManager } from './workspace-manager'
 import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
 import { fetchAllCatalogPackages } from './package-catalog'
@@ -31,6 +33,11 @@ const MIN_WINDOW_WIDTH = 800
 const MIN_WINDOW_HEIGHT = 600
 const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL
 const PRELOAD_PATH = join(__dirname, '../preload/index.js')
+// <webview> partitions used by the file preview (see file-tree.tsx). The HTML
+// preview renders untrusted workspace files with scripts and network disabled;
+// the PDF preview needs pdfium (plugins) and is confined to file:// only.
+const HTML_PREVIEW_PARTITION = 'preview'
+const PDF_PREVIEW_PARTITION = 'persist:pdf-preview'
 
 // In dev: resources/ sits at the project root (app.getAppPath()).
 // In packaged: extraResources config copies resources/ into process.resourcesPath/resources/.
@@ -78,6 +85,41 @@ app.setPath('userData', userDataDir)
 configureGuiDataDir(userDataDir)
 
 // ─── Window Creation ─────────────────────────────────────────────────────────
+
+/**
+ * The main window must never navigate to arbitrary content: its privileged
+ * preload (terminal + full IPC) attaches to whatever loads. In production only
+ * the exact packaged renderer file is allowed; in development only the dev
+ * server's own origin (parsed, not a fragile string prefix).
+ */
+function isAllowedMainWindowNavigation(targetUrl: string): boolean {
+  return isTrustedRendererUrl(targetUrl, {
+    devServerUrl: DEV_SERVER_URL,
+    rendererIndexPath: RENDERER_INDEX_PATH,
+  })
+}
+
+/** Whether the active workspace has been trusted by the user (see workspace-trust.ts). */
+function isActiveWorkspaceTrusted(): boolean {
+  const path = workspaceManager?.getActiveWorkspace()?.path
+  return path ? workspaceTrustStore.isTrusted(path) : false
+}
+
+/**
+ * For an untrusted workspace, confine the HTML file-preview guest to local files:
+ * block every non-file request on its partition so malicious workspace HTML
+ * cannot beacon out or pull remote resources. Combined with scripts-disabled for
+ * untrusted previews (see will-attach-webview), this closes the exfiltration path.
+ * A trusted workspace's own pages may load resources normally (interactive preview).
+ */
+function hardenPreviewSession(): void {
+  session
+    .fromPartition(HTML_PREVIEW_PARTITION)
+    .webRequest.onBeforeRequest((details, callback) => {
+      const blocked = !details.url.startsWith('file://') && !isActiveWorkspaceTrusted()
+      callback({ cancel: blocked })
+    })
+}
 
 function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -139,10 +181,9 @@ function createMainWindow(): BrowserWindow {
     return { action: 'deny' }
   })
 
-  // Block navigation to external URLs
+  // Block navigation to anything but the pinned renderer (see helper).
   window.webContents.on('will-navigate', (event, url) => {
-    if (DEV_SERVER_URL && url.startsWith(DEV_SERVER_URL)) return
-    if (!DEV_SERVER_URL && url.startsWith('file://')) return
+    if (isAllowedMainWindowNavigation(url)) return
     event.preventDefault()
   })
 
@@ -158,10 +199,18 @@ function createMainWindow(): BrowserWindow {
     webPreferences.sandbox = true
     webPreferences.webSecurity = true
     webPreferences.allowRunningInsecureContent = false
-    // Enable Chromium's built-in PDF viewer (pdfium) so the preview pane can
-    // render local .pdf files. It's a bundled internal component; the guest is
-    // still confined to file:// (below), sandboxed, with no preload/node.
-    webPreferences.plugins = true
+
+    // Only the PDF preview needs pdfium (plugins). For the HTML preview, scripts
+    // run only when the workspace is trusted (interactive preview of your own
+    // project); for an untrusted workspace scripts are disabled so — with sandbox
+    // + webSecurity above and the partition's network block — malicious preview
+    // HTML cannot read other local files or exfiltrate data.
+    const isPdfPreview =
+      params.partition === PDF_PREVIEW_PARTITION || /\.pdf(?:[?#]|$)/i.test(params.src)
+    webPreferences.plugins = isPdfPreview
+    if (!isPdfPreview && !isActiveWorkspaceTrusted()) {
+      webPreferences.javascript = false
+    }
 
     if (!params.src.startsWith('file://')) {
       event.preventDefault()
@@ -172,7 +221,7 @@ function createMainWindow(): BrowserWindow {
   if (DEV_SERVER_URL) {
     window.loadURL(DEV_SERVER_URL)
   } else {
-    window.loadFile(join(__dirname, '../renderer/index.html'))
+    window.loadFile(RENDERER_INDEX_PATH)
   }
 
   // Dev tools in development
@@ -288,6 +337,9 @@ app.whenReady().then(async () => {
   // Honor PI_DESKTOP_WORKSPACE if set: switch to (or create) the named workspace.
   await applyWorkspaceFromEnv(workspaceManager)
 
+  // Lock the HTML preview partition to local files before any preview can load.
+  hardenPreviewSession()
+
   // Register IPC handlers before creating windows
   registerIpcHandlers(workspaceManager)
 
@@ -347,11 +399,21 @@ app.on('before-quit', () => {
   workspaceManager?.stopAll()
 })
 
-// Security: prevent new window creation
+// Security: prevent new window creation, and stop preview <webview> guests from
+// navigating away from their local file (e.g. a malicious HTML file redirecting
+// itself to a remote URL to phone home).
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(() => {
     return { action: 'deny' }
   })
+  if (contents.getType() === 'webview') {
+    contents.on('will-navigate', (event, url) => {
+      // An untrusted preview may not navigate away from its local file (e.g. a
+      // malicious page redirecting itself to a remote URL). Trusted previews of
+      // your own project may navigate freely.
+      if (!url.startsWith('file://') && !isActiveWorkspaceTrusted()) event.preventDefault()
+    })
+  }
 })
 
 async function applyWorkspaceFromEnv(manager: WorkspaceManager): Promise<void> {
