@@ -56,8 +56,8 @@ Four base modes control what Pi may do, selectable from the Review rail or **Set
 - A rule is an action (`allow`/`deny`), a tool name (`bash`, `edit`, `write`, `read`, … or `*` for any), and an optional glob pattern matched against the tool's input — the shell command for `bash`, the file path for file tools. `*` is the only wildcard.
 - Precedence: **deny beats allow beats the mode default**. Deny rules are enforced in every mode — a `deny * *.env*` rule holds even in Trusted. Allow rules skip the confirmation prompt in the ask modes.
 - Rule edits apply to the next tool call immediately — no Pi restart.
-- **Global vs workspace**: the **Global | This workspace** tabs edit either your global rules or the active workspace's `.pi-desktop/permission-rules.json`, which fully replaces the global list while you work there (a one-time notice appears for workspace rule files you didn't create in the app). Import/Export moves rule lists as JSON files, and the workspace file can be hand-edited or committed with a repo — the app picks up changes live.
-- Honest scope: rules match raw strings and workspace rule files are trusted repo content — treat rules as a guardrail against accidents, not a security sandbox.
+- **Global vs workspace**: the **Global | This workspace** tabs edit either your global rules or the active workspace's `.pi-desktop/permission-rules.json`. A workspace file is gated by **workspace trust**: once you trust the workspace it fully replaces the global list while you work there; until then (the default for a repo you just opened) only its *deny* rules apply, layered on top of your global rules, and its *allow* rules are ignored — so a cloned repo can tighten your permissions but never loosen them. Opening a workspace whose file contains allow rules prompts you to trust it; you can also Trust/Revoke from the **This workspace** tab. Import/Export moves rule lists as JSON files, and the workspace file can be hand-edited or committed with a repo — the app picks up changes live.
+- Honest scope: rules match raw strings (no path canonicalization or command parsing), so treat them as a guardrail against accidents, not a security sandbox — keep even a trusted workspace's allow rules narrow.
 
 Example rules:
 
@@ -274,7 +274,7 @@ If you must keep code under Documents/Desktop, allow the app instead:
 
 If `npm install` completes but the app won't launch because Electron is missing or corrupted, download it directly from GitHub and unpack it into place. This is the known-good fallback when `node_modules\electron\dist` contains only partial contents, such as `locales`, and no `electron.exe`.
 
-Replace `39.8.10` with the version in `node_modules/electron/package.json` if it differs.
+Replace `43.0.0` with the version in `node_modules/electron/package.json` if it differs.
 
 ```powershell
 $ver = "43.0.0"
