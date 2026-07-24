@@ -722,7 +722,8 @@ function HomeScreenMinimal(): React.JSX.Element {
   const openSession = async (session: SessionListItem): Promise<void> => {
     setBusy(true)
     try {
-      if (selected) await switchWorkspace(selected.id)
+      // skipSessionLoad: switchSession below loads the target once.
+      if (selected) await switchWorkspace(selected.id, { skipSessionLoad: true })
       else await startPi()
       if (useAppStore.getState().piStatus === 'error') return
       await switchSession(session.path)

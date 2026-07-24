@@ -177,19 +177,20 @@ export function Sidebar(): React.JSX.Element {
   }
 
   const openSession = async (session: SessionListItem): Promise<void> => {
-    // Auto-switch workspace if session is from a different project
+    // Auto-switch workspace if session is from a different project. Skip the
+    // resume+history load — switchSession below loads the target session once.
     if (session.projectPath && session.projectPath !== activeWorkspace?.path) {
       const matchingWs = workspaces.find((w) => w.path === session.projectPath)
       if (matchingWs) {
-        await switchWorkspace(matchingWs.id)
+        await switchWorkspace(matchingWs.id, { skipSessionLoad: true })
       } else {
         await useAppStore.getState().createWorkspace(session.projectName, session.projectPath)
         const updated = useAppStore.getState().workspaces
         const newWs = updated.find((w) => w.path === session.projectPath)
-        if (newWs) await switchWorkspace(newWs.id)
+        if (newWs) await switchWorkspace(newWs.id, { skipSessionLoad: true })
       }
     }
-    switchSession(session.path)
+    await switchSession(session.path)
     // Bring the chat into view (may be on Settings/Notes/etc.). In-app switches
     // keep their remembered scroll position, so no force-to-bottom here.
     setCurrentView('chat')
