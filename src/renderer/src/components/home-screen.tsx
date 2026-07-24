@@ -438,6 +438,8 @@ function HomeScreenMinimal(): React.JSX.Element {
       s.settings?.homeSelectLatestFolder ??
       DEFAULT_SETTINGS.homeSelectLatestFolder
   )
+  const pendingInsert = useAppStore((s) => s.pendingInsert)
+  const clearPendingInsert = useAppStore((s) => s.clearPendingInsert)
 
   const sortedWorkspaces = useMemo(
     () => [...workspaces].sort((a, b) => b.lastActiveAt - a.lastActiveAt),
@@ -521,6 +523,26 @@ function HomeScreenMinimal(): React.JSX.Element {
     ta.style.height = 'auto'
     ta.style.height = `${Math.min(Math.max(ta.scrollHeight, MIN_INPUT_HEIGHT), MAX_INPUT_HEIGHT)}px`
   }, [])
+
+  // Slash palette / skill inserts target this controlled composer while Home is active.
+  useEffect(() => {
+    if (!pendingInsert) return
+    if (useAppStore.getState().currentView !== 'home') return
+    if (pendingInsert.replace) {
+      setPrompt(pendingInsert.text)
+    } else {
+      setPrompt((prev) => prev + pendingInsert.text)
+    }
+    clearPendingInsert()
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current
+      if (!ta) return
+      resizeTextarea(ta)
+      ta.focus()
+      const end = ta.value.length
+      ta.setSelectionRange(end, end)
+    })
+  }, [pendingInsert, clearPendingInsert, resizeTextarea])
 
   const pathMatches = (a: string, b: string): boolean =>
     a.replace(/[\\/]+$/, '').toLowerCase() === b.replace(/[\\/]+$/, '').toLowerCase()
@@ -767,12 +789,21 @@ function HomeScreenMinimal(): React.JSX.Element {
             ref={textareaRef}
             value={prompt}
             onChange={(e) => {
-              setPrompt(e.target.value)
+              const value = e.target.value
+              setPrompt(value)
               resizeTextarea(e.currentTarget)
+              // Same slash-palette trigger as chat-input.
+              if (value.startsWith('/')) {
+                useAppStore.getState().setCommandPalette(true, value, true)
+              } else {
+                useAppStore.getState().setCommandPalette(false)
+              }
             }}
             onPaste={handlePaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
+                // Don't send while the slash palette is driving Enter.
+                if (useAppStore.getState().commandPaletteOpen) return
                 e.preventDefault()
                 void submit()
               }
