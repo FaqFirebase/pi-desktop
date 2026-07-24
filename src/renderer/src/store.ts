@@ -1063,6 +1063,16 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   setModel: async (provider, modelId) => {
     try {
       await window.piDesktop.model.set(provider, modelId)
+      // Remember for next Pi start / home composer (settings defaults).
+      try {
+        const updated = await window.piDesktop.settings.save({
+          defaultProvider: provider,
+          defaultModel: modelId,
+        })
+        set({ settings: updated })
+      } catch {
+        // Non-fatal — model still applied for this session.
+      }
       get().refreshSessionState()
     } catch (err) {
       get().addMessage({

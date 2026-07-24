@@ -21,6 +21,7 @@ import piLogo from '../assets/pi-logo.svg'
 import { formatGitStatus } from './review-rail'
 import { StatsPanel } from './stats-panel'
 import { ComposerPermissionMenu } from './composer-permission-menu'
+import { ModelSelector } from './model-selector'
 import {
   SUPPORTED_IMAGE_EXTENSIONS,
   type GitFileStatus,
@@ -828,6 +829,21 @@ function HomeScreenMinimal(): React.JSX.Element {
             >
               <Paperclip size={15} />
             </button>
+            <ModelSelector
+              placement="up"
+              variant="composer"
+              startPiIfNeeded
+              ensurePiReady={async () => {
+                // Align Pi cwd with the project picker before listing models.
+                if (selected) {
+                  await switchWorkspace(selected.id, { skipSessionLoad: true })
+                  return
+                }
+                const homeWs = await ensureHomeWorkspace()
+                if (homeWs) await switchWorkspace(homeWs.id, { skipSessionLoad: true })
+              }}
+              className="min-w-0"
+            />
 
             <span className="ml-auto mr-1 text-[11px] text-faint">Shift+Enter newline</span>
 

@@ -438,9 +438,16 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
       cwd = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()
     }
 
+    // Prefer explicit start options, else last model chosen in the GUI.
+    const withDefaults: PiStartOptions = {
+      ...opts,
+      cwd,
+      provider: opts.provider ?? settings.defaultProvider ?? undefined,
+      model: opts.model ?? settings.defaultModel ?? undefined,
+    }
     await workspaceManager.startPiForWorkspace(
       activeWs.id,
-      applyPermissionModeToStartOptions(applyResumePreference({ ...opts, cwd }, settings), settings)
+      applyPermissionModeToStartOptions(applyResumePreference(withDefaults, settings), settings)
     )
     const pi = workspaceManager.getPiManager(activeWs.id)
     if (!pi) throw new Error('Failed to create Pi manager')
@@ -468,7 +475,15 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     pi.stop()
     return pi.start(
       applyPermissionModeToStartOptions(
-        applyResumePreference({ cwd: activeWs.path, ...opts }, settings),
+        applyResumePreference(
+          {
+            cwd: activeWs.path,
+            ...opts,
+            provider: opts.provider ?? settings.defaultProvider ?? undefined,
+            model: opts.model ?? settings.defaultModel ?? undefined,
+          },
+          settings
+        ),
         settings
       )
     )
