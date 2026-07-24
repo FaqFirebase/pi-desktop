@@ -17,7 +17,7 @@ import { useContextMenu, buildDefaultContextMenu } from './components/context-me
 import { usePiEvents, useMenuActions, useInitialize, useNotePickerShortcut } from './hooks'
 import { useAppStore } from './store'
 import { useEffect } from 'react'
-import { ArrowUpCircle, X } from 'lucide-react'
+import { ArrowUpCircle, PanelLeft, X } from 'lucide-react'
 
 export function App(): React.JSX.Element {
   usePiEvents()
@@ -27,6 +27,7 @@ export function App(): React.JSX.Element {
 
   const currentView = useAppStore((state) => state.currentView)
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
+  const toggleSidebar = useAppStore((state) => state.toggleSidebar)
   const homeLayout = useAppStore(
     (state) => state.settingsDraft.homeLayout ?? state.settings?.homeLayout ?? 'info'
   )
@@ -80,6 +81,9 @@ export function App(): React.JSX.Element {
   const isHome = currentView === 'home'
   const isInfoHomeSplash = isHome && homeLayout === 'info'
   const showChrome = !isInfoHomeSplash
+  // Chat has its own toolbar toggle; other chrome views need a top-left reopen
+  // control when the sidebar is closed (otherwise only the status bar has one).
+  const showSidebarReopen = showChrome && !sidebarOpen && currentView !== 'chat'
 
   const showUpdateBanner = !!updateInfo?.updateAvailable && !updateDismissed
 
@@ -110,7 +114,18 @@ export function App(): React.JSX.Element {
       <div className="flex flex-1 overflow-hidden">
         {sidebarOpen && showChrome && <Sidebar />}
 
-        <div className="flex min-w-0 flex-1 overflow-hidden">
+        <div className="relative flex min-w-0 flex-1 overflow-hidden">
+          {showSidebarReopen && (
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className="absolute left-2 top-2 z-30 rounded-md border border-border-strong bg-surface/95 p-1.5 text-muted shadow-sm backdrop-blur-sm hover:bg-surface-hover hover:text-primary transition-colors"
+              title="Show sidebar"
+              aria-label="Show sidebar"
+            >
+              <PanelLeft size={16} />
+            </button>
+          )}
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
             {currentView === 'home' && <HomeScreen />}
             {/* Kept mounted (just hidden) so the chat scroll position survives

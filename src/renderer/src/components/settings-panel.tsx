@@ -545,7 +545,7 @@ export function SettingsPanel(): React.JSX.Element {
             label="Home Layout"
             description="Info: classic splash with recents. Minimal: center prompt with project picker (sidebar stays visible)."
           >
-            <div className="flex gap-0.5 rounded-md bg-card/60 p-0.5">
+            <div className="ml-auto inline-flex w-fit gap-0.5 rounded-md bg-card/60 p-0.5">
               {([
                 { id: 'info' as const, label: 'Info' },
                 { id: 'minimal' as const, label: 'Minimal' },
