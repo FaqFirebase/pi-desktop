@@ -29,6 +29,9 @@ Project is currently in **Alpha**. APIs, IPC contracts, on-disk config formats, 
 - `sandbox: true`
 - All IPC channels validated with typed contracts
 - No renderer access to Node APIs
+- Main-window navigation pinned to the packaged renderer; privileged IPC verifies the sender frame is the app renderer
+- Per-workspace trust gate: an untrusted workspace's own `.pi-desktop/permission-rules.json` allow rules are ignored, and its HTML preview runs without scripts/network, until the user trusts the workspace
+- Attachment reads limited to picked or in-workspace paths; session deletion confined to the Pi sessions dir; package specs validated before the Pi CLI runs
 
 ## Project Structure
 
@@ -42,6 +45,8 @@ src/
 │   ├── council-config.ts         # Council planning config, prompts, parsers
 │   ├── models-config.ts          # Custom models.json validate/merge
 │   ├── package-filter.ts         # Tokenized catalog search, shared main+renderer
+│   ├── package-spec.ts           # Validate package specs before the Pi CLI runs
+│   ├── untrusted-data.ts         # Wrap file/agent text as a labeled untrusted-data block
 │   ├── pi-command.ts             # Slash-command filtering
 │   ├── fork-point.ts             # Fork/branch message helpers
 │   └── session-lineage.ts        # Cross-session lineage tree
@@ -50,6 +55,9 @@ src/
 │   ├── ipc-handlers.ts           # IPC handler registration
 │   ├── pi-rpc-manager.ts         # Pi subprocess management, startup readiness probe
 │   ├── pi-paths.ts               # Shared Pi session-store root path
+│   ├── path-authorization.ts     # Path containment checks (attachment/session IPC)
+│   ├── renderer-origin.ts        # Trusted-renderer URL check (navigation + IPC sender)
+│   ├── workspace-trust.ts        # Per-workspace trust registry (gates allow rules + preview)
 │   ├── workspace-manager.ts      # Multi-workspace management
 │   ├── file-service.ts           # File tree, search, git status, read/write
 │   ├── terminal-service.ts       # node-pty PTY management
@@ -206,7 +214,7 @@ src/
 
 ### File Preview Panes
 
-- Click a workspace file link (chat or file tree) to open it in a side pane: code (CodeMirror), image, or HTML (via a sandboxed `<webview>` — no Node access, isolated partition, `file://` source only)
+- Click a workspace file link (chat or file tree) to open it in a side pane: code (CodeMirror), image, or HTML (via a sandboxed `<webview>` — no Node access, isolated partition, `file://` source only). HTML preview runs scripts and network only when the workspace is trusted; an untrusted workspace gets a static preview with a "Trust workspace" banner
 - Independent from the review rail; chat toolbar toggles for sidebar, review panel, and file tree
 
 ### Packages & Skills
@@ -236,8 +244,8 @@ Click the status icon in the sidebar header to see:
 - Independent UI / Terminal / Code Editor font size sliders
 - Show thinking blocks, auto-scroll
 - Every field (theme, permission mode, toggles, font sizes) live-previews before Save via a unified settings draft (`store.ts` `settingsDraft`); survives view switches; Save persists, Reset restores `DEFAULT_SETTINGS`
-- Permission rules: user-defined allow/deny rules (glob per Pi tool) that overlay the permission modes. Deny beats allow beats mode default; deny applies in every mode. Global rules live in `<GUI data dir>/permission-rules.json`; a workspace `.pi-desktop/permission-rules.json` fully replaces them (one-time in-app notice per workspace; the editor's Global tab separately notes the override, pointing at the This workspace tab). Settings → Behavior edits BOTH scopes via Global | This workspace tabs: create, edit, and remove workspace rules (in-app danger confirm), Copy from global (seeds an unsaved draft from the current global list), and per-scope JSON import/export. Manual editing of either file on disk remains fully supported — switching scope tabs re-reads that file when the scope has no unsaved draft, so hand-edited rules show up without a restart. Engine: `resources/permission-rules.ts`, shared by the Pi extension (jiti relative import, mtime-cached live re-read) and the main process. The permissions extension always loads alongside Pi when present on disk, regardless of mode or whether rules currently exist, so a rules file created mid-session is enforced immediately rather than after a restart.
-  - Trust posture: a workspace's `.pi-desktop/permission-rules.json` is trusted repo content, not GUI-managed config — cloning an untrusted repo means trusting its rules file. Its allow rules suppress ask-mode prompts for that workspace, and the one-time notice dialog is informational, not a consent gate. Rule globs match raw tool input strings only (no path canonicalization, no command parsing), so rules are a guardrail against accidents, not a security sandbox.
+- Permission rules: user-defined allow/deny rules (glob per Pi tool) that overlay the permission modes. Deny beats allow beats mode default; deny applies in every mode. Global rules live in `<GUI data dir>/permission-rules.json`. A workspace `.pi-desktop/permission-rules.json` is gated by workspace trust: when the workspace is trusted it fully replaces the global rules; when untrusted (the default) only its deny rules apply, layered on top of the global rules, and its allow rules are ignored (a repo can tighten, never grant). Opening a workspace whose rules file contains allow rules shows a trust prompt; the editor's Global tab notes the override and the This workspace tab carries a Trust/Revoke control. Settings → Behavior edits BOTH scopes via Global | This workspace tabs: create, edit, and remove workspace rules (in-app danger confirm), Copy from global (seeds an unsaved draft from the current global list), and per-scope JSON import/export. Manual editing of either file on disk remains fully supported — switching scope tabs re-reads that file when the scope has no unsaved draft, so hand-edited rules show up without a restart. Engine: `resources/permission-rules.ts`, shared by the Pi extension (jiti relative import, mtime-cached live re-read) and the main process. The permissions extension always loads alongside Pi when present on disk, regardless of mode or whether rules currently exist, so a rules file created mid-session is enforced immediately rather than after a restart.
+  - Trust posture: a workspace's `.pi-desktop/permission-rules.json` is repo content, so its allow rules take effect only after the user explicitly trusts the workspace (persisted in `trusted-workspaces.json`; surfaced as a trust prompt on open and a control in Settings). Until trusted, the repo can only add deny rules — it cannot suppress ask-mode prompts. Rule globs match raw tool input strings only (no path canonicalization, no command parsing), so rules are a guardrail against accidents, not a security sandbox.
 - Custom models & providers editor — edits `~/.pi/agent/models.json` (applied on Pi restart)
 - All settings persisted to `~/.pi-desktop-gui/settings.json`; defaults come from the single shared `src/shared/default-settings.ts` (used to seed the file AND for the renderer's initial/Reset values)
 
@@ -268,6 +276,7 @@ Renderer → preload (contextBridge) → IPC → main handlers → Pi RPC / File
 | `~/.pi-desktop-gui/workspaces.json` | Workspace list and active workspace |
 | `~/.pi-desktop-gui/settings.json` | App settings |
 | `~/.pi-desktop-gui/session-tags.json` | Session tags |
+| `~/.pi-desktop-gui/trusted-workspaces.json` | Workspaces the user has trusted (enables their allow rules + interactive HTML preview) |
 | `~/.pi-desktop-gui/activity-stats.json` | Persisted per-day activity stats (aggregates only, survives session deletion) |
 | `~/.pi/agent/sessions/` | Pi session files (organized by cwd) |
 | `~/.pi/agent/settings.json` | Pi global settings |

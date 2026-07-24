@@ -34,11 +34,6 @@ export class WorkspaceTrustStore {
     return this.trusted.has(resolve(workspacePath))
   }
 
-  getAll(): string[] {
-    this.ensureLoaded()
-    return [...this.trusted]
-  }
-
   async trust(workspacePath: string): Promise<void> {
     if (!workspacePath) return
     this.ensureLoaded()
