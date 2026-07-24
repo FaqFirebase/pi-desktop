@@ -27,6 +27,9 @@ export function App(): React.JSX.Element {
 
   const currentView = useAppStore((state) => state.currentView)
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
+  const homeLayout = useAppStore(
+    (state) => state.settingsDraft.homeLayout ?? state.settings?.homeLayout ?? 'info'
+  )
   const updateInfo = useAppStore((state) => state.updateInfo)
   const updateDismissed = useAppStore((state) => state.updateDismissed)
   const dismissUpdate = useAppStore((state) => state.dismissUpdate)
@@ -72,9 +75,11 @@ export function App(): React.JSX.Element {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // The Home/launcher view is a full-screen splash: hide the sidebar, review
-  // rail, and status bar so it reads as a standalone landing page.
+  // Info home is a full-screen splash (no sidebar/status). Minimal home keeps
+  // the normal chrome so the Codex-style composer sits next to the sidebar.
   const isHome = currentView === 'home'
+  const isInfoHomeSplash = isHome && homeLayout === 'info'
+  const showChrome = !isInfoHomeSplash
 
   const showUpdateBanner = !!updateInfo?.updateAvailable && !updateDismissed
 
@@ -103,7 +108,7 @@ export function App(): React.JSX.Element {
         </div>
       )}
       <div className="flex flex-1 overflow-hidden">
-        {sidebarOpen && !isHome && <Sidebar />}
+        {sidebarOpen && showChrome && <Sidebar />}
 
         <div className="flex min-w-0 flex-1 overflow-hidden">
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -125,7 +130,7 @@ export function App(): React.JSX.Element {
         </div>
       </div>
 
-      {!isHome && <StatusBar />}
+      {showChrome && <StatusBar />}
       <ExtensionUiDialog />
       <AppConfirmDialog />
       <NotePicker />

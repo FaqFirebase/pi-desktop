@@ -20,6 +20,7 @@ import { BUILTIN_THEME_IDS } from '../themes'
 import { CustomModelsEditor } from './custom-models-editor'
 import { ThemeEditor } from './theme-editor'
 import { ThemeGallery } from './theme-gallery'
+import { HomeInfoSummary } from './home-screen'
 import type { UserThemeRecord } from '../../../shared/ipc-contracts'
 import {
   MIN_TIMEOUT_SECONDS as COUNCIL_MIN_TIMEOUT,
@@ -75,6 +76,9 @@ export function SettingsPanel(): React.JSX.Element {
   const [autoScroll, setAutoScroll] = useState(draft0.autoScroll ?? settings?.autoScroll ?? DEFAULT_SETTINGS.autoScroll)
   const [resumeLastSession, setResumeLastSession] = useState(draft0.resumeLastSession ?? settings?.resumeLastSession ?? DEFAULT_SETTINGS.resumeLastSession)
   const [openToHomeOnLaunch, setOpenToHomeOnLaunch] = useState(draft0.openToHomeOnLaunch ?? settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch)
+  const [homeLayout, setHomeLayout] = useState<'info' | 'minimal'>(
+    draft0.homeLayout ?? settings?.homeLayout ?? DEFAULT_SETTINGS.homeLayout
+  )
   const [runOnStartup, setRunOnStartup] = useState(draft0.runOnStartup ?? settings?.runOnStartup ?? DEFAULT_SETTINGS.runOnStartup)
   const [minimizeToTrayOnClose, setMinimizeToTrayOnClose] = useState(draft0.minimizeToTrayOnClose ?? settings?.minimizeToTrayOnClose ?? DEFAULT_SETTINGS.minimizeToTrayOnClose)
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
@@ -220,6 +224,7 @@ export function SettingsPanel(): React.JSX.Element {
     setAutoScroll(draft.autoScroll ?? settings.autoScroll)
     setResumeLastSession(draft.resumeLastSession ?? settings.resumeLastSession)
     setOpenToHomeOnLaunch(draft.openToHomeOnLaunch ?? settings.openToHomeOnLaunch)
+    setHomeLayout(draft.homeLayout ?? settings.homeLayout ?? DEFAULT_SETTINGS.homeLayout)
     setRunOnStartup(draft.runOnStartup ?? settings.runOnStartup)
     setMinimizeToTrayOnClose(draft.minimizeToTrayOnClose ?? settings.minimizeToTrayOnClose)
     setPermissionMode(draft.permissionMode ?? settings.permissionMode)
@@ -427,6 +432,7 @@ export function SettingsPanel(): React.JSX.Element {
       autoScroll,
       resumeLastSession,
       openToHomeOnLaunch,
+      homeLayout,
       runOnStartup,
       minimizeToTrayOnClose,
       permissionMode,
@@ -483,6 +489,7 @@ export function SettingsPanel(): React.JSX.Element {
       autoScroll: DEFAULT_SETTINGS.autoScroll,
       resumeLastSession: DEFAULT_SETTINGS.resumeLastSession,
       openToHomeOnLaunch: DEFAULT_SETTINGS.openToHomeOnLaunch,
+      homeLayout: DEFAULT_SETTINGS.homeLayout,
       runOnStartup: DEFAULT_SETTINGS.runOnStartup,
       minimizeToTrayOnClose: DEFAULT_SETTINGS.minimizeToTrayOnClose,
       permissionMode: DEFAULT_SETTINGS.permissionMode,
@@ -497,6 +504,7 @@ export function SettingsPanel(): React.JSX.Element {
     setAutoScroll(defaults.autoScroll!)
     setResumeLastSession(defaults.resumeLastSession!)
     setOpenToHomeOnLaunch(defaults.openToHomeOnLaunch!)
+    setHomeLayout(defaults.homeLayout!)
     setRunOnStartup(defaults.runOnStartup!)
     setMinimizeToTrayOnClose(defaults.minimizeToTrayOnClose!)
     setPermissionMode(defaults.permissionMode!)
@@ -527,6 +535,13 @@ export function SettingsPanel(): React.JSX.Element {
             <h1 className="text-lg font-semibold text-primary">Settings</h1>
           </div>
         </div>
+
+        {/* Activity overview (info-home content without Open/New Session buttons) */}
+        <SettingsSection title="Activity">
+          <div className="px-1 pb-2">
+            <HomeInfoSummary compact />
+          </div>
+        </SettingsSection>
 
         {/* Pi Configuration */}
         <SettingsSection title="Pi Configuration">
@@ -768,6 +783,33 @@ export function SettingsPanel(): React.JSX.Element {
             description="Show the Home launcher on startup; Pi starts only when you open a workspace or session"
           >
             <Toggle checked={openToHomeOnLaunch} onChange={(v) => { setOpenToHomeOnLaunch(v); setSettingsDraft({ openToHomeOnLaunch: v }) }} />
+          </SettingsRow>
+
+          <SettingsRow
+            label="Home Layout"
+            description="Info shows activity and recents. Minimal is a center prompt with project picker (sidebar stays visible)."
+          >
+            <div className="flex gap-0.5 rounded-md bg-card/60 p-0.5">
+              {([
+                { id: 'info' as const, label: 'Info' },
+                { id: 'minimal' as const, label: 'Minimal' },
+              ]).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    setHomeLayout(opt.id)
+                    setSettingsDraft({ homeLayout: opt.id })
+                  }}
+                  className={clsx(
+                    'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                    homeLayout === opt.id ? 'bg-elevated text-primary' : 'text-dim hover:text-secondary'
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </SettingsRow>
 
           <SettingsRow
