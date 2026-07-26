@@ -24,8 +24,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   resumeLastSession: true,
   collapsedSessionGroups: [],
   openToHomeOnLaunch: true,
-  homeLayout: 'info',
-  homeSelectLatestFolder: true,
   runOnStartup: false,
   minimizeToTrayOnClose: false,
   hasSeenTrayHint: false,

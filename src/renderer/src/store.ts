@@ -1925,8 +1925,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   insertPrompt: (text, replace = false) =>
     set((state) => ({
-      // Keep minimal home so slash/skill inserts land in that composer; every
-      // other surface still jumps to chat (notes/palette, etc.).
+      // Stay on Home if the user is there; otherwise jump to chat (notes/palette).
       currentView: state.currentView === 'home' ? 'home' : 'chat',
       notePickerOpen: false,
       pendingInsert: { text, nonce: Date.now(), replace },

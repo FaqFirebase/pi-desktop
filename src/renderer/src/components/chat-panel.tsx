@@ -1,5 +1,6 @@
 import { useAppStore } from '../store'
 import { ChatInput } from './chat-input'
+import { ChatProjectPicker } from './chat-project-picker'
 import { CouncilPanels } from './council-panels'
 import { MessageBubble, ToolGroupBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
@@ -190,66 +191,123 @@ export function ChatPanel(): React.JSX.Element {
                 onClose={() => setSearchOpen(false)}
               />
             )}
-            <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-              {sessionLoading && messages.length === 0 ? (
-                <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-dim">
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
-                  Loading session…
-                </div>
-              ) : messages.length === 0 && !isStreaming ? (
-                <EmptyState piStatus={piStatus} />
-              ) : (
-                <NowContext.Provider value={now}>
-                <div
-                  className="mx-auto max-w-5xl px-4 pt-6"
-                  style={{ paddingBottom: composerPadPx }}
-                >
-                  {renderItems.map((item) =>
-                    item.kind === 'toolGroup' ? (
-                      <ToolGroupBubble
-                        key={item.id}
-                        title={item.title}
-                        messages={item.messages}
-                        onRetry={handleRetry}
+            {(() => {
+              const isEmptyChat =
+                !sessionLoading && messages.length === 0 && !isStreaming
+
+              // Empty session: Codex-style center prompt + project picker (sidebar chrome).
+              if (isEmptyChat) {
+                return (
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10">
+                    <div className="mb-8 text-center">
+                      <img
+                        src={piLogo}
+                        alt="Pi Desktop"
+                        className="mx-auto mb-4 block h-14 w-14"
                       />
+                      <h2 className="text-2xl font-semibold text-primary">What should Pi work on?</h2>
+                      <p className="mt-1 text-sm text-dim">
+                        {piStatus === 'running'
+                          ? 'Pick a project and describe what you want done.'
+                          : piStatus === 'starting'
+                            ? 'Starting Pi agent…'
+                            : piStatus === 'error'
+                              ? 'Failed to start Pi. Check settings.'
+                              : 'Choose a project — Pi starts when you send.'}
+                      </p>
+                    </div>
+                    <div className="w-full max-w-3xl">
+                      <ChatInput />
+                      <div className="px-4">
+                        <ChatProjectPicker />
+                      </div>
+                      {piStatus === 'running' && (
+                        <div className="mt-6 flex flex-wrap justify-center gap-2 px-4">
+                          {EXAMPLE_PROMPTS.map((prompt) => (
+                            <button
+                              key={prompt}
+                              type="button"
+                              onClick={() => {
+                                useAppStore.getState().sendPrompt(prompt)
+                              }}
+                              className="rounded-lg border border-border-strong px-3 py-1.5 text-xs text-muted hover:border-border-strong-hover hover:text-secondary transition-colors"
+                            >
+                              {prompt}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              }
+
+              return (
+                <>
+                  <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
+                    {sessionLoading && messages.length === 0 ? (
+                      <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-dim">
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
+                        Loading session…
+                      </div>
                     ) : (
-                      <MessageBubble key={item.message.id} message={item.message} onRetry={handleRetry} />
-                    )
-                  )}
-                  {isStreaming && (
-                    <StreamingBubble
-                      content={streamingContent}
-                      thinking={streamingThinking}
-                      toolCalls={streamingToolCalls}
-                    />
-                  )}
-                </div>
-                </NowContext.Provider>
-              )}
-            </div>
+                      <NowContext.Provider value={now}>
+                        <div
+                          className="mx-auto max-w-5xl px-4 pt-6"
+                          style={{ paddingBottom: composerPadPx }}
+                        >
+                          {renderItems.map((item) =>
+                            item.kind === 'toolGroup' ? (
+                              <ToolGroupBubble
+                                key={item.id}
+                                title={item.title}
+                                messages={item.messages}
+                                onRetry={handleRetry}
+                              />
+                            ) : (
+                              <MessageBubble
+                                key={item.message.id}
+                                message={item.message}
+                                onRetry={handleRetry}
+                              />
+                            )
+                          )}
+                          {isStreaming && (
+                            <StreamingBubble
+                              content={streamingContent}
+                              thinking={streamingThinking}
+                              toolCalls={streamingToolCalls}
+                            />
+                          )}
+                        </div>
+                      </NowContext.Provider>
+                    )}
+                  </div>
 
-            {!atBottom && (
-              <button
-                onClick={scrollToBottom}
-                className="absolute left-1/2 z-20 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border-strong bg-card/90 text-secondary shadow-lg shadow-black/30 backdrop-blur transition-colors hover:bg-elevated hover:text-primary"
-                style={{ bottom: composerPadPx + 12 }}
-                title="Scroll to bottom"
-                aria-label="Scroll to bottom"
-              >
-                <ChevronDown size={16} />
-              </button>
-            )}
+                  {!atBottom && (
+                    <button
+                      onClick={scrollToBottom}
+                      className="absolute left-1/2 z-20 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border-strong bg-card/90 text-secondary shadow-lg shadow-black/30 backdrop-blur transition-colors hover:bg-elevated hover:text-primary"
+                      style={{ bottom: composerPadPx + 12 }}
+                      title="Scroll to bottom"
+                      aria-label="Scroll to bottom"
+                    >
+                      <ChevronDown size={16} />
+                    </button>
+                  )}
 
-            {/* Transparent sides so wider message text isn't covered by the pill. */}
-            <div
-              ref={composerWrapRef}
-              className="pointer-events-none absolute inset-x-0 bottom-0 z-10 pb-3 pt-8 bg-gradient-to-t from-chat-column via-chat-column/80 to-transparent"
-            >
-              <div className="pointer-events-auto mx-auto w-full max-w-5xl px-4">
-                <CouncilPanels />
-              </div>
-              <ChatInput />
-            </div>
+                  <div
+                    ref={composerWrapRef}
+                    className="pointer-events-none absolute inset-x-0 bottom-0 z-10 pb-3 pt-8 bg-gradient-to-t from-chat-column via-chat-column/80 to-transparent"
+                  >
+                    <div className="pointer-events-auto mx-auto w-full max-w-5xl px-4">
+                      <CouncilPanels />
+                    </div>
+                    <ChatInput />
+                  </div>
+                </>
+              )
+            })()}
           </div>
         </div>
 
@@ -386,43 +444,6 @@ function ToolbarButton({
     >
       {icon}
     </button>
-  )
-}
-
-function EmptyState({ piStatus }: { piStatus: string }): React.JSX.Element {
-  return (
-    <div className="flex h-full flex-col items-center justify-center px-4">
-      <div className="text-center">
-        <img src={piLogo} alt="Pi Desktop" className="mx-auto mb-4 block h-16 w-16" />
-        <h2 className="mb-6 text-2xl font-semibold text-primary">
-          Pi Desktop
-        </h2>
-        <p className="mb-6 max-w-3xl text-balance text-sm text-dim">
-          {piStatus === 'running'
-            ? 'Start a conversation with your coding agent. Ask it to build, debug, or explore your codebase.'
-            : piStatus === 'starting'
-              ? 'Starting Pi agent...'
-              : piStatus === 'error'
-                ? 'Failed to start Pi agent. Check settings.'
-                : 'Pi agent is not running. Start it from the sidebar or status bar.'}
-        </p>
-        {piStatus === 'running' && (
-          <div className="flex flex-wrap justify-center gap-2">
-            {EXAMPLE_PROMPTS.map((prompt) => (
-              <button
-                key={prompt}
-                onClick={() => {
-                  useAppStore.getState().sendPrompt(prompt)
-                }}
-                className="rounded-lg border border-border-strong px-3 py-1.5 text-xs text-muted hover:border-border-strong-hover hover:text-secondary transition-colors"
-              >
-                {prompt}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
   )
 }
 

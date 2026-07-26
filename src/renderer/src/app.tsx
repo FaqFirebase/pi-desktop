@@ -28,9 +28,6 @@ export function App(): React.JSX.Element {
   const currentView = useAppStore((state) => state.currentView)
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
-  const homeLayout = useAppStore(
-    (state) => state.settingsDraft.homeLayout ?? state.settings?.homeLayout ?? 'info'
-  )
   const updateInfo = useAppStore((state) => state.updateInfo)
   const updateDismissed = useAppStore((state) => state.updateDismissed)
   const dismissUpdate = useAppStore((state) => state.dismissUpdate)
@@ -76,11 +73,10 @@ export function App(): React.JSX.Element {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // Info home is a full-screen splash (no sidebar/status). Minimal home keeps
-  // the normal chrome so the Codex-style composer sits next to the sidebar.
+  // Home is a full-screen splash (no sidebar/status). Chat keeps chrome; the
+  // empty-chat center prompt is the "minimal" launch surface when not opening Home.
   const isHome = currentView === 'home'
-  const isInfoHomeSplash = isHome && homeLayout === 'info'
-  const showChrome = !isInfoHomeSplash
+  const showChrome = !isHome
   // Chat has its own toolbar toggle; other chrome views need a top-left reopen
   // control when the sidebar is closed (otherwise only the status bar has one).
   const showSidebarReopen = showChrome && !sidebarOpen && currentView !== 'chat'
