@@ -217,12 +217,8 @@ export function ChatPanel(): React.JSX.Element {
                       </p>
                     </div>
                     <div className="w-full max-w-3xl">
-                      <ChatInput />
-                      <div className="px-4">
-                        <ChatProjectPicker />
-                      </div>
                       {piStatus === 'running' && (
-                        <div className="mt-6 flex flex-wrap justify-center gap-2 px-4">
+                        <div className="mb-4 flex flex-wrap justify-center gap-2 px-4">
                           {EXAMPLE_PROMPTS.map((prompt) => (
                             <button
                               key={prompt}
@@ -237,6 +233,10 @@ export function ChatPanel(): React.JSX.Element {
                           ))}
                         </div>
                       )}
+                      <ChatInput />
+                      <div className="px-4">
+                        <ChatProjectPicker />
+                      </div>
                     </div>
                   </div>
                 )
