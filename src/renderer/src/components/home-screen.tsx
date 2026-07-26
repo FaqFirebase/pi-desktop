@@ -66,9 +66,9 @@ function useHomeLayout(): 'info' | 'minimal' {
 }
 
 /**
- * Home / launcher. Layout is selected in Settings:
- *  - info: stats + recents splash (legacy)
- *  - minimal: Codex-style center composer with project picker
+ * Home / launcher. Layout is selected in Settings → Behavior → Home Layout:
+ *  - info: full Home panel (stats, recents, open folder / new session)
+ *  - minimal: separate Codex-style center composer with project picker
  */
 export function HomeScreen(): React.JSX.Element {
   const layout = useHomeLayout()
@@ -77,9 +77,8 @@ export function HomeScreen(): React.JSX.Element {
 }
 
 /**
- * Info-home content without Open Folder / New Session — stats, changed files,
- * and recents. Shown at the top of Settings so activity stays available when
- * Home is set to Minimal.
+ * Info Home body: activity stats, changed files, recent workspaces/sessions.
+ * Used by the full Info Home panel (with Open Folder / New Session chrome).
  */
 export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.Element {
   const workspaces = useAppStore((s) => s.workspaces)
