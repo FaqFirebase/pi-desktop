@@ -1,5 +1,5 @@
 import { ipcMain, dialog, shell, app, BrowserWindow, type IpcMainInvokeEvent } from 'electron'
-import { PiRpcManager, PI_CLI } from './pi-rpc-manager'
+import { PiRpcManager, getPiCli, setPiExecutableOverride } from './pi-rpc-manager'
 import { WorkspaceManager } from './workspace-manager'
 import { SessionTagManager } from './session-tags'
 import { ArchivedSessionsManager } from './archived-sessions'
@@ -725,6 +725,11 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     // icon so the close behavior matches the new setting without a restart.
     if ('minimizeToTrayOnClose' in settings) {
       setTrayEnabled(Boolean((settings as Partial<AppSettings>).minimizeToTrayOnClose))
+    }
+    // Re-resolve the Pi binary so a corrected executable path takes effect on
+    // the next start instead of requiring an app restart.
+    if ('piExecutablePath' in settings) {
+      setPiExecutableOverride((settings as Partial<AppSettings>).piExecutablePath)
     }
     return loadAppSettings(workspaceManager)
   })
@@ -1778,15 +1783,16 @@ async function runPiCli(
   timeout: number
 ): Promise<{ success: boolean; output: string }> {
   try {
-    const [cmd, cmdArgs]: [string, string[]] = PI_CLI.useNode
-      ? [PI_CLI.node, [PI_CLI.script, ...args]]
-      : [PI_CLI.script, args]
+    const cli = getPiCli()
+    const [cmd, cmdArgs]: [string, string[]] = cli.useNode
+      ? [cli.node, [cli.script, ...args]]
+      : [cli.script, args]
     const { stdout, stderr } = await execFileAsync(cmd, cmdArgs, {
       cwd,
       timeout,
       env: { ...process.env },
       // Windows .cmd/.bat shims require shell:true to be invoked.
-      shell: PI_CLI.needsShell,
+      shell: cli.needsShell,
     })
     return { success: true, output: stdout + stderr }
   } catch (err) {

@@ -121,8 +121,13 @@ export function HomeScreen(): React.JSX.Element {
         }
         targetId = ws?.id
       }
-      if (targetId) await switchWorkspace(targetId)
-      else await startPi()
+      // A declined "Pi is still working" warning stops the whole open, since the
+      // session switch below would tear the running turn down regardless.
+      if (targetId) {
+        if (!(await switchWorkspace(targetId))) return
+      } else {
+        await startPi()
+      }
       if (useAppStore.getState().piStatus === 'error') return
       await switchSession(session.path)
       requestChatScrollToBottom()
@@ -139,7 +144,7 @@ export function HomeScreen(): React.JSX.Element {
     }
     setBusy(true)
     try {
-      await switchWorkspace(activeWorkspace.id)
+      if (!(await switchWorkspace(activeWorkspace.id))) return
       if (useAppStore.getState().piStatus === 'error') return
       await createNewSession()
       requestChatScrollToBottom()

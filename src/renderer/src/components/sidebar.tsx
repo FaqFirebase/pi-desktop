@@ -104,15 +104,18 @@ export function Sidebar(): React.JSX.Element {
     if (session.projectPath && session.projectPath !== activeWorkspace?.path) {
       const matchingWs = workspaces.find((w) => w.path === session.projectPath)
       if (matchingWs) {
-        await switchWorkspace(matchingWs.id)
+        // The workspace switch carries the "Pi is still working" warning for this
+        // whole flow; a decline there must stop the session switch too, or the
+        // declined turn gets torn down anyway by the session change below.
+        if (!(await switchWorkspace(matchingWs.id))) return
       } else {
         await useAppStore.getState().createWorkspace(session.projectName, session.projectPath)
         const updated = useAppStore.getState().workspaces
         const newWs = updated.find((w) => w.path === session.projectPath)
-        if (newWs) await switchWorkspace(newWs.id)
+        if (newWs && !(await switchWorkspace(newWs.id))) return
       }
     }
-    switchSession(session.path)
+    await switchSession(session.path)
     // Bring the chat into view (may be on Settings/Notes/etc.). In-app switches
     // keep their remembered scroll position, so no force-to-bottom here.
     setCurrentView('chat')

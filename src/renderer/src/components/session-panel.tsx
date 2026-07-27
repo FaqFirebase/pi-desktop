@@ -96,15 +96,15 @@ export function SessionPanel(): React.JSX.Element {
     if (session.projectPath && session.projectPath !== activeWorkspace?.path) {
       const matchingWorkspace = workspaces.find((w) => w.path === session.projectPath)
       if (matchingWorkspace) {
-        await switchWorkspace(matchingWorkspace.id)
+        // A declined "Pi is still working" warning must stop the session switch
+        // below as well, not just the workspace change.
+        if (!(await switchWorkspace(matchingWorkspace.id))) return
       } else {
         // Auto-create workspace for this project
         await useAppStore.getState().createWorkspace(session.projectName, session.projectPath)
         const updatedWorkspaces = useAppStore.getState().workspaces
         const newWorkspace = updatedWorkspaces.find((w) => w.path === session.projectPath)
-        if (newWorkspace) {
-          await switchWorkspace(newWorkspace.id)
-        }
+        if (newWorkspace && !(await switchWorkspace(newWorkspace.id))) return
       }
     }
 
