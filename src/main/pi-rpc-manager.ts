@@ -1,6 +1,6 @@
 import { ChildProcess, SpawnOptions, spawn, spawnSync } from 'child_process'
-import { existsSync } from 'fs'
-import { join, delimiter as PATH_DELIMITER } from 'path'
+import { existsSync, readdirSync, statSync } from 'fs'
+import { join } from 'path'
 import { EventEmitter } from 'events'
 import { StringDecoder } from 'string_decoder'
 import type {
@@ -10,6 +10,13 @@ import type {
   PiStatus,
   PiResponseEvent,
 } from '../shared/ipc-contracts'
+import type { CaptureOptions, PiResolution, ResolutionDeps } from './pi-binary-resolution'
+import {
+  describePiResolutionFailure,
+  normalizeOverride,
+  resolvePiBinary,
+  whichInPath,
+} from './pi-binary-resolution'
 
 /**
  * Manages a Pi RPC child process.
@@ -31,7 +38,6 @@ const MODEL_FLAG = '--model'
 const SESSION_FLAG = '--session'
 const CONTINUE_FLAG = '--continue'
 const IS_WINDOWS = process.platform === 'win32'
-const PI_FALLBACK_BINARY = IS_WINDOWS ? 'pi.cmd' : 'pi'
 const SPAWN_STARTUP_TIMEOUT_MS = 15_000
 // Spawn attempts per start(): the initial try plus one retry, used ONLY when Pi
 // crashes before becoming ready (spawn error / early exit) — a transient hiccup
@@ -53,146 +59,60 @@ const STARTUP_PROBE_ID = '__startup_probe__'
 const STARTUP_PROBE_COMMAND = 'get_state'
 const STARTUP_PROBE_INTERVAL_MS = 750
 const FORCE_KILL_TIMEOUT_MS = 3_000
-const PI_PACKAGE = '@earendil-works/pi-coding-agent'
-const PI_CLI_REL = join('node_modules', PI_PACKAGE, 'dist', 'cli.js')
 
-/**
- * Search PATH for an executable. Returns the absolute path or null.
- * On Windows, also tries PATHEXT extensions (.cmd, .exe, .ps1, .bat).
- */
-function whichInPath(name: string): string | null {
-  const pathDirs = (process.env.PATH ?? '').split(PATH_DELIMITER).filter(Boolean)
-  const exts = IS_WINDOWS
-    ? (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').map((e) => e.toLowerCase())
-    : ['']
-  for (const dir of pathDirs) {
-    for (const ext of exts) {
-      const candidate = join(dir, name + ext)
-      if (existsSync(candidate)) return candidate
+// Real filesystem/process access for the resolver in pi-binary-resolution.ts.
+// Kept in one object so the search order stays testable against a fake.
+const RESOLUTION_DEPS: ResolutionDeps = {
+  isWindows: IS_WINDOWS,
+  env: process.env,
+  exists: (path) => existsSync(path),
+  isDirectory: (path) => {
+    try {
+      return statSync(path).isDirectory()
+    } catch (err) {
+      // ENOENT/EACCES/ELOOP all mean "not a directory we can use".
+      if (isFsAccessError(err)) return false
+      throw err
     }
-  }
-  return null
+  },
+  listDir: (path) => {
+    try {
+      return readdirSync(path)
+    } catch (err) {
+      if (isFsAccessError(err)) return []
+      throw err
+    }
+  },
+  capture: (command, args, options) => runCapture(command, args, options),
+}
+
+const FS_ACCESS_ERROR_CODES = new Set(['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'ELOOP'])
+
+function isFsAccessError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code
+  return typeof code === 'string' && FS_ACCESS_ERROR_CODES.has(code)
 }
 
 /**
- * Ask npm itself where its global prefix is. Most reliable way to find npm
- * globals across every install method (default Node installer, fnm, nvm,
- * volta, custom prefixes). Returns null if npm isn't on PATH or errors out.
+ * Run a probe command and return its stdout, or null if it could not run.
+ * stdin is closed immediately so an interactive login shell never blocks.
  */
-function npmGlobalPrefix(): string | null {
+function runCapture(command: string, args: string[], options: CaptureOptions): string | null {
   try {
-    const result = spawnSync(IS_WINDOWS ? 'npm.cmd' : 'npm', ['prefix', '-g'], {
+    const result = spawnSync(command, args, {
       encoding: 'utf-8',
-      shell: IS_WINDOWS,
-      timeout: 5000,
+      shell: options.shell,
+      timeout: options.timeoutMs,
+      input: '',
+      env: { ...process.env, PATH: options.pathEnv },
     })
-    if (result.status === 0 && result.stdout) {
-      const prefix = result.stdout.trim()
-      if (prefix && existsSync(prefix)) return prefix
-    }
-  } catch {
-    // npm not on PATH or other error — fall back to env-based guesses
+    if (result.status !== 0 || !result.stdout) return null
+    return result.stdout
+  } catch (err) {
+    // Spawn-level failure (missing binary, EACCES) — treat as "no answer".
+    if (isFsAccessError(err)) return null
+    throw err
   }
-  return null
-}
-
-/**
- * Given a directory that probably contains the Pi install (either an npm
- * prefix or the dirname of a pi.cmd shim), try to find the underlying
- * cli.js. Returns null if nothing matches.
- *
- * Why: spawning pi.cmd via shell:true on Windows is unreliable for RPC
- * mode — the cmd.exe wrapper interferes with stdio piping that Pi's
- * JSONL protocol needs. If we can find the cli.js the shim would invoke,
- * we can run it with node.exe directly and skip the shell entirely.
- */
-function findCliJsNear(dir: string): string | null {
-  const candidates = [
-    join(dir, 'node_modules', PI_PACKAGE, 'dist', 'cli.js'),
-    join(dir, 'lib', 'node_modules', PI_PACKAGE, 'dist', 'cli.js'),
-    // pi-node managed install drops it one level up from the shim dir
-    join(dir, '..', 'node_modules', PI_PACKAGE, 'dist', 'cli.js'),
-  ]
-  for (const c of candidates) {
-    if (existsSync(c)) return c
-  }
-  return null
-}
-
-/**
- * Locate the Pi coding agent CLI. Strategy (most reliable first):
- *
- *   1. Ask npm for its global prefix and look there. Works for default
- *      Node installs, fnm, nvm, volta, pnpm, custom prefixes — anything
- *      where `npm install -g` actually puts files.
- *   2. Search PATH for `pi` (respects PATHEXT on Windows for .cmd/.exe).
- *      If found as a .cmd/.ps1 shim, try to locate the underlying cli.js
- *      next to the shim so we can spawn Node directly.
- *   3. Fall back to OS-specific guesses for common install paths.
- *   4. Last resort: bare `pi`/`pi.cmd` (will likely fail with ENOENT).
- *
- * Prefers the JS entry point (cli.js) when present so we can spawn it
- * with our own Node binary — sidesteps the shell-required-for-shim
- * problem on Windows.
- */
-function findPiBinary(): string {
-  // 1. npm's actual global prefix
-  const prefix = npmGlobalPrefix()
-  if (prefix) {
-    // Always try cli.js layouts first (any platform), then fall back to
-    // shims. Spawning the JS entry directly with Node is more reliable
-    // than the .cmd/.ps1 shim on Windows.
-    const cliJs = findCliJsNear(prefix)
-    if (cliJs) return cliJs
-    const fromPrefixCandidates = IS_WINDOWS
-      ? [join(prefix, 'pi.cmd'), join(prefix, 'pi.ps1')]
-      : [join(prefix, 'bin', 'pi')]
-    for (const c of fromPrefixCandidates) {
-      if (existsSync(c)) return c
-    }
-  }
-
-  // 2. PATH search (uses Windows PATHEXT for .cmd/.exe/.ps1). If it
-  //    resolves to a .cmd/.ps1 shim, look next to the shim for the
-  //    underlying cli.js so we can skip the shell wrapper.
-  const fromPath = whichInPath('pi')
-  if (fromPath) {
-    if (/\.(cmd|bat|ps1)$/i.test(fromPath)) {
-      const cliJs = findCliJsNear(join(fromPath, '..'))
-      if (cliJs) return cliJs
-    }
-    return fromPath
-  }
-
-  // 3. OS-specific common locations as fallback
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? ''
-  const appData = process.env.APPDATA ?? ''
-  const localAppData = process.env.LOCALAPPDATA ?? ''
-  const programFiles = process.env.ProgramFiles ?? 'C:\\Program Files'
-
-  const candidates: string[] = []
-  if (IS_WINDOWS) {
-    if (appData) candidates.push(join(appData, 'npm', PI_CLI_REL))
-    if (localAppData) candidates.push(join(localAppData, 'npm', PI_CLI_REL))
-    candidates.push(join(programFiles, 'nodejs', PI_CLI_REL))
-    if (appData) candidates.push(join(appData, 'npm', 'pi.cmd'))
-    if (localAppData) candidates.push(join(localAppData, 'npm', 'pi.cmd'))
-  } else {
-    candidates.push(join(home, '.npm-global', PI_CLI_REL))
-    candidates.push(join(home, '.npm-global', 'bin', 'pi'))
-    candidates.push(join('/opt/homebrew/lib', PI_CLI_REL))
-    candidates.push(join('/usr/local/lib', PI_CLI_REL))
-    candidates.push(join('/usr/lib', PI_CLI_REL))
-    candidates.push('/opt/homebrew/bin/pi')
-    candidates.push('/usr/local/bin/pi')
-    candidates.push('/usr/bin/pi')
-    candidates.push(join(home, '.local/bin/pi'))
-  }
-  for (const c of candidates) {
-    if (existsSync(c)) return c
-  }
-
-  return PI_FALLBACK_BINARY
 }
 
 /**
@@ -222,7 +142,7 @@ function findNodeBinary(): string {
       localAppData ? join(localAppData, 'fnm_multishells', 'node.exe') : '',
     ].filter(Boolean)
     for (const c of candidates) if (existsSync(c)) return c
-    const fromPath = whichInPath('node')
+    const fromPath = whichInPath(RESOLUTION_DEPS, 'node', process.env.PATH ?? '')
     if (fromPath) return fromPath
     return 'node.exe'
   }
@@ -230,34 +150,110 @@ function findNodeBinary(): string {
   for (const c of ['/usr/bin/node', '/usr/local/bin/node', '/opt/homebrew/bin/node']) {
     if (existsSync(c)) return c
   }
-  const fromPath = whichInPath('node')
+  const fromPath = whichInPath(RESOLUTION_DEPS, 'node', process.env.PATH ?? '')
   if (fromPath) return fromPath
   return 'node'
 }
 
-const PI_SCRIPT = findPiBinary()
-const USE_NODE = PI_SCRIPT.endsWith('.js')
-const NODE_BINARY = findNodeBinary()
-// On Windows, .cmd/.bat/.ps1 shims require shell:true to be invoked via spawn.
-const NEEDS_SHELL = IS_WINDOWS && !USE_NODE && /\.(cmd|bat|ps1)$/i.test(PI_SCRIPT)
-const PI_SCRIPT_EXISTS = existsSync(PI_SCRIPT)
-const NODE_BINARY_EXISTS = !USE_NODE || existsSync(NODE_BINARY)
-console.log('─── Pi binary resolution ────────────────────────────')
-console.log('[Pi] PI_SCRIPT     :', PI_SCRIPT, PI_SCRIPT_EXISTS ? '(exists)' : '(MISSING)')
-console.log('[Pi] USE_NODE      :', USE_NODE)
-console.log('[Pi] NODE_BINARY   :', NODE_BINARY, USE_NODE ? (NODE_BINARY_EXISTS ? '(exists)' : '(MISSING)') : '(unused)')
-console.log('[Pi] NEEDS_SHELL   :', NEEDS_SHELL)
-console.log('[Pi] Spawn command :', USE_NODE ? `${NODE_BINARY} ${PI_SCRIPT}` : PI_SCRIPT, NEEDS_SHELL ? '(via shell)' : '')
-console.log('─────────────────────────────────────────────────────')
+/**
+ * Resolved Pi invocation. `found` is false when nothing was located and
+ * `script` is only a hopeful fallback; `failureReason` then explains why.
+ */
+export interface PiCli {
+  script: string
+  node: string
+  useNode: boolean
+  needsShell: boolean
+  found: boolean
+  nodeFound: boolean
+  failureReason: string | null
+}
 
-// Exported so ipc-handlers can run `pi install/remove/update` with the same
-// binary that was resolved here — Electron's PATH won't have `pi` directly.
-export const PI_CLI = {
-  script: PI_SCRIPT,
-  node: NODE_BINARY,
-  useNode: USE_NODE,
-  needsShell: NEEDS_SHELL,
-} as const
+// Resolution is lazy and cached rather than computed at import time, because
+// it depends on the `piExecutablePath` setting, which is only readable once
+// the app has loaded settings. setPiExecutableOverride() invalidates the cache.
+let configuredOverride: string | null = null
+let cachedResolution: PiResolution | null = null
+let cachedNodeBinary: string | null = null
+
+/**
+ * Apply the `piExecutablePath` setting. Call on startup once settings are
+ * loaded and again whenever the setting changes; the next Pi start picks it up
+ * without an app restart.
+ */
+export function setPiExecutableOverride(raw: string | undefined | null): void {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? ''
+  const next = normalizeOverride(raw, home)
+  if (next === configuredOverride && cachedResolution) return
+  configuredOverride = next
+  cachedResolution = null
+  cachedNodeBinary = null
+}
+
+function getResolution(): PiResolution {
+  if (cachedResolution) return cachedResolution
+  const resolution = resolvePiBinary(RESOLUTION_DEPS, configuredOverride)
+  // Adopt the login shell's PATH process-wide so Pi itself — and every helper
+  // we spawn — can find node, npm and the tools the user's shell exposes.
+  if (resolution.pathEnv && resolution.pathEnv !== process.env.PATH) {
+    process.env.PATH = resolution.pathEnv
+  }
+  cachedResolution = resolution
+  logResolution(resolution)
+  return resolution
+}
+
+function logResolution(resolution: PiResolution): void {
+  const node = getNodeBinary()
+  console.log('─── Pi binary resolution ────────────────────────────')
+  console.log('[Pi] Script        :', resolution.script, resolution.found ? '(exists)' : '(MISSING)')
+  console.log('[Pi] Source        :', resolution.source)
+  if (resolution.rejectedOverride) {
+    console.warn('[Pi] Configured path ignored (does not exist):', resolution.rejectedOverride)
+  }
+  console.log('[Pi] Uses node     :', resolution.useNode)
+  console.log(
+    '[Pi] Node binary   :',
+    node,
+    resolution.useNode ? (existsSync(node) ? '(exists)' : '(MISSING)') : '(unused)'
+  )
+  console.log('[Pi] Needs shell   :', resolution.needsShell)
+  console.log('─────────────────────────────────────────────────────')
+}
+
+function getNodeBinary(): string {
+  if (cachedNodeBinary === null) cachedNodeBinary = findNodeBinary()
+  return cachedNodeBinary
+}
+
+/**
+ * The resolved Pi invocation. Also exported for ipc-handlers, which runs
+ * `pi install/remove/update` with the same binary — Electron's own PATH won't
+ * have `pi` on it.
+ */
+export function getPiCli(): PiCli {
+  const resolution = getResolution()
+  const node = getNodeBinary()
+  const nodeFound = !resolution.useNode || existsSync(node)
+  let failureReason: string | null = null
+  if (!resolution.found) {
+    failureReason = describePiResolutionFailure(resolution)
+  } else if (!nodeFound) {
+    failureReason =
+      `Node binary not found at resolved path:\n  ${node}\n\n` +
+      "Pi's .js entry point requires Node. Install Node from https://nodejs.org " +
+      'or set the NODE env var to your Node binary path.'
+  }
+  return {
+    script: resolution.script,
+    node,
+    useNode: resolution.useNode,
+    needsShell: resolution.needsShell,
+    found: resolution.found,
+    nodeFound,
+    failureReason,
+  }
+}
 
 const MAX_PENDING_RESPONSES = 64
 const RESPONSE_TIMEOUT_MS = 30_000
@@ -316,14 +312,9 @@ export class PiRpcManager extends EventEmitter {
 
     // Pre-flight: if the binary we resolved doesn't exist, fail fast with a
     // clear message instead of letting spawn die with a cryptic ENOENT.
-    if (!PI_SCRIPT_EXISTS) {
-      this.stderrBuffer = `Pi binary not found at resolved path:\n  ${PI_SCRIPT}\n\nSearched npm prefix, PATH, and common install locations. Make sure Pi is installed:\n  npm install -g @earendil-works/pi-coding-agent\nor on Windows:\n  irm https://pi.dev/install.ps1 | iex`
-      this.setStatus('error')
-      console.error('[Pi] Pre-flight failed:', this.stderrBuffer)
-      return this.getStatus()
-    }
-    if (USE_NODE && !NODE_BINARY_EXISTS) {
-      this.stderrBuffer = `Node binary not found at resolved path:\n  ${NODE_BINARY}\n\nPi's .js entry point requires Node. Install Node from https://nodejs.org or set the NODE env var to your Node binary path.`
+    const cli = getPiCli()
+    if (cli.failureReason) {
+      this.stderrBuffer = cli.failureReason
       this.setStatus('error')
       console.error('[Pi] Pre-flight failed:', this.stderrBuffer)
       return this.getStatus()
@@ -375,6 +366,7 @@ export class PiRpcManager extends EventEmitter {
    */
   private spawnAndAwaitReady(options: PiStartOptions): Promise<'ready' | 'crashed' | 'timeout'> {
     const args = this.buildArgs(options)
+    const cli = getPiCli()
 
     const spawnOptions: SpawnOptions = {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -382,7 +374,7 @@ export class PiRpcManager extends EventEmitter {
       env: { ...process.env, ...options.env },
       // .cmd/.bat/.ps1 shims on Windows can't be invoked directly from
       // spawn — they need the cmd.exe interpreter via shell:true.
-      shell: NEEDS_SHELL,
+      shell: cli.needsShell,
       // On POSIX, make the child its own process-group leader so kill()'s
       // negative-PID group kill reaps Pi and all its descendants. Skipped on
       // Windows, where it would spawn a detached console window with shell:true.
@@ -392,10 +384,13 @@ export class PiRpcManager extends EventEmitter {
     let proc: ChildProcess
     try {
       console.log('[Pi] Spawning with cwd:', options.cwd)
-      console.log('[Pi] Spawn argv     :', USE_NODE ? [NODE_BINARY, PI_SCRIPT, ...args] : [PI_SCRIPT, ...args])
-      proc = USE_NODE
-        ? spawn(NODE_BINARY, [PI_SCRIPT, ...args], spawnOptions)
-        : spawn(PI_SCRIPT, args, spawnOptions)
+      console.log(
+        '[Pi] Spawn argv     :',
+        cli.useNode ? [cli.node, cli.script, ...args] : [cli.script, ...args]
+      )
+      proc = cli.useNode
+        ? spawn(cli.node, [cli.script, ...args], spawnOptions)
+        : spawn(cli.script, args, spawnOptions)
     } catch (err) {
       this.stderrBuffer += (err instanceof Error ? err.message : String(err)) + '\n'
       return Promise.resolve('crashed')

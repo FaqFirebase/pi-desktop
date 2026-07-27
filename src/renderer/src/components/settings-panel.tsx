@@ -530,7 +530,10 @@ export function SettingsPanel(): React.JSX.Element {
 
         {/* Pi Configuration */}
         <SettingsSection title="Pi Configuration">
-          <SettingsRow label="Pi Executable" description="Path to the Pi binary">
+          <SettingsRow
+            label="Pi Executable"
+            description="Path to Pi's cli.js or its install directory. Leave as 'pi' to auto-detect."
+          >
             <div className="flex gap-2">
               <input
                 type="text"

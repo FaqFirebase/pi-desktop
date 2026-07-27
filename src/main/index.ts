@@ -5,6 +5,7 @@ import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
 import { workspaceTrustStore } from './workspace-trust'
 import { WorkspaceManager } from './workspace-manager'
 import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
+import { setPiExecutableOverride } from './pi-rpc-manager'
 import { fetchAllCatalogPackages } from './package-catalog'
 import { activityStatsStore } from './activity-stats'
 import { configureGuiDataDir, getCanonicalUserDataDir, getExternalGuiDataDir, migrateLegacyGuiData } from './app-data-paths'
@@ -352,6 +353,10 @@ app.whenReady().then(async () => {
   // System tray: inject deps once, then enable it if the setting is on. The
   // one-time "still running" hint reads/persists via app settings.
   const settings = await loadAppSettings(workspaceManager)
+
+  // Apply the configured Pi executable path before anything can start Pi.
+  setPiExecutableOverride(settings.piExecutablePath)
+
   setupTray({
     getWindow: () => mainWindow,
     quit: () => app.quit(),
