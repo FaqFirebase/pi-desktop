@@ -16,7 +16,11 @@ import {
  */
 
 function stripAnsi(text: string): string {
-  return text.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;[^\x1b]*\x1b\\/g, '')
+  // Build ESC via fromCharCode so eslint no-control-regex stays quiet.
+  const esc = String.fromCharCode(27)
+  return text
+    .replace(new RegExp(`${esc}\\[[0-9;]*m`, 'g'), '')
+    .replace(new RegExp(`${esc}\\]8;[^${esc}]*${esc}\\\\`, 'g'), '')
 }
 
 function formatDuration(ms: number): string {

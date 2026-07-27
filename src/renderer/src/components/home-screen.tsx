@@ -80,7 +80,7 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
   const openWorkspace = async (workspaceId: string): Promise<void> => {
     setBusy(true)
     try {
-      await switchWorkspace(workspaceId)
+      if (!(await switchWorkspace(workspaceId))) return
       if (useAppStore.getState().piStatus !== 'error') {
         requestChatScrollToBottom()
         setCurrentView('chat')
@@ -102,8 +102,13 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
         }
         targetId = ws?.id
       }
-      if (targetId) await switchWorkspace(targetId)
-      else await startPi()
+      // A declined "Pi is still working" warning stops the whole open, since the
+      // session switch below would tear the running turn down regardless.
+      if (targetId) {
+        if (!(await switchWorkspace(targetId))) return
+      } else {
+        await startPi()
+      }
       if (useAppStore.getState().piStatus === 'error') return
       await switchSession(session.path)
       requestChatScrollToBottom()
@@ -117,7 +122,7 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
     if (!activeWorkspace) return
     setBusy(true)
     try {
-      await switchWorkspace(activeWorkspace.id)
+      if (!(await switchWorkspace(activeWorkspace.id))) return
       if (useAppStore.getState().piStatus !== 'error') setCurrentView('diff')
     } finally {
       setBusy(false)
@@ -301,7 +306,7 @@ function HomeScreenInfo(): React.JSX.Element {
         ws = useAppStore.getState().workspaces.find((w) => w.path === path)
       }
       if (ws) {
-        await switchWorkspace(ws.id)
+        if (!(await switchWorkspace(ws.id))) return
         goChatUnlessError()
       }
     } finally {
@@ -316,7 +321,7 @@ function HomeScreenInfo(): React.JSX.Element {
     }
     setBusy(true)
     try {
-      await switchWorkspace(activeWorkspace.id)
+      if (!(await switchWorkspace(activeWorkspace.id))) return
       if (useAppStore.getState().piStatus === 'error') return
       await createNewSession()
       requestChatScrollToBottom()

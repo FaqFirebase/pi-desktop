@@ -12,7 +12,6 @@ import {
   Minimize2,
   Settings,
   Loader2,
-  ChevronUp,
   Check,
   GitBranch,
 } from 'lucide-react'

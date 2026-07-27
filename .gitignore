@@ -65,6 +65,8 @@ coverage/
 # Electron / packaging artifacts
 *.dmg
 *.AppImage
+# AppImage extraction dir (created by `AppImage --appimage-extract`)
+squashfs-root/
 *.exe
 *.msi
 *.pkg

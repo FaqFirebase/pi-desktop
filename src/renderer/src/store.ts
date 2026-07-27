@@ -99,6 +99,55 @@ export interface ConfirmRequest extends ConfirmOptions {
   resolve: (confirmed: boolean) => void
 }
 
+/** The actions that abandon the live turn, either by replacing the session or by leaving it. */
+export type SessionChangeAction = 'switch' | 'new' | 'fork' | 'clone' | 'workspace'
+
+const discardWarning = (verb: string): string =>
+  `Pi has not finished responding in this session. ${verb} stops it: whatever Pi already wrote ` +
+  'to the session is kept, but the rest of the response — including any tool calls still ' +
+  'running — is discarded.'
+
+const SESSION_CHANGE_PROMPTS: Record<SessionChangeAction, { message: string; confirmLabel: string }> = {
+  switch: { message: discardWarning('Opening another session'), confirmLabel: 'Switch anyway' },
+  new: { message: discardWarning('Starting a new session'), confirmLabel: 'Start anyway' },
+  fork: { message: discardWarning('Forking this session'), confirmLabel: 'Fork anyway' },
+  clone: { message: discardWarning('Cloning this branch'), confirmLabel: 'Clone anyway' },
+  // Leaving a workspace does not tear the session down — each workspace has its
+  // own Pi process and nothing stops it. The turn still cannot be relied on to
+  // finish: events from an inactive workspace are dropped, and the permission
+  // extension's `ctx.ui.confirm()` blocks the tool call until a response comes
+  // back, so the first tool needing approval while the user is away deadlocks the
+  // turn with no timeout. Promising a background completion here would be a lie.
+  workspace: {
+    message:
+      'Pi has not finished responding in this session. Switching workspace leaves that response ' +
+      'behind: the chat stops showing it, and if Pi needs a permission decision while you are ' +
+      'away the prompt is lost and the turn stalls until you stop it.',
+    confirmLabel: 'Switch anyway',
+  },
+}
+
+/**
+ * The per-turn state left behind once a turn is over. `isStreaming` otherwise
+ * only clears on `agent_end` / `turn_end`, so any path that ends a turn without
+ * those events has to apply this or the chat keeps a streaming bubble that no
+ * incoming event can close. Built fresh each call: the tool-call map is mutable
+ * and must never be shared between turns.
+ */
+function idleTurnState(): Pick<
+  AppState,
+  'isStreaming' | 'streamingContent' | 'streamingThinking' | 'streamingToolCalls' | 'pendingSteering' | 'pendingFollowUp'
+> {
+  return {
+    isStreaming: false,
+    streamingContent: '',
+    streamingThinking: '',
+    streamingToolCalls: new Map(),
+    pendingSteering: [],
+    pendingFollowUp: [],
+  }
+}
+
 // ─── Store Shape ─────────────────────────────────────────────────────────────
 
 interface AppState {
@@ -274,6 +323,7 @@ interface AppActions {
   reviseCouncilPlan: (feedback: string) => Promise<void>
   cancelCouncil: () => void
   abort: () => Promise<void>
+  confirmSessionChange: (action: SessionChangeAction) => Promise<boolean>
 
   // Session
   createNewSession: () => Promise<void>
@@ -332,9 +382,15 @@ interface AppActions {
   // Workspaces
   loadWorkspaces: () => Promise<void>
   createWorkspace: (name: string, path: string) => Promise<void>
-  // skipSessionLoad: when opening a specific session next (sidebar/session
-  // panel), skip the expensive resume+history load — switchSession will load.
-  switchWorkspace: (workspaceId: string, options?: { skipSessionLoad?: boolean }) => Promise<void>
+  /**
+   * Resolves false when the user declined the still-working warning, or the switch failed.
+   * skipSessionLoad: when opening a specific session next, skip resume+history —
+   * switchSession will load the target once.
+   */
+  switchWorkspace: (
+    workspaceId: string,
+    options?: { skipSessionLoad?: boolean }
+  ) => Promise<boolean>
   removeWorkspace: (workspaceId: string) => Promise<void>
   renameWorkspace: (workspaceId: string, name: string) => Promise<void>
   changeWorkspaceFolder: (workspaceId: string, newPath: string) => Promise<void>
@@ -650,7 +706,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   setMessages: (messages) => set({ messages }),
 
-  clearMessages: () => set({ messages: [], promptHistory: [], streamingContent: '', streamingThinking: '', streamingToolCalls: new Map(), subagentProgress: [] }),
+  // Tears down the whole chat context. The turn being left behind ends with it,
+  // so its streaming state and queue counters go too — otherwise the newly
+  // loaded session inherits a stuck spinner and a stale "queued steers" badge.
+  clearMessages: () =>
+    set({ messages: [], promptHistory: [], subagentProgress: [], ...idleTurnState() }),
 
   // Append a sent prompt to the recall history. Ignores blanks and consecutive
   // duplicates (shell-style), and caps the list so it can't grow unbounded.
@@ -858,11 +918,37 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
+  // Gate on every action that abandons the live turn. Pi runs one session per
+  // workspace process, and `switch_session`, `new_session`, `fork` and `clone`
+  // all tear the current one down — that disposal aborts the running turn along
+  // with its bash commands, retries and compaction, and detaches the listeners
+  // that would have emitted the rest of its events. A workspace switch spares the
+  // turn but clears the chat rendering it. Either way the user loses the response,
+  // so the loss is made explicit instead of happening on a stray sidebar click.
+  // Returns true when the caller may proceed.
+  //
+  // Must be consulted BEFORE anything calls clearMessages(): that resets
+  // `isStreaming`, which is the signal this gate reads.
+  confirmSessionChange: async (action) => {
+    if (!get().isStreaming) return true
+    const { message, confirmLabel } = SESSION_CHANGE_PROMPTS[action]
+    return get().requestConfirm({
+      title: 'Pi is still working',
+      message,
+      confirmLabel,
+      cancelLabel: 'Keep working',
+      // Discards work in progress, so the confirm button reads as destructive and
+      // "Keep working" takes the initial focus.
+      danger: true,
+    })
+  },
+
   // ─── Session ──────────────────────────────────────────────────────────
 
   createNewSession: async () => {
     const gen = ++sessionLoadGeneration
     try {
+      if (!(await get().confirmSessionChange('new'))) return
       const result = await window.piDesktop.session.createNew() as { success?: boolean; error?: string } | null
       if (gen !== sessionLoadGeneration) return
       if (result && result.success === false) {
@@ -872,6 +958,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           content: result.error ?? 'Cannot create session — Pi not running',
           timestamp: Date.now(),
         })
+        // The session did not change, so the chat still belongs here and must be
+        // kept. Only the turn is written off: Pi is not running to finish it, and
+        // its closing events will never arrive.
+        set(idleTurnState())
         return
       }
       get().clearMessages()
@@ -895,11 +985,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     // Already on this session — avoid a full history reload.
     if (get().sessionState?.sessionFile === path && !get().sessionLoading) return
 
-    // Coalesce rapid clicks: only the last path within the window runs.
+    // Gate first — must read isStreaming before clearMessages/idleTurnState.
+    if (!(await get().confirmSessionChange('switch'))) return
+
+    // Coalesce rapid clicks after the user has confirmed: only the last path runs.
     pendingSwitchPath = path
     const gen = ++sessionLoadGeneration
-    set({ sessionLoading: true, isStreaming: false })
-    get().clearMessages()
 
     if (switchCoalesceTimer) clearTimeout(switchCoalesceTimer)
     await new Promise<void>((resolve) => {
@@ -917,13 +1008,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const run = async (): Promise<void> => {
       if (gen !== sessionLoadGeneration || pendingSwitchPath !== path) return
       try {
-        const result = await window.piDesktop.session.switch(path) as {
+        set({ sessionLoading: true })
+        get().clearMessages()
+        const result = (await window.piDesktop.session.switch(path)) as {
           success?: boolean
           error?: string
         } | null
         if (gen !== sessionLoadGeneration) return
         if (result && result.success === false) {
-          set({ sessionLoading: false })
+          set({ sessionLoading: false, ...idleTurnState() })
           get().addMessage({
             id: generateId(),
             role: 'system',
@@ -937,7 +1030,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         scheduleSessionListRefresh(get)
       } catch (err) {
         if (gen !== sessionLoadGeneration) return
-        set({ sessionLoading: false })
+        set({ sessionLoading: false, ...idleTurnState() })
         get().addMessage({
           id: generateId(),
           role: 'system',
@@ -1075,6 +1168,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   forkFrom: async (entryId) => {
+    if (!(await get().confirmSessionChange('fork'))) return
     const result = (await window.piDesktop.session.fork(entryId)) as { success?: boolean } | null
     if (result?.success) {
       await get().reloadActiveSession()
@@ -1082,6 +1176,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   cloneBranch: async () => {
+    if (!(await get().confirmSessionChange('clone'))) return
     const result = (await window.piDesktop.session.clone()) as { success?: boolean } | null
     if (result?.success) {
       await get().reloadActiveSession()
@@ -1558,6 +1653,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   switchWorkspace: async (workspaceId, options) => {
     const skipSessionLoad = options?.skipSessionLoad === true
     try {
+      // Ask first: everything below clears the chat, and `clearMessages()` resets
+      // the `isStreaming` flag that the gate on any follow-up session change reads.
+      // Without this the cross-workspace path in the sidebar and session panel
+      // (switch workspace, then switch session) skipped the warning entirely.
+      if (!(await get().confirmSessionChange('workspace'))) return false
       await window.piDesktop.workspace.setActive(workspaceId)
       // The switch has committed on the main side as of this point — an
       // unsaved workspace-rules draft belongs to the workspace being left, so
@@ -1589,6 +1689,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         void get().refreshSessionStats()
       }
       await get().maybeWarnWorkspacePermissionRules()
+      return true
     } catch (err) {
       get().addMessage({
         id: generateId(),
@@ -1596,6 +1697,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         content: `Switch workspace error: ${err instanceof Error ? err.message : String(err)}`,
         timestamp: Date.now(),
       })
+      return false
     }
   },
 
