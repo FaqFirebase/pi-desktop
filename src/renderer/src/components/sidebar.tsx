@@ -107,12 +107,13 @@ export function Sidebar(): React.JSX.Element {
         // The workspace switch carries the "Pi is still working" warning for this
         // whole flow; a decline there must stop the session switch too, or the
         // declined turn gets torn down anyway by the session change below.
-        if (!(await switchWorkspace(matchingWs.id))) return
+        // Skip resume+history — switchSession below loads the target once.
+        if (!(await switchWorkspace(matchingWs.id, { skipSessionLoad: true }))) return
       } else {
         await useAppStore.getState().createWorkspace(session.projectName, session.projectPath)
         const updated = useAppStore.getState().workspaces
         const newWs = updated.find((w) => w.path === session.projectPath)
-        if (newWs && !(await switchWorkspace(newWs.id))) return
+        if (newWs && !(await switchWorkspace(newWs.id, { skipSessionLoad: true }))) return
       }
     }
     await switchSession(session.path)

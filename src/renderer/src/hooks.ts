@@ -342,27 +342,33 @@ export function useInitialize(): void {
       await loadSettings()
       const openToHome = useAppStore.getState().settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch
 
-      // Pi-free data needed by both Home and Chat.
+      // Workspaces are needed for the shell chrome; land the UI immediately after.
       await loadWorkspaces()
-      await refreshSessionList()
-      await useAppStore.getState().loadTags()
-      await useAppStore.getState().loadArchivedSessions()
-      await useAppStore.getState().loadNotes()
-      // Model id -> display-name map for chat/history; reads ~/.pi/agent/models.json.
+
+      if (openToHome) {
+        // Interactive ASAP — do NOT wait on the session-store walk (can be tens
+        // of seconds on a large ~/.pi/agent/sessions tree and freezes main IPC).
+        useAppStore.getState().setCurrentView('home')
+      } else {
+        useAppStore.getState().setCurrentView('chat')
+      }
+
+      // Background: session list, tags, notes, models, updates.
+      void refreshSessionList()
+      void useAppStore.getState().loadTags()
+      void useAppStore.getState().loadArchivedSessions()
+      void useAppStore.getState().loadNotes()
       void useAppStore.getState().loadCustomModels()
-      // Best-effort GitHub release check (non-blocking).
       void useAppStore.getState().checkForUpdates()
 
       if (openToHome) {
-        // Land on the Home/launcher screen; Pi starts lazily on first action.
-        useAppStore.getState().setCurrentView('home')
+        // Pi starts lazily on first action from Home.
         return
       }
 
       // Legacy: boot into Chat and resume the last session. reloadActiveSession
       // pulls the resumed session's message history (refreshSessionState alone
       // only loads metadata, leaving the chat empty).
-      useAppStore.getState().setCurrentView('chat')
       await startPi()
       await useAppStore.getState().reloadActiveSession()
       await refreshSessionStats()

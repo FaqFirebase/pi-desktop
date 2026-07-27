@@ -60,6 +60,31 @@ const IGNORED_DIRS = new Set([
   'target', 'coverage', '.nyc_output',
 ])
 
+/**
+ * Windows user-profile folders that appear under a home-directory workspace.
+ * Watching them hits junctions / protected reparse points (EPERM noise).
+ * Only applied on win32 so other platforms are unaffected.
+ */
+const WIN32_PROFILE_IGNORED = new Set([
+  'appdata',
+  'application data',
+  'local settings',
+  'cookies',
+  'recent',
+  'sendto',
+  'start menu',
+  'templates',
+  'nethood',
+  'printhood',
+  'my documents',
+  'my music',
+  'my pictures',
+  'my videos',
+])
+
+/** Log each watch error path at most once to avoid console floods. */
+const watchErrorLogged = new Set<string>()
+
 // Watcher tuning. Depth matches the tree view (getFileTree default), so the
 // watcher never recurses into deep subtrees the UI doesn't render — important
 // because the default workspace is the user's home directory. Burst writes
@@ -351,6 +376,9 @@ export class FileService {
     this.watcher = watch(this.workspacePath, {
       ignored: (path) => this.isIgnoredPath(path),
       ignoreInitial: true,
+      // Home-directory workspaces on Windows contain junctions into protected
+      // trees; following them floods EPERM. POSIX trees rarely need this.
+      followSymlinks: process.platform !== 'win32',
       depth: WATCH_DEPTH,
       awaitWriteFinish: { stabilityThreshold: WATCH_DEBOUNCE_MS, pollInterval: 50 },
       persistent: true,
@@ -373,9 +401,23 @@ export class FileService {
       .on('unlink', emit('unlink'))
       .on('addDir', emit('addDir'))
       .on('unlinkDir', emit('unlinkDir'))
-      // Tolerate watch failures (e.g. inotify limit ENOSPC on large trees):
-      // the renderer's safety-net poll still keeps the tree fresh.
-      .on('error', (err) => console.error('[FileService] watch error:', err))
+      // Tolerate watch failures (EPERM on Windows protected dirs, ENOSPC on
+      // large trees): the renderer's safety-net poll still keeps the tree fresh.
+      .on('error', (err: unknown) => {
+        const code =
+          err && typeof err === 'object' && 'code' in err
+            ? String((err as { code?: unknown }).code ?? '')
+            : ''
+        if (code === 'EPERM' || code === 'EACCES' || code === 'ENOENT') {
+          const key = `${this.workspacePath}:${code}`
+          if (!watchErrorLogged.has(key)) {
+            watchErrorLogged.add(key)
+            console.warn(`[FileService] watch ${code} under ${this.workspacePath} (further ${code} suppressed)`)
+          }
+          return
+        }
+        console.error('[FileService] watch error:', err)
+      })
   }
 
   /**
@@ -399,7 +441,14 @@ export class FileService {
   private isIgnoredPath(absolutePath: string): boolean {
     const rel = relative(this.workspacePath, absolutePath)
     if (!rel || rel.startsWith('..')) return false
-    return rel.split(/[\\/]/).some((segment) => IGNORED_DIRS.has(segment))
+    return rel.split(/[\\/]/).some((segment) => {
+      if (IGNORED_DIRS.has(segment)) return true
+      // Windows profile noise only — do not broaden ignore sets on other OSes.
+      if (process.platform !== 'win32') return false
+      const lower = segment.toLowerCase()
+      if (WIN32_PROFILE_IGNORED.has(lower)) return true
+      return lower.startsWith('ntuser.')
+    })
   }
 
   /**
