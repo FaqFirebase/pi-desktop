@@ -1,5 +1,5 @@
 import { ChildProcess, SpawnOptions, spawn, spawnSync } from 'child_process'
-import { existsSync, mkdirSync, readdirSync, statSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'fs'
 import { join } from 'path'
 import { EventEmitter } from 'events'
 import { StringDecoder } from 'string_decoder'
@@ -260,8 +260,10 @@ const MAX_PENDING_RESPONSES = 64
 const RESPONSE_TIMEOUT_MS = 30_000
 
 /**
- * Writable temp directory for the Pi child process. Prefer the GUI data dir so
- * extensions (pi-subagents, etc.) don't depend on a locked %TEMP% tree.
+ * Writable temp directory for the Pi child process on Windows only. Prefer the
+ * GUI data dir so extensions (pi-subagents, etc.) don't depend on a locked
+ * %TEMP% tree. Not used on POSIX — those platforms keep the system temp so
+ * $TMPDIR still receives OS cleanup.
  */
 function resolvePiChildTempDir(): string {
   try {
@@ -281,12 +283,35 @@ function resolvePiChildTempDir(): string {
   }
 }
 
+/** Windows-only TEMP/TMP/TMPDIR override for the Pi child. Empty on other OSes. */
 function buildPiChildEnv(): NodeJS.ProcessEnv {
+  if (process.platform !== 'win32') return {}
   const tmp = resolvePiChildTempDir()
   return {
     TEMP: tmp,
     TMP: tmp,
     TMPDIR: tmp,
+  }
+}
+
+/**
+ * Best-effort wipe of the GUI-owned Pi temp dir (Windows). Called on app quit
+ * so pi-subagents / extension scratch does not grow without bound.
+ */
+export function cleanupPiChildTempDir(): void {
+  if (process.platform !== 'win32') return
+  try {
+    const dir = getGuiDataPath('tmp')
+    if (!existsSync(dir)) return
+    for (const name of readdirSync(dir)) {
+      try {
+        rmSync(join(dir, name), { recursive: true, force: true })
+      } catch {
+        // In use or locked — leave for next quit.
+      }
+    }
+  } catch {
+    // Ignore — quit path must not throw.
   }
 }
 
@@ -403,9 +428,8 @@ export class PiRpcManager extends EventEmitter {
     const spawnOptions: SpawnOptions = {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: options.cwd,
-      // Give Pi (and extensions like pi-subagents) a known-writable temp root.
-      // On Windows, %TEMP%\pi-subagents-* can hit EPERM (Controlled Folder Access,
-      // multi-profile ACLs, AV locks) and abort extension load before ready.
+      // Windows only: redirect TEMP so pi-subagents can mkdir without EPERM on
+      // locked %LocalAppData%\Temp trees. POSIX keeps the system temp (OS cleanup).
       env: { ...process.env, ...buildPiChildEnv(), ...options.env },
       // .cmd/.bat/.ps1 shims on Windows can't be invoked directly from
       // spawn — they need the cmd.exe interpreter via shell:true.

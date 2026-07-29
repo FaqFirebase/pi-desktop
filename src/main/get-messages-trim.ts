@@ -2,6 +2,8 @@
 export const MAX_MESSAGES_FOR_UI = 150
 /** Cap individual text/tool blobs so one bash dump can't freeze paint. */
 export const MAX_CONTENT_CHARS = 80_000
+/** Cap base64 image payloads reloaded from history (drop rather than ship). */
+export const MAX_IMAGE_DATA_CHARS = 200_000
 
 /**
  * Shrink a Pi `get_messages` response before IPC. Drops old turns and truncates
@@ -56,7 +58,7 @@ export function trimMessagePayload(msg: unknown): unknown {
         }
       }
       // Drop huge base64 image reloads in history if somehow embedded as data.
-      if (b.type === 'image' && typeof b.data === 'string' && b.data.length > 200_000) {
+      if (b.type === 'image' && typeof b.data === 'string' && b.data.length > MAX_IMAGE_DATA_CHARS) {
         return { ...b, data: '', mimeType: b.mimeType, _omitted: true }
       }
       return block
@@ -73,17 +75,19 @@ export function trimMessagePayload(msg: unknown): unknown {
         out.arguments = out.arguments.slice(0, MAX_CONTENT_CHARS) + '…'
       }
       if (typeof out.result === 'string' && out.result.length > MAX_CONTENT_CHARS) {
+        const originalLen = out.result.length
         out.result =
           out.result.slice(0, MAX_CONTENT_CHARS) +
-          `\n\n… truncated ${String(t.result).length - MAX_CONTENT_CHARS} characters`
+          `\n\n… truncated ${originalLen - MAX_CONTENT_CHARS} characters`
       }
       return out
     })
   }
   if (typeof next.result === 'string' && next.result.length > MAX_CONTENT_CHARS) {
+    const originalLen = next.result.length
     next.result =
       next.result.slice(0, MAX_CONTENT_CHARS) +
-      `\n\n… truncated ${String(m.result).length - MAX_CONTENT_CHARS} characters`
+      `\n\n… truncated ${originalLen - MAX_CONTENT_CHARS} characters`
   }
   if (typeof next.thinking === 'string' && next.thinking.length > MAX_CONTENT_CHARS) {
     next.thinking = next.thinking.slice(0, MAX_CONTENT_CHARS) + '…'

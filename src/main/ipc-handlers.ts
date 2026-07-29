@@ -1617,10 +1617,11 @@ function createListSessions(wm: WorkspaceManager) {
       const sessionsDir = getSessionsRoot()
       const entries: SessionEntry[] = []
       // Precompute workspace match map once (was O(workspaces) per file).
+      // Keys use pathsEqual semantics: case-fold only on win32.
       const workspaceBySanitized = new Map(
-        wm.getWorkspaces().map((ws) => [sanitizePath(ws.path).toLowerCase(), ws] as const)
+        wm.getWorkspaces().map((ws) => [workspaceMatchKey(sanitizePath(ws.path)), ws] as const)
       )
-      await collectSessionFiles(sessionsDir, entries, sessionsDir, workspaceBySanitized)
+      await collectSessionFiles(entries, sessionsDir, workspaceBySanitized)
       entries.sort((a, b) => b.lastModified - a.lastModified)
       // Only read names for the sessions we actually return (avoids reading the
       // whole store), then surface each session's latest session_info name.
@@ -1640,6 +1641,11 @@ function createListAllSessions(wm: WorkspaceManager) {
   }
 }
 
+/** Map key for workspace path matching — case-fold only where pathsEqual does. */
+function workspaceMatchKey(path: string): string {
+  return process.platform === 'win32' ? path.toLowerCase() : path
+}
+
 /**
  * Collect top-level parent sessions only.
  *
@@ -1652,7 +1658,6 @@ function createListAllSessions(wm: WorkspaceManager) {
  * runs. We only index `.jsonl` files that sit directly in a project directory.
  */
 async function collectSessionFiles(
-  _dir: string,
   entries: SessionEntry[],
   sessionsRoot: string,
   workspaceBySanitized: Map<string, { path: string; name: string }>
@@ -1667,8 +1672,8 @@ async function collectSessionFiles(
           const relativeToRoot = sessionDirName(projectFull, sessionsRoot) || projectDir.name
 
           const matched =
-            workspaceBySanitized.get(relativeToRoot.toLowerCase()) ??
-            workspaceBySanitized.get(sanitizePath(relativeToRoot).toLowerCase())
+            workspaceBySanitized.get(workspaceMatchKey(relativeToRoot)) ??
+            workspaceBySanitized.get(workspaceMatchKey(sanitizePath(relativeToRoot)))
           const projectPath = matched
             ? matched.path
             : desanitizeSessionDir(relativeToRoot)

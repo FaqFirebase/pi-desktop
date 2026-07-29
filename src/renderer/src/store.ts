@@ -436,6 +436,8 @@ let sessionLoadGeneration = 0
 // Latest path requested for switch — rapid clicks only run the final one.
 let pendingSwitchPath: string | null = null
 let switchCoalesceTimer: ReturnType<typeof setTimeout> | null = null
+/** Resolve for the in-flight coalesce wait — invoked immediately when superseded. */
+let switchCoalesceResolve: (() => void) | null = null
 // Only one get_messages/switch pipeline at a time (Pi + IPC can't keep up).
 let switchPipeline: Promise<void> = Promise.resolve()
 
@@ -929,7 +931,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         return
       }
       get().clearMessages()
-      set({ isStreaming: false })
       await get().refreshSessionState()
       await get().refreshSessionStats()
       if (gen !== sessionLoadGeneration) return
@@ -956,10 +957,21 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     pendingSwitchPath = path
     const gen = ++sessionLoadGeneration
 
-    if (switchCoalesceTimer) clearTimeout(switchCoalesceTimer)
+    // Supersede any prior coalesce wait so its promise does not leak.
+    if (switchCoalesceTimer) {
+      clearTimeout(switchCoalesceTimer)
+      switchCoalesceTimer = null
+    }
+    if (switchCoalesceResolve) {
+      const prev = switchCoalesceResolve
+      switchCoalesceResolve = null
+      prev()
+    }
     await new Promise<void>((resolve) => {
+      switchCoalesceResolve = resolve
       switchCoalesceTimer = setTimeout(() => {
         switchCoalesceTimer = null
+        switchCoalesceResolve = null
         resolve()
       }, 80)
     })
@@ -1013,7 +1025,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const refreshList = options?.refreshList ?? true
 
     get().clearMessages()
-    set({ isStreaming: false, sessionLoading: true })
+    set({ sessionLoading: true })
     void get().refreshSessionState()
     void get().refreshSessionStats()
 
@@ -1032,16 +1044,19 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           }
         }
         if (resp.success && resp.data?.messages) {
-          const loaded = await parseMessagesChunked(resp.data.messages as unknown[], gen)
+          const rawMessages = resp.data.messages as unknown[]
+          const shippedCount = rawMessages.length
+          const loaded = await parseMessagesChunked(rawMessages, gen)
           if (loaded === null || gen !== sessionLoadGeneration) return
           const truncated = resp.data.truncatedFromStart === true
-          const total = typeof resp.data.totalMessageCount === 'number' ? resp.data.totalMessageCount : loaded.length
+          const total = typeof resp.data.totalMessageCount === 'number' ? resp.data.totalMessageCount : shippedCount
           // Surface a one-line notice when older turns were dropped for perf.
-          if (truncated && loaded.length > 0) {
+          // Use the raw shipped count (not parse survivors) for "latest N of M".
+          if (truncated && shippedCount > 0) {
             loaded.unshift({
               id: generateId(),
               role: 'system',
-              content: `Showing the latest ${loaded.length} of ${total} messages for performance. Older turns are still on disk in the session file.`,
+              content: `Showing the latest ${shippedCount} of ${total} messages for performance. Older turns are still on disk in the session file.`,
               timestamp: Date.now(),
             })
           }
@@ -1605,7 +1620,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // never observe a stale draft under the new workspace.
       get().setPermissionRulesDraft('workspace', null)
       get().clearMessages()
-      set({ isStreaming: false })
       // Re-sync Pi status from main: each workspace has its own PiRpcManager,
       // so the new active workspace's Pi may be in a different state than
       // what piStatus is currently showing. Without this, the `if running return`
