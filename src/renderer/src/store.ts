@@ -174,6 +174,8 @@ interface AppState {
     { name: string; args: string; result?: string; isExecuting: boolean; isError?: boolean; startedAt?: number; durationMs?: number }
   >
   isStreaming: boolean
+  /** True while a session history load is in flight (switch/reload). */
+  sessionLoading: boolean
 
   // Queue
   pendingSteering: string[]
@@ -299,7 +301,7 @@ interface AppActions {
   // Session
   createNewSession: () => Promise<void>
   switchSession: (path: string) => Promise<void>
-  reloadActiveSession: () => Promise<void>
+  reloadActiveSession: (options?: { refreshList?: boolean }) => Promise<void>
   refreshSessionState: () => Promise<void>
   refreshSessionStats: () => Promise<void>
   refreshSessionList: () => Promise<void>
@@ -354,7 +356,9 @@ interface AppActions {
   loadWorkspaces: () => Promise<void>
   createWorkspace: (name: string, path: string) => Promise<void>
   /** Resolves false when the user declined the still-working warning, or the switch failed. */
-  switchWorkspace: (workspaceId: string) => Promise<boolean>
+  // skipSessionLoad: when opening a specific session next (sidebar/session
+  // panel), skip the expensive resume+history load — switchSession will load.
+  switchWorkspace: (workspaceId: string, options?: { skipSessionLoad?: boolean }) => Promise<boolean>
   removeWorkspace: (workspaceId: string) => Promise<void>
   renameWorkspace: (workspaceId: string, name: string) => Promise<void>
   changeWorkspaceFolder: (workspaceId: string, newPath: string) => Promise<void>
@@ -423,6 +427,54 @@ interface AppActions {
 let messageCounter = 0
 function generateId(): string {
   return `msg-${Date.now()}-${++messageCounter}`
+}
+
+// Bumps on every session switch / explicit reload so in-flight getMessages
+// results from a previous switch are dropped instead of fighting the UI.
+let sessionLoadGeneration = 0
+
+// Latest path requested for switch — rapid clicks only run the final one.
+let pendingSwitchPath: string | null = null
+let switchCoalesceTimer: ReturnType<typeof setTimeout> | null = null
+/** Resolve for the in-flight coalesce wait — invoked immediately when superseded. */
+let switchCoalesceResolve: (() => void) | null = null
+// Only one get_messages/switch pipeline at a time (Pi + IPC can't keep up).
+let switchPipeline: Promise<void> = Promise.resolve()
+
+// Coalesce filesystem session-list walks: rapid switches used to stack N full
+// directory scans and freeze the renderer/main.
+let sessionListRefreshInFlight = false
+let sessionListRefreshQueued = false
+let sessionListRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleSessionListRefresh(get: () => AppState & AppActions): void {
+  if (sessionListRefreshTimer) clearTimeout(sessionListRefreshTimer)
+  sessionListRefreshTimer = setTimeout(() => {
+    sessionListRefreshTimer = null
+    void get().refreshSessionList()
+  }, 250)
+}
+
+const PARSE_CHUNK = 50
+
+/** Parse history in chunks, yielding to the event loop so the UI can paint. */
+async function parseMessagesChunked(
+  raw: unknown[],
+  gen: number
+): Promise<DisplayMessage[] | null> {
+  const out: DisplayMessage[] = []
+  for (let i = 0; i < raw.length; i += PARSE_CHUNK) {
+    if (gen !== sessionLoadGeneration) return null
+    const end = Math.min(i + PARSE_CHUNK, raw.length)
+    for (let j = i; j < end; j++) {
+      const parsed = parseAgentMessage(raw[j])
+      if (parsed) out.push(parsed)
+    }
+    // Yield so Windows doesn't mark the window "Not Responding".
+    await new Promise<void>((r) => setTimeout(r, 0))
+  }
+  if (gen !== sessionLoadGeneration) return null
+  return out
 }
 
 /**
@@ -503,6 +555,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   streamingThinking: '',
   streamingToolCalls: new Map(),
   isStreaming: false,
+  sessionLoading: false,
 
   pendingSteering: [],
   pendingFollowUp: [],
@@ -859,9 +912,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Session ──────────────────────────────────────────────────────────
 
   createNewSession: async () => {
+    const gen = ++sessionLoadGeneration
     try {
       if (!(await get().confirmSessionChange('new'))) return
       const result = await window.piDesktop.session.createNew() as { success?: boolean; error?: string } | null
+      if (gen !== sessionLoadGeneration) return
       if (result && result.success === false) {
         get().addMessage({
           id: generateId(),
@@ -878,8 +933,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       get().clearMessages()
       await get().refreshSessionState()
       await get().refreshSessionStats()
-      await get().refreshSessionList()
+      if (gen !== sessionLoadGeneration) return
+      scheduleSessionListRefresh(get)
     } catch (err) {
+      if (gen !== sessionLoadGeneration) return
       get().addMessage({
         id: generateId(),
         role: 'system',
@@ -890,46 +947,130 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   switchSession: async (path) => {
-    try {
-      if (!(await get().confirmSessionChange('switch'))) return
-      const result = await window.piDesktop.session.switch(path) as { success?: boolean; error?: string } | null
-      if (result && result.success === false) {
+    // Already on this session — avoid a full history reload.
+    if (get().sessionState?.sessionFile === path && !get().sessionLoading) return
+
+    // Gate first — must read isStreaming before clearMessages/idleTurnState.
+    if (!(await get().confirmSessionChange('switch'))) return
+
+    // Coalesce rapid clicks after the user has confirmed: only the last path runs.
+    pendingSwitchPath = path
+    const gen = ++sessionLoadGeneration
+
+    // Supersede any prior coalesce wait so its promise does not leak.
+    if (switchCoalesceTimer) {
+      clearTimeout(switchCoalesceTimer)
+      switchCoalesceTimer = null
+    }
+    if (switchCoalesceResolve) {
+      const prev = switchCoalesceResolve
+      switchCoalesceResolve = null
+      prev()
+    }
+    await new Promise<void>((resolve) => {
+      switchCoalesceResolve = resolve
+      switchCoalesceTimer = setTimeout(() => {
+        switchCoalesceTimer = null
+        switchCoalesceResolve = null
+        resolve()
+      }, 80)
+    })
+
+    // Superseded by a newer click.
+    if (gen !== sessionLoadGeneration || pendingSwitchPath !== path) return
+
+    // Serialize against other in-flight switches so Pi never gets N concurrent
+    // get_messages (each multi‑MB IPC clone freezes the app).
+    const run = async (): Promise<void> => {
+      if (gen !== sessionLoadGeneration || pendingSwitchPath !== path) return
+      try {
+        set({ sessionLoading: true })
+        get().clearMessages()
+        const result = (await window.piDesktop.session.switch(path)) as {
+          success?: boolean
+          error?: string
+        } | null
+        if (gen !== sessionLoadGeneration) return
+        if (result && result.success === false) {
+          set({ sessionLoading: false, ...idleTurnState() })
+          get().addMessage({
+            id: generateId(),
+            role: 'system',
+            content: result.error ?? 'Cannot switch session — Pi not running',
+            timestamp: Date.now(),
+          })
+          return
+        }
+        await get().reloadActiveSession({ refreshList: false })
+        if (gen !== sessionLoadGeneration) return
+        scheduleSessionListRefresh(get)
+      } catch (err) {
+        if (gen !== sessionLoadGeneration) return
+        set({ sessionLoading: false, ...idleTurnState() })
         get().addMessage({
           id: generateId(),
           role: 'system',
-          content: result.error ?? 'Cannot switch session — Pi not running',
+          content: `Switch session error: ${err instanceof Error ? err.message : String(err)}`,
           timestamp: Date.now(),
         })
-        // Same as a refused new session: the chat stays put, the turn does not.
-        set(idleTurnState())
-        return
       }
-      await get().reloadActiveSession()
-    } catch (err) {
-      get().addMessage({
-        id: generateId(),
-        role: 'system',
-        content: `Switch session error: ${err instanceof Error ? err.message : String(err)}`,
-        timestamp: Date.now(),
-      })
     }
+
+    switchPipeline = switchPipeline.then(run, run)
+    await switchPipeline
   },
 
-  reloadActiveSession: async () => {
+  reloadActiveSession: async (options) => {
+    const gen = sessionLoadGeneration
+    const refreshList = options?.refreshList ?? true
+
     get().clearMessages()
-    get().refreshSessionState()
-    get().refreshSessionStats()
-    const response = await window.piDesktop.session.getMessages()
-    if (response && typeof response === 'object') {
-      const resp = response as { success?: boolean; data?: { messages?: unknown[] } }
-      if (resp.success && resp.data?.messages) {
-        const loaded = (resp.data.messages as unknown[])
-          .map(parseAgentMessage)
-          .filter((m): m is DisplayMessage => m !== null)
-        set({ messages: loaded })
+    set({ sessionLoading: true })
+    void get().refreshSessionState()
+    void get().refreshSessionStats()
+
+    try {
+      const response = await window.piDesktop.session.getMessages()
+      // A newer switch/reload started while we waited — discard this history.
+      if (gen !== sessionLoadGeneration) return
+
+      if (response && typeof response === 'object') {
+        const resp = response as {
+          success?: boolean
+          data?: {
+            messages?: unknown[]
+            truncatedFromStart?: boolean
+            totalMessageCount?: number
+          }
+        }
+        if (resp.success && resp.data?.messages) {
+          const rawMessages = resp.data.messages as unknown[]
+          const shippedCount = rawMessages.length
+          const loaded = await parseMessagesChunked(rawMessages, gen)
+          if (loaded === null || gen !== sessionLoadGeneration) return
+          const truncated = resp.data.truncatedFromStart === true
+          const total = typeof resp.data.totalMessageCount === 'number' ? resp.data.totalMessageCount : shippedCount
+          // Surface a one-line notice when older turns were dropped for perf.
+          // Use the raw shipped count (not parse survivors) for "latest N of M".
+          if (truncated && shippedCount > 0) {
+            loaded.unshift({
+              id: generateId(),
+              role: 'system',
+              content: `Showing the latest ${shippedCount} of ${total} messages for performance. Older turns are still on disk in the session file.`,
+              timestamp: Date.now(),
+            })
+          }
+          set({ messages: loaded, sessionLoading: false })
+        } else {
+          set({ sessionLoading: false })
+        }
+      } else {
+        set({ sessionLoading: false })
       }
+      if (refreshList) scheduleSessionListRefresh(get)
+    } catch {
+      if (gen === sessionLoadGeneration) set({ sessionLoading: false })
     }
-    get().refreshSessionList()
   },
 
   refreshSessionState: async () => {
@@ -961,6 +1102,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   refreshSessionList: async () => {
+    if (sessionListRefreshInFlight) {
+      sessionListRefreshQueued = true
+      return
+    }
+    sessionListRefreshInFlight = true
     try {
       const list = await window.piDesktop.session.list()
       const sessionState = get().sessionState
@@ -989,6 +1135,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       set({ sessionList })
     } catch {
       // Silent failure
+    } finally {
+      sessionListRefreshInFlight = false
+      if (sessionListRefreshQueued) {
+        sessionListRefreshQueued = false
+        void get().refreshSessionList()
+      }
     }
   },
 
@@ -1450,7 +1602,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
-  switchWorkspace: async (workspaceId) => {
+  switchWorkspace: async (workspaceId, options) => {
+    const skipSessionLoad = options?.skipSessionLoad === true
     try {
       // Ask first: everything below clears the chat, and `clearMessages()` resets
       // the `isStreaming` flag that the gate on any follow-up session change reads.
@@ -1474,15 +1627,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       const status = await window.piDesktop.pi.getStatus()
       set({ piStatus: status.status, piPid: status.pid, piError: status.error })
       await get().loadWorkspaces()
-      await get().refreshSessionState()
-      await get().refreshSessionStats()
-      await get().refreshSessionList()
+      // Session list + Pi start; skip full history when a follow-up switchSession
+      // will load the target session (sidebar/session panel open flow).
+      scheduleSessionListRefresh(get)
       await get().startPi()
-      // Load the resumed session's history into the chat. Unlike selecting a
-      // session (which goes through reloadActiveSession), the workspace path
-      // never fetched messages, so the recent session opened with an empty chat.
-      if (get().piStatus === 'running') {
-        await get().reloadActiveSession()
+      if (!skipSessionLoad && get().piStatus === 'running') {
+        sessionLoadGeneration += 1
+        await get().reloadActiveSession({ refreshList: false })
+      } else if (get().piStatus === 'running') {
+        // Still refresh metadata so chrome (model/name) isn't stale.
+        void get().refreshSessionState()
+        void get().refreshSessionStats()
       }
       await get().maybeWarnWorkspacePermissionRules()
       return true

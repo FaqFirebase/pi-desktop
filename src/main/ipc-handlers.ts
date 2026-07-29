@@ -16,9 +16,9 @@ import {
   sessionDirName,
   desanitizeSessionDir,
   projectNameFromPath,
-  pathsEqual,
 } from './session-paths'
-import { readSessionName } from './session-name'
+import { readSessionNameCached } from './session-name'
+import { trimGetMessagesResponse } from './get-messages-trim'
 import { activityStatsStore } from './activity-stats'
 import type {
   PiStartOptions,
@@ -602,7 +602,9 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_MESSAGES, async () => {
     const pi = workspaceManager.getActivePiManager()
     if (!pi || pi.getStatus().status !== 'running') return null
-    return pi.sendCommand({ type: 'get_messages' })
+    const response = await pi.sendCommand({ type: 'get_messages' })
+    // Bound IPC payload size so multi‑MB histories don't freeze the renderer.
+    return trimGetMessagesResponse(response)
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_STATS, async () => {
@@ -1589,9 +1591,9 @@ interface SessionEntry {
   projectName: string
 }
 
-// How many session files to read names from in parallel. Mirrors Pi's own
-// bounded concurrency so a large session store doesn't spawn hundreds of reads.
-const SESSION_NAME_READ_CONCURRENCY = 10
+// How many session files to read names from in parallel. Each read is now
+// bounded (head+tail only), so we can run more without freezing main.
+const SESSION_NAME_READ_CONCURRENCY = 24
 
 /** Populate `entry.name` from each session file's latest `session_info`, bounded. */
 async function fillSessionNames(entries: SessionEntry[]): Promise<void> {
@@ -1599,7 +1601,7 @@ async function fillSessionNames(entries: SessionEntry[]): Promise<void> {
   async function worker(): Promise<void> {
     while (cursor < entries.length) {
       const entry = entries[cursor++]
-      entry.name = await readSessionName(entry.path)
+      entry.name = await readSessionNameCached(entry.path, entry.lastModified)
     }
   }
   const workers = Array.from(
@@ -1614,7 +1616,12 @@ function createListSessions(wm: WorkspaceManager) {
     try {
       const sessionsDir = getSessionsRoot()
       const entries: SessionEntry[] = []
-      await collectSessionFiles(sessionsDir, entries, sessionsDir, wm)
+      // Precompute workspace match map once (was O(workspaces) per file).
+      // Keys use pathsEqual semantics: case-fold only on win32.
+      const workspaceBySanitized = new Map(
+        wm.getWorkspaces().map((ws) => [workspaceMatchKey(sanitizePath(ws.path)), ws] as const)
+      )
+      await collectSessionFiles(entries, sessionsDir, workspaceBySanitized)
       entries.sort((a, b) => b.lastModified - a.lastModified)
       // Only read names for the sessions we actually return (avoids reading the
       // whole store), then surface each session's latest session_info name.
@@ -1634,57 +1641,74 @@ function createListAllSessions(wm: WorkspaceManager) {
   }
 }
 
+/** Map key for workspace path matching — case-fold only where pathsEqual does. */
+function workspaceMatchKey(path: string): string {
+  return process.platform === 'win32' ? path.toLowerCase() : path
+}
+
+/**
+ * Collect top-level parent sessions only.
+ *
+ * Layout under the Pi session store:
+ *   sessions/<sanitized-project>/<timestamp>_<id>.jsonl     ← parent (list these)
+ *   sessions/<sanitized-project>/<timestamp>_<id>/<child>…  ← subagent runs
+ *
+ * Extensions like pi-subagents nest each run under the parent session folder.
+ * Recursing into those folders flooded Recent Sessions with ephemeral child
+ * runs. We only index `.jsonl` files that sit directly in a project directory.
+ */
 async function collectSessionFiles(
-  dir: string,
   entries: SessionEntry[],
   sessionsRoot: string,
-  wm: WorkspaceManager
+  workspaceBySanitized: Map<string, { path: string; name: string }>
 ): Promise<void> {
   try {
-    const items = await readdir(dir, { withFileTypes: true })
-    for (const item of items) {
-      const fullPath = join(dir, item.name)
-      if (item.isDirectory()) {
-        await collectSessionFiles(fullPath, entries, sessionsRoot, wm)
-      } else if (item.isFile() && item.name.endsWith(JSONL_EXTENSION)) {
-        try {
-          const fileStat = await stat(fullPath)
+    const projectDirs = await readdir(sessionsRoot, { withFileTypes: true })
+    await Promise.all(
+      projectDirs
+        .filter((d) => d.isDirectory())
+        .map(async (projectDir) => {
+          const projectFull = join(sessionsRoot, projectDir.name)
+          const relativeToRoot = sessionDirName(projectFull, sessionsRoot) || projectDir.name
 
-          // Determine project path from the directory structure. Normalized so
-          // Windows session dirs (backslash-separated) compare correctly.
-          const relativeToRoot = sessionDirName(dir, sessionsRoot)
-          let projectPath = ''
-          let projectName = 'Unknown'
+          const matched =
+            workspaceBySanitized.get(workspaceMatchKey(relativeToRoot)) ??
+            workspaceBySanitized.get(workspaceMatchKey(sanitizePath(relativeToRoot)))
+          const projectPath = matched
+            ? matched.path
+            : desanitizeSessionDir(relativeToRoot)
+          const projectName = matched
+            ? matched.name
+            : projectNameFromPath(projectPath)
 
-          if (relativeToRoot) {
-            // Try to match against known workspace paths
-            const workspaces = wm.getWorkspaces()
-            const matched = workspaces.find((ws) => pathsEqual(sanitizePath(ws.path), relativeToRoot))
-
-            if (matched) {
-              projectPath = matched.path
-              projectName = matched.name
-            } else {
-              // Fallback: desanitize (lossy) and derive a clean basename.
-              projectPath = desanitizeSessionDir(relativeToRoot)
-              projectName = projectNameFromPath(projectPath)
-            }
+          let items: Array<{ name: string; isFile: () => boolean }>
+          try {
+            items = await readdir(projectFull, { withFileTypes: true })
+          } catch {
+            return
           }
 
-          entries.push({
-            path: fullPath,
-            name: null,
-            sessionId: item.name.replace(JSONL_EXTENSION, ''),
-            lastModified: fileStat.mtimeMs,
-            messageCount: 0,
-            projectPath,
-            projectName,
-          })
-        } catch {
-          // Skip unreadable files
-        }
-      }
-    }
+          for (const item of items) {
+            // Parent sessions only — skip directories (subagent nests) and non-jsonl.
+            if (!item.isFile() || !item.name.endsWith(JSONL_EXTENSION)) continue
+            const fullPath = join(projectFull, item.name)
+            try {
+              const fileStat = await stat(fullPath)
+              entries.push({
+                path: fullPath,
+                name: null,
+                sessionId: item.name.replace(JSONL_EXTENSION, ''),
+                lastModified: fileStat.mtimeMs,
+                messageCount: 0,
+                projectPath,
+                projectName,
+              })
+            } catch {
+              // Skip unreadable files
+            }
+          }
+        })
+    )
   } catch {
     // Directory doesn't exist or isn't readable
   }

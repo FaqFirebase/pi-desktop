@@ -98,13 +98,14 @@ export function SessionPanel(): React.JSX.Element {
       if (matchingWorkspace) {
         // A declined "Pi is still working" warning must stop the session switch
         // below as well, not just the workspace change.
-        if (!(await switchWorkspace(matchingWorkspace.id))) return
+        // skipSessionLoad: switchSession loads the target history once.
+        if (!(await switchWorkspace(matchingWorkspace.id, { skipSessionLoad: true }))) return
       } else {
         // Auto-create workspace for this project
         await useAppStore.getState().createWorkspace(session.projectName, session.projectPath)
         const updatedWorkspaces = useAppStore.getState().workspaces
         const newWorkspace = updatedWorkspaces.find((w) => w.path === session.projectPath)
-        if (newWorkspace && !(await switchWorkspace(newWorkspace.id))) return
+        if (newWorkspace && !(await switchWorkspace(newWorkspace.id, { skipSessionLoad: true }))) return
       }
     }
 
