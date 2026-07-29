@@ -207,8 +207,6 @@ interface AppState {
 
   // Extension UI
   extensionUiRequest: PiExtensionUiRequest | null
-  // Extension widgets (setWidget fire-and-forget). Keyed by widgetKey.
-  extensionWidgets: Record<string, { lines: string[]; placement?: string }>
   // Extension status entries (setStatus fire-and-forget). Keyed by statusKey.
   extensionStatuses: Record<string, string>
   // Live subagent progress from tool_execution_update events (subagent tool).
@@ -606,7 +604,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   commands: [],
 
   extensionUiRequest: null,
-  extensionWidgets: {},
   extensionStatuses: {},
   subagentProgress: [],
   confirmRequest: null,
@@ -967,7 +964,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         return
       }
       get().clearMessages()
-      set({ isStreaming: false })
       await get().refreshSessionState()
       await get().refreshSessionStats()
       if (gen !== sessionLoadGeneration) return
@@ -1499,19 +1495,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       case 'extension_ui_request': {
         const uiEvent = event as PiExtensionUiRequest
         if (uiEvent.method === 'setWidget') {
-          set((state) => {
-            const key = uiEvent.widgetKey ?? 'default'
-            if (uiEvent.widgetLines === undefined) {
-              const { [key]: _removed, ...rest } = state.extensionWidgets
-              return { extensionWidgets: rest }
-            }
-            return {
-              extensionWidgets: {
-                ...state.extensionWidgets,
-                [key]: { lines: uiEvent.widgetLines ?? [], placement: uiEvent.widgetPlacement },
-              },
-            }
-          })
+          // Fire-and-forget: no renderer surface consumes widget lines yet.
         } else if (uiEvent.method === 'setStatus') {
           set((state) => {
             const key = uiEvent.statusKey ?? 'default'
@@ -1702,7 +1686,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // never observe a stale draft under the new workspace.
       get().setPermissionRulesDraft('workspace', null)
       get().clearMessages()
-      set({ isStreaming: false })
       // Re-sync Pi status from main: each workspace has its own PiRpcManager,
       // so the new active workspace's Pi may be in a different state than
       // what piStatus is currently showing. Without this, the `if running return`

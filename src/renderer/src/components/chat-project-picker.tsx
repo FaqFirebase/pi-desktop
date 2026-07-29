@@ -3,6 +3,7 @@ import { clsx } from 'clsx'
 import { Check, ChevronDown, FolderOpen, Layers } from 'lucide-react'
 import { useAppStore } from '../store'
 import type { Workspace } from '../../../shared/ipc-contracts'
+import { pathsEqual } from '../../../shared/path-compare'
 
 /**
  * Compact project picker for the empty-chat center prompt.
@@ -59,30 +60,37 @@ export function ChatProjectPicker(): React.JSX.Element {
   const selected: Workspace | null =
     selectedId === null ? null : (workspaces.find((w) => w.id === selectedId) ?? null)
 
-  const pathMatches = (a: string, b: string): boolean =>
-    a.replace(/[\\/]+$/, '').toLowerCase() === b.replace(/[\\/]+$/, '').toLowerCase()
-
   const ensureHomeWorkspace = async (): Promise<Workspace | null> => {
     const home = homePath ?? (await window.piDesktop.system.getPath('home'))
     if (!homePath) setHomePath(home)
-    const existing = useAppStore.getState().workspaces.find((w) => pathMatches(w.path, home))
+    const existing = useAppStore.getState().workspaces.find((w) => pathsEqual(w.path, home))
     if (existing) return existing
     await createWorkspace('Home', home)
-    return useAppStore.getState().workspaces.find((w) => pathMatches(w.path, home)) ?? null
+    return useAppStore.getState().workspaces.find((w) => pathsEqual(w.path, home)) ?? null
   }
 
   const applySelection = async (id: string | null): Promise<void> => {
+    const previousId = selectedId
     setSelectedId(id)
     setPickerOpen(false)
     setBusy(true)
     try {
       if (id) {
-        await switchWorkspace(id, { skipSessionLoad: true })
+        if (!(await switchWorkspace(id, { skipSessionLoad: true }))) {
+          setSelectedId(previousId)
+        }
       } else {
         const homeWs = await ensureHomeWorkspace()
-        if (homeWs) await switchWorkspace(homeWs.id, { skipSessionLoad: true })
-        else await startPi()
+        if (homeWs) {
+          if (!(await switchWorkspace(homeWs.id, { skipSessionLoad: true }))) {
+            setSelectedId(previousId)
+          }
+        } else {
+          await startPi()
+        }
       }
+    } catch {
+      setSelectedId(previousId)
     } finally {
       setBusy(false)
     }
@@ -93,11 +101,11 @@ export function ChatProjectPicker(): React.JSX.Element {
     if (!path) return
     setBusy(true)
     try {
-      let ws = useAppStore.getState().workspaces.find((w) => pathMatches(w.path, path))
+      let ws = useAppStore.getState().workspaces.find((w) => pathsEqual(w.path, path))
       if (!ws) {
         const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path
         await createWorkspace(name, path)
-        ws = useAppStore.getState().workspaces.find((w) => pathMatches(w.path, path))
+        ws = useAppStore.getState().workspaces.find((w) => pathsEqual(w.path, path))
       }
       if (ws) await applySelection(ws.id)
     } finally {

@@ -15,8 +15,8 @@ export function ExtensionUiDialog(): React.JSX.Element | null {
     return <NotifyToast request={request} onDismiss={dismissExtensionUi} />
   }
 
-  // setStatus, setWidget, setTitle, set_editor_text are fire-and-forget
-  if (['setStatus', 'setWidget', 'setTitle', 'set_editor_text'].includes(request.method)) {
+  // setTitle / set_editor_text are fire-and-forget (setStatus/setWidget handled in the store).
+  if (['setTitle', 'set_editor_text'].includes(request.method)) {
     return null
   }
 

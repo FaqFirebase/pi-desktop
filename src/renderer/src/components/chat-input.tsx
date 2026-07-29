@@ -106,8 +106,7 @@ export function ChatInput(): React.JSX.Element {
 
   // Apply a note inserted from the panel or picker: drop the text at the
   // cursor, refocus, resize, then clear so the same note can be inserted again.
-  // Only consume when Chat is the active surface — minimal home has its own
-  // composer and also listens for pendingInsert.
+  // Only consume when Chat is the active surface (avoids applying while on Settings/etc.).
   useEffect(() => {
     if (!pendingInsert) return
     if (useAppStore.getState().currentView !== 'chat') return

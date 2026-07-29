@@ -224,7 +224,8 @@ export function ChatPanel(): React.JSX.Element {
                               key={prompt}
                               type="button"
                               onClick={() => {
-                                useAppStore.getState().sendPrompt(prompt)
+                                // Fill the composer only — never start a turn from a chip misclick.
+                                useAppStore.getState().insertPrompt(prompt, true)
                               }}
                               className="rounded-lg border border-border-strong px-3 py-1.5 text-xs text-muted hover:border-border-strong-hover hover:text-secondary transition-colors"
                             >

@@ -108,7 +108,7 @@ export function StatusBar(): React.JSX.Element {
       {/* Right section */}
       <div className="flex items-center gap-3">
         {/* Model selector */}
-        <ModelSelector placement="up" variant="status" />
+        <ModelSelector />
 
         {/* Thinking level */}
         <ThinkingLevelSelector />

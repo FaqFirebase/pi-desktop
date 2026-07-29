@@ -1,4 +1,5 @@
 import { useAppStore } from '../store'
+import { pathGroupKey, pathsEqual } from '../../../shared/path-compare'
 import { clsx } from 'clsx'
 import {
   Home,
@@ -119,11 +120,11 @@ export function Sidebar(): React.JSX.Element {
 
   // Group recents by project folder (path). Display name = folder basename.
   const recentGroups = useMemo((): RecentSessionGroup[] => {
-    // Normalize path casing so Windows paths don't split the same folder.
+    // Group key is case-fold only on win32 (shared path-compare helper).
     const byProject = new Map<string, { displayPath: string; sessions: SessionListItem[] }>()
     for (const session of activeSessions) {
       const displayPath = session.projectPath || 'unknown'
-      const key = displayPath.toLowerCase()
+      const key = pathGroupKey(displayPath)
       const existing = byProject.get(key)
       if (existing) existing.sessions.push(session)
       else byProject.set(key, { displayPath, sessions: [session] })
@@ -157,11 +158,11 @@ export function Sidebar(): React.JSX.Element {
   const activeProjectKey = useMemo(() => {
     if (!sessionState?.sessionFile) return null
     const active = activeSessions.find((s) => s.path === sessionState.sessionFile)
-    return active ? (active.projectPath || 'unknown').toLowerCase() : null
+    return active ? pathGroupKey(active.projectPath || 'unknown') : null
   }, [activeSessions, sessionState?.sessionFile])
 
   const isGroupExpanded = (projectPath: string): boolean => {
-    const key = projectPath.toLowerCase()
+    const key = pathGroupKey(projectPath)
     if (Object.prototype.hasOwnProperty.call(expandOverride, key)) {
       return expandOverride[key]
     }
@@ -169,7 +170,7 @@ export function Sidebar(): React.JSX.Element {
   }
 
   const toggleGroup = (projectPath: string): void => {
-    const key = projectPath.toLowerCase()
+    const key = pathGroupKey(projectPath)
     setExpandOverride((prev) => ({
       ...prev,
       [key]: !isGroupExpanded(projectPath),
@@ -285,12 +286,11 @@ export function Sidebar(): React.JSX.Element {
   const renderRecentGroup = (group: RecentSessionGroup): React.JSX.Element => {
     const expanded = isGroupExpanded(group.projectPath)
     const isCurrentFolder =
-      !!activeWorkspace?.path &&
-      activeWorkspace.path.toLowerCase() === group.projectPath.toLowerCase()
+      !!activeWorkspace?.path && pathsEqual(activeWorkspace.path, group.projectPath)
     const count = group.sessions.length
 
     return (
-      <div key={group.projectPath.toLowerCase()} className="mb-1">
+      <div key={pathGroupKey(group.projectPath)} className="mb-1">
         {/* Folder header — primary grouping unit */}
         <button
           type="button"

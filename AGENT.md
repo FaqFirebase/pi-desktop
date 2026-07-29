@@ -207,8 +207,11 @@ src/
 
 ### Home / Activity Dashboard
 
-- `homeLayout` setting (`info` | `minimal`, default `info`): Info is the classic stats/recents splash; Minimal is a Codex-style center composer with project picker and sidebar chrome
-- Settings opens with **Activity** (calendar/model stats only) and a **Home Layout** toggle (Info | Minimal) next to it
+- **Open to Home on Launch** (Settings → Behavior): when on, boot lands on the full Home launcher (stats, changed files, recent workspaces/sessions, Open Folder / New Session). When off, boot opens Chat; an empty session uses a Codex-style **center prompt** with a **project picker** under the composer (sidebar + status chrome stay)
+- Home is a single info/launcher surface — there is no separate Minimal Home layout or `homeLayout` setting
+- Suggested prompt chips on empty chat **fill the composer** (ready for Enter); they do not auto-send a turn
+- Recent sidebar groups sessions by project folder (platform-aware path equality)
+- Compact live **subagent strip** seats on the composer while subagents run
 - Range-selectable (7d–1y) stats: sessions, messages, tokens, active days, current/longest streak, peak hour, per-model input/output token usage
 - Persisted per-day aggregate store (`activity-stats.ts`) survives session deletion (captured before the file is removed); only aggregate numbers are stored, never prompt/response text
 - Baseline-scanned on launch (non-blocking) so stats are accurate even if Home is never opened that run
