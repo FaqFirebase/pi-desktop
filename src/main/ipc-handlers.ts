@@ -17,6 +17,7 @@ import {
   desanitizeSessionDir,
   projectNameFromPath,
 } from './session-paths'
+import { pathGroupKey as workspaceMatchKey } from '../shared/path-compare'
 import { readSessionNameCached } from './session-name'
 import { trimGetMessagesResponse } from './get-messages-trim'
 import { activityStatsStore } from './activity-stats'
@@ -1646,11 +1647,6 @@ function createListAllSessions(wm: WorkspaceManager) {
   return async function listAllSessions(cwd: string): Promise<SessionEntry[]> {
     return listSessions(cwd)
   }
-}
-
-/** Map key for workspace path matching — case-fold only where pathsEqual does. */
-function workspaceMatchKey(path: string): string {
-  return process.platform === 'win32' ? path.toLowerCase() : path
 }
 
 /**

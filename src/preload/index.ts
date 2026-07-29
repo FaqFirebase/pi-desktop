@@ -223,6 +223,12 @@ interface PiDesktopAPI {
     getPath(name: string): Promise<string>
     openExternal(url: string): Promise<void>
     getVersion(): Promise<string>
+    /**
+     * Host OS platform from the preload process polyfill. Sync — sandboxed
+     * renderer pages have no Node `process`, so path helpers read this for
+     * win32 case-folding.
+     */
+    platform: NodeJS.Platform
   }
 
   // Activity stats
@@ -416,6 +422,8 @@ const api: PiDesktopAPI = {
   system: {
     openDialog: (options) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_DIALOG, options),
     getPath: (name) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_PATH, name),
+    // Sandboxed preload still has a process polyfill with platform.
+    platform: process.platform,
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, url),
     getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_VERSION),
   },

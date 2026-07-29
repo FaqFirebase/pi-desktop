@@ -46,6 +46,7 @@ src/
 │   ├── models-config.ts          # Custom models.json validate/merge
 │   ├── package-filter.ts         # Tokenized catalog search, shared main+renderer
 │   ├── package-spec.ts           # Validate package specs before the Pi CLI runs
+│   ├── path-compare.ts           # Platform-aware path equality (win32 case-fold); main+renderer
 │   ├── untrusted-data.ts         # Wrap file/agent text as a labeled untrusted-data block
 │   ├── pi-command.ts             # Slash-command filtering
 │   ├── fork-point.ts             # Fork/branch message helpers
@@ -92,12 +93,15 @@ src/
         │   ├── model-search.ts   # Tokenized model-picker search (treats -_./: as spaces)
         │   └── theme.ts          # Theme application
         └── components/
-            ├── sidebar.tsx        # Workspace switcher, nav, sessions, inline rename
+            ├── sidebar.tsx        # Workspace switcher, nav, sessions grouped by folder, inline rename
             ├── sidebar-session-labels.ts # Session row label helpers
-            ├── home-screen.tsx    # Home launcher (info splash or minimal Codex-style; layout via settings)
-            ├── stats-panel.tsx    # Activity stats (Home info + Settings Activity)
-            ├── chat-panel.tsx     # Main streaming chat
+            ├── home-screen.tsx    # Full Home launcher (stats, recents, open folder / new session)
+            ├── stats-panel.tsx    # Activity stats dashboard on Home
+            ├── chat-panel.tsx     # Main streaming chat; empty session = center prompt + project picker
+            ├── chat-project-picker.tsx # Empty-chat project / no-project picker under the composer
             ├── chat-input.tsx     # Input with #tag support
+            ├── model-selector.tsx # Status-bar model picker (searchable)
+            ├── subagent-progress.tsx # Compact live subagent strip on the composer
             ├── chat-code-highlight.ts # Fenced-code syntax highlighting -> HTML
             ├── chat-file-link.ts  # Detect/classify filenames mentioned in chat text
             ├── copy-button.tsx    # Shared copy-to-clipboard button
