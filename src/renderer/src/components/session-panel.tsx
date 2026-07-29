@@ -92,20 +92,23 @@ export function SessionPanel(): React.JSX.Element {
   }, [groupedSessions, searchQuery])
 
   const handleSwitchSession = async (session: SessionListItem) => {
-    // If session belongs to a different workspace, switch workspace first
+    // If session belongs to a different workspace, switch workspace first.
+    // skipSessionLoad: switchSession loads the target history once (avoids
+    // resume+history then a second full reload).
     if (session.projectPath && session.projectPath !== activeWorkspace?.path) {
       const matchingWorkspace = workspaces.find((w) => w.path === session.projectPath)
       if (matchingWorkspace) {
         // A declined "Pi is still working" warning must stop the session switch
         // below as well, not just the workspace change.
-        // skipSessionLoad: switchSession loads the target history once.
         if (!(await switchWorkspace(matchingWorkspace.id, { skipSessionLoad: true }))) return
       } else {
         // Auto-create workspace for this project
         await useAppStore.getState().createWorkspace(session.projectName, session.projectPath)
         const updatedWorkspaces = useAppStore.getState().workspaces
         const newWorkspace = updatedWorkspaces.find((w) => w.path === session.projectPath)
-        if (newWorkspace && !(await switchWorkspace(newWorkspace.id, { skipSessionLoad: true }))) return
+        if (newWorkspace && !(await switchWorkspace(newWorkspace.id, { skipSessionLoad: true }))) {
+          return
+        }
       }
     }
 

@@ -768,7 +768,7 @@ export function SettingsPanel(): React.JSX.Element {
 
           <SettingsRow
             label="Open to Home Screen on Launch"
-            description="Show the Home launcher on startup; Pi starts only when you open a workspace or session"
+            description="On: full Home launcher (stats, recents, open folder). Off: open Chat with the empty-session center prompt and project picker."
           >
             <Toggle checked={openToHomeOnLaunch} onChange={(v) => { setOpenToHomeOnLaunch(v); setSettingsDraft({ openToHomeOnLaunch: v }) }} />
           </SettingsRow>

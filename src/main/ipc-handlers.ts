@@ -17,6 +17,7 @@ import {
   desanitizeSessionDir,
   projectNameFromPath,
 } from './session-paths'
+import { pathGroupKey as workspaceMatchKey } from '../shared/path-compare'
 import { readSessionNameCached } from './session-name'
 import { trimGetMessagesResponse } from './get-messages-trim'
 import { activityStatsStore } from './activity-stats'
@@ -439,9 +440,16 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
       cwd = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()
     }
 
+    // Prefer explicit start options, else last model chosen in the GUI.
+    const withDefaults = {
+      ...opts,
+      cwd,
+      provider: opts.provider ?? settings.defaultProvider ?? undefined,
+      model: opts.model ?? settings.defaultModel ?? undefined,
+    }
     await workspaceManager.startPiForWorkspace(
       activeWs.id,
-      applyPermissionModeToStartOptions(applyResumePreference({ ...opts, cwd }, settings), settings)
+      applyPermissionModeToStartOptions(applyResumePreference(withDefaults, settings), settings)
     )
     const pi = workspaceManager.getPiManager(activeWs.id)
     if (!pi) throw new Error('Failed to create Pi manager')
@@ -1639,11 +1647,6 @@ function createListAllSessions(wm: WorkspaceManager) {
   return async function listAllSessions(cwd: string): Promise<SessionEntry[]> {
     return listSessions(cwd)
   }
-}
-
-/** Map key for workspace path matching — case-fold only where pathsEqual does. */
-function workspaceMatchKey(path: string): string {
-  return process.platform === 'win32' ? path.toLowerCase() : path
 }
 
 /**

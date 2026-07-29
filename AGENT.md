@@ -46,6 +46,7 @@ src/
 │   ├── models-config.ts          # Custom models.json validate/merge
 │   ├── package-filter.ts         # Tokenized catalog search, shared main+renderer
 │   ├── package-spec.ts           # Validate package specs before the Pi CLI runs
+│   ├── path-compare.ts           # Platform-aware path equality (win32 case-fold); main+renderer
 │   ├── untrusted-data.ts         # Wrap file/agent text as a labeled untrusted-data block
 │   ├── pi-command.ts             # Slash-command filtering
 │   ├── fork-point.ts             # Fork/branch message helpers
@@ -92,12 +93,15 @@ src/
         │   ├── model-search.ts   # Tokenized model-picker search (treats -_./: as spaces)
         │   └── theme.ts          # Theme application
         └── components/
-            ├── sidebar.tsx        # Workspace switcher, nav, sessions, inline rename
+            ├── sidebar.tsx        # Workspace switcher, nav, sessions grouped by folder, inline rename
             ├── sidebar-session-labels.ts # Session row label helpers
-            ├── home-screen.tsx    # Home/launcher screen
-            ├── stats-panel.tsx    # Persistent activity-stats dashboard (Home)
-            ├── chat-panel.tsx     # Main streaming chat
+            ├── home-screen.tsx    # Full Home launcher (stats, recents, open folder / new session)
+            ├── stats-panel.tsx    # Activity stats dashboard on Home
+            ├── chat-panel.tsx     # Main streaming chat; empty session = center prompt + project picker
+            ├── chat-project-picker.tsx # Empty-chat project / no-project picker under the composer
             ├── chat-input.tsx     # Input with #tag support
+            ├── model-selector.tsx # Status-bar model picker (searchable)
+            ├── subagent-progress.tsx # Compact live subagent strip on the composer
             ├── chat-code-highlight.ts # Fenced-code syntax highlighting -> HTML
             ├── chat-file-link.ts  # Detect/classify filenames mentioned in chat text
             ├── copy-button.tsx    # Shared copy-to-clipboard button
@@ -207,6 +211,11 @@ src/
 
 ### Home / Activity Dashboard
 
+- **Open to Home on Launch** (Settings → Behavior): when on, boot lands on the full Home launcher (stats, changed files, recent workspaces/sessions, Open Folder / New Session). When off, boot opens Chat; an empty session uses a Codex-style **center prompt** with a **project picker** under the composer (sidebar + status chrome stay)
+- Home is a single info/launcher surface — there is no separate Minimal Home layout or `homeLayout` setting
+- Suggested prompt chips on empty chat **fill the composer** (ready for Enter); they do not auto-send a turn
+- Recent sidebar groups sessions by project folder (platform-aware path equality)
+- Compact live **subagent strip** seats on the composer while subagents run
 - Range-selectable (7d–1y) stats: sessions, messages, tokens, active days, current/longest streak, peak hour, per-model input/output token usage
 - Persisted per-day aggregate store (`activity-stats.ts`) survives session deletion (captured before the file is removed); only aggregate numbers are stored, never prompt/response text
 - Baseline-scanned on launch (non-blocking) so stats are accurate even if Home is never opened that run
