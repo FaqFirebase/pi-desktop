@@ -468,6 +468,8 @@ let sessionLoadGeneration = 0
 // Latest path requested for switch — rapid clicks only run the final one.
 let pendingSwitchPath: string | null = null
 let switchCoalesceTimer: ReturnType<typeof setTimeout> | null = null
+/** Resolve for the in-flight coalesce wait — invoked immediately when superseded. */
+let switchCoalesceResolve: (() => void) | null = null
 // Only one get_messages/switch pipeline at a time (Pi + IPC can't keep up).
 let switchPipeline: Promise<void> = Promise.resolve()
 
@@ -992,10 +994,21 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     pendingSwitchPath = path
     const gen = ++sessionLoadGeneration
 
-    if (switchCoalesceTimer) clearTimeout(switchCoalesceTimer)
+    // Supersede any prior coalesce wait so its promise does not leak.
+    if (switchCoalesceTimer) {
+      clearTimeout(switchCoalesceTimer)
+      switchCoalesceTimer = null
+    }
+    if (switchCoalesceResolve) {
+      const prev = switchCoalesceResolve
+      switchCoalesceResolve = null
+      prev()
+    }
     await new Promise<void>((resolve) => {
+      switchCoalesceResolve = resolve
       switchCoalesceTimer = setTimeout(() => {
         switchCoalesceTimer = null
+        switchCoalesceResolve = null
         resolve()
       }, 80)
     })
@@ -1049,7 +1062,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const refreshList = options?.refreshList ?? true
 
     get().clearMessages()
-    set({ isStreaming: false, sessionLoading: true })
+    set({ sessionLoading: true })
     void get().refreshSessionState()
     void get().refreshSessionStats()
 
@@ -1059,10 +1072,31 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       if (gen !== sessionLoadGeneration) return
 
       if (response && typeof response === 'object') {
-        const resp = response as { success?: boolean; data?: { messages?: unknown[] } }
+        const resp = response as {
+          success?: boolean
+          data?: {
+            messages?: unknown[]
+            truncatedFromStart?: boolean
+            totalMessageCount?: number
+          }
+        }
         if (resp.success && resp.data?.messages) {
-          const loaded = await parseMessagesChunked(resp.data.messages as unknown[], gen)
+          const rawMessages = resp.data.messages as unknown[]
+          const shippedCount = rawMessages.length
+          const loaded = await parseMessagesChunked(rawMessages, gen)
           if (loaded === null || gen !== sessionLoadGeneration) return
+          const truncated = resp.data.truncatedFromStart === true
+          const total = typeof resp.data.totalMessageCount === 'number' ? resp.data.totalMessageCount : shippedCount
+          // Surface a one-line notice when older turns were dropped for perf.
+          // Use the raw shipped count (not parse survivors) for "latest N of M".
+          if (truncated && shippedCount > 0) {
+            loaded.unshift({
+              id: generateId(),
+              role: 'system',
+              content: `Showing the latest ${shippedCount} of ${total} messages for performance. Older turns are still on disk in the session file.`,
+              timestamp: Date.now(),
+            })
+          }
           set({ messages: loaded, sessionLoading: false })
         } else {
           set({ sessionLoading: false })
