@@ -285,7 +285,7 @@ function resolvePiChildTempDir(): string {
 
 /** Windows-only TEMP/TMP/TMPDIR override for the Pi child. Empty on other OSes. */
 function buildPiChildEnv(): NodeJS.ProcessEnv {
-  if (process.platform !== 'win32') return {}
+  if (!IS_WINDOWS) return {}
   const tmp = resolvePiChildTempDir()
   return {
     TEMP: tmp,
@@ -299,7 +299,7 @@ function buildPiChildEnv(): NodeJS.ProcessEnv {
  * so pi-subagents / extension scratch does not grow without bound.
  */
 export function cleanupPiChildTempDir(): void {
-  if (process.platform !== 'win32') return
+  if (!IS_WINDOWS) return
   try {
     const dir = getGuiDataPath('tmp')
     if (!existsSync(dir)) return
