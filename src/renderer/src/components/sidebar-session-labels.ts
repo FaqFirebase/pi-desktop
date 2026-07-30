@@ -1,7 +1,10 @@
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { getSessionTitle } from '../utils/session-title'
 
-type SessionRowLabelInput = Pick<SessionListItem, 'name' | 'sessionId' | 'projectName' | 'projectPath'>
+type SessionRowLabelInput = Pick<
+  SessionListItem,
+  'name' | 'preview' | 'sessionId' | 'projectName' | 'projectPath'
+>
 
 interface SessionRowLabels {
   title: string
@@ -12,7 +15,7 @@ export function getSessionRowLabels(session: SessionRowLabelInput): SessionRowLa
   const subtitle = session.projectName.trim()
 
   return {
-    title: getSessionTitle(session.name, session.sessionId),
+    title: getSessionTitle(session.name, session.sessionId, session.preview),
     subtitle: subtitle || null,
   }
 }

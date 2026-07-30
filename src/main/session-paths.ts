@@ -14,6 +14,9 @@
  * and fall back to `desanitizeSessionDir` only for display.
  */
 
+/** Extension of a Pi session file. */
+export const JSONL_EXTENSION = '.jsonl'
+
 /** Encode a real filesystem path the same way Pi names its session directory. */
 export function sanitizePath(p: string): string {
   // Drop a single leading separator so POSIX "/home/x" -> "--home-x--".
@@ -66,16 +69,5 @@ export function projectNameFromPath(p: string): string {
   return parts.length ? parts[parts.length - 1] : p
 }
 
-/**
- * Whether two paths (or encoded session-dir names) refer to the same location.
- * Windows filesystems are case-insensitive, so paths are compared ignoring case
- * there; on case-sensitive systems (Linux, and how the rest of the app treats
- * macOS) the comparison stays exact. `caseInsensitive` is injectable for tests.
- */
-export function pathsEqual(
-  a: string,
-  b: string,
-  caseInsensitive: boolean = process.platform === 'win32'
-): boolean {
-  return caseInsensitive ? a.toLowerCase() === b.toLowerCase() : a === b
-}
+// Single implementation lives in shared so main + renderer cannot drift.
+export { pathsEqual, pathGroupKey } from '../shared/path-compare'

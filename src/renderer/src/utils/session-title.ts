@@ -8,16 +8,23 @@
  * timestamp id it yields `2026-07-04T1` for *every* session created the same
  * day (the slice stops mid-hour), making sessions indistinguishable.
  *
- * So: prefer an explicit name; otherwise, if the id carries Pi's timestamp
- * prefix, format it as `YYYY-MM-DD HH:MM:SS` (using the wall-clock recorded in
- * the filename); otherwise fall back to the short id (e.g. a bare UUID).
+ * So: prefer an explicit name; then a preview of the session's first user
+ * message, which is what actually distinguishes two same-day sessions; then, if
+ * the id carries Pi's timestamp prefix, format it as `YYYY-MM-DD HH:MM:SS` (using
+ * the wall-clock recorded in the filename); otherwise fall back to the short id
+ * (e.g. a bare UUID).
  */
 
 // Matches the leading "YYYY-MM-DDTHH-MM-SS" of a Pi session filename stem.
 const SESSION_TIMESTAMP_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})/
 
-export function getSessionTitle(name: string | null | undefined, sessionId: string): string {
+export function getSessionTitle(
+  name: string | null | undefined,
+  sessionId: string,
+  preview?: string | null
+): string {
   if (name && name.trim()) return name.trim()
+  if (preview && preview.trim()) return preview.trim()
 
   const m = SESSION_TIMESTAMP_RE.exec(sessionId)
   if (m) {

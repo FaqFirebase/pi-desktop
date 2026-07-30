@@ -1,5 +1,6 @@
 import type { AppSettings } from './ipc-contracts'
 import { DEFAULT_COUNCIL_CONFIG } from './council-config'
+import { DEFAULT_SIDEBAR_WIDTH } from './sidebar-width'
 
 /**
  * The single source of truth for default app settings. Used by the main process
@@ -23,6 +24,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   permissionRulesAckWorkspaces: [],
   resumeLastSession: true,
   collapsedSessionGroups: [],
+  sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   openToHomeOnLaunch: true,
   runOnStartup: false,
   minimizeToTrayOnClose: false,

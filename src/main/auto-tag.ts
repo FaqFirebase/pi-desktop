@@ -1,4 +1,5 @@
-import { open } from 'fs/promises'
+import { stripInjectedPreamble } from '../shared/session-preview'
+import { readFirstUserMessage } from './session-metadata'
 
 /**
  * Derive a single-word topic tag from the context of a Pi session by reading
@@ -6,8 +7,6 @@ import { open } from 'fs/promises'
  * salient keyword. Runs locally — no network, no LLM, deterministic.
  */
 
-// Only the head of the file is scanned; the first user message appears early.
-const MAX_READ_BYTES = 32 * 1024
 const MIN_TOKEN_LENGTH = 3
 const MAX_TAG_LENGTH = 32
 // Action-oriented words win frequency ties so tags read as intent ("refactor").
@@ -38,62 +37,9 @@ const INTENT_WORDS = new Set([
 export async function deriveAutoTag(sessionFilePath: string): Promise<string | null> {
   const text = await readFirstUserMessage(sessionFilePath)
   if (!text) return null
-  return extractKeyword(text)
-}
-
-async function readFirstUserMessage(sessionFilePath: string): Promise<string | null> {
-  let handle
-  try {
-    handle = await open(sessionFilePath, 'r')
-    const buffer = Buffer.alloc(MAX_READ_BYTES)
-    const { bytesRead } = await handle.read(buffer, 0, MAX_READ_BYTES, 0)
-    const chunk = buffer.toString('utf-8', 0, bytesRead)
-
-    // Drop a trailing partial line so JSON.parse only sees complete records.
-    const lines = chunk.split('\n')
-    const complete = bytesRead === MAX_READ_BYTES ? lines.slice(0, -1) : lines
-
-    for (const line of complete) {
-      if (!line.trim()) continue
-      let record: unknown
-      try {
-        record = JSON.parse(line)
-      } catch {
-        continue
-      }
-      const text = userMessageText(record)
-      if (text) return text
-    }
-    return null
-  } catch {
-    return null
-  } finally {
-    await handle?.close()
-  }
-}
-
-function userMessageText(record: unknown): string | null {
-  if (typeof record !== 'object' || record === null) return null
-  const rec = record as { type?: unknown; message?: unknown }
-  if (rec.type !== 'message' || typeof rec.message !== 'object' || rec.message === null) {
-    return null
-  }
-  const message = rec.message as { role?: unknown; content?: unknown }
-  if (message.role !== 'user' || !Array.isArray(message.content)) return null
-
-  const parts: string[] = []
-  for (const block of message.content) {
-    if (
-      typeof block === 'object' &&
-      block !== null &&
-      (block as { type?: unknown }).type === 'text' &&
-      typeof (block as { text?: unknown }).text === 'string'
-    ) {
-      parts.push((block as { text: string }).text)
-    }
-  }
-  const joined = parts.join(' ').trim()
-  return joined.length > 0 ? joined : null
+  // Strip GUI-injected boilerplate so the tag reflects the user's intent rather
+  // than the words of a planning-mode preamble.
+  return extractKeyword(stripInjectedPreamble(text))
 }
 
 function extractKeyword(text: string): string | null {

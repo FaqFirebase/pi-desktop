@@ -1,9 +1,21 @@
 import { useAppStore } from '../store'
 import { ChatInput } from './chat-input'
+import { ChatProjectPicker } from './chat-project-picker'
 import { CouncilPanels } from './council-panels'
 import { MessageBubble, ToolGroupBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
 import { ChatSearch } from './chat-search'
+import { ResizeHandle } from './resize-handle'
+import {
+  DEFAULT_FILE_PANE_WIDTH,
+  DEFAULT_SIDE_PANEL_WIDTH,
+  MAX_SIDE_PANEL_WIDTH,
+  MIN_EDITOR_PANE_WIDTH,
+  MIN_FILE_PANE_WIDTH,
+  clamp,
+  resolveSidePanelMetrics,
+} from './chat-panel-widths'
+
 import { groupToolMessages, prepareChatMessages } from '../message-grouping'
 import { NowContext } from '../utils/relative-time'
 import { FileTree, FileSearch, FilePreview } from './file-tree'
@@ -30,6 +42,7 @@ const DEFAULT_COMPOSER_PAD_PX = 144
 
 export function ChatPanel(): React.JSX.Element {
   const messages = useAppStore((state) => state.messages)
+  const sessionLoading = useAppStore((state) => state.sessionLoading)
   const isStreaming = useAppStore((state) => state.isStreaming)
   const composerWrapRef = useRef<HTMLDivElement>(null)
   const [composerPadPx, setComposerPadPx] = useState(DEFAULT_COMPOSER_PAD_PX)
@@ -62,8 +75,8 @@ export function ChatPanel(): React.JSX.Element {
   // round-trip). Widths stay local — resetting them on remount is benign.
   const sidePanel = useAppStore((state) => state.chatSidePanel)
   const setSidePanel = useAppStore((state) => state.setChatSidePanel)
-  const [sidePanelWidth, setSidePanelWidth] = useState(640)
-  const [filePaneWidth, setFilePaneWidth] = useState(280)
+  const [sidePanelWidth, setSidePanelWidth] = useState(DEFAULT_SIDE_PANEL_WIDTH)
+  const [filePaneWidth, setFilePaneWidth] = useState(DEFAULT_FILE_PANE_WIDTH)
 
   // One shared clock for all relative-time labels — refresh every 30s so
   // "5 minutes ago" stays current without each label owning a timer.
@@ -123,12 +136,13 @@ export function ChatPanel(): React.JSX.Element {
   const showImage = previewTarget?.kind === 'image' && sidePanel !== 'diff'
   const showEditor = previewTarget?.kind === 'code' && sidePanel !== 'diff'
   const showDiff = sidePanel === 'diff'
-  const showFileTreeOnly = showFileTree && !showEditor && !showImage
-  const minSidePanelWidth = showFileTree && (showEditor || showImage) ? 600 : 360
-  const effectiveSidePanelWidth = clamp(sidePanelWidth, minSidePanelWidth, 1280)
-  const maxFilePaneWidth = Math.max(220, effectiveSidePanelWidth - 360)
-  const effectiveFilePaneWidth = clamp(filePaneWidth, 220, maxFilePaneWidth)
-  const sidePanelContentWidth = showFileTreeOnly ? effectiveFilePaneWidth : effectiveSidePanelWidth
+  const {
+    fileTreeOnly: showFileTreeOnly,
+    minSidePanelWidth,
+    contentWidth: sidePanelContentWidth,
+    filePaneWidth: effectiveFilePaneWidth,
+    maxFilePaneWidth,
+  } = resolveSidePanelMetrics({ showFileTree, showEditor, showImage }, sidePanelWidth, filePaneWidth)
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -188,61 +202,124 @@ export function ChatPanel(): React.JSX.Element {
                 onClose={() => setSearchOpen(false)}
               />
             )}
-            <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-              {messages.length === 0 && !isStreaming ? (
-                <EmptyState piStatus={piStatus} />
-              ) : (
-                <NowContext.Provider value={now}>
-                <div
-                  className="mx-auto max-w-5xl px-4 pt-6"
-                  style={{ paddingBottom: composerPadPx }}
-                >
-                  {renderItems.map((item) =>
-                    item.kind === 'toolGroup' ? (
-                      <ToolGroupBubble
-                        key={item.id}
-                        title={item.title}
-                        messages={item.messages}
-                        onRetry={handleRetry}
+            {(() => {
+              const isEmptyChat =
+                !sessionLoading && messages.length === 0 && !isStreaming
+
+              // Empty session: Codex-style center prompt + project picker (sidebar chrome).
+              if (isEmptyChat) {
+                return (
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10">
+                    <div className="mb-8 text-center">
+                      <img
+                        src={piLogo}
+                        alt="Pi Desktop"
+                        className="mx-auto mb-4 block h-14 w-14"
                       />
+                      <h2 className="text-2xl font-semibold text-primary">What should Pi work on?</h2>
+                      <p className="mt-1 text-sm text-dim">
+                        {piStatus === 'running'
+                          ? 'Pick a project and describe what you want done.'
+                          : piStatus === 'starting'
+                            ? 'Starting Pi agent…'
+                            : piStatus === 'error'
+                              ? 'Failed to start Pi. Check settings.'
+                              : 'Choose a project — Pi starts when you send.'}
+                      </p>
+                    </div>
+                    <div className="w-full max-w-3xl">
+                      {piStatus === 'running' && (
+                        <div className="mb-4 flex flex-wrap justify-center gap-2 px-4">
+                          {EXAMPLE_PROMPTS.map((prompt) => (
+                            <button
+                              key={prompt}
+                              type="button"
+                              onClick={() => {
+                                // Fill the composer only — never start a turn from a chip misclick.
+                                useAppStore.getState().insertPrompt(prompt, true)
+                              }}
+                              className="rounded-lg border border-border-strong px-3 py-1.5 text-xs text-muted hover:border-border-strong-hover hover:text-secondary transition-colors"
+                            >
+                              {prompt}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <ChatInput />
+                      <div className="px-4">
+                        <ChatProjectPicker />
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+
+              return (
+                <>
+                  <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
+                    {sessionLoading && messages.length === 0 ? (
+                      <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-dim">
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
+                        Loading session…
+                      </div>
                     ) : (
-                      <MessageBubble key={item.message.id} message={item.message} onRetry={handleRetry} />
-                    )
-                  )}
-                  {isStreaming && (
-                    <StreamingBubble
-                      content={streamingContent}
-                      thinking={streamingThinking}
-                      toolCalls={streamingToolCalls}
-                    />
-                  )}
-                </div>
-                </NowContext.Provider>
-              )}
-            </div>
+                      <NowContext.Provider value={now}>
+                        <div
+                          className="mx-auto max-w-5xl px-4 pt-6"
+                          style={{ paddingBottom: composerPadPx }}
+                        >
+                          {renderItems.map((item) =>
+                            item.kind === 'toolGroup' ? (
+                              <ToolGroupBubble
+                                key={item.id}
+                                title={item.title}
+                                messages={item.messages}
+                                onRetry={handleRetry}
+                              />
+                            ) : (
+                              <MessageBubble
+                                key={item.message.id}
+                                message={item.message}
+                                onRetry={handleRetry}
+                              />
+                            )
+                          )}
+                          {isStreaming && (
+                            <StreamingBubble
+                              content={streamingContent}
+                              thinking={streamingThinking}
+                              toolCalls={streamingToolCalls}
+                            />
+                          )}
+                        </div>
+                      </NowContext.Provider>
+                    )}
+                  </div>
 
-            {!atBottom && (
-              <button
-                onClick={scrollToBottom}
-                className="absolute left-1/2 z-20 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border-strong bg-card/90 text-secondary shadow-lg shadow-black/30 backdrop-blur transition-colors hover:bg-elevated hover:text-primary"
-                style={{ bottom: composerPadPx + 12 }}
-                title="Scroll to bottom"
-                aria-label="Scroll to bottom"
-              >
-                <ChevronDown size={16} />
-              </button>
-            )}
+                  {!atBottom && (
+                    <button
+                      onClick={scrollToBottom}
+                      className="absolute left-1/2 z-20 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border-strong bg-card/90 text-secondary shadow-lg shadow-black/30 backdrop-blur transition-colors hover:bg-elevated hover:text-primary"
+                      style={{ bottom: composerPadPx + 12 }}
+                      title="Scroll to bottom"
+                      aria-label="Scroll to bottom"
+                    >
+                      <ChevronDown size={16} />
+                    </button>
+                  )}
 
-            {/* Transparent sides so wider message text isn't covered by the pill. */}
-            <div
-              ref={composerWrapRef}
-              className="pointer-events-none absolute inset-x-0 bottom-0 z-10 pb-3 pt-8 bg-gradient-to-t from-chat-column via-chat-column/80 to-transparent"
-            >
-              <div className="pointer-events-auto mx-auto w-full max-w-5xl px-4">
-                <CouncilPanels />
-              </div>
-              <ChatInput />
-            </div>
+                  <div
+                    ref={composerWrapRef}
+                    className="pointer-events-none absolute inset-x-0 bottom-0 z-10 pb-3 pt-8 bg-gradient-to-t from-chat-column via-chat-column/80 to-transparent"
+                  >
+                    <div className="pointer-events-auto mx-auto w-full max-w-5xl px-4">
+                      <CouncilPanels />
+                    </div>
+                    <ChatInput />
+                  </div>
+                </>
+              )
+            })()}
           </div>
         </div>
 
@@ -252,11 +329,16 @@ export function ChatPanel(): React.JSX.Element {
             <ResizeHandle
               onResize={(delta) => {
                 if (showFileTreeOnly) {
-                  setFilePaneWidth((width) => clamp(width - delta, 220, 520))
+                  // Same ceiling the render uses, so the state cannot outrun it.
+                  setFilePaneWidth((width) =>
+                    clamp(width - delta, MIN_FILE_PANE_WIDTH, maxFilePaneWidth)
+                  )
                   return
                 }
 
-                setSidePanelWidth((width) => clamp(width - delta, minSidePanelWidth, 1280))
+                setSidePanelWidth((width) =>
+                  clamp(width - delta, minSidePanelWidth, MAX_SIDE_PANEL_WIDTH)
+                )
               }}
             />
             <div className="flex min-w-0 flex-1 overflow-hidden">
@@ -267,7 +349,11 @@ export function ChatPanel(): React.JSX.Element {
                   </div>
                   {(showEditor || showImage) && (
                     <ResizeHandle
-                      onResize={(delta) => setFilePaneWidth((width) => clamp(width + delta, 220, maxFilePaneWidth))}
+                      onResize={(delta) =>
+                        setFilePaneWidth((width) =>
+                          clamp(width + delta, MIN_FILE_PANE_WIDTH, maxFilePaneWidth)
+                        )
+                      }
                     />
                   )}
                 </>
@@ -280,17 +366,22 @@ export function ChatPanel(): React.JSX.Element {
               {showEditor && (
                 <div
                   className={clsx(
-                    'flex min-w-[360px] flex-1 flex-col overflow-hidden',
+                    'flex flex-1 flex-col overflow-hidden',
                     // Divider only when the file tree is beside it; alone, the
                     // outer panel's border-l is the left edge (avoids doubling).
                     showFileTree && 'border-l border-border'
                   )}
+                  // The same constant the file pane's ceiling reserves for.
+                  style={{ minWidth: MIN_EDITOR_PANE_WIDTH }}
                 >
                   <FilePreview />
                 </div>
               )}
               {showImage && (
-                <div className="flex min-w-[360px] flex-1 flex-col overflow-hidden">
+                <div
+                  className="flex flex-1 flex-col overflow-hidden"
+                  style={{ minWidth: MIN_EDITOR_PANE_WIDTH }}
+                >
                   <ImageViewer />
                 </div>
               )}
@@ -317,43 +408,6 @@ export function ChatPanel(): React.JSX.Element {
   )
 }
 
-function ResizeHandle({ onResize }: { onResize: (delta: number) => void }): React.JSX.Element {
-  const handleMouseDown = (event: React.MouseEvent) => {
-    event.preventDefault()
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    let lastX = event.clientX
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      onResize(moveEvent.clientX - lastX)
-      lastX = moveEvent.clientX
-    }
-
-    const handleMouseUp = () => {
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-  }
-
-  return (
-    <div
-      onMouseDown={handleMouseDown}
-      className="group flex w-2 shrink-0 cursor-col-resize items-stretch justify-center bg-app transition-colors hover:bg-surface-hover"
-      title="Drag to resize"
-    >
-      <div className="w-px bg-transparent transition-colors group-hover:bg-accent" />
-    </div>
-  )
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
 
 function ToolbarButton({
   icon,
@@ -379,43 +433,6 @@ function ToolbarButton({
     >
       {icon}
     </button>
-  )
-}
-
-function EmptyState({ piStatus }: { piStatus: string }): React.JSX.Element {
-  return (
-    <div className="flex h-full flex-col items-center justify-center px-4">
-      <div className="text-center">
-        <img src={piLogo} alt="Pi Desktop" className="mx-auto mb-4 block h-16 w-16" />
-        <h2 className="mb-6 text-2xl font-semibold text-primary">
-          Pi Desktop
-        </h2>
-        <p className="mb-6 max-w-3xl text-balance text-sm text-dim">
-          {piStatus === 'running'
-            ? 'Start a conversation with your coding agent. Ask it to build, debug, or explore your codebase.'
-            : piStatus === 'starting'
-              ? 'Starting Pi agent...'
-              : piStatus === 'error'
-                ? 'Failed to start Pi agent. Check settings.'
-                : 'Pi agent is not running. Start it from the sidebar or status bar.'}
-        </p>
-        {piStatus === 'running' && (
-          <div className="flex flex-wrap justify-center gap-2">
-            {EXAMPLE_PROMPTS.map((prompt) => (
-              <button
-                key={prompt}
-                onClick={() => {
-                  useAppStore.getState().sendPrompt(prompt)
-                }}
-                className="rounded-lg border border-border-strong px-3 py-1.5 text-xs text-muted hover:border-border-strong-hover hover:text-secondary transition-colors"
-              >
-                {prompt}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
   )
 }
 

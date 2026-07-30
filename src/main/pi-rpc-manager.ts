@@ -1,5 +1,5 @@
 import { ChildProcess, SpawnOptions, spawn, spawnSync } from 'child_process'
-import { existsSync, readdirSync, statSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'fs'
 import { join } from 'path'
 import { EventEmitter } from 'events'
 import { StringDecoder } from 'string_decoder'
@@ -17,6 +17,7 @@ import {
   resolvePiBinary,
   whichInPath,
 } from './pi-binary-resolution'
+import { getGuiDataPath } from './app-data-paths'
 
 /**
  * Manages a Pi RPC child process.
@@ -258,6 +259,62 @@ export function getPiCli(): PiCli {
 const MAX_PENDING_RESPONSES = 64
 const RESPONSE_TIMEOUT_MS = 30_000
 
+/**
+ * Writable temp directory for the Pi child process on Windows only. Prefer the
+ * GUI data dir so extensions (pi-subagents, etc.) don't depend on a locked
+ * %TEMP% tree. Not used on POSIX — those platforms keep the system temp so
+ * $TMPDIR still receives OS cleanup.
+ */
+function resolvePiChildTempDir(): string {
+  try {
+    const dir = getGuiDataPath('tmp')
+    mkdirSync(dir, { recursive: true })
+    return dir
+  } catch {
+    // Fall back to home — still more reliable than a broken Local\Temp ACL.
+    const home = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()
+    const dir = join(home, '.pi', 'tmp')
+    try {
+      mkdirSync(dir, { recursive: true })
+    } catch {
+      // Last resort: leave system TEMP as-is via process.env
+    }
+    return dir
+  }
+}
+
+/** Windows-only TEMP/TMP/TMPDIR override for the Pi child. Empty on other OSes. */
+function buildPiChildEnv(): NodeJS.ProcessEnv {
+  if (!IS_WINDOWS) return {}
+  const tmp = resolvePiChildTempDir()
+  return {
+    TEMP: tmp,
+    TMP: tmp,
+    TMPDIR: tmp,
+  }
+}
+
+/**
+ * Best-effort wipe of the GUI-owned Pi temp dir (Windows). Called on app quit
+ * so pi-subagents / extension scratch does not grow without bound.
+ */
+export function cleanupPiChildTempDir(): void {
+  if (!IS_WINDOWS) return
+  try {
+    const dir = getGuiDataPath('tmp')
+    if (!existsSync(dir)) return
+    for (const name of readdirSync(dir)) {
+      try {
+        rmSync(join(dir, name), { recursive: true, force: true })
+      } catch {
+        // In use or locked — leave for next quit.
+      }
+    }
+  } catch {
+    // Ignore — quit path must not throw.
+  }
+}
+
 interface PendingResponse {
   resolve: (event: PiResponseEvent) => void
   reject: (error: Error) => void
@@ -371,7 +428,9 @@ export class PiRpcManager extends EventEmitter {
     const spawnOptions: SpawnOptions = {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: options.cwd,
-      env: { ...process.env, ...options.env },
+      // Windows only: redirect TEMP so pi-subagents can mkdir without EPERM on
+      // locked %LocalAppData%\Temp trees. POSIX keeps the system temp (OS cleanup).
+      env: { ...process.env, ...buildPiChildEnv(), ...options.env },
       // .cmd/.bat/.ps1 shims on Windows can't be invoked directly from
       // spawn — they need the cmd.exe interpreter via shell:true.
       shell: cli.needsShell,

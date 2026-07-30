@@ -5,7 +5,7 @@ import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
 import { workspaceTrustStore } from './workspace-trust'
 import { WorkspaceManager } from './workspace-manager'
 import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
-import { setPiExecutableOverride } from './pi-rpc-manager'
+import { setPiExecutableOverride, cleanupPiChildTempDir } from './pi-rpc-manager'
 import { fetchAllCatalogPackages } from './package-catalog'
 import { activityStatsStore } from './activity-stats'
 import { configureGuiDataDir, getCanonicalUserDataDir, getExternalGuiDataDir, migrateLegacyGuiData } from './app-data-paths'
@@ -402,6 +402,8 @@ app.on('before-quit', () => {
   // run before we exit (async I/O isn't guaranteed to finish during shutdown).
   activityStatsStore.flushSync()
   workspaceManager?.stopAll()
+  // Windows: GUI-owned Pi TEMP does not get OS cleanup — wipe on quit.
+  cleanupPiChildTempDir()
 })
 
 // Security: prevent new window creation, and stop preview <webview> guests from

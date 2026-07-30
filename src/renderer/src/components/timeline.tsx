@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useAppStore } from '../store'
+import { getSessionTitle } from '../utils/session-title'
 import type { TimelineEvent as StoreTimelineEvent } from '../../../shared/ipc-contracts'
 import { clsx } from 'clsx'
 import {
@@ -263,7 +264,9 @@ function LineageTree({
             )}
           >
             <GitBranch size={11} className="shrink-0 text-faint" />
-            <span className="truncate">{node.name ?? node.sessionId.slice(0, 8)}</span>
+            <span className="truncate">
+              {getSessionTitle(node.name, node.sessionId, node.preview)}
+            </span>
           </button>
           {node.children.length > 0 && (
             <LineageTree
