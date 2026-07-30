@@ -3,6 +3,7 @@
   "version": "0.1.2-alpha",
   "description": "Desktop GUI frontend for the Pi coding agent",
   "main": "out/main/index.js",
+  "desktopName": "pi-desktop.desktop",
   "author": "Pi Desktop GUI Contributors",
   "license": "Apache-2.0",
   "homepage": "https://github.com/FaqFirebase/pi-desktop",
@@ -119,6 +120,7 @@
       "target": [
         "AppImage"
       ],
+      "syncDesktopName": true,
       "category": "Development",
       "icon": "resources/icons",
       "synopsis": "Desktop GUI for the Pi coding agent",
