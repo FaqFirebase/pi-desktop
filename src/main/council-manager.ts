@@ -12,6 +12,7 @@ import {
   parsePiStreamLine,
 } from '../shared/council-config'
 import { detectAgents } from './agent-detection'
+import { escapeCmdSpawn } from './cmd-escape'
 
 const IS_WINDOWS = process.platform === 'win32'
 const MS_PER_SECOND = 1000
@@ -129,14 +130,30 @@ export async function runArbiter(
   return deps.spawnConsultant('pi', prompt, cwd, timeoutMs, deps.onProgress)
 }
 
+/**
+ * The exact program and argv handed to spawn() for one consultant.
+ *
+ * The prompt is delivered over stdin, never as a CLI argument. On Windows the
+ * args pass through cmd.exe (shell:true is required to launch the `.cmd`
+ * shims), so untrusted plan text on the command line would be open to
+ * shell-metacharacter injection. All three CLIs read the prompt from stdin.
+ * Node performs no quoting with shell:true, so the executable path (which may
+ * contain spaces or cmd metacharacters via the user profile directory) and the
+ * flags are escaped for the cmd.exe traversal on Windows.
+ */
+export function buildConsultantSpawn(
+  id: CouncilAgentId,
+  executable: string,
+  isWindows: boolean,
+): { file: string; args: string[] } {
+  const command = buildConsultantCommand(id, executable)
+  return escapeCmdSpawn(isWindows, command.file, command.args)
+}
+
 /** Default spawn: run the consultant CLI, stream output, enforce timeout. */
 export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeoutMs, onChunk) =>
   new Promise<SpawnOutcome>((resolve) => {
-    const { file, args } = buildConsultantCommand(id, resolveExecutable(id))
-    // The prompt is delivered over stdin, never as a CLI argument. On Windows
-    // the args pass through cmd.exe (shell:true is required to launch the `.cmd`
-    // shims), so untrusted plan text on the command line would be open to
-    // shell-metacharacter injection. All three CLIs read the prompt from stdin.
+    const { file, args } = buildConsultantSpawn(id, resolveExecutable(id), IS_WINDOWS)
     const child = spawn(file, args, {
       cwd,
       shell: IS_WINDOWS,

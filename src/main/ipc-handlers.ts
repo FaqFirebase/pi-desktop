@@ -1,5 +1,5 @@
 import { ipcMain, dialog, shell, app, BrowserWindow, type IpcMainInvokeEvent } from 'electron'
-import { PiRpcManager, getPiCli, setPiExecutableOverride } from './pi-rpc-manager'
+import { PiRpcManager, buildPiInvocation, getPiCli, setPiExecutableOverride } from './pi-rpc-manager'
 import { WorkspaceManager } from './workspace-manager'
 import { SessionTagManager } from './session-tags'
 import { ArchivedSessionsManager } from './archived-sessions'
@@ -1804,10 +1804,12 @@ async function runPiCli(
 ): Promise<{ success: boolean; output: string }> {
   try {
     const cli = getPiCli()
-    const [cmd, cmdArgs]: [string, string[]] = cli.useNode
-      ? [cli.node, [cli.script, ...args]]
-      : [cli.script, args]
-    const { stdout, stderr } = await execFileAsync(cmd, cmdArgs, {
+    // Package specs reach this argv from the renderer, and shell:true means
+    // Node quotes nothing — buildPiInvocation escapes the whole invocation for
+    // the cmd.exe traversal. A spec cmd.exe cannot carry throws here and is
+    // reported through the same failure path as any other CLI error below.
+    const invocation = buildPiInvocation(cli, args)
+    const { stdout, stderr } = await execFileAsync(invocation.file, invocation.args, {
       cwd,
       timeout,
       env: { ...process.env },

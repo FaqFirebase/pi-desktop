@@ -3,6 +3,7 @@ import { join, delimiter as PATH_DELIMITER } from 'path'
 import { spawnSync } from 'child_process'
 import type { CouncilAgentId } from '../shared/council-config'
 import { COUNCIL_AGENT_IDS } from '../shared/council-config'
+import { escapeCmdSpawn } from './cmd-escape'
 
 const IS_WINDOWS = process.platform === 'win32'
 
@@ -62,7 +63,10 @@ function whichInPath(name: string): string | null {
 
 function npmGlobalPrefix(): string | null {
   try {
-    const result = spawnSync(IS_WINDOWS ? 'npm.cmd' : 'npm', ['prefix', '-g'], {
+    // shell:true is required to launch npm's .cmd shim on Windows, and Node
+    // performs no quoting on that path, so the command is escaped for cmd.exe.
+    const command = escapeCmdSpawn(IS_WINDOWS, IS_WINDOWS ? 'npm.cmd' : 'npm', ['prefix', '-g'])
+    const result = spawnSync(command.file, command.args, {
       encoding: 'utf-8',
       shell: IS_WINDOWS,
       timeout: 5000,

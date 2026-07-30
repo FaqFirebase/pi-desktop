@@ -17,6 +17,7 @@ import {
   resolvePiBinary,
   whichInPath,
 } from './pi-binary-resolution'
+import { escapeCmdSpawn } from './cmd-escape'
 import { getGuiDataPath } from './app-data-paths'
 
 /**
@@ -256,6 +257,26 @@ export function getPiCli(): PiCli {
   }
 }
 
+/**
+ * The exact program and argv for one Pi invocation, ready for spawn().
+ *
+ * `useNode` runs Pi's .js entry point through Node, which never needs a shell,
+ * so both paths stay byte-identical there and on POSIX. A direct spawn of a
+ * Windows `.cmd`/`.bat` shim does need shell:true (Node refuses to launch one
+ * otherwise since CVE-2024-27980) and Node performs no quoting on that path,
+ * so the script path — which reaches us through the user profile directory and
+ * can hold spaces or cmd metacharacters — and every argument are escaped for
+ * the cmd.exe traversal. Throws on characters cmd.exe cannot carry at all.
+ */
+export function buildPiInvocation(
+  cli: PiCli,
+  args: readonly string[],
+): { file: string; args: string[] } {
+  return cli.useNode
+    ? escapeCmdSpawn(cli.needsShell, cli.node, [cli.script, ...args])
+    : escapeCmdSpawn(cli.needsShell, cli.script, args)
+}
+
 const MAX_PENDING_RESPONSES = 64
 const RESPONSE_TIMEOUT_MS = 30_000
 
@@ -442,14 +463,13 @@ export class PiRpcManager extends EventEmitter {
 
     let proc: ChildProcess
     try {
+      // Escaping happens inside the try so a path or argument cmd.exe cannot
+      // carry fails this attempt like any other spawn failure ('crashed'),
+      // instead of throwing out of start().
+      const invocation = buildPiInvocation(cli, args)
       console.log('[Pi] Spawning with cwd:', options.cwd)
-      console.log(
-        '[Pi] Spawn argv     :',
-        cli.useNode ? [cli.node, cli.script, ...args] : [cli.script, ...args]
-      )
-      proc = cli.useNode
-        ? spawn(cli.node, [cli.script, ...args], spawnOptions)
-        : spawn(cli.script, args, spawnOptions)
+      console.log('[Pi] Spawn argv     :', [invocation.file, ...invocation.args])
+      proc = spawn(invocation.file, invocation.args, spawnOptions)
     } catch (err) {
       this.stderrBuffer += (err instanceof Error ? err.message : String(err)) + '\n'
       return Promise.resolve('crashed')
