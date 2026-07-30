@@ -177,6 +177,14 @@ export class WorkspaceManager {
     return this.piManagers.get(this.activeWorkspaceId) ?? null
   }
 
+  /** Reverse lookup: the workspace id owning a given Pi manager, if any. */
+  workspaceIdFor(manager: PiRpcManager): string | null {
+    for (const [workspaceId, candidate] of this.piManagers) {
+      if (candidate === manager) return workspaceId
+    }
+    return null
+  }
+
   getFileService(workspaceId: string): FileService | null {
     return this.fileServices.get(workspaceId) ?? null
   }

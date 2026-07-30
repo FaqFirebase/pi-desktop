@@ -9,14 +9,22 @@ import { BUILTIN_SOURCE, type PiCommand } from '../../shared/pi-command'
  */
 export function usePiEvents(): void {
   const handlePiEvent = useAppStore((state) => state.handlePiEvent)
+  const handlePendingPromptCounts = useAppStore((state) => state.handlePendingPromptCounts)
+  const recoverPendingPrompts = useAppStore((state) => state.recoverPendingPrompts)
 
   useEffect(() => {
     // Subscribe to Pi events (status changes arrive here too, as 'status_change').
     const unsubscribeEvent = window.piDesktop.onEvent(handlePiEvent)
+    const unsubscribeCounts = window.piDesktop.onPendingPrompts(handlePendingPromptCounts)
+
+    // A reload leaves the dialog slot empty while main still holds the prompt.
+    void recoverPendingPrompts()
+
     return () => {
       unsubscribeEvent()
+      unsubscribeCounts()
     }
-  }, [handlePiEvent])
+  }, [handlePiEvent, handlePendingPromptCounts, recoverPendingPrompts])
 }
 
 /**

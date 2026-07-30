@@ -1,26 +1,103 @@
 import { test, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import type { PiExtensionUiRequest, Workspace } from '../../shared/ipc-contracts'
 
 // Each recorded call is appended to `calls`, so tests can assert both that a
 // session change reached Pi and that nothing reached Pi when it was declined.
 const calls: string[] = []
 let switchResult: { success?: boolean; error?: string } | null = { success: true }
+// Non-null makes the stubbed pi.getStatus reject, simulating a main-side
+// failure AFTER a workspace switch has already committed.
+let getStatusFailure: string | null = null
+// Non-null makes the stubbed workspace.setActive reject, simulating a switch
+// that never commits on the main side.
+let setActiveFailure: string | null = null
+// Non-null makes the stubbed ui.getPendingPrompts reject, simulating a boot
+// recovery that cannot reach main.
+let pendingPromptsFailure: string | null = null
+let pendingPromptsSnapshot: Record<string, number> = {}
+let activeWorkspaceResult: Workspace | null = null
 
 const SESSION_PATH = '/tmp/session-b.jsonl'
 const FORK_ENTRY_ID = 'entry-7'
 
 const WORKSPACE_ID = 'ws-2'
 
+const WORKSPACE_ONE: Workspace = {
+  id: 'ws-1',
+  name: 'one',
+  path: '/tmp/one',
+  createdAt: 0,
+  lastActiveAt: 0,
+  color: '#000',
+}
+
+const WORKSPACE_TWO: Workspace = {
+  id: WORKSPACE_ID,
+  name: 'two',
+  path: '/tmp/two',
+  createdAt: 0,
+  lastActiveAt: 0,
+  color: '#000',
+}
+
+const EXTENSION_DIALOG: PiExtensionUiRequest = {
+  type: 'extension_ui_request',
+  id: 'req-dialog',
+  method: 'confirm',
+  title: 'Allow write?',
+}
+
+const EXTENSION_NOTIFY: PiExtensionUiRequest = {
+  type: 'extension_ui_request',
+  id: 'req-notify',
+  method: 'notify',
+  message: 'build finished',
+}
+
 const piDesktopStub = {
   workspace: {
     setActive: async (id: string) => {
+      if (setActiveFailure) throw new Error(setActiveFailure)
       calls.push(`setActiveWorkspace:${id}`)
       return { id, name: 'other', path: '/tmp/other', createdAt: 0, lastActiveAt: 0, color: '#000' }
     },
     list: async () => [],
+    getActive: async () => activeWorkspaceResult,
+    create: async (name: string, path: string) => {
+      calls.push(`createWorkspace:${name}:${path}`)
+      return activeWorkspaceResult ?? WORKSPACE_ONE
+    },
+    remove: async (id: string) => {
+      calls.push(`removeWorkspace:${id}`)
+    },
   },
   pi: {
-    getStatus: async () => ({ status: 'stopped' as const, pid: null, error: null }),
+    getStatus: async () => {
+      if (getStatusFailure) throw new Error(getStatusFailure)
+      return { status: 'stopped' as const, pid: null, error: null }
+    },
+  },
+  ui: {
+    respondSelect: (id: string, _value: string) => {
+      calls.push(`respondSelect:${id}`)
+    },
+    respondConfirm: (id: string, _confirmed: boolean) => {
+      calls.push(`respondConfirm:${id}`)
+    },
+    respondInput: (id: string, _value: string) => {
+      calls.push(`respondInput:${id}`)
+    },
+    respondEditor: (id: string, _value: string) => {
+      calls.push(`respondEditor:${id}`)
+    },
+    flushPendingPrompts: async (workspaceId: string) => {
+      calls.push(`flushPendingPrompts:${workspaceId}`)
+    },
+    getPendingPrompts: async () => {
+      if (pendingPromptsFailure) throw new Error(pendingPromptsFailure)
+      return pendingPromptsSnapshot
+    },
   },
   commands: {
     abort: async () => {
@@ -57,12 +134,17 @@ const piDesktopStub = {
 
 type AppStore = typeof import('./store')['useAppStore']
 let useAppStore: AppStore
+let countPromptsWaitingElsewhere: typeof import('./store')['countPromptsWaitingElsewhere']
+let formatPromptsWaiting: typeof import('./store')['formatPromptsWaiting']
+let DIALOG_OVERLAY_Z_INDEX: number
+let NOTIFY_TOAST_Z_INDEX: number
 
 // The store reaches for `window.piDesktop` inside its actions, so the bridge has
 // to exist before the module body runs — hence the deferred import.
 before(async () => {
   ;(globalThis as unknown as { window: unknown }).window = { piDesktop: piDesktopStub }
-  ;({ useAppStore } = await import('./store'))
+  ;({ useAppStore, countPromptsWaitingElsewhere, formatPromptsWaiting } = await import('./store'))
+  ;({ DIALOG_OVERLAY_Z_INDEX, NOTIFY_TOAST_Z_INDEX } = await import('./components/extension-ui-dialog'))
 })
 
 // A turn in flight: streaming flag set, partial buffers filled, and a queue
@@ -99,6 +181,11 @@ function answerConfirm(confirmed: boolean): void {
 beforeEach(() => {
   calls.length = 0
   switchResult = { success: true }
+  getStatusFailure = null
+  setActiveFailure = null
+  pendingPromptsFailure = null
+  pendingPromptsSnapshot = {}
+  activeWorkspaceResult = null
   useAppStore.setState({
     isStreaming: false,
     streamingContent: '',
@@ -110,6 +197,10 @@ beforeEach(() => {
     promptHistory: [],
     sessionState: null,
     confirmRequest: null,
+    extensionUiRequest: null,
+    extensionNotify: null,
+    pendingPromptCounts: {},
+    activeWorkspace: null,
   })
 })
 
@@ -262,4 +353,254 @@ test('cloneBranch is gated by the same warning', async () => {
 
   assert.deepEqual(calls, [], 'a declined clone must not reach Pi')
   assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+// ─── Cross-workspace extension-UI prompts (queue-and-replay) ─────────────────
+
+test('an accepted workspace switch clears the held dialog without answering it', async () => {
+  useAppStore.setState({ extensionUiRequest: EXTENSION_DIALOG })
+
+  const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+
+  assert.equal(proceed, true)
+  assert.equal(useAppStore.getState().extensionUiRequest, null, 'the old workspace dialog must leave the screen')
+  assert.equal(
+    calls.some((c) => c.startsWith('respond')),
+    false,
+    'clearing the slot must not synthesize an answer — a false deny hard-blocks the asking tool'
+  )
+})
+
+test('a declined workspace switch keeps the dialog on screen', async () => {
+  enterStreamingState()
+  useAppStore.setState({ extensionUiRequest: EXTENSION_DIALOG })
+  answerConfirm(false)
+
+  const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+
+  assert.equal(proceed, false)
+  assert.equal(useAppStore.getState().extensionUiRequest?.id, EXTENSION_DIALOG.id)
+  assert.equal(
+    calls.some((c) => c.startsWith('flushPendingPrompts')),
+    false,
+    'a declined switch must not replay prompts for a workspace the user never left for'
+  )
+})
+
+test('a successful workspace switch flushes prompts for the new workspace', async () => {
+  const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+
+  assert.equal(proceed, true)
+  assert.equal(calls.includes(`flushPendingPrompts:${WORKSPACE_ID}`), true)
+})
+
+// Design invariant: the dialog slot may only be cleared once setActive has
+// committed. Clearing it earlier loses the prompt from the screen of a
+// workspace the user never actually left.
+test('a failed setActive keeps the dialog on screen and replays nothing', async () => {
+  setActiveFailure = 'workspace backend gone'
+  useAppStore.setState({ extensionUiRequest: EXTENSION_DIALOG })
+
+  const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+
+  assert.equal(proceed, false, 'a switch that never committed must report failure')
+  assert.equal(
+    useAppStore.getState().extensionUiRequest?.id,
+    EXTENSION_DIALOG.id,
+    'the dialog still belongs to the workspace on screen'
+  )
+  assert.equal(
+    calls.some((c) => c.startsWith('flushPendingPrompts')),
+    false,
+    'nothing may be replayed for a workspace that never became active'
+  )
+})
+
+test('the flush still runs when a step after the committed switch rejects', async () => {
+  getStatusFailure = 'status backend gone'
+
+  const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+
+  assert.equal(proceed, false, 'the caller must learn the chain failed')
+  assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_ID}`), true)
+  assert.equal(
+    calls.includes(`flushPendingPrompts:${WORKSPACE_ID}`),
+    true,
+    'the switch committed on the main side, so the held prompt must still be replayed'
+  )
+})
+
+test('notify and dialog requests occupy separate slots in either order', () => {
+  useAppStore.getState().handlePiEvent(EXTENSION_DIALOG)
+  useAppStore.getState().handlePiEvent(EXTENSION_NOTIFY)
+
+  let state = useAppStore.getState()
+  assert.equal(state.extensionUiRequest?.id, EXTENSION_DIALOG.id, 'a toast must never clobber a blocking dialog')
+  assert.equal(state.extensionNotify?.id, EXTENSION_NOTIFY.id)
+
+  useAppStore.setState({ extensionUiRequest: null, extensionNotify: null })
+  useAppStore.getState().handlePiEvent(EXTENSION_NOTIFY)
+  useAppStore.getState().handlePiEvent(EXTENSION_DIALOG)
+
+  state = useAppStore.getState()
+  assert.equal(state.extensionNotify?.id, EXTENSION_NOTIFY.id, 'a dialog must never clobber a toast')
+  assert.equal(state.extensionUiRequest?.id, EXTENSION_DIALOG.id)
+})
+
+test('dismissing a notify toast answers it and leaves the dialog slot alone', () => {
+  useAppStore.setState({ extensionUiRequest: EXTENSION_DIALOG, extensionNotify: EXTENSION_NOTIFY })
+
+  useAppStore.getState().dismissExtensionNotify()
+
+  const state = useAppStore.getState()
+  assert.equal(state.extensionNotify, null)
+  assert.equal(state.extensionUiRequest?.id, EXTENSION_DIALOG.id)
+  assert.deepEqual(
+    calls,
+    [`respondInput:${EXTENSION_NOTIFY.id}`],
+    'toast dismissal keeps sending the empty-input response Pi ignores'
+  )
+})
+
+test('pending prompt counts land in state and sum over non-active workspaces', () => {
+  useAppStore.getState().handlePendingPromptCounts({ 'ws-2': 2, 'ws-9': 1 })
+
+  assert.deepEqual(useAppStore.getState().pendingPromptCounts, { 'ws-2': 2, 'ws-9': 1 })
+  assert.equal(countPromptsWaitingElsewhere({ 'ws-2': 2, 'ws-9': 1 }, 'ws-2'), 1)
+  assert.equal(countPromptsWaitingElsewhere({ 'ws-2': 2, 'ws-9': 1 }, null), 3)
+  assert.equal(formatPromptsWaiting(1), '1 Pi prompt waiting')
+  assert.equal(formatPromptsWaiting(3), '3 Pi prompts waiting')
+})
+
+test('removing the workspace flushes prompts only when a new one is promoted', async () => {
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, extensionUiRequest: EXTENSION_DIALOG })
+  activeWorkspaceResult = WORKSPACE_TWO
+
+  await useAppStore.getState().removeWorkspace(WORKSPACE_ONE.id)
+
+  assert.equal(
+    calls.includes(`flushPendingPrompts:${WORKSPACE_ID}`),
+    true,
+    'the promoted workspace may hold a prompt that must surface now'
+  )
+  assert.equal(
+    useAppStore.getState().extensionUiRequest,
+    null,
+    'the dialog belonged to the workspace that is gone'
+  )
+  assert.equal(
+    calls.some((c) => c.startsWith('respond')),
+    false,
+    'clearing the slot must not synthesize an answer'
+  )
+
+  calls.length = 0
+  useAppStore.setState({ activeWorkspace: activeWorkspaceResult, extensionUiRequest: EXTENSION_DIALOG })
+  await useAppStore.getState().removeWorkspace('ws-9')
+
+  assert.equal(
+    calls.some((c) => c.startsWith('flushPendingPrompts')),
+    false,
+    'removing a non-active workspace changes nothing on screen'
+  )
+  assert.equal(
+    useAppStore.getState().extensionUiRequest?.id,
+    EXTENSION_DIALOG.id,
+    'the active workspace keeps its unanswered dialog'
+  )
+})
+
+// Regression: main activates the existing workspace when a create names a path
+// it already knows (and when it creates the very first workspace). The renderer
+// never routed that through switchWorkspace, so without adopting the change the
+// newly-active workspace's held prompt stays invisible — the badge hides it
+// (it counts other workspaces only) and no dialog is ever broadcast.
+test('a create that main turns into an activation adopts the new workspace', async () => {
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, extensionUiRequest: EXTENSION_DIALOG })
+  activeWorkspaceResult = WORKSPACE_TWO
+
+  await useAppStore.getState().createWorkspace(WORKSPACE_TWO.name, WORKSPACE_TWO.path)
+
+  assert.equal(calls.includes(`createWorkspace:${WORKSPACE_TWO.name}:${WORKSPACE_TWO.path}`), true)
+  assert.equal(
+    useAppStore.getState().extensionUiRequest,
+    null,
+    'the dialog belongs to the workspace that just left the screen'
+  )
+  assert.equal(
+    calls.some((c) => c.startsWith('respond')),
+    false,
+    'clearing the slot must not synthesize an answer — a false deny hard-blocks the asking tool'
+  )
+  assert.equal(
+    calls.includes(`flushPendingPrompts:${WORKSPACE_TWO.id}`),
+    true,
+    'a prompt held for the workspace now on screen must be replayed'
+  )
+})
+
+test('a create that leaves the active workspace alone touches neither slot nor prompts', async () => {
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, extensionUiRequest: EXTENSION_DIALOG })
+  activeWorkspaceResult = WORKSPACE_ONE
+
+  await useAppStore.getState().createWorkspace(WORKSPACE_TWO.name, WORKSPACE_TWO.path)
+
+  assert.equal(useAppStore.getState().extensionUiRequest?.id, EXTENSION_DIALOG.id)
+  assert.equal(
+    calls.some((c) => c.startsWith('flushPendingPrompts')),
+    false,
+    'the workspace on screen did not change, so nothing needs replaying'
+  )
+})
+
+// ─── Boot/reload recovery ────────────────────────────────────────────────────
+
+test('recoverPendingPrompts applies the counts snapshot and flushes the active workspace', async () => {
+  pendingPromptsSnapshot = { 'ws-9': 2 }
+  activeWorkspaceResult = WORKSPACE_TWO
+
+  await useAppStore.getState().recoverPendingPrompts()
+
+  assert.deepEqual(useAppStore.getState().pendingPromptCounts, { 'ws-9': 2 })
+  assert.equal(
+    calls.includes(`flushPendingPrompts:${WORKSPACE_TWO.id}`),
+    true,
+    'a reload leaves the dialog slot empty while main still holds the prompt'
+  )
+})
+
+test('recoverPendingPrompts flushes nothing when no workspace is active', async () => {
+  pendingPromptsSnapshot = { 'ws-9': 1 }
+  activeWorkspaceResult = null
+
+  await useAppStore.getState().recoverPendingPrompts()
+
+  assert.deepEqual(useAppStore.getState().pendingPromptCounts, { 'ws-9': 1 })
+  assert.equal(calls.some((c) => c.startsWith('flushPendingPrompts')), false)
+})
+
+test('recoverPendingPrompts swallows a rejected snapshot', async () => {
+  pendingPromptsFailure = 'pending-prompts bridge gone'
+  activeWorkspaceResult = WORKSPACE_TWO
+
+  await assert.doesNotReject(() => useAppStore.getState().recoverPendingPrompts())
+
+  assert.deepEqual(
+    useAppStore.getState().pendingPromptCounts,
+    {},
+    'a failed recovery must leave the counts untouched'
+  )
+  assert.equal(calls.some((c) => c.startsWith('flushPendingPrompts')), false)
+})
+
+// ─── Extension UI stacking ───────────────────────────────────────────────────
+
+// A toast and a blocking dialog can be on screen together. At the same tier the
+// dialog's full-screen backdrop paints over the toast, so the click aimed at the
+// toast lands on the backdrop and cancels the dialog — a permanent tool denial.
+test('the notify toast sits above the blocking dialog backdrop', () => {
+  assert.ok(
+    NOTIFY_TOAST_Z_INDEX > DIALOG_OVERLAY_Z_INDEX,
+    'a toast at or below the backdrop tier turns a toast click into a hard deny'
+  )
 })

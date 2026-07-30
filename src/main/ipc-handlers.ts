@@ -1,5 +1,6 @@
 import { ipcMain, dialog, shell, app, BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { PiRpcManager, buildPiInvocation, getPiCli, setPiExecutableOverride } from './pi-rpc-manager'
+import { createExtensionUiRouter, wireExtensionUiIpc } from './extension-ui-ipc'
 import { WorkspaceManager } from './workspace-manager'
 import { SessionTagManager } from './session-tags'
 import { ArchivedSessionsManager } from './archived-sessions'
@@ -26,7 +27,6 @@ import { trimGetMessagesResponse } from './get-messages-trim'
 import { activityStatsStore } from './activity-stats'
 import type {
   PiStartOptions,
-  PiRpcEvent,
   AppSettings,
   PermissionMode,
   SessionDeleteResult,
@@ -1486,68 +1486,18 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     return checkForUpdate()
   })
 
-  // ─── Extension UI Responses ─────────────────────────────────────────────
+  // ─── Extension UI Responses and Pi Event Forwarding ─────────────────────
 
-  ipcMain.handle(IPC_CHANNELS.UI_SELECT_RESPONSE, async (_event, id: unknown, value: unknown) => {
-    if (!isString(id)) throw new Error('id must be a string')
-    getActivePi().sendExtensionUiResponse(id, { value })
+  // Router construction, the dialog-answer channels, the pending-prompt
+  // flush/get pair and the two workspace hooks all live in extension-ui-ipc.ts
+  // so they can be tested without Electron.
+  wireExtensionUiIpc<IpcMainInvokeEvent>({
+    handle: (channel, handler) => ipcMain.handle(channel, handler),
+    assertTrustedSender,
+    router: createExtensionUiRouter({ workspace: workspaceManager, broadcast }),
+    workspace: workspaceManager,
+    broadcast,
   })
-
-  ipcMain.handle(IPC_CHANNELS.UI_CONFIRM_RESPONSE, async (_event, id: unknown, confirmed: unknown) => {
-    if (!isString(id)) throw new Error('id must be a string')
-    getActivePi().sendExtensionUiResponse(id, { confirmed: !!confirmed })
-  })
-
-  ipcMain.handle(IPC_CHANNELS.UI_INPUT_RESPONSE, async (_event, id: unknown, value: unknown) => {
-    if (!isString(id)) throw new Error('id must be a string')
-    getActivePi().sendExtensionUiResponse(id, { value })
-  })
-
-  ipcMain.handle(IPC_CHANNELS.UI_EDITOR_RESPONSE, async (_event, id: unknown, value: unknown) => {
-    if (!isString(id)) throw new Error('id must be a string')
-    getActivePi().sendExtensionUiResponse(id, { value })
-  })
-
-  // ─── Event Forwarding ───────────────────────────────────────────────────
-
-  // Forward Pi events ONLY from the currently-active workspace's Pi manager.
-  // Why: each workspace has its own PiRpcManager. If we forwarded events from
-  // every manager, the renderer (whose piStatus is a single global) would see
-  // status from inactive workspaces and the green dot would lie about whether
-  // the *active* workspace's Pi is running. Filtering here keeps the renderer's
-  // view of "Pi" aligned with the active workspace it's looking at.
-  const isActiveManager = (manager: PiRpcManager): boolean =>
-    manager === workspaceManager.getActivePiManager()
-
-  workspaceManager.onPiManager((piManager: PiRpcManager) => {
-    piManager.on('event', (event: PiRpcEvent) => {
-      if (isActiveManager(piManager)) {
-        broadcast(IPC_CHANNELS.EVENT_PI, event)
-      }
-    })
-
-    piManager.on('status-change', () => {
-      if (isActiveManager(piManager)) {
-        broadcast(IPC_CHANNELS.EVENT_PI, {
-          type: 'status_change',
-          ...piManager.getStatus(),
-        })
-      }
-    })
-  })
-
-  // Push the active workspace's Pi status to the renderer whenever the active
-  // workspace changes, so the status indicator reflects the new workspace
-  // even if its Pi manager hasn't emitted any events recently.
-  const broadcastActiveStatus = (): void => {
-    const pi = workspaceManager.getActivePiManager()
-    if (!pi) return
-    broadcast(IPC_CHANNELS.EVENT_PI, {
-      type: 'status_change',
-      ...pi.getStatus(),
-    })
-  }
-  workspaceManager.onActiveWorkspaceChanged(broadcastActiveStatus)
 
   // Forward debounced file-change events from the active workspace's watcher
   // so the renderer can refresh the file tree and git status live. The

@@ -3,61 +3,83 @@ import { useState, useEffect } from 'react'
 import { X, AlertCircle, HelpCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 
+// Stacking tiers for the two extension-UI surfaces, which can be on screen at
+// the same time. The toast MUST outrank the dialog's full-screen backdrop: at
+// an equal tier the backdrop paints over the toast, and the click aimed at the
+// toast lands on the backdrop instead — cancelling the blocking prompt, which
+// answers the asking tool with a permanent deny.
+export const DIALOG_OVERLAY_Z_INDEX = 50
+export const NOTIFY_TOAST_Z_INDEX = 60
+
+// How long a notification stays up before it dismisses itself.
+const NOTIFY_TOAST_TIMEOUT_MS = 5000
+
 export function ExtensionUiDialog(): React.JSX.Element | null {
   const request = useAppStore((state) => state.extensionUiRequest)
+  const notify = useAppStore((state) => state.extensionNotify)
   const respondExtensionUi = useAppStore((state) => state.respondExtensionUi)
   const dismissExtensionUi = useAppStore((state) => state.dismissExtensionUi)
+  const dismissExtensionNotify = useAppStore((state) => state.dismissExtensionNotify)
 
-  if (!request) return null
+  // The toast lives in its own store slot so it can coexist with a blocking
+  // dialog instead of clobbering it; dismissal only touches the toast slot.
+  // Keyed by request id so a notification arriving mid-countdown remounts the
+  // toast — otherwise it inherits the previous one's remaining time (and its
+  // already-finished fade-in) and can vanish on arrival.
+  const toast = notify ? (
+    <NotifyToast key={notify.id} request={notify} onDismiss={dismissExtensionNotify} />
+  ) : null
 
-  // Notify method is fire-and-forget, just show a toast
-  if (request.method === 'notify') {
-    return <NotifyToast request={request} onDismiss={dismissExtensionUi} />
-  }
+  // Dialog slot: the store routes only select/confirm/input/editor here.
+  const dialog = ((): React.JSX.Element | null => {
+    if (!request) return null
+    switch (request.method) {
+      case 'select':
+        return (
+          <SelectDialog
+            request={request}
+            onSelect={(value) => respondExtensionUi(request.id, { value })}
+            onCancel={() => dismissExtensionUi()}
+          />
+        )
+      case 'confirm':
+        return (
+          <ConfirmDialog
+            request={request}
+            onConfirm={() => respondExtensionUi(request.id, { confirmed: true })}
+            onDeny={() => respondExtensionUi(request.id, { confirmed: false })}
+            onCancel={() => dismissExtensionUi()}
+          />
+        )
+      case 'input':
+        return (
+          <InputDialog
+            request={request}
+            onSubmit={(value) => respondExtensionUi(request.id, { value })}
+            onCancel={() => dismissExtensionUi()}
+          />
+        )
+      case 'editor':
+        return (
+          <EditorDialog
+            request={request}
+            onSubmit={(value) => respondExtensionUi(request.id, { value })}
+            onCancel={() => dismissExtensionUi()}
+          />
+        )
+      default:
+        return null
+    }
+  })()
 
-  // setTitle / set_editor_text are fire-and-forget (setStatus/setWidget handled in the store).
-  if (['setTitle', 'set_editor_text'].includes(request.method)) {
-    return null
-  }
+  if (!toast && !dialog) return null
 
-  // Dialog methods: select, confirm, input, editor
-  switch (request.method) {
-    case 'select':
-      return (
-        <SelectDialog
-          request={request}
-          onSelect={(value) => respondExtensionUi(request.id, { value })}
-          onCancel={() => dismissExtensionUi()}
-        />
-      )
-    case 'confirm':
-      return (
-        <ConfirmDialog
-          request={request}
-          onConfirm={() => respondExtensionUi(request.id, { confirmed: true })}
-          onDeny={() => respondExtensionUi(request.id, { confirmed: false })}
-          onCancel={() => dismissExtensionUi()}
-        />
-      )
-    case 'input':
-      return (
-        <InputDialog
-          request={request}
-          onSubmit={(value) => respondExtensionUi(request.id, { value })}
-          onCancel={() => dismissExtensionUi()}
-        />
-      )
-    case 'editor':
-      return (
-        <EditorDialog
-          request={request}
-          onSubmit={(value) => respondExtensionUi(request.id, { value })}
-          onCancel={() => dismissExtensionUi()}
-        />
-      )
-    default:
-      return null
-  }
+  return (
+    <>
+      {toast}
+      {dialog}
+    </>
+  )
 }
 
 // ─── Notify Toast ────────────────────────────────────────────────────────────
@@ -70,7 +92,7 @@ function NotifyToast({
   onDismiss: () => void
 }): React.JSX.Element {
   useEffect(() => {
-    const timer = setTimeout(onDismiss, 5000)
+    const timer = setTimeout(onDismiss, NOTIFY_TOAST_TIMEOUT_MS)
     return () => clearTimeout(timer)
   }, [onDismiss])
 
@@ -81,7 +103,7 @@ function NotifyToast({
   }
 
   return (
-    <div className="fixed bottom-10 right-4 z-50 animate-fade-in">
+    <div className="fixed bottom-10 right-4 animate-fade-in" style={{ zIndex: NOTIFY_TOAST_Z_INDEX }}>
       <div className="flex items-center gap-3 rounded-lg border border-border-strong bg-surface px-4 py-3 shadow-lg">
         {iconMap[request.notifyType ?? 'info'] ?? iconMap.info}
         <span className="text-sm text-primary">{request.message ?? 'Notification'}</span>
@@ -312,7 +334,8 @@ function DialogOverlay({
 }): React.JSX.Element {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in"
+      style={{ zIndex: DIALOG_OVERLAY_Z_INDEX }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel()
       }}

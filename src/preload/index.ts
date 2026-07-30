@@ -48,6 +48,7 @@ import type {
   PermissionRulesExportResult,
   PermissionRulesWorkspaceStatus,
   PermissionRulesRemoveResult,
+  PendingPromptCounts,
 } from '../shared/ipc-contracts'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -256,10 +257,17 @@ interface PiDesktopAPI {
     respondConfirm(id: string, confirmed: boolean): void
     respondInput(id: string, value: string): void
     respondEditor(id: string, value: string): void
+    /**
+     * Ask main to (re-)deliver the workspace's held blocking prompt.
+     * No-op unless the workspace is active when the flush executes.
+     */
+    flushPendingPrompts(workspaceId: string): Promise<void>
+    getPendingPrompts(): Promise<PendingPromptCounts>
   }
 
   // Event subscription
   onEvent(callback: (event: PiRpcEvent) => void): () => void
+  onPendingPrompts(callback: (counts: PendingPromptCounts) => void): () => void
   onFileChange(callback: (event: FileChangeEvent) => void): () => void
   onMenuAction(callback: (action: string) => void): () => void
 }
@@ -458,6 +466,8 @@ const api: PiDesktopAPI = {
     respondConfirm: (id, confirmed) => ipcRenderer.invoke(IPC_CHANNELS.UI_CONFIRM_RESPONSE, id, confirmed),
     respondInput: (id, value) => ipcRenderer.invoke(IPC_CHANNELS.UI_INPUT_RESPONSE, id, value),
     respondEditor: (id, value) => ipcRenderer.invoke(IPC_CHANNELS.UI_EDITOR_RESPONSE, id, value),
+    flushPendingPrompts: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.UI_PENDING_FLUSH, workspaceId),
+    getPendingPrompts: () => ipcRenderer.invoke(IPC_CHANNELS.UI_PENDING_GET),
   },
 
   onEvent: (callback) => {
@@ -465,6 +475,14 @@ const api: PiDesktopAPI = {
     ipcRenderer.on(IPC_CHANNELS.EVENT_PI, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.EVENT_PI, handler)
+    }
+  },
+
+  onPendingPrompts: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: PendingPromptCounts) => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.EVENT_PENDING_PROMPTS, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.EVENT_PENDING_PROMPTS, handler)
     }
   },
 

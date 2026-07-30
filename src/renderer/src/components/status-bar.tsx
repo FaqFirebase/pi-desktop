@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useAppStore } from '../store'
+import { useAppStore, countPromptsWaitingElsewhere, formatPromptsWaiting } from '../store'
 import { ModelSelector } from './model-selector'
 import { clsx } from 'clsx'
 import {
@@ -31,6 +31,14 @@ export function StatusBar(): React.JSX.Element {
   const compactContext = useAppStore((state) => state.compactContext)
   const isCompacting = useAppStore((state) => state.sessionState?.isCompacting ?? false)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
+  const pendingPromptCounts = useAppStore((state) => state.pendingPromptCounts)
+
+  // Blocking prompts held for OTHER workspaces (any extension's select/
+  // confirm/input/editor) — the active workspace's prompt is already on screen.
+  const promptsWaitingElsewhere = countPromptsWaitingElsewhere(
+    pendingPromptCounts,
+    activeWorkspace?.id ?? null
+  )
 
   // Current git branch of the active workspace. Refreshed when the workspace
   // changes and when the window regains focus (branch switches outside the app).
@@ -101,6 +109,16 @@ export function StatusBar(): React.JSX.Element {
         {pendingFollowUp.length > 0 && (
           <span className="text-warning">
             {pendingFollowUp.length} follow-up queued
+          </span>
+        )}
+
+        {/* Prompts held for other workspaces (switch back to answer them) */}
+        {promptsWaitingElsewhere > 0 && (
+          <span
+            className="text-warning"
+            title="Pi is waiting on a prompt in another workspace; switch to it to answer"
+          >
+            {formatPromptsWaiting(promptsWaitingElsewhere)}
           </span>
         )}
       </div>
