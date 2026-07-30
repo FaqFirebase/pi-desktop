@@ -5,6 +5,7 @@ import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from '
 import type { PiCommand } from '../../shared/pi-command'
 import { normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
+import { clampSidebarWidth } from '../../shared/sidebar-width'
 import { validateModelsConfig, mergeModelsConfig, type ModelsConfig } from '../../shared/models-config'
 import {
   resolveActiveMembers,
@@ -360,6 +361,7 @@ interface AppActions {
   setPermissionRulesDraft: (scope: PermissionRulesScope, rules: PermissionRule[] | null) => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   toggleSessionGroupCollapsed: (projectPath: string) => Promise<void>
+  saveSidebarWidth: (width: number) => Promise<void>
   loadCommands: () => Promise<void>
 
   // Events
@@ -1155,6 +1157,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
             {
               path: sessionState.sessionFile,
               name: sessionState.sessionName,
+              // The active session's first message is not on `sessionState`, and
+              // the renderer cannot read the file; the row falls back to its name
+              // or timestamp until the next list refresh supplies a preview.
+              preview: null,
               sessionId: sessionState.sessionId,
               lastModified: Date.now(),
               messageCount: sessionState.messageCount,
@@ -1342,6 +1348,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (get().piStatus === 'running') {
       await get().restartPi()
     }
+  },
+
+  saveSidebarWidth: async (width) => {
+    // Called once when a drag ends, never per mousemove — the live width is local
+    // to the sidebar so dragging does not write settings.json on every pixel.
+    const updated = await window.piDesktop.settings.save({
+      sidebarWidth: clampSidebarWidth(width),
+    })
+    set({ settings: updated })
   },
 
   toggleSessionGroupCollapsed: async (projectPath) => {

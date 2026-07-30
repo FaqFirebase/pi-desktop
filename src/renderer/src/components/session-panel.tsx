@@ -469,7 +469,7 @@ function SessionEntry({
         <Clock size={12} className="shrink-0 text-faint" />
         <div className="min-w-0 flex-1">
           <div className={clsx('text-sm truncate', isActive ? 'text-accent-fg' : 'text-muted')}>
-            {getSessionTitle(session.name, session.sessionId)}
+            {getSessionTitle(session.name, session.sessionId, session.preview)}
           </div>
           {(tags.length > 0 || autoTag) && (
             <div className="flex flex-wrap gap-1 mt-1">

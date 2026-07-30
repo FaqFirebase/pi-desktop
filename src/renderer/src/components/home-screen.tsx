@@ -219,7 +219,7 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
                     <Clock size={13} className="shrink-0 text-faint" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm text-secondary">
-                        {getSessionTitle(session.name, session.sessionId)}
+                        {getSessionTitle(session.name, session.sessionId, session.preview)}
                       </div>
                       <div className="truncate text-[11px] text-faint">{session.projectName}</div>
                     </div>

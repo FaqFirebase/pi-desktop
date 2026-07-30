@@ -33,3 +33,37 @@ test('falls back to a short id when name is empty/whitespace', () => {
   assert.equal(getSessionTitle('', '019f2d6c-7d8e'), '019f2d6c-7d8')
   assert.equal(getSessionTitle('   ', '019f2d6c-7d8e'), '019f2d6c-7d8')
 })
+
+test('prefers an explicit name over a message preview', () => {
+  assert.equal(
+    getSessionTitle('debug token refresh', '2026-07-04T13-34-18-375Z_019f2d56', 'Refactor auth'),
+    'debug token refresh'
+  )
+})
+
+test('falls back to a message preview when the session is unnamed', () => {
+  assert.equal(
+    getSessionTitle(null, '2026-07-04T13-34-18-375Z_019f2d56', 'Refactor auth module login'),
+    'Refactor auth module login'
+  )
+})
+
+test('falls back to a message preview when the name was cleared to whitespace', () => {
+  assert.equal(getSessionTitle('   ', '019f2d6c-7d8e', 'Write unit tests'), 'Write unit tests')
+})
+
+test('trims a message preview', () => {
+  assert.equal(getSessionTitle(null, 'x', '  Fix token refresh  '), 'Fix token refresh')
+})
+
+test('falls back to the timestamp when neither a name nor a preview exists', () => {
+  // An empty-string preview must not win over the timestamp.
+  assert.equal(
+    getSessionTitle(null, '2026-07-04T13-34-18-375Z_019f2d56', null),
+    '2026-07-04 13:34:18'
+  )
+  assert.equal(
+    getSessionTitle(null, '2026-07-04T13-34-18-375Z_019f2d56', '   '),
+    '2026-07-04 13:34:18'
+  )
+})

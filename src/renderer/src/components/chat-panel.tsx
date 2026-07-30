@@ -5,6 +5,16 @@ import { CouncilPanels } from './council-panels'
 import { MessageBubble, ToolGroupBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
 import { ChatSearch } from './chat-search'
+import { ResizeHandle } from './resize-handle'
+import {
+  DEFAULT_FILE_PANE_WIDTH,
+  DEFAULT_SIDE_PANEL_WIDTH,
+  MAX_SIDE_PANEL_WIDTH,
+  MIN_EDITOR_PANE_WIDTH,
+  MIN_FILE_PANE_WIDTH,
+  clamp,
+  resolveSidePanelMetrics,
+} from './chat-panel-widths'
 
 import { groupToolMessages, prepareChatMessages } from '../message-grouping'
 import { NowContext } from '../utils/relative-time'
@@ -65,8 +75,8 @@ export function ChatPanel(): React.JSX.Element {
   // round-trip). Widths stay local — resetting them on remount is benign.
   const sidePanel = useAppStore((state) => state.chatSidePanel)
   const setSidePanel = useAppStore((state) => state.setChatSidePanel)
-  const [sidePanelWidth, setSidePanelWidth] = useState(640)
-  const [filePaneWidth, setFilePaneWidth] = useState(280)
+  const [sidePanelWidth, setSidePanelWidth] = useState(DEFAULT_SIDE_PANEL_WIDTH)
+  const [filePaneWidth, setFilePaneWidth] = useState(DEFAULT_FILE_PANE_WIDTH)
 
   // One shared clock for all relative-time labels — refresh every 30s so
   // "5 minutes ago" stays current without each label owning a timer.
@@ -126,12 +136,13 @@ export function ChatPanel(): React.JSX.Element {
   const showImage = previewTarget?.kind === 'image' && sidePanel !== 'diff'
   const showEditor = previewTarget?.kind === 'code' && sidePanel !== 'diff'
   const showDiff = sidePanel === 'diff'
-  const showFileTreeOnly = showFileTree && !showEditor && !showImage
-  const minSidePanelWidth = showFileTree && (showEditor || showImage) ? 600 : 360
-  const effectiveSidePanelWidth = clamp(sidePanelWidth, minSidePanelWidth, 1280)
-  const maxFilePaneWidth = Math.max(220, effectiveSidePanelWidth - 360)
-  const effectiveFilePaneWidth = clamp(filePaneWidth, 220, maxFilePaneWidth)
-  const sidePanelContentWidth = showFileTreeOnly ? effectiveFilePaneWidth : effectiveSidePanelWidth
+  const {
+    fileTreeOnly: showFileTreeOnly,
+    minSidePanelWidth,
+    contentWidth: sidePanelContentWidth,
+    filePaneWidth: effectiveFilePaneWidth,
+    maxFilePaneWidth,
+  } = resolveSidePanelMetrics({ showFileTree, showEditor, showImage }, sidePanelWidth, filePaneWidth)
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -318,11 +329,16 @@ export function ChatPanel(): React.JSX.Element {
             <ResizeHandle
               onResize={(delta) => {
                 if (showFileTreeOnly) {
-                  setFilePaneWidth((width) => clamp(width - delta, 220, 520))
+                  // Same ceiling the render uses, so the state cannot outrun it.
+                  setFilePaneWidth((width) =>
+                    clamp(width - delta, MIN_FILE_PANE_WIDTH, maxFilePaneWidth)
+                  )
                   return
                 }
 
-                setSidePanelWidth((width) => clamp(width - delta, minSidePanelWidth, 1280))
+                setSidePanelWidth((width) =>
+                  clamp(width - delta, minSidePanelWidth, MAX_SIDE_PANEL_WIDTH)
+                )
               }}
             />
             <div className="flex min-w-0 flex-1 overflow-hidden">
@@ -333,7 +349,11 @@ export function ChatPanel(): React.JSX.Element {
                   </div>
                   {(showEditor || showImage) && (
                     <ResizeHandle
-                      onResize={(delta) => setFilePaneWidth((width) => clamp(width + delta, 220, maxFilePaneWidth))}
+                      onResize={(delta) =>
+                        setFilePaneWidth((width) =>
+                          clamp(width + delta, MIN_FILE_PANE_WIDTH, maxFilePaneWidth)
+                        )
+                      }
                     />
                   )}
                 </>
@@ -346,17 +366,22 @@ export function ChatPanel(): React.JSX.Element {
               {showEditor && (
                 <div
                   className={clsx(
-                    'flex min-w-[360px] flex-1 flex-col overflow-hidden',
+                    'flex flex-1 flex-col overflow-hidden',
                     // Divider only when the file tree is beside it; alone, the
                     // outer panel's border-l is the left edge (avoids doubling).
                     showFileTree && 'border-l border-border'
                   )}
+                  // The same constant the file pane's ceiling reserves for.
+                  style={{ minWidth: MIN_EDITOR_PANE_WIDTH }}
                 >
                   <FilePreview />
                 </div>
               )}
               {showImage && (
-                <div className="flex min-w-[360px] flex-1 flex-col overflow-hidden">
+                <div
+                  className="flex flex-1 flex-col overflow-hidden"
+                  style={{ minWidth: MIN_EDITOR_PANE_WIDTH }}
+                >
                   <ImageViewer />
                 </div>
               )}
@@ -383,43 +408,6 @@ export function ChatPanel(): React.JSX.Element {
   )
 }
 
-function ResizeHandle({ onResize }: { onResize: (delta: number) => void }): React.JSX.Element {
-  const handleMouseDown = (event: React.MouseEvent) => {
-    event.preventDefault()
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    let lastX = event.clientX
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      onResize(moveEvent.clientX - lastX)
-      lastX = moveEvent.clientX
-    }
-
-    const handleMouseUp = () => {
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-  }
-
-  return (
-    <div
-      onMouseDown={handleMouseDown}
-      className="group flex w-2 shrink-0 cursor-col-resize items-stretch justify-center bg-app transition-colors hover:bg-surface-hover"
-      title="Drag to resize"
-    >
-      <div className="w-px bg-transparent transition-colors group-hover:bg-accent" />
-    </div>
-  )
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
 
 function ToolbarButton({
   icon,

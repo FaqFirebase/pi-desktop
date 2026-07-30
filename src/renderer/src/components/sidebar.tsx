@@ -24,6 +24,10 @@ import { useMemo, useState, useRef } from 'react'
 import { StatusPopover } from './status-popover'
 import { useContextMenu, buildSessionContextMenu } from './context-menu'
 import { getSessionRowLabels } from './sidebar-session-labels'
+import { ResizeHandle } from './resize-handle'
+import { getSessionTitle } from '../utils/session-title'
+import { formatRelativeTime } from '../utils/format-relative-time'
+import { clampSidebarWidth, resolveSidebarWidth } from '../../../shared/sidebar-width'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 
 /** Cap how many workspace groups appear in the Recent list. */
@@ -54,10 +58,33 @@ export function Sidebar(): React.JSX.Element {
   const unarchiveSession = useAppStore((state) => state.unarchiveSession)
   const deleteSession = useAppStore((state) => state.deleteSession)
   const setSessionName = useAppStore((state) => state.setSessionName)
+  const persistedWidth = useAppStore((state) => state.settings?.sidebarWidth)
+  const saveSidebarWidth = useAppStore((state) => state.saveSidebarWidth)
 
   const { show: showMenu, ContextMenuComponent: SessionMenu } = useContextMenu()
 
   const [archivedOpen, setArchivedOpen] = useState(false)
+
+  // The live width during a drag. Kept local so dragging never writes
+  // settings.json; the draft outlives the drag so the row does not jump while the
+  // save round-trips, and a remount falls back to the saved value.
+  const [widthDraft, setWidthDraft] = useState<number | null>(null)
+  const sidebarWidth = resolveSidebarWidth(widthDraft, persistedWidth)
+  const savedWidth = resolveSidebarWidth(null, persistedWidth)
+  // The handle registers its mousemove listener once per drag, so its callback
+  // closes over a single render. Deltas must therefore accumulate through the
+  // state updater — reading the width off a render-scoped value (or a ref written
+  // during render) drops every event that lands before React re-renders.
+  const widthRef = useRef(sidebarWidth)
+
+  const applyResizeDelta = (delta: number): void => {
+    setWidthDraft((current) => {
+      const next = clampSidebarWidth((current ?? savedWidth) + delta)
+      // Mirrored for onResizeEnd, which has no access to the updated state.
+      widthRef.current = next
+      return next
+    })
+  }
 
   // Inline session rename. Only the active session can be renamed (Pi's rename
   // targets it), and it's reachable from two spots — the Current Session panel
@@ -264,9 +291,11 @@ export function Sidebar(): React.JSX.Element {
         onClick={() => openSession(session)}
         onDoubleClick={() => { if (isActive) startSessionRename('recent') }}
         onContextMenu={(e) => handleSessionRightClick(e, session)}
-        title={isActive
+        // The full title leads, so a preview too long for the current width is
+        // still readable on hover.
+        title={`${labels.title}\n\n${isActive
           ? 'Click to open · double-click to rename · right-click for actions'
-          : 'Click to open · right-click for actions'}
+          : 'Click to open · right-click for actions'}`}
         className={clsx(
           'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
           nested && 'pl-2',
@@ -278,6 +307,13 @@ export function Sidebar(): React.JSX.Element {
         <Clock size={12} className="shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="truncate">{labels.title}</div>
+          {/* The title is now the session's name or first message, so the time it
+              displaced moves here. Recent rows are already grouped by workspace,
+              which makes the project name the less useful of the two subtitles —
+              the home screen, which is not grouped, shows the project instead. */}
+          <div className="truncate text-[11px] text-faint">
+            {formatRelativeTime(session.lastModified, Date.now())}
+          </div>
         </div>
       </button>
     )
@@ -335,7 +371,11 @@ export function Sidebar(): React.JSX.Element {
   }
 
   return (
-    <aside className="flex w-[calc(16rem_+_16px)] flex-col border-r border-border bg-app">
+    <>
+    <aside
+      className="flex shrink-0 flex-col border-r border-border bg-app"
+      style={{ width: sidebarWidth }}
+    >
       {/* Header */}
       <div className="flex h-12 items-center justify-between border-b border-border px-3">
         <div className="flex items-center gap-2">
@@ -440,7 +480,7 @@ export function Sidebar(): React.JSX.Element {
           >
             <div className="text-xs font-medium text-muted uppercase tracking-wider">Current Session</div>
             <div className="mt-1.5 text-sm text-primary truncate">
-              {sessionState.sessionName || sessionState.sessionId || 'Unnamed'}
+              {getSessionTitle(sessionState.sessionName, sessionState.sessionId)}
             </div>
             {sessionState.model && (
               <div className="mt-1 text-xs text-dim">
@@ -490,6 +530,11 @@ export function Sidebar(): React.JSX.Element {
       )}
       {SessionMenu}
     </aside>
+    <ResizeHandle
+      onResize={applyResizeDelta}
+      onResizeEnd={() => void saveSidebarWidth(widthRef.current)}
+    />
+    </>
   )
 }
 

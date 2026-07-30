@@ -16,9 +16,12 @@ import {
   sessionDirName,
   desanitizeSessionDir,
   projectNameFromPath,
+  JSONL_EXTENSION,
 } from './session-paths'
 import { pathGroupKey as workspaceMatchKey } from '../shared/path-compare'
-import { readSessionNameCached } from './session-name'
+import { readSessionMetadataCached } from './session-metadata'
+import { mapWithConcurrency } from './map-concurrent'
+import { readSessionLineage } from './session-lineage-reader'
 import { trimGetMessagesResponse } from './get-messages-trim'
 import { activityStatsStore } from './activity-stats'
 import type {
@@ -27,6 +30,7 @@ import type {
   AppSettings,
   PermissionMode,
   SessionDeleteResult,
+  SessionListItem,
   NoteInput,
   NoteUpdate,
   NoteScope,
@@ -62,7 +66,6 @@ import { runConsultants, runArbiter, defaultSpawnConsultant, type ArbiterRequest
 import { fetchPackageCatalog } from './package-catalog'
 import { applyRunOnStartup } from './startup-launch'
 import { setTrayEnabled } from './tray-manager'
-import type { SessionLineageRecord } from '../shared/session-lineage'
 import { readdir, stat, readFile, writeFile, mkdir, access, unlink } from 'fs/promises'
 import { basename, dirname, join, resolve } from 'path'
 import { isPathWithin, isAuthorizedAttachmentPath } from './path-authorization'
@@ -88,7 +91,6 @@ const execFileAsync = promisify(execFile)
  * The preload bridge is the only path from renderer to these handlers.
  */
 
-const JSONL_EXTENSION = '.jsonl'
 const MAX_SESSION_LIST = 100
 const READ_ONLY_TOOLS = 'read,grep,find,ls'
 const THEMES_DIR_NAME = 'themes'
@@ -1589,34 +1591,24 @@ function validateStartOptions(value: unknown): PiStartOptions {
 
 // ─── Session Listing ─────────────────────────────────────────────────────────
 
-interface SessionEntry {
-  path: string
-  name: string | null
-  sessionId: string
-  lastModified: number
-  messageCount: number
-  projectPath: string
-  projectName: string
-}
+// Rows the renderer lists; the wire type is the single source of truth.
+type SessionEntry = SessionListItem
 
-// How many session files to read names from in parallel. Each read is now
-// bounded (head+tail only), so we can run more without freezing main.
+// How many session files to read labels from in parallel. Each read is bounded
+// (head+tail only), so we can run more without freezing main.
 const SESSION_NAME_READ_CONCURRENCY = 24
 
-/** Populate `entry.name` from each session file's latest `session_info`, bounded. */
-async function fillSessionNames(entries: SessionEntry[]): Promise<void> {
-  let cursor = 0
-  async function worker(): Promise<void> {
-    while (cursor < entries.length) {
-      const entry = entries[cursor++]
-      entry.name = await readSessionNameCached(entry.path, entry.lastModified)
-    }
-  }
-  const workers = Array.from(
-    { length: Math.min(SESSION_NAME_READ_CONCURRENCY, entries.length) },
-    () => worker()
-  )
-  await Promise.all(workers)
+/**
+ * Populate each row's label fields from its session file: the latest
+ * `session_info` name, plus a preview of the first user message so an unnamed
+ * session is identifiable without opening it.
+ */
+async function fillSessionLabels(entries: SessionEntry[]): Promise<void> {
+  await mapWithConcurrency(entries, SESSION_NAME_READ_CONCURRENCY, async (entry) => {
+    const { name, preview } = await readSessionMetadataCached(entry.path, entry.lastModified)
+    entry.name = name
+    entry.preview = preview
+  })
 }
 
 function createListSessions(wm: WorkspaceManager) {
@@ -1634,7 +1626,7 @@ function createListSessions(wm: WorkspaceManager) {
       // Only read names for the sessions we actually return (avoids reading the
       // whole store), then surface each session's latest session_info name.
       const top = entries.slice(0, MAX_SESSION_LIST)
-      await fillSessionNames(top)
+      await fillSessionLabels(top)
       return top
     } catch {
       return []
@@ -1700,6 +1692,7 @@ async function collectSessionFiles(
               entries.push({
                 path: fullPath,
                 name: null,
+                preview: null,
                 sessionId: item.name.replace(JSONL_EXTENSION, ''),
                 lastModified: fileStat.mtimeMs,
                 messageCount: 0,
@@ -1847,49 +1840,8 @@ async function updatePackage(spec: string | undefined, cwd: string): Promise<{ s
   return runPiCli(spec ? ['update', spec] : ['update'], cwd, 120_000)
 }
 
-// ─── Session Lineage Reader ──────────────────────────────────────────────────
-
-async function readSessionLineage(): Promise<SessionLineageRecord[]> {
-  const sessionsDir = getSessionsRoot()
-  const records: SessionLineageRecord[] = []
-  if (!existsSync(sessionsDir)) return records
-
-  let projectDirs: string[]
-  try {
-    const entries = await readdir(sessionsDir, { withFileTypes: true })
-    projectDirs = entries.filter((e) => e.isDirectory()).map((e) => join(sessionsDir, e.name))
-  } catch {
-    return records
-  }
-
-  for (const dir of projectDirs) {
-    let files: string[]
-    try {
-      files = (await readdir(dir)).filter((f) => f.endsWith('.jsonl'))
-    } catch {
-      continue
-    }
-    for (const file of files) {
-      const full = join(dir, file)
-      try {
-        const content = await readFile(full, 'utf-8')
-        const newlineIdx = content.indexOf('\n')
-        const firstLine = newlineIdx === -1 ? content : content.slice(0, newlineIdx)
-        const header = JSON.parse(firstLine) as Record<string, unknown>
-        if (header.type !== 'session' || typeof header.id !== 'string') continue
-        records.push({
-          sessionId: header.id,
-          path: full,
-          name: typeof header.cwd === 'string' ? header.cwd.split('/').pop() ?? null : null,
-          parentPath: typeof header.parentSession === 'string' ? header.parentSession : null,
-        })
-      } catch {
-        // Skip unreadable / malformed session files.
-      }
-    }
-  }
-  return records
-}
+// Session lineage lives in ./session-lineage-reader — it needs bounded, cached
+// reads over the whole store and an injectable root to be testable.
 
 // ─── Skills Listing ──────────────────────────────────────────────────────────
 

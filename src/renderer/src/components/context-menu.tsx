@@ -358,7 +358,7 @@ export function buildSessionContextMenu(
   isArchived: boolean,
   actions: SessionContextMenuActions
 ): ContextMenuItem[] {
-  const displayName = getSessionTitle(session.name, session.sessionId)
+  const displayName = getSessionTitle(session.name, session.sessionId, session.preview)
   const items: ContextMenuItem[] = [
     {
       id: 'session-open',

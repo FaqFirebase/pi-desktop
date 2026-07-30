@@ -14,6 +14,9 @@
  * and fall back to `desanitizeSessionDir` only for display.
  */
 
+/** Extension of a Pi session file. */
+export const JSONL_EXTENSION = '.jsonl'
+
 /** Encode a real filesystem path the same way Pi names its session directory. */
 export function sanitizePath(p: string): string {
   // Drop a single leading separator so POSIX "/home/x" -> "--home-x--".

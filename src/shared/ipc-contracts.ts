@@ -453,6 +453,8 @@ export interface SessionStats {
 export interface SessionListItem {
   path: string
   name: string | null
+  /** Preview of the session's first user message, or null if it has none. */
+  preview: string | null
   sessionId: string
   lastModified: number
   messageCount: number
@@ -732,6 +734,8 @@ export interface AppSettings {
   // Project paths whose session group is collapsed in the Sessions panel.
   // Persisted so the collapsed/expanded layout survives navigation and restarts.
   collapsedSessionGroups: string[]
+  /** Sidebar width in pixels; clamped by `clampSidebarWidth` on read. */
+  sidebarWidth: number
   // Show the Home/launcher screen on launch (Pi starts lazily on first action)
   // instead of booting straight into Chat. When false, boot into Chat (empty
   // chat is the Codex-style center prompt with project picker).
