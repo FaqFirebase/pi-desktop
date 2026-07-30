@@ -155,9 +155,6 @@
       "installerIcon": "resources/icons/icon.ico",
       "uninstallerIcon": "resources/icons/icon.ico",
       "artifactName": "Pi-Desktop-${version}-${os}-${arch}-setup.${ext}"
-    },
-    "appImage": {
-      "license": "LICENSE"
     }
   }
 }
