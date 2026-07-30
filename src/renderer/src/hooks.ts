@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState } from 'react'
 import { useAppStore } from './store'
 import { DEFAULT_SETTINGS } from '../../shared/default-settings'
+import { BUILTIN_SOURCE, type PiCommand } from '../../shared/pi-command'
 
 /**
  * Subscribes to Pi events from the main process and routes them to the store.
@@ -320,6 +321,50 @@ export function useChatKeyboard(
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isStreaming, onSend, onAbort, inputRef])
+}
+
+/** A Pi built-in that maps to a GUI action rather than being inserted as text. */
+export interface BuiltinCommand {
+  name: string
+  description: string
+  run: () => void
+}
+
+/**
+ * The command set offered by both command UIs (Ctrl+K palette and the
+ * composer's inline slash popup): everything the agent reports plus the GUI's
+ * built-in actions, ready for filtering. Built-ins cover Pi commands with a
+ * direct GUI equivalent; ones that need an argument or aren't supported in the
+ * GUI (e.g. /name, /tree) are excluded.
+ */
+export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: PiCommand[] } {
+  const commands = useAppStore((s) => s.commands)
+  const compactContext = useAppStore((s) => s.compactContext)
+  const cloneBranch = useAppStore((s) => s.cloneBranch)
+  const createNewSession = useAppStore((s) => s.createNewSession)
+  const setCurrentView = useAppStore((s) => s.setCurrentView)
+
+  const builtins = useMemo<BuiltinCommand[]>(
+    () => [
+      { name: 'compact', description: 'Compact the conversation to free up context', run: () => { void compactContext() } },
+      { name: 'clone', description: 'Clone the current branch into a new session', run: () => { void cloneBranch() } },
+      { name: 'new', description: 'Start a new session', run: () => { void createNewSession() } },
+      { name: 'resume', description: 'Open the Sessions list', run: () => setCurrentView('sessions') },
+      { name: 'fork', description: 'Open Branches to fork from a message', run: () => setCurrentView('timeline') },
+      { name: 'settings', description: 'Open Settings', run: () => setCurrentView('settings') },
+    ],
+    [compactContext, cloneBranch, createNewSession, setCurrentView]
+  )
+
+  const allCommands = useMemo<PiCommand[]>(
+    () => [
+      ...commands,
+      ...builtins.map((b) => ({ name: b.name, description: b.description, source: BUILTIN_SOURCE })),
+    ],
+    [commands, builtins]
+  )
+
+  return { builtins, allCommands }
 }
 
 /**

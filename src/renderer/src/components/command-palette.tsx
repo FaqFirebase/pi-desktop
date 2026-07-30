@@ -1,103 +1,42 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { clsx } from 'clsx'
 import { Terminal } from 'lucide-react'
 import { useAppStore } from '../store'
-import { filterCommands, type PiCommand } from '../../../shared/pi-command'
+import { useCommandCatalog } from '../hooks'
+import { CommandResults } from './command-results'
+import {
+  BUILTIN_SOURCE,
+  filterCommands,
+  groupCommands,
+  invocationToken,
+  type PiCommand,
+} from '../../../shared/pi-command'
 
-// Source used for Pi built-in commands that map to a GUI action rather than
-// being inserted as text. Pi's RPC only expands `/skill:` and `/template` from
-// typed input, so these built-ins run the equivalent GUI action directly.
-const BUILTIN_SOURCE = 'builtin'
-
-const SOURCE_BADGE: Record<string, string> = {
-  skill: 'bg-special-bg text-special',
-  prompt: 'bg-accent-bg text-accent-fg',
-  [BUILTIN_SOURCE]: 'bg-warning-bg text-warning',
-  extension: 'bg-success-bg text-success',
-}
-
-const GROUPS: Array<{ source: string; label: string }> = [
-  { source: 'skill', label: 'Skills' },
-  { source: 'prompt', label: 'Prompts' },
-  { source: BUILTIN_SOURCE, label: 'Commands' },
-  { source: 'extension', label: 'Extensions' },
-]
-
-/** Token inserted into the composer when a skill/prompt/extension is chosen. */
-function invocationToken(name: string, source: string): string {
-  if (source === 'skill') return `/skill:${name.replace(/^skill:/, '')} `
-  return `/${name} `
-}
-
-interface BuiltinCommand {
-  name: string
-  description: string
-  run: () => void
-}
-
+/**
+ * Modal launcher opened with Ctrl/Cmd+K. Chosen commands insert their token at
+ * the composer caret (builtins run their GUI action instead), so an existing
+ * draft is never overwritten. Slash-typing in the composer is handled by
+ * ChatInput's inline popup, which never takes focus from the textarea.
+ */
 export function CommandPalette(): React.JSX.Element | null {
   const open = useAppStore((s) => s.commandPaletteOpen)
-  const initialQuery = useAppStore((s) => s.commandPaletteQuery)
-  const replace = useAppStore((s) => s.commandPaletteReplace)
-  const commands = useAppStore((s) => s.commands)
   const setCommandPalette = useAppStore((s) => s.setCommandPalette)
   const insertPrompt = useAppStore((s) => s.insertPrompt)
-  const compactContext = useAppStore((s) => s.compactContext)
-  const cloneBranch = useAppStore((s) => s.cloneBranch)
-  const createNewSession = useAppStore((s) => s.createNewSession)
-  const setCurrentView = useAppStore((s) => s.setCurrentView)
+  const { builtins, allCommands } = useCommandCatalog()
 
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Pi built-in commands that have a direct GUI equivalent. Excludes built-ins
-  // that need an argument or aren't supported in the GUI (e.g. /name, /tree).
-  const builtins = useMemo<BuiltinCommand[]>(
-    () => [
-      { name: 'compact', description: 'Compact the conversation to free up context', run: () => { void compactContext() } },
-      { name: 'clone', description: 'Clone the current branch into a new session', run: () => { void cloneBranch() } },
-      { name: 'new', description: 'Start a new session', run: () => { void createNewSession() } },
-      { name: 'resume', description: 'Open the Sessions list', run: () => setCurrentView('sessions') },
-      { name: 'fork', description: 'Open Branches to fork from a message', run: () => setCurrentView('timeline') },
-      { name: 'settings', description: 'Open Settings', run: () => setCurrentView('settings') },
-    ],
-    [compactContext, cloneBranch, createNewSession, setCurrentView]
-  )
-
-  const allCommands = useMemo<PiCommand[]>(
-    () => [
-      ...commands,
-      ...builtins.map((b) => ({ name: b.name, description: b.description, source: BUILTIN_SOURCE })),
-    ],
-    [commands, builtins]
-  )
-
   const results = useMemo(() => filterCommands(allCommands, query), [allCommands, query])
-
-  // Ordered groups plus an "Other" catch-all for any unexpected source, so
-  // nothing is silently hidden.
-  const grouped = useMemo(() => {
-    const known = new Set(GROUPS.map((g) => g.source))
-    const out = GROUPS.map((g) => ({
-      label: g.label,
-      items: results.filter((r) => r.source === g.source),
-    })).filter((g) => g.items.length > 0)
-    const other = results.filter((r) => !known.has(r.source))
-    if (other.length > 0) out.push({ label: 'Other', items: other })
-    return out
-  }, [results])
-
-  // Flattened order matches visual order — keyboard nav indexes this list.
-  const flat = useMemo(() => grouped.flatMap((g) => g.items), [grouped])
+  const { grouped, flat } = useMemo(() => groupCommands(results), [results])
 
   useEffect(() => {
     if (open) {
-      setQuery(initialQuery)
+      setQuery('')
       setActiveIndex(0)
       requestAnimationFrame(() => inputRef.current?.focus())
     }
-  }, [open, initialQuery])
+  }, [open])
 
   useEffect(() => {
     setActiveIndex((i) => Math.min(i, Math.max(0, flat.length - 1)))
@@ -105,34 +44,25 @@ export function CommandPalette(): React.JSX.Element | null {
 
   if (!open) return null
 
-  // Close the palette. When opened from a composer slash (`replace`), also
-  // clear that slash draft so the user does not have to delete `/` twice.
-  const dismiss = (clearSlashDraft: boolean): void => {
-    if (clearSlashDraft && replace) {
-      insertPrompt('', true)
-    }
-    setCommandPalette(false)
-  }
+  const close = (): void => setCommandPalette(false)
 
+  // Run the chosen command; choosing nothing (Enter on an empty result list)
+  // just closes — the composer draft is never touched.
   const choose = (cmd: PiCommand | undefined): void => {
     if (cmd) {
       if (cmd.source === BUILTIN_SOURCE) {
         builtins.find((b) => b.name === cmd.name)?.run()
-        // Built-ins don't insert text; drop the composer's `/…` draft.
-        if (replace) insertPrompt('', true)
       } else {
-        insertPrompt(invocationToken(cmd.name, cmd.source), replace)
+        insertPrompt(invocationToken(cmd.name, cmd.source))
       }
-    } else if (replace) {
-      insertPrompt('', true)
     }
-    setCommandPalette(false)
+    close()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent): void => {
     if (e.key === 'Escape') {
       e.preventDefault()
-      dismiss(true)
+      close()
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
       setActiveIndex((i) => Math.min(i + 1, flat.length - 1))
@@ -145,20 +75,10 @@ export function CommandPalette(): React.JSX.Element | null {
     }
   }
 
-  const handleQueryChange = (value: string): void => {
-    setQuery(value)
-    // Composer-driven opens always start with `/`. If the user deletes the
-    // slash (or the whole token), close and put any remaining text back.
-    if (replace && !value.startsWith('/')) {
-      insertPrompt(value, true)
-      setCommandPalette(false)
-    }
-  }
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-24"
-      onClick={() => dismiss(true)}
+      onClick={close}
     >
       <div
         className="w-full max-w-lg overflow-hidden rounded-lg border border-border-strong bg-surface shadow-2xl"
@@ -170,7 +90,7 @@ export function CommandPalette(): React.JSX.Element | null {
             ref={inputRef}
             type="text"
             value={query}
-            onChange={(e) => handleQueryChange(e.target.value)}
+            onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Run a skill, prompt, or command..."
             className="flex-1 bg-transparent text-sm text-primary placeholder:text-faint outline-none"
@@ -180,42 +100,13 @@ export function CommandPalette(): React.JSX.Element | null {
           {flat.length === 0 ? (
             <div className="px-3 py-6 text-center text-sm text-faint">No matching commands</div>
           ) : (
-            grouped.map((group) => (
-              <div key={group.label}>
-                <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-faint">
-                  {group.label}
-                </div>
-                {group.items.map((cmd) => {
-                  const index = flat.indexOf(cmd)
-                  return (
-                    <button
-                      key={`${cmd.source}:${cmd.name}`}
-                      onClick={() => choose(cmd)}
-                      onMouseEnter={() => setActiveIndex(index)}
-                      className={clsx(
-                        'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors',
-                        index === activeIndex ? 'bg-card' : 'hover:bg-surface-hover/50'
-                      )}
-                    >
-                      <span
-                        className={clsx(
-                          'shrink-0 rounded px-1.5 py-0.5 text-[10px] uppercase',
-                          SOURCE_BADGE[cmd.source] ?? 'bg-card text-muted'
-                        )}
-                      >
-                        {cmd.source}
-                      </span>
-                      <span className="truncate text-sm text-primary">
-                        {cmd.source === BUILTIN_SOURCE ? `/${cmd.name}` : cmd.name}
-                      </span>
-                      <span className="ml-auto line-clamp-1 text-xs text-dim">
-                        {cmd.description}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            ))
+            <CommandResults
+              grouped={grouped}
+              flat={flat}
+              activeIndex={activeIndex}
+              onSelect={choose}
+              onHover={setActiveIndex}
+            />
           )}
         </div>
         <div className="border-t border-border px-3 py-1.5 text-[10px] text-faint">
