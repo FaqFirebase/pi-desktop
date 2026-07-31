@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { escapeCmdArg, escapeCmdSpawn, quoteCmdProgram } from './cmd-escape'
+import {
+  buildNpmPrefixCommand,
+  escapeCmdArg,
+  escapeCmdSpawn,
+  quoteCmdProgram,
+} from './cmd-escape'
 
 // --- escapeCmdArg: args that need no rewriting stay byte-identical ---
 
@@ -392,4 +397,28 @@ test('escapeCmdSpawn does not mutate the input args array', () => {
   const args = ['a b']
   escapeCmdSpawn(true, 'npm.cmd', args)
   assert.deepEqual(args, ['a b'])
+})
+
+// --- buildNpmPrefixCommand: the shared `npm prefix -g` probe ---
+
+test('buildNpmPrefixCommand targets the npm shim through cmd.exe on Windows', () => {
+  assert.deepEqual(buildNpmPrefixCommand(true), {
+    file: 'npm.cmd',
+    args: ['prefix', '-g'],
+  })
+})
+
+test('buildNpmPrefixCommand targets plain npm off Windows', () => {
+  assert.deepEqual(buildNpmPrefixCommand(false), {
+    file: 'npm',
+    args: ['prefix', '-g'],
+  })
+})
+
+test('buildNpmPrefixCommand returns a fresh args array each call', () => {
+  // Callers hand these straight to spawn; a shared array could be mutated by one
+  // caller and observed by the next.
+  const first = buildNpmPrefixCommand(true)
+  first.args.push('--extra')
+  assert.deepEqual(buildNpmPrefixCommand(true).args, ['prefix', '-g'])
 })

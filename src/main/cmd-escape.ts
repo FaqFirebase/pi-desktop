@@ -162,3 +162,25 @@ export function escapeCmdSpawn(
   if (!viaCmd) return { file, args: [...args] }
   return { file: quoteCmdProgram(file), args: args.map(escapeCmdArg) }
 }
+
+const NPM_WINDOWS_SHIM = 'npm.cmd'
+const NPM_POSIX_BINARY = 'npm'
+const NPM_PREFIX_ARGS = ['prefix', '-g'] as const
+
+/**
+ * The `npm prefix -g` probe used to locate globally installed CLIs. Both
+ * callers spawn it with shell:true on Windows to reach npm's `.cmd` shim.
+ *
+ * Every token is a constant that needs no rewriting, so the escaped and raw
+ * forms are byte-identical and no behavioural test can distinguish a caller
+ * that uses this helper from one that inlines the strings. Centralising it is
+ * what keeps the guarantee: a caller that later needs a variable argument
+ * inherits the escaping instead of reinventing an unescaped spawn.
+ */
+export function buildNpmPrefixCommand(isWindows: boolean): { file: string; args: string[] } {
+  return escapeCmdSpawn(
+    isWindows,
+    isWindows ? NPM_WINDOWS_SHIM : NPM_POSIX_BINARY,
+    NPM_PREFIX_ARGS,
+  )
+}

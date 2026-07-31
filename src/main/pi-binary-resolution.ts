@@ -1,5 +1,5 @@
 import { basename, join } from 'path'
-import { escapeCmdSpawn } from './cmd-escape'
+import { buildNpmPrefixCommand } from './cmd-escape'
 
 /**
  * Locating the Pi CLI is the single most failure-prone step at startup, and the
@@ -304,12 +304,7 @@ export function whichInPath(deps: ResolutionDeps, name: string, pathEnv: string)
 
 /** Ask npm where its global prefix is; null when npm is unreachable. */
 function npmGlobalPrefix(deps: ResolutionDeps, pathEnv: string): string | null {
-  // shell:true is required to launch npm's .cmd shim on Windows, and Node
-  // performs no quoting on that path, so the command is escaped for cmd.exe.
-  const command = escapeCmdSpawn(deps.isWindows, deps.isWindows ? 'npm.cmd' : 'npm', [
-    'prefix',
-    '-g',
-  ])
+  const command = buildNpmPrefixCommand(deps.isWindows)
   const stdout = deps.capture(command.file, command.args, {
     shell: deps.isWindows,
     timeoutMs: NPM_PREFIX_TIMEOUT_MS,
