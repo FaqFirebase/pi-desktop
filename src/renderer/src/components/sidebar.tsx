@@ -1,4 +1,4 @@
-import { useAppStore } from '../store'
+import { useAppStore, countPromptsWaitingElsewhere, formatPromptsWaiting } from '../store'
 import { pathGroupKey, pathsEqual } from '../../../shared/path-compare'
 import { clsx } from 'clsx'
 import {
@@ -207,17 +207,21 @@ export function Sidebar(): React.JSX.Element {
   const openSession = async (session: SessionListItem): Promise<void> => {
     // Auto-switch workspace if session is from a different project. Skip the
     // resume+history load — switchSession below loads the target session once.
-    if (session.projectPath && session.projectPath !== activeWorkspace?.path) {
-      const matchingWs = workspaces.find((w) => w.path === session.projectPath)
+    // Paths are compared the way main compares them (case-insensitive on
+    // Windows): a casing mismatch here would route an existing workspace down
+    // the create path, which main turns into a silent activation.
+    const projectPath = session.projectPath
+    if (projectPath && !(activeWorkspace && pathsEqual(activeWorkspace.path, projectPath))) {
+      const matchingWs = workspaces.find((w) => pathsEqual(w.path, projectPath))
       if (matchingWs) {
         // The workspace switch carries the "Pi is still working" warning for this
         // whole flow; a decline there must stop the session switch too, or the
         // declined turn gets torn down anyway by the session change below.
         if (!(await switchWorkspace(matchingWs.id, { skipSessionLoad: true }))) return
       } else {
-        await useAppStore.getState().createWorkspace(session.projectName, session.projectPath)
+        await useAppStore.getState().createWorkspace(session.projectName, projectPath)
         const updated = useAppStore.getState().workspaces
-        const newWs = updated.find((w) => w.path === session.projectPath)
+        const newWs = updated.find((w) => pathsEqual(w.path, projectPath))
         if (newWs && !(await switchWorkspace(newWs.id, { skipSessionLoad: true }))) return
       }
     }
@@ -548,7 +552,15 @@ function WorkspaceSwitcher(): React.JSX.Element {
   const removeWorkspace = useAppStore((state) => state.removeWorkspace)
   const renameWorkspace = useAppStore((state) => state.renameWorkspace)
   const changeWorkspaceFolder = useAppStore((state) => state.changeWorkspaceFolder)
+  const pendingPromptCounts = useAppStore((state) => state.pendingPromptCounts)
   const { show: showContextMenu, ContextMenuComponent: WorkspaceContextMenu } = useContextMenu()
+
+  // Prompts held for workspaces other than the active one — the active
+  // workspace's prompt is already on screen, so only elsewhere needs a badge.
+  const promptsWaitingElsewhere = countPromptsWaitingElsewhere(
+    pendingPromptCounts,
+    activeWorkspace?.id ?? null
+  )
 
   const [isOpen, setIsOpen] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
@@ -646,13 +658,23 @@ function WorkspaceSwitcher(): React.JSX.Element {
             <Layers size={14} style={{ color: activeWorkspace?.color ?? '#6b7280' }} />
             <span className="truncate">{activeWorkspace?.name ?? 'No workspace'}</span>
           </div>
-          <ChevronDown
-            size={14}
-            className={clsx(
-              'shrink-0 text-dim transition-transform',
-              isOpen && 'rotate-180'
+          <div className="flex shrink-0 items-center gap-1.5">
+            {promptsWaitingElsewhere > 0 && (
+              <span
+                className="rounded bg-warning-bg px-1.5 py-0.5 text-[10px] text-warning"
+                title={`${formatPromptsWaiting(promptsWaitingElsewhere)} in other workspaces`}
+              >
+                {promptsWaitingElsewhere}
+              </span>
             )}
-          />
+            <ChevronDown
+              size={14}
+              className={clsx(
+                'text-dim transition-transform',
+                isOpen && 'rotate-180'
+              )}
+            />
+          </div>
         </button>
       )}
       {WorkspaceContextMenu}
@@ -680,6 +702,14 @@ function WorkspaceSwitcher(): React.JSX.Element {
                 <span className="text-sm text-secondary truncate">{ws.name}</span>
                 {ws.id === activeWorkspace?.id && (
                   <Check size={12} className="shrink-0 text-success" />
+                )}
+                {ws.id !== activeWorkspace?.id && (pendingPromptCounts[ws.id] ?? 0) > 0 && (
+                  <span
+                    className="shrink-0 rounded bg-warning-bg px-1.5 py-0.5 text-[10px] text-warning"
+                    title={formatPromptsWaiting(pendingPromptCounts[ws.id])}
+                  >
+                    {pendingPromptCounts[ws.id]}
+                  </span>
                 )}
               </button>
               {workspaces.length > 1 && (

@@ -1,7 +1,8 @@
-import { useRef, useCallback, useState, useEffect } from 'react'
+import { useRef, useCallback, useState, useEffect, useMemo } from 'react'
 import { useAppStore } from '../store'
-import { useChatKeyboard } from '../hooks'
+import { useChatKeyboard, useCommandCatalog } from '../hooks'
 import { ComposerPermissionMenu } from './composer-permission-menu'
+import { CommandResults } from './command-results'
 import { SubagentProgress } from './subagent-progress'
 import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users, Search } from 'lucide-react'
 import {
@@ -10,6 +11,14 @@ import {
   type FileSearchResult,
 } from '../../../shared/ipc-contracts'
 import { formatUntrustedBlock } from '../../../shared/untrusted-data'
+import {
+  BUILTIN_SOURCE,
+  filterCommands,
+  groupCommands,
+  invocationToken,
+  isSlashCommandToken,
+  type PiCommand,
+} from '../../../shared/pi-command'
 
 const MAX_INPUT_HEIGHT = 160
 const MIN_INPUT_HEIGHT = 40
@@ -104,6 +113,19 @@ export function ChatInput(): React.JSX.Element {
   const historyIndex = useRef(-1)
   const draft = useRef('')
 
+  // Inline slash-command popup: suggestions overlay the composer while the
+  // draft is a bare `/token`. Unlike the Ctrl+K modal, the textarea keeps
+  // focus the whole time and the draft never leaves it, so selecting a
+  // command and typing its arguments can't fight a modal for focus.
+  const { builtins, allCommands } = useCommandCatalog()
+  const [slashToken, setSlashToken] = useState<string | null>(null)
+  const [slashIndex, setSlashIndex] = useState(0)
+
+  const resizeTextarea = useCallback((ta: HTMLTextAreaElement): void => {
+    ta.style.height = 'auto'
+    ta.style.height = `${Math.min(Math.max(ta.scrollHeight, MIN_INPUT_HEIGHT), MAX_INPUT_HEIGHT)}px`
+  }, [])
+
   // Apply a note inserted from the panel or picker: drop the text at the
   // cursor, refocus, resize, then clear so the same note can be inserted again.
   // Only consume when Chat is the active surface (avoids applying while on Settings/etc.).
@@ -127,11 +149,10 @@ export function ChatInput(): React.JSX.Element {
     }
     ta.focus()
     ta.setSelectionRange(caret, caret)
-    ta.style.height = 'auto'
-    ta.style.height = `${Math.min(Math.max(ta.scrollHeight, MIN_INPUT_HEIGHT), MAX_INPUT_HEIGHT)}px`
+    resizeTextarea(ta)
 
     clearPendingInsert()
-  }, [pendingInsert, clearPendingInsert])
+  }, [pendingInsert, clearPendingInsert, resizeTextarea])
 
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
@@ -144,6 +165,7 @@ export function ChatInput(): React.JSX.Element {
     if (!ta) return
     ta.value = ''
     ta.style.height = `${MIN_INPUT_HEIGHT}px`
+    setSlashToken(null)
   }, [])
 
   // @-file mention autocomplete. `mention` is the token being typed (null when
@@ -201,16 +223,53 @@ export function ChatInput(): React.JSX.Element {
       ta.value = ta.value.slice(0, mention.start) + token + ta.value.slice(pos)
       const caret = mention.start + token.length
       ta.setSelectionRange(caret, caret)
-      ta.style.height = 'auto'
-      ta.style.height = `${Math.min(Math.max(ta.scrollHeight, MIN_INPUT_HEIGHT), MAX_INPUT_HEIGHT)}px`
+      resizeTextarea(ta)
       ta.focus()
       setMention(null)
       setMentionResults([])
     },
-    [mention]
+    [mention, resizeTextarea]
   )
 
   const mentionOpen = mention !== null && mentionResults.length > 0
+
+  // Commands matching the current slash token, grouped for display. The popup
+  // renders only while there are matches; `/` alone lists everything.
+  const slashResults = useMemo(
+    () =>
+      slashToken === null
+        ? { grouped: [], flat: [] }
+        : groupCommands(filterCommands(allCommands, slashToken)),
+    [slashToken, allCommands]
+  )
+  const slashOpen = slashResults.flat.length > 0
+
+  // New matches, new highlight — keep the first row selected.
+  useEffect(() => {
+    setSlashIndex(0)
+  }, [slashResults])
+
+  // Replace the draft (always just the bare `/token`) with the chosen
+  // command's invocation token, caret after the trailing space so argument
+  // typing continues in place — or run a builtin's GUI action directly.
+  const selectSlashCommand = useCallback(
+    (cmd: PiCommand) => {
+      setSlashToken(null)
+      const ta = textareaRef.current
+      if (!ta) return
+      if (cmd.source === BUILTIN_SOURCE) {
+        builtins.find((b) => b.name === cmd.name)?.run()
+        resetComposer()
+        return
+      }
+      const token = invocationToken(cmd.name, cmd.source)
+      ta.value = token
+      ta.setSelectionRange(token.length, token.length)
+      resizeTextarea(ta)
+      ta.focus()
+    },
+    [builtins, resetComposer, resizeTextarea]
+  )
 
   const handleSend = useCallback(
     async (message: string) => {
@@ -256,14 +315,16 @@ export function ChatInput(): React.JSX.Element {
   }, [abort])
 
   // Drop a recalled prompt into the box: set value, regrow height, caret to end.
-  const applyHistory = useCallback((text: string) => {
-    const ta = textareaRef.current
-    if (!ta) return
-    ta.value = text
-    ta.style.height = 'auto'
-    ta.style.height = `${Math.min(Math.max(ta.scrollHeight, MIN_INPUT_HEIGHT), MAX_INPUT_HEIGHT)}px`
-    ta.setSelectionRange(text.length, text.length)
-  }, [])
+  const applyHistory = useCallback(
+    (text: string) => {
+      const ta = textareaRef.current
+      if (!ta) return
+      ta.value = text
+      resizeTextarea(ta)
+      ta.setSelectionRange(text.length, text.length)
+    },
+    [resizeTextarea]
+  )
 
   const handleAttachFile = useCallback(async () => {
     setAttachError(null)
@@ -360,11 +421,6 @@ export function ChatInput(): React.JSX.Element {
 
   useChatKeyboard(handleSend, handleAbort, textareaRef)
 
-  const resizeTextarea = useCallback((ta: HTMLTextAreaElement): void => {
-    ta.style.height = 'auto'
-    ta.style.height = `${Math.min(Math.max(ta.scrollHeight, MIN_INPUT_HEIGHT), MAX_INPUT_HEIGHT)}px`
-  }, [])
-
   return (
     <div className="pointer-events-none mx-auto w-full max-w-3xl px-4">
       {attachError && (
@@ -380,6 +436,23 @@ export function ChatInput(): React.JSX.Element {
         <div className="pointer-events-auto absolute bottom-full left-[5%] right-[5%] z-20 mb-0">
           <SubagentProgress />
         </div>
+
+        {slashOpen && (
+          <div className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border border-border-strong bg-surface shadow-2xl">
+            <div className="max-h-80 overflow-y-auto py-1">
+              <CommandResults
+                grouped={slashResults.grouped}
+                flat={slashResults.flat}
+                activeIndex={slashIndex}
+                onSelect={selectSlashCommand}
+                onHover={setSlashIndex}
+              />
+            </div>
+            <div className="border-t border-border px-3 py-1 text-[10px] text-faint">
+              ↑↓ navigate · Enter/Tab select · Esc close
+            </div>
+          </div>
+        )}
 
         {mentionOpen && (
           <div className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border border-border-strong bg-surface shadow-2xl">
@@ -457,16 +530,17 @@ export function ChatInput(): React.JSX.Element {
             resizeTextarea(target)
             // Any real edit ends history navigation; the box is a fresh draft again.
             historyIndex.current = -1
-            const value = target.value
-            if (value.startsWith('/')) {
-              useAppStore.getState().setCommandPalette(true, value, true)
-            } else {
-              useAppStore.getState().setCommandPalette(false)
-            }
+            // Offer command suggestions only while the draft is a bare
+            // `/token` — once whitespace appears the user is typing arguments
+            // after a chosen command, not searching for one (issue #50).
+            setSlashToken(isSlashCommandToken(target.value) ? target.value : null)
             // Detect / refine an @-file mention at the caret.
             setMention(detectMention(target))
           }}
-          onBlur={() => setMention(null)}
+          onBlur={() => {
+            setMention(null)
+            setSlashToken(null)
+          }}
           onKeyDown={(e) => {
             if (e.ctrlKey && e.key === 'p') {
               e.preventDefault()
@@ -502,10 +576,39 @@ export function ChatInput(): React.JSX.Element {
                 return
               }
             }
+            // Slash-command popup navigation, same contract as the mention
+            // popup above. The two are never open together: a slash token
+            // contains no whitespace, so it cannot also hold a mention (`@`
+            // only starts one at the beginning of the input or after a space).
+            if (slashOpen) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault()
+                setSlashIndex((i) => Math.min(i + 1, slashResults.flat.length - 1))
+                return
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                setSlashIndex((i) => Math.max(i - 1, 0))
+                return
+              }
+              if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault()
+                e.stopPropagation()
+                selectSlashCommand(slashResults.flat[slashIndex])
+                return
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                e.stopPropagation()
+                setSlashToken(null)
+                return
+              }
+            }
             // ↑/↓: shell-style prompt-history recall. Only kicks in at the text
             // edge (↑ on the first line, ↓ on the last) with no selection and no
-            // modifiers, so ordinary multi-line cursor movement is untouched. Left
-            // to the command palette when it's driving the arrows.
+            // modifiers, so ordinary multi-line cursor movement is untouched.
+            // Skipped while the Ctrl+K palette is open: it owns the arrows for
+            // the frame between opening and its input taking focus.
             if (
               (e.key === 'ArrowUp' || e.key === 'ArrowDown') &&
               !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey &&

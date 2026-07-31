@@ -46,6 +46,7 @@ import type {
   CouncilArbiterRequest,
   PermissionRule,
   PermissionRulesScope,
+  PendingPromptCounts,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -114,18 +115,34 @@ const SESSION_CHANGE_PROMPTS: Record<SessionChangeAction, { message: string; con
   fork: { message: discardWarning('Forking this session'), confirmLabel: 'Fork anyway' },
   clone: { message: discardWarning('Cloning this branch'), confirmLabel: 'Clone anyway' },
   // Leaving a workspace does not tear the session down — each workspace has its
-  // own Pi process and nothing stops it. The turn still cannot be relied on to
-  // finish: events from an inactive workspace are dropped, and the permission
-  // extension's `ctx.ui.confirm()` blocks the tool call until a response comes
-  // back, so the first tool needing approval while the user is away deadlocks the
-  // turn with no timeout. Promising a background completion here would be a lie.
+  // own Pi process and nothing stops it. The turn keeps running in the
+  // background: its output lands in the session file and is restored on
+  // switch-back, and any blocking prompt it raises while the user is away is
+  // held by the main process and re-shown when this workspace is active again.
   workspace: {
     message:
-      'Pi has not finished responding in this session. Switching workspace leaves that response ' +
-      'behind: the chat stops showing it, and if Pi needs a permission decision while you are ' +
-      'away the prompt is lost and the turn stalls until you stop it.',
+      'Pi has not finished responding in this session. It keeps working after you switch: ' +
+      'the response is saved to the session and restored when you come back, and any ' +
+      'prompt Pi raises while you are away is held and shown on your return.',
     confirmLabel: 'Switch anyway',
   },
+}
+
+/** Total prompts held for workspaces other than the active one (whose prompt is already on screen). */
+export function countPromptsWaitingElsewhere(
+  counts: PendingPromptCounts,
+  activeWorkspaceId: string | null
+): number {
+  let total = 0
+  for (const [workspaceId, count] of Object.entries(counts)) {
+    if (workspaceId !== activeWorkspaceId) total += count
+  }
+  return total
+}
+
+/** Badge/status label for held prompts, e.g. "2 Pi prompts waiting". */
+export function formatPromptsWaiting(count: number): string {
+  return `${count} Pi prompt${count === 1 ? '' : 's'} waiting`
 }
 
 /**
@@ -207,7 +224,15 @@ interface AppState {
   commands: PiCommand[]
 
   // Extension UI
+  // Blocking dialog slot (select/confirm/input/editor). Main retains every
+  // request it delivers here and replays it on demand (flushPendingPrompts),
+  // so clearing this slot never loses the prompt.
   extensionUiRequest: PiExtensionUiRequest | null
+  // Fire-and-forget notify toast. Its own slot so a toast can never clobber
+  // an unanswered blocking dialog (and vice versa); both can be on screen.
+  extensionNotify: PiExtensionUiRequest | null
+  // Blocking prompts held by main per workspace id (zero entries omitted).
+  pendingPromptCounts: PendingPromptCounts
   // Extension status entries (setStatus fire-and-forget). Keyed by statusKey.
   extensionStatuses: Record<string, string>
   // Live subagent progress from tool_execution_update events (subagent tool).
@@ -284,8 +309,6 @@ interface AppState {
   notes: Note[]
   notePickerOpen: boolean
   commandPaletteOpen: boolean
-  commandPaletteQuery: string
-  commandPaletteReplace: boolean
   // A prompt queued for insertion into the chat input. The nonce lets the
   // chat input re-apply the same text on repeated inserts.
   pendingInsert: { text: string; nonce: number; replace?: boolean } | null
@@ -366,10 +389,18 @@ interface AppActions {
 
   // Events
   handlePiEvent: (event: PiRpcEvent) => void
+  handlePendingPromptCounts: (counts: PendingPromptCounts) => void
+  /**
+   * Boot/reload recovery: the dialog slot and the counts are renderer memory
+   * only, while main keeps every held prompt. Pulls the counts snapshot and
+   * asks main to re-broadcast the active workspace's dialog. Never rejects.
+   */
+  recoverPendingPrompts: () => Promise<void>
 
   // Extension UI
   respondExtensionUi: (id: string, response: Record<string, unknown>) => void
   dismissExtensionUi: () => void
+  dismissExtensionNotify: () => void
 
   // App confirmation dialog (promise-based; resolves true on confirm)
   requestConfirm: (options: ConfirmOptions) => Promise<boolean>
@@ -442,7 +473,7 @@ interface AppActions {
   insertPrompt: (text: string, replace?: boolean) => void
   clearPendingInsert: () => void
   setNotePickerOpen: (open: boolean) => void
-  setCommandPalette: (open: boolean, query?: string, replace?: boolean) => void
+  setCommandPalette: (open: boolean) => void
   startNoteFromText: (text: string) => void
   clearNoteDraft: () => void
 
@@ -478,6 +509,30 @@ let switchPipeline: Promise<void> = Promise.resolve()
 let sessionListRefreshInFlight = false
 let sessionListRefreshQueued = false
 let sessionListRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * Adopt an active-workspace change the main process made on its own: creating a
+ * workspace whose path is already registered activates the existing one, as does
+ * creating the very first workspace, and removing the active one promotes
+ * another. None of those go through switchWorkspace, so the renderer has to
+ * resync the extension-UI surfaces here or a prompt held for the workspace now
+ * on screen stays invisible — the badge counts other workspaces only — and its
+ * Pi turn blocks forever.
+ *
+ * The stale dialog is cleared WITHOUT answering: main retains the request and
+ * replays it on switch-back, while a synthesized deny would hard-block the tool
+ * that asked.
+ */
+function adoptMainSideActivation(
+  get: () => AppState & AppActions,
+  set: (partial: Partial<AppState>) => void,
+  previousActiveId: string | null
+): void {
+  const active = get().activeWorkspace
+  if (!active || active.id === previousActiveId) return
+  set({ extensionUiRequest: null })
+  void window.piDesktop.ui.flushPendingPrompts(active.id)
+}
 
 function scheduleSessionListRefresh(get: () => AppState & AppActions): void {
   if (sessionListRefreshTimer) clearTimeout(sessionListRefreshTimer)
@@ -606,6 +661,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   commands: [],
 
   extensionUiRequest: null,
+  extensionNotify: null,
+  pendingPromptCounts: {},
   extensionStatuses: {},
   subagentProgress: [],
   confirmRequest: null,
@@ -641,8 +698,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   notes: [],
   notePickerOpen: false,
   commandPaletteOpen: false,
-  commandPaletteQuery: '',
-  commandPaletteReplace: true,
   pendingInsert: null,
   noteDraft: null,
   updateInfo: null,
@@ -1527,8 +1582,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           })
         } else if (uiEvent.method === 'setTitle' || uiEvent.method === 'set_editor_text') {
           // Fire-and-forget: nothing to store in state.
+        } else if (uiEvent.method === 'notify') {
+          // Toast slot: kept apart from the dialog slot so a notification can
+          // never clobber an unanswered blocking prompt.
+          set({ extensionNotify: uiEvent })
         } else {
-          // Dialog methods (select, confirm, input, editor, notify).
+          // Blocking dialog methods (select, confirm, input, editor).
           set({ extensionUiRequest: uiEvent })
         }
         break
@@ -1592,6 +1651,27 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         window.piDesktop.ui.respondInput(extensionUiRequest.id, '')
       }
       set({ extensionUiRequest: null })
+    }
+  },
+
+  dismissExtensionNotify: () => {
+    const { extensionNotify } = get()
+    if (!extensionNotify) return
+    // Pi ignores responses to unknown ids, so answering a fire-and-forget
+    // notify is harmless — and it must never touch the dialog slot.
+    window.piDesktop.ui.respondInput(extensionNotify.id, '')
+    set({ extensionNotify: null })
+  },
+
+  handlePendingPromptCounts: (counts) => set({ pendingPromptCounts: counts }),
+
+  recoverPendingPrompts: async () => {
+    try {
+      get().handlePendingPromptCounts(await window.piDesktop.ui.getPendingPrompts())
+      const workspace = await window.piDesktop.workspace.getActive()
+      if (workspace) await window.piDesktop.ui.flushPendingPrompts(workspace.id)
+    } catch {
+      // Non-fatal: the next counts broadcast or flush catches the renderer up.
     }
   },
 
@@ -1670,9 +1750,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   createWorkspace: async (name, path) => {
+    const previousActiveId = get().activeWorkspace?.id ?? null
     try {
       await window.piDesktop.workspace.create(name, path)
       await get().loadWorkspaces()
+      adoptMainSideActivation(get, set, previousActiveId)
     } catch (err) {
       get().addMessage({
         id: generateId(),
@@ -1685,6 +1767,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   switchWorkspace: async (workspaceId, options) => {
     const skipSessionLoad = options?.skipSessionLoad === true
+    // Whether setActive committed on the main side. Gates the finally-flush:
+    // flushing on a declined gate or a failed setActive would target a
+    // workspace the user never actually switched to.
+    let switchCommitted = false
     try {
       // Ask first: everything below clears the chat, and `clearMessages()` resets
       // the `isStreaming` flag that the gate on any follow-up session change reads.
@@ -1692,6 +1778,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // (switch workspace, then switch session) skipped the warning entirely.
       if (!(await get().confirmSessionChange('workspace'))) return false
       await window.piDesktop.workspace.setActive(workspaceId)
+      switchCommitted = true
+      // The dialog on screen belongs to the workspace being left. Clear it
+      // WITHOUT answering: main retains the request and re-broadcasts it on
+      // switch-back, while a synthesized deny would hard-block the asking
+      // tool. Must happen only after setActive succeeds — on a failed switch
+      // the dialog still belongs on screen.
+      set({ extensionUiRequest: null })
       // The switch has committed on the main side as of this point — an
       // unsaved workspace-rules draft belongs to the workspace being left, so
       // discard it now rather than at the end of this chain. Doing it here
@@ -1730,13 +1823,23 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         timestamp: Date.now(),
       })
       return false
+    } finally {
+      // Replay any blocking prompt main holds for the new workspace. In
+      // `finally` because every post-commit await above can reject and the
+      // held prompt must still surface; main no-ops the flush unless the
+      // workspace is active when it executes.
+      if (switchCommitted) {
+        void window.piDesktop.ui.flushPendingPrompts(workspaceId)
+      }
     }
   },
 
   removeWorkspace: async (workspaceId) => {
+    const previousActiveId = get().activeWorkspace?.id ?? null
     try {
       await window.piDesktop.workspace.remove(workspaceId)
       await get().loadWorkspaces()
+      adoptMainSideActivation(get, set, previousActiveId)
     } catch (err) {
       get().addMessage({
         id: generateId(),
@@ -2069,8 +2172,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   setNotePickerOpen: (open) => set({ notePickerOpen: open }),
 
-  setCommandPalette: (open, query = '', replace = true) =>
-    set({ commandPaletteOpen: open, commandPaletteQuery: query, commandPaletteReplace: replace }),
+  setCommandPalette: (open) => set({ commandPaletteOpen: open }),
 
   startNoteFromText: (text) =>
     set({ noteDraft: text, notePickerOpen: false, currentView: 'notes' }),

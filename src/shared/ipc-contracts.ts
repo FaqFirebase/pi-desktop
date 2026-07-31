@@ -68,6 +68,8 @@ export const IPC_CHANNELS = {
   UI_CONFIRM_RESPONSE: 'ui:confirm-response',
   UI_INPUT_RESPONSE: 'ui:input-response',
   UI_EDITOR_RESPONSE: 'ui:editor-response',
+  UI_PENDING_FLUSH: 'ui:pending-flush',
+  UI_PENDING_GET: 'ui:pending-get',
 
   // System
   SYSTEM_OPEN_DIALOG: 'system:open-dialog',
@@ -159,6 +161,7 @@ export const IPC_CHANNELS = {
 
   // Events (main → renderer)
   EVENT_PI: 'event:pi',
+  EVENT_PENDING_PROMPTS: 'event:pending-prompts',
   EVENT_FILE_CHANGE: 'event:file-change',
   EVENT_TERMINAL_DATA: 'event:terminal-data',
   EVENT_TERMINAL_EXIT: 'event:terminal-exit',
@@ -342,6 +345,12 @@ export interface PiExtensionUiRequest {
   widgetPlacement?: string
   timeout?: number
 }
+
+/**
+ * Blocking extension-UI prompts held in the main process, keyed by workspace
+ * id. Zero entries are omitted, so an empty object means nothing is waiting.
+ */
+export type PendingPromptCounts = Record<string, number>
 
 export interface PiMessageStartEvent {
   type: 'message_start'

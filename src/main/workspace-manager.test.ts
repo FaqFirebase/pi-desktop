@@ -4,6 +4,7 @@ import { mkdtemp, readFile, writeFile, access } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { configureGuiDataDir, getGuiDataPath } from './app-data-paths'
+import { PiRpcManager } from './pi-rpc-manager'
 import { WorkspaceManager } from './workspace-manager'
 
 async function freshDataDir(): Promise<void> {
@@ -44,6 +45,21 @@ test('saveWorkspaces writes atomically (no leftover .tmp) and round-trips', asyn
       reloaded.getWorkspaces().some((w) => w.name === 'Alpha'),
       'reloaded manager should see the persisted workspace'
     )
+  })
+})
+
+test('workspaceIdFor reverse-maps a manager to its owning workspace', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const alpha = await mgr.createWorkspace('Alpha', await project())
+    const beta = await mgr.createWorkspace('Beta', await project())
+    const alphaManager = mgr.getPiManager(alpha.id)
+    const betaManager = mgr.getPiManager(beta.id)
+    assert.ok(alphaManager && betaManager, 'each workspace should own a Pi manager')
+    assert.equal(mgr.workspaceIdFor(alphaManager), alpha.id)
+    assert.equal(mgr.workspaceIdFor(betaManager), beta.id)
+    assert.equal(mgr.workspaceIdFor(new PiRpcManager()), null, 'an unowned manager must map to nothing')
   })
 })
 

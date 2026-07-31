@@ -57,15 +57,16 @@ export function App(): React.JSX.Element {
     return () => document.removeEventListener('contextmenu', handleContextMenu)
   }, [show])
 
-  // Global command palette launcher (Ctrl/Cmd+K). Opens in insert-at-caret mode
-  // so it does not overwrite anything already typed in the composer.
+  // Global command palette launcher (Ctrl/Cmd+K). Chosen commands insert at
+  // the composer caret, so an open draft is never overwritten. Slash-typing in
+  // the composer is handled by ChatInput's inline popup instead.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault()
         const state = useAppStore.getState()
         if (state.piStatus === 'running') {
-          state.setCommandPalette(true, '', false)
+          state.setCommandPalette(true)
         }
       }
     }

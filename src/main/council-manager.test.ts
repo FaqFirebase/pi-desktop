@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { runConsultants, runArbiter, type SpawnConsultant } from './council-manager'
+import {
+  buildConsultantSpawn,
+  runConsultants,
+  runArbiter,
+  type SpawnConsultant,
+} from './council-manager'
+import { COUNCIL_AGENT_IDS, buildConsultantCommand } from '../shared/council-config'
 import type { CouncilAgentId, ConsultantResult } from '../shared/council-config'
 
 function fakeSpawn(map: Record<string, { ok: boolean; output?: string; error?: string; timedOut?: boolean }>): SpawnConsultant {
@@ -9,6 +15,48 @@ function fakeSpawn(map: Record<string, { ok: boolean; output?: string; error?: s
     return { ok: r.ok, output: r.output ?? '', error: r.error, timedOut: r.timedOut }
   }
 }
+
+// --- buildConsultantSpawn: the wire form handed to spawn() on each platform ---
+
+test('buildConsultantSpawn quotes a spaced shim path for the Windows cmd.exe hop', () => {
+  const spawn = buildConsultantSpawn('claude', String.raw`C:\Program Files\nodejs\claude.cmd`, true)
+  assert.equal(spawn.file, String.raw`"C:\Program Files\nodejs\claude.cmd"`)
+  // Every consultant flag is metacharacter-free, so escaping must leave the
+  // args byte-identical — gratuitous quoting would reach the CLI verbatim.
+  assert.deepEqual(spawn.args, [
+    '-p',
+    '--permission-mode',
+    'plan',
+    '--output-format',
+    'stream-json',
+    '--include-partial-messages',
+    '--verbose',
+  ])
+})
+
+test('buildConsultantSpawn escapes cmd metacharacters in a Windows shim path', () => {
+  const spawn = buildConsultantSpawn('pi', String.raw`C:\Users\Tom & Jerry\100%\pi.cmd`, true)
+  assert.equal(spawn.file, String.raw`"C:\Users\Tom & Jerry\100"^%"\pi.cmd"`)
+  assert.deepEqual(spawn.args, [
+    '-p',
+    '--mode',
+    'json',
+    '--no-session',
+    '--exclude-tools',
+    'bash,edit,write',
+  ])
+})
+
+test('buildConsultantSpawn passes every agent through byte-identically off Windows', () => {
+  for (const id of COUNCIL_AGENT_IDS) {
+    const executable = `/usr/local/bin/my agents/${id}`
+    const command = buildConsultantCommand(id, executable)
+    assert.deepEqual(buildConsultantSpawn(id, executable, false), {
+      file: executable,
+      args: command.args,
+    }, id)
+  }
+})
 
 test('arbiter mode: contributed and errored are labeled', async () => {
   const results = await runConsultants(
