@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pi Desktop — Desktop GUI for the Pi coding agent</title>
-  <meta name="description" content="Pi Desktop is a free, open-source Electron app that puts a full GUI around the Pi coding agent. Chat, manage files, run commands, and review changes — all in one window." />
+  <meta name="description" content="Pi Desktop is a free, open-source Electron app that puts a full GUI around the Pi coding agent. Chat, manage files, run commands, and review changes in one window." />
   <link rel="canonical" href="https://pi-desktop.com/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Pi Desktop" />
@@ -27,7 +27,7 @@
     "name": "Pi Desktop",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Linux, macOS, Windows",
-    "description": "A free, open-source Electron app that puts a full GUI around the Pi coding agent. Chat, manage files, run commands, and review changes — all in one window.",
+    "description": "A free, open-source Electron app that puts a full GUI around the Pi coding agent. Chat, manage files, run commands, and review changes in one window.",
     "url": "https://pi-desktop.com/",
     "downloadUrl": "https://github.com/FaqFirebase/pi-desktop/releases",
     "softwareVersion": "0.1.0-alpha",
@@ -187,8 +187,13 @@
       padding: 28px;
     }
     .feature-icon {
-      font-size: 1.6rem;
       margin-bottom: 14px;
+      color: var(--accent);
+    }
+    .feature-icon svg {
+      width: 26px;
+      height: 26px;
+      display: block;
     }
     .feature-card h3 {
       font-size: 1rem;
@@ -293,7 +298,7 @@
   <section class="hero">
     <div class="badge">Open Source Alpha</div>
     <h1>A desktop GUI for the<br><span>Pi coding agent</span></h1>
-    <p>Chat with Pi, review changes, browse files, and run commands — all in one window. Free and open source.</p>
+    <p>Chat with Pi, review changes, browse files, and run commands in one window. Free and open source.</p>
     <div class="hero-actions">
       <a href="https://github.com/FaqFirebase/pi-desktop/releases/latest" class="btn btn-primary">
         ↓ Download for Linux
@@ -325,59 +330,59 @@
     <h2 class="section-title">Everything you need in one window</h2>
     <div class="feature-grid">
       <div class="feature-card">
-        <div class="feature-icon">💬</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
         <h3>Streaming chat</h3>
-        <p>Real-time streaming with thinking blocks and tool-use visibility. Rich rendering — inline SVG preview, clickable file links, color emoji. Consecutive tool calls fold into collapsible groups; file reads show as line-numbered, highlighted code and edits as diffs. Find within a conversation with Ctrl/Cmd+F, mention workspace files with @, and recall earlier prompts with the arrow keys.</p>
+        <p>Real-time streaming with thinking blocks and tool-use visibility. Rich rendering: inline SVG preview, clickable file links, color emoji. Consecutive tool calls fold into collapsible groups; file reads show as line-numbered, highlighted code and edits as diffs. Find within a conversation with Ctrl/Cmd+F, mention workspace files with @, and recall earlier prompts with the arrow keys.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">🗂</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></div>
         <h3>Multiple workspaces</h3>
         <p>Each workspace gets its own Pi process and session history. Switch between projects instantly without losing context.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">🔍</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
         <h3>Review rail</h3>
-        <p>See changed files, permissions, and session status at a glance. Approve or deny tool calls without leaving the chat, and define custom allow/deny rules per tool — globally or per workspace.</p>
+        <p>See changed files, permissions, and session status at a glance. Approve or deny tool calls without leaving the chat, and define custom allow/deny rules per tool, globally or per workspace.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">📂</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
         <h3>File tree &amp; diff viewer</h3>
         <p>Browse your project and review diffs inline. Preview code, images, PDFs, and HTML in a side pane. File search with Ctrl+Shift+F.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">📝</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
         <h3>Code editor</h3>
         <p>Open and edit files in a real CodeMirror 6 editor with syntax highlighting for 15+ languages. Save/Revert controls and instant feedback.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">⌨️</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
         <h3>Integrated terminal</h3>
-        <p>Full PTY terminal with ANSI color support, right inside the app. No switching windows.</p>
+        <p>Full PTY terminal with ANSI color support, right inside the app, so you don't have to switch windows.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">📦</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>
         <h3>Package browser</h3>
         <p>Browse and install Pi packages from pi.dev/packages without leaving the app.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">🎨</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg></div>
         <h3>Themes</h3>
-        <p>Dark, Light, System, Nord, Gruvbox, Breeze Dark, Breeze Light, and Breeze Claudius — or build your own from 7 seed colors with a live-previewing editor. Import, export, install from a URL, or browse the <a href="https://github.com/FaqFirebase/pi-desktop-themes">community gallery</a>.</p>
+        <p>Dark, Light, System, Nord, Gruvbox, Breeze Dark, Breeze Light, and Breeze Claudius, or build your own from 7 seed colors with a live-previewing editor. Import, export, install from a URL, or browse the <a href="https://github.com/FaqFirebase/pi-desktop-themes">community gallery</a>.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">⚡</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
         <h3>Model switching</h3>
         <p>Cycle between models with Ctrl+P. Session tags keep your work organized.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">🏷️</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></div>
         <h3>Session naming</h3>
-        <p>Session names read straight from Pi, with inline rename right in the sidebar. Themed in-app confirmation for delete — no native dialogs stealing window focus.</p>
+        <p>Session names read straight from Pi, with inline rename right in the sidebar. Delete confirmations are themed and in-app, so no native dialog steals window focus.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">📊</div>
+        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
         <h3>Activity dashboard</h3>
-        <p>Home shows usage stats over 7 days to a year — messages, tokens, active-day streaks, peak hour, and per-model breakdown. Persists even if you delete the session.</p>
+        <p>Home shows usage stats over 7 days to a year: messages, tokens, active-day streaks, peak hour, and per-model breakdown. The stats persist even if you delete the session.</p>
       </div>
     </div>
   </section>
@@ -400,7 +405,7 @@
         <div class="step-num">2</div>
         <div class="step-body">
           <h4>Download and run</h4>
-          <p>Grab the latest build for your platform from <a href="https://github.com/FaqFirebase/pi-desktop/releases">Releases</a> — Linux AppImage/deb/rpm, macOS DMG (Apple Silicon), or Windows installer/portable.</p>
+          <p>Grab the latest build for your platform from <a href="https://github.com/FaqFirebase/pi-desktop/releases">Releases</a>: Linux AppImage/deb/rpm, macOS DMG (Apple Silicon), or Windows installer/portable.</p>
           <p class="mt-8">
             <code>chmod +x Pi-Desktop-*.AppImage</code><br>
             <code>./Pi-Desktop-*.AppImage</code>
@@ -410,7 +415,7 @@
     </div>
 
     <p class="install-note">
-      macOS and Windows builds are unsigned (community-tested) — see the
+      macOS and Windows builds are unsigned (community-tested); see the
       <a href="https://github.com/FaqFirebase/pi-desktop#macos">README</a> for the one-time Gatekeeper/SmartScreen steps, or
       <a href="https://github.com/FaqFirebase/pi-desktop#build-it-yourself">build from source</a> to skip them entirely.
     </p>
@@ -418,7 +423,7 @@
 
   <!-- FOOTER -->
   <footer>
-    <p>Pi Desktop &mdash; Apache 2.0 &mdash; Alpha</p>
+    <p>Pi Desktop &middot; Apache 2.0 &middot; Alpha</p>
     <div class="footer-links">
       <a href="https://github.com/FaqFirebase/pi-desktop">GitHub</a>
       <a href="https://github.com/FaqFirebase/pi-desktop/releases">Releases</a>
