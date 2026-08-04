@@ -1,25 +1,25 @@
 # Pi Desktop
 
-A desktop GUI for the [Pi coding agent](https://pi.dev). Chat, manage projects, browse files, run commands, install packages — all in one window.
+A desktop GUI for the [Pi coding agent](https://pi.dev). Chat, manage projects, browse files, run commands, and install packages in one window.
 
 ![Pi Desktop — Home launcher screen](docs/screenshots/pi_desktop_home.png)
 
-Still in alpha — expect rough edges.
+Still in alpha, so expect rough edges.
 
 ## What it does
 
-- Streaming chat with thinking blocks, tool use, and rich rendering — bundled fonts + color emoji, inline SVG preview, clickable file links that open a preview pane. Consecutive tool calls fold into collapsible groups; file reads show as line-numbered, syntax-highlighted code and edits as diffs
+- Streaming chat with thinking blocks, tool use, and rich rendering: bundled fonts and color emoji, inline SVG preview, and clickable file links that open a preview pane. Consecutive tool calls fold into collapsible groups. File reads show as line-numbered, syntax-highlighted code and edits as diffs
 - Find within a conversation (`Ctrl/Cmd+F`); streaming follows new output only while you're at the bottom, with a jump-to-bottom control
-- Composer file mentions — type `@` to insert a path reference for Pi to read — and `Up`/`Down` to recall prompts sent in the current session
-- Home dashboard with usage stats — messages, tokens, active-day streaks, peak hour, per-model breakdown
-- [Multi-Agent Council Planning](#multi-agent-council-planning) — Pi, Claude, and Codex plan together and reach consensus before Pi builds (opt-in)
-- Command palette (`Ctrl/Cmd+K` or `/`) — run skills, prompt templates, and built-in commands
+- Composer file mentions (type `@` to insert a path reference for Pi to read) and `Up`/`Down` to recall prompts sent in the current session
+- Home dashboard with usage stats: messages, tokens, active-day streaks, peak hour, and a per-model breakdown
+- [Multi-Agent Council Planning](#multi-agent-council-planning), where Pi, Claude, and Codex plan together and reach consensus before Pi builds (opt-in)
+- Command palette (`Ctrl/Cmd+K` or `/`) for skills, prompt templates, and built-in commands
 - Skills browser, session fork/branch tree, and one-click context compaction
 - Session naming (read from Pi) with inline rename, and a themed in-app confirmation for delete
-- Custom models & providers editor (Settings) — edits `~/.pi/agent/models.json`
+- Custom models & providers editor in Settings, which edits `~/.pi/agent/models.json`
 - Multiple workspaces, each with its own Pi process and sessions
 - Review rail (toggleable) with permissions, approvals, changed files, and session status
-- Custom permission rules — allow/deny glob rules per Pi tool that refine the permission modes, with per-workspace rule files, import/export, and live edits (no Pi restart)
+- Custom permission rules: allow/deny glob rules per Pi tool that refine the permission modes, with per-workspace rule files, import/export, and live edits that apply without restarting Pi
 - File tree, code/image/PDF/HTML preview panes, code editor (CodeMirror 6 with syntax highlighting), diff viewer, file search
 - Terminal with ANSI colors
 - Package browser connected to pi.dev/packages, with instant local search
@@ -51,13 +51,13 @@ Four base modes control what Pi may do, selectable from the Review rail or **Set
 | Ask before commands | Pi asks before shell commands |
 | Trusted | All tools enabled |
 
-**Custom permission rules** refine the modes with allow/deny rules per Pi tool, edited in **Settings → Behavior → Permission rules**:
+Custom permission rules refine the modes with allow/deny rules per Pi tool, edited in **Settings → Behavior → Permission rules**:
 
-- A rule is an action (`allow`/`deny`), a tool name (`bash`, `edit`, `write`, `read`, … or `*` for any), and an optional glob pattern matched against the tool's input — the shell command for `bash`, the file path for file tools. `*` is the only wildcard.
-- Precedence: **deny beats allow beats the mode default**. Deny rules are enforced in every mode — a `deny * *.env*` rule holds even in Trusted. Allow rules skip the confirmation prompt in the ask modes.
-- Rule edits apply to the next tool call immediately — no Pi restart.
-- **Global vs workspace**: the **Global | This workspace** tabs edit either your global rules or the active workspace's `.pi-desktop/permission-rules.json`. A workspace file is gated by **workspace trust**: once you trust the workspace it fully replaces the global list while you work there; until then (the default for a repo you just opened) only its *deny* rules apply, layered on top of your global rules, and its *allow* rules are ignored — so a cloned repo can tighten your permissions but never loosen them. Opening a workspace whose file contains allow rules prompts you to trust it; you can also Trust/Revoke from the **This workspace** tab. Import/Export moves rule lists as JSON files, and the workspace file can be hand-edited or committed with a repo — the app picks up changes live.
-- Honest scope: rules match raw strings (no path canonicalization or command parsing), so treat them as a guardrail against accidents, not a security sandbox — keep even a trusted workspace's allow rules narrow.
+- A rule is an action (`allow`/`deny`), a tool name (`bash`, `edit`, `write`, `read`, … or `*` for any), and an optional glob pattern matched against the tool's input: the shell command for `bash`, the file path for file tools. `*` is the only wildcard.
+- Precedence: deny beats allow, and allow beats the mode default. Deny rules are enforced in every mode; a `deny * *.env*` rule holds even in Trusted. Allow rules skip the confirmation prompt in the ask modes.
+- Rule edits apply to the next tool call without restarting Pi.
+- Rules come in two scopes. The **Global | This workspace** tabs edit either your global rules or the active workspace's `.pi-desktop/permission-rules.json`. A workspace file is gated by workspace trust: once you trust the workspace it fully replaces the global list while you work there. Until then (the default for a repo you just opened) only its *deny* rules apply, layered on top of your global rules, and its *allow* rules are ignored, so a cloned repo can tighten your permissions but never loosen them. Opening a workspace whose file contains allow rules prompts you to trust it; you can also Trust/Revoke from the **This workspace** tab. Import/Export moves rule lists as JSON files, and the workspace file can be hand-edited or committed with a repo. The app picks up changes live.
+- One honest caveat: rules match raw strings, with no path canonicalization or command parsing. Treat them as a guardrail against accidents rather than a security sandbox, and keep even a trusted workspace's allow rules narrow.
 
 Example rules:
 
@@ -71,16 +71,16 @@ Example rules:
 
 Pi Desktop ships 7 built-in themes (Dark, Light, Nord, Gruvbox, Breeze Dark, Breeze Light, Breeze Claudius) plus System, and you can create your own from **Settings → Appearance**.
 
-**In-app editor.** Click **Create theme** to fork the currently active theme, or **Edit theme** to keep editing one you already created. Pick 7 seed colors — app background, surface, text, accent, success, warning, error — and a dark/light **kind**; every other color in the app is derived from those seeds. Changes preview live across the whole window as you edit. Two disclosures cover finer control:
+To build one in the app, click **Create theme** to fork the currently active theme, or **Edit theme** to keep editing one you already created. Pick 7 seed colors (app background, surface, text, accent, success, warning, error) and a dark or light kind; every other color in the app is derived from those seeds. Changes preview live across the whole window as you edit. Two disclosures cover finer control:
 
-- **Advanced** — override any of the ~30 derived tokens individually (borders, hovers, scrollbars, and so on) instead of accepting the automatic derivation.
-- **Syntax colors** — override code-highlighting colors (keywords, strings, comments, etc.) for the code editor and diff viewer.
+- **Advanced** lets you override any of the ~30 derived tokens individually (borders, hovers, scrollbars, and so on) instead of accepting the automatic derivation.
+- **Syntax colors** overrides the code-highlighting colors (keywords, strings, comments, etc.) used by the code editor and diff viewer.
 
 Themes you create are listed alongside the built-ins in the **Theme** dropdown. Rename one by editing its name in the editor, duplicate one by selecting it and clicking **Create theme** (which forks whatever is active), and delete one with the **Delete** button that appears next to the dropdown whenever a custom theme is selected.
 
-**Import / export / URL install.** Use **Import** and **Export** to share a theme as a `.json` file, or paste an `https://` URL into **Install from URL** to fetch and install one directly (HTTP is rejected; downloads are size-capped).
+To share a theme, use **Import** and **Export** to move it as a `.json` file, or paste an `https://` URL into **Install from URL** to fetch and install one directly (HTTP is rejected, and downloads are size-capped).
 
-**The `pi-theme/v1` format.** A theme file is JSON with a `$schema`, a `name`, a `kind` (`"dark"` or `"light"`), and 7 `seeds`. That's enough for a complete, valid theme — everything else is derived automatically via CSS `color-mix()`:
+A theme file uses the `pi-theme/v1` format: JSON with a `$schema`, a `name`, a `kind` (`"dark"` or `"light"`), and 7 `seeds`. That's enough for a complete, valid theme; everything else is derived automatically via CSS `color-mix()`:
 
 ```json
 {
@@ -99,32 +99,32 @@ Themes you create are listed alongside the built-ins in the **Theme** dropdown. 
 }
 ```
 
-Two optional top-level objects let you pin exact values instead of relying on derivation: `overrides` (any derived token, e.g. `border`, `scrollbar`, `accent-hover`) and `syntax` (code-highlighting colors, e.g. `keyword`, `string`, `comment`). Both are entirely optional — omit them and the theme still renders correctly from the 7 seeds alone.
+Two optional top-level objects let you pin exact values instead of relying on derivation: `overrides` (any derived token, e.g. `border`, `scrollbar`, `accent-hover`) and `syntax` (code-highlighting colors, e.g. `keyword`, `string`, `comment`). Omit both and the theme still renders correctly from the 7 seeds alone.
 
-User theme files live in the app's user-data directory under `themes/` — on Linux, `~/.config/pi-desktop/themes/`.
+User theme files live in the app's user-data directory under `themes/` (on Linux, `~/.config/pi-desktop/themes/`).
 
-**Community gallery.** Browse and share themes at [pi-desktop-themes](https://github.com/FaqFirebase/pi-desktop-themes) — copy any theme's raw URL into **Install from URL**, or submit your own with a pull request.
+There's also a community gallery at [pi-desktop-themes](https://github.com/FaqFirebase/pi-desktop-themes): copy any theme's raw URL into **Install from URL**, or submit your own with a pull request.
 
 ## Multi-Agent Council Planning
 
 Pi, Claude, and Codex each produce an initial plan, share and converge, and Pi presents the agreed consensus plan *before* anything is built. All members plan read-only; Pi is the only agent that edits files.
 
-This is **off by default**. Enable it in **Settings → "Multi-Agent Council Planning"**. A confirmation dialog warns that it increases token/credit usage, because each request runs multiple agents.
+The feature is off by default. Enable it in **Settings → "Multi-Agent Council Planning"**; a confirmation dialog warns that it increases token and credit usage, since each request runs multiple agents.
 
-**Members.** Pi, Claude, and Codex. The app auto-detects each CLI cross-platform; only detected agents can be enabled, via per-agent checkboxes. At least two members must be available, or a run is refused. Pi always merges the plans into the final consensus, even when not checked as a planner.
+The app auto-detects each member's CLI cross-platform, and only detected agents can be enabled (per-agent checkboxes). At least two members must be available or a run is refused. Pi always merges the plans into the final consensus, even when it isn't checked as a planner.
 
-**Read-only planning.** Every member plans read-only (Claude `--permission-mode plan`, Codex `--sandbox read-only`, Pi with write tools excluded) — they produce plans but never modify files. Only Pi implements the approved result.
+Every member plans read-only: Claude runs with `--permission-mode plan`, Codex with `--sandbox read-only`, and Pi with write tools excluded. They produce plans but never modify files. Only Pi implements the approved result.
 
-**Live output.** Each member streams its plan live in its own card during the consulting phase, with an elapsed timer.
+During the consulting phase, each member streams its plan live in its own card with an elapsed timer.
 
-**Consensus modes:**
+There are two consensus modes:
 
-- **One debate round** (default) — each member sees the others' plans and revises once, then Pi merges. You watch them converge.
-- **Arbiter merge** — faster/cheaper. Pi synthesizes the initial plans directly with no debate round.
+- **One debate round** (default): each member sees the others' plans and revises once, then Pi merges. You watch them converge.
+- **Arbiter merge**: faster and cheaper. Pi synthesizes the initial plans directly with no debate round.
 
-**Per-member timeout** (10–600s, default 240s) bounds each member. A member that times out or errors is dropped, and the run proceeds as long as at least one plan was produced.
+A per-member timeout (10 to 600 seconds, default 240) bounds each member. A member that times out or errors is dropped, and the run proceeds as long as at least one plan was produced.
 
-**To use it:** with the feature enabled, type your request and click **Plan with Council** in the composer. Review each member's plan and Pi's merged consensus plan. If you want changes, type feedback in **Request changes to the plan…** and Pi revises the consensus (repeat as needed). When you're happy, click **Implement this** to have Pi build it. The panel collapses once a plan is ready so the output stays readable.
+To use it, type your request with the feature enabled and click **Plan with Council** in the composer. Review each member's plan and Pi's merged consensus plan. If you want changes, type feedback in **Request changes to the plan…** and Pi revises the consensus; repeat as needed. When you're happy, click **Implement this** and Pi builds it. The panel collapses once a plan is ready so the output stays readable.
 
 ## Getting started
 
@@ -149,7 +149,7 @@ Builds are **not yet signed or notarized**. Because the download is unsigned, ma
 
 > Pi Desktop is damaged and can't be opened. You should move it to the Trash.
 
-**Do not move it to the Trash.** The app is not damaged — this is how Gatekeeper phrases its block on any unsigned app. macOS offers no "Open Anyway" button for this particular dialog, so clear the quarantine flag in Terminal instead:
+**Do not move it to the Trash.** The app is not damaged; this is just how Gatekeeper phrases its block on any unsigned app. macOS offers no "Open Anyway" button for this particular dialog, so clear the quarantine flag in Terminal instead:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/Pi Desktop.app"
@@ -159,11 +159,11 @@ Then open the app normally. You only need to do this once.
 
 > If macOS instead says the app **"cannot be opened because Apple cannot check it for malicious software,"** you can allow it without Terminal: open **System Settings → Privacy & Security**, scroll to the **Security** section, and click **Open Anyway** next to the Pi Desktop notice, then confirm with Touch ID / your password.
 
-> **Prefer to skip the unsigned-app warnings entirely?** Build from source. A build you compile yourself runs locally without Gatekeeper blocking it, so there's no signing/notarization prompt and no quarantine flag to clear. See [Build it yourself → Linux / macOS](#linux--macos) below.
+> If you'd rather skip the unsigned-app warnings entirely, build from source. A build you compile yourself runs locally without Gatekeeper blocking it, so there is no signing prompt and no quarantine flag to clear. See [Build it yourself → Linux / macOS](#linux--macos) below.
 
 ### Windows
 
-Download from [Releases](https://github.com/FaqFirebase/pi-desktop/releases): the **installer** (`…-win-x64-setup.exe`, recommended) or the **portable** `…-win-x64.exe`. Builds are unsigned, so SmartScreen may warn — choose **More info → Run anyway**. If file edits or saves fail, see the [Controlled Folder Access](#controlled-folder-access-ransomware-protection) note below. Windows is community-tested; please [open a bug report](https://github.com/FaqFirebase/pi-desktop/issues) if you hit an issue.
+Download from [Releases](https://github.com/FaqFirebase/pi-desktop/releases): the **installer** (`…-win-x64-setup.exe`, recommended) or the **portable** `…-win-x64.exe`. Builds are unsigned, so SmartScreen may warn; choose **More info → Run anyway**. If file edits or saves fail, see the [Controlled Folder Access](#controlled-folder-access-ransomware-protection) note below. Windows is community-tested; please [open a bug report](https://github.com/FaqFirebase/pi-desktop/issues) if you hit an issue.
 
 ## Keyboard shortcuts
 
@@ -204,12 +204,12 @@ Windows requires extra steps because **node-pty** (the terminal backend) compile
 Install all of the following **before** cloning:
 
 - [Git for Windows](https://git-scm.com/download/win)
-- [Node.js LTS](https://nodejs.org) — use the official Windows installer (adds `node` and `npm` to PATH)
-- **Visual Studio Build Tools 2022** — download from [Visual Studio downloads](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022)
+- [Node.js LTS](https://nodejs.org), via the official Windows installer (adds `node` and `npm` to PATH)
+- **Visual Studio Build Tools 2022**, downloaded from [Visual Studio downloads](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022)
   - Select the **Desktop development with C++** workload
   - Open **Individual components**, search `Spectre`, and install **Spectre-mitigated libs for v143 toolset**
 
-> **⚠️ Use VS Build Tools 2022, not 2026.** node-pty requires Spectre-mitigated runtime libraries. VS 2022 stable (v143 toolset) ships them. VS 2026 preview (v180 toolset) does not — `npm install` will fail with `MSB8040: Spectre-mitigated libraries are required for this project`.
+> **Use VS Build Tools 2022, not 2026.** node-pty requires Spectre-mitigated runtime libraries. VS 2022 stable (v143 toolset) ships them; VS 2026 preview (v180 toolset) does not, and `npm install` will fail with `MSB8040: Spectre-mitigated libraries are required for this project`.
 
 #### 2. Add a Windows Defender exclusion (recommended)
 
@@ -247,17 +247,17 @@ npm run dev
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `MSB8040` — Spectre libs missing | VS Build Tools 2026 (v180 toolset) installed instead of 2022 (v143) | Uninstall 2026, install VS Build Tools 2022 with Spectre libs for v143 |
+| `MSB8040`: Spectre libs missing | VS Build Tools 2026 (v180 toolset) installed instead of 2022 (v143) | Uninstall 2026, install VS Build Tools 2022 with Spectre libs for v143 |
 | `electron-vite is not recognized` | `npm install` didn't complete | Run `npm install` again |
 | Electron binary missing after install | Electron's postinstall extraction left a partial or missing `dist` folder | Add the repo folder to Defender exclusions, then `npm install` again. If it still fails, use the manual download steps below |
-| `EPERM` / `EACCES` writing a project file | Controlled Folder Access (Ransomware protection) is blocking writes under Documents/Desktop | Keep the repo and your projects out of protected folders, or allow Pi Desktop through Controlled folder access — see below |
+| `EPERM` / `EACCES` writing a project file | Controlled Folder Access (Ransomware protection) is blocking writes under Documents/Desktop | Keep the repo and your projects out of protected folders, or allow Pi Desktop through Controlled folder access (see below) |
 | Pi shows "error" in status popover | Pi not installed or PATH not updated | Run the install script above in a **new** terminal window |
 
 #### Controlled Folder Access (Ransomware protection)
 
-Windows **Controlled Folder Access** protects `Documents`, `Desktop`, `Pictures`, and similar folders, silently blocking apps it doesn't trust from writing to them. Because Pi Desktop is a coding agent that edits files, this shows up as intermittent `EPERM`/`EACCES` failures — during `npm install`, when the agent edits code, or when you save a file — if your repo or projects live inside a protected folder.
+Windows **Controlled Folder Access** protects `Documents`, `Desktop`, `Pictures`, and similar folders by silently blocking apps it doesn't trust from writing to them. Because Pi Desktop is a coding agent that edits files, this shows up as intermittent `EPERM`/`EACCES` failures (during `npm install`, when the agent edits code, or when you save a file) if your repo or projects live inside a protected folder.
 
-The reliable fix is to **keep code out of protected folders**. Clone the repo and put your projects somewhere unprotected, for example:
+The reliable fix is to keep code out of protected folders. Clone the repo and put your projects somewhere unprotected, for example:
 
 ```powershell
 # Not C:\Users\<you>\Documents\... — use an unprotected path:
@@ -266,7 +266,7 @@ git clone https://github.com/FaqFirebase/pi-desktop.git C:\dev\pi-desktop
 
 If you must keep code under Documents/Desktop, allow the app instead:
 
-**Windows Security → Virus & threat protection → Ransomware protection → Manage ransomware protection → Allow an app through Controlled folder access → Add an allowed app** — add the installed `Pi Desktop.exe` (and, for development, `node.exe`, `git.exe`, and `electron.exe`).
+**Windows Security → Virus & threat protection → Ransomware protection → Manage ransomware protection → Allow an app through Controlled folder access → Add an allowed app**, then add the installed `Pi Desktop.exe` (and, for development, `node.exe`, `git.exe`, and `electron.exe`).
 
 > The portable `.exe` re-extracts to a temporary folder on each launch, so allow-listing it doesn't stick. Prefer the **installer** (`Pi-Desktop-<version>-win-x64-setup.exe`) if you rely on the allow-list approach.
 
