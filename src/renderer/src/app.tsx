@@ -25,7 +25,7 @@ export function App(): React.JSX.Element {
   useMenuActions()
   useInitialize()
   useNotePickerShortcut()
-  const { isDraggingFolder, dropBusy } = useFolderDrop()
+  const { isDraggingFolder } = useFolderDrop()
 
   const currentView = useAppStore((state) => state.currentView)
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
@@ -88,7 +88,7 @@ export function App(): React.JSX.Element {
 
   return (
     <div className="relative flex h-screen flex-col bg-app text-primary">
-      {(isDraggingFolder || dropBusy) && (
+      {isDraggingFolder && (
         <div
           className="pointer-events-none absolute inset-0 z-[100] flex items-center justify-center bg-app/80 backdrop-blur-sm"
           aria-live="polite"
@@ -97,12 +97,10 @@ export function App(): React.JSX.Element {
             <FolderOpen size={36} className="text-accent" />
             <div className="text-center">
               <div className="text-base font-semibold text-primary">
-                {dropBusy ? 'Opening project…' : 'Drop folder to open as project'}
+                Drop folder to open as project
               </div>
               <div className="mt-1 text-sm text-dim">
-                {dropBusy
-                  ? 'Creating workspace and starting Pi'
-                  : 'A new workspace will be created at that path'}
+                A new workspace will be created at that path
               </div>
             </div>
           </div>

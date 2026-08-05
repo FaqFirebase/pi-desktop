@@ -6,16 +6,18 @@ import { useAppStore } from '../store'
  * Window-level folder drag-and-drop: drop a directory onto the app to open it
  * as a workspace (create if needed, switch, show Chat).
  *
+ * The drop overlay is only shown while dragging — it dismisses immediately on
+ * drop so the UI is not blocked while the workspace opens in the background.
+ *
  * Files (non-directories) are ignored so future attachment drops can coexist.
  */
 export function useFolderDrop(): {
   isDraggingFolder: boolean
-  dropBusy: boolean
 } {
   const [isDraggingFolder, setIsDraggingFolder] = useState(false)
-  const [dropBusy, setDropBusy] = useState(false)
   const dragDepth = useRef(0)
-  const busyRef = useRef(false)
+  /** Prevent stacking concurrent openFolderAsWorkspace calls; no overlay. */
+  const openInFlight = useRef(false)
 
   const clearDrag = useCallback((): void => {
     dragDepth.current = 0
@@ -47,8 +49,9 @@ export function useFolderDrop(): {
       if (!isFileDrag(e.dataTransfer)) return
       e.preventDefault()
       e.stopPropagation()
+      // Dismiss overlay immediately — do not wait for workspace create/switch.
       clearDrag()
-      if (!e.dataTransfer || busyRef.current) return
+      if (!e.dataTransfer || openInFlight.current) return
 
       const { paths } = collectDroppedPaths(e.dataTransfer, (file) =>
         window.piDesktop.system.getPathForFile(file)
@@ -57,14 +60,12 @@ export function useFolderDrop(): {
 
       // One folder per drop — multi-folder would stack ambiguous switches.
       const folderPath = paths[0]
-      busyRef.current = true
-      setDropBusy(true)
+      openInFlight.current = true
       void useAppStore
         .getState()
         .openFolderAsWorkspace(folderPath)
         .finally(() => {
-          busyRef.current = false
-          setDropBusy(false)
+          openInFlight.current = false
         })
     }
 
@@ -80,5 +81,5 @@ export function useFolderDrop(): {
     }
   }, [clearDrag])
 
-  return { isDraggingFolder, dropBusy }
+  return { isDraggingFolder }
 }
