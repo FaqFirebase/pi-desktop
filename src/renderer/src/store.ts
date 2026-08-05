@@ -1450,16 +1450,28 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         handleMessageUpdate(event as PiMessageUpdateEvent, set)
         break
 
-      case 'message_end':
-        handleTurnComplete(set, (event as { message?: Record<string, unknown> }).message)
+      case 'message_end': {
+        const endedMessage = (event as { message?: Record<string, unknown> }).message
+        handleTurnComplete(set, endedMessage)
+        // turn_end re-delivers the same message, so errors surface only here.
+        const turnError = turnErrorText(endedMessage)
+        if (turnError) {
+          get().addMessage({
+            id: generateId(),
+            role: 'system',
+            content: `Error: ${turnError}`,
+            timestamp: Date.now(),
+          })
+        }
         get().addTimelineEvent({
           id: generateId(),
           type: 'assistant_message',
           timestamp: Date.now(),
-          title: 'Assistant response complete',
-          status: 'success',
+          title: turnError ? 'Assistant response failed' : 'Assistant response complete',
+          status: turnError ? 'error' : 'success',
         })
         break
+      }
 
       case 'turn_end':
         handleTurnComplete(set, (event as { message?: Record<string, unknown> }).message)
@@ -2291,6 +2303,27 @@ function handleMessageUpdate(
       break
     }
   }
+}
+
+// Pi reports a generic abort with exactly this text; anything else on an
+// aborted turn is a specific reason worth showing (mirrors Pi's own TUI).
+const GENERIC_ABORT_MESSAGE = 'Request was aborted'
+const UNKNOWN_TURN_ERROR = 'Unknown error'
+
+/**
+ * Error text to surface in chat for a finished assistant message, or null.
+ * A provider that rejects before streaming (e.g. HTTP 402) yields an
+ * assistant message with stopReason 'error', empty content, and the provider
+ * error in errorMessage — without this, the chat shows nothing at all.
+ */
+function turnErrorText(message?: Record<string, unknown>): string | null {
+  if (!message || message.role !== 'assistant') return null
+  const errorMessage = typeof message.errorMessage === 'string' ? message.errorMessage : ''
+  if (message.stopReason === 'error') return errorMessage || UNKNOWN_TURN_ERROR
+  if (message.stopReason === 'aborted' && errorMessage && errorMessage !== GENERIC_ABORT_MESSAGE) {
+    return errorMessage
+  }
+  return null
 }
 
 function handleTurnComplete(
