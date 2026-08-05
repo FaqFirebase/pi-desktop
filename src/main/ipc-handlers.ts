@@ -1466,6 +1466,19 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
     throw new Error(`Invalid path name: ${name}`)
   })
 
+  /** Classify a filesystem path for drag-drop (folder → open as workspace). */
+  ipcMain.handle(IPC_CHANNELS.SYSTEM_PATH_KIND, async (_event, filePath: unknown) => {
+    if (!isString(filePath) || filePath.trim().length === 0) {
+      return { exists: false, isDirectory: false }
+    }
+    try {
+      const st = await stat(filePath)
+      return { exists: true, isDirectory: st.isDirectory() }
+    } catch {
+      return { exists: false, isDirectory: false }
+    }
+  })
+
   ipcMain.handle(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, async (_event, url: unknown) => {
     if (!isString(url)) throw new Error('url must be a string')
     if (!url.startsWith('https://') && !url.startsWith('http://')) {

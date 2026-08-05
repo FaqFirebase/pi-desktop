@@ -15,15 +15,17 @@ import { ExtensionUiDialog, AppConfirmDialog } from './components/extension-ui-d
 import { ReviewRail } from './components/review-rail'
 import { useContextMenu, buildDefaultContextMenu } from './components/context-menu'
 import { usePiEvents, useMenuActions, useInitialize, useNotePickerShortcut } from './hooks'
+import { useFolderDrop } from './hooks/use-folder-drop'
 import { useAppStore } from './store'
 import { useEffect } from 'react'
-import { ArrowUpCircle, PanelLeft, X } from 'lucide-react'
+import { ArrowUpCircle, FolderOpen, PanelLeft, X } from 'lucide-react'
 
 export function App(): React.JSX.Element {
   usePiEvents()
   useMenuActions()
   useInitialize()
   useNotePickerShortcut()
+  const { isDraggingFolder, dropBusy } = useFolderDrop()
 
   const currentView = useAppStore((state) => state.currentView)
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
@@ -85,7 +87,27 @@ export function App(): React.JSX.Element {
   const showUpdateBanner = !!updateInfo?.updateAvailable && !updateDismissed
 
   return (
-    <div className="flex h-screen flex-col bg-app text-primary">
+    <div className="relative flex h-screen flex-col bg-app text-primary">
+      {(isDraggingFolder || dropBusy) && (
+        <div
+          className="pointer-events-none absolute inset-0 z-[100] flex items-center justify-center bg-app/80 backdrop-blur-sm"
+          aria-live="polite"
+        >
+          <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-accent bg-surface/95 px-10 py-8 shadow-xl shadow-black/40">
+            <FolderOpen size={36} className="text-accent" />
+            <div className="text-center">
+              <div className="text-base font-semibold text-primary">
+                {dropBusy ? 'Opening project…' : 'Drop folder to open as project'}
+              </div>
+              <div className="mt-1 text-sm text-dim">
+                {dropBusy
+                  ? 'Creating workspace and starting Pi'
+                  : 'A new workspace will be created at that path'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {showUpdateBanner && updateInfo && (
         <div className="flex shrink-0 items-center justify-center gap-3 bg-accent px-4 py-1.5 text-xs text-white">
           <ArrowUpCircle size={14} className="shrink-0" />
