@@ -87,6 +87,7 @@ builder-effective-config.yaml
 # itself as a workspace (see AGENT.md Data Storage: .pi/settings.json)
 .pi/
 .pi-desktop/
+.pi-subagents/
 
 # Agent context — local-only memory and architecture notes
 MEMORY.md
