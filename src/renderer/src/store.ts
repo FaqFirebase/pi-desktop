@@ -1788,13 +1788,21 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         get().setCurrentView('chat')
         return false
       }
+      // Snapshot BEFORE create: main's createWorkspace activates an existing
+      // workspace for a duplicate path, which makes activeWorkspace look like
+      // the target after loadWorkspaces — even though we never ran
+      // switchWorkspace (messages/piStatus stay from the previous workspace).
+      const active = get().activeWorkspace
+      const wasAlreadyActive = active ? pathsEqual(active.path, trimmed) : false
       const name = workspaceNameFromFolderPath(trimmed)
       await get().createWorkspace(name, trimmed)
       const ws = get().workspaces.find((w) => pathsEqual(w.path, trimmed))
       if (!ws) return false
-      // Already active after create (duplicate path or first workspace): still
-      // ensure Chat is visible and Pi is running for that project.
-      if (get().activeWorkspace?.id === ws.id) {
+      // Only skip switchWorkspace when this folder was already the active
+      // project before the drop (re-drop / re-open current). First workspace
+      // and cross-workspace opens go through switchWorkspace for message clear,
+      // status resync, still-working confirm, and session load.
+      if (wasAlreadyActive) {
         get().setCurrentView('chat')
         if (get().piStatus !== 'running') await get().startPi()
         return true
