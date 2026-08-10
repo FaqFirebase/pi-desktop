@@ -15,6 +15,8 @@ import piLogo from '../assets/pi-logo.svg'
 import { formatGitStatus } from './review-rail'
 import { StatsPanel } from './stats-panel'
 import type { GitFileStatus, SessionListItem } from '../../../shared/ipc-contracts'
+import { workspaceNameFromFolderPath } from '../../../shared/folder-drop'
+import { pathsEqual } from '../../../shared/path-compare'
 
 const MAX_RECENT_WORKSPACES = 6
 const MAX_RECENT_SESSIONS = 5
@@ -95,10 +97,10 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
     try {
       let targetId: string | undefined
       if (session.projectPath) {
-        let ws = useAppStore.getState().workspaces.find((w) => w.path === session.projectPath)
+        let ws = useAppStore.getState().workspaces.find((w) => pathsEqual(w.path, session.projectPath))
         if (!ws) {
           await createWorkspace(session.projectName, session.projectPath)
-          ws = useAppStore.getState().workspaces.find((w) => w.path === session.projectPath)
+          ws = useAppStore.getState().workspaces.find((w) => pathsEqual(w.path, session.projectPath))
         }
         targetId = ws?.id
       }
@@ -299,11 +301,10 @@ function HomeScreenInfo(): React.JSX.Element {
     if (!path) return
     setBusy(true)
     try {
-      let ws = useAppStore.getState().workspaces.find((w) => w.path === path)
+      let ws = useAppStore.getState().workspaces.find((w) => pathsEqual(w.path, path))
       if (!ws) {
-        const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path
-        await createWorkspace(name, path)
-        ws = useAppStore.getState().workspaces.find((w) => w.path === path)
+        await createWorkspace(workspaceNameFromFolderPath(path), path)
+        ws = useAppStore.getState().workspaces.find((w) => pathsEqual(w.path, path))
       }
       if (ws) {
         if (!(await switchWorkspace(ws.id))) return

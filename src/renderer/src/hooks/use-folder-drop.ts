@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { collectDroppedPaths, isFileDrag } from '../../../shared/folder-drop'
+import { useEffect, useRef, useState } from 'react'
+import { firstDroppedFolderPath, isFileDrag } from '../../../shared/folder-drop'
 import { useAppStore } from '../store'
 
 /**
@@ -19,12 +19,12 @@ export function useFolderDrop(): {
   /** Prevent stacking concurrent openFolderAsWorkspace calls; no overlay. */
   const openInFlight = useRef(false)
 
-  const clearDrag = useCallback((): void => {
-    dragDepth.current = 0
-    setIsDraggingFolder(false)
-  }, [])
-
   useEffect(() => {
+    const clearDrag = (): void => {
+      dragDepth.current = 0
+      setIsDraggingFolder(false)
+    }
+
     const onDragEnter = (e: DragEvent): void => {
       if (!isFileDrag(e.dataTransfer)) return
       e.preventDefault()
@@ -32,9 +32,9 @@ export function useFolderDrop(): {
       setIsDraggingFolder(true)
     }
 
-    const onDragLeave = (e: DragEvent): void => {
-      if (!isFileDrag(e.dataTransfer) && dragDepth.current === 0) return
-      e.preventDefault()
+    const onDragLeave = (): void => {
+      // Depth only increments for file drags; leave just unwinds the counter.
+      if (dragDepth.current === 0) return
       dragDepth.current = Math.max(0, dragDepth.current - 1)
       if (dragDepth.current === 0) setIsDraggingFolder(false)
     }
@@ -48,18 +48,15 @@ export function useFolderDrop(): {
     const onDrop = (e: DragEvent): void => {
       if (!isFileDrag(e.dataTransfer)) return
       e.preventDefault()
-      e.stopPropagation()
       // Dismiss overlay immediately — do not wait for workspace create/switch.
       clearDrag()
       if (!e.dataTransfer || openInFlight.current) return
 
-      const { paths } = collectDroppedPaths(e.dataTransfer, (file) =>
+      const folderPath = firstDroppedFolderPath(e.dataTransfer, (file) =>
         window.piDesktop.system.getPathForFile(file)
       )
-      if (paths.length === 0) return
+      if (!folderPath) return
 
-      // One folder per drop — multi-folder would stack ambiguous switches.
-      const folderPath = paths[0]
       openInFlight.current = true
       void useAppStore
         .getState()
@@ -79,7 +76,7 @@ export function useFolderDrop(): {
       window.removeEventListener('dragover', onDragOver)
       window.removeEventListener('drop', onDrop)
     }
-  }, [clearDrag])
+  }, [])
 
   return { isDraggingFolder }
 }

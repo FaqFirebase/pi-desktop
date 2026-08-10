@@ -100,7 +100,7 @@ export function App(): React.JSX.Element {
                 Drop folder to open as project
               </div>
               <div className="mt-1 text-sm text-dim">
-                A new workspace will be created at that path
+                Opens that folder as a workspace (creates one if needed)
               </div>
             </div>
           </div>

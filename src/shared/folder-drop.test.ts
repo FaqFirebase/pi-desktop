@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  collectDroppedPaths,
+  firstDroppedFolderPath,
   isFileDrag,
   workspaceNameFromFolderPath,
   type FileDragTransfer,
@@ -18,25 +18,25 @@ test('workspaceNameFromFolderPath falls back when empty-ish', () => {
   assert.equal(workspaceNameFromFolderPath(''), '')
 })
 
-test('isFileDrag detects Files type', () => {
-  assert.equal(isFileDrag({ types: ['Files'], files: { length: 0 } }), true)
-  assert.equal(isFileDrag({ types: ['text/plain'], files: { length: 0 } }), false)
+test('isFileDrag detects the Files type (Chromium array)', () => {
+  assert.equal(isFileDrag({ types: ['Files'] }), true)
+  assert.equal(isFileDrag({ types: ['text/plain'] }), false)
   assert.equal(isFileDrag(null), false)
 })
 
-test('collectDroppedPaths keeps directory entries only when entry API exists', () => {
+test('firstDroppedFolderPath returns the first directory entry path', () => {
   const dirFile = { name: 'proj' } as File
   const plainFile = { name: 'readme.md' } as File
   const items = [
     {
       kind: 'file',
-      webkitGetAsEntry: () => ({ isDirectory: true, isFile: false }),
-      getAsFile: () => dirFile,
+      webkitGetAsEntry: () => ({ isDirectory: false, isFile: true }),
+      getAsFile: () => plainFile,
     },
     {
       kind: 'file',
-      webkitGetAsEntry: () => ({ isDirectory: false, isFile: true }),
-      getAsFile: () => plainFile,
+      webkitGetAsEntry: () => ({ isDirectory: true, isFile: false }),
+      getAsFile: () => dirFile,
     },
   ]
   const dt: FileDragTransfer = {
@@ -46,28 +46,46 @@ test('collectDroppedPaths keeps directory entries only when entry API exists', (
       0: items[0],
       1: items[1],
     },
-    files: { length: 0 },
   }
 
   const paths = new Map<File, string>([
     [dirFile, '/tmp/proj'],
     [plainFile, '/tmp/readme.md'],
   ])
-  const result = collectDroppedPaths(dt, (f) => paths.get(f) ?? '')
-  assert.deepEqual(result.paths, ['/tmp/proj'])
-  assert.equal(result.hadNonDirectoryEntry, true)
+  assert.equal(
+    firstDroppedFolderPath(dt, (f) => paths.get(f) ?? ''),
+    '/tmp/proj'
+  )
 })
 
-test('collectDroppedPaths falls back to files when entry API is missing', () => {
+test('firstDroppedFolderPath uses getAsFile when webkitGetAsEntry is null', () => {
   const f = { name: 'maybe-dir' } as File
   const dt: FileDragTransfer = {
     types: ['Files'],
-    items: null,
-    files: {
+    items: {
       length: 1,
-      0: f,
+      0: {
+        kind: 'file',
+        webkitGetAsEntry: () => null,
+        getAsFile: () => f,
+      },
     },
   }
-  const result = collectDroppedPaths(dt, () => '/tmp/maybe-dir')
-  assert.deepEqual(result.paths, ['/tmp/maybe-dir'])
+  assert.equal(firstDroppedFolderPath(dt, () => '/tmp/maybe-dir'), '/tmp/maybe-dir')
+})
+
+test('firstDroppedFolderPath returns null when only files are present', () => {
+  const plainFile = { name: 'readme.md' } as File
+  const dt: FileDragTransfer = {
+    types: ['Files'],
+    items: {
+      length: 1,
+      0: {
+        kind: 'file',
+        webkitGetAsEntry: () => ({ isDirectory: false, isFile: true }),
+        getAsFile: () => plainFile,
+      },
+    },
+  }
+  assert.equal(firstDroppedFolderPath(dt, () => '/tmp/readme.md'), null)
 })
