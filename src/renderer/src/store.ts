@@ -1795,6 +1795,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   createWorkspace: async (name, path) => {
+    // Main activates an existing workspace on a duplicate path, and the
+    // adoption below would then tear a dirty editor down after the fact —
+    // so the ask has to come before the IPC commits anything.
+    const duplicate = get().workspaces.find((w) => pathsEqual(w.path, path))
+    if (duplicate && duplicate.id !== get().activeWorkspace?.id) {
+      if (!(await get().confirmDiscardEditorChanges())) return
+    }
     const previousActiveId = get().activeWorkspace?.id ?? null
     try {
       await window.piDesktop.workspace.create(name, path)
@@ -1936,6 +1943,20 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   removeWorkspace: async (workspaceId) => {
+    const workspace = get().workspaces.find((w) => w.id === workspaceId)
+    const confirmed = await get().requestConfirm({
+      title: 'Remove workspace',
+      message: `Remove "${workspace?.name ?? workspaceId}" from the sidebar? Its Pi process stops; files on disk are not touched.`,
+      confirmLabel: 'Remove',
+      cancelLabel: 'Cancel',
+      danger: true,
+    })
+    if (!confirmed) return
+    // Removing the active workspace closes its preview via the adoption
+    // below — a dirty editor gets the same ask a workspace switch gives it.
+    if (workspaceId === get().activeWorkspace?.id) {
+      if (!(await get().confirmDiscardEditorChanges())) return
+    }
     const previousActiveId = get().activeWorkspace?.id ?? null
     try {
       await window.piDesktop.workspace.remove(workspaceId)
@@ -1962,9 +1983,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   changeWorkspaceFolder: async (workspaceId, newPath) => {
+    // Repointing the active workspace strands its open preview: the file
+    // binds the old folder and the file service refuses paths outside the
+    // new root. Ask a dirty editor, then close the preview on commit.
+    const isActive = workspaceId === get().activeWorkspace?.id
+    if (isActive && !(await get().confirmDiscardEditorChanges())) return
     try {
       await window.piDesktop.workspace.changePath(workspaceId, newPath)
       await get().loadWorkspaces()
+      if (isActive) set({ previewTarget: null, editorDirty: false })
     } catch (err) {
       get().addMessage({
         id: generateId(),

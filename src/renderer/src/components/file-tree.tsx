@@ -54,7 +54,9 @@ export function FileTree(): React.JSX.Element {
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [pathExists, setPathExists] = useState(true)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
-  const workspaceId = activeWorkspace?.id ?? null
+  // Path included: "Change folder…" repoints a workspace without changing its
+  // id, and the tree must reload for that too.
+  const workspaceKey = activeWorkspace ? `${activeWorkspace.id}:${activeWorkspace.path}` : null
   // Overlapping loads resolve out of order (a slow pre-switch tree scan can
   // land after a fast post-switch one); only the latest may commit state.
   const loadGuard = useMemo(() => createStaleGuard(), [])
@@ -93,10 +95,10 @@ export function FileTree(): React.JSX.Element {
     }
   }, [loadGuard])
 
-  // Keyed on the workspace id: switching workspaces must reload immediately —
-  // main only watches the active workspace and attaches its watcher with
-  // ignoreInitial, so no file-change event announces the switch, and the 15s
-  // safety poll is far too slow to be the primary refresh.
+  // Keyed on the workspace id+path: switching (or repointing) workspaces must
+  // reload immediately — main only watches the active workspace and attaches
+  // its watcher with ignoreInitial, so no file-change event announces the
+  // switch, and the 15s safety poll is far too slow to be the primary refresh.
   useEffect(() => {
     // The highlight belongs to the previous workspace's tree.
     setSelectedFile(null)
@@ -124,7 +126,7 @@ export function FileTree(): React.JSX.Element {
       window.clearInterval(interval)
       window.removeEventListener('focus', handleFocus)
     }
-  }, [loadTree, workspaceId])
+  }, [loadTree, workspaceKey])
 
   const handleFileClick = useCallback(async (path: string, relativePath: string) => {
     // Open the preview first (images route to the image viewer); a dirty
