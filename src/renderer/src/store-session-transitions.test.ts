@@ -1,6 +1,7 @@
 import { test, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { PiExtensionUiRequest, Workspace } from '../../shared/ipc-contracts'
+import type { PreviewTarget } from './store'
 
 // Each recorded call is appended to `calls`, so tests can assert both that a
 // session change reached Pi and that nothing reached Pi when it was declined.
@@ -18,6 +19,15 @@ let pendingPromptsFailure: string | null = null
 let pendingPromptsSnapshot: Record<string, number> = {}
 let activeWorkspaceResult: Workspace | null = null
 let workspaceListResult: Workspace[] = []
+// Results the stubbed files.search returns; the hook runs while the "IPC" is
+// in flight so tests can interleave state changes with the await.
+let fileSearchResults: Array<{
+  name: string
+  path: string
+  relativePath: string
+  matchType: string
+}> = []
+let fileSearchHook: (() => void) | null = null
 
 const SESSION_PATH = '/tmp/session-b.jsonl'
 const FORK_ENTRY_ID = 'entry-7'
@@ -102,6 +112,13 @@ const piDesktopStub = {
       return { exists: true, isDirectory: true }
     },
   },
+  files: {
+    search: async (query: string) => {
+      calls.push(`filesSearch:${query}`)
+      fileSearchHook?.()
+      return fileSearchResults
+    },
+  },
   pi: {
     getStatus: async () => {
       if (getStatusFailure) throw new Error(getStatusFailure)
@@ -170,6 +187,7 @@ type AppStore = typeof import('./store')['useAppStore']
 let useAppStore: AppStore
 let countPromptsWaitingElsewhere: typeof import('./store')['countPromptsWaitingElsewhere']
 let formatPromptsWaiting: typeof import('./store')['formatPromptsWaiting']
+let openFileFromChat: typeof import('./components/chat-file-link')['openFileFromChat']
 let DIALOG_OVERLAY_Z_INDEX: number
 let NOTIFY_TOAST_Z_INDEX: number
 
@@ -178,6 +196,7 @@ let NOTIFY_TOAST_Z_INDEX: number
 before(async () => {
   ;(globalThis as unknown as { window: unknown }).window = { piDesktop: piDesktopStub }
   ;({ useAppStore, countPromptsWaitingElsewhere, formatPromptsWaiting } = await import('./store'))
+  ;({ openFileFromChat } = await import('./components/chat-file-link'))
   ;({ DIALOG_OVERLAY_Z_INDEX, NOTIFY_TOAST_Z_INDEX } = await import('./components/extension-ui-dialog'))
 })
 
@@ -221,6 +240,8 @@ beforeEach(() => {
   pendingPromptsSnapshot = {}
   activeWorkspaceResult = null
   workspaceListResult = []
+  fileSearchResults = []
+  fileSearchHook = null
   useAppStore.setState({
     isStreaming: false,
     streamingContent: '',
@@ -239,6 +260,9 @@ beforeEach(() => {
     workspaces: [],
     piStatus: 'stopped',
     currentView: 'home',
+    previewTarget: null,
+    chatSidePanel: null,
+    editorDirty: false,
   })
 })
 
@@ -704,6 +728,233 @@ test('openFolderAsWorkspace preserves surrounding whitespace in the folder path'
     calls.includes(`pathKind:${SPACED_PATH}`),
     true,
     'the dropped path must reach main exactly as the OS reported it'
+  )
+})
+
+// ─── Unsaved-editor guard ────────────────────────────────────────────────────
+// The editor's dirty flag is mirrored into the store so every path that would
+// silently destroy the edit buffer — showing another file, closing the editor,
+// opening the diff pane over it, switching workspace — asks first.
+
+const CODE_FILE: PreviewTarget = {
+  kind: 'code',
+  name: 'a.ts',
+  path: '/tmp/one/a.ts',
+  relativePath: 'a.ts',
+}
+
+const OTHER_FILE: PreviewTarget = {
+  kind: 'code',
+  name: 'b.ts',
+  path: '/tmp/one/b.ts',
+  relativePath: 'b.ts',
+}
+
+test('setPreviewTarget applies immediately when the editor is clean', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE })
+
+  const ok = await useAppStore.getState().setPreviewTarget(OTHER_FILE)
+
+  assert.equal(ok, true)
+  assert.equal(useAppStore.getState().previewTarget?.path, OTHER_FILE.path)
+})
+
+test('a dirty editor asks before showing another file; declining keeps it', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true })
+  answerConfirm(false)
+
+  const ok = await useAppStore.getState().setPreviewTarget(OTHER_FILE)
+
+  assert.equal(ok, false)
+  assert.equal(
+    useAppStore.getState().previewTarget?.path,
+    CODE_FILE.path,
+    'declining must keep the dirty file on screen'
+  )
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('accepting the discard applies the new preview and clears the dirty flag', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true })
+  answerConfirm(true)
+
+  const ok = await useAppStore.getState().setPreviewTarget(OTHER_FILE)
+
+  assert.equal(ok, true)
+  assert.equal(useAppStore.getState().previewTarget?.path, OTHER_FILE.path)
+  assert.equal(useAppStore.getState().editorDirty, false)
+})
+
+test('re-selecting the same dirty file needs no confirmation and keeps the buffer', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true })
+
+  const ok = await useAppStore.getState().setPreviewTarget({ ...CODE_FILE })
+
+  assert.equal(ok, true)
+  assert.equal(
+    useAppStore.getState().editorDirty,
+    true,
+    'the edit buffer survives a same-file re-select, so the flag must too'
+  )
+})
+
+test('closing a dirty editor asks first; declining keeps it open', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true })
+  answerConfirm(false)
+
+  const ok = await useAppStore.getState().setPreviewTarget(null)
+
+  assert.equal(ok, false)
+  assert.equal(useAppStore.getState().previewTarget?.path, CODE_FILE.path)
+})
+
+test('opening the diff over a dirty editor asks first; declining keeps the panel', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true, chatSidePanel: null })
+  answerConfirm(false)
+
+  const ok = await useAppStore.getState().setChatSidePanel('diff')
+
+  assert.equal(ok, false)
+  assert.equal(useAppStore.getState().chatSidePanel, null)
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('accepting the diff-open discards the buffer', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true, chatSidePanel: null })
+  answerConfirm(true)
+
+  const ok = await useAppStore.getState().setChatSidePanel('diff')
+
+  assert.equal(ok, true)
+  assert.equal(useAppStore.getState().chatSidePanel, 'diff')
+  assert.equal(useAppStore.getState().editorDirty, false)
+})
+
+test('non-diff panel changes never ask — the editor pane stays mounted', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true, chatSidePanel: null })
+
+  const ok = await useAppStore.getState().setChatSidePanel('files')
+
+  assert.equal(ok, true)
+  assert.equal(useAppStore.getState().chatSidePanel, 'files')
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('switchWorkspace asks before discarding a dirty editor; declining aborts the switch', async () => {
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  answerConfirm(false)
+
+  const switched = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+
+  assert.equal(switched, false)
+  assert.equal(
+    calls.some((c) => c.startsWith('setActiveWorkspace:')),
+    false,
+    'a declined discard must abort the switch before setActive'
+  )
+  assert.equal(useAppStore.getState().previewTarget?.path, CODE_FILE.path)
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('accepting the editor discard lets the workspace switch proceed', async () => {
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  answerConfirm(true)
+
+  const switched = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+
+  assert.equal(switched, true)
+  assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_ID}`), true)
+  assert.equal(useAppStore.getState().editorDirty, false)
+})
+
+test('a committed workspace switch closes the preview', async () => {
+  // The open file belongs to the workspace being left; the new workspace's
+  // file service would refuse to touch it anyway.
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, previewTarget: CODE_FILE })
+
+  const switched = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+
+  assert.equal(switched, true)
+  assert.equal(useAppStore.getState().previewTarget, null)
+})
+
+test('a main-side activation adoption closes the preview too', async () => {
+  // Same rationale as the committed switch: after main promotes another
+  // workspace (duplicate-path create, active-workspace removal), the file on
+  // screen belongs to a workspace that is no longer active.
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  activeWorkspaceResult = WORKSPACE_TWO
+
+  await useAppStore.getState().createWorkspace(WORKSPACE_TWO.name, WORKSPACE_TWO.path)
+
+  assert.equal(useAppStore.getState().previewTarget, null)
+  assert.equal(useAppStore.getState().editorDirty, false)
+})
+
+test('a chat file link declined by the dirty editor changes nothing', async () => {
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  fileSearchResults = [
+    { name: 'b.ts', path: '/tmp/one/b.ts', relativePath: 'b.ts', matchType: 'name' },
+  ]
+  answerConfirm(false)
+
+  await openFileFromChat('b.ts')
+
+  assert.equal(useAppStore.getState().previewTarget?.path, CODE_FILE.path)
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('an accepted chat file link opens the file', async () => {
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  fileSearchResults = [
+    { name: 'b.ts', path: '/tmp/one/b.ts', relativePath: 'b.ts', matchType: 'name' },
+  ]
+  answerConfirm(true)
+
+  await openFileFromChat('b.ts')
+
+  assert.equal(useAppStore.getState().previewTarget?.path, '/tmp/one/b.ts')
+  assert.equal(useAppStore.getState().editorDirty, false)
+})
+
+test('a chat file link closes a diff pane opened while its search was in flight', async () => {
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, chatSidePanel: null })
+  fileSearchResults = [
+    { name: 'b.ts', path: '/tmp/one/b.ts', relativePath: 'b.ts', matchType: 'name' },
+  ]
+  // The user opens the diff pane while the search IPC is still out — the
+  // pane check must read current state, not the pre-await snapshot.
+  fileSearchHook = () => {
+    useAppStore.setState({ chatSidePanel: 'diff' })
+  }
+
+  await openFileFromChat('b.ts')
+
+  assert.equal(useAppStore.getState().previewTarget?.path, '/tmp/one/b.ts')
+  assert.equal(
+    useAppStore.getState().chatSidePanel,
+    null,
+    'the diff pane must make way for the preview it would otherwise hide'
   )
 })
 

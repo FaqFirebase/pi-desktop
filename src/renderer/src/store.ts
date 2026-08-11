@@ -294,6 +294,11 @@ interface AppState {
   // workspace); `relativePath` drives the code editor's language + header.
   previewTarget: PreviewTarget | null
 
+  // Mirror of the editor pane's unsaved-changes state. The buffer itself is
+  // component-local; this flag is what lets store actions that would destroy
+  // it (new preview target, diff pane, workspace switch) ask first.
+  editorDirty: boolean
+
   // File search
   fileSearchOpen: boolean
 
@@ -376,7 +381,8 @@ interface AppActions {
   // UI
   setCurrentView: (view: AppState['currentView']) => void
   requestChatScrollToBottom: () => void
-  setChatSidePanel: (panel: AppState['chatSidePanel']) => void
+  // Resolves false when a dirty-editor discard was declined (diff pane only).
+  setChatSidePanel: (panel: AppState['chatSidePanel']) => Promise<boolean>
   toggleSidebar: () => void
   toggleTerminal: () => void
   toggleReview: () => void
@@ -452,8 +458,12 @@ interface AppActions {
   loadCustomModels: () => Promise<void>
   saveCustomModels: (edited: ModelsConfig) => Promise<{ ok: boolean; errors?: string[] }>
 
-  // File preview
-  setPreviewTarget: (target: PreviewTarget | null) => void
+  // File preview. Resolves false when a dirty-editor discard was declined and
+  // the target was left unchanged.
+  setPreviewTarget: (target: PreviewTarget | null) => Promise<boolean>
+  setEditorDirty: (dirty: boolean) => void
+  // True when the caller may proceed to destroy the editor's unsaved buffer.
+  confirmDiscardEditorChanges: () => Promise<boolean>
 
   // File search
   toggleFileSearch: () => void
@@ -538,7 +548,10 @@ function adoptMainSideActivation(
 ): void {
   const active = get().activeWorkspace
   if (!active || active.id === previousActiveId) return
-  set({ extensionUiRequest: null })
+  // The preview closes for the same reason switchWorkspace closes it: its
+  // file belongs to a workspace that is no longer active, and the new
+  // workspace's file service refuses paths outside its root.
+  set({ extensionUiRequest: null, previewTarget: null, editorDirty: false })
   void window.piDesktop.ui.flushPendingPrompts(active.id)
 }
 
@@ -693,6 +706,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   councilRun: null,
 
   previewTarget: null,
+  editorDirty: false,
 
   fileSearchOpen: false,
 
@@ -1362,7 +1376,18 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   setCurrentView: (view) => set({ currentView: view }),
   requestChatScrollToBottom: () =>
     set((state) => ({ chatScrollBottomNonce: state.chatScrollBottomNonce + 1 })),
-  setChatSidePanel: (panel) => set({ chatSidePanel: panel }),
+  setChatSidePanel: async (panel) => {
+    // Only opening the diff destroys the editor buffer: chat-panel renders the
+    // editor pane only while the side panel is not 'diff', so this unmounts a
+    // dirty FilePreview. Every other panel leaves the editor mounted.
+    if (panel === 'diff') {
+      if (!(await get().confirmDiscardEditorChanges())) return false
+      set({ chatSidePanel: panel, editorDirty: false })
+      return true
+    }
+    set({ chatSidePanel: panel })
+    return true
+  },
 
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
 
@@ -1848,14 +1873,19 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // Without this the cross-workspace path in the sidebar and session panel
       // (switch workspace, then switch session) skipped the warning entirely.
       if (!(await get().confirmSessionChange('workspace'))) return false
+      // The editor buffer belongs to the workspace being left, and the new
+      // workspace's file service refuses paths outside its root — unsaved
+      // edits would be stranded unsaveable. Ask before committing the switch.
+      if (!(await get().confirmDiscardEditorChanges())) return false
       await window.piDesktop.workspace.setActive(workspaceId)
       switchCommitted = true
       // The dialog on screen belongs to the workspace being left. Clear it
       // WITHOUT answering: main retains the request and re-broadcasts it on
       // switch-back, while a synthesized deny would hard-block the asking
       // tool. Must happen only after setActive succeeds — on a failed switch
-      // the dialog still belongs on screen.
-      set({ extensionUiRequest: null })
+      // the dialog still belongs on screen. The preview closes for the same
+      // reason: its file lives in the old workspace.
+      set({ extensionUiRequest: null, previewTarget: null, editorDirty: false })
       // The switch has committed on the main side as of this point — an
       // unsaved workspace-rules draft belongs to the workspace being left, so
       // discard it now rather than at the end of this chain. Doing it here
@@ -2050,8 +2080,38 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     return { ok: true }
   },
 
-  setPreviewTarget: (target) => {
-    set({ previewTarget: target })
+  setPreviewTarget: async (target) => {
+    const current = get().previewTarget
+    // Same code file re-selected: FilePreview's load effect keys on `path`, so
+    // it won't re-run and the edit buffer survives — nothing to confirm, and
+    // the dirty flag must stand.
+    const sameCodeFile =
+      target?.kind === 'code' && current?.kind === 'code' && target.path === current.path
+    if (sameCodeFile) {
+      set({ previewTarget: target })
+      return true
+    }
+    if (!(await get().confirmDiscardEditorChanges())) return false
+    // The dirty flag falls with the buffer it described: the component reloads
+    // (or unmounts) from the new target and re-syncs from a clean slate.
+    set({ previewTarget: target, editorDirty: false })
+    return true
+  },
+
+  setEditorDirty: (dirty) => {
+    if (get().editorDirty !== dirty) set({ editorDirty: dirty })
+  },
+
+  confirmDiscardEditorChanges: async () => {
+    if (!get().editorDirty) return true
+    const name = get().previewTarget?.name
+    return get().requestConfirm({
+      title: 'Unsaved changes',
+      message: name ? `Discard unsaved changes to ${name}?` : 'Discard unsaved changes?',
+      confirmLabel: 'Discard changes',
+      cancelLabel: 'Keep editing',
+      danger: true,
+    })
   },
 
   toggleFileSearch: () => {

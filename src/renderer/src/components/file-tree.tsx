@@ -1,5 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useAppStore } from '../store'
+import { createDebouncedBuffer } from '../utils/debounced-buffer'
+import { createStaleGuard } from '../utils/stale-guard'
 import type { FileTreeNode, GitFileStatus, FileSearchResult } from '../../../shared/ipc-contracts'
 import { CodeEditor } from './code-editor'
 import { MarkdownRenderer } from './markdown-renderer'
@@ -52,8 +54,13 @@ export function FileTree(): React.JSX.Element {
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [pathExists, setPathExists] = useState(true)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
+  const workspaceId = activeWorkspace?.id ?? null
+  // Overlapping loads resolve out of order (a slow pre-switch tree scan can
+  // land after a fast post-switch one); only the latest may commit state.
+  const loadGuard = useMemo(() => createStaleGuard(), [])
 
   const loadTree = useCallback(async (showLoading: boolean) => {
+    const isCurrent = loadGuard.begin()
     if (showLoading) setLoading(true)
     try {
       const [treeData, status, branch] = await Promise.all([
@@ -61,6 +68,7 @@ export function FileTree(): React.JSX.Element {
         window.piDesktop.files.getGitStatus(),
         window.piDesktop.files.getGitBranch(),
       ])
+      if (!isCurrent()) return
       setTree(treeData)
       setGitStatus(status)
       setGitBranch(branch)
@@ -68,18 +76,30 @@ export function FileTree(): React.JSX.Element {
     } catch {
       // The tree couldn't load — usually the workspace folder is missing or
       // unreadable. Record whether it exists so the UI can say which.
-      setTree(null)
+      let exists: boolean
       try {
-        setPathExists(await window.piDesktop.workspace.pathExists())
+        exists = await window.piDesktop.workspace.pathExists()
       } catch {
-        setPathExists(true)
+        exists = true
       }
+      if (!isCurrent()) return
+      setTree(null)
+      setPathExists(exists)
     } finally {
+      // Unconditional: gating this on isCurrent() would leave the spinner
+      // stuck forever when a background refresh supersedes a visible load —
+      // the stale load skips the clear and the background one never does it.
       if (showLoading) setLoading(false)
     }
-  }, [])
+  }, [loadGuard])
 
+  // Keyed on the workspace id: switching workspaces must reload immediately —
+  // main only watches the active workspace and attaches its watcher with
+  // ignoreInitial, so no file-change event announces the switch, and the 15s
+  // safety poll is far too slow to be the primary refresh.
   useEffect(() => {
+    // The highlight belongs to the previous workspace's tree.
+    setSelectedFile(null)
     void loadTree(true)
 
     // Primary path: refresh the instant the main process reports a disk change
@@ -104,18 +124,20 @@ export function FileTree(): React.JSX.Element {
       window.clearInterval(interval)
       window.removeEventListener('focus', handleFocus)
     }
-  }, [loadTree])
+  }, [loadTree, workspaceId])
 
-  const handleFileClick = useCallback((path: string, relativePath: string) => {
-    setSelectedFile(relativePath)
-    // Store the selected file for preview (images route to the image viewer).
+  const handleFileClick = useCallback(async (path: string, relativePath: string) => {
+    // Open the preview first (images route to the image viewer); a dirty
+    // editor may decline the change, and the highlight must only follow what
+    // is actually on screen.
     const name = relativePath.split(/[\\/]/).pop() ?? relativePath
-    useAppStore.getState().setPreviewTarget({
+    const ok = await useAppStore.getState().setPreviewTarget({
       kind: isImagePath(name) ? 'image' : 'code',
       name,
       path,
       relativePath,
     })
+    if (ok) setSelectedFile(relativePath)
   }, [])
 
   if (loading) {
@@ -190,7 +212,7 @@ function TreeNodeComponent({
   node: FileTreeNode
   gitStatus: Record<string, GitFileStatus>
   selectedFile: string | null
-  onFileClick: (path: string, relativePath: string) => void
+  onFileClick: (path: string, relativePath: string) => Promise<void>
   depth: number
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState(depth < 1)
@@ -229,7 +251,7 @@ function TreeNodeComponent({
 
   return (
     <button
-      onClick={() => onFileClick(node.path, node.relativePath)}
+      onClick={() => void onFileClick(node.path, node.relativePath)}
       className={clsx(
         'flex w-full items-center gap-1.5 py-0.5 px-2 text-sm transition-colors',
         isSelected
@@ -299,6 +321,9 @@ export function FileSearch({ isOpen, onClose }: FileSearchProps): React.JSX.Elem
     if (!isOpen) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // A confirm dialog stacked on top (dirty-editor discard) owns Escape;
+        // swallowing it here would close the palette and leave the dialog.
+        if (useAppStore.getState().confirmRequest) return
         e.preventDefault()
         e.stopPropagation()
         onClose()
@@ -331,14 +356,17 @@ export function FileSearch({ isOpen, onClose }: FileSearchProps): React.JSX.Elem
     return () => clearTimeout(timer)
   }, [query, contentMode])
 
-  const handleSelect = (result: FileSearchResult) => {
-    useAppStore.getState().setPreviewTarget({
+  const handleSelect = async (result: FileSearchResult) => {
+    const ok = await useAppStore.getState().setPreviewTarget({
       kind: isImagePath(result.name) ? 'image' : 'code',
       name: result.name,
       path: result.path,
       relativePath: result.relativePath,
     })
-    onClose()
+    // A declined dirty-editor discard keeps the palette open for a re-pick.
+    // onClose is a toggle: only fire it while the palette is still open, or a
+    // palette the user closed during the confirm would pop back up.
+    if (ok && useAppStore.getState().fileSearchOpen) onClose()
   }
 
   if (!isOpen) return null
@@ -391,7 +419,7 @@ export function FileSearch({ isOpen, onClose }: FileSearchProps): React.JSX.Elem
               {results.map((result, i) => (
                 <button
                   key={`${result.path}-${i}`}
-                  onClick={() => handleSelect(result)}
+                  onClick={() => void handleSelect(result)}
                   className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-surface-hover transition-colors"
                 >
                   <FileText size={14} className="shrink-0 text-dim" />
@@ -423,6 +451,11 @@ export function FileSearch({ isOpen, onClose }: FileSearchProps): React.JSX.Elem
 
 // ─── File Preview ────────────────────────────────────────────────────────────
 
+// Quiet period after the last keystroke before the editor text commits to
+// state (smoothing markdown/HTML preview re-renders). Save, revert, and file
+// switches flush or discard the buffer instead of racing this timer.
+const EDITOR_INPUT_DEBOUNCE_MS = 150
+
 export function FilePreview(): React.JSX.Element | null {
   const target = useAppStore((state) => state.previewTarget)
   const file = target?.kind === 'code' ? target : null
@@ -437,7 +470,8 @@ export function FilePreview(): React.JSX.Element | null {
   const [reloadKey, setReloadKey] = useState(0)
   // null until resolved; false means the HTML preview runs without scripts.
   const [workspaceTrusted, setWorkspaceTrusted] = useState<boolean | null>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const editBuffer = useMemo(() => createDebouncedBuffer(EDITOR_INPUT_DEBOUNCE_MS, setContent), [])
+  const setEditorDirty = useAppStore((state) => state.setEditorDirty)
   const isDirty = content !== null && savedContent !== null && content !== savedContent
 
   const displayPath = file?.relativePath ?? file?.name ?? ''
@@ -449,12 +483,23 @@ export function FilePreview(): React.JSX.Element | null {
   const canPreview = isMarkdown || isHtml
   const path = file?.path ?? null
 
+  // Mirror the dirty flag into the store so actions that would destroy this
+  // buffer (new preview target, diff pane, workspace switch) can ask first;
+  // the cleanup keeps the flag honest when the pane unmounts.
   useEffect(() => {
-    if (!path || isPdf) {
-      setContent(null)
-      setSavedContent(null)
-      return
-    }
+    setEditorDirty(isDirty)
+    return () => setEditorDirty(false)
+  }, [isDirty, setEditorDirty])
+
+  useEffect(() => {
+    // Both the pending keystrokes and the committed text belong to the
+    // previous file. The buffer firing after this load would put the old
+    // file's text into the new one; the old content surviving into the error
+    // path would leave a live Save button writing it to the new file's path.
+    editBuffer.cancel()
+    setContent(null)
+    setSavedContent(null)
+    if (!path || isPdf) return
 
     let cancelled = false
 
@@ -481,7 +526,7 @@ export function FilePreview(): React.JSX.Element | null {
     return () => {
       cancelled = true
     }
-  }, [path, isPdf])
+  }, [path, isPdf, editBuffer])
 
   // Default to the rendered preview for markdown/HTML, source otherwise.
   useEffect(() => {
@@ -511,32 +556,37 @@ export function FilePreview(): React.JSX.Element | null {
     setReloadKey((k) => k + 1)
   }, [])
 
-  // Cleanup pending debounce on unmount
+  // Discard any pending keystrokes when the pane closes.
   useEffect(() => {
     return () => {
-      if (debounceRef.current !== null) clearTimeout(debounceRef.current)
+      editBuffer.cancel()
     }
-  }, [])
+  }, [editBuffer])
 
-  const handleChange = useCallback((value: string) => {
-    if (debounceRef.current !== null) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => {
-      setContent(value)
-      debounceRef.current = null
-    }, 150)
-  }, [])
+  const handleChange = useCallback(
+    (value: string) => {
+      editBuffer.push(value)
+      // The store flag must not lag the debounce window: a file switch inside
+      // it would otherwise discard these keystrokes without asking.
+      setEditorDirty(savedContent !== null && value !== savedContent)
+    },
+    [editBuffer, savedContent, setEditorDirty]
+  )
 
   if (!file || !path) return null
 
   const handleSave = async () => {
-    if (content === null) return
+    // Flush keystrokes still inside the debounce window so the newest text is
+    // written, not the state snapshot from before the timer fired.
+    const text = editBuffer.flush() ?? content
+    if (text === null) return
 
     setSaving(true)
     setError(null)
     setSaveSuccess(false)
     try {
-      await window.piDesktop.files.write(path, content)
-      setSavedContent(content)
+      await window.piDesktop.files.write(path, text)
+      setSavedContent(text)
       setSaveSuccess(true)
       setReloadKey((k) => k + 1)
       setTimeout(() => setSaveSuccess(false), 2000)
@@ -549,6 +599,8 @@ export function FilePreview(): React.JSX.Element | null {
 
   const handleRevert = () => {
     if (savedContent !== null) {
+      // Pending keystrokes are part of what is being reverted.
+      editBuffer.cancel()
       setContent(savedContent)
     }
   }
@@ -616,7 +668,7 @@ export function FilePreview(): React.JSX.Element | null {
             </>
           )}
           <button
-            onClick={() => useAppStore.getState().setPreviewTarget(null)}
+            onClick={() => void useAppStore.getState().setPreviewTarget(null)}
             className="rounded p-1 text-dim hover:text-secondary"
             title="Close editor"
           >

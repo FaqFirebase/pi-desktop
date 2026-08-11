@@ -60,7 +60,7 @@ export function ImageViewer(): React.JSX.Element | null {
           <span className="truncate text-xs text-secondary">{image.name}</span>
         </div>
         <button
-          onClick={() => useAppStore.getState().setPreviewTarget(null)}
+          onClick={() => void useAppStore.getState().setPreviewTarget(null)}
           className="rounded p-1 text-dim hover:text-secondary"
           title="Close image"
         >
