@@ -3,6 +3,7 @@ import { clsx } from 'clsx'
 import { Check, ChevronDown, FolderOpen, Layers } from 'lucide-react'
 import { useAppStore } from '../store'
 import type { Workspace } from '../../../shared/ipc-contracts'
+import { workspaceNameFromFolderPath } from '../../../shared/folder-drop'
 import { pathsEqual } from '../../../shared/path-compare'
 
 /**
@@ -103,8 +104,7 @@ export function ChatProjectPicker(): React.JSX.Element {
     try {
       let ws = useAppStore.getState().workspaces.find((w) => pathsEqual(w.path, path))
       if (!ws) {
-        const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path
-        await createWorkspace(name, path)
+        await createWorkspace(workspaceNameFromFolderPath(path), path)
         ws = useAppStore.getState().workspaces.find((w) => pathsEqual(w.path, path))
       }
       if (ws) await applySelection(ws.id)

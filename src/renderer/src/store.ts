@@ -6,6 +6,8 @@ import type { PiCommand } from '../../shared/pi-command'
 import { normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
 import { clampSidebarWidth } from '../../shared/sidebar-width'
+import { workspaceNameFromFolderPath } from '../../shared/folder-drop'
+import { pathsEqual } from '../../shared/path-compare'
 import { validateModelsConfig, mergeModelsConfig, type ModelsConfig } from '../../shared/models-config'
 import {
   resolveActiveMembers,
@@ -413,6 +415,12 @@ interface AppActions {
   // Workspaces
   loadWorkspaces: () => Promise<void>
   createWorkspace: (name: string, path: string) => Promise<void>
+  /**
+   * Open a folder as a workspace (create if needed, switch into it, show Chat).
+   * Used by File → Open Project and by drag-dropping a folder onto the window.
+   * Resolves false if the still-working confirm was declined or switch failed.
+   */
+  openFolderAsWorkspace: (folderPath: string) => Promise<boolean>
   /**
    * Resolves false when the user declined the still-working warning, or the switch failed.
    * skipSessionLoad: when opening a specific session next, skip resume+history —
@@ -1774,6 +1782,54 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         content: `Create workspace error: ${err instanceof Error ? err.message : String(err)}`,
         timestamp: Date.now(),
       })
+    }
+  },
+
+  openFolderAsWorkspace: async (folderPath) => {
+    const trimmed = folderPath.trim()
+    if (!trimmed) return false
+    try {
+      const kind = await window.piDesktop.system.pathKind(trimmed)
+      if (!kind.exists || !kind.isDirectory) {
+        get().addMessage({
+          id: generateId(),
+          role: 'system',
+          content: `Cannot open as project — not a folder: ${trimmed}`,
+          timestamp: Date.now(),
+        })
+        get().setCurrentView('chat')
+        return false
+      }
+      // Snapshot BEFORE create: main's createWorkspace activates an existing
+      // workspace for a duplicate path, which makes activeWorkspace look like
+      // the target after loadWorkspaces — even though we never ran
+      // switchWorkspace (messages/piStatus stay from the previous workspace).
+      const active = get().activeWorkspace
+      const wasAlreadyActive = active ? pathsEqual(active.path, trimmed) : false
+      const name = workspaceNameFromFolderPath(trimmed)
+      await get().createWorkspace(name, trimmed)
+      const ws = get().workspaces.find((w) => pathsEqual(w.path, trimmed))
+      if (!ws) return false
+      // Only skip switchWorkspace when this folder was already the active
+      // project before the drop (re-drop / re-open current). First workspace
+      // and cross-workspace opens go through switchWorkspace for message clear,
+      // status resync, still-working confirm, and session load.
+      if (wasAlreadyActive) {
+        get().setCurrentView('chat')
+        if (get().piStatus !== 'running') await get().startPi()
+        return true
+      }
+      const switched = await get().switchWorkspace(ws.id)
+      if (switched) get().setCurrentView('chat')
+      return switched
+    } catch (err) {
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: `Open folder error: ${err instanceof Error ? err.message : String(err)}`,
+        timestamp: Date.now(),
+      })
+      return false
     }
   },
 

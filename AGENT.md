@@ -47,6 +47,7 @@ src/
 │   ├── package-filter.ts         # Tokenized catalog search, shared main+renderer
 │   ├── package-spec.ts           # Validate package specs before the Pi CLI runs
 │   ├── path-compare.ts           # Platform-aware path equality (win32 case-fold); main+renderer
+│   ├── folder-drop.ts            # Pure helpers for drag-drop folder → workspace
 │   ├── untrusted-data.ts         # Wrap file/agent text as a labeled untrusted-data block
 │   ├── pi-command.ts             # Slash-command filtering
 │   ├── fork-point.ts             # Fork/branch message helpers
@@ -147,6 +148,7 @@ src/
 - Default workspace: user's home directory
 - Workspace switcher in sidebar
 - Auto-creates workspace when switching to a session from a different project
+- **Drag-and-drop a folder** onto the window to open it as a project (create workspace if needed, switch, show Chat) — same path as File → Open Project
 
 ### Session Management
 

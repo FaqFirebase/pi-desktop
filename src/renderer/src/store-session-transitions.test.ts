@@ -17,6 +17,7 @@ let setActiveFailure: string | null = null
 let pendingPromptsFailure: string | null = null
 let pendingPromptsSnapshot: Record<string, number> = {}
 let activeWorkspaceResult: Workspace | null = null
+let workspaceListResult: Workspace[] = []
 
 const SESSION_PATH = '/tmp/session-b.jsonl'
 const FORK_ENTRY_ID = 'entry-7'
@@ -60,22 +61,55 @@ const piDesktopStub = {
     setActive: async (id: string) => {
       if (setActiveFailure) throw new Error(setActiveFailure)
       calls.push(`setActiveWorkspace:${id}`)
-      return { id, name: 'other', path: '/tmp/other', createdAt: 0, lastActiveAt: 0, color: '#000' }
+      const hit = workspaceListResult.find((w) => w.id === id)
+      if (hit) activeWorkspaceResult = hit
+      return hit ?? { id, name: 'other', path: '/tmp/other', createdAt: 0, lastActiveAt: 0, color: '#000' }
     },
-    list: async () => [],
+    list: async () => workspaceListResult,
     getActive: async () => activeWorkspaceResult,
     create: async (name: string, path: string) => {
       calls.push(`createWorkspace:${name}:${path}`)
-      return activeWorkspaceResult ?? WORKSPACE_ONE
+      // Mirror main: existing path activates that workspace.
+      const existing = workspaceListResult.find((w) => w.path === path)
+      if (existing) {
+        activeWorkspaceResult = existing
+        return existing
+      }
+      // Tests that pre-set getActive for create→activate without a prior list.
+      if (activeWorkspaceResult && activeWorkspaceResult.path === path) {
+        return activeWorkspaceResult
+      }
+      const created = {
+        id: `ws-new-${name}`,
+        name,
+        path,
+        createdAt: 0,
+        lastActiveAt: 0,
+        color: '#000',
+      }
+      workspaceListResult = [...workspaceListResult, created]
+      // First workspace becomes active; otherwise leave active alone.
+      if (!activeWorkspaceResult) activeWorkspaceResult = created
+      return created
     },
     remove: async (id: string) => {
       calls.push(`removeWorkspace:${id}`)
+    },
+  },
+  system: {
+    pathKind: async (filePath: string) => {
+      calls.push(`pathKind:${filePath}`)
+      return { exists: true, isDirectory: true }
     },
   },
   pi: {
     getStatus: async () => {
       if (getStatusFailure) throw new Error(getStatusFailure)
       return { status: 'stopped' as const, pid: null, error: null }
+    },
+    start: async () => {
+      calls.push('pi.start')
+      return { status: 'running' as const, pid: 1, error: null }
     },
   },
   ui: {
@@ -186,6 +220,7 @@ beforeEach(() => {
   pendingPromptsFailure = null
   pendingPromptsSnapshot = {}
   activeWorkspaceResult = null
+  workspaceListResult = []
   useAppStore.setState({
     isStreaming: false,
     streamingContent: '',
@@ -201,6 +236,9 @@ beforeEach(() => {
     extensionNotify: null,
     pendingPromptCounts: {},
     activeWorkspace: null,
+    workspaces: [],
+    piStatus: 'stopped',
+    currentView: 'home',
   })
 })
 
@@ -542,6 +580,8 @@ test('a create that main turns into an activation adopts the new workspace', asy
 test('a create that leaves the active workspace alone touches neither slot nor prompts', async () => {
   useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, extensionUiRequest: EXTENSION_DIALOG })
   activeWorkspaceResult = WORKSPACE_ONE
+  // New path while one is already active — main does not switch away.
+  workspaceListResult = [WORKSPACE_ONE]
 
   await useAppStore.getState().createWorkspace(WORKSPACE_TWO.name, WORKSPACE_TWO.path)
 
@@ -551,6 +591,67 @@ test('a create that leaves the active workspace alone touches neither slot nor p
     false,
     'the workspace on screen did not change, so nothing needs replaying'
   )
+})
+
+// Regression: openFolderAsWorkspace must not treat "main activated the target on
+// create" as "we were already on that workspace". Skipping switchWorkspace leaves
+// the previous chat/messages and a stale piStatus that blocks starting the new Pi.
+test('openFolderAsWorkspace switches when the dropped folder is an existing other workspace', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    messages: [{ id: 'old', role: 'user', content: 'from workspace one', timestamp: 0 }],
+    piStatus: 'running',
+    currentView: 'home',
+  })
+
+  const ok = await useAppStore.getState().openFolderAsWorkspace(WORKSPACE_TWO.path)
+
+  assert.equal(ok, true)
+  assert.equal(
+    calls.includes(`setActiveWorkspace:${WORKSPACE_TWO.id}`),
+    true,
+    'must route through switchWorkspace so messages and Pi status resync'
+  )
+  assert.deepEqual(
+    useAppStore.getState().messages,
+    [],
+    'previous workspace chat must clear on switch'
+  )
+  assert.equal(useAppStore.getState().currentView, 'chat')
+  assert.equal(
+    useAppStore.getState().piStatus,
+    'running',
+    'switchWorkspace resyncs status then startPi can start the target manager'
+  )
+  // After create main already activated TWO; startPi still runs because status
+  // was resynced to stopped from getStatus before start.
+  assert.equal(calls.includes('pi.start'), true)
+})
+
+test('openFolderAsWorkspace skips switch when the dropped folder is already active', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_TWO
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_TWO,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    messages: [{ id: 'keep', role: 'user', content: 'already here', timestamp: 0 }],
+    piStatus: 'running',
+    currentView: 'home',
+  })
+
+  const ok = await useAppStore.getState().openFolderAsWorkspace(WORKSPACE_TWO.path)
+
+  assert.equal(ok, true)
+  assert.equal(
+    calls.some((c) => c.startsWith('setActiveWorkspace:')),
+    false,
+    're-dropping the current project must not tear down the session via switch'
+  )
+  assert.equal(useAppStore.getState().messages[0]?.id, 'keep')
+  assert.equal(useAppStore.getState().currentView, 'chat')
 })
 
 // ─── Boot/reload recovery ────────────────────────────────────────────────────
