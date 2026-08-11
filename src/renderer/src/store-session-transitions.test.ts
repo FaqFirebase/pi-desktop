@@ -1,6 +1,6 @@
 import { test, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import type { PiExtensionUiRequest, Workspace } from '../../shared/ipc-contracts'
+import type { PiExtensionUiRequest, SessionState, Workspace } from '../../shared/ipc-contracts'
 import type { PreviewTarget } from './store'
 
 // Each recorded call is appended to `calls`, so tests can assert both that a
@@ -28,6 +28,14 @@ let fileSearchResults: Array<{
   matchType: string
 }> = []
 let fileSearchHook: (() => void) | null = null
+// What the stubbed session.getState returns as data (null = no state).
+let sessionStateResult: SessionState | null = null
+
+// Only sessionFile is read by the code under test; the cast keeps this
+// fixture from churning as SessionState grows fields.
+function sessionStateWith(sessionFile: string): SessionState {
+  return { sessionFile } as unknown as SessionState
+}
 
 const SESSION_PATH = '/tmp/session-b.jsonl'
 const FORK_ENTRY_ID = 'entry-7'
@@ -180,7 +188,7 @@ const piDesktopStub = {
       calls.push('getMessages')
       return { success: true, data: { messages: [] } }
     },
-    getState: async () => ({ success: true, data: null }),
+    getState: async () => ({ success: true, data: sessionStateResult }),
     getStats: async () => ({ success: true, data: null }),
     list: async () => [],
   },
@@ -264,6 +272,7 @@ beforeEach(() => {
   workspaceListResult = []
   fileSearchResults = []
   fileSearchHook = null
+  sessionStateResult = null
   useAppStore.setState({
     isStreaming: false,
     streamingContent: '',
@@ -1130,6 +1139,65 @@ test('a chat file link closes a diff pane opened while its search was in flight'
     useAppStore.getState().chatSidePanel,
     null,
     'the diff pane must make way for the preview it would otherwise hide'
+  )
+})
+
+// ─── Cross-workspace session open (skipSessionLoad contract) ─────────────────
+// The sidebar/session-panel flow is: switchWorkspace({skipSessionLoad}) then
+// switchSession(target). The workspace switch clears the chat; the target is
+// very often the new workspace's remembered active session, so the fast path
+// must not eat the follow-up click.
+
+test('switchSession loads history even when sessionState already names the target', async () => {
+  // Post-workspace-switch state: chat cleared, sessionState already refreshed
+  // to the very session the user clicked.
+  useAppStore.setState({
+    sessionState: sessionStateWith(SESSION_PATH),
+    messages: [],
+    sessionLoading: false,
+  })
+
+  await useAppStore.getState().switchSession(SESSION_PATH)
+
+  assert.equal(
+    calls.includes(`switch:${SESSION_PATH}`),
+    true,
+    'an empty chat means nothing is on screen — the session must load'
+  )
+})
+
+test('switchSession still skips a reload when the session is already on screen', async () => {
+  useAppStore.setState({
+    sessionState: sessionStateWith(SESSION_PATH),
+    messages: [{ id: 'm1', role: 'user', content: 'hi', timestamp: 0 }],
+    sessionLoading: false,
+  })
+
+  await useAppStore.getState().switchSession(SESSION_PATH)
+
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), false)
+})
+
+test('the cross-workspace open flow loads the clicked session end to end', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+  })
+  // The target workspace's Pi resumes straight onto the very session the user
+  // clicked (startPi refreshes sessionState to it) — the arrangement whose
+  // refresh/fast-path race used to eat the click and leave an empty chat.
+  sessionStateResult = sessionStateWith(SESSION_PATH)
+
+  const ok = await useAppStore.getState().switchWorkspace(WORKSPACE_ID, { skipSessionLoad: true })
+  assert.equal(ok, true)
+  await useAppStore.getState().switchSession(SESSION_PATH)
+
+  assert.equal(
+    calls.includes(`switch:${SESSION_PATH}`),
+    true,
+    'the chat was cleared by the workspace switch, so the session must actually load'
   )
 })
 

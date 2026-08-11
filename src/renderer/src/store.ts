@@ -1059,8 +1059,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   switchSession: async (path) => {
-    // Already on this session — avoid a full history reload.
-    if (get().sessionState?.sessionFile === path && !get().sessionLoading) return
+    // Already on this session — avoid a full history reload. Only when its
+    // history is actually on screen: a skipSessionLoad workspace switch clears
+    // the chat while sessionState may already name this session, and skipping
+    // then would leave an empty chat and a dead session click.
+    if (
+      get().sessionState?.sessionFile === path &&
+      !get().sessionLoading &&
+      get().messages.length > 0
+    ) {
+      return
+    }
 
     // Gate first — must read isStreaming before clearMessages/idleTurnState.
     if (!(await get().confirmSessionChange('switch'))) return
@@ -1917,8 +1926,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         sessionLoadGeneration += 1
         await get().reloadActiveSession({ refreshList: false })
       } else if (get().piStatus === 'running') {
-        // Still refresh metadata so chrome (model/name) isn't stale.
-        void get().refreshSessionState()
+        // Stats only. Refreshing sessionState here races the follow-up
+        // switchSession this flow contracts for: when the refresh lands
+        // first, the fast path sees its target "already active" over the
+        // chat this switch just cleared — an empty screen and a dead click.
+        // That switchSession's reload refreshes state and stats anyway.
         void get().refreshSessionStats()
       }
       await get().maybeWarnWorkspacePermissionRules()
