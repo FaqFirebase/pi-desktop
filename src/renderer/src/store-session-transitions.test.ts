@@ -654,6 +654,59 @@ test('openFolderAsWorkspace skips switch when the dropped folder is already acti
   assert.equal(useAppStore.getState().currentView, 'chat')
 })
 
+// Regression: a dropped folder that is already a registered (but inactive)
+// workspace must activate through switchWorkspace's confirm gate only. Routing
+// it through createWorkspace lets main activate the duplicate path before the
+// "still working" dialog appears, so declining left main and the sidebar on the
+// new workspace while the chat pane still held the old one.
+test('declining the confirm while dropping an existing workspace leaves everything in place', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    currentView: 'home',
+  })
+  enterStreamingState()
+  answerConfirm(false)
+
+  const ok = await useAppStore.getState().openFolderAsWorkspace(WORKSPACE_TWO.path)
+
+  assert.equal(ok, false)
+  assert.equal(
+    calls.some((c) => c.startsWith('createWorkspace:')),
+    false,
+    'create activates a duplicate path on main before the confirm can run'
+  )
+  assert.equal(
+    calls.some((c) => c.startsWith('setActiveWorkspace:')),
+    false,
+    'a declined switch must leave the main-side active workspace untouched'
+  )
+  assert.equal(useAppStore.getState().activeWorkspace?.id, WORKSPACE_ONE.id)
+  assert.equal(
+    useAppStore.getState().messages[0]?.id,
+    'm1',
+    'the streaming chat must survive a declined switch'
+  )
+  assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+test('openFolderAsWorkspace preserves surrounding whitespace in the folder path', async () => {
+  // Legal POSIX folder name with a trailing space; trimming would probe a
+  // different, nonexistent path.
+  const SPACED_PATH = '/tmp/spaced '
+
+  const ok = await useAppStore.getState().openFolderAsWorkspace(SPACED_PATH)
+
+  assert.equal(ok, true)
+  assert.equal(
+    calls.includes(`pathKind:${SPACED_PATH}`),
+    true,
+    'the dropped path must reach main exactly as the OS reported it'
+  )
+})
+
 // ─── Boot/reload recovery ────────────────────────────────────────────────────
 
 test('recoverPendingPrompts applies the counts snapshot and flushes the active workspace', async () => {

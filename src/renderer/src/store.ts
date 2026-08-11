@@ -1786,38 +1786,41 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   openFolderAsWorkspace: async (folderPath) => {
-    const trimmed = folderPath.trim()
-    if (!trimmed) return false
+    // No trim: leading/trailing spaces are legal in POSIX folder names, and the
+    // path arrives verbatim from the OS (drop or dialog), never from typing.
+    if (!folderPath) return false
     try {
-      const kind = await window.piDesktop.system.pathKind(trimmed)
+      const kind = await window.piDesktop.system.pathKind(folderPath)
       if (!kind.exists || !kind.isDirectory) {
         get().addMessage({
           id: generateId(),
           role: 'system',
-          content: `Cannot open as project — not a folder: ${trimmed}`,
+          content: `Cannot open as project — not a folder: ${folderPath}`,
           timestamp: Date.now(),
         })
         get().setCurrentView('chat')
         return false
       }
-      // Snapshot BEFORE create: main's createWorkspace activates an existing
-      // workspace for a duplicate path, which makes activeWorkspace look like
-      // the target after loadWorkspaces — even though we never ran
-      // switchWorkspace (messages/piStatus stay from the previous workspace).
+      // Re-drop / re-open of the current project: nothing to switch, just make
+      // sure the chat is on screen and Pi is up.
       const active = get().activeWorkspace
-      const wasAlreadyActive = active ? pathsEqual(active.path, trimmed) : false
-      const name = workspaceNameFromFolderPath(trimmed)
-      await get().createWorkspace(name, trimmed)
-      const ws = get().workspaces.find((w) => pathsEqual(w.path, trimmed))
-      if (!ws) return false
-      // Only skip switchWorkspace when this folder was already the active
-      // project before the drop (re-drop / re-open current). First workspace
-      // and cross-workspace opens go through switchWorkspace for message clear,
-      // status resync, still-working confirm, and session load.
-      if (wasAlreadyActive) {
+      if (active && pathsEqual(active.path, folderPath)) {
         get().setCurrentView('chat')
         if (get().piStatus !== 'running') await get().startPi()
         return true
+      }
+      // An already-registered folder must NOT go through createWorkspace:
+      // main's create activates a duplicate path immediately, before
+      // switchWorkspace can raise the still-working confirm — declining it
+      // would then leave main and the chat pane on different workspaces.
+      // Only a genuinely new path gets created (main leaves the active
+      // workspace alone then, except for the very first workspace, where
+      // there is no prior state for the confirm to protect).
+      let ws = get().workspaces.find((w) => pathsEqual(w.path, folderPath))
+      if (!ws) {
+        await get().createWorkspace(workspaceNameFromFolderPath(folderPath), folderPath)
+        ws = get().workspaces.find((w) => pathsEqual(w.path, folderPath))
+        if (!ws) return false
       }
       const switched = await get().switchWorkspace(ws.id)
       if (switched) get().setCurrentView('chat')
