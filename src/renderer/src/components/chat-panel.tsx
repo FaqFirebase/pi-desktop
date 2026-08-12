@@ -176,13 +176,13 @@ export function ChatPanel(): React.JSX.Element {
               <ToolbarButton
                 icon={<FolderTree size={14} />}
                 active={sidePanel === 'files'}
-                onClick={() => setSidePanel(sidePanel === 'files' ? null : 'files')}
+                onClick={() => void setSidePanel(sidePanel === 'files' ? null : 'files')}
                 title="File tree"
               />
               <ToolbarButton
                 icon={<GitCompare size={14} />}
                 active={sidePanel === 'diff'}
-                onClick={() => setSidePanel(sidePanel === 'diff' ? null : 'diff')}
+                onClick={() => void setSidePanel(sidePanel === 'diff' ? null : 'diff')}
                 title="Diff viewer"
               />
               <ToolbarButton

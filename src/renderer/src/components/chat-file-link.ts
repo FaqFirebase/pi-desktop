@@ -98,13 +98,17 @@ export async function openFileFromChat(text: string): Promise<void> {
     if (isAbsolutePath(raw)) {
       // Only open absolute paths that live inside the active workspace.
       if (!isInsideWorkspace(raw)) return
-      if (store.chatSidePanel === 'diff') store.setChatSidePanel(null)
-      store.setPreviewTarget({
+      // Preview first: a dirty editor may decline, and the diff pane must only
+      // make way for a preview that is actually going to show. Re-read the
+      // state after the await — the pane may have opened during the confirm.
+      const ok = await store.setPreviewTarget({
         kind: image ? 'image' : 'code',
         name: base,
         path: original,
         relativePath: base,
       })
+      const after = useAppStore.getState()
+      if (ok && after.chatSidePanel === 'diff') void after.setChatSidePanel(null)
       return
     }
 
@@ -120,13 +124,16 @@ export async function openFileFromChat(text: string): Promise<void> {
 
     if (!match) return
 
-    if (store.chatSidePanel === 'diff') store.setChatSidePanel(null)
-    store.setPreviewTarget({
+    const ok = await store.setPreviewTarget({
       kind: image ? 'image' : 'code',
       name: match.name,
       path: match.path,
       relativePath: match.relativePath,
     })
+    // Re-read the state: the diff pane may have opened during the search or
+    // confirm awaits, and a stale snapshot would leave it hiding the preview.
+    const after = useAppStore.getState()
+    if (ok && after.chatSidePanel === 'diff') void after.setChatSidePanel(null)
   } catch {
     // File service unavailable or no active workspace — silently ignore.
   }

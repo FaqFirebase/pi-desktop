@@ -44,15 +44,8 @@ export function useMenuActions(): void {
           setCurrentView('settings') // Open settings where workspace creation lives
           break
         case 'menu:open-project': {
-          // Open dialog to select project folder
-          window.piDesktop.system.openDialog({ title: 'Open Project' }).then((path) => {
-            if (path) {
-              const name = path.split('/').pop() ?? path
-              useAppStore.getState().createWorkspace(name, path).then(() => {
-                const ws = useAppStore.getState().workspaces.find((w) => w.path === path)
-                if (ws) useAppStore.getState().switchWorkspace(ws.id)
-              })
-            }
+          void window.piDesktop.system.openDialog({ title: 'Open Project' }).then((path) => {
+            if (path) void useAppStore.getState().openFolderAsWorkspace(path)
           })
           break
         }

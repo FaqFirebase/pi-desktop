@@ -6,6 +6,8 @@ import type { PiCommand } from '../../shared/pi-command'
 import { normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
 import { clampSidebarWidth } from '../../shared/sidebar-width'
+import { workspaceNameFromFolderPath } from '../../shared/folder-drop'
+import { pathsEqual } from '../../shared/path-compare'
 import { validateModelsConfig, mergeModelsConfig, type ModelsConfig } from '../../shared/models-config'
 import {
   resolveActiveMembers,
@@ -102,7 +104,7 @@ export interface ConfirmRequest extends ConfirmOptions {
 }
 
 /** The actions that abandon the live turn, either by replacing the session or by leaving it. */
-export type SessionChangeAction = 'switch' | 'new' | 'fork' | 'clone' | 'workspace'
+export type SessionChangeAction = 'switch' | 'new' | 'fork' | 'clone' | 'workspace' | 'changeFolder'
 
 const discardWarning = (verb: string): string =>
   `Pi has not finished responding in this session. ${verb} stops it: whatever Pi already wrote ` +
@@ -125,6 +127,12 @@ const SESSION_CHANGE_PROMPTS: Record<SessionChangeAction, { message: string; con
       'the response is saved to the session and restored when you come back, and any ' +
       'prompt Pi raises while you are away is held and shown on your return.',
     confirmLabel: 'Switch anyway',
+  },
+  // Unlike a workspace switch, this restarts the workspace's Pi (its working
+  // directory is bound at spawn), so the turn does not survive in the background.
+  changeFolder: {
+    message: discardWarning('Changing the project folder restarts Pi, which'),
+    confirmLabel: 'Change anyway',
   },
 }
 
@@ -292,6 +300,11 @@ interface AppState {
   // workspace); `relativePath` drives the code editor's language + header.
   previewTarget: PreviewTarget | null
 
+  // Mirror of the editor pane's unsaved-changes state. The buffer itself is
+  // component-local; this flag is what lets store actions that would destroy
+  // it (new preview target, diff pane, workspace switch) ask first.
+  editorDirty: boolean
+
   // File search
   fileSearchOpen: boolean
 
@@ -374,7 +387,8 @@ interface AppActions {
   // UI
   setCurrentView: (view: AppState['currentView']) => void
   requestChatScrollToBottom: () => void
-  setChatSidePanel: (panel: AppState['chatSidePanel']) => void
+  // Resolves false when a dirty-editor discard was declined (diff pane only).
+  setChatSidePanel: (panel: AppState['chatSidePanel']) => Promise<boolean>
   toggleSidebar: () => void
   toggleTerminal: () => void
   toggleReview: () => void
@@ -414,6 +428,12 @@ interface AppActions {
   loadWorkspaces: () => Promise<void>
   createWorkspace: (name: string, path: string) => Promise<void>
   /**
+   * Open a folder as a workspace (create if needed, switch into it, show Chat).
+   * Used by File → Open Project and by drag-dropping a folder onto the window.
+   * Resolves false if the still-working confirm was declined or switch failed.
+   */
+  openFolderAsWorkspace: (folderPath: string) => Promise<boolean>
+  /**
    * Resolves false when the user declined the still-working warning, or the switch failed.
    * skipSessionLoad: when opening a specific session next, skip resume+history —
    * switchSession will load the target once.
@@ -444,8 +464,12 @@ interface AppActions {
   loadCustomModels: () => Promise<void>
   saveCustomModels: (edited: ModelsConfig) => Promise<{ ok: boolean; errors?: string[] }>
 
-  // File preview
-  setPreviewTarget: (target: PreviewTarget | null) => void
+  // File preview. Resolves false when a dirty-editor discard was declined and
+  // the target was left unchanged.
+  setPreviewTarget: (target: PreviewTarget | null) => Promise<boolean>
+  setEditorDirty: (dirty: boolean) => void
+  // True when the caller may proceed to destroy the editor's unsaved buffer.
+  confirmDiscardEditorChanges: () => Promise<boolean>
 
   // File search
   toggleFileSearch: () => void
@@ -530,7 +554,10 @@ function adoptMainSideActivation(
 ): void {
   const active = get().activeWorkspace
   if (!active || active.id === previousActiveId) return
-  set({ extensionUiRequest: null })
+  // The preview closes for the same reason switchWorkspace closes it: its
+  // file belongs to a workspace that is no longer active, and the new
+  // workspace's file service refuses paths outside its root.
+  set({ extensionUiRequest: null, previewTarget: null, editorDirty: false })
   void window.piDesktop.ui.flushPendingPrompts(active.id)
 }
 
@@ -685,6 +712,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   councilRun: null,
 
   previewTarget: null,
+  editorDirty: false,
 
   fileSearchOpen: false,
 
@@ -1037,8 +1065,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   switchSession: async (path) => {
-    // Already on this session — avoid a full history reload.
-    if (get().sessionState?.sessionFile === path && !get().sessionLoading) return
+    // Already on this session — avoid a full history reload. Only when its
+    // history is actually on screen: a skipSessionLoad workspace switch clears
+    // the chat while sessionState may already name this session, and skipping
+    // then would leave an empty chat and a dead session click.
+    if (
+      get().sessionState?.sessionFile === path &&
+      !get().sessionLoading &&
+      get().messages.length > 0
+    ) {
+      return
+    }
 
     // Gate first — must read isStreaming before clearMessages/idleTurnState.
     if (!(await get().confirmSessionChange('switch'))) return
@@ -1354,7 +1391,18 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   setCurrentView: (view) => set({ currentView: view }),
   requestChatScrollToBottom: () =>
     set((state) => ({ chatScrollBottomNonce: state.chatScrollBottomNonce + 1 })),
-  setChatSidePanel: (panel) => set({ chatSidePanel: panel }),
+  setChatSidePanel: async (panel) => {
+    // Only opening the diff destroys the editor buffer: chat-panel renders the
+    // editor pane only while the side panel is not 'diff', so this unmounts a
+    // dirty FilePreview. Every other panel leaves the editor mounted.
+    if (panel === 'diff') {
+      if (!(await get().confirmDiscardEditorChanges())) return false
+      set({ chatSidePanel: panel, editorDirty: false })
+      return true
+    }
+    set({ chatSidePanel: panel })
+    return true
+  },
 
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
 
@@ -1450,16 +1498,28 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         handleMessageUpdate(event as PiMessageUpdateEvent, set)
         break
 
-      case 'message_end':
-        handleTurnComplete(set, (event as { message?: Record<string, unknown> }).message)
+      case 'message_end': {
+        const endedMessage = (event as { message?: Record<string, unknown> }).message
+        handleTurnComplete(set, endedMessage)
+        // turn_end re-delivers the same message, so errors surface only here.
+        const turnError = turnErrorText(endedMessage)
+        if (turnError) {
+          get().addMessage({
+            id: generateId(),
+            role: 'system',
+            content: `Error: ${turnError}`,
+            timestamp: Date.now(),
+          })
+        }
         get().addTimelineEvent({
           id: generateId(),
           type: 'assistant_message',
           timestamp: Date.now(),
-          title: 'Assistant response complete',
-          status: 'success',
+          title: turnError ? 'Assistant response failed' : 'Assistant response complete',
+          status: turnError ? 'error' : 'success',
         })
         break
+      }
 
       case 'turn_end':
         handleTurnComplete(set, (event as { message?: Record<string, unknown> }).message)
@@ -1750,6 +1810,18 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   createWorkspace: async (name, path) => {
+    // Main activates an existing workspace on a duplicate path — inside the
+    // create call, with none of the switch teardown. Route the duplicate
+    // through switchWorkspace instead, so every caller gets the still-working
+    // confirm, the dirty-editor ask, the chat clear, and the status resync;
+    // the already-active duplicate needs nothing at all.
+    const duplicate = get().workspaces.find((w) => pathsEqual(w.path, path))
+    if (duplicate) {
+      if (duplicate.id !== get().activeWorkspace?.id) {
+        await get().switchWorkspace(duplicate.id)
+      }
+      return
+    }
     const previousActiveId = get().activeWorkspace?.id ?? null
     try {
       await window.piDesktop.workspace.create(name, path)
@@ -1765,6 +1837,57 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
+  openFolderAsWorkspace: async (folderPath) => {
+    // No trim: leading/trailing spaces are legal in POSIX folder names, and the
+    // path arrives verbatim from the OS (drop or dialog), never from typing.
+    if (!folderPath) return false
+    try {
+      const kind = await window.piDesktop.system.pathKind(folderPath)
+      if (!kind.exists || !kind.isDirectory) {
+        get().addMessage({
+          id: generateId(),
+          role: 'system',
+          content: `Cannot open as project — not a folder: ${folderPath}`,
+          timestamp: Date.now(),
+        })
+        get().setCurrentView('chat')
+        return false
+      }
+      // Re-drop / re-open of the current project: nothing to switch, just make
+      // sure the chat is on screen and Pi is up.
+      const active = get().activeWorkspace
+      if (active && pathsEqual(active.path, folderPath)) {
+        get().setCurrentView('chat')
+        if (get().piStatus !== 'running') await get().startPi()
+        return true
+      }
+      // An already-registered folder must NOT go through createWorkspace:
+      // main's create activates a duplicate path immediately, before
+      // switchWorkspace can raise the still-working confirm — declining it
+      // would then leave main and the chat pane on different workspaces.
+      // Only a genuinely new path gets created (main leaves the active
+      // workspace alone then, except for the very first workspace, where
+      // there is no prior state for the confirm to protect).
+      let ws = get().workspaces.find((w) => pathsEqual(w.path, folderPath))
+      if (!ws) {
+        await get().createWorkspace(workspaceNameFromFolderPath(folderPath), folderPath)
+        ws = get().workspaces.find((w) => pathsEqual(w.path, folderPath))
+        if (!ws) return false
+      }
+      const switched = await get().switchWorkspace(ws.id)
+      if (switched) get().setCurrentView('chat')
+      return switched
+    } catch (err) {
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: `Open folder error: ${err instanceof Error ? err.message : String(err)}`,
+        timestamp: Date.now(),
+      })
+      return false
+    }
+  },
+
   switchWorkspace: async (workspaceId, options) => {
     const skipSessionLoad = options?.skipSessionLoad === true
     // Whether setActive committed on the main side. Gates the finally-flush:
@@ -1777,14 +1900,19 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // Without this the cross-workspace path in the sidebar and session panel
       // (switch workspace, then switch session) skipped the warning entirely.
       if (!(await get().confirmSessionChange('workspace'))) return false
+      // The editor buffer belongs to the workspace being left, and the new
+      // workspace's file service refuses paths outside its root — unsaved
+      // edits would be stranded unsaveable. Ask before committing the switch.
+      if (!(await get().confirmDiscardEditorChanges())) return false
       await window.piDesktop.workspace.setActive(workspaceId)
       switchCommitted = true
       // The dialog on screen belongs to the workspace being left. Clear it
       // WITHOUT answering: main retains the request and re-broadcasts it on
       // switch-back, while a synthesized deny would hard-block the asking
       // tool. Must happen only after setActive succeeds — on a failed switch
-      // the dialog still belongs on screen.
-      set({ extensionUiRequest: null })
+      // the dialog still belongs on screen. The preview closes for the same
+      // reason: its file lives in the old workspace.
+      set({ extensionUiRequest: null, previewTarget: null, editorDirty: false })
       // The switch has committed on the main side as of this point — an
       // unsaved workspace-rules draft belongs to the workspace being left, so
       // discard it now rather than at the end of this chain. Doing it here
@@ -1809,8 +1937,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         sessionLoadGeneration += 1
         await get().reloadActiveSession({ refreshList: false })
       } else if (get().piStatus === 'running') {
-        // Still refresh metadata so chrome (model/name) isn't stale.
-        void get().refreshSessionState()
+        // Stats only. Refreshing sessionState here races the follow-up
+        // switchSession this flow contracts for: when the refresh lands
+        // first, the fast path sees its target "already active" over the
+        // chat this switch just cleared — an empty screen and a dead click.
+        // That switchSession's reload refreshes state and stats anyway.
         void get().refreshSessionStats()
       }
       await get().maybeWarnWorkspacePermissionRules()
@@ -1835,6 +1966,20 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   removeWorkspace: async (workspaceId) => {
+    const workspace = get().workspaces.find((w) => w.id === workspaceId)
+    const confirmed = await get().requestConfirm({
+      title: 'Remove workspace',
+      message: `Remove "${workspace?.name ?? workspaceId}" from the sidebar? Its Pi process stops; files on disk are not touched.`,
+      confirmLabel: 'Remove',
+      cancelLabel: 'Cancel',
+      danger: true,
+    })
+    if (!confirmed) return
+    // Removing the active workspace closes its preview via the adoption
+    // below — a dirty editor gets the same ask a workspace switch gives it.
+    if (workspaceId === get().activeWorkspace?.id) {
+      if (!(await get().confirmDiscardEditorChanges())) return
+    }
     const previousActiveId = get().activeWorkspace?.id ?? null
     try {
       await window.piDesktop.workspace.remove(workspaceId)
@@ -1861,9 +2006,22 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   changeWorkspaceFolder: async (workspaceId, newPath) => {
+    // Repointing the active workspace restarts its Pi below (the working
+    // directory is bound at spawn — without a restart Pi keeps operating in
+    // the old folder while the UI shows the new one) and strands the open
+    // preview (the file service refuses paths outside the new root). Ask
+    // about the in-flight turn and the editor buffer before touching anything.
+    const isActive = workspaceId === get().activeWorkspace?.id
+    if (isActive && !(await get().confirmSessionChange('changeFolder'))) return
+    if (isActive && !(await get().confirmDiscardEditorChanges())) return
+    const restartNeeded = isActive && get().piStatus === 'running'
     try {
       await window.piDesktop.workspace.changePath(workspaceId, newPath)
       await get().loadWorkspaces()
+      if (isActive) set({ previewTarget: null, editorDirty: false })
+      // Main stopped this workspace's Pi with the repoint; bring the active
+      // one back up in the new folder.
+      if (restartNeeded) await get().restartPi()
     } catch (err) {
       get().addMessage({
         id: generateId(),
@@ -1979,8 +2137,38 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     return { ok: true }
   },
 
-  setPreviewTarget: (target) => {
-    set({ previewTarget: target })
+  setPreviewTarget: async (target) => {
+    const current = get().previewTarget
+    // Same code file re-selected: FilePreview's load effect keys on `path`, so
+    // it won't re-run and the edit buffer survives — nothing to confirm, and
+    // the dirty flag must stand.
+    const sameCodeFile =
+      target?.kind === 'code' && current?.kind === 'code' && target.path === current.path
+    if (sameCodeFile) {
+      set({ previewTarget: target })
+      return true
+    }
+    if (!(await get().confirmDiscardEditorChanges())) return false
+    // The dirty flag falls with the buffer it described: the component reloads
+    // (or unmounts) from the new target and re-syncs from a clean slate.
+    set({ previewTarget: target, editorDirty: false })
+    return true
+  },
+
+  setEditorDirty: (dirty) => {
+    if (get().editorDirty !== dirty) set({ editorDirty: dirty })
+  },
+
+  confirmDiscardEditorChanges: async () => {
+    if (!get().editorDirty) return true
+    const name = get().previewTarget?.name
+    return get().requestConfirm({
+      title: 'Unsaved changes',
+      message: name ? `Discard unsaved changes to ${name}?` : 'Discard unsaved changes?',
+      confirmLabel: 'Discard changes',
+      cancelLabel: 'Keep editing',
+      danger: true,
+    })
   },
 
   toggleFileSearch: () => {
@@ -2204,6 +2392,20 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 }))
 
+// Mirror editor-dirty transitions to main, which guards quit, window close,
+// and reload behind a discard confirmation — teardown outruns any
+// renderer-side ask, so the decision must be local to main. A subscription
+// (rather than a call inside setEditorDirty) catches every write path:
+// several actions clear the flag with a direct set() alongside other keys,
+// and a stale main-side cache would make quit nag after an in-app discard.
+useAppStore.subscribe((state, prev) => {
+  if (state.editorDirty === prev.editorDirty) return
+  window.piDesktop.ui.setEditorDirty(
+    state.editorDirty,
+    state.editorDirty ? (state.previewTarget?.name ?? null) : null
+  )
+})
+
 // ─── Event Handlers ──────────────────────────────────────────────────────────
 
 // Zustand set supports both object and callback forms
@@ -2291,6 +2493,27 @@ function handleMessageUpdate(
       break
     }
   }
+}
+
+// Pi reports a generic abort with exactly this text; anything else on an
+// aborted turn is a specific reason worth showing (mirrors Pi's own TUI).
+const GENERIC_ABORT_MESSAGE = 'Request was aborted'
+const UNKNOWN_TURN_ERROR = 'Unknown error'
+
+/**
+ * Error text to surface in chat for a finished assistant message, or null.
+ * A provider that rejects before streaming (e.g. HTTP 402) yields an
+ * assistant message with stopReason 'error', empty content, and the provider
+ * error in errorMessage — without this, the chat shows nothing at all.
+ */
+function turnErrorText(message?: Record<string, unknown>): string | null {
+  if (!message || message.role !== 'assistant') return null
+  const errorMessage = typeof message.errorMessage === 'string' ? message.errorMessage : ''
+  if (message.stopReason === 'error') return errorMessage || UNKNOWN_TURN_ERROR
+  if (message.stopReason === 'aborted' && errorMessage && errorMessage !== GENERIC_ABORT_MESSAGE) {
+    return errorMessage
+  }
+  return null
 }
 
 function handleTurnComplete(

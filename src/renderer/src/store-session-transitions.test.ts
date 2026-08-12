@@ -1,6 +1,7 @@
 import { test, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import type { PiExtensionUiRequest, Workspace } from '../../shared/ipc-contracts'
+import type { PiExtensionUiRequest, SessionState, Workspace } from '../../shared/ipc-contracts'
+import type { PreviewTarget } from './store'
 
 // Each recorded call is appended to `calls`, so tests can assert both that a
 // session change reached Pi and that nothing reached Pi when it was declined.
@@ -17,6 +18,24 @@ let setActiveFailure: string | null = null
 let pendingPromptsFailure: string | null = null
 let pendingPromptsSnapshot: Record<string, number> = {}
 let activeWorkspaceResult: Workspace | null = null
+let workspaceListResult: Workspace[] = []
+// Results the stubbed files.search returns; the hook runs while the "IPC" is
+// in flight so tests can interleave state changes with the await.
+let fileSearchResults: Array<{
+  name: string
+  path: string
+  relativePath: string
+  matchType: string
+}> = []
+let fileSearchHook: (() => void) | null = null
+// What the stubbed session.getState returns as data (null = no state).
+let sessionStateResult: SessionState | null = null
+
+// Only sessionFile is read by the code under test; the cast keeps this
+// fixture from churning as SessionState grows fields.
+function sessionStateWith(sessionFile: string): SessionState {
+  return { sessionFile } as unknown as SessionState
+}
 
 const SESSION_PATH = '/tmp/session-b.jsonl'
 const FORK_ENTRY_ID = 'entry-7'
@@ -60,22 +79,69 @@ const piDesktopStub = {
     setActive: async (id: string) => {
       if (setActiveFailure) throw new Error(setActiveFailure)
       calls.push(`setActiveWorkspace:${id}`)
-      return { id, name: 'other', path: '/tmp/other', createdAt: 0, lastActiveAt: 0, color: '#000' }
+      const hit = workspaceListResult.find((w) => w.id === id)
+      if (hit) activeWorkspaceResult = hit
+      return hit ?? { id, name: 'other', path: '/tmp/other', createdAt: 0, lastActiveAt: 0, color: '#000' }
     },
-    list: async () => [],
+    list: async () => workspaceListResult,
     getActive: async () => activeWorkspaceResult,
     create: async (name: string, path: string) => {
       calls.push(`createWorkspace:${name}:${path}`)
-      return activeWorkspaceResult ?? WORKSPACE_ONE
+      // Mirror main: existing path activates that workspace.
+      const existing = workspaceListResult.find((w) => w.path === path)
+      if (existing) {
+        activeWorkspaceResult = existing
+        return existing
+      }
+      // Tests that pre-set getActive for create→activate without a prior list.
+      if (activeWorkspaceResult && activeWorkspaceResult.path === path) {
+        return activeWorkspaceResult
+      }
+      const created = {
+        id: `ws-new-${name}`,
+        name,
+        path,
+        createdAt: 0,
+        lastActiveAt: 0,
+        color: '#000',
+      }
+      workspaceListResult = [...workspaceListResult, created]
+      // First workspace becomes active; otherwise leave active alone.
+      if (!activeWorkspaceResult) activeWorkspaceResult = created
+      return created
     },
     remove: async (id: string) => {
       calls.push(`removeWorkspace:${id}`)
+    },
+    changePath: async (id: string, path: string) => {
+      calls.push(`changePath:${id}:${path}`)
+    },
+  },
+  system: {
+    pathKind: async (filePath: string) => {
+      calls.push(`pathKind:${filePath}`)
+      return { exists: true, isDirectory: true }
+    },
+  },
+  files: {
+    search: async (query: string) => {
+      calls.push(`filesSearch:${query}`)
+      fileSearchHook?.()
+      return fileSearchResults
     },
   },
   pi: {
     getStatus: async () => {
       if (getStatusFailure) throw new Error(getStatusFailure)
       return { status: 'stopped' as const, pid: null, error: null }
+    },
+    start: async () => {
+      calls.push('pi.start')
+      return { status: 'running' as const, pid: 1, error: null }
+    },
+    restart: async () => {
+      calls.push('pi.restart')
+      return { status: 'running' as const, pid: 1, error: null }
     },
   },
   ui: {
@@ -97,6 +163,9 @@ const piDesktopStub = {
     getPendingPrompts: async () => {
       if (pendingPromptsFailure) throw new Error(pendingPromptsFailure)
       return pendingPromptsSnapshot
+    },
+    setEditorDirty: (dirty: boolean, fileName: string | null) => {
+      calls.push(`editorDirtyMirror:${dirty}:${fileName ?? ''}`)
     },
   },
   commands: {
@@ -126,7 +195,7 @@ const piDesktopStub = {
       calls.push('getMessages')
       return { success: true, data: { messages: [] } }
     },
-    getState: async () => ({ success: true, data: null }),
+    getState: async () => ({ success: true, data: sessionStateResult }),
     getStats: async () => ({ success: true, data: null }),
     list: async () => [],
   },
@@ -136,6 +205,7 @@ type AppStore = typeof import('./store')['useAppStore']
 let useAppStore: AppStore
 let countPromptsWaitingElsewhere: typeof import('./store')['countPromptsWaitingElsewhere']
 let formatPromptsWaiting: typeof import('./store')['formatPromptsWaiting']
+let openFileFromChat: typeof import('./components/chat-file-link')['openFileFromChat']
 let DIALOG_OVERLAY_Z_INDEX: number
 let NOTIFY_TOAST_Z_INDEX: number
 
@@ -144,6 +214,7 @@ let NOTIFY_TOAST_Z_INDEX: number
 before(async () => {
   ;(globalThis as unknown as { window: unknown }).window = { piDesktop: piDesktopStub }
   ;({ useAppStore, countPromptsWaitingElsewhere, formatPromptsWaiting } = await import('./store'))
+  ;({ openFileFromChat } = await import('./components/chat-file-link'))
   ;({ DIALOG_OVERLAY_Z_INDEX, NOTIFY_TOAST_Z_INDEX } = await import('./components/extension-ui-dialog'))
 })
 
@@ -164,28 +235,50 @@ function enterStreamingState(): void {
   })
 }
 
-// Answers the confirmation dialog the store raises while a turn is streaming.
-// Resolving synchronously on the next microtask keeps the action under test
-// awaiting a real promise, as it does against the rendered dialog.
-function answerConfirm(confirmed: boolean): void {
+// Answers confirmation dialogs the store raises, in order. Polling keeps the
+// action under test awaiting a real promise, as it does against the rendered
+// dialog; a single poller answers each dialog as it appears. Arming cancels
+// any previous poller — a stray from a test whose dialogs never appeared must
+// not answer a later test's dialog with the wrong value.
+let answerPoll: ReturnType<typeof setInterval> | null = null
+
+function answerConfirms(values: boolean[]): void {
+  if (answerPoll !== null) clearInterval(answerPoll)
+  let next = 0
   const poll = setInterval(() => {
-    if (useAppStore.getState().confirmRequest) {
+    if (next >= values.length) {
       clearInterval(poll)
-      useAppStore.getState().resolveConfirm(confirmed)
+      return
+    }
+    if (useAppStore.getState().confirmRequest) {
+      useAppStore.getState().resolveConfirm(values[next])
+      next++
     }
   }, 0)
-  // Never leave the timer running if the dialog is not raised at all.
+  answerPoll = poll
+  // Never leave the timer running if the dialogs are not raised at all.
   setTimeout(() => clearInterval(poll), 100)
 }
 
+function answerConfirm(confirmed: boolean): void {
+  answerConfirms([confirmed])
+}
+
 beforeEach(() => {
-  calls.length = 0
+  if (answerPoll !== null) {
+    clearInterval(answerPoll)
+    answerPoll = null
+  }
   switchResult = { success: true }
   getStatusFailure = null
   setActiveFailure = null
   pendingPromptsFailure = null
   pendingPromptsSnapshot = {}
   activeWorkspaceResult = null
+  workspaceListResult = []
+  fileSearchResults = []
+  fileSearchHook = null
+  sessionStateResult = null
   useAppStore.setState({
     isStreaming: false,
     streamingContent: '',
@@ -201,7 +294,17 @@ beforeEach(() => {
     extensionNotify: null,
     pendingPromptCounts: {},
     activeWorkspace: null,
+    workspaces: [],
+    piStatus: 'stopped',
+    currentView: 'home',
+    previewTarget: null,
+    chatSidePanel: null,
+    editorDirty: false,
   })
+  // AFTER the state reset: the editor-dirty mirror subscription fires on the
+  // reset itself when the previous test left the flag set, and that push
+  // belongs to cleanup, not to the test about to run.
+  calls.length = 0
 })
 
 test('clearMessages resets every per-turn streaming field', () => {
@@ -475,6 +578,7 @@ test('pending prompt counts land in state and sum over non-active workspaces', (
 test('removing the workspace flushes prompts only when a new one is promoted', async () => {
   useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, extensionUiRequest: EXTENSION_DIALOG })
   activeWorkspaceResult = WORKSPACE_TWO
+  answerConfirm(true)
 
   await useAppStore.getState().removeWorkspace(WORKSPACE_ONE.id)
 
@@ -496,6 +600,7 @@ test('removing the workspace flushes prompts only when a new one is promoted', a
 
   calls.length = 0
   useAppStore.setState({ activeWorkspace: activeWorkspaceResult, extensionUiRequest: EXTENSION_DIALOG })
+  answerConfirm(true)
   await useAppStore.getState().removeWorkspace('ws-9')
 
   assert.equal(
@@ -542,6 +647,8 @@ test('a create that main turns into an activation adopts the new workspace', asy
 test('a create that leaves the active workspace alone touches neither slot nor prompts', async () => {
   useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, extensionUiRequest: EXTENSION_DIALOG })
   activeWorkspaceResult = WORKSPACE_ONE
+  // New path while one is already active — main does not switch away.
+  workspaceListResult = [WORKSPACE_ONE]
 
   await useAppStore.getState().createWorkspace(WORKSPACE_TWO.name, WORKSPACE_TWO.path)
 
@@ -550,6 +657,680 @@ test('a create that leaves the active workspace alone touches neither slot nor p
     calls.some((c) => c.startsWith('flushPendingPrompts')),
     false,
     'the workspace on screen did not change, so nothing needs replaying'
+  )
+})
+
+// Regression: openFolderAsWorkspace must not treat "main activated the target on
+// create" as "we were already on that workspace". Skipping switchWorkspace leaves
+// the previous chat/messages and a stale piStatus that blocks starting the new Pi.
+test('openFolderAsWorkspace switches when the dropped folder is an existing other workspace', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    messages: [{ id: 'old', role: 'user', content: 'from workspace one', timestamp: 0 }],
+    piStatus: 'running',
+    currentView: 'home',
+  })
+
+  const ok = await useAppStore.getState().openFolderAsWorkspace(WORKSPACE_TWO.path)
+
+  assert.equal(ok, true)
+  assert.equal(
+    calls.includes(`setActiveWorkspace:${WORKSPACE_TWO.id}`),
+    true,
+    'must route through switchWorkspace so messages and Pi status resync'
+  )
+  assert.deepEqual(
+    useAppStore.getState().messages,
+    [],
+    'previous workspace chat must clear on switch'
+  )
+  assert.equal(useAppStore.getState().currentView, 'chat')
+  assert.equal(
+    useAppStore.getState().piStatus,
+    'running',
+    'switchWorkspace resyncs status then startPi can start the target manager'
+  )
+  // After create main already activated TWO; startPi still runs because status
+  // was resynced to stopped from getStatus before start.
+  assert.equal(calls.includes('pi.start'), true)
+})
+
+test('openFolderAsWorkspace skips switch when the dropped folder is already active', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_TWO
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_TWO,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    messages: [{ id: 'keep', role: 'user', content: 'already here', timestamp: 0 }],
+    piStatus: 'running',
+    currentView: 'home',
+  })
+
+  const ok = await useAppStore.getState().openFolderAsWorkspace(WORKSPACE_TWO.path)
+
+  assert.equal(ok, true)
+  assert.equal(
+    calls.some((c) => c.startsWith('setActiveWorkspace:')),
+    false,
+    're-dropping the current project must not tear down the session via switch'
+  )
+  assert.equal(useAppStore.getState().messages[0]?.id, 'keep')
+  assert.equal(useAppStore.getState().currentView, 'chat')
+})
+
+// Regression: a dropped folder that is already a registered (but inactive)
+// workspace must activate through switchWorkspace's confirm gate only. Routing
+// it through createWorkspace lets main activate the duplicate path before the
+// "still working" dialog appears, so declining left main and the sidebar on the
+// new workspace while the chat pane still held the old one.
+test('declining the confirm while dropping an existing workspace leaves everything in place', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    currentView: 'home',
+  })
+  enterStreamingState()
+  answerConfirm(false)
+
+  const ok = await useAppStore.getState().openFolderAsWorkspace(WORKSPACE_TWO.path)
+
+  assert.equal(ok, false)
+  assert.equal(
+    calls.some((c) => c.startsWith('createWorkspace:')),
+    false,
+    'create activates a duplicate path on main before the confirm can run'
+  )
+  assert.equal(
+    calls.some((c) => c.startsWith('setActiveWorkspace:')),
+    false,
+    'a declined switch must leave the main-side active workspace untouched'
+  )
+  assert.equal(useAppStore.getState().activeWorkspace?.id, WORKSPACE_ONE.id)
+  assert.equal(
+    useAppStore.getState().messages[0]?.id,
+    'm1',
+    'the streaming chat must survive a declined switch'
+  )
+  assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+test('openFolderAsWorkspace preserves surrounding whitespace in the folder path', async () => {
+  // Legal POSIX folder name with a trailing space; trimming would probe a
+  // different, nonexistent path.
+  const SPACED_PATH = '/tmp/spaced '
+
+  const ok = await useAppStore.getState().openFolderAsWorkspace(SPACED_PATH)
+
+  assert.equal(ok, true)
+  assert.equal(
+    calls.includes(`pathKind:${SPACED_PATH}`),
+    true,
+    'the dropped path must reach main exactly as the OS reported it'
+  )
+})
+
+// ─── Unsaved-editor guard ────────────────────────────────────────────────────
+// The editor's dirty flag is mirrored into the store so every path that would
+// silently destroy the edit buffer — showing another file, closing the editor,
+// opening the diff pane over it, switching workspace — asks first.
+
+const CODE_FILE: PreviewTarget = {
+  kind: 'code',
+  name: 'a.ts',
+  path: '/tmp/one/a.ts',
+  relativePath: 'a.ts',
+}
+
+const OTHER_FILE: PreviewTarget = {
+  kind: 'code',
+  name: 'b.ts',
+  path: '/tmp/one/b.ts',
+  relativePath: 'b.ts',
+}
+
+test('editorDirty transitions are mirrored to main for the quit guard', () => {
+  useAppStore.setState({ previewTarget: CODE_FILE })
+
+  useAppStore.getState().setEditorDirty(true)
+  useAppStore.getState().setEditorDirty(true)
+  useAppStore.getState().setEditorDirty(false)
+  // Direct set() writes (how switch/discard actions clear the flag) must
+  // mirror too — main's cache going stale would make quit nag forever.
+  useAppStore.setState({ editorDirty: true })
+  useAppStore.setState({ editorDirty: false })
+
+  assert.deepEqual(
+    calls.filter((c) => c.startsWith('editorDirtyMirror:')),
+    [
+      `editorDirtyMirror:true:${CODE_FILE.name}`,
+      'editorDirtyMirror:false:',
+      `editorDirtyMirror:true:${CODE_FILE.name}`,
+      'editorDirtyMirror:false:',
+    ],
+    'exactly one push per transition, with the file name while dirty'
+  )
+})
+
+test('setPreviewTarget applies immediately when the editor is clean', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE })
+
+  const ok = await useAppStore.getState().setPreviewTarget(OTHER_FILE)
+
+  assert.equal(ok, true)
+  assert.equal(useAppStore.getState().previewTarget?.path, OTHER_FILE.path)
+})
+
+test('a dirty editor asks before showing another file; declining keeps it', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true })
+  answerConfirm(false)
+
+  const ok = await useAppStore.getState().setPreviewTarget(OTHER_FILE)
+
+  assert.equal(ok, false)
+  assert.equal(
+    useAppStore.getState().previewTarget?.path,
+    CODE_FILE.path,
+    'declining must keep the dirty file on screen'
+  )
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('accepting the discard applies the new preview and clears the dirty flag', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true })
+  answerConfirm(true)
+
+  const ok = await useAppStore.getState().setPreviewTarget(OTHER_FILE)
+
+  assert.equal(ok, true)
+  assert.equal(useAppStore.getState().previewTarget?.path, OTHER_FILE.path)
+  assert.equal(useAppStore.getState().editorDirty, false)
+})
+
+test('re-selecting the same dirty file needs no confirmation and keeps the buffer', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true })
+
+  const ok = await useAppStore.getState().setPreviewTarget({ ...CODE_FILE })
+
+  assert.equal(ok, true)
+  assert.equal(
+    useAppStore.getState().editorDirty,
+    true,
+    'the edit buffer survives a same-file re-select, so the flag must too'
+  )
+})
+
+test('closing a dirty editor asks first; declining keeps it open', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true })
+  answerConfirm(false)
+
+  const ok = await useAppStore.getState().setPreviewTarget(null)
+
+  assert.equal(ok, false)
+  assert.equal(useAppStore.getState().previewTarget?.path, CODE_FILE.path)
+})
+
+test('opening the diff over a dirty editor asks first; declining keeps the panel', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true, chatSidePanel: null })
+  answerConfirm(false)
+
+  const ok = await useAppStore.getState().setChatSidePanel('diff')
+
+  assert.equal(ok, false)
+  assert.equal(useAppStore.getState().chatSidePanel, null)
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('accepting the diff-open discards the buffer', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true, chatSidePanel: null })
+  answerConfirm(true)
+
+  const ok = await useAppStore.getState().setChatSidePanel('diff')
+
+  assert.equal(ok, true)
+  assert.equal(useAppStore.getState().chatSidePanel, 'diff')
+  assert.equal(useAppStore.getState().editorDirty, false)
+})
+
+test('non-diff panel changes never ask — the editor pane stays mounted', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true, chatSidePanel: null })
+
+  const ok = await useAppStore.getState().setChatSidePanel('files')
+
+  assert.equal(ok, true)
+  assert.equal(useAppStore.getState().chatSidePanel, 'files')
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('switchWorkspace asks before discarding a dirty editor; declining aborts the switch', async () => {
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  answerConfirm(false)
+
+  const switched = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+
+  assert.equal(switched, false)
+  assert.equal(
+    calls.some((c) => c.startsWith('setActiveWorkspace:')),
+    false,
+    'a declined discard must abort the switch before setActive'
+  )
+  assert.equal(useAppStore.getState().previewTarget?.path, CODE_FILE.path)
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('accepting the editor discard lets the workspace switch proceed', async () => {
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  answerConfirm(true)
+
+  const switched = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+
+  assert.equal(switched, true)
+  assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_ID}`), true)
+  assert.equal(useAppStore.getState().editorDirty, false)
+})
+
+test('a committed workspace switch closes the preview', async () => {
+  // The open file belongs to the workspace being left; the new workspace's
+  // file service would refuse to touch it anyway.
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, previewTarget: CODE_FILE })
+
+  const switched = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+
+  assert.equal(switched, true)
+  assert.equal(useAppStore.getState().previewTarget, null)
+})
+
+test('a main-side activation adoption closes the preview too', async () => {
+  // Same rationale as the committed switch: after main promotes another
+  // workspace (duplicate-path create, active-workspace removal), the file on
+  // screen belongs to a workspace that is no longer active.
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  activeWorkspaceResult = WORKSPACE_TWO
+
+  await useAppStore.getState().createWorkspace(WORKSPACE_TWO.name, WORKSPACE_TWO.path)
+
+  assert.equal(useAppStore.getState().previewTarget, null)
+  assert.equal(useAppStore.getState().editorDirty, false)
+})
+
+test('a chat file link declined by the dirty editor changes nothing', async () => {
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  fileSearchResults = [
+    { name: 'b.ts', path: '/tmp/one/b.ts', relativePath: 'b.ts', matchType: 'name' },
+  ]
+  answerConfirm(false)
+
+  await openFileFromChat('b.ts')
+
+  assert.equal(useAppStore.getState().previewTarget?.path, CODE_FILE.path)
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('an accepted chat file link opens the file', async () => {
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  fileSearchResults = [
+    { name: 'b.ts', path: '/tmp/one/b.ts', relativePath: 'b.ts', matchType: 'name' },
+  ]
+  answerConfirm(true)
+
+  await openFileFromChat('b.ts')
+
+  assert.equal(useAppStore.getState().previewTarget?.path, '/tmp/one/b.ts')
+  assert.equal(useAppStore.getState().editorDirty, false)
+})
+
+test('removing a workspace asks first; declining leaves it registered', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+  })
+  answerConfirm(false)
+
+  await useAppStore.getState().removeWorkspace(WORKSPACE_TWO.id)
+
+  assert.equal(
+    calls.some((c) => c.startsWith('removeWorkspace:')),
+    false,
+    'a declined removal must never reach main'
+  )
+})
+
+test('removing the active workspace with a dirty editor asks about the edits too', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  // Yes to the removal, no to discarding the edits.
+  answerConfirms([true, false])
+
+  await useAppStore.getState().removeWorkspace(WORKSPACE_ONE.id)
+
+  assert.equal(
+    calls.some((c) => c.startsWith('removeWorkspace:')),
+    false,
+    'declining the discard must abort the removal'
+  )
+  assert.equal(useAppStore.getState().previewTarget?.path, CODE_FILE.path)
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('removing an inactive workspace never asks about the editor', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  // Only the removal dialog; an unexpected second dialog would hang the test.
+  answerConfirm(true)
+
+  await useAppStore.getState().removeWorkspace(WORKSPACE_TWO.id)
+
+  assert.equal(calls.includes(`removeWorkspace:${WORKSPACE_TWO.id}`), true)
+  assert.equal(useAppStore.getState().previewTarget?.path, CODE_FILE.path)
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('creating a duplicate-path workspace asks before activating over a dirty editor', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  answerConfirm(false)
+
+  await useAppStore.getState().createWorkspace(WORKSPACE_TWO.name, WORKSPACE_TWO.path)
+
+  assert.equal(
+    calls.some((c) => c.startsWith('createWorkspace:')),
+    false,
+    'main activates a duplicate path inside create, so the ask must come before the IPC'
+  )
+  assert.equal(useAppStore.getState().activeWorkspace?.id, WORKSPACE_ONE.id)
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('a duplicate-path create routes through the full workspace switch', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    messages: [{ id: 'old', role: 'user', content: 'from workspace one', timestamp: 0 }],
+  })
+
+  await useAppStore.getState().createWorkspace(WORKSPACE_TWO.name, WORKSPACE_TWO.path)
+
+  assert.equal(
+    calls.some((c) => c.startsWith('createWorkspace:')),
+    false,
+    'main would activate inside create, skipping the switch teardown'
+  )
+  assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_TWO.id}`), true)
+  assert.deepEqual(
+    useAppStore.getState().messages,
+    [],
+    'the previous workspace chat must clear like any other switch'
+  )
+})
+
+test('a duplicate-path create warns while Pi is streaming', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+  })
+  enterStreamingState()
+  answerConfirm(false)
+
+  await useAppStore.getState().createWorkspace(WORKSPACE_TWO.name, WORKSPACE_TWO.path)
+
+  assert.equal(calls.some((c) => c.startsWith('createWorkspace:')), false)
+  assert.equal(
+    calls.some((c) => c.startsWith('setActiveWorkspace:')),
+    false,
+    'declining the still-working warning must abort the activation'
+  )
+  assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+test('creating the already-active path is a no-op', async () => {
+  workspaceListResult = [WORKSPACE_ONE]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    messages: [{ id: 'keep', role: 'user', content: 'stay', timestamp: 0 }],
+  })
+
+  await useAppStore.getState().createWorkspace(WORKSPACE_ONE.name, WORKSPACE_ONE.path)
+
+  assert.equal(calls.length, 0, 'nothing to create and nothing to switch')
+  assert.equal(useAppStore.getState().messages[0]?.id, 'keep')
+})
+
+test('a new-path create leaves a dirty editor alone', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE]
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+
+  await useAppStore.getState().createWorkspace('fresh', '/tmp/fresh')
+
+  assert.equal(calls.includes('createWorkspace:fresh:/tmp/fresh'), true)
+  assert.equal(useAppStore.getState().previewTarget?.path, CODE_FILE.path)
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('changing the active workspace folder asks a dirty editor first', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  answerConfirm(false)
+
+  await useAppStore.getState().changeWorkspaceFolder(WORKSPACE_ONE.id, '/tmp/elsewhere')
+
+  assert.equal(
+    calls.some((c) => c.startsWith('changePath:')),
+    false,
+    'a declined discard must leave the folder unchanged'
+  )
+  assert.equal(useAppStore.getState().previewTarget?.path, CODE_FILE.path)
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('an accepted active-folder change closes the preview', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  answerConfirm(true)
+
+  await useAppStore.getState().changeWorkspaceFolder(WORKSPACE_ONE.id, '/tmp/elsewhere')
+
+  assert.equal(calls.includes(`changePath:${WORKSPACE_ONE.id}:/tmp/elsewhere`), true)
+  assert.equal(
+    useAppStore.getState().previewTarget,
+    null,
+    'the open file binds the old folder and is unsaveable under the new root'
+  )
+  assert.equal(useAppStore.getState().editorDirty, false)
+})
+
+test('changing the active folder warns while Pi is streaming', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE })
+  enterStreamingState()
+  answerConfirm(false)
+
+  await useAppStore.getState().changeWorkspaceFolder(WORKSPACE_ONE.id, '/tmp/elsewhere')
+
+  assert.equal(
+    calls.some((c) => c.startsWith('changePath:')),
+    false,
+    'the restart below would kill the in-flight turn, so declining must abort'
+  )
+  assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+test('an accepted active-folder change restarts a running Pi', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, piStatus: 'running' })
+
+  await useAppStore.getState().changeWorkspaceFolder(WORKSPACE_ONE.id, '/tmp/elsewhere')
+
+  assert.equal(calls.includes(`changePath:${WORKSPACE_ONE.id}:/tmp/elsewhere`), true)
+  assert.equal(
+    calls.includes('pi.restart'),
+    true,
+    "Pi's cwd is bound at spawn — without a restart it keeps working in the old folder"
+  )
+})
+
+test('a stopped Pi is not restarted by a folder change', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, piStatus: 'stopped' })
+
+  await useAppStore.getState().changeWorkspaceFolder(WORKSPACE_ONE.id, '/tmp/elsewhere')
+
+  assert.equal(calls.includes(`changePath:${WORKSPACE_ONE.id}:/tmp/elsewhere`), true)
+  assert.equal(calls.includes('pi.restart'), false)
+})
+
+test('changing an inactive workspace folder touches neither dialog nor preview', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+
+  await useAppStore.getState().changeWorkspaceFolder(WORKSPACE_TWO.id, '/tmp/elsewhere')
+
+  assert.equal(calls.includes(`changePath:${WORKSPACE_TWO.id}:/tmp/elsewhere`), true)
+  assert.equal(useAppStore.getState().previewTarget?.path, CODE_FILE.path)
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('a chat file link closes a diff pane opened while its search was in flight', async () => {
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, chatSidePanel: null })
+  fileSearchResults = [
+    { name: 'b.ts', path: '/tmp/one/b.ts', relativePath: 'b.ts', matchType: 'name' },
+  ]
+  // The user opens the diff pane while the search IPC is still out — the
+  // pane check must read current state, not the pre-await snapshot.
+  fileSearchHook = () => {
+    useAppStore.setState({ chatSidePanel: 'diff' })
+  }
+
+  await openFileFromChat('b.ts')
+
+  assert.equal(useAppStore.getState().previewTarget?.path, '/tmp/one/b.ts')
+  assert.equal(
+    useAppStore.getState().chatSidePanel,
+    null,
+    'the diff pane must make way for the preview it would otherwise hide'
+  )
+})
+
+// ─── Cross-workspace session open (skipSessionLoad contract) ─────────────────
+// The sidebar/session-panel flow is: switchWorkspace({skipSessionLoad}) then
+// switchSession(target). The workspace switch clears the chat; the target is
+// very often the new workspace's remembered active session, so the fast path
+// must not eat the follow-up click.
+
+test('switchSession loads history even when sessionState already names the target', async () => {
+  // Post-workspace-switch state: chat cleared, sessionState already refreshed
+  // to the very session the user clicked.
+  useAppStore.setState({
+    sessionState: sessionStateWith(SESSION_PATH),
+    messages: [],
+    sessionLoading: false,
+  })
+
+  await useAppStore.getState().switchSession(SESSION_PATH)
+
+  assert.equal(
+    calls.includes(`switch:${SESSION_PATH}`),
+    true,
+    'an empty chat means nothing is on screen — the session must load'
+  )
+})
+
+test('switchSession still skips a reload when the session is already on screen', async () => {
+  useAppStore.setState({
+    sessionState: sessionStateWith(SESSION_PATH),
+    messages: [{ id: 'm1', role: 'user', content: 'hi', timestamp: 0 }],
+    sessionLoading: false,
+  })
+
+  await useAppStore.getState().switchSession(SESSION_PATH)
+
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), false)
+})
+
+test('the cross-workspace open flow loads the clicked session end to end', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+  })
+  // The target workspace's Pi resumes straight onto the very session the user
+  // clicked (startPi refreshes sessionState to it) — the arrangement whose
+  // refresh/fast-path race used to eat the click and leave an empty chat.
+  sessionStateResult = sessionStateWith(SESSION_PATH)
+
+  const ok = await useAppStore.getState().switchWorkspace(WORKSPACE_ID, { skipSessionLoad: true })
+  assert.equal(ok, true)
+  await useAppStore.getState().switchSession(SESSION_PATH)
+
+  assert.equal(
+    calls.includes(`switch:${SESSION_PATH}`),
+    true,
+    'the chat was cleared by the workspace switch, so the session must actually load'
   )
 })
 

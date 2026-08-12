@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, nativeImage, session, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell } from 'electron'
 import { existsSync, mkdirSync } from 'fs'
 import { basename, join, resolve as resolvePath } from 'path'
 import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
@@ -11,6 +11,8 @@ import { activityStatsStore } from './activity-stats'
 import { configureGuiDataDir, getCanonicalUserDataDir, getExternalGuiDataDir, migrateLegacyGuiData } from './app-data-paths'
 import { setupTray, setTrayEnabled, isTrayEnabled, isTrayAvailable, destroyTray, notifyFirstHide } from './tray-manager'
 import { shouldHideToTray } from './tray-decision'
+import { createEditorGuard } from './editor-guard'
+import { IPC_CHANNELS } from '../shared/ipc-contracts'
 
 // Env var honored on startup: if set, the named directory becomes the active
 // workspace (created on first run, switched to on subsequent runs). The CLI
@@ -63,6 +65,40 @@ let workspaceManager: WorkspaceManager | null = null
 // quit (menu/tray Quit, Cmd-Ctrl+Q) from a window close that should hide to tray.
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
+
+// Guards the renderer's unsaved editor buffer against teardown. The renderer
+// mirrors its dirty flag here (ui:editor-dirty-set); quit, non-tray window
+// close, and the reload menu items all pause on the same discard dialog.
+const editorGuard = createEditorGuard()
+
+/** Native confirm matching the in-app discard dialog's wording. */
+async function confirmEditorDiscard(window: BrowserWindow | null): Promise<boolean> {
+  // Tray Quit can arrive while the window is hidden; surface it so the
+  // dialog (and the edits it is asking about) are actually visible.
+  if (window && !window.isDestroyed() && !window.isVisible()) window.show()
+  const options = {
+    type: 'warning' as const,
+    title: 'Unsaved changes',
+    message: editorGuard.promptMessage(),
+    buttons: ['Discard changes', 'Keep editing'],
+    defaultId: 1,
+    cancelId: 1,
+  }
+  const { response } = window
+    ? await dialog.showMessageBox(window, options)
+    : await dialog.showMessageBox(options)
+  return response === 0
+}
+
+/** Menu Reload / Force Reload: ask a dirty editor first, then reload. */
+async function reloadMainWindowWithGuard(ignoreCache: boolean): Promise<void> {
+  const window = mainWindow
+  if (!window) return
+  if (editorGuard.needsPrompt() && !(await confirmEditorDiscard(window))) return
+  // did-start-loading resets the guard once the reload actually begins.
+  if (ignoreCache) window.webContents.reloadIgnoringCache()
+  else window.webContents.reload()
+}
 
 // Single-instance lock: with "minimize to tray" the window can be hidden while
 // the app keeps running, so a relaunch (taskbar, launcher, `pi-desktop <path>`)
@@ -167,8 +203,26 @@ function createMainWindow(): BrowserWindow {
       event.preventDefault()
       window.hide()
       notifyFirstHide()
+      return
+    }
+    // A real close destroys the renderer and its unsaved editor buffer;
+    // pause for the same discard decision every in-app path gets. (Hiding to
+    // tray above loses nothing, so it never asks.)
+    if (editorGuard.needsPrompt()) {
+      event.preventDefault()
+      void confirmEditorDiscard(window).then((discard) => {
+        if (discard) {
+          editorGuard.confirmDiscard()
+          window.close()
+        }
+      })
     }
   })
+
+  // A reloaded (or crashed-and-recovered) renderer starts with a clean
+  // editor; a stale dirty flag here would make quit nag forever.
+  window.webContents.on('did-start-loading', () => editorGuard.reset())
+  window.webContents.on('render-process-gone', () => editorGuard.reset())
 
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null
@@ -296,8 +350,19 @@ function createApplicationMenu(): void {
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
+        // Not the bare roles: a reload destroys the renderer and its unsaved
+        // editor buffer, so both run through the same discard guard as
+        // close/quit before touching webContents.
+        {
+          label: 'Reload',
+          accelerator: 'CmdOrCtrl+R',
+          click: () => void reloadMainWindowWithGuard(false),
+        },
+        {
+          label: 'Force Reload',
+          accelerator: 'Shift+CmdOrCtrl+R',
+          click: () => void reloadMainWindowWithGuard(true),
+        },
         { role: 'toggleDevTools' },
         { type: 'separator' },
         { role: 'resetZoom' },
@@ -343,6 +408,12 @@ app.whenReady().then(async () => {
 
   // Register IPC handlers before creating windows
   registerIpcHandlers(workspaceManager)
+
+  // The renderer mirrors its editor-dirty flag on every transition; the
+  // quit/close/reload guards below read the cached value.
+  ipcMain.on(IPC_CHANNELS.UI_EDITOR_DIRTY_SET, (_event, dirty: unknown, fileName: unknown) => {
+    editorGuard.setDirty(dirty === true, typeof fileName === 'string' ? fileName : null)
+  })
 
   // Create application menu
   createApplicationMenu()
@@ -391,7 +462,20 @@ app.on('window-all-closed', () => {
 })
 
 // Cleanup on quit
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  // Gate BEFORE isQuitting is set: quitting destroys the renderer and its
+  // unsaved editor buffer, and a cancelled dialog must leave the tray-hide
+  // behavior (which reads isQuitting) exactly as it was.
+  if (editorGuard.needsPrompt()) {
+    event.preventDefault()
+    void confirmEditorDiscard(mainWindow).then((discard) => {
+      if (discard) {
+        editorGuard.confirmDiscard()
+        app.quit()
+      }
+    })
+    return
+  }
   // Mark a real quit so the window `close` handler stops hiding to tray and lets
   // the window actually close. This is the single choke point every quit path
   // flows through (menu/tray Quit, Cmd-Ctrl+Q).

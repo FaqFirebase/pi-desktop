@@ -70,10 +70,12 @@ export const IPC_CHANNELS = {
   UI_EDITOR_RESPONSE: 'ui:editor-response',
   UI_PENDING_FLUSH: 'ui:pending-flush',
   UI_PENDING_GET: 'ui:pending-get',
+  UI_EDITOR_DIRTY_SET: 'ui:editor-dirty-set',
 
   // System
   SYSTEM_OPEN_DIALOG: 'system:open-dialog',
   SYSTEM_GET_PATH: 'system:get-path',
+  SYSTEM_PATH_KIND: 'system:path-kind',
   SYSTEM_OPEN_EXTERNAL: 'system:open-external',
   SYSTEM_GET_VERSION: 'system:get-version',
   UPDATE_CHECK: 'update:check',
@@ -549,6 +551,12 @@ export interface OpenDialogOptions {
   title?: string
   mode?: 'file' | 'directory'
   filters?: Array<{ name: string; extensions: string[] }>
+}
+
+/** Result of SYSTEM_PATH_KIND (drag-drop folder open). */
+export interface PathKindResult {
+  exists: boolean
+  isDirectory: boolean
 }
 
 export type { SessionLineageRecord } from './session-lineage'

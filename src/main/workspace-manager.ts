@@ -284,8 +284,9 @@ export class WorkspaceManager {
 
   /**
    * Repoint a workspace at a different folder. Replaces its FileService (which
-   * binds the path at construction) and re-arms watching if it's the active one.
-   * Pi must be restarted separately to pick up the new cwd.
+   * binds the path at construction), stops the workspace's Pi (its cwd is
+   * bound at spawn), and re-arms watching if it's the active one. The renderer
+   * restarts the active workspace's Pi after this commits.
    */
   async changeWorkspacePath(workspaceId: string, newPath: string): Promise<void> {
     const workspace = this.workspaces.find((w) => w.id === workspaceId)
@@ -293,6 +294,10 @@ export class WorkspaceManager {
     if (!existsSync(newPath)) throw new Error(`Folder does not exist: ${newPath}`)
 
     workspace.path = newPath
+    // Pi's working directory is bound at spawn, so a running Pi would keep
+    // operating in the old folder. Stop it here; the renderer restarts the
+    // active workspace's Pi, and an inactive one starts fresh on activation.
+    this.piManagers.get(workspaceId)?.stop()
     const oldFs = this.fileServices.get(workspaceId)
     oldFs?.stopWatching()
     this.fileServices.set(workspaceId, new FileService(newPath))

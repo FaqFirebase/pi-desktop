@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   PiRpcEvent,
   PiStartOptions,
@@ -33,6 +33,7 @@ import type {
   CouncilProgressEvent,
   AttachmentReadResult,
   OpenDialogOptions,
+  PathKindResult,
   PromptImage,
   ActivityStatsResult,
   ThemesListResult,
@@ -222,6 +223,10 @@ interface PiDesktopAPI {
   system: {
     openDialog(options?: OpenDialogOptions): Promise<string | null>
     getPath(name: string): Promise<string>
+    /** Absolute path for a File from a drag-drop (Electron webUtils). */
+    getPathForFile(file: File): string
+    /** Whether a path exists and is a directory (folder open). */
+    pathKind(path: string): Promise<PathKindResult>
     openExternal(url: string): Promise<void>
     getVersion(): Promise<string>
     /**
@@ -263,6 +268,11 @@ interface PiDesktopAPI {
      */
     flushPendingPrompts(workspaceId: string): Promise<void>
     getPendingPrompts(): Promise<PendingPromptCounts>
+    /**
+     * Mirror the editor pane's unsaved-changes state to main, which guards
+     * quit, window close, and reload behind a discard confirmation.
+     */
+    setEditorDirty(dirty: boolean, fileName: string | null): void
   }
 
   // Event subscription
@@ -430,6 +440,8 @@ const api: PiDesktopAPI = {
   system: {
     openDialog: (options) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_DIALOG, options),
     getPath: (name) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_PATH, name),
+    getPathForFile: (file) => webUtils.getPathForFile(file),
+    pathKind: (path) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_PATH_KIND, path),
     // Sandboxed preload still has a process polyfill with platform.
     platform: process.platform,
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, url),
@@ -468,6 +480,12 @@ const api: PiDesktopAPI = {
     respondEditor: (id, value) => ipcRenderer.invoke(IPC_CHANNELS.UI_EDITOR_RESPONSE, id, value),
     flushPendingPrompts: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.UI_PENDING_FLUSH, workspaceId),
     getPendingPrompts: () => ipcRenderer.invoke(IPC_CHANNELS.UI_PENDING_GET),
+    setEditorDirty: (dirty, fileName) =>
+      ipcRenderer.send(
+        IPC_CHANNELS.UI_EDITOR_DIRTY_SET,
+        dirty === true,
+        typeof fileName === 'string' ? fileName : null
+      ),
   },
 
   onEvent: (callback) => {

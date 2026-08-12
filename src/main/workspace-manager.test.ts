@@ -63,6 +63,24 @@ test('workspaceIdFor reverse-maps a manager to its owning workspace', async () =
   })
 })
 
+test('changeWorkspacePath stops the workspace Pi so it cannot keep the old cwd', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const ws = await mgr.createWorkspace('Alpha', await project())
+    const piManager = mgr.getPiManager(ws.id)
+    assert.ok(piManager, 'the workspace should own a Pi manager')
+    let stopped = false
+    piManager.stop = () => {
+      stopped = true
+    }
+
+    await mgr.changeWorkspacePath(ws.id, await project())
+
+    assert.equal(stopped, true, "Pi's cwd is bound at spawn; a repoint must stop it")
+  })
+})
+
 test('load recovers from .bak when the live workspaces file is corrupted', async () => {
   await freshDataDir()
   const proj = await project()
