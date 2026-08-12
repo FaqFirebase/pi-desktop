@@ -268,6 +268,11 @@ interface PiDesktopAPI {
      */
     flushPendingPrompts(workspaceId: string): Promise<void>
     getPendingPrompts(): Promise<PendingPromptCounts>
+    /**
+     * Mirror the editor pane's unsaved-changes state to main, which guards
+     * quit, window close, and reload behind a discard confirmation.
+     */
+    setEditorDirty(dirty: boolean, fileName: string | null): void
   }
 
   // Event subscription
@@ -475,6 +480,12 @@ const api: PiDesktopAPI = {
     respondEditor: (id, value) => ipcRenderer.invoke(IPC_CHANNELS.UI_EDITOR_RESPONSE, id, value),
     flushPendingPrompts: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.UI_PENDING_FLUSH, workspaceId),
     getPendingPrompts: () => ipcRenderer.invoke(IPC_CHANNELS.UI_PENDING_GET),
+    setEditorDirty: (dirty, fileName) =>
+      ipcRenderer.send(
+        IPC_CHANNELS.UI_EDITOR_DIRTY_SET,
+        dirty === true,
+        typeof fileName === 'string' ? fileName : null
+      ),
   },
 
   onEvent: (callback) => {

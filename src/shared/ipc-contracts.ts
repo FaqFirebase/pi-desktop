@@ -70,6 +70,7 @@ export const IPC_CHANNELS = {
   UI_EDITOR_RESPONSE: 'ui:editor-response',
   UI_PENDING_FLUSH: 'ui:pending-flush',
   UI_PENDING_GET: 'ui:pending-get',
+  UI_EDITOR_DIRTY_SET: 'ui:editor-dirty-set',
 
   // System
   SYSTEM_OPEN_DIALOG: 'system:open-dialog',

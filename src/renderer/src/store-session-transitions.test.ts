@@ -164,6 +164,9 @@ const piDesktopStub = {
       if (pendingPromptsFailure) throw new Error(pendingPromptsFailure)
       return pendingPromptsSnapshot
     },
+    setEditorDirty: (dirty: boolean, fileName: string | null) => {
+      calls.push(`editorDirtyMirror:${dirty}:${fileName ?? ''}`)
+    },
   },
   commands: {
     abort: async () => {
@@ -789,6 +792,29 @@ const OTHER_FILE: PreviewTarget = {
   path: '/tmp/one/b.ts',
   relativePath: 'b.ts',
 }
+
+test('editorDirty transitions are mirrored to main for the quit guard', () => {
+  useAppStore.setState({ previewTarget: CODE_FILE })
+
+  useAppStore.getState().setEditorDirty(true)
+  useAppStore.getState().setEditorDirty(true)
+  useAppStore.getState().setEditorDirty(false)
+  // Direct set() writes (how switch/discard actions clear the flag) must
+  // mirror too — main's cache going stale would make quit nag forever.
+  useAppStore.setState({ editorDirty: true })
+  useAppStore.setState({ editorDirty: false })
+
+  assert.deepEqual(
+    calls.filter((c) => c.startsWith('editorDirtyMirror:')),
+    [
+      `editorDirtyMirror:true:${CODE_FILE.name}`,
+      'editorDirtyMirror:false:',
+      `editorDirtyMirror:true:${CODE_FILE.name}`,
+      'editorDirtyMirror:false:',
+    ],
+    'exactly one push per transition, with the file name while dirty'
+  )
+})
 
 test('setPreviewTarget applies immediately when the editor is clean', async () => {
   useAppStore.setState({ previewTarget: CODE_FILE })

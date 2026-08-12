@@ -2392,6 +2392,20 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 }))
 
+// Mirror editor-dirty transitions to main, which guards quit, window close,
+// and reload behind a discard confirmation — teardown outruns any
+// renderer-side ask, so the decision must be local to main. A subscription
+// (rather than a call inside setEditorDirty) catches every write path:
+// several actions clear the flag with a direct set() alongside other keys,
+// and a stale main-side cache would make quit nag after an in-app discard.
+useAppStore.subscribe((state, prev) => {
+  if (state.editorDirty === prev.editorDirty) return
+  window.piDesktop.ui.setEditorDirty(
+    state.editorDirty,
+    state.editorDirty ? (state.previewTarget?.name ?? null) : null
+  )
+})
+
 // ─── Event Handlers ──────────────────────────────────────────────────────────
 
 // Zustand set supports both object and callback forms
