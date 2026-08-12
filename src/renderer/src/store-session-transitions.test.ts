@@ -139,6 +139,10 @@ const piDesktopStub = {
       calls.push('pi.start')
       return { status: 'running' as const, pid: 1, error: null }
     },
+    restart: async () => {
+      calls.push('pi.restart')
+      return { status: 'running' as const, pid: 1, error: null }
+    },
   },
   ui: {
     respondSelect: (id: string, _value: string) => {
@@ -262,7 +266,6 @@ beforeEach(() => {
     clearInterval(answerPoll)
     answerPoll = null
   }
-  calls.length = 0
   switchResult = { success: true }
   getStatusFailure = null
   setActiveFailure = null
@@ -295,6 +298,10 @@ beforeEach(() => {
     chatSidePanel: null,
     editorDirty: false,
   })
+  // AFTER the state reset: the editor-dirty mirror subscription fires on the
+  // reset itself when the previous test left the flag set, and that push
+  // belongs to cleanup, not to the test about to run.
+  calls.length = 0
 })
 
 test('clearMessages resets every per-turn streaming field', () => {
@@ -1049,6 +1056,66 @@ test('creating a duplicate-path workspace asks before activating over a dirty ed
   assert.equal(useAppStore.getState().editorDirty, true)
 })
 
+test('a duplicate-path create routes through the full workspace switch', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    messages: [{ id: 'old', role: 'user', content: 'from workspace one', timestamp: 0 }],
+  })
+
+  await useAppStore.getState().createWorkspace(WORKSPACE_TWO.name, WORKSPACE_TWO.path)
+
+  assert.equal(
+    calls.some((c) => c.startsWith('createWorkspace:')),
+    false,
+    'main would activate inside create, skipping the switch teardown'
+  )
+  assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_TWO.id}`), true)
+  assert.deepEqual(
+    useAppStore.getState().messages,
+    [],
+    'the previous workspace chat must clear like any other switch'
+  )
+})
+
+test('a duplicate-path create warns while Pi is streaming', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+  })
+  enterStreamingState()
+  answerConfirm(false)
+
+  await useAppStore.getState().createWorkspace(WORKSPACE_TWO.name, WORKSPACE_TWO.path)
+
+  assert.equal(calls.some((c) => c.startsWith('createWorkspace:')), false)
+  assert.equal(
+    calls.some((c) => c.startsWith('setActiveWorkspace:')),
+    false,
+    'declining the still-working warning must abort the activation'
+  )
+  assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+test('creating the already-active path is a no-op', async () => {
+  workspaceListResult = [WORKSPACE_ONE]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    messages: [{ id: 'keep', role: 'user', content: 'stay', timestamp: 0 }],
+  })
+
+  await useAppStore.getState().createWorkspace(WORKSPACE_ONE.name, WORKSPACE_ONE.path)
+
+  assert.equal(calls.length, 0, 'nothing to create and nothing to switch')
+  assert.equal(useAppStore.getState().messages[0]?.id, 'keep')
+})
+
 test('a new-path create leaves a dirty editor alone', async () => {
   activeWorkspaceResult = WORKSPACE_ONE
   workspaceListResult = [WORKSPACE_ONE]
@@ -1104,6 +1171,46 @@ test('an accepted active-folder change closes the preview', async () => {
     'the open file binds the old folder and is unsaveable under the new root'
   )
   assert.equal(useAppStore.getState().editorDirty, false)
+})
+
+test('changing the active folder warns while Pi is streaming', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE })
+  enterStreamingState()
+  answerConfirm(false)
+
+  await useAppStore.getState().changeWorkspaceFolder(WORKSPACE_ONE.id, '/tmp/elsewhere')
+
+  assert.equal(
+    calls.some((c) => c.startsWith('changePath:')),
+    false,
+    'the restart below would kill the in-flight turn, so declining must abort'
+  )
+  assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+test('an accepted active-folder change restarts a running Pi', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, piStatus: 'running' })
+
+  await useAppStore.getState().changeWorkspaceFolder(WORKSPACE_ONE.id, '/tmp/elsewhere')
+
+  assert.equal(calls.includes(`changePath:${WORKSPACE_ONE.id}:/tmp/elsewhere`), true)
+  assert.equal(
+    calls.includes('pi.restart'),
+    true,
+    "Pi's cwd is bound at spawn — without a restart it keeps working in the old folder"
+  )
+})
+
+test('a stopped Pi is not restarted by a folder change', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, piStatus: 'stopped' })
+
+  await useAppStore.getState().changeWorkspaceFolder(WORKSPACE_ONE.id, '/tmp/elsewhere')
+
+  assert.equal(calls.includes(`changePath:${WORKSPACE_ONE.id}:/tmp/elsewhere`), true)
+  assert.equal(calls.includes('pi.restart'), false)
 })
 
 test('changing an inactive workspace folder touches neither dialog nor preview', async () => {

@@ -104,7 +104,7 @@ export interface ConfirmRequest extends ConfirmOptions {
 }
 
 /** The actions that abandon the live turn, either by replacing the session or by leaving it. */
-export type SessionChangeAction = 'switch' | 'new' | 'fork' | 'clone' | 'workspace'
+export type SessionChangeAction = 'switch' | 'new' | 'fork' | 'clone' | 'workspace' | 'changeFolder'
 
 const discardWarning = (verb: string): string =>
   `Pi has not finished responding in this session. ${verb} stops it: whatever Pi already wrote ` +
@@ -127,6 +127,12 @@ const SESSION_CHANGE_PROMPTS: Record<SessionChangeAction, { message: string; con
       'the response is saved to the session and restored when you come back, and any ' +
       'prompt Pi raises while you are away is held and shown on your return.',
     confirmLabel: 'Switch anyway',
+  },
+  // Unlike a workspace switch, this restarts the workspace's Pi (its working
+  // directory is bound at spawn), so the turn does not survive in the background.
+  changeFolder: {
+    message: discardWarning('Changing the project folder restarts Pi, which'),
+    confirmLabel: 'Change anyway',
   },
 }
 
@@ -1804,12 +1810,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   createWorkspace: async (name, path) => {
-    // Main activates an existing workspace on a duplicate path, and the
-    // adoption below would then tear a dirty editor down after the fact —
-    // so the ask has to come before the IPC commits anything.
+    // Main activates an existing workspace on a duplicate path — inside the
+    // create call, with none of the switch teardown. Route the duplicate
+    // through switchWorkspace instead, so every caller gets the still-working
+    // confirm, the dirty-editor ask, the chat clear, and the status resync;
+    // the already-active duplicate needs nothing at all.
     const duplicate = get().workspaces.find((w) => pathsEqual(w.path, path))
-    if (duplicate && duplicate.id !== get().activeWorkspace?.id) {
-      if (!(await get().confirmDiscardEditorChanges())) return
+    if (duplicate) {
+      if (duplicate.id !== get().activeWorkspace?.id) {
+        await get().switchWorkspace(duplicate.id)
+      }
+      return
     }
     const previousActiveId = get().activeWorkspace?.id ?? null
     try {
@@ -1995,15 +2006,22 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   changeWorkspaceFolder: async (workspaceId, newPath) => {
-    // Repointing the active workspace strands its open preview: the file
-    // binds the old folder and the file service refuses paths outside the
-    // new root. Ask a dirty editor, then close the preview on commit.
+    // Repointing the active workspace restarts its Pi below (the working
+    // directory is bound at spawn — without a restart Pi keeps operating in
+    // the old folder while the UI shows the new one) and strands the open
+    // preview (the file service refuses paths outside the new root). Ask
+    // about the in-flight turn and the editor buffer before touching anything.
     const isActive = workspaceId === get().activeWorkspace?.id
+    if (isActive && !(await get().confirmSessionChange('changeFolder'))) return
     if (isActive && !(await get().confirmDiscardEditorChanges())) return
+    const restartNeeded = isActive && get().piStatus === 'running'
     try {
       await window.piDesktop.workspace.changePath(workspaceId, newPath)
       await get().loadWorkspaces()
       if (isActive) set({ previewTarget: null, editorDirty: false })
+      // Main stopped this workspace's Pi with the repoint; bring the active
+      // one back up in the new folder.
+      if (restartNeeded) await get().restartPi()
     } catch (err) {
       get().addMessage({
         id: generateId(),

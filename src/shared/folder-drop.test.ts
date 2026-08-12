@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  firstDroppedFolderPath,
+  droppedFolderCandidates,
   isFileDrag,
   workspaceNameFromFolderPath,
+  type FileDragItem,
   type FileDragTransfer,
 } from './folder-drop'
 
@@ -24,10 +25,18 @@ test('isFileDrag detects the Files type (Chromium array)', () => {
   assert.equal(isFileDrag(null), false)
 })
 
-test('firstDroppedFolderPath returns the first directory entry path', () => {
+function transferOf(items: FileDragItem[]): FileDragTransfer {
+  const indexed: Record<number, FileDragItem> & { length: number } = { length: items.length }
+  items.forEach((item, i) => {
+    indexed[i] = item
+  })
+  return { types: ['Files'], items: indexed }
+}
+
+test('droppedFolderCandidates keeps directory entries and drops plain files', () => {
   const dirFile = { name: 'proj' } as File
   const plainFile = { name: 'readme.md' } as File
-  const items = [
+  const dt = transferOf([
     {
       kind: 'file',
       webkitGetAsEntry: () => ({ isDirectory: false, isFile: true }),
@@ -38,54 +47,72 @@ test('firstDroppedFolderPath returns the first directory entry path', () => {
       webkitGetAsEntry: () => ({ isDirectory: true, isFile: false }),
       getAsFile: () => dirFile,
     },
-  ]
-  const dt: FileDragTransfer = {
-    types: ['Files'],
-    items: {
-      length: items.length,
-      0: items[0],
-      1: items[1],
-    },
-  }
+  ])
 
   const paths = new Map<File, string>([
     [dirFile, '/tmp/proj'],
     [plainFile, '/tmp/readme.md'],
   ])
-  assert.equal(
-    firstDroppedFolderPath(dt, (f) => paths.get(f) ?? ''),
-    '/tmp/proj'
+  assert.deepEqual(
+    droppedFolderCandidates(dt, (f) => paths.get(f) ?? ''),
+    ['/tmp/proj']
   )
 })
 
-test('firstDroppedFolderPath uses getAsFile when webkitGetAsEntry is null', () => {
+test('droppedFolderCandidates keeps entry-less items as unknowns', () => {
   const f = { name: 'maybe-dir' } as File
-  const dt: FileDragTransfer = {
-    types: ['Files'],
-    items: {
-      length: 1,
-      0: {
-        kind: 'file',
-        webkitGetAsEntry: () => null,
-        getAsFile: () => f,
-      },
+  const dt = transferOf([
+    {
+      kind: 'file',
+      webkitGetAsEntry: () => null,
+      getAsFile: () => f,
     },
-  }
-  assert.equal(firstDroppedFolderPath(dt, () => '/tmp/maybe-dir'), '/tmp/maybe-dir')
+  ])
+
+  assert.deepEqual(droppedFolderCandidates(dt, () => '/tmp/maybe-dir'), ['/tmp/maybe-dir'])
 })
 
-test('firstDroppedFolderPath returns null when only files are present', () => {
-  const plainFile = { name: 'readme.md' } as File
-  const dt: FileDragTransfer = {
-    types: ['Files'],
-    items: {
-      length: 1,
-      0: {
-        kind: 'file',
-        webkitGetAsEntry: () => ({ isDirectory: false, isFile: true }),
-        getAsFile: () => plainFile,
-      },
+test('droppedFolderCandidates orders confirmed directories before unknowns', () => {
+  // An entry-less item first in the drop must not shadow a confirmed folder
+  // after it — the caller probes in the returned order.
+  const mysteryFile = { name: 'mystery' } as File
+  const dirFile = { name: 'proj' } as File
+  const dt = transferOf([
+    {
+      kind: 'file',
+      webkitGetAsEntry: () => null,
+      getAsFile: () => mysteryFile,
     },
-  }
-  assert.equal(firstDroppedFolderPath(dt, () => '/tmp/readme.md'), null)
+    {
+      kind: 'file',
+      webkitGetAsEntry: () => ({ isDirectory: true, isFile: false }),
+      getAsFile: () => dirFile,
+    },
+  ])
+
+  const paths = new Map<File, string>([
+    [mysteryFile, '/tmp/mystery'],
+    [dirFile, '/tmp/proj'],
+  ])
+  assert.deepEqual(
+    droppedFolderCandidates(dt, (f) => paths.get(f) ?? ''),
+    ['/tmp/proj', '/tmp/mystery']
+  )
+})
+
+test('droppedFolderCandidates is empty when only classified files are present', () => {
+  const plainFile = { name: 'readme.md' } as File
+  const dt = transferOf([
+    {
+      kind: 'file',
+      webkitGetAsEntry: () => ({ isDirectory: false, isFile: true }),
+      getAsFile: () => plainFile,
+    },
+  ])
+
+  assert.deepEqual(droppedFolderCandidates(dt, () => '/tmp/readme.md'), [])
+})
+
+test('droppedFolderCandidates is empty for an itemless transfer', () => {
+  assert.deepEqual(droppedFolderCandidates({ types: ['Files'], items: null }, () => ''), [])
 })

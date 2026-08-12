@@ -38,18 +38,22 @@ export function isFileDrag(dataTransfer: FileDragTransfer | null | undefined): b
 }
 
 /**
- * Absolute path of the first directory in a drop, or null if none.
- *
- * Prefer directory entries via webkitGetAsEntry. When that returns null for an
- * item (some drag sources), fall back to getAsFile + getPathForFile and let
- * main confirm directory-ness via pathKind.
+ * Absolute paths that could be the dropped folder, in confidence order:
+ * confirmed directory entries first, then items whose kind is unknown because
+ * webkitGetAsEntry returned null (some drag sources). Confirmed plain files
+ * are excluded, and an unknown never shadows a confirmed folder behind it.
+ * The caller probes each candidate (main-side pathKind) and opens the first
+ * directory.
  */
-export function firstDroppedFolderPath(
+export function droppedFolderCandidates(
   dataTransfer: FileDragTransfer,
   getPathForFile: (file: File) => string
-): string | null {
+): string[] {
   const items = dataTransfer.items
-  if (!items || items.length === 0) return null
+  if (!items || items.length === 0) return []
+
+  const directories: string[] = []
+  const unknowns: string[] = []
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
@@ -57,22 +61,14 @@ export function firstDroppedFolderPath(
 
     const entry =
       typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null
+    if (entry && !entry.isDirectory) continue
 
-    if (entry) {
-      if (!entry.isDirectory) continue
-      const file = item.getAsFile()
-      if (!file) continue
-      const p = getPathForFile(file)
-      if (p) return p
-      continue
-    }
-
-    // webkitGetAsEntry can return null; take the path and let main verify dir.
     const file = item.getAsFile()
     if (!file) continue
     const p = getPathForFile(file)
-    if (p) return p
+    if (!p) continue
+    ;(entry ? directories : unknowns).push(p)
   }
 
-  return null
+  return [...directories, ...unknowns]
 }

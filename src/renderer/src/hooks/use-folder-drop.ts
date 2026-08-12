@@ -1,6 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
-import { firstDroppedFolderPath, isFileDrag } from '../../../shared/folder-drop'
+import { droppedFolderCandidates, isFileDrag } from '../../../shared/folder-drop'
 import { useAppStore } from '../store'
+
+/**
+ * Open the first candidate that is actually a directory. Entry-less items
+ * (webkitGetAsEntry returned null) can only be classified by asking main, so
+ * a file appearing before a folder in the drop must not end the search. When
+ * nothing qualifies, the first candidate still goes through
+ * openFolderAsWorkspace so its standard "not a folder" message surfaces.
+ */
+async function openFirstDroppedFolder(candidates: string[]): Promise<void> {
+  for (const path of candidates) {
+    try {
+      const kind = await window.piDesktop.system.pathKind(path)
+      if (kind.exists && kind.isDirectory) {
+        await useAppStore.getState().openFolderAsWorkspace(path)
+        return
+      }
+    } catch {
+      // Unprobeable candidate — try the next one.
+    }
+  }
+  await useAppStore.getState().openFolderAsWorkspace(candidates[0])
+}
 
 /**
  * Window-level folder drag-and-drop: drop a directory onto the app to open it
@@ -52,18 +74,15 @@ export function useFolderDrop(): {
       clearDrag()
       if (!e.dataTransfer || openInFlight.current) return
 
-      const folderPath = firstDroppedFolderPath(e.dataTransfer, (file) =>
+      const candidates = droppedFolderCandidates(e.dataTransfer, (file) =>
         window.piDesktop.system.getPathForFile(file)
       )
-      if (!folderPath) return
+      if (candidates.length === 0) return
 
       openInFlight.current = true
-      void useAppStore
-        .getState()
-        .openFolderAsWorkspace(folderPath)
-        .finally(() => {
-          openInFlight.current = false
-        })
+      void openFirstDroppedFolder(candidates).finally(() => {
+        openInFlight.current = false
+      })
     }
 
     window.addEventListener('dragenter', onDragEnter)
