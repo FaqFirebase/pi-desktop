@@ -21,6 +21,7 @@ Still in alpha, so expect rough edges.
 - Review rail (toggleable) with permissions, approvals, changed files, and session status
 - Custom permission rules: allow/deny glob rules per Pi tool that refine the permission modes, with per-workspace rule files, import/export, and live edits that apply without restarting Pi
 - File tree, code/image/PDF/HTML preview panes, code editor (CodeMirror 6 with syntax highlighting), diff viewer, file search
+- Unsaved editor changes are guarded everywhere: switching files, sessions, or workspaces, opening the diff, and even closing, reloading, or quitting the app all ask before discarding
 - Terminal with ANSI colors
 - Package browser connected to pi.dev/packages, with instant local search
 - Session tags, model switching, live-preview settings, themes (7 built-ins plus System, and custom themes you can create in-app, import, export, or install from a URL)
