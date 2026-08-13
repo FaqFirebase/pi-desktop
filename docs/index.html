@@ -79,8 +79,8 @@
     .nav-logo { font-weight: 700; font-size: 1.1rem; color: var(--text); letter-spacing: -0.02em; }
     .nav-logo span { color: var(--accent); }
     .nav-links { display: flex; gap: 28px; align-items: center; }
-    .nav-links a { color: var(--muted); font-size: 0.9rem; transition: color 0.15s; }
-    .nav-links a:hover { color: var(--text); text-decoration: none; }
+    .nav-links a:not(.btn) { color: var(--muted); font-size: 0.9rem; transition: color 0.15s; }
+    .nav-links a:not(.btn):hover { color: var(--text); text-decoration: none; }
     .btn {
       display: inline-flex;
       align-items: center;
