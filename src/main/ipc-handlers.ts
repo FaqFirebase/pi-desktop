@@ -24,6 +24,7 @@ import { readSessionMetadataCached } from './session-metadata'
 import { mapWithConcurrency } from './map-concurrent'
 import { readSessionLineage } from './session-lineage-reader'
 import { trimGetMessagesResponse } from './get-messages-trim'
+import { listSkills } from './skills-lister'
 import { activityStatsStore } from './activity-stats'
 import type {
   PiStartOptions,
@@ -1116,7 +1117,8 @@ export function registerIpcHandlers(workspaceManager: WorkspaceManager): void {
   ipcMain.handle(IPC_CHANNELS.SKILLS_LIST, async () => {
     const ws = workspaceManager.getActiveWorkspace()
     const cwd = ws?.path ?? process.cwd()
-    return listSkills(cwd)
+    const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
+    return listSkills(cwd, homeDir)
   })
 
   ipcMain.handle(IPC_CHANNELS.COMMANDS_LIST, async () => {
@@ -1809,117 +1811,8 @@ async function updatePackage(spec: string | undefined, cwd: string): Promise<{ s
 // reads over the whole store and an injectable root to be testable.
 
 // ─── Skills Listing ──────────────────────────────────────────────────────────
-
-interface InstalledSkill {
-  name: string
-  description: string
-  path: string
-  source: string
-  enabled: boolean
-}
-
-async function listSkills(cwd: string): Promise<InstalledSkill[]> {
-  const skills: InstalledSkill[] = []
-  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-
-  // Global skills
-  const globalPaths = [
-    join(homeDir, '.pi', 'agent', 'skills'),
-    join(homeDir, '.agents', 'skills'),
-  ]
-
-  for (const skillsDir of globalPaths) {
-    await collectSkills(skillsDir, skills, 'global')
-  }
-
-  // Project skills
-  const projectPaths = [
-    join(cwd, '.pi', 'skills'),
-    join(cwd, '.agents', 'skills'),
-  ]
-
-  for (const skillsDir of projectPaths) {
-    await collectSkills(skillsDir, skills, 'project')
-  }
-
-  return skills
-}
-
-async function collectSkills(
-  dir: string,
-  skills: InstalledSkill[],
-  source: string
-): Promise<void> {
-  try {
-    if (!existsSync(dir)) return
-
-    const items = await readdir(dir, { withFileTypes: true })
-
-    for (const item of items) {
-      const fullPath = join(dir, item.name)
-
-      if (item.isFile() && item.name.endsWith('.md') && item.name !== 'SKILL.md') {
-        // Root .md file as individual skill
-        try {
-          const content = await readFile(fullPath, 'utf-8')
-          const parsed = parseSkillFrontmatter(content)
-          if (parsed) {
-            skills.push({
-              name: parsed.name,
-              description: parsed.description,
-              path: fullPath,
-              source,
-              enabled: true,
-            })
-          }
-        } catch {
-          // Skip unreadable files
-        }
-      } else if (item.isDirectory()) {
-        // Directory with SKILL.md
-        const skillFile = join(fullPath, 'SKILL.md')
-        if (existsSync(skillFile)) {
-          try {
-            const content = await readFile(skillFile, 'utf-8')
-            const parsed = parseSkillFrontmatter(content)
-            if (parsed) {
-              skills.push({
-                name: parsed.name,
-                description: parsed.description,
-                path: skillFile,
-                source,
-                enabled: true,
-              })
-            }
-          } catch {
-            // Skip unreadable files
-          }
-        }
-
-        // Recurse into subdirectories
-        await collectSkills(fullPath, skills, source)
-      }
-    }
-  } catch {
-    // Directory doesn't exist or isn't readable
-  }
-}
-
-function parseSkillFrontmatter(content: string): { name: string; description: string } | null {
-  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/)
-  if (!frontmatterMatch) return null
-
-  const frontmatter = frontmatterMatch[1]
-  const nameMatch = frontmatter.match(/^name:\s*(.+)$/m)
-  const descMatch = frontmatter.match(/^description:\s*(.+)$/m)
-
-  if (!nameMatch || !descMatch) return null
-
-  return {
-    name: nameMatch[1].trim(),
-    description: descMatch[1].trim(),
-  }
-}
+// The recursive scan with bounded-concurrency reads and the startup-burst
+// cache live in ./skills-lister so they can be tested without Electron.
 
 // ─── App Settings Persistence ────────────────────────────────────────────────
 
