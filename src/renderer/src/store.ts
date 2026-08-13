@@ -24,6 +24,7 @@ import type {
   SessionStats,
   SessionListItem,
   AppSettings,
+  PiMessageStartEvent,
   PiMessageUpdateEvent,
   PiToolExecutionStartEvent,
   PiToolExecutionEndEvent,
@@ -520,6 +521,38 @@ function generateId(): string {
 // results from a previous switch are dropped instead of fighting the UI.
 let sessionLoadGeneration = 0
 
+/**
+ * Texts of prompts this GUI just sent to Pi, awaiting their echo on the RPC
+ * event stream. Pi emits a `message_start` for every user message added to
+ * the session — both ours and ones injected inside the Pi process by
+ * extensions (e.g. pi-nvim's socket bridge). Externally injected prompts must
+ * be rendered from that event or they never appear in the thread; our own
+ * prompts must be skipped, since sendPrompt already adds the bubble locally
+ * at send time. Entries expire so a prompt whose echo never arrives (send
+ * failure, process restart) cannot swallow an identical future external
+ * message.
+ */
+const pendingLocalEchoes: { text: string; sentAt: number }[] = []
+const LOCAL_ECHO_TTL_MS = 5 * 60 * 1000
+const LOCAL_ECHO_MAX = 50
+
+function recordLocalEcho(text: string): void {
+  pendingLocalEchoes.push({ text, sentAt: Date.now() })
+  if (pendingLocalEchoes.length > LOCAL_ECHO_MAX) pendingLocalEchoes.shift()
+}
+
+/** Consume the oldest pending local echo matching this content, if any. */
+function consumeLocalEcho(text: string): boolean {
+  const now = Date.now()
+  for (let i = pendingLocalEchoes.length - 1; i >= 0; i--) {
+    if (now - pendingLocalEchoes[i].sentAt > LOCAL_ECHO_TTL_MS) pendingLocalEchoes.splice(i, 1)
+  }
+  const idx = pendingLocalEchoes.findIndex((entry) => entry.text === text)
+  if (idx === -1) return false
+  pendingLocalEchoes.splice(idx, 1)
+  return true
+}
+
 // Latest path requested for switch — rapid clicks only run the final one.
 let pendingSwitchPath: string | null = null
 let switchCoalesceTimer: ReturnType<typeof setTimeout> | null = null
@@ -839,11 +872,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       if (isStreaming) {
         // Queue as steering during streaming, carrying any image attachments.
+        recordLocalEcho(message)
         await window.piDesktop.commands.steer(message, options?.images)
       } else {
         const prompt = settings?.permissionMode === 'plan-readonly'
           ? buildPlanningPrompt(message)
           : message
+        // Record the text actually sent (plan mode wraps it), not the text
+        // displayed — Pi's message_start echo carries the sent form.
+        recordLocalEcho(prompt)
         await window.piDesktop.commands.prompt(prompt, options)
       }
     } catch (err) {
@@ -1494,6 +1531,40 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   handlePiEvent: (event) => {
     switch (event.type) {
+      case 'message_start': {
+        // User messages can enter the session without passing through this
+        // GUI — pi-nvim and other socket/extension bridges inject prompts
+        // directly inside the Pi process. Render those here, or the thread
+        // shows only the assistant's replies. Our own prompts arrive on this
+        // event too, but sendPrompt already rendered them at send time, so a
+        // matching pending echo means skip. Assistant-role message_start is
+        // ignored: assistant content renders via message_update / message_end.
+        const startedMessage = (event as PiMessageStartEvent).message
+        if (startedMessage && (startedMessage as { role?: unknown }).role === 'user') {
+          const parsed = parseAgentMessage(startedMessage)
+          if (parsed && parsed.content.trim() && !consumeLocalEcho(parsed.content)) {
+            get().addMessage(parsed)
+            // Mirror sendPrompt's turn-start state so the external turn gets
+            // a live streaming bubble instead of content appearing only at
+            // message_end. agent_end clears isStreaming as usual.
+            set({
+              isStreaming: true,
+              streamingContent: '',
+              streamingThinking: '',
+              streamingToolCalls: new Map(),
+            })
+            get().addTimelineEvent({
+              id: generateId(),
+              type: 'system',
+              timestamp: Date.now(),
+              title: 'External prompt received',
+              status: 'success',
+            })
+          }
+        }
+        break
+      }
+
       case 'message_update':
         handleMessageUpdate(event as PiMessageUpdateEvent, set)
         break
