@@ -1,4 +1,5 @@
 import { useAppStore, countPromptsWaitingElsewhere, formatPromptsWaiting } from '../store'
+import { summarizeBackgroundActivity, workspaceActivityIndicator } from './sidebar-activity'
 import { pathGroupKey, pathsEqual } from '../../../shared/path-compare'
 import { clsx } from 'clsx'
 import {
@@ -18,6 +19,7 @@ import {
   StickyNote,
   Archive,
   Sparkles,
+  Stethoscope,
   Pencil,
 } from 'lucide-react'
 import { useMemo, useState, useRef } from 'react'
@@ -49,9 +51,6 @@ export function Sidebar(): React.JSX.Element {
   const sessionState = useAppStore((state) => state.sessionState)
   const sessionList = useAppStore((state) => state.sessionList)
   const createNewSession = useAppStore((state) => state.createNewSession)
-  const switchSession = useAppStore((state) => state.switchSession)
-  const switchWorkspace = useAppStore((state) => state.switchWorkspace)
-  const workspaces = useAppStore((state) => state.workspaces)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const archivedSessions = useAppStore((state) => state.archivedSessions)
   const archiveSession = useAppStore((state) => state.archiveSession)
@@ -204,32 +203,9 @@ export function Sidebar(): React.JSX.Element {
     }))
   }
 
-  const openSession = async (session: SessionListItem): Promise<void> => {
-    // Auto-switch workspace if session is from a different project. Skip the
-    // resume+history load — switchSession below loads the target session once.
-    // Paths are compared the way main compares them (case-insensitive on
-    // Windows): a casing mismatch here would route an existing workspace down
-    // the create path, which main turns into a silent activation.
-    const projectPath = session.projectPath
-    if (projectPath && !(activeWorkspace && pathsEqual(activeWorkspace.path, projectPath))) {
-      const matchingWs = workspaces.find((w) => pathsEqual(w.path, projectPath))
-      if (matchingWs) {
-        // The workspace switch carries the "Pi is still working" warning for this
-        // whole flow; a decline there must stop the session switch too, or the
-        // declined turn gets torn down anyway by the session change below.
-        if (!(await switchWorkspace(matchingWs.id, { skipSessionLoad: true }))) return
-      } else {
-        await useAppStore.getState().createWorkspace(session.projectName, projectPath)
-        const updated = useAppStore.getState().workspaces
-        const newWs = updated.find((w) => pathsEqual(w.path, projectPath))
-        if (newWs && !(await switchWorkspace(newWs.id, { skipSessionLoad: true }))) return
-      }
-    }
-    await switchSession(session.path)
-    // Bring the chat into view (may be on Settings/Notes/etc.). In-app switches
-    // keep their remembered scroll position, so no force-to-bottom here.
-    setCurrentView('chat')
-  }
+  // Workspace auto-switch/create + session switch + show Chat, shared with the
+  // session panel and the quick switcher.
+  const openSession = useAppStore((state) => state.openSessionItem)
 
   const handleSessionRightClick = (e: React.MouseEvent, session: SessionListItem): void => {
     // Prevent the app-level document-level contextmenu handler from also
@@ -455,6 +431,12 @@ export function Sidebar(): React.JSX.Element {
           onClick={() => setCurrentView('skills')}
         />
         <SidebarItem
+          icon={<Stethoscope size={14} />}
+          label="Diagnostics"
+          active={currentView === 'diagnostics'}
+          onClick={() => setCurrentView('diagnostics')}
+        />
+        <SidebarItem
           icon={<Settings size={14} />}
           label="Settings"
           active={currentView === 'settings'}
@@ -553,12 +535,19 @@ function WorkspaceSwitcher(): React.JSX.Element {
   const renameWorkspace = useAppStore((state) => state.renameWorkspace)
   const changeWorkspaceFolder = useAppStore((state) => state.changeWorkspaceFolder)
   const pendingPromptCounts = useAppStore((state) => state.pendingPromptCounts)
+  const workspaceActivity = useAppStore((state) => state.workspaceActivity)
   const { show: showContextMenu, ContextMenuComponent: WorkspaceContextMenu } = useContextMenu()
 
   // Prompts held for workspaces other than the active one — the active
   // workspace's prompt is already on screen, so only elsewhere needs a badge.
   const promptsWaitingElsewhere = countPromptsWaitingElsewhere(
     pendingPromptCounts,
+    activeWorkspace?.id ?? null
+  )
+
+  // Background work in non-active workspaces, condensed to one header dot.
+  const backgroundActivity = summarizeBackgroundActivity(
+    workspaceActivity,
     activeWorkspace?.id ?? null
   )
 
@@ -659,6 +648,16 @@ function WorkspaceSwitcher(): React.JSX.Element {
             <span className="truncate">{activeWorkspace?.name ?? 'No workspace'}</span>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
+            {backgroundActivity && (
+              <span
+                className={clsx(
+                  'h-2 w-2 rounded-full',
+                  backgroundActivity.colorClass,
+                  backgroundActivity.pulse && 'animate-pulse'
+                )}
+                title={backgroundActivity.label}
+              />
+            )}
             {promptsWaitingElsewhere > 0 && (
               <span
                 className="rounded bg-warning-bg px-1.5 py-0.5 text-[10px] text-warning"
@@ -711,6 +710,19 @@ function WorkspaceSwitcher(): React.JSX.Element {
                     {pendingPromptCounts[ws.id]}
                   </span>
                 )}
+                {(() => {
+                  const indicator = workspaceActivityIndicator(workspaceActivity[ws.id])
+                  return indicator ? (
+                    <span
+                      className={clsx(
+                        'h-2 w-2 shrink-0 rounded-full',
+                        indicator.colorClass,
+                        indicator.pulse && 'animate-pulse'
+                      )}
+                      title={indicator.label}
+                    />
+                  ) : null
+                })()}
               </button>
               {workspaces.length > 1 && (
                 <button

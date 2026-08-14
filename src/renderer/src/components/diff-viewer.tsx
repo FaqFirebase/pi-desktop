@@ -3,6 +3,7 @@ import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { clsx } from 'clsx'
 import {
+  AlertTriangle,
   GitCompare,
   File,
   RefreshCw,
@@ -11,6 +12,7 @@ import {
   X,
   Loader2,
 } from 'lucide-react'
+import { formatIpcError } from '../utils/ipc-error'
 
 interface DiffLine {
   type: 'add' | 'remove' | 'context' | 'header' | 'hunk'
@@ -34,6 +36,7 @@ interface DiffViewerProps {
 export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element {
   const [files, setFiles] = useState<DiffFileBlock[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
   const [stagedMode, setStagedMode] = useState(false)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
@@ -45,8 +48,10 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
         ? await window.piDesktop.files.getStagedDiff()
         : await window.piDesktop.files.getDiff()
       setFiles(parseDiff(diff))
-    } catch {
+      setLoadError(null)
+    } catch (err) {
       setFiles([])
+      setLoadError(formatIpcError(err))
     } finally {
       setLoading(false)
     }
@@ -114,6 +119,18 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 size={24} className="animate-spin text-dim" />
+          </div>
+        ) : loadError !== null ? (
+          <div className="flex flex-col items-center justify-center py-12 text-dim">
+            <AlertTriangle size={32} className="mb-3 text-warning" />
+            <p className="text-sm text-secondary">Couldn't load the diff</p>
+            <p className="mt-1 max-w-md break-words px-4 text-center text-xs text-faint">{loadError}</p>
+            <button
+              onClick={loadDiff}
+              className="mt-3 rounded bg-card px-3 py-1 text-xs text-secondary transition-colors hover:bg-surface-hover"
+            >
+              Retry
+            </button>
           </div>
         ) : files.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-dim">

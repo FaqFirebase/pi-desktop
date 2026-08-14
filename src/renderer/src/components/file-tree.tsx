@@ -67,7 +67,9 @@ export function FileTree(): React.JSX.Element {
     try {
       const [treeData, status, branch] = await Promise.all([
         window.piDesktop.files.getTree(4),
-        window.piDesktop.files.getGitStatus(),
+        // A git failure must not take the whole tree down with it — the tree
+        // is still useful without status badges.
+        window.piDesktop.files.getGitStatus().catch(() => ({})),
         window.piDesktop.files.getGitBranch(),
       ])
       if (!isCurrent()) return

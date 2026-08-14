@@ -54,7 +54,13 @@ src/
 │   └── session-lineage.ts        # Cross-session lineage tree
 ├── main/
 │   ├── index.ts                  # App lifecycle, window creation, hardening
-│   ├── ipc-handlers.ts           # IPC handler registration
+│   ├── ipc-handlers.ts           # IPC composition root (creates context, calls ipc/ modules)
+│   ├── ipc/                      # Domain-specific IPC handler modules (pi, session, files, ...)
+│   ├── app-log.ts                # Main-process log: ring buffer + JSONL file in the GUI data dir
+│   ├── workspace-activity.ts     # Per-workspace activity state machine (working/approval/completed/failed)
+│   ├── notify-decision.ts        # Pure should-we-notify decision (focus/active-workspace aware)
+│   ├── diagnostics.ts            # Assembles the Diagnostics view's report
+│   ├── diagnostics-report.ts     # Pure report helpers (provider key classification etc.)
 │   ├── pi-rpc-manager.ts         # Pi subprocess management, startup readiness probe
 │   ├── pi-paths.ts               # Shared Pi session-store root path
 │   ├── path-authorization.ts     # Path containment checks (attachment/session IPC)
@@ -89,6 +95,9 @@ src/
         ├── index.css             # Tailwind + theme overrides
         ├── utils/
         │   ├── planning-prompt.ts # Plan/read-only prompt wrapper
+│   ├── ipc-error.ts      # Strip Electron's remote-method prefix from IPC errors
+│   ├── quick-switcher.ts # Token filters for the palette's workspace/session/file sections
+│   ├── rank-file-results.ts # Basename-tiered ranking for file search hits
         │   ├── session-title.ts  # Distinguishable fallback session titles
         │   ├── heatmap-grid.ts   # Weeks/intensity layout for the stats mini-heatmap
         │   ├── model-search.ts   # Tokenized model-picker search (treats -_./: as spaces)
@@ -130,7 +139,9 @@ src/
             ├── skills-panel.tsx   # Skills browser
             ├── notes-panel.tsx    # Reusable prompts/notes
             ├── note-picker.tsx    # Insert a saved note
-            ├── command-palette.tsx # Ctrl/Cmd+K command palette
+            ├── command-palette.tsx # Ctrl/Cmd+K quick switcher (commands, workspaces, sessions, files)
+            ├── sidebar-activity.ts # Workspace activity dot mapping for the sidebar
+            ├── diagnostics-panel.tsx # Diagnostics view (Pi binary, providers, permissions, log)
             ├── file-tree.tsx      # File tree + search + preview
             ├── diff-viewer.tsx    # Git diff viewer
             ├── terminal.tsx       # ANSI terminal
@@ -182,11 +193,24 @@ src/
 - Thinking level selector (off/minimal/low/medium/high/xhigh)
 - Token usage and cost tracking in status bar
 
-### Command Palette
+### Command Palette / Quick Switcher
 
-- Open with `Ctrl/Cmd+K`, or by typing `/` at the start of the composer
+- Open with `Ctrl/Cmd+K` (works with Pi stopped), or by typing `/` at the start of the composer
+- One searchable list: commands plus Workspaces, Sessions, and Files sections; a leading `/` narrows to commands only
 - Results grouped by source: Skills, Prompts, Commands (Pi built-ins), Extensions
 - Skills/prompts/extensions insert their token (`/skill:name`, `/template`, `/cmd`) for Pi to expand; built-ins (`/compact`, `/clone`, `/new`, `/resume`, `/fork`, `/settings`) run the GUI action directly
+- Workspace/session/file picks route through the store's guarded actions, so the streaming and dirty-editor confirms still apply
+
+### Workspace Activity & Desktop Notifications
+
+- Main derives per-workspace activity (working / needs approval / completed / failed) from every workspace's Pi events — the renderer's stream state only follows the active workspace, so this ships as its own map (`workspace-activity.ts`, broadcast on `event:workspace-activity`)
+- Sidebar shows per-workspace dots (pulsing while working; success/error until the workspace is next viewed) alongside the existing held-prompt badges
+- OS notifications (toggleable in Settings → Behavior) fire when a turn finishes, fails, or waits for approval outside the focused view; clicking one focuses the window and switches to that workspace via the renderer's guarded switch
+
+### Diagnostics
+
+- Sidebar → Diagnostics: Pi binary resolution (path, source, node binary, PATH), `pi --version`, per-workspace path/trust/process status, provider key classification from models.json (never evaluates secrets), permission mode + rule counts, storage paths, and recent warnings/errors from the app log
+- App log: `app-log.jsonl` in the GUI data dir (ring-buffered in memory, size-capped rotation) so packaged-build errors survive for the Diagnostics view
 
 ### File & Project
 
@@ -289,6 +313,7 @@ Renderer → preload (contextBridge) → IPC → main handlers → Pi RPC / File
 | `~/.pi-desktop-gui/session-tags.json` | Session tags |
 | `~/.pi-desktop-gui/trusted-workspaces.json` | Workspaces the user has trusted (enables their allow rules + interactive HTML preview) |
 | `~/.pi-desktop-gui/activity-stats.json` | Persisted per-day activity stats (aggregates only, survives session deletion) |
+| `~/.pi-desktop-gui/app-log.jsonl` | Main-process app log (warnings/errors for the Diagnostics view) |
 | `~/.pi/agent/sessions/` | Pi session files (organized by cwd) |
 | `~/.pi/agent/settings.json` | Pi global settings |
 | `.pi/settings.json` | Pi project settings |

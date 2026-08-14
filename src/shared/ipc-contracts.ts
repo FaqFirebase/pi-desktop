@@ -83,6 +83,12 @@ export const IPC_CHANNELS = {
   // Activity
   ACTIVITY_GET_STATS: 'activity:get-stats',
 
+  // App log
+  LOG_GET_RECENT: 'log:get-recent',
+
+  // Diagnostics
+  DIAGNOSTICS_GET: 'diagnostics:get',
+
   // Workspaces
   WORKSPACE_LIST: 'workspace:list',
   WORKSPACE_CREATE: 'workspace:create',
@@ -94,6 +100,8 @@ export const IPC_CHANNELS = {
   WORKSPACE_PATH_EXISTS: 'workspace:path-exists',
   WORKSPACE_START_PI: 'workspace:start-pi',
   WORKSPACE_STOP_PI: 'workspace:stop-pi',
+  WORKSPACE_ACTIVITY_GET: 'workspace:activity',
+  WORKSPACE_TAKE_PENDING_ACTIVATION: 'workspace:take-pending-activation',
 
   // Packages
   PACKAGE_LIST_INSTALLED: 'package:list-installed',
@@ -164,6 +172,8 @@ export const IPC_CHANNELS = {
   // Events (main → renderer)
   EVENT_PI: 'event:pi',
   EVENT_PENDING_PROMPTS: 'event:pending-prompts',
+  EVENT_WORKSPACE_ACTIVITY: 'event:workspace-activity',
+  EVENT_ACTIVATE_WORKSPACE: 'event:activate-workspace',
   EVENT_FILE_CHANGE: 'event:file-change',
   EVENT_TERMINAL_DATA: 'event:terminal-data',
   EVENT_TERMINAL_EXIT: 'event:terminal-exit',
@@ -353,6 +363,22 @@ export interface PiExtensionUiRequest {
  * id. Zero entries are omitted, so an empty object means nothing is waiting.
  */
 export type PendingPromptCounts = Record<string, number>
+
+/**
+ * Per-workspace background activity derived in the main process from every
+ * workspace's Pi events (the renderer only receives streamed events for the
+ * active workspace, so it cannot derive this itself).
+ */
+export type WorkspaceActivityState = 'working' | 'needs-approval' | 'completed' | 'failed'
+
+export interface WorkspaceActivity {
+  state: WorkspaceActivityState
+  /** Epoch ms when the workspace entered this state. */
+  since: number
+}
+
+/** Keyed by workspace id; idle workspaces are omitted. */
+export type WorkspaceActivityMap = Record<string, WorkspaceActivity>
 
 export interface PiMessageStartEvent {
   type: 'message_start'
@@ -768,6 +794,9 @@ export interface AppSettings {
   // Internal: whether the one-time "still running in the tray" hint has been
   // shown. Not exposed in the Settings UI.
   hasSeenTrayHint: boolean
+  // Show OS desktop notifications when a turn finishes, fails, or waits for
+  // approval in a workspace the user is not currently looking at.
+  desktopNotifications: boolean
   // Multi-agent council planning configuration.
   council: CouncilConfig
 }
@@ -913,6 +942,94 @@ export interface InstalledSkill {
   path: string
   source: 'global' | 'project' | 'package' | 'cli'
   enabled: boolean
+}
+
+// ─── App Log Types ──────────────────────────────────────────────────────────
+
+/**
+ * One entry in the main-process application log. Persisted as JSONL in the GUI
+ * data dir and mirrored in a bounded in-memory ring for the diagnostics view.
+ */
+export interface AppLogEntry {
+  /** Epoch ms when the entry was recorded. */
+  ts: number
+  level: 'info' | 'warn' | 'error'
+  /** Short subsystem tag, e.g. 'pi', 'git', 'settings'. */
+  scope: string
+  message: string
+  /** Optional stringified error / extra context. */
+  detail?: string
+}
+
+// ─── Diagnostics Types ──────────────────────────────────────────────────────
+
+export interface DiagnosticsWorkspaceInfo {
+  id: string
+  name: string
+  path: string
+  pathExists: boolean
+  trusted: boolean
+  piStatus: PiProcessStatus
+}
+
+/**
+ * How a provider's apiKey field resolves: a literal secret, an environment
+ * variable that is present/absent, a shell command (never evaluated here), or
+ * nothing configured.
+ */
+export type ProviderKeyState = 'literal' | 'env-set' | 'env-missing' | 'shell' | 'none'
+
+export interface DiagnosticsProviderInfo {
+  name: string
+  modelCount: number
+  keyState: ProviderKeyState
+  /** The environment variable name when keyState is env-set / env-missing. */
+  envVar?: string
+}
+
+/** Everything the Diagnostics view shows, assembled in one main-side pass. */
+export interface DiagnosticsReport {
+  generatedAt: number
+  app: {
+    version: string
+    electron: string
+    chrome: string
+    node: string
+    platform: string
+  }
+  piBinary: {
+    found: boolean
+    script: string
+    source: string
+    useNode: boolean
+    nodeBinary: string
+    nodeFound: boolean
+    needsShell: boolean
+    rejectedOverride: string | null
+    failureReason: string | null
+    /** Entries on the merged (login-shell-aware) PATH used to find Pi. */
+    pathEntryCount: number
+  }
+  /** `pi --version` output (first line), or null when it could not run. */
+  piVersion: string | null
+  workspaces: DiagnosticsWorkspaceInfo[]
+  /** Null when models.json is missing or unreadable — see providersError. */
+  providers: DiagnosticsProviderInfo[] | null
+  providersError: string | null
+  permissions: {
+    mode: PermissionMode
+    /** Rule count in the global file; null when the file is invalid. */
+    globalRuleCount: number | null
+    globalRulesError: string | null
+    workspace: PermissionRulesWorkspaceStatus
+  }
+  storage: {
+    guiDataDir: string
+    settingsPath: string
+    sessionsRoot: string
+    sessionsRootExists: boolean
+  }
+  recentErrors: AppLogEntry[]
 }
 
 // ─── File Types ────────────────────────────────────────────────────────────

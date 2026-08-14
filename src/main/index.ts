@@ -12,6 +12,7 @@ import { configureGuiDataDir, getCanonicalUserDataDir, getExternalGuiDataDir, mi
 import { setupTray, setTrayEnabled, isTrayEnabled, isTrayAvailable, destroyTray, notifyFirstHide } from './tray-manager'
 import { shouldHideToTray } from './tray-decision'
 import { createEditorGuard } from './editor-guard'
+import { appLog } from './app-log'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 
 // Env var honored on startup: if set, the named directory becomes the active
@@ -26,6 +27,7 @@ process.on('uncaughtException', (err) => {
     return
   }
   console.error('Uncaught exception:', err)
+  appLog.error('app', 'Uncaught exception', err)
 })
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -406,8 +408,14 @@ app.whenReady().then(async () => {
   // Lock the HTML preview partition to local files before any preview can load.
   hardenPreviewSession()
 
-  // Register IPC handlers before creating windows
-  registerIpcHandlers(workspaceManager)
+  // Register IPC handlers before creating windows. The window getter is a
+  // lazy closure — mainWindow is created later and the notification wiring
+  // only dereferences it at event time. showMainWindow recreates the window
+  // when a notification is clicked after a full close (macOS).
+  registerIpcHandlers(workspaceManager, {
+    getWindow: () => mainWindow,
+    showWindow: showMainWindow,
+  })
 
   // The renderer mirrors its editor-dirty flag on every transition; the
   // quit/close/reload guards below read the cached value.
@@ -485,6 +493,7 @@ app.on('before-quit', (event) => {
   // Synchronous incremental scan + write: captures every session touched this
   // run before we exit (async I/O isn't guaranteed to finish during shutdown).
   activityStatsStore.flushSync()
+  appLog.flushSync()
   workspaceManager?.stopAll()
   // Windows: GUI-owned Pi TEMP does not get OS cleanup — wipe on quit.
   cleanupPiChildTempDir()

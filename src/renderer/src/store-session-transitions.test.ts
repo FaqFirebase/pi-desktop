@@ -1,6 +1,6 @@
 import { test, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import type { PiExtensionUiRequest, SessionState, Workspace } from '../../shared/ipc-contracts'
+import type { PiExtensionUiRequest, SessionListItem, SessionState, Workspace } from '../../shared/ipc-contracts'
 import type { PreviewTarget } from './store'
 
 // Each recorded call is appended to `calls`, so tests can assert both that a
@@ -17,6 +17,10 @@ let setActiveFailure: string | null = null
 // recovery that cannot reach main.
 let pendingPromptsFailure: string | null = null
 let pendingPromptsSnapshot: Record<string, number> = {}
+// Non-null makes the stubbed workspace.getActivity reject; the activity
+// snapshot is cosmetic and must never block prompt recovery.
+let workspaceActivityFailure: string | null = null
+let workspaceActivitySnapshot: Record<string, { state: 'working' | 'needs-approval' | 'completed' | 'failed'; since: number }> = {}
 let activeWorkspaceResult: Workspace | null = null
 let workspaceListResult: Workspace[] = []
 // Results the stubbed files.search returns; the hook runs while the "IPC" is
@@ -85,6 +89,10 @@ const piDesktopStub = {
     },
     list: async () => workspaceListResult,
     getActive: async () => activeWorkspaceResult,
+    getActivity: async () => {
+      if (workspaceActivityFailure) throw new Error(workspaceActivityFailure)
+      return workspaceActivitySnapshot
+    },
     create: async (name: string, path: string) => {
       calls.push(`createWorkspace:${name}:${path}`)
       // Mirror main: existing path activates that workspace.
@@ -274,6 +282,8 @@ beforeEach(() => {
   setActiveFailure = null
   pendingPromptsFailure = null
   pendingPromptsSnapshot = {}
+  workspaceActivityFailure = null
+  workspaceActivitySnapshot = {}
   activeWorkspaceResult = null
   workspaceListResult = []
   fileSearchResults = []
@@ -293,6 +303,7 @@ beforeEach(() => {
     extensionUiRequest: null,
     extensionNotify: null,
     pendingPromptCounts: {},
+    workspaceActivity: {},
     activeWorkspace: null,
     workspaces: [],
     piStatus: 'stopped',
@@ -1334,6 +1345,239 @@ test('the cross-workspace open flow loads the clicked session end to end', async
   )
 })
 
+// ─── openSessionItem (shared sidebar / session-panel / quick-switcher flow) ──
+
+function sessionItemFor(workspace: Workspace): SessionListItem {
+  return {
+    path: SESSION_PATH,
+    name: 'target session',
+    preview: null,
+    sessionId: 'target-1',
+    lastModified: 0,
+    messageCount: 1,
+    projectPath: workspace.path,
+    projectName: workspace.name,
+  }
+}
+
+test('openSessionItem in the active workspace switches straight to the session', async () => {
+  workspaceListResult = [WORKSPACE_ONE]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    currentView: 'sessions',
+  })
+
+  await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_ONE))
+
+  assert.equal(calls.some((c) => c.startsWith('setActiveWorkspace')), false)
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
+  assert.equal(useAppStore.getState().currentView, 'chat')
+})
+
+test('openSessionItem auto-switches to the owning workspace first', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    currentView: 'sessions',
+  })
+
+  await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
+
+  assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_TWO.id}`), true)
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
+  assert.equal(useAppStore.getState().currentView, 'chat')
+})
+
+test('a declined streaming warning aborts the whole openSessionItem flow', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    currentView: 'sessions',
+  })
+  enterStreamingState()
+  answerConfirm(false)
+
+  await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
+
+  assert.equal(calls.some((c) => c.startsWith('setActiveWorkspace')), false)
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), false)
+  assert.equal(useAppStore.getState().currentView, 'sessions')
+})
+
+test('openSessionItem creates a workspace for an unknown project path', async () => {
+  workspaceListResult = [WORKSPACE_ONE]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    currentView: 'sessions',
+  })
+
+  await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
+
+  assert.equal(
+    calls.includes(`createWorkspace:${WORKSPACE_TWO.name}:${WORKSPACE_TWO.path}`),
+    true,
+    'an unknown project path must get a workspace before the session switch'
+  )
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
+})
+
+// ─── Mid-turn re-attach on workspace switch-back ─────────────────────────────
+
+function enterWorkspacesWithBackgroundTurn(): void {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    workspaceActivity: { [WORKSPACE_ID]: { state: 'working', since: 1 } },
+  })
+}
+
+test('switching into a working workspace shows the indicator and marks the attach', async () => {
+  enterWorkspacesWithBackgroundTurn()
+
+  const ok = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+
+  assert.equal(ok, true)
+  const state = useAppStore.getState()
+  assert.equal(state.isStreaming, true, 'a running background turn must not render as an idle chat')
+  assert.equal(state.reattachedMidTurn, true)
+})
+
+test('switching into an idle workspace attaches nothing', async () => {
+  enterWorkspacesWithBackgroundTurn()
+  useAppStore.setState({ workspaceActivity: {} })
+
+  await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+
+  const state = useAppStore.getState()
+  assert.equal(state.isStreaming, false)
+  assert.equal(state.reattachedMidTurn, false)
+})
+
+test('agent_end after a mid-turn attach backfills from the session', async () => {
+  enterWorkspacesWithBackgroundTurn()
+  await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  const loadsBefore = calls.filter((c) => c === 'getMessages').length
+
+  useAppStore.getState().handlePiEvent({ type: 'agent_end', messages: [] })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  const state = useAppStore.getState()
+  assert.equal(state.reattachedMidTurn, false)
+  assert.equal(state.isStreaming, false)
+  assert.equal(
+    calls.filter((c) => c === 'getMessages').length,
+    loadsBefore + 1,
+    'the stream buffers missed the pre-attach output — the session is the source of truth'
+  )
+})
+
+test('the activity map going quiet after an attach stops the indicator and backfills', async () => {
+  enterWorkspacesWithBackgroundTurn()
+  await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  const loadsBefore = calls.filter((c) => c === 'getMessages').length
+
+  // The turn ended during the switch: its agent_end was filtered while the
+  // manager was not yet active, so only the activity broadcast reports it.
+  useAppStore.getState().handleWorkspaceActivity({})
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  const state = useAppStore.getState()
+  assert.equal(state.isStreaming, false)
+  assert.equal(state.reattachedMidTurn, false)
+  assert.equal(calls.filter((c) => c === 'getMessages').length, loadsBefore + 1)
+})
+
+test('opening the mid-turn session row skips the killing RPC and re-attaches', async () => {
+  // Return path two: sidebar recents / Sessions tab / quick-switcher row
+  // click into a workspace with a background turn running. The switch_session
+  // RPC aborts an in-flight turn EVEN for the session Pi is already on
+  // (verified against real Pi), so the working-workspace guard must ask Pi
+  // where it is and reload instead of switching.
+  enterWorkspacesWithBackgroundTurn()
+  sessionStateResult = sessionStateWith(SESSION_PATH)
+
+  await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
+
+  const state = useAppStore.getState()
+  assert.equal(
+    calls.includes(`switch:${SESSION_PATH}`),
+    false,
+    'switch_session mid-turn kills the running turn — it must not be sent'
+  )
+  assert.equal(calls.includes('getMessages'), true, 'history must still load')
+  assert.equal(state.isStreaming, true)
+  assert.equal(state.reattachedMidTurn, true)
+})
+
+test('opening a DIFFERENT session mid-turn still switches (turn teardown intended)', async () => {
+  enterWorkspacesWithBackgroundTurn()
+  // Pi reports it is working on another session than the row being opened.
+  sessionStateResult = sessionStateWith('/tmp/other-turn-session.jsonl')
+
+  await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
+
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
+  assert.equal(useAppStore.getState().reattachedMidTurn, false)
+})
+
+test('an attach whose turn ends is settled by the next activity broadcast', async () => {
+  enterWorkspacesWithBackgroundTurn()
+  sessionStateResult = sessionStateWith(SESSION_PATH)
+  await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
+  assert.equal(useAppStore.getState().reattachedMidTurn, true)
+
+  // The turn finished; the workspace goes idle in the next broadcast.
+  useAppStore.getState().handleWorkspaceActivity({})
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  const state = useAppStore.getState()
+  assert.equal(state.isStreaming, false)
+  assert.equal(state.reattachedMidTurn, false)
+})
+
+test('a live on-screen stream is never re-attached over', async () => {
+  // Same-workspace navigation back to the streaming session: the fast path
+  // short-circuits (session already on screen) and the live stream needs no
+  // attach — reattachedMidTurn stays clear so no spurious backfill runs.
+  enterWorkspacesWithBackgroundTurn()
+  activeWorkspaceResult = WORKSPACE_TWO
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_TWO,
+    isStreaming: true,
+    sessionState: sessionStateWith(SESSION_PATH),
+    messages: [{ id: 'm1', role: 'user', content: 'hi', timestamp: 0 }],
+  })
+
+  await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
+
+  assert.equal(useAppStore.getState().reattachedMidTurn, false)
+  assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+test('an activity update that still shows working keeps the attach alive', async () => {
+  enterWorkspacesWithBackgroundTurn()
+  await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  const loadsBefore = calls.filter((c) => c === 'getMessages').length
+
+  useAppStore.getState().handleWorkspaceActivity({ [WORKSPACE_ID]: { state: 'working', since: 2 } })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  const state = useAppStore.getState()
+  assert.equal(state.isStreaming, true)
+  assert.equal(state.reattachedMidTurn, true)
+  assert.equal(calls.filter((c) => c === 'getMessages').length, loadsBefore)
+})
+
 // ─── Boot/reload recovery ────────────────────────────────────────────────────
 
 test('recoverPendingPrompts applies the counts snapshot and flushes the active workspace', async () => {
@@ -1348,6 +1592,28 @@ test('recoverPendingPrompts applies the counts snapshot and flushes the active w
     true,
     'a reload leaves the dialog slot empty while main still holds the prompt'
   )
+})
+
+test('recoverPendingPrompts applies the workspace-activity snapshot', async () => {
+  workspaceActivitySnapshot = { 'ws-9': { state: 'completed', since: 123 } }
+  activeWorkspaceResult = WORKSPACE_TWO
+
+  await useAppStore.getState().recoverPendingPrompts()
+
+  assert.deepEqual(useAppStore.getState().workspaceActivity, {
+    'ws-9': { state: 'completed', since: 123 },
+  })
+})
+
+test('a rejected activity snapshot does not block prompt recovery', async () => {
+  workspaceActivityFailure = 'activity bridge gone'
+  pendingPromptsSnapshot = { 'ws-9': 2 }
+  activeWorkspaceResult = WORKSPACE_TWO
+
+  await assert.doesNotReject(() => useAppStore.getState().recoverPendingPrompts())
+
+  assert.deepEqual(useAppStore.getState().pendingPromptCounts, { 'ws-9': 2 })
+  assert.equal(calls.includes(`flushPendingPrompts:${WORKSPACE_TWO.id}`), true)
 })
 
 test('recoverPendingPrompts flushes nothing when no workspace is active', async () => {

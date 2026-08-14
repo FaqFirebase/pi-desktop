@@ -3,7 +3,13 @@ import { test } from 'node:test'
 import { mkdtemp, writeFile, mkdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { buildNewFileDiff, FileService, isPathInsideWorkspace } from './file-service'
+import {
+  buildNewFileDiff,
+  describeGitError,
+  FileService,
+  isBenignGitError,
+  isPathInsideWorkspace,
+} from './file-service'
 import type { FileChangeEvent } from '../shared/ipc-contracts'
 
 // ─── Path-boundary guard ──────────────────────────────────────────────────
@@ -109,3 +115,43 @@ async function testWatcherIgnoresHeavyDirs(): Promise<void> {
 
 test('watcher emits a debounced change event', testWatcherEmitsOnChange)
 test('watcher ignores heavy dirs like node_modules', testWatcherIgnoresHeavyDirs)
+
+// ─── Git error classification ─────────────────────────────────────────────
+
+test('isBenignGitError accepts not-a-repo stderr and missing git binary', () => {
+  assert.equal(
+    isBenignGitError({ stderr: 'fatal: not a git repository (or any of the parent directories): .git\n' }),
+    true,
+  )
+  assert.equal(isBenignGitError({ code: 'ENOENT', message: 'spawn git ENOENT' }), true)
+  assert.equal(isBenignGitError({ message: 'fatal: Not a git repository' }), true)
+})
+
+test('isBenignGitError rejects real git failures', () => {
+  assert.equal(isBenignGitError({ code: 128, stderr: 'fatal: bad object HEAD\n' }), false)
+  assert.equal(isBenignGitError({ killed: true, signal: 'SIGTERM', message: 'timeout' }), false)
+  assert.equal(isBenignGitError(null), false)
+  assert.equal(isBenignGitError('string error'), false)
+})
+
+test('describeGitError prefers the first stderr line over the message', () => {
+  assert.equal(
+    describeGitError('status', { stderr: 'fatal: bad object HEAD\nmore context\n', message: 'exited 128' }),
+    'git status failed: fatal: bad object HEAD',
+  )
+  assert.equal(describeGitError('diff', { message: 'timed out' }), 'git diff failed: timed out')
+})
+
+test('getGitStatus returns empty for a non-repo directory', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'fs-nonrepo-'))
+  const service = new FileService(dir)
+  const status = await service.getGitStatus()
+  assert.equal(status.size, 0)
+})
+
+test('getFileDiff and getStagedDiff return empty for a non-repo directory', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'fs-nonrepo-'))
+  const service = new FileService(dir)
+  assert.equal(await service.getFileDiff(), '')
+  assert.equal(await service.getStagedDiff(), '')
+})

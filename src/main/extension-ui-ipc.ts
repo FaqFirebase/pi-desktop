@@ -1,4 +1,4 @@
-import { IPC_CHANNELS } from '../shared/ipc-contracts'
+import { IPC_CHANNELS, type PendingPromptCounts } from '../shared/ipc-contracts'
 import { createPiEventRouter, type PiEventRouter } from './pi-event-router'
 import type { PiRpcManager } from './pi-rpc-manager'
 
@@ -48,12 +48,17 @@ export interface ExtensionUiIpcDeps<TEvent> {
 export function createExtensionUiRouter(deps: {
   workspace: ExtensionUiWorkspace
   broadcast: ChannelBroadcast
+  /** Optional main-side observer of pending-count changes (activity tracker). */
+  onPendingCounts?: (counts: PendingPromptCounts) => void
 }): PiEventRouter {
   return createPiEventRouter({
     getActiveManager: () => deps.workspace.getActivePiManager(),
     workspaceIdFor: (manager) => deps.workspace.workspaceIdFor(manager),
     broadcastEvent: (event) => deps.broadcast(IPC_CHANNELS.EVENT_PI, event),
-    broadcastPendingCounts: (counts) => deps.broadcast(IPC_CHANNELS.EVENT_PENDING_PROMPTS, counts),
+    broadcastPendingCounts: (counts) => {
+      deps.onPendingCounts?.(counts)
+      deps.broadcast(IPC_CHANNELS.EVENT_PENDING_PROMPTS, counts)
+    },
     now: () => Date.now(),
   })
 }

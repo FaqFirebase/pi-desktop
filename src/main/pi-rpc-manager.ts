@@ -18,6 +18,7 @@ import {
   whichInPath,
 } from './pi-binary-resolution'
 import { escapeCmdSpawn } from './cmd-escape'
+import { appLog } from './app-log'
 import { getGuiDataPath } from './app-data-paths'
 
 /**
@@ -203,6 +204,14 @@ function getResolution(): PiResolution {
   cachedResolution = resolution
   logResolution(resolution)
   return resolution
+}
+
+/**
+ * Full resolution details (source, PATH, rejected override) for the
+ * diagnostics report. First call may run the login-shell and npm probes.
+ */
+export function getPiResolution(): PiResolution {
+  return getResolution()
 }
 
 function logResolution(resolution: PiResolution): void {
@@ -395,6 +404,7 @@ export class PiRpcManager extends EventEmitter {
       this.stderrBuffer = cli.failureReason
       this.setStatus('error')
       console.error('[Pi] Pre-flight failed:', this.stderrBuffer)
+      appLog.error('pi', 'Pre-flight failed', this.stderrBuffer)
       return this.getStatus()
     }
 
@@ -505,6 +515,7 @@ export class PiRpcManager extends EventEmitter {
 
       proc.on('error', (err) => {
         console.error('[Pi] Spawn error:', err.message)
+        appLog.error('pi', 'Spawn error', err)
         this.stderrBuffer += `Spawn error: ${err.message}\n`
         finish('crashed')
       })

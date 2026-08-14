@@ -49,6 +49,7 @@ import type {
   PermissionRule,
   PermissionRulesScope,
   PendingPromptCounts,
+  WorkspaceActivityMap,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -162,7 +163,13 @@ export function formatPromptsWaiting(count: number): string {
  */
 function idleTurnState(): Pick<
   AppState,
-  'isStreaming' | 'streamingContent' | 'streamingThinking' | 'streamingToolCalls' | 'pendingSteering' | 'pendingFollowUp'
+  | 'isStreaming'
+  | 'streamingContent'
+  | 'streamingThinking'
+  | 'streamingToolCalls'
+  | 'pendingSteering'
+  | 'pendingFollowUp'
+  | 'reattachedMidTurn'
 > {
   return {
     isStreaming: false,
@@ -171,6 +178,7 @@ function idleTurnState(): Pick<
     streamingToolCalls: new Map(),
     pendingSteering: [],
     pendingFollowUp: [],
+    reattachedMidTurn: false,
   }
 }
 
@@ -200,6 +208,13 @@ interface AppState {
     { name: string; args: string; result?: string; isExecuting: boolean; isError?: boolean; startedAt?: number; durationMs?: number }
   >
   isStreaming: boolean
+  /**
+   * The renderer attached to a turn already in flight (workspace switch-back
+   * or notification click into a working workspace). The stream buffers only
+   * hold what arrived after the attach, so the next turn boundary must
+   * backfill from the session instead of trusting them.
+   */
+  reattachedMidTurn: boolean
   /** True while a session history load is in flight (switch/reload). */
   sessionLoading: boolean
 
@@ -208,7 +223,7 @@ interface AppState {
   pendingFollowUp: string[]
 
   // UI
-  currentView: 'home' | 'chat' | 'settings' | 'sessions' | 'timeline' | 'packages' | 'diff' | 'notes' | 'skills'
+  currentView: 'home' | 'chat' | 'settings' | 'sessions' | 'timeline' | 'packages' | 'diff' | 'notes' | 'skills' | 'diagnostics'
   // Bumped to request the chat scroll jump to the bottom (used when resuming a
   // session/workspace from Home). In-app session switches leave it untouched so
   // the chat restores each session's remembered scroll position instead.
@@ -241,6 +256,8 @@ interface AppState {
   extensionNotify: PiExtensionUiRequest | null
   // Blocking prompts held by main per workspace id (zero entries omitted).
   pendingPromptCounts: PendingPromptCounts
+  // Per-workspace background activity derived in main (idle entries omitted).
+  workspaceActivity: WorkspaceActivityMap
   // Extension status entries (setStatus fire-and-forget). Keyed by statusKey.
   extensionStatuses: Record<string, string>
   // Live subagent progress from tool_execution_update events (subagent tool).
@@ -363,6 +380,13 @@ interface AppActions {
   // Session
   createNewSession: () => Promise<void>
   switchSession: (path: string) => Promise<void>
+  /**
+   * Open a session row from any surface (sidebar, session panel, quick
+   * switcher): auto-switches or creates the owning workspace first, then
+   * switches to the session and shows Chat. A declined "Pi is still working"
+   * confirm aborts the whole flow.
+   */
+  openSessionItem: (session: SessionListItem) => Promise<void>
   reloadActiveSession: (options?: { refreshList?: boolean }) => Promise<void>
   refreshSessionState: () => Promise<void>
   refreshSessionStats: () => Promise<void>
@@ -404,6 +428,7 @@ interface AppActions {
   // Events
   handlePiEvent: (event: PiRpcEvent) => void
   handlePendingPromptCounts: (counts: PendingPromptCounts) => void
+  handleWorkspaceActivity: (map: WorkspaceActivityMap) => void
   /**
    * Boot/reload recovery: the dialog slot and the counts are renderer memory
    * only, while main keeps every held prompt. Pulls the counts snapshot and
@@ -669,6 +694,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   streamingThinking: '',
   streamingToolCalls: new Map(),
   isStreaming: false,
+  reattachedMidTurn: false,
   sessionLoading: false,
 
   pendingSteering: [],
@@ -690,6 +716,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   extensionUiRequest: null,
   extensionNotify: null,
   pendingPromptCounts: {},
+  workspaceActivity: {},
   extensionStatuses: {},
   subagentProgress: [],
   confirmRequest: null,
@@ -1113,6 +1140,30 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       try {
         set({ sessionLoading: true })
         get().clearMessages()
+
+        // A live turn in this workspace: the switch_session RPC ABORTS it —
+        // Pi treats the command as a session change even when the target is
+        // the very session it is already on (verified live: the in-flight
+        // response is discarded and never reaches the session file). When the
+        // activity map says this workspace is working, ask Pi which session
+        // it is on (get_state answers mid-turn); if it IS the target, skip
+        // the RPC, reload history, and attach to the running turn instead.
+        const activeId = get().activeWorkspace?.id
+        const activity = activeId ? get().workspaceActivity[activeId]?.state : undefined
+        if (activity === 'working' || activity === 'needs-approval') {
+          await get().refreshSessionState()
+          if (gen !== sessionLoadGeneration) return
+          if (get().sessionState?.sessionFile === path) {
+            await get().reloadActiveSession({ refreshList: false })
+            if (gen !== sessionLoadGeneration) return
+            scheduleSessionListRefresh(get)
+            // The reload only shows persisted messages; mark the attach so
+            // the working banner shows and the next turn boundary backfills.
+            set({ isStreaming: true, reattachedMidTurn: true })
+            return
+          }
+        }
+
         const result = (await window.piDesktop.session.switch(path)) as {
           success?: boolean
           error?: string
@@ -1198,6 +1249,35 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     } catch {
       if (gen === sessionLoadGeneration) set({ sessionLoading: false })
     }
+  },
+
+  openSessionItem: async (session) => {
+    // Auto-switch workspace if the session is from a different project. Skip
+    // the resume+history load — switchSession below loads the target session
+    // once. Paths are compared the way main compares them (case-insensitive on
+    // Windows): a casing mismatch here would route an existing workspace down
+    // the create path, which main turns into a silent activation.
+    const { activeWorkspace, workspaces } = get()
+    const projectPath = session.projectPath
+    if (projectPath && !(activeWorkspace && pathsEqual(activeWorkspace.path, projectPath))) {
+      const matchingWs = workspaces.find((w) => pathsEqual(w.path, projectPath))
+      if (matchingWs) {
+        // The workspace switch carries the "Pi is still working" warning for
+        // this whole flow; a decline there must stop the session switch too,
+        // or the declined turn gets torn down anyway by the change below.
+        if (!(await get().switchWorkspace(matchingWs.id, { skipSessionLoad: true }))) return
+      } else {
+        await get().createWorkspace(session.projectName, projectPath)
+        const newWs = get().workspaces.find((w) => pathsEqual(w.path, projectPath))
+        if (newWs && !(await get().switchWorkspace(newWs.id, { skipSessionLoad: true }))) return
+      }
+    }
+    // switchSession preserves (and attaches to) a live turn when the clicked
+    // row is the session Pi is mid-turn on — see its working-workspace guard.
+    await get().switchSession(session.path)
+    // Bring the chat into view (may be on Settings/Notes/etc.). In-app
+    // switches keep their remembered scroll position, so no force-to-bottom.
+    get().setCurrentView('chat')
   },
 
   refreshSessionState: async () => {
@@ -1518,6 +1598,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           title: turnError ? 'Assistant response failed' : 'Assistant response complete',
           status: turnError ? 'error' : 'success',
         })
+        // Attached mid-turn: the commit above only held the post-attach
+        // suffix of this message — replace it with the persisted full one.
+        // Later messages of the same turn then stream normally.
+        if (get().reattachedMidTurn) {
+          set({ reattachedMidTurn: false })
+          void get().reloadActiveSession({ refreshList: false })
+        }
         break
       }
 
@@ -1526,6 +1613,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         break
 
       case 'agent_start':
+        // A fresh turn means real stream context from its first byte — any
+        // pending mid-turn-attach backfill was already handled at agent_end.
+        set({ reattachedMidTurn: false })
         get().addTimelineEvent({
           id: generateId(),
           type: 'system',
@@ -1553,6 +1643,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           title: 'Agent finished',
           status: 'success',
         })
+        // Attached mid-turn and the turn just ended: the stream buffers never
+        // held the full response, so pull the finished messages from the
+        // session instead of leaving the pre-attach view on screen.
+        if (get().reattachedMidTurn) {
+          set({ reattachedMidTurn: false })
+          void get().reloadActiveSession({ refreshList: false })
+        }
         break
 
       case 'tool_execution_start':
@@ -1725,7 +1822,33 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   handlePendingPromptCounts: (counts) => set({ pendingPromptCounts: counts }),
 
+  handleWorkspaceActivity: (map) => {
+    // Safety net for the mid-turn attach: the turn can end during the switch
+    // itself, while this workspace's manager was not yet the active one — its
+    // agent_end is filtered and never reaches the renderer. The activity map
+    // always arrives, so a working state that disappears while the attach
+    // flag is up means the turn is over: stop the indicator and backfill.
+    const state = get()
+    const activeId = state.activeWorkspace?.id
+    if (state.reattachedMidTurn && activeId) {
+      const activity = map[activeId]?.state
+      if (activity !== 'working' && activity !== 'needs-approval') {
+        set({ workspaceActivity: map, reattachedMidTurn: false, isStreaming: false })
+        void get().reloadActiveSession({ refreshList: false })
+        return
+      }
+    }
+    set({ workspaceActivity: map })
+  },
+
   recoverPendingPrompts: async () => {
+    // Isolated: the activity snapshot is cosmetic and must never block the
+    // prompt flush below, which recovers a held blocking dialog.
+    try {
+      get().handleWorkspaceActivity(await window.piDesktop.workspace.getActivity())
+    } catch {
+      // Non-fatal: the next activity broadcast catches the renderer up.
+    }
     try {
       get().handlePendingPromptCounts(await window.piDesktop.ui.getPendingPrompts())
       const workspace = await window.piDesktop.workspace.getActive()
@@ -1936,6 +2059,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       if (!skipSessionLoad && get().piStatus === 'running') {
         sessionLoadGeneration += 1
         await get().reloadActiveSession({ refreshList: false })
+        // A turn may already be running here (that is what the sidebar dot
+        // advertised). The reload above only shows persisted messages, so
+        // without this the chat looks idle while Pi is mid-response. Show the
+        // working indicator and mark the attach so the next turn boundary
+        // backfills from the session (the stream buffers missed the prefix).
+        const activity = get().workspaceActivity[workspaceId]?.state
+        if (activity === 'working' || activity === 'needs-approval') {
+          set({ isStreaming: true, reattachedMidTurn: true })
+        }
       } else if (get().piStatus === 'running') {
         // Stats only. Refreshing sessionState here races the follow-up
         // switchSession this flow contracts for: when the refresh lands

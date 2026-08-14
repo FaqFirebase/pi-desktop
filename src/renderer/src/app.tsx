@@ -9,6 +9,7 @@ import { DiffViewer } from './components/diff-viewer'
 import { HomeScreen } from './components/home-screen'
 import { NotesPanel } from './components/notes-panel'
 import { SkillsPanel } from './components/skills-panel'
+import { DiagnosticsPanel } from './components/diagnostics-panel'
 import { NotePicker } from './components/note-picker'
 import { CommandPalette } from './components/command-palette'
 import { ExtensionUiDialog, AppConfirmDialog } from './components/extension-ui-dialog'
@@ -59,17 +60,16 @@ export function App(): React.JSX.Element {
     return () => document.removeEventListener('contextmenu', handleContextMenu)
   }, [show])
 
-  // Global command palette launcher (Ctrl/Cmd+K). Chosen commands insert at
-  // the composer caret, so an open draft is never overwritten. Slash-typing in
-  // the composer is handled by ChatInput's inline popup instead.
+  // Global quick-switcher launcher (Ctrl/Cmd+K): commands, workspaces,
+  // sessions, and files. No Pi-running gate — workspace/session/file
+  // navigation works with Pi stopped, and command actions soft-fail the same
+  // way their buttons do. Slash-typing in the composer is handled by
+  // ChatInput's inline popup instead.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault()
-        const state = useAppStore.getState()
-        if (state.piStatus === 'running') {
-          state.setCommandPalette(true)
-        }
+        useAppStore.getState().setCommandPalette(true)
       }
     }
     document.addEventListener('keydown', handleKeyDown)
@@ -157,6 +157,7 @@ export function App(): React.JSX.Element {
             {currentView === 'diff' && <DiffViewer />}
             {currentView === 'notes' && <NotesPanel />}
             {currentView === 'skills' && <SkillsPanel />}
+            {currentView === 'diagnostics' && <DiagnosticsPanel />}
           </main>
           {currentView === 'chat' && <ReviewRail />}
         </div>
