@@ -553,6 +553,17 @@ let switchCoalesceResolve: (() => void) | null = null
 // Only one get_messages/switch pipeline at a time (Pi + IPC can't keep up).
 let switchPipeline: Promise<void> = Promise.resolve()
 
+// Attach backfills ride the same pipeline as session switches so their
+// get_messages can never run concurrently with a switch's (each response is a
+// multi-MB IPC clone, and an agent_end landing inside a switch's coalesce
+// window would otherwise race it). Generation checks inside
+// reloadActiveSession still drop a backfill a newer switch superseded.
+function enqueueAttachBackfill(get: () => AppState & AppActions): Promise<void> {
+  const load = (): Promise<void> => get().reloadActiveSession({ refreshList: false })
+  switchPipeline = switchPipeline.then(load, load)
+  return switchPipeline
+}
+
 // Coalesce filesystem session-list walks: rapid switches used to stack N full
 // directory scans and freeze the renderer/main.
 let sessionListRefreshInFlight = false
@@ -1138,32 +1149,57 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const run = async (): Promise<void> => {
       if (gen !== sessionLoadGeneration || pendingSwitchPath !== path) return
       try {
-        set({ sessionLoading: true })
-        get().clearMessages()
-
         // A live turn in this workspace: the switch_session RPC ABORTS it —
         // Pi treats the command as a session change even when the target is
         // the very session it is already on (verified live: the in-flight
         // response is discarded and never reaches the session file). When the
         // activity map says this workspace is working, ask Pi which session
-        // it is on (get_state answers mid-turn); if it IS the target, skip
-        // the RPC, reload history, and attach to the running turn instead.
+        // it is on (get_state answers mid-turn): the turn's own session
+        // re-attaches instead of switching; anything else — including a
+        // failed/stale get_state, which must fail CLOSED — warns before
+        // killing a turn whose streaming was never on screen.
         const activeId = get().activeWorkspace?.id
         const activity = activeId ? get().workspaceActivity[activeId]?.state : undefined
         if (activity === 'working' || activity === 'needs-approval') {
           await get().refreshSessionState()
           if (gen !== sessionLoadGeneration) return
           if (get().sessionState?.sessionFile === path) {
+            set({ sessionLoading: true })
+            get().clearMessages()
             await get().reloadActiveSession({ refreshList: false })
             if (gen !== sessionLoadGeneration) return
             scheduleSessionListRefresh(get)
-            // The reload only shows persisted messages; mark the attach so
-            // the working banner shows and the next turn boundary backfills.
-            set({ isStreaming: true, reattachedMidTurn: true })
+            // The reload only shows persisted messages; arm the attach so the
+            // working banner shows and turn boundaries backfill. Re-check the
+            // map first: the turn may have ended during the reload, and its
+            // disarming broadcast may already be behind us.
+            const still = activeId ? get().workspaceActivity[activeId]?.state : undefined
+            if (still === 'working' || still === 'needs-approval') {
+              set({ isStreaming: true, reattachedMidTurn: true })
+            }
             return
+          }
+          // A different session (or an unconfirmable one): switching kills
+          // the background turn. When its streaming is on screen the
+          // confirmSessionChange gate above already warned; a background
+          // turn's isStreaming is false, so warn here before the teardown.
+          if (!get().isStreaming) {
+            const confirmed = await get().requestConfirm({
+              title: 'Pi is still working',
+              message:
+                'Pi has not finished responding in another session of this ' +
+                'workspace. Opening this session stops it: whatever Pi already ' +
+                'wrote to that session is kept, but the rest of the response ' +
+                'is discarded.',
+              confirmLabel: 'Switch anyway',
+              danger: true,
+            })
+            if (!confirmed || gen !== sessionLoadGeneration) return
           }
         }
 
+        set({ sessionLoading: true })
+        get().clearMessages()
         const result = (await window.piDesktop.session.switch(path)) as {
           success?: boolean
           error?: string
@@ -1272,8 +1308,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         if (newWs && !(await get().switchWorkspace(newWs.id, { skipSessionLoad: true }))) return
       }
     }
-    // switchSession preserves (and attaches to) a live turn when the clicked
-    // row is the session Pi is mid-turn on — see its working-workspace guard.
+    // switchSession's working-workspace guard covers the live-turn cases from
+    // here on: the turn's own session re-attaches instead of switching, and
+    // opening a different session of a mid-turn workspace warns first (the
+    // switchWorkspace gates above only cover a turn whose streaming is on
+    // screen in the departing workspace).
     await get().switchSession(session.path)
     // Bring the chat into view (may be on Settings/Notes/etc.). In-app
     // switches keep their remembered scroll position, so no force-to-bottom.
@@ -1600,10 +1639,23 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         })
         // Attached mid-turn: the commit above only held the post-attach
         // suffix of this message — replace it with the persisted full one.
-        // Later messages of the same turn then stream normally.
+        // The reload's teardown (idleTurnState inside clearMessages) disarms
+        // the attach and the indicator, so re-arm afterwards from the
+        // authoritative signal: the activity map still reporting the turn
+        // live. If the turn ended during the backfill the map says idle (or
+        // its broadcast is about to and the reconciliation settles it).
         if (get().reattachedMidTurn) {
-          set({ reattachedMidTurn: false })
-          void get().reloadActiveSession({ refreshList: false })
+          void enqueueAttachBackfill(get).then(() => {
+            const after = get()
+            const activeId = after.activeWorkspace?.id
+            const activity = activeId ? after.workspaceActivity[activeId]?.state : undefined
+            if (
+              (activity === 'working' || activity === 'needs-approval') &&
+              !after.sessionLoading
+            ) {
+              set({ isStreaming: true, reattachedMidTurn: true })
+            }
+          })
         }
         break
       }
@@ -1648,7 +1700,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         // session instead of leaving the pre-attach view on screen.
         if (get().reattachedMidTurn) {
           set({ reattachedMidTurn: false })
-          void get().reloadActiveSession({ refreshList: false })
+          void enqueueAttachBackfill(get)
         }
         break
 
@@ -1823,20 +1875,27 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   handlePendingPromptCounts: (counts) => set({ pendingPromptCounts: counts }),
 
   handleWorkspaceActivity: (map) => {
-    // Safety net for the mid-turn attach: the turn can end during the switch
-    // itself, while this workspace's manager was not yet the active one — its
-    // agent_end is filtered and never reaches the renderer. The activity map
-    // always arrives, so a working state that disappears while the attach
-    // flag is up means the turn is over: stop the indicator and backfill.
     const state = get()
     const activeId = state.activeWorkspace?.id
-    if (state.reattachedMidTurn && activeId) {
-      const activity = map[activeId]?.state
-      if (activity !== 'working' && activity !== 'needs-approval') {
-        set({ workspaceActivity: map, reattachedMidTurn: false, isStreaming: false })
-        void get().reloadActiveSession({ refreshList: false })
-        return
-      }
+    const activity = activeId ? map[activeId]?.state : undefined
+    const working = activity === 'working' || activity === 'needs-approval'
+    // Disarm: the turn can end during a switch itself, while this workspace's
+    // manager was not yet the active one — its agent_end is filtered and
+    // never reaches the renderer. The activity map always arrives, so a
+    // working state that disappears while the attach flag is up means the
+    // turn is over: stop the indicator and backfill.
+    if (state.reattachedMidTurn && !working) {
+      set({ workspaceActivity: map, reattachedMidTurn: false, isStreaming: false })
+      void enqueueAttachBackfill(get)
+      return
+    }
+    // Arm: a live turn in the active workspace with no live view — e.g. a
+    // renderer reload (Ctrl+R) mid-turn boots with idle state and would
+    // otherwise stream invisibly and commit a truncated message. The
+    // sessionLoading guard keeps this out of session-change teardown windows.
+    if (!state.reattachedMidTurn && working && !state.isStreaming && !state.sessionLoading) {
+      set({ workspaceActivity: map, isStreaming: true, reattachedMidTurn: true })
+      return
     }
     set({ workspaceActivity: map })
   },

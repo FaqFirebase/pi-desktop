@@ -70,6 +70,12 @@ export function wireWorkspaceActivity(
       const stillExists = workspaceManager
         .getWorkspaces()
         .some((ws) => ws.id === notification.workspaceId)
+      // Always stash AND broadcast: a webContents.send only lands if the
+      // renderer's subscription is already live, which a click during boot,
+      // reload, or with the window closed cannot guarantee. A renderer that
+      // does receive the broadcast consumes the stash immediately; one that
+      // missed it pulls the stash when its subscriptions come up.
+      if (stillExists) pendingActivationWorkspaceId = notification.workspaceId
       const win = getWindow()
       if (win) {
         if (win.isMinimized()) win.restore()
@@ -84,10 +90,8 @@ export function wireWorkspaceActivity(
           })
         }
       } else {
-        // macOS: the window may be fully closed. A broadcast now has no
-        // windows to reach, and a send at did-finish-load would race the
-        // renderer's subscription — stash the intent for the boot-time pull.
-        if (stillExists) pendingActivationWorkspaceId = notification.workspaceId
+        // macOS: the window may be fully closed — recreate it; the fresh
+        // renderer pulls the stashed intent once its subscriptions are live.
         showWindow()
       }
     })

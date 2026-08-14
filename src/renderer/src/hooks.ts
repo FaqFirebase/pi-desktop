@@ -38,9 +38,13 @@ export function usePiEvents(): void {
         if (switched) useAppStore.getState().setCurrentView('chat')
       })
     }
-    const unsubscribeActivate = window.piDesktop.onActivateWorkspace(({ workspaceId }) =>
+    const unsubscribeActivate = window.piDesktop.onActivateWorkspace(({ workspaceId }) => {
+      // Main stashes every click's intent in case this broadcast never lands
+      // (boot/reload race). It did land — consume the stash so a later boot
+      // cannot replay a long-stale activation.
+      void window.piDesktop.workspace.takePendingActivation().catch(() => undefined)
       activateWorkspaceIntent(workspaceId)
-    )
+    })
 
     // A reload leaves the dialog slot empty while main still holds the prompt.
     void recoverPendingPrompts()
@@ -456,6 +460,20 @@ export function useInitialize(): void {
       await startPi()
       await useAppStore.getState().reloadActiveSession()
       await refreshSessionStats()
+
+      // Re-pull the activity snapshot AFTER the boot load: a renderer reload
+      // (Ctrl+R) mid-turn boots idle, the load's teardown clears any attach
+      // the earlier snapshot armed, and broadcasts only fire on transitions —
+      // without this pull the running turn would stream invisibly and its
+      // in-flight message would commit truncated. handleWorkspaceActivity
+      // arms the attach when the active workspace is working.
+      try {
+        useAppStore
+          .getState()
+          .handleWorkspaceActivity(await window.piDesktop.workspace.getActivity())
+      } catch {
+        // Non-fatal: the next activity broadcast catches the renderer up.
+      }
     }
 
     initialize()

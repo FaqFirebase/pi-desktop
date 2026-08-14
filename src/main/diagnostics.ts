@@ -42,12 +42,14 @@ export async function collectDiagnostics(
   const resolution = getPiResolution()
 
   const activeWorkspace = workspaceManager.getActiveWorkspace()
+  // A stale workspace path (folder deleted/renamed outside the app) would make
+  // the spawn itself fail on cwd — fall back rather than reporting no version.
+  const versionCwd =
+    activeWorkspace && existsSync(activeWorkspace.path)
+      ? activeWorkspace.path
+      : (process.env.HOME ?? process.cwd())
   const piVersionResult = cli.found
-    ? await runPiCli(
-        ['--version'],
-        activeWorkspace?.path ?? process.env.HOME ?? process.cwd(),
-        PI_VERSION_TIMEOUT_MS,
-      )
+    ? await runPiCli(['--version'], versionCwd, PI_VERSION_TIMEOUT_MS)
     : { success: false, output: '' }
 
   const workspaces: DiagnosticsWorkspaceInfo[] = workspaceManager.getWorkspaces().map((ws) => ({

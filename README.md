@@ -13,7 +13,7 @@ Still in alpha, so expect rough edges.
 - Composer file mentions (type `@` to insert a path reference for Pi to read) and `Up`/`Down` to recall prompts sent in the current session
 - Home dashboard with usage stats: messages, tokens, active-day streaks, peak hour, and a per-model breakdown
 - [Multi-Agent Council Planning](#multi-agent-council-planning), where Pi, Claude, and Codex plan together and reach consensus before Pi builds (opt-in)
-- Quick switcher (`Ctrl/Cmd+K` or `/`) for skills, prompt templates, built-in commands, workspaces, sessions, and files
+- Quick switcher (`Ctrl/Cmd+K`) for skills, prompt templates, built-in commands, workspaces, sessions, and files; `/` in the composer for commands
 - Skills browser, session fork/branch tree, and one-click context compaction
 - Session naming (read from Pi) with inline rename, and a themed in-app confirmation for delete
 - Custom models & providers editor in Settings, which edits `~/.pi/agent/models.json`

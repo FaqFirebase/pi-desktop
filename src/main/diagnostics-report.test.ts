@@ -35,6 +35,17 @@ test('summarizeProviders counts models and classifies each provider', () => {
   ])
 })
 
+test('summarizeProviders tolerates null and non-object provider entries', () => {
+  const config = {
+    providers: { broken: null, alsoBroken: 'oops', ok: { apiKey: 'sk-x' } },
+  } as unknown as ModelsConfig
+  assert.deepEqual(summarizeProviders(config, {}), [
+    { name: 'broken', modelCount: 0, keyState: 'none' },
+    { name: 'alsoBroken', modelCount: 0, keyState: 'none' },
+    { name: 'ok', modelCount: 0, keyState: 'literal' },
+  ])
+})
+
 test('extractVersionLine takes the first non-empty line', () => {
   assert.equal(extractVersionLine('0.31.0\n'), '0.31.0')
   assert.equal(extractVersionLine('\n  pi 0.31.0 \nextra noise'), 'pi 0.31.0')

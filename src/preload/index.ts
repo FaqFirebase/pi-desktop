@@ -36,7 +36,6 @@ import type {
   PathKindResult,
   PromptImage,
   ActivityStatsResult,
-  AppLogEntry,
   DiagnosticsReport,
   ThemesListResult,
   ThemeImportResult,
@@ -250,11 +249,6 @@ interface PiDesktopAPI {
   // Activity stats
   activity: {
     getStats(): Promise<ActivityStatsResult>
-  }
-
-  // App log (main-process log ring for diagnostics)
-  logs: {
-    getRecent(): Promise<AppLogEntry[]>
   }
 
   // Diagnostics report
@@ -474,10 +468,6 @@ const api: PiDesktopAPI = {
 
   activity: {
     getStats: () => ipcRenderer.invoke(IPC_CHANNELS.ACTIVITY_GET_STATS),
-  },
-
-  logs: {
-    getRecent: () => ipcRenderer.invoke(IPC_CHANNELS.LOG_GET_RECENT),
   },
 
   diagnostics: {

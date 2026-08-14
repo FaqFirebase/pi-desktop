@@ -21,6 +21,9 @@ const TONE_TEXT: Record<Exclude<RowTone, 'plain'>, string> = {
   fail: 'text-error',
 }
 
+/** Newest log entries shown in the Recent Errors section. */
+const MAX_VISIBLE_LOG_ENTRIES = 30
+
 const KEY_STATE_LABELS: Record<string, { label: string; tone: RowTone }> = {
   literal: { label: 'key configured', tone: 'ok' },
   'env-set': { label: 'env var set', tone: 'ok' },
@@ -234,7 +237,7 @@ export function DiagnosticsPanel(): React.JSX.Element {
                 <p className="text-xs text-dim">No warnings or errors recorded this run.</p>
               ) : (
                 <div className="space-y-1">
-                  {report.recentErrors.slice(-30).map((entry, index) => (
+                  {report.recentErrors.slice(-MAX_VISIBLE_LOG_ENTRIES).map((entry, index) => (
                     <LogEntryRow key={`${entry.ts}-${index}`} entry={entry} now={report.generatedAt} />
                   ))}
                 </div>

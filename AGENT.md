@@ -95,9 +95,9 @@ src/
         ├── index.css             # Tailwind + theme overrides
         ├── utils/
         │   ├── planning-prompt.ts # Plan/read-only prompt wrapper
-│   ├── ipc-error.ts      # Strip Electron's remote-method prefix from IPC errors
-│   ├── quick-switcher.ts # Token filters for the palette's workspace/session/file sections
-│   ├── rank-file-results.ts # Basename-tiered ranking for file search hits
+        │   ├── ipc-error.ts      # Strip Electron's remote-method prefix from IPC errors
+        │   ├── quick-switcher.ts # Token filters for the palette's workspace/session/file sections
+        │   ├── rank-file-results.ts # Basename-tiered ranking for file search hits
         │   ├── session-title.ts  # Distinguishable fallback session titles
         │   ├── heatmap-grid.ts   # Weeks/intensity layout for the stats mini-heatmap
         │   ├── model-search.ts   # Tokenized model-picker search (treats -_./: as spaces)
@@ -305,6 +305,11 @@ Renderer → preload (contextBridge) → IPC → main handlers → Pi RPC / File
 - Extension UI protocol supported (select, confirm, input, editor dialogs)
 
 ## Data Storage
+
+Paths below show the legacy home-dir location for brevity; since the canonical
+data-dir migration the GUI's files live under the OS app-data dir
+(`<appData>/pi-desktop`, overridable via `PI_DESKTOP_USER_DATA_DIR`), with
+`~/.pi-desktop-gui` kept as the legacy fallback.
 
 | Path | Purpose |
 |------|---------|

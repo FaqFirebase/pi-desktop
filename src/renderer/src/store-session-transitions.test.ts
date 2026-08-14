@@ -304,6 +304,7 @@ beforeEach(() => {
     extensionNotify: null,
     pendingPromptCounts: {},
     workspaceActivity: {},
+    reattachedMidTurn: false,
     activeWorkspace: null,
     workspaces: [],
     piStatus: 'stopped',
@@ -1519,14 +1520,77 @@ test('opening the mid-turn session row skips the killing RPC and re-attaches', a
   assert.equal(state.reattachedMidTurn, true)
 })
 
-test('opening a DIFFERENT session mid-turn still switches (turn teardown intended)', async () => {
+test('opening a DIFFERENT session mid-turn warns, then switches on accept', async () => {
   enterWorkspacesWithBackgroundTurn()
-  // Pi reports it is working on another session than the row being opened.
+  // Pi reports it is working on another session than the row being opened —
+  // switching kills that background turn, so a warning must gate it (the
+  // renderer's isStreaming is false for background turns, so the ordinary
+  // confirmSessionChange gate stays silent here).
   sessionStateResult = sessionStateWith('/tmp/other-turn-session.jsonl')
+  answerConfirm(true)
 
   await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
 
   assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
+  assert.equal(useAppStore.getState().reattachedMidTurn, false)
+})
+
+test('declining the background-turn warning aborts the session switch', async () => {
+  enterWorkspacesWithBackgroundTurn()
+  sessionStateResult = sessionStateWith('/tmp/other-turn-session.jsonl')
+  answerConfirm(false)
+
+  await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
+
+  assert.equal(
+    calls.includes(`switch:${SESSION_PATH}`),
+    false,
+    'a declined warning must not send the turn-killing switch_session RPC'
+  )
+})
+
+test('a mid-turn message_end keeps the attach armed and restores the indicator', async () => {
+  enterWorkspacesWithBackgroundTurn()
+  await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  const loadsBefore = calls.filter((c) => c === 'getMessages').length
+
+  // The in-flight message completes but the TURN continues (tool-using
+  // turns have several messages). The backfill's teardown clears the
+  // indicator; it must come back, and the attach must stay armed so the
+  // kill-gates keep warning and later boundaries keep backfilling.
+  useAppStore.getState().handlePiEvent({ type: 'message_end', message: {} })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  const state = useAppStore.getState()
+  assert.equal(state.reattachedMidTurn, true)
+  assert.equal(state.isStreaming, true, 'the turn is still running — the UI must not look idle')
+  assert.equal(calls.filter((c) => c === 'getMessages').length, loadsBefore + 1)
+})
+
+test('an activity broadcast arms the attach for a renderer that booted mid-turn', async () => {
+  // Ctrl+R mid-turn: the fresh renderer is idle while Pi still streams.
+  workspaceListResult = [WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_TWO
+  useAppStore.setState({ activeWorkspace: WORKSPACE_TWO, workspaces: [WORKSPACE_TWO] })
+
+  useAppStore.getState().handleWorkspaceActivity({ [WORKSPACE_ID]: { state: 'working', since: 1 } })
+
+  const state = useAppStore.getState()
+  assert.equal(state.isStreaming, true)
+  assert.equal(state.reattachedMidTurn, true)
+})
+
+test('the boot arm stays out of session-change teardown windows', async () => {
+  workspaceListResult = [WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_TWO
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_TWO,
+    workspaces: [WORKSPACE_TWO],
+    sessionLoading: true,
+  })
+
+  useAppStore.getState().handleWorkspaceActivity({ [WORKSPACE_ID]: { state: 'working', since: 1 } })
+
   assert.equal(useAppStore.getState().reattachedMidTurn, false)
 })
 

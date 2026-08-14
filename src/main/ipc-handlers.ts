@@ -21,7 +21,6 @@ import { registerNotesHandlers } from './ipc/notes-handlers'
 import { registerFileHandlers } from './ipc/file-handlers'
 import { registerSystemHandlers } from './ipc/system-handlers'
 import { registerUpdateHandlers } from './ipc/update-handlers'
-import { registerLogHandlers } from './ipc/log-handlers'
 import { registerDiagnosticsHandlers } from './ipc/diagnostics-handlers'
 import { wireWorkspaceActivity, type WindowControls } from './ipc/workspace-activity-wiring'
 
@@ -56,7 +55,6 @@ export function registerIpcHandlers(
   registerFileHandlers(ctx)
   registerSystemHandlers(ctx)
   registerUpdateHandlers()
-  registerLogHandlers()
   registerDiagnosticsHandlers(ctx)
 
   // ─── Extension UI Responses and Pi Event Forwarding ─────────────────────

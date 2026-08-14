@@ -83,9 +83,6 @@ export const IPC_CHANNELS = {
   // Activity
   ACTIVITY_GET_STATS: 'activity:get-stats',
 
-  // App log
-  LOG_GET_RECENT: 'log:get-recent',
-
   // Diagnostics
   DIAGNOSTICS_GET: 'diagnostics:get',
 

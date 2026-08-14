@@ -30,10 +30,14 @@ export function summarizeProviders(
   env: NodeJS.ProcessEnv,
 ): DiagnosticsProviderInfo[] {
   return Object.entries(config.providers).map(([name, provider]) => {
-    const { keyState, envVar } = classifyProviderKey(provider.apiKey, env)
+    // The file-level validation only checks the providers RECORD; a hand-
+    // edited entry value can be null or a non-object and must not take the
+    // whole report down.
+    const shape = typeof provider === 'object' && provider !== null ? provider : {}
+    const { keyState, envVar } = classifyProviderKey(shape.apiKey, env)
     const info: DiagnosticsProviderInfo = {
       name,
-      modelCount: Array.isArray(provider.models) ? provider.models.length : 0,
+      modelCount: Array.isArray(shape.models) ? shape.models.length : 0,
       keyState,
     }
     if (envVar !== undefined) info.envVar = envVar
