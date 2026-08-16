@@ -934,6 +934,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   sendSteer: async (message) => {
     try {
+      // Steers are intentionally not rendered as bubbles; record the echo so
+      // the message_start handler does not render one as an external prompt.
+      recordLocalEcho(message)
       await window.piDesktop.commands.steer(message)
     } catch (err) {
       get().addMessage({
@@ -947,6 +950,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   sendFollowUp: async (message) => {
     try {
+      // Same as sendSteer: suppress the echo-rendered external bubble.
+      recordLocalEcho(message)
       await window.piDesktop.commands.followUp(message)
     } catch (err) {
       get().addMessage({
@@ -1665,13 +1670,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
             get().addMessage(parsed)
             // Mirror sendPrompt's turn-start state so the external turn gets
             // a live streaming bubble instead of content appearing only at
-            // message_end. agent_end clears isStreaming as usual.
-            set({
-              isStreaming: true,
-              streamingContent: '',
-              streamingThinking: '',
-              streamingToolCalls: new Map(),
-            })
+            // message_end. agent_end clears isStreaming as usual. When a turn
+            // is already streaming (an external steer injected mid-turn), the
+            // in-progress content and tool-call state must survive.
+            if (!get().isStreaming) {
+              set({
+                isStreaming: true,
+                streamingContent: '',
+                streamingThinking: '',
+                streamingToolCalls: new Map(),
+              })
+            }
             get().addTimelineEvent({
               id: generateId(),
               type: 'system',
