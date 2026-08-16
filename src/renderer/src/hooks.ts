@@ -10,21 +10,63 @@ import { BUILTIN_SOURCE, type PiCommand } from '../../shared/pi-command'
 export function usePiEvents(): void {
   const handlePiEvent = useAppStore((state) => state.handlePiEvent)
   const handlePendingPromptCounts = useAppStore((state) => state.handlePendingPromptCounts)
+  const handleWorkspaceActivity = useAppStore((state) => state.handleWorkspaceActivity)
   const recoverPendingPrompts = useAppStore((state) => state.recoverPendingPrompts)
 
   useEffect(() => {
     // Subscribe to Pi events (status changes arrive here too, as 'status_change').
     const unsubscribeEvent = window.piDesktop.onEvent(handlePiEvent)
     const unsubscribeCounts = window.piDesktop.onPendingPrompts(handlePendingPromptCounts)
+    const unsubscribeActivity = window.piDesktop.onWorkspaceActivity(handleWorkspaceActivity)
+
+    // A desktop-notification click hands the renderer the switch intent so the
+    // usual streaming/dirty-editor confirms still run; landing on chat shows
+    // the finished (or waiting) turn the notification was about.
+    const activateWorkspaceIntent = (workspaceId: string): void => {
+      const state = useAppStore.getState()
+      // A stale intent for a removed workspace must not run confirm dialogs
+      // for a doomed switch. An empty list means it just hasn't loaded yet
+      // (boot) — proceed and let main validate.
+      if (state.workspaces.length > 0 && !state.workspaces.some((ws) => ws.id === workspaceId)) {
+        return
+      }
+      if (state.activeWorkspace?.id === workspaceId) {
+        if (state.currentView !== 'chat') state.setCurrentView('chat')
+        return
+      }
+      void state.switchWorkspace(workspaceId).then((switched) => {
+        if (switched) useAppStore.getState().setCurrentView('chat')
+      })
+    }
+    const unsubscribeActivate = window.piDesktop.onActivateWorkspace(({ workspaceId }) => {
+      // Main stashes every click's intent in case this broadcast never lands
+      // (boot/reload race). It did land — consume the stash so a later boot
+      // cannot replay a long-stale activation.
+      void window.piDesktop.workspace.takePendingActivation().catch(() => undefined)
+      activateWorkspaceIntent(workspaceId)
+    })
 
     // A reload leaves the dialog slot empty while main still holds the prompt.
     void recoverPendingPrompts()
 
+    // A notification clicked while no window existed stashed its intent in
+    // main; deliver it now that the subscriptions above are live.
+    void window.piDesktop.workspace
+      .takePendingActivation()
+      .then((workspaceId) => {
+        if (workspaceId) activateWorkspaceIntent(workspaceId)
+      })
+      .catch(() => {
+        // Non-fatal: the user can switch manually.
+      })
+
     return () => {
       unsubscribeEvent()
       unsubscribeCounts()
+      unsubscribeActivity()
+      unsubscribeActivate()
     }
-  }, [handlePiEvent, handlePendingPromptCounts, recoverPendingPrompts])
+  }, [handlePiEvent, handlePendingPromptCounts, handleWorkspaceActivity, recoverPendingPrompts])
 }
 
 /**
@@ -418,6 +460,20 @@ export function useInitialize(): void {
       await startPi()
       await useAppStore.getState().reloadActiveSession()
       await refreshSessionStats()
+
+      // Re-pull the activity snapshot AFTER the boot load: a renderer reload
+      // (Ctrl+R) mid-turn boots idle, the load's teardown clears any attach
+      // the earlier snapshot armed, and broadcasts only fire on transitions —
+      // without this pull the running turn would stream invisibly and its
+      // in-flight message would commit truncated. handleWorkspaceActivity
+      // arms the attach when the active workspace is working.
+      try {
+        useAppStore
+          .getState()
+          .handleWorkspaceActivity(await window.piDesktop.workspace.getActivity())
+      } catch {
+        // Non-fatal: the next activity broadcast catches the renderer up.
+      }
     }
 
     initialize()

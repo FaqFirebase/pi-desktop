@@ -2,6 +2,7 @@ import { AlertCircle, CheckCircle2, FileSearch, GitCompare, ShieldCheck } from '
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../store'
 import { PermissionSelector } from './permission-selector'
+import { formatIpcError } from '../utils/ipc-error'
 import type { GitFileStatus } from '../../../shared/ipc-contracts'
 
 interface ChangedFile {
@@ -20,6 +21,7 @@ export function ReviewRail(): React.JSX.Element | null {
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const messages = useAppStore((state) => state.messages)
   const [gitStatus, setGitStatus] = useState<Record<string, GitFileStatus>>({})
+  const [gitError, setGitError] = useState<string | null>(null)
 
   const pendingCount = pendingSteering.length + pendingFollowUp.length
   const changedFiles = useMemo<ChangedFile[]>(
@@ -35,9 +37,17 @@ export function ReviewRail(): React.JSX.Element | null {
     const loadStatus = async () => {
       try {
         const status = await window.piDesktop.files.getGitStatus()
-        if (!cancelled) setGitStatus(status)
-      } catch {
-        if (!cancelled) setGitStatus({})
+        if (!cancelled) {
+          setGitStatus(status)
+          setGitError(null)
+        }
+      } catch (err) {
+        // Keep polling — a transient git failure (index lock, etc.) heals on
+        // the next tick; the notice below tells the user why the list is empty.
+        if (!cancelled) {
+          setGitStatus({})
+          setGitError(formatIpcError(err))
+        }
       }
     }
 
@@ -108,7 +118,12 @@ export function ReviewRail(): React.JSX.Element | null {
             </span>
           </div>
           <div className="mb-2 overflow-hidden rounded-md border border-border bg-surface/50">
-            {changedFiles.length === 0 ? (
+            {gitError !== null ? (
+              <div className="flex items-center gap-2 px-3 py-3 text-xs text-warning" title={gitError}>
+                <AlertCircle size={13} className="shrink-0" />
+                <span className="min-w-0 flex-1 truncate">Git status unavailable</span>
+              </div>
+            ) : changedFiles.length === 0 ? (
               <div className="px-3 py-3 text-sm text-dim">No working tree changes.</div>
             ) : (
               <div className="max-h-44 overflow-y-auto py-1">

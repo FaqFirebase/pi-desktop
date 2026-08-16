@@ -11,6 +11,7 @@ import {
   type FileSearchResult,
 } from '../../../shared/ipc-contracts'
 import { formatUntrustedBlock } from '../../../shared/untrusted-data'
+import { rankFileResults } from '../utils/rank-file-results'
 import {
   BUILTIN_SOURCE,
   filterCommands,
@@ -48,28 +49,6 @@ function readFileAsDataUrl(file: File): Promise<string> {
 interface MentionState {
   start: number
   query: string
-}
-
-// Rank filename matches so the strongest candidates land in the visible slots:
-// exact basename first, then prefix, then any-other substring; ties broken by
-// shorter path (closer to the workspace root), then alphabetically. The backend
-// returns matches in filesystem-walk order, which otherwise buries good hits.
-function rankMentionResults(results: FileSearchResult[], query: string): FileSearchResult[] {
-  const q = query.toLowerCase()
-  const score = (r: FileSearchResult): number => {
-    const name = r.name.toLowerCase()
-    if (name === q) return 0
-    if (name.startsWith(q)) return 1
-    if (name.includes(q)) return 2
-    return 3
-  }
-  return [...results].sort((a, b) => {
-    const byScore = score(a) - score(b)
-    if (byScore !== 0) return byScore
-    const byLen = a.relativePath.length - b.relativePath.length
-    if (byLen !== 0) return byLen
-    return a.relativePath.localeCompare(b.relativePath)
-  })
 }
 
 // Detect an @-file mention immediately left of the caret: an `@` at the start of
@@ -194,7 +173,7 @@ export function ChatInput(): React.JSX.Element {
       try {
         const results = await window.piDesktop.files.search(query)
         if (!cancelled) {
-          setMentionResults(rankMentionResults(results, query).slice(0, MAX_MENTION_RESULTS))
+          setMentionResults(rankFileResults(results, query).slice(0, MAX_MENTION_RESULTS))
         }
       } catch {
         if (!cancelled) setMentionResults([])

@@ -4,11 +4,41 @@ import { join, extname, basename, resolve, relative, isAbsolute, sep, dirname } 
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { describeWriteError } from './fs-errors'
+import { appLog } from './app-log'
 import type { FileChangeEvent } from '../shared/ipc-contracts'
 
 const execFileAsync = promisify(execFile)
 
 const PARENT_ESCAPE = '..'
+
+const NOT_GIT_REPO_RE = /not a git repository/i
+// Bare repos: rev-parse succeeds but status/diff refuse to run.
+const NO_WORK_TREE_RE = /must be run in a work tree/i
+
+/**
+ * True for git errors that just mean "no git information here": the workspace
+ * is not a repo (or a bare one), or the machine has no git binary. All are
+ * normal configurations and must keep producing empty results, not errors.
+ */
+export function isBenignGitError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  const { code, stderr, message } = err as { code?: unknown; stderr?: unknown; message?: unknown }
+  if (code === 'ENOENT') return true
+  const text = `${typeof stderr === 'string' ? stderr : ''} ${typeof message === 'string' ? message : ''}`
+  return NOT_GIT_REPO_RE.test(text) || NO_WORK_TREE_RE.test(text)
+}
+
+/** Compact failure text for a git subcommand: first stderr line, else message. */
+export function describeGitError(operation: string, err: unknown): string {
+  const { stderr, message } = (err ?? {}) as { stderr?: unknown; message?: unknown }
+  const stderrLine = typeof stderr === 'string' ? stderr.trim().split('\n')[0] : ''
+  const reason = stderrLine || (typeof message === 'string' ? message : String(err))
+  return `git ${operation} failed: ${reason}`
+}
+
+// One log entry per workspace+operation per run — git status is polled every
+// few seconds, so an unguarded log would flood the file.
+const gitErrorLogged = new Set<string>()
 
 /**
  * True when `filePath` (absolute or workspace-relative) resolves to a location
@@ -220,7 +250,8 @@ export class FileService {
   }
 
   /**
-   * Get git status for the workspace.
+   * Get git status for the workspace. Empty for non-repos and machines
+   * without git; throws on real git failures so callers can surface them.
    */
   async getGitStatus(): Promise<Map<string, GitFileStatus>> {
     const statusMap = new Map<string, GitFileStatus>()
@@ -247,11 +278,42 @@ export class FileService {
           isStaged: indexStatus !== ' ' && indexStatus !== '?',
         })
       }
-    } catch {
-      // Not a git repo or git not available
+    } catch (err) {
+      if (!isBenignGitError(err) && (await this.probeGitRepo()) !== 'outside') {
+        throw this.describeAndLogGitError('status', err)
+      }
     }
 
     return statusMap
+  }
+
+  private describeAndLogGitError(operation: string, err: unknown): Error {
+    const description = describeGitError(operation, err)
+    // Dedup by error signature, not just operation, so a NEW failure mode for
+    // the same command still reaches the log.
+    const key = `${this.workspacePath}:${description}`
+    if (!gitErrorLogged.has(key)) {
+      gitErrorLogged.add(key)
+      appLog.warn('git', `${description} (${this.workspacePath})`, err)
+    }
+    return new Error(description)
+  }
+
+  // Some git subcommands fail outside a repo with errors that never mention
+  // "not a git repository" (e.g. `diff --cached` becomes an unknown option in
+  // no-index mode), so on the error path settle it definitively. Three-way:
+  // a broken git (config errors, permissions) must NOT be mistaken for
+  // "outside a repo" — that would silently mask real failures.
+  private async probeGitRepo(): Promise<'inside' | 'outside' | 'broken'> {
+    try {
+      await execFileAsync('git', ['rev-parse', '--git-dir'], {
+        cwd: this.workspacePath,
+        timeout: 5_000,
+      })
+      return 'inside'
+    } catch (err) {
+      return isBenignGitError(err) ? 'outside' : 'broken'
+    }
   }
 
   /**
@@ -270,7 +332,8 @@ export class FileService {
   }
 
   /**
-   * Get a diff for a specific file.
+   * Get a diff for a specific file. Empty for non-repos and machines without
+   * git; throws on real git failures so callers can surface them.
    */
   async getFileDiff(filePath?: string): Promise<string> {
     try {
@@ -282,8 +345,9 @@ export class FileService {
       })
       const untrackedDiff = await this.getUntrackedFileDiff(filePath)
       return [stdout, untrackedDiff].filter((part) => part.trim()).join('\n')
-    } catch {
-      return ''
+    } catch (err) {
+      if (isBenignGitError(err) || (await this.probeGitRepo()) === 'outside') return ''
+      throw this.describeAndLogGitError('diff', err)
     }
   }
 
@@ -308,7 +372,8 @@ export class FileService {
   }
 
   /**
-   * Get the staged diff.
+   * Get the staged diff. Empty for non-repos and machines without git;
+   * throws on real git failures so callers can surface them.
    */
   async getStagedDiff(filePath?: string): Promise<string> {
     try {
@@ -319,8 +384,9 @@ export class FileService {
         timeout: 10_000,
       })
       return stdout
-    } catch {
-      return ''
+    } catch (err) {
+      if (isBenignGitError(err) || (await this.probeGitRepo()) === 'outside') return ''
+      throw this.describeAndLogGitError('staged diff', err)
     }
   }
 

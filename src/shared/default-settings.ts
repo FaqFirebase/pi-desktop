@@ -29,5 +29,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   runOnStartup: false,
   minimizeToTrayOnClose: false,
   hasSeenTrayHint: false,
+  desktopNotifications: true,
   council: DEFAULT_COUNCIL_CONFIG,
 }

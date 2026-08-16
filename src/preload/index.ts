@@ -36,6 +36,7 @@ import type {
   PathKindResult,
   PromptImage,
   ActivityStatsResult,
+  DiagnosticsReport,
   ThemesListResult,
   ThemeImportResult,
   ThemeExportResult,
@@ -50,6 +51,7 @@ import type {
   PermissionRulesWorkspaceStatus,
   PermissionRulesRemoveResult,
   PendingPromptCounts,
+  WorkspaceActivityMap,
 } from '../shared/ipc-contracts'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -151,6 +153,13 @@ interface PiDesktopAPI {
     getActive(): Promise<Workspace | null>
     startPi(workspaceId: string, options?: PiStartOptions): Promise<PiStatus>
     stopPi(workspaceId: string): Promise<PiStatus>
+    /** Snapshot of the per-workspace activity map (reload recovery). */
+    getActivity(): Promise<WorkspaceActivityMap>
+    /**
+     * Consume the activation intent from a notification clicked while no
+     * window existed (macOS closed-window case). Null when there is none.
+     */
+    takePendingActivation(): Promise<string | null>
   }
 
   // Package management
@@ -242,6 +251,11 @@ interface PiDesktopAPI {
     getStats(): Promise<ActivityStatsResult>
   }
 
+  // Diagnostics report
+  diagnostics: {
+    get(): Promise<DiagnosticsReport>
+  }
+
   // Update check (GitHub releases)
   updates: {
     check(): Promise<UpdateCheckResult>
@@ -278,6 +292,8 @@ interface PiDesktopAPI {
   // Event subscription
   onEvent(callback: (event: PiRpcEvent) => void): () => void
   onPendingPrompts(callback: (counts: PendingPromptCounts) => void): () => void
+  onWorkspaceActivity(callback: (map: WorkspaceActivityMap) => void): () => void
+  onActivateWorkspace(callback: (payload: { workspaceId: string }) => void): () => void
   onFileChange(callback: (event: FileChangeEvent) => void): () => void
   onMenuAction(callback: (action: string) => void): () => void
 }
@@ -370,6 +386,8 @@ const api: PiDesktopAPI = {
     getActive: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GET_ACTIVE),
     startPi: (workspaceId, options) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_START_PI, workspaceId, options),
     stopPi: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_STOP_PI, workspaceId),
+    getActivity: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_ACTIVITY_GET),
+    takePendingActivation: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_TAKE_PENDING_ACTIVATION),
   },
 
   packages: {
@@ -452,6 +470,10 @@ const api: PiDesktopAPI = {
     getStats: () => ipcRenderer.invoke(IPC_CHANNELS.ACTIVITY_GET_STATS),
   },
 
+  diagnostics: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_GET),
+  },
+
   updates: {
     check: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK),
   },
@@ -501,6 +523,22 @@ const api: PiDesktopAPI = {
     ipcRenderer.on(IPC_CHANNELS.EVENT_PENDING_PROMPTS, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.EVENT_PENDING_PROMPTS, handler)
+    }
+  },
+
+  onWorkspaceActivity: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: WorkspaceActivityMap) => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.EVENT_WORKSPACE_ACTIVITY, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.EVENT_WORKSPACE_ACTIVITY, handler)
+    }
+  },
+
+  onActivateWorkspace: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { workspaceId: string }) => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.EVENT_ACTIVATE_WORKSPACE, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.EVENT_ACTIVATE_WORKSPACE, handler)
     }
   },
 

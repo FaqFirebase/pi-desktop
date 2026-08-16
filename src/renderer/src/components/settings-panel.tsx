@@ -73,6 +73,7 @@ export function SettingsPanel(): React.JSX.Element {
   const [codeEditorFontSize, setCodeEditorFontSize] = useState(draft0.codeEditorFontSize ?? settings?.codeEditorFontSize ?? DEFAULT_SETTINGS.codeEditorFontSize)
   const [showThinking, setShowThinking] = useState(draft0.showThinking ?? settings?.showThinking ?? DEFAULT_SETTINGS.showThinking)
   const [autoScroll, setAutoScroll] = useState(draft0.autoScroll ?? settings?.autoScroll ?? DEFAULT_SETTINGS.autoScroll)
+  const [desktopNotifications, setDesktopNotifications] = useState(draft0.desktopNotifications ?? settings?.desktopNotifications ?? DEFAULT_SETTINGS.desktopNotifications)
   const [resumeLastSession, setResumeLastSession] = useState(draft0.resumeLastSession ?? settings?.resumeLastSession ?? DEFAULT_SETTINGS.resumeLastSession)
   const [openToHomeOnLaunch, setOpenToHomeOnLaunch] = useState(draft0.openToHomeOnLaunch ?? settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch)
   const [runOnStartup, setRunOnStartup] = useState(draft0.runOnStartup ?? settings?.runOnStartup ?? DEFAULT_SETTINGS.runOnStartup)
@@ -218,6 +219,7 @@ export function SettingsPanel(): React.JSX.Element {
     setCodeEditorFontSize(draft.codeEditorFontSize ?? settings.codeEditorFontSize)
     setShowThinking(draft.showThinking ?? settings.showThinking)
     setAutoScroll(draft.autoScroll ?? settings.autoScroll)
+    setDesktopNotifications(draft.desktopNotifications ?? settings.desktopNotifications)
     setResumeLastSession(draft.resumeLastSession ?? settings.resumeLastSession)
     setOpenToHomeOnLaunch(draft.openToHomeOnLaunch ?? settings.openToHomeOnLaunch)
     setRunOnStartup(draft.runOnStartup ?? settings.runOnStartup)
@@ -425,6 +427,7 @@ export function SettingsPanel(): React.JSX.Element {
       codeEditorFontSize,
       showThinking,
       autoScroll,
+      desktopNotifications,
       resumeLastSession,
       openToHomeOnLaunch,
       runOnStartup,
@@ -481,6 +484,7 @@ export function SettingsPanel(): React.JSX.Element {
       codeEditorFontSize: DEFAULT_SETTINGS.codeEditorFontSize,
       showThinking: DEFAULT_SETTINGS.showThinking,
       autoScroll: DEFAULT_SETTINGS.autoScroll,
+      desktopNotifications: DEFAULT_SETTINGS.desktopNotifications,
       resumeLastSession: DEFAULT_SETTINGS.resumeLastSession,
       openToHomeOnLaunch: DEFAULT_SETTINGS.openToHomeOnLaunch,
       runOnStartup: DEFAULT_SETTINGS.runOnStartup,
@@ -495,6 +499,7 @@ export function SettingsPanel(): React.JSX.Element {
     setCodeEditorFontSize(defaults.codeEditorFontSize!)
     setShowThinking(defaults.showThinking!)
     setAutoScroll(defaults.autoScroll!)
+    setDesktopNotifications(defaults.desktopNotifications!)
     setResumeLastSession(defaults.resumeLastSession!)
     setOpenToHomeOnLaunch(defaults.openToHomeOnLaunch!)
     setRunOnStartup(defaults.runOnStartup!)
@@ -764,6 +769,13 @@ export function SettingsPanel(): React.JSX.Element {
 
           <SettingsRow label="Auto Scroll" description="Automatically scroll to new messages">
             <Toggle checked={autoScroll} onChange={(v) => { setAutoScroll(v); setSettingsDraft({ autoScroll: v }) }} />
+          </SettingsRow>
+
+          <SettingsRow
+            label="Desktop Notifications"
+            description="Notify when Pi finishes, fails, or waits for approval in a workspace you are not looking at"
+          >
+            <Toggle checked={desktopNotifications} onChange={(v) => { setDesktopNotifications(v); setSettingsDraft({ desktopNotifications: v }) }} />
           </SettingsRow>
 
           <SettingsRow

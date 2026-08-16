@@ -18,6 +18,7 @@ import {
   whichInPath,
 } from './pi-binary-resolution'
 import { escapeCmdSpawn } from './cmd-escape'
+import { appLog } from './app-log'
 import { getGuiDataPath } from './app-data-paths'
 
 /**
@@ -205,6 +206,14 @@ function getResolution(): PiResolution {
   return resolution
 }
 
+/**
+ * Full resolution details (source, PATH, rejected override) for the
+ * diagnostics report. First call may run the login-shell and npm probes.
+ */
+export function getPiResolution(): PiResolution {
+  return getResolution()
+}
+
 function logResolution(resolution: PiResolution): void {
   const node = getNodeBinary()
   console.log('─── Pi binary resolution ────────────────────────────')
@@ -354,6 +363,11 @@ export class PiRpcManager extends EventEmitter {
   // Set while a spawn attempt awaits readiness; handleLine invokes it when the
   // startup probe's correlated response arrives. Cleared once the attempt settles.
   private markReady: (() => void) | null = null
+  // Settles a pending startup attempt when the process is torn down under it.
+  // Without this, stop()/restart() during 'starting' would sever every settle
+  // path of spawnAndAwaitReady (kill() removes the child's listeners and the
+  // deadline guard is status-gated), leaving start() hung forever.
+  private abortStartup: (() => void) | null = null
 
   getStatus(): PiStatus {
     return {
@@ -395,6 +409,7 @@ export class PiRpcManager extends EventEmitter {
       this.stderrBuffer = cli.failureReason
       this.setStatus('error')
       console.error('[Pi] Pre-flight failed:', this.stderrBuffer)
+      appLog.error('pi', 'Pre-flight failed', this.stderrBuffer)
       return this.getStatus()
     }
 
@@ -403,6 +418,10 @@ export class PiRpcManager extends EventEmitter {
     for (let attempt = 1; attempt <= STARTUP_MAX_ATTEMPTS; attempt++) {
       const outcome = await this.spawnAndAwaitReady(options)
       if (outcome === 'ready') return this.getStatus()
+
+      // A deliberate stop/restart tore this attempt down; the initiator has
+      // already set the status — report it without retrying or erroring.
+      if (outcome === 'aborted') return this.getStatus()
 
       if (outcome === 'crashed' && attempt < STARTUP_MAX_ATTEMPTS) {
         console.log(
@@ -442,7 +461,9 @@ export class PiRpcManager extends EventEmitter {
    * It does NOT set the terminal 'error' status — doStart owns that, so it can
    * retry a crash without flipping the UI to 'error' between attempts.
    */
-  private spawnAndAwaitReady(options: PiStartOptions): Promise<'ready' | 'crashed' | 'timeout'> {
+  private spawnAndAwaitReady(
+    options: PiStartOptions
+  ): Promise<'ready' | 'crashed' | 'timeout' | 'aborted'> {
     const args = this.buildArgs(options)
     const cli = getPiCli()
 
@@ -477,20 +498,24 @@ export class PiRpcManager extends EventEmitter {
     this.process = proc
     this.setupStreams()
 
-    return new Promise<'ready' | 'crashed' | 'timeout'>((resolve) => {
+    return new Promise<'ready' | 'crashed' | 'timeout' | 'aborted'>((resolve) => {
       let settled = false
       let probeTimer: NodeJS.Timeout | null = null
       const startedAt = Date.now()
-      const finish = (outcome: 'ready' | 'crashed' | 'timeout'): void => {
+      const finish = (outcome: 'ready' | 'crashed' | 'timeout' | 'aborted'): void => {
         if (settled) return
         settled = true
         this.markReady = null
+        this.abortStartup = null
         if (probeTimer) {
           clearInterval(probeTimer)
           probeTimer = null
         }
         resolve(outcome)
       }
+      // Deliberate teardown (stop/restart) while starting: settle without
+      // retrying and without stamping an error — the caller chose to stop.
+      this.abortStartup = (): void => finish('aborted')
 
       // Readiness signal: handleLine invokes this when the probe's correlated
       // response (success OR "unknown command" error) arrives — proof the
@@ -505,6 +530,7 @@ export class PiRpcManager extends EventEmitter {
 
       proc.on('error', (err) => {
         console.error('[Pi] Spawn error:', err.message)
+        appLog.error('pi', 'Spawn error', err)
         this.stderrBuffer += `Spawn error: ${err.message}\n`
         finish('crashed')
       })
@@ -746,6 +772,9 @@ export class PiRpcManager extends EventEmitter {
   }
 
   private kill(): void {
+    // Settle any pending startup attempt first — after the listener teardown
+    // below it could never settle on its own. No-op when already settled.
+    this.abortStartup?.()
     for (const [, pending] of this.pendingResponses) {
       clearTimeout(pending.timer)
       pending.reject(new Error('Pi process killed'))

@@ -12,12 +12,8 @@ export function SessionPanel(): React.JSX.Element {
   const sessionList = useAppStore((state) => state.sessionList)
   const sessionState = useAppStore((state) => state.sessionState)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
-  const switchSession = useAppStore((state) => state.switchSession)
-  const switchWorkspace = useAppStore((state) => state.switchWorkspace)
   const createNewSession = useAppStore((state) => state.createNewSession)
-  const setCurrentView = useAppStore((state) => state.setCurrentView)
   const refreshSessionList = useAppStore((state) => state.refreshSessionList)
-  const workspaces = useAppStore((state) => state.workspaces)
   const archivedSessions = useAppStore((state) => state.archivedSessions)
   const showArchived = useAppStore((state) => state.showArchived)
   const toggleShowArchived = useAppStore((state) => state.toggleShowArchived)
@@ -91,30 +87,9 @@ export function SessionPanel(): React.JSX.Element {
       .filter(([_, sessions]) => (sessions as SessionListItem[]).length > 0) as [string, SessionListItem[]][]
   }, [groupedSessions, searchQuery])
 
-  const handleSwitchSession = async (session: SessionListItem) => {
-    // If session belongs to a different workspace, switch workspace first.
-    // skipSessionLoad: switchSession loads the target history once (avoids
-    // resume+history then a second full reload).
-    if (session.projectPath && session.projectPath !== activeWorkspace?.path) {
-      const matchingWorkspace = workspaces.find((w) => w.path === session.projectPath)
-      if (matchingWorkspace) {
-        // A declined "Pi is still working" warning must stop the session switch
-        // below as well, not just the workspace change.
-        if (!(await switchWorkspace(matchingWorkspace.id, { skipSessionLoad: true }))) return
-      } else {
-        // Auto-create workspace for this project
-        await useAppStore.getState().createWorkspace(session.projectName, session.projectPath)
-        const updatedWorkspaces = useAppStore.getState().workspaces
-        const newWorkspace = updatedWorkspaces.find((w) => w.path === session.projectPath)
-        if (newWorkspace && !(await switchWorkspace(newWorkspace.id, { skipSessionLoad: true }))) {
-          return
-        }
-      }
-    }
-
-    await switchSession(session.path)
-    setCurrentView('chat')
-  }
+  // Workspace auto-switch/create + session switch + show Chat, shared with the
+  // sidebar and the quick switcher.
+  const handleSwitchSession = useAppStore((state) => state.openSessionItem)
 
   const toggleProject = (project: string) => {
     void toggleSessionGroupCollapsed(project)

@@ -35,6 +35,7 @@ import {
   PanelLeftClose,
   X,
   ChevronDown,
+  Loader2,
 } from 'lucide-react'
 
 // Fallback padding when the composer has not measured yet (~idle pill + gradient).
@@ -44,6 +45,7 @@ export function ChatPanel(): React.JSX.Element {
   const messages = useAppStore((state) => state.messages)
   const sessionLoading = useAppStore((state) => state.sessionLoading)
   const isStreaming = useAppStore((state) => state.isStreaming)
+  const reattachedMidTurn = useAppStore((state) => state.reattachedMidTurn)
   const composerWrapRef = useRef<HTMLDivElement>(null)
   const [composerPadPx, setComposerPadPx] = useState(DEFAULT_COMPOSER_PAD_PX)
 
@@ -315,6 +317,17 @@ export function ChatPanel(): React.JSX.Element {
                     <div className="pointer-events-auto mx-auto w-full max-w-5xl px-4">
                       <CouncilPanels />
                     </div>
+                    {reattachedMidTurn && (
+                      <div className="pointer-events-auto mx-auto mb-2 w-full max-w-5xl px-4">
+                        <div className="flex items-center gap-2.5 rounded-md bg-accent px-4 py-2.5 text-sm text-white shadow-lg shadow-black/30">
+                          <Loader2 size={16} className="shrink-0 animate-spin" />
+                          <span className="shrink-0 font-medium">Pi is still working in this session.</span>
+                          <span className="min-w-0 flex-1 truncate text-white/80">
+                            The response appears here the moment it finishes.
+                          </span>
+                        </div>
+                      </div>
+                    )}
                     <ChatInput />
                   </div>
                 </>

@@ -6,6 +6,7 @@ import { FileService } from './file-service'
 import type { FileChangeEvent, PiStartOptions } from '../shared/ipc-contracts'
 import { getGuiDataPath } from './app-data-paths'
 import { pathsEqual } from './session-paths'
+import { appLog } from './app-log'
 
 /**
  * Manages multiple workspaces (project directories), each with its own Pi process.
@@ -37,6 +38,7 @@ const WORKSPACE_COLORS = [
 export type PiManagerListener = (manager: PiRpcManager) => void
 export type ActiveWorkspaceListener = (workspaceId: string | null) => void
 export type FileChangeListener = (event: FileChangeEvent) => void
+export type WorkspaceRemovedListener = (workspaceId: string) => void
 
 export class WorkspaceManager {
   private workspaces: Workspace[] = []
@@ -55,6 +57,7 @@ export class WorkspaceManager {
   private wiredPairs = new WeakMap<PiRpcManager, Set<PiManagerListener>>()
   private activeWorkspaceListeners: ActiveWorkspaceListener[] = []
   private fileChangeListeners: FileChangeListener[] = []
+  private workspaceRemovedListeners: WorkspaceRemovedListener[] = []
   // The workspace whose FileService currently has an active disk watcher.
   // Only the active workspace is watched, mirroring how Pi events are
   // forwarded for the active workspace only.
@@ -66,6 +69,10 @@ export class WorkspaceManager {
 
   onFileChange(listener: FileChangeListener): void {
     this.fileChangeListeners.push(listener)
+  }
+
+  onWorkspaceRemoved(listener: WorkspaceRemovedListener): void {
+    this.workspaceRemovedListeners.push(listener)
   }
 
   private emitFileChange(event: FileChangeEvent): void {
@@ -272,6 +279,9 @@ export class WorkspaceManager {
 
     await this.saveWorkspaces()
     if (activeChanged) this.emitActiveWorkspaceChanged()
+    for (const listener of this.workspaceRemovedListeners) {
+      listener(workspaceId)
+    }
   }
 
   async renameWorkspace(workspaceId: string, name: string): Promise<void> {
@@ -416,6 +426,7 @@ export class WorkspaceManager {
       await rename(tmpPath, this.configPath)
     } catch (err) {
       console.error('Failed to save workspaces:', err)
+      appLog.error('workspaces', 'Failed to save workspaces.json', err)
     }
   }
 }

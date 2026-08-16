@@ -24,6 +24,7 @@ import type {
   SessionStats,
   SessionListItem,
   AppSettings,
+  PiMessageStartEvent,
   PiMessageUpdateEvent,
   PiToolExecutionStartEvent,
   PiToolExecutionEndEvent,
@@ -49,6 +50,7 @@ import type {
   PermissionRule,
   PermissionRulesScope,
   PendingPromptCounts,
+  WorkspaceActivityMap,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -162,7 +164,13 @@ export function formatPromptsWaiting(count: number): string {
  */
 function idleTurnState(): Pick<
   AppState,
-  'isStreaming' | 'streamingContent' | 'streamingThinking' | 'streamingToolCalls' | 'pendingSteering' | 'pendingFollowUp'
+  | 'isStreaming'
+  | 'streamingContent'
+  | 'streamingThinking'
+  | 'streamingToolCalls'
+  | 'pendingSteering'
+  | 'pendingFollowUp'
+  | 'reattachedMidTurn'
 > {
   return {
     isStreaming: false,
@@ -171,6 +179,7 @@ function idleTurnState(): Pick<
     streamingToolCalls: new Map(),
     pendingSteering: [],
     pendingFollowUp: [],
+    reattachedMidTurn: false,
   }
 }
 
@@ -200,6 +209,13 @@ interface AppState {
     { name: string; args: string; result?: string; isExecuting: boolean; isError?: boolean; startedAt?: number; durationMs?: number }
   >
   isStreaming: boolean
+  /**
+   * The renderer attached to a turn already in flight (workspace switch-back
+   * or notification click into a working workspace). The stream buffers only
+   * hold what arrived after the attach, so the next turn boundary must
+   * backfill from the session instead of trusting them.
+   */
+  reattachedMidTurn: boolean
   /** True while a session history load is in flight (switch/reload). */
   sessionLoading: boolean
 
@@ -208,7 +224,7 @@ interface AppState {
   pendingFollowUp: string[]
 
   // UI
-  currentView: 'home' | 'chat' | 'settings' | 'sessions' | 'timeline' | 'packages' | 'diff' | 'notes' | 'skills'
+  currentView: 'home' | 'chat' | 'settings' | 'sessions' | 'timeline' | 'packages' | 'diff' | 'notes' | 'skills' | 'diagnostics'
   // Bumped to request the chat scroll jump to the bottom (used when resuming a
   // session/workspace from Home). In-app session switches leave it untouched so
   // the chat restores each session's remembered scroll position instead.
@@ -241,6 +257,8 @@ interface AppState {
   extensionNotify: PiExtensionUiRequest | null
   // Blocking prompts held by main per workspace id (zero entries omitted).
   pendingPromptCounts: PendingPromptCounts
+  // Per-workspace background activity derived in main (idle entries omitted).
+  workspaceActivity: WorkspaceActivityMap
   // Extension status entries (setStatus fire-and-forget). Keyed by statusKey.
   extensionStatuses: Record<string, string>
   // Live subagent progress from tool_execution_update events (subagent tool).
@@ -363,6 +381,13 @@ interface AppActions {
   // Session
   createNewSession: () => Promise<void>
   switchSession: (path: string) => Promise<void>
+  /**
+   * Open a session row from any surface (sidebar, session panel, quick
+   * switcher): auto-switches or creates the owning workspace first, then
+   * switches to the session and shows Chat. A declined "Pi is still working"
+   * confirm aborts the whole flow.
+   */
+  openSessionItem: (session: SessionListItem) => Promise<void>
   reloadActiveSession: (options?: { refreshList?: boolean }) => Promise<void>
   refreshSessionState: () => Promise<void>
   refreshSessionStats: () => Promise<void>
@@ -404,6 +429,7 @@ interface AppActions {
   // Events
   handlePiEvent: (event: PiRpcEvent) => void
   handlePendingPromptCounts: (counts: PendingPromptCounts) => void
+  handleWorkspaceActivity: (map: WorkspaceActivityMap) => void
   /**
    * Boot/reload recovery: the dialog slot and the counts are renderer memory
    * only, while main keeps every held prompt. Pulls the counts snapshot and
@@ -520,6 +546,38 @@ function generateId(): string {
 // results from a previous switch are dropped instead of fighting the UI.
 let sessionLoadGeneration = 0
 
+/**
+ * Texts of prompts this GUI just sent to Pi, awaiting their echo on the RPC
+ * event stream. Pi emits a `message_start` for every user message added to
+ * the session — both ours and ones injected inside the Pi process by
+ * extensions (e.g. pi-nvim's socket bridge). Externally injected prompts must
+ * be rendered from that event or they never appear in the thread; our own
+ * prompts must be skipped, since sendPrompt already adds the bubble locally
+ * at send time. Entries expire so a prompt whose echo never arrives (send
+ * failure, process restart) cannot swallow an identical future external
+ * message.
+ */
+const pendingLocalEchoes: { text: string; sentAt: number }[] = []
+const LOCAL_ECHO_TTL_MS = 5 * 60 * 1000
+const LOCAL_ECHO_MAX = 50
+
+function recordLocalEcho(text: string): void {
+  pendingLocalEchoes.push({ text, sentAt: Date.now() })
+  if (pendingLocalEchoes.length > LOCAL_ECHO_MAX) pendingLocalEchoes.shift()
+}
+
+/** Consume the oldest pending local echo matching this content, if any. */
+function consumeLocalEcho(text: string): boolean {
+  const now = Date.now()
+  for (let i = pendingLocalEchoes.length - 1; i >= 0; i--) {
+    if (now - pendingLocalEchoes[i].sentAt > LOCAL_ECHO_TTL_MS) pendingLocalEchoes.splice(i, 1)
+  }
+  const idx = pendingLocalEchoes.findIndex((entry) => entry.text === text)
+  if (idx === -1) return false
+  pendingLocalEchoes.splice(idx, 1)
+  return true
+}
+
 // Latest path requested for switch — rapid clicks only run the final one.
 let pendingSwitchPath: string | null = null
 let switchCoalesceTimer: ReturnType<typeof setTimeout> | null = null
@@ -527,6 +585,17 @@ let switchCoalesceTimer: ReturnType<typeof setTimeout> | null = null
 let switchCoalesceResolve: (() => void) | null = null
 // Only one get_messages/switch pipeline at a time (Pi + IPC can't keep up).
 let switchPipeline: Promise<void> = Promise.resolve()
+
+// Attach backfills ride the same pipeline as session switches so their
+// get_messages can never run concurrently with a switch's (each response is a
+// multi-MB IPC clone, and an agent_end landing inside a switch's coalesce
+// window would otherwise race it). Generation checks inside
+// reloadActiveSession still drop a backfill a newer switch superseded.
+function enqueueAttachBackfill(get: () => AppState & AppActions): Promise<void> {
+  const load = (): Promise<void> => get().reloadActiveSession({ refreshList: false })
+  switchPipeline = switchPipeline.then(load, load)
+  return switchPipeline
+}
 
 // Coalesce filesystem session-list walks: rapid switches used to stack N full
 // directory scans and freeze the renderer/main.
@@ -669,6 +738,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   streamingThinking: '',
   streamingToolCalls: new Map(),
   isStreaming: false,
+  reattachedMidTurn: false,
   sessionLoading: false,
 
   pendingSteering: [],
@@ -690,6 +760,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   extensionUiRequest: null,
   extensionNotify: null,
   pendingPromptCounts: {},
+  workspaceActivity: {},
   extensionStatuses: {},
   subagentProgress: [],
   confirmRequest: null,
@@ -839,11 +910,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       if (isStreaming) {
         // Queue as steering during streaming, carrying any image attachments.
+        recordLocalEcho(message)
         await window.piDesktop.commands.steer(message, options?.images)
       } else {
         const prompt = settings?.permissionMode === 'plan-readonly'
           ? buildPlanningPrompt(message)
           : message
+        // Record the text actually sent (plan mode wraps it), not the text
+        // displayed — Pi's message_start echo carries the sent form.
+        recordLocalEcho(prompt)
         await window.piDesktop.commands.prompt(prompt, options)
       }
     } catch (err) {
@@ -859,6 +934,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   sendSteer: async (message) => {
     try {
+      // Steers are intentionally not rendered as bubbles; record the echo so
+      // the message_start handler does not render one as an external prompt.
+      recordLocalEcho(message)
       await window.piDesktop.commands.steer(message)
     } catch (err) {
       get().addMessage({
@@ -872,6 +950,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   sendFollowUp: async (message) => {
     try {
+      // Same as sendSteer: suppress the echo-rendered external bubble.
+      recordLocalEcho(message)
       await window.piDesktop.commands.followUp(message)
     } catch (err) {
       get().addMessage({
@@ -1111,6 +1191,55 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const run = async (): Promise<void> => {
       if (gen !== sessionLoadGeneration || pendingSwitchPath !== path) return
       try {
+        // A live turn in this workspace: the switch_session RPC ABORTS it —
+        // Pi treats the command as a session change even when the target is
+        // the very session it is already on (verified live: the in-flight
+        // response is discarded and never reaches the session file). When the
+        // activity map says this workspace is working, ask Pi which session
+        // it is on (get_state answers mid-turn): the turn's own session
+        // re-attaches instead of switching; anything else — including a
+        // failed/stale get_state, which must fail CLOSED — warns before
+        // killing a turn whose streaming was never on screen.
+        const activeId = get().activeWorkspace?.id
+        const activity = activeId ? get().workspaceActivity[activeId]?.state : undefined
+        if (activity === 'working' || activity === 'needs-approval') {
+          await get().refreshSessionState()
+          if (gen !== sessionLoadGeneration) return
+          if (get().sessionState?.sessionFile === path) {
+            set({ sessionLoading: true })
+            get().clearMessages()
+            await get().reloadActiveSession({ refreshList: false })
+            if (gen !== sessionLoadGeneration) return
+            scheduleSessionListRefresh(get)
+            // The reload only shows persisted messages; arm the attach so the
+            // working banner shows and turn boundaries backfill. Re-check the
+            // map first: the turn may have ended during the reload, and its
+            // disarming broadcast may already be behind us.
+            const still = activeId ? get().workspaceActivity[activeId]?.state : undefined
+            if (still === 'working' || still === 'needs-approval') {
+              set({ isStreaming: true, reattachedMidTurn: true })
+            }
+            return
+          }
+          // A different session (or an unconfirmable one): switching kills
+          // the background turn. When its streaming is on screen the
+          // confirmSessionChange gate above already warned; a background
+          // turn's isStreaming is false, so warn here before the teardown.
+          if (!get().isStreaming) {
+            const confirmed = await get().requestConfirm({
+              title: 'Pi is still working',
+              message:
+                'Pi has not finished responding in another session of this ' +
+                'workspace. Opening this session stops it: whatever Pi already ' +
+                'wrote to that session is kept, but the rest of the response ' +
+                'is discarded.',
+              confirmLabel: 'Switch anyway',
+              danger: true,
+            })
+            if (!confirmed || gen !== sessionLoadGeneration) return
+          }
+        }
+
         set({ sessionLoading: true })
         get().clearMessages()
         const result = (await window.piDesktop.session.switch(path)) as {
@@ -1198,6 +1327,38 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     } catch {
       if (gen === sessionLoadGeneration) set({ sessionLoading: false })
     }
+  },
+
+  openSessionItem: async (session) => {
+    // Auto-switch workspace if the session is from a different project. Skip
+    // the resume+history load — switchSession below loads the target session
+    // once. Paths are compared the way main compares them (case-insensitive on
+    // Windows): a casing mismatch here would route an existing workspace down
+    // the create path, which main turns into a silent activation.
+    const { activeWorkspace, workspaces } = get()
+    const projectPath = session.projectPath
+    if (projectPath && !(activeWorkspace && pathsEqual(activeWorkspace.path, projectPath))) {
+      const matchingWs = workspaces.find((w) => pathsEqual(w.path, projectPath))
+      if (matchingWs) {
+        // The workspace switch carries the "Pi is still working" warning for
+        // this whole flow; a decline there must stop the session switch too,
+        // or the declined turn gets torn down anyway by the change below.
+        if (!(await get().switchWorkspace(matchingWs.id, { skipSessionLoad: true }))) return
+      } else {
+        await get().createWorkspace(session.projectName, projectPath)
+        const newWs = get().workspaces.find((w) => pathsEqual(w.path, projectPath))
+        if (newWs && !(await get().switchWorkspace(newWs.id, { skipSessionLoad: true }))) return
+      }
+    }
+    // switchSession's working-workspace guard covers the live-turn cases from
+    // here on: the turn's own session re-attaches instead of switching, and
+    // opening a different session of a mid-turn workspace warns first (the
+    // switchWorkspace gates above only cover a turn whose streaming is on
+    // screen in the departing workspace).
+    await get().switchSession(session.path)
+    // Bring the chat into view (may be on Settings/Notes/etc.). In-app
+    // switches keep their remembered scroll position, so no force-to-bottom.
+    get().setCurrentView('chat')
   },
 
   refreshSessionState: async () => {
@@ -1494,6 +1655,44 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   handlePiEvent: (event) => {
     switch (event.type) {
+      case 'message_start': {
+        // User messages can enter the session without passing through this
+        // GUI — pi-nvim and other socket/extension bridges inject prompts
+        // directly inside the Pi process. Render those here, or the thread
+        // shows only the assistant's replies. Our own prompts arrive on this
+        // event too, but sendPrompt already rendered them at send time, so a
+        // matching pending echo means skip. Assistant-role message_start is
+        // ignored: assistant content renders via message_update / message_end.
+        const startedMessage = (event as PiMessageStartEvent).message
+        if (startedMessage && (startedMessage as { role?: unknown }).role === 'user') {
+          const parsed = parseAgentMessage(startedMessage)
+          if (parsed && parsed.content.trim() && !consumeLocalEcho(parsed.content)) {
+            get().addMessage(parsed)
+            // Mirror sendPrompt's turn-start state so the external turn gets
+            // a live streaming bubble instead of content appearing only at
+            // message_end. agent_end clears isStreaming as usual. When a turn
+            // is already streaming (an external steer injected mid-turn), the
+            // in-progress content and tool-call state must survive.
+            if (!get().isStreaming) {
+              set({
+                isStreaming: true,
+                streamingContent: '',
+                streamingThinking: '',
+                streamingToolCalls: new Map(),
+              })
+            }
+            get().addTimelineEvent({
+              id: generateId(),
+              type: 'system',
+              timestamp: Date.now(),
+              title: 'External prompt received',
+              status: 'success',
+            })
+          }
+        }
+        break
+      }
+
       case 'message_update':
         handleMessageUpdate(event as PiMessageUpdateEvent, set)
         break
@@ -1518,6 +1717,26 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           title: turnError ? 'Assistant response failed' : 'Assistant response complete',
           status: turnError ? 'error' : 'success',
         })
+        // Attached mid-turn: the commit above only held the post-attach
+        // suffix of this message — replace it with the persisted full one.
+        // The reload's teardown (idleTurnState inside clearMessages) disarms
+        // the attach and the indicator, so re-arm afterwards from the
+        // authoritative signal: the activity map still reporting the turn
+        // live. If the turn ended during the backfill the map says idle (or
+        // its broadcast is about to and the reconciliation settles it).
+        if (get().reattachedMidTurn) {
+          void enqueueAttachBackfill(get).then(() => {
+            const after = get()
+            const activeId = after.activeWorkspace?.id
+            const activity = activeId ? after.workspaceActivity[activeId]?.state : undefined
+            if (
+              (activity === 'working' || activity === 'needs-approval') &&
+              !after.sessionLoading
+            ) {
+              set({ isStreaming: true, reattachedMidTurn: true })
+            }
+          })
+        }
         break
       }
 
@@ -1526,6 +1745,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         break
 
       case 'agent_start':
+        // A fresh turn means real stream context from its first byte — any
+        // pending mid-turn-attach backfill was already handled at agent_end.
+        set({ reattachedMidTurn: false })
         get().addTimelineEvent({
           id: generateId(),
           type: 'system',
@@ -1553,6 +1775,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           title: 'Agent finished',
           status: 'success',
         })
+        // Attached mid-turn and the turn just ended: the stream buffers never
+        // held the full response, so pull the finished messages from the
+        // session instead of leaving the pre-attach view on screen.
+        if (get().reattachedMidTurn) {
+          set({ reattachedMidTurn: false })
+          void enqueueAttachBackfill(get)
+        }
         break
 
       case 'tool_execution_start':
@@ -1725,7 +1954,40 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   handlePendingPromptCounts: (counts) => set({ pendingPromptCounts: counts }),
 
+  handleWorkspaceActivity: (map) => {
+    const state = get()
+    const activeId = state.activeWorkspace?.id
+    const activity = activeId ? map[activeId]?.state : undefined
+    const working = activity === 'working' || activity === 'needs-approval'
+    // Disarm: the turn can end during a switch itself, while this workspace's
+    // manager was not yet the active one — its agent_end is filtered and
+    // never reaches the renderer. The activity map always arrives, so a
+    // working state that disappears while the attach flag is up means the
+    // turn is over: stop the indicator and backfill.
+    if (state.reattachedMidTurn && !working) {
+      set({ workspaceActivity: map, reattachedMidTurn: false, isStreaming: false })
+      void enqueueAttachBackfill(get)
+      return
+    }
+    // Arm: a live turn in the active workspace with no live view — e.g. a
+    // renderer reload (Ctrl+R) mid-turn boots with idle state and would
+    // otherwise stream invisibly and commit a truncated message. The
+    // sessionLoading guard keeps this out of session-change teardown windows.
+    if (!state.reattachedMidTurn && working && !state.isStreaming && !state.sessionLoading) {
+      set({ workspaceActivity: map, isStreaming: true, reattachedMidTurn: true })
+      return
+    }
+    set({ workspaceActivity: map })
+  },
+
   recoverPendingPrompts: async () => {
+    // Isolated: the activity snapshot is cosmetic and must never block the
+    // prompt flush below, which recovers a held blocking dialog.
+    try {
+      get().handleWorkspaceActivity(await window.piDesktop.workspace.getActivity())
+    } catch {
+      // Non-fatal: the next activity broadcast catches the renderer up.
+    }
     try {
       get().handlePendingPromptCounts(await window.piDesktop.ui.getPendingPrompts())
       const workspace = await window.piDesktop.workspace.getActive()
@@ -1936,6 +2198,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       if (!skipSessionLoad && get().piStatus === 'running') {
         sessionLoadGeneration += 1
         await get().reloadActiveSession({ refreshList: false })
+        // A turn may already be running here (that is what the sidebar dot
+        // advertised). The reload above only shows persisted messages, so
+        // without this the chat looks idle while Pi is mid-response. Show the
+        // working indicator and mark the attach so the next turn boundary
+        // backfills from the session (the stream buffers missed the prefix).
+        const activity = get().workspaceActivity[workspaceId]?.state
+        if (activity === 'working' || activity === 'needs-approval') {
+          set({ isStreaming: true, reattachedMidTurn: true })
+        }
       } else if (get().piStatus === 'running') {
         // Stats only. Refreshing sessionState here races the follow-up
         // switchSession this flow contracts for: when the refresh lands
