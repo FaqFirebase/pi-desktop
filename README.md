@@ -18,7 +18,8 @@ Still in alpha, so expect rough edges.
 - Session naming (read from Pi) with inline rename, and a themed in-app confirmation for delete
 - Custom models & providers editor in Settings, which edits `~/.pi/agent/models.json`
 - Multiple workspaces, each with its own Pi process and sessions; Mission Control and sidebar activity dots surface background work across projects, with optional desktop notifications when a session finishes, fails, or waits for approval
-- New Task launcher starts a real fresh Pi session in a selected project and sends the issue immediately, while work continues in the background
+- New Task launcher starts a real fresh Pi session in a selected project, optionally in an isolated Git worktree, and sends the issue immediately while work continues in the background
+- Diff Review conveyor with explicit Commit → Push → PR actions, upstream-aware GitHub CLI PR creation, and exact notification clicks back to the finished session
 - Diagnostics view: Pi install and PATH resolution, provider configuration, permissions, and recent errors
 - Review rail (toggleable) with permissions, approvals, changed files, and session status
 - Custom permission rules: allow/deny glob rules per Pi tool that refine the permission modes, with per-workspace rule files, import/export, and live edits that apply without restarting Pi

@@ -1,6 +1,6 @@
 import { ipcMain, Notification, type BrowserWindow } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
-import type { PiProcessStatus } from '../../shared/ipc-contracts'
+import type { PiProcessStatus, WorkspaceActivationIntent } from '../../shared/ipc-contracts'
 import {
   createWorkspaceActivityTracker,
   type WorkspaceActivityNotification,
@@ -34,12 +34,13 @@ export interface WindowControls {
 export function wireWorkspaceActivity(
   ctx: IpcContext,
   windowControls: WindowControls,
+  iconPath: string,
 ): WorkspaceActivityTracker {
   const { workspaceManager } = ctx
   const { getWindow, showWindow } = windowControls
   // Activation intent from a notification clicked while no window existed;
   // the freshly created renderer pulls it once its subscriptions are live.
-  let pendingActivationWorkspaceId: string | null = null
+  let pendingActivation: WorkspaceActivationIntent | null = null
 
   const showNotification = async (
     notification: WorkspaceActivityNotification,
@@ -61,7 +62,10 @@ export function wireWorkspaceActivity(
 
     const osNotification = new Notification({
       title: workspace.name,
-      body: NOTIFICATION_BODIES[notification.kind],
+      body: notification.sessionPath
+        ? `${NOTIFICATION_BODIES[notification.kind]} Click to open the finished session.`
+        : NOTIFICATION_BODIES[notification.kind],
+      ...(iconPath ? { icon: iconPath } : {}),
     })
     osNotification.on('click', () => {
       // The workspace can be removed between showing and clicking; a stale
@@ -75,7 +79,12 @@ export function wireWorkspaceActivity(
       // reload, or with the window closed cannot guarantee. A renderer that
       // does receive the broadcast consumes the stash immediately; one that
       // missed it pulls the stash when its subscriptions come up.
-      if (stillExists) pendingActivationWorkspaceId = notification.workspaceId
+      const intent: WorkspaceActivationIntent = {
+        workspaceId: notification.workspaceId,
+        ...(notification.sessionPath ? { sessionPath: notification.sessionPath } : {}),
+        ...(notification.runtimeId ? { runtimeId: notification.runtimeId } : {}),
+      }
+      if (stillExists) pendingActivation = intent
       const win = getWindow()
       if (win) {
         if (win.isMinimized()) win.restore()
@@ -85,9 +94,7 @@ export function wireWorkspaceActivity(
         // dirty-editor confirms), so hand it the intent instead of switching
         // main-side and desyncing its store.
         if (stillExists) {
-          ctx.broadcast(IPC_CHANNELS.EVENT_ACTIVATE_WORKSPACE, {
-            workspaceId: notification.workspaceId,
-          })
+          ctx.broadcast(IPC_CHANNELS.EVENT_ACTIVATE_WORKSPACE, intent)
         }
       } else {
         // macOS: the window may be fully closed — recreate it; the fresh
@@ -117,19 +124,27 @@ export function wireWorkspaceActivity(
       const id = workspaceIdOf()
       if (id) tracker.handleAgentStart(id)
     })
+    const sessionTarget = (): { runtimeId?: string; sessionPath?: string } => {
+      const sessionPath = workspaceManager.sessionPathFor(manager)
+      const runtimeId = workspaceManager.runtimeIdFor(manager)
+      return {
+        ...(sessionPath ? { sessionPath } : {}),
+        ...(sessionPath && runtimeId ? { runtimeId } : {}),
+      }
+    }
     manager.on('agent_end', () => {
       const id = workspaceIdOf()
-      if (id) tracker.handleAgentEnd(id)
+      if (id) tracker.handleAgentEnd(id, sessionTarget())
     })
     manager.on('status-change', (status: PiProcessStatus) => {
       const id = workspaceIdOf()
-      if (id) tracker.handleStatusChange(id, status)
+      if (id) tracker.handleStatusChange(id, status, sessionTarget())
     })
     // Only unexpected death emits 'exit' (deliberate stop() detaches
     // listeners first) — this is what distinguishes a crash from a stop.
     manager.on('exit', () => {
       const id = workspaceIdOf()
-      if (id) tracker.handleProcessExit(id)
+      if (id) tracker.handleProcessExit(id, sessionTarget())
     })
   })
 
@@ -144,9 +159,9 @@ export function wireWorkspaceActivity(
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_ACTIVITY_GET, async () => tracker.getMap())
 
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_TAKE_PENDING_ACTIVATION, async () => {
-    const workspaceId = pendingActivationWorkspaceId
-    pendingActivationWorkspaceId = null
-    return workspaceId
+    const intent = pendingActivation
+    pendingActivation = null
+    return intent
   })
 
   return tracker

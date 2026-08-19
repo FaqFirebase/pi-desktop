@@ -13,6 +13,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { formatIpcError } from '../utils/ipc-error'
+import { GitConveyorActions } from './git-conveyor-actions'
 
 interface DiffLine {
   type: 'add' | 'remove' | 'context' | 'header' | 'hunk'
@@ -82,6 +83,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <GitConveyorActions onChanged={loadDiff} />
           <button
             onClick={() => setStagedMode(!stagedMode)}
             className={clsx(

@@ -1227,14 +1227,27 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   launchTask: async (options) => {
     const prompt = options.prompt.trim()
     if (!prompt) return false
-    if (get().activeWorkspace?.id !== options.workspaceId) {
-      if (!(await get().activateWorkspace(options.workspaceId, { start: false }))) return false
-    }
-
-    const gen = ++sessionLoadGeneration
+    let workspaceId = options.workspaceId
+    let gen = 0
     try {
+      if (get().activeWorkspace?.id !== workspaceId) {
+        if (!(await get().activateWorkspace(workspaceId, { start: false }))) return false
+      }
+      if (options.isolated) {
+        const label = prompt.split(/\r?\n/, 1)[0]?.trim().slice(0, 60) || 'Task'
+        const workspace = await window.piDesktop.workspace.createTab({
+          name: label,
+          sourceWorkspaceId: workspaceId,
+          startPi: false,
+        })
+        await get().loadWorkspaces()
+        if (!(await get().activateWorkspace(workspace.id, { start: false }))) return false
+        workspaceId = workspace.id
+      }
+
+      gen = ++sessionLoadGeneration
       const runtime = await window.piDesktop.session.launchTask({
-        workspaceId: options.workspaceId,
+        workspaceId,
         prompt,
       })
       if (gen !== sessionLoadGeneration) return false
@@ -1252,7 +1265,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       scheduleSessionListRefresh(get)
       return true
     } catch (err) {
-      if (gen !== sessionLoadGeneration) return false
+      if (gen !== 0 && gen !== sessionLoadGeneration) return false
       get().addMessage({
         id: generateId(),
         role: 'system',

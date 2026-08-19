@@ -21,6 +21,9 @@ import type {
 export type WorkspaceActivityNotification = {
   workspaceId: string
   kind: 'completed' | 'failed' | 'needs-approval'
+  /** Exact runtime/session target when the event came from a session manager. */
+  runtimeId?: string
+  sessionPath?: string
 }
 
 export interface WorkspaceActivityTrackerDeps {
@@ -40,15 +43,15 @@ export interface WorkspaceActivityTrackerDeps {
 
 export interface WorkspaceActivityTracker {
   handleAgentStart(workspaceId: string): void
-  handleAgentEnd(workspaceId: string): void
-  handleStatusChange(workspaceId: string, status: PiProcessStatus): void
+  handleAgentEnd(workspaceId: string, target?: { runtimeId?: string; sessionPath?: string }): void
+  handleStatusChange(workspaceId: string, status: PiProcessStatus, target?: { runtimeId?: string; sessionPath?: string }): void
   /**
    * The manager's 'exit' emission: the process died UNEXPECTEDLY after
    * reaching running (a deliberate stop() detaches listeners first and never
    * emits it). This — not the 'stopped' status both paths share — is the
    * failure signal, so quitting or stopping Pi mid-turn stays silent.
    */
-  handleProcessExit(workspaceId: string): void
+  handleProcessExit(workspaceId: string, target?: { runtimeId?: string; sessionPath?: string }): void
   handlePendingCounts(counts: PendingPromptCounts): void
   /** The user is now looking at this workspace — clear finished outcomes. */
   handleWorkspaceSeen(workspaceId: string): void
@@ -124,7 +127,7 @@ export function createWorkspaceActivityTracker(
       recompute()
     },
 
-    handleAgentEnd(workspaceId) {
+    handleAgentEnd(workspaceId, target) {
       const entry = signalsFor(workspaceId)
       const wasTurnActive = entry.turnActive
       entry.turnActive = false
@@ -133,18 +136,18 @@ export function createWorkspaceActivityTracker(
       // background stays visible until the user looks at that workspace. The
       // notification fires either way — focus, not activity, decides there.
       entry.outcome = deps.getActiveWorkspaceId() === workspaceId ? null : 'completed'
-      if (wasTurnActive) deps.onNotify({ workspaceId, kind: 'completed' })
+      if (wasTurnActive) deps.onNotify({ workspaceId, kind: 'completed', ...target })
       recompute()
     },
 
-    handleStatusChange(workspaceId, status) {
+    handleStatusChange(workspaceId, status, target) {
       const entry = signalsFor(workspaceId)
       const isActive = deps.getActiveWorkspaceId() === workspaceId
       if (status === 'error') {
         entry.turnActive = false
         entry.stoppedMidTurn = false
         entry.outcome = isActive ? null : 'failed'
-        deps.onNotify({ workspaceId, kind: 'failed' })
+        deps.onNotify({ workspaceId, kind: 'failed', ...target })
       } else if (status === 'stopped') {
         // 'stopped' alone is neutral — deliberate stops (user stop, quit,
         // folder change) land here too. Only a following 'exit' emission
@@ -160,11 +163,11 @@ export function createWorkspaceActivityTracker(
       recompute()
     },
 
-    handleProcessExit(workspaceId) {
+    handleProcessExit(workspaceId, target) {
       const entry = signalsFor(workspaceId)
       if (entry.stoppedMidTurn || entry.turnActive) {
         entry.outcome = deps.getActiveWorkspaceId() === workspaceId ? null : 'failed'
-        deps.onNotify({ workspaceId, kind: 'failed' })
+        deps.onNotify({ workspaceId, kind: 'failed', ...target })
       }
       entry.stoppedMidTurn = false
       entry.turnActive = false

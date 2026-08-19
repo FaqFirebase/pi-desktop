@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
-import { isString, isObject, isOptionalString } from './validation'
+import { isString, isObject, isOptionalBoolean, isOptionalString } from './validation'
 import { validateStartOptions, applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
 import { loadAppSettings } from './settings'
 import type { WorkspaceTabOptions } from '../../shared/ipc-contracts'
@@ -16,11 +16,13 @@ function validateWorkspaceTabOptions(value: unknown): WorkspaceTabOptions {
   if (!isOptionalString(value.name)) throw new Error('tab name must be a string')
   if (!isOptionalString(value.sourceWorkspaceId)) throw new Error('sourceWorkspaceId must be a string')
   if (!isOptionalString(value.forkSessionPath)) throw new Error('forkSessionPath must be a string')
+  if (!isOptionalBoolean(value.startPi)) throw new Error('startPi must be a boolean')
 
   return {
     ...(isString(value.name) ? { name: value.name } : {}),
     ...(isString(value.sourceWorkspaceId) ? { sourceWorkspaceId: value.sourceWorkspaceId } : {}),
     ...(isString(value.forkSessionPath) ? { forkSessionPath: value.forkSessionPath } : {}),
+    ...(typeof value.startPi === 'boolean' ? { startPi: value.startPi } : {}),
   }
 }
 
@@ -106,8 +108,10 @@ export function registerWorkspaceHandlers(ctx: IpcContext): void {
     const settings = await loadAppSettings(workspaceManager)
     const workspace = await workspaceManager.createWorktreeWorkspace(options)
     // Return the new project tab immediately. Its session runtime starts in the
-    // background so the tab/file contents are usable before Pi is ready.
-    void workspaceManager.startPiForWorkspace(
+    // background so the tab/file contents are usable before Pi is ready. A task
+    // launch may explicitly skip this default runtime to avoid two Pi processes
+    // in the freshly-created worktree.
+    if (options.startPi !== false) void workspaceManager.startPiForWorkspace(
       workspace.id,
       applyPermissionModeToStartOptions(
         applyResumePreference(

@@ -67,6 +67,7 @@ src/
 │   ├── renderer-origin.ts        # Trusted-renderer URL check (navigation + IPC sender)
 │   ├── workspace-trust.ts        # Per-workspace trust registry (gates allow rules + preview)
 │   ├── workspace-manager.ts      # Multi-workspace management
+│   ├── git-conveyor.ts           # Validated commit, push, and GitHub PR commands
 │   ├── file-service.ts           # File tree, search, git status, read/write
 │   ├── terminal-service.ts       # node-pty PTY management
 │   ├── agent-detection.ts        # Detect claude/codex/pi CLIs (council)
@@ -108,6 +109,7 @@ src/
             ├── home-screen.tsx    # Full Home launcher (stats, recents, open folder / new session)
             ├── task-launcher.tsx  # New-task modal that starts a real background session
             ├── mission-control.tsx # Global live-session and workflow inbox
+            ├── git-conveyor-actions.tsx # Explicit commit/push/PR controls for reviewed diffs
             ├── stats-panel.tsx    # Activity stats dashboard on Home
             ├── chat-panel.tsx     # Main streaming chat; empty session = center prompt + project picker
             ├── chat-project-picker.tsx # Empty-chat project / no-project picker under the composer
@@ -157,6 +159,7 @@ src/
 ### Workspace Management
 
 - Mission Control summarizes all live session runtimes and workflow runs across projects; New Task launches a prompt into a dedicated background runtime
+- New Task can create an isolated Git worktree, and Diff Review exposes explicit Commit → Push → PR actions with upstream-aware GitHub CLI routing
 - Multiple workspaces (project directories)
 - Each workspace owns a file service; every live session in that project owns an independent Pi process bound to that workspace cwd and its own `--session` file
 - Session navigation is immediate; Pi startup and history hydration continue in the background
@@ -207,6 +210,12 @@ src/
 - Results grouped by source: Skills, Prompts, Commands (Pi built-ins), Extensions
 - Skills/prompts/extensions insert their token (`/skill:name`, `/template`, `/cmd`) for Pi to expand; built-ins (`/compact`, `/clone`, `/new`, `/resume`, `/fork`, `/settings`) run the GUI action directly
 - Workspace/session/file picks route through the store's guarded actions, so the streaming and dirty-editor confirms still apply
+
+### Issue-to-PR Conveyor
+
+- Task Launcher accepts an issue description or URL, optionally creates a clean isolated Git worktree, and sends the task to a dedicated Pi runtime.
+- Diff Review exposes explicit Commit, Push, and PR actions; mutating Git operations never happen implicitly.
+- PR creation uses GitHub CLI when available, targets the configured `upstream` remote when present, and opens the returned PR URL.
 
 ### Workspace Activity & Desktop Notifications
 

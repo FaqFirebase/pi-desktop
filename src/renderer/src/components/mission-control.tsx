@@ -71,6 +71,11 @@ export function MissionControl(): React.JSX.Element {
     }
   }
 
+  const reviewRuntime = async (runtime: SessionRuntimeInfo): Promise<void> => {
+    await openRuntime(runtime)
+    if (useAppStore.getState().activeSessionRuntimeId === runtime.runtimeId) setCurrentView('diff')
+  }
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-5xl px-6 py-7">
@@ -132,13 +137,24 @@ export function MissionControl(): React.JSX.Element {
                       <div className="truncate text-[11px] text-faint">{workspace?.name ?? 'Unknown project'} · {runtimeState(runtime)}</div>
                     </div>
                     {canOpen && (
-                      <button
-                        type="button"
-                        onClick={() => void openRuntime(runtime)}
-                        className="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-[11px] text-muted transition-colors hover:bg-highlight hover:text-primary"
-                      >
-                        Open <ArrowUpRight size={11} />
-                      </button>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => void openRuntime(runtime)}
+                          className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted transition-colors hover:bg-highlight hover:text-primary"
+                        >
+                          Open <ArrowUpRight size={11} />
+                        </button>
+                        {(runtime.activity === 'completed' || workspace?.kind === 'worktree') && (
+                          <button
+                            type="button"
+                            onClick={() => void reviewRuntime(runtime)}
+                            className="rounded border border-accent/40 px-2 py-1 text-[10px] text-accent-fg transition-colors hover:bg-accent-bg/20"
+                          >
+                            Review
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 )

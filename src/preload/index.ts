@@ -60,6 +60,11 @@ import type {
   WorkflowControlResult,
   SessionRuntimeInfo,
   SessionLaunchTaskOptions,
+  WorkspaceActivationIntent,
+  GitConveyorStatus,
+  GitConveyorCommitOptions,
+  GitConveyorPullRequestOptions,
+  GitConveyorPullRequestResult,
 } from '../shared/ipc-contracts'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -170,7 +175,7 @@ interface PiDesktopAPI {
      * Consume the activation intent from a notification clicked while no
      * window existed (macOS closed-window case). Null when there is none.
      */
-    takePendingActivation(): Promise<string | null>
+    takePendingActivation(): Promise<WorkspaceActivationIntent | null>
   }
 
   // Package management
@@ -215,6 +220,14 @@ interface PiDesktopAPI {
     autoGetAll(): Promise<Record<string, string>>
     autoEnsure(sessions: Array<{ sessionId: string; path: string }>): Promise<Record<string, string>>
     autoRemove(sessionId: string): Promise<void>
+  }
+
+  // Git issue-to-PR conveyor. All mutating actions require explicit renderer clicks.
+  git: {
+    status(): Promise<GitConveyorStatus>
+    commit(options: GitConveyorCommitOptions): Promise<GitConveyorStatus>
+    push(): Promise<GitConveyorStatus>
+    createPullRequest(options: GitConveyorPullRequestOptions): Promise<GitConveyorPullRequestResult>
   }
 
   // Notes (reusable prompts / commands)
@@ -317,7 +330,7 @@ interface PiDesktopAPI {
   onPendingPrompts(callback: (counts: PendingPromptCounts) => void): () => void
   onWorkspaceActivity(callback: (map: WorkspaceActivityMap) => void): () => void
   onSessionRuntime(callback: (runtime: SessionRuntimeInfo) => void): () => void
-  onActivateWorkspace(callback: (payload: { workspaceId: string }) => void): () => void
+  onActivateWorkspace(callback: (payload: WorkspaceActivationIntent) => void): () => void
   onFileChange(callback: (event: FileChangeEvent) => void): () => void
   onMenuAction(callback: (action: string) => void): () => void
 }
@@ -462,6 +475,13 @@ const api: PiDesktopAPI = {
     autoRemove: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.TAG_AUTO_REMOVE, sessionId),
   },
 
+  git: {
+    status: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_STATUS),
+    commit: (options) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_COMMIT, options),
+    push: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_PUSH),
+    createPullRequest: (options) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_CREATE_PR, options),
+  },
+
   notes: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.NOTES_LIST),
     create: (input) => ipcRenderer.invoke(IPC_CHANNELS.NOTES_CREATE, input),
@@ -577,7 +597,7 @@ const api: PiDesktopAPI = {
   },
 
   onActivateWorkspace: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, data: { workspaceId: string }) => callback(data)
+    const handler = (_event: Electron.IpcRendererEvent, data: WorkspaceActivationIntent) => callback(data)
     ipcRenderer.on(IPC_CHANNELS.EVENT_ACTIVATE_WORKSPACE, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.EVENT_ACTIVATE_WORKSPACE, handler)

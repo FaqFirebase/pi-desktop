@@ -141,6 +141,10 @@ export const IPC_CHANNELS = {
   FILE_STAGED_DIFF: 'file:staged-diff',
   GIT_STATUS: 'git:status',
   GIT_BRANCH: 'git:branch',
+  GIT_CONVEYOR_STATUS: 'git:conveyor-status',
+  GIT_CONVEYOR_COMMIT: 'git:conveyor-commit',
+  GIT_CONVEYOR_PUSH: 'git:conveyor-push',
+  GIT_CONVEYOR_CREATE_PR: 'git:conveyor-create-pr',
 
   // Terminal
   TERMINAL_START: 'terminal:start',
@@ -212,6 +216,33 @@ export interface SessionRuntimeInfo extends PiStatus {
 export interface SessionLaunchTaskOptions {
   workspaceId: string
   prompt: string
+  isolated?: boolean
+}
+
+export interface GitConveyorStatus {
+  branch: string | null
+  head: string
+  lastCommitMessage: string | null
+  dirtyFiles: number
+  ahead: number
+  behind: number
+  hasUpstream: boolean
+  remoteUrl: string | null
+}
+
+export interface GitConveyorCommitOptions {
+  message: string
+}
+
+export interface GitConveyorPullRequestOptions {
+  title: string
+  body: string
+  draft?: boolean
+}
+
+export interface GitConveyorPullRequestResult {
+  url: string | null
+  output: string
 }
 
 export interface PiStartOptions {
@@ -406,6 +437,13 @@ export interface WorkspaceActivity {
 
 /** Keyed by workspace id; idle workspaces are omitted. */
 export type WorkspaceActivityMap = Record<string, WorkspaceActivity>
+
+/** Target carried by a desktop-notification click. */
+export interface WorkspaceActivationIntent {
+  workspaceId: string
+  sessionPath?: string
+  runtimeId?: string
+}
 
 // ─── Workflow monitoring ────────────────────────────────────────────────────
 
@@ -965,6 +1003,8 @@ export interface WorkspaceTabOptions {
   sourceWorkspaceId?: string
   /** Optional Pi session to fork into the new worktree. */
   forkSessionPath?: string
+  /** Skip the default runtime when another action will launch a task there. */
+  startPi?: boolean
 }
 
 /** Result of closing a workspace tab. Dirty worktrees are preserved. */

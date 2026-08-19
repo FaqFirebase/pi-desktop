@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Layers, Play, X } from 'lucide-react'
+import { GitBranch, Layers, Play, X } from 'lucide-react'
 import { useAppStore } from '../store'
 
 export function TaskLauncher(): React.JSX.Element | null {
@@ -10,6 +10,7 @@ export function TaskLauncher(): React.JSX.Element | null {
   const launchTask = useAppStore((state) => state.launchTask)
   const [workspaceId, setWorkspaceId] = useState('')
   const [prompt, setPrompt] = useState('')
+  const [isolated, setIsolated] = useState(false)
   const [busy, setBusy] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -17,6 +18,7 @@ export function TaskLauncher(): React.JSX.Element | null {
     if (!open) return
     setWorkspaceId(activeWorkspace?.id ?? workspaces[0]?.id ?? '')
     setPrompt('')
+    setIsolated(false)
     requestAnimationFrame(() => inputRef.current?.focus())
   }, [open, activeWorkspace?.id, workspaces])
 
@@ -29,7 +31,7 @@ export function TaskLauncher(): React.JSX.Element | null {
   const submit = async (): Promise<void> => {
     if (!workspaceId || !prompt.trim() || busy) return
     setBusy(true)
-    const launched = await launchTask({ workspaceId, prompt })
+    const launched = await launchTask({ workspaceId, prompt, isolated })
     setBusy(false)
     if (launched) setOpen(false)
   }
@@ -105,8 +107,25 @@ export function TaskLauncher(): React.JSX.Element | null {
             />
           </label>
 
+          <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border bg-app/50 px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={isolated}
+              onChange={(event) => setIsolated(event.target.checked)}
+              disabled={busy}
+              className="mt-0.5 accent-[var(--accent)]"
+            />
+            <span className="flex min-w-0 items-start gap-2">
+              <GitBranch size={14} className="mt-0.5 shrink-0 text-special" />
+              <span>
+                <span className="block text-xs font-medium text-secondary">Use an isolated Git worktree</span>
+                <span className="mt-0.5 block text-[11px] text-faint">Recommended for PR work; the source project remains untouched.</span>
+              </span>
+            </span>
+          </label>
+
           <p className="text-[11px] text-faint">
-            The task runs in a new session and continues in the background if you switch away. Use the isolated Git tab button when file isolation is required.
+            The task runs in a new session and continues in the background if you switch away. Ctrl/Cmd+Enter starts it.
           </p>
         </div>
 

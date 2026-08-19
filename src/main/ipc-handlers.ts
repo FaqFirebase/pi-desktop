@@ -19,6 +19,7 @@ import { registerCouncilHandlers } from './ipc/council-handlers'
 import { registerTagHandlers } from './ipc/tag-handlers'
 import { registerNotesHandlers } from './ipc/notes-handlers'
 import { registerFileHandlers } from './ipc/file-handlers'
+import { registerGitConveyorHandlers } from './ipc/git-conveyor-handlers'
 import { registerSystemHandlers } from './ipc/system-handlers'
 import { registerUpdateHandlers } from './ipc/update-handlers'
 import { registerDiagnosticsHandlers } from './ipc/diagnostics-handlers'
@@ -36,6 +37,7 @@ export { loadAppSettings, saveAppSettings } from './ipc/settings'
 export function registerIpcHandlers(
   workspaceManager: WorkspaceManager,
   windowControls: WindowControls = { getWindow: () => null, showWindow: () => {} },
+  iconPath = '',
 ): void {
   const ctx = createIpcContext(workspaceManager)
 
@@ -60,6 +62,7 @@ export function registerIpcHandlers(
   registerTagHandlers(ctx)
   registerNotesHandlers(ctx)
   registerFileHandlers(ctx)
+  registerGitConveyorHandlers(ctx)
   registerSystemHandlers(ctx)
   registerUpdateHandlers()
   registerDiagnosticsHandlers(ctx)
@@ -69,7 +72,7 @@ export function registerIpcHandlers(
 
   // Cross-workspace activity map + desktop notifications. Wired before the
   // router so it can observe the router's pending-prompt counts below.
-  const workspaceActivity = wireWorkspaceActivity(ctx, windowControls)
+  const workspaceActivity = wireWorkspaceActivity(ctx, windowControls, iconPath)
 
   // Router construction, the dialog-answer channels, the pending-prompt
   // flush/get pair and the two workspace hooks all live in extension-ui-ipc.ts

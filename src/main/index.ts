@@ -20,6 +20,11 @@ import { IPC_CHANNELS } from '../shared/ipc-contracts'
 // launcher in bin/pi-desktop.js sets this from `pi-desktop <path>`.
 const WORKSPACE_ENV_VAR = 'PI_DESKTOP_WORKSPACE'
 
+// Electron's development executable otherwise registers as Electron on Windows,
+// which makes the taskbar and notification identity use Electron branding.
+app.setName('Pi Desktop')
+if (process.platform === 'win32') app.setAppUserModelId('dev.pi.desktop-gui')
+
 // Suppress EPIPE errors from closed subprocess pipes
 process.on('uncaughtException', (err) => {
   if (err.message?.includes('EPIPE') || (err as NodeJS.ErrnoException).code === 'EPIPE') {
@@ -161,6 +166,7 @@ function hardenPreviewSession(): void {
 }
 
 function createMainWindow(): BrowserWindow {
+  const appIcon = nativeImage.createFromPath(getAppIconPath())
   const window = new BrowserWindow({
     width: WINDOW_WIDTH,
     height: WINDOW_HEIGHT,
@@ -168,7 +174,7 @@ function createMainWindow(): BrowserWindow {
     minHeight: MIN_WINDOW_HEIGHT,
     title: 'Pi Desktop',
     backgroundColor: '#0a0a0a',
-    icon: getAppIconPath(),
+    icon: appIcon,
     show: false,
     webPreferences: {
       preload: PRELOAD_PATH,
@@ -415,7 +421,7 @@ app.whenReady().then(async () => {
   registerIpcHandlers(workspaceManager, {
     getWindow: () => mainWindow,
     showWindow: showMainWindow,
-  })
+  }, getAppIconPath())
 
   // The renderer mirrors its editor-dirty flag on every transition; the
   // quit/close/reload guards below read the cached value.
