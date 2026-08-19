@@ -78,21 +78,21 @@ export function GitConveyorActions({ onChanged }: { onChanged?: () => void }): R
   }
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+    <div className="flex min-w-0 flex-wrap items-center justify-start gap-1.5 lg:justify-end">
       {status && (
-        <span className="mr-1 max-w-44 truncate text-[10px] text-faint" title={status.branch ?? undefined}>
+        <span className="basis-full mr-1 max-w-44 truncate text-[10px] text-faint sm:basis-auto" title={status.branch ?? undefined}>
           {status.branch ?? 'detached'}{status.dirtyFiles > 0 ? ` · ${status.dirtyFiles} changed` : ''}
         </span>
       )}
-      <button type="button" onClick={commit} disabled={busy !== null || !status?.dirtyFiles} className="flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title="Stage all changes and commit">
+      <button type="button" onClick={commit} disabled={busy !== null || !status?.dirtyFiles} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title="Stage all changes and commit">
         {busy === 'commit' ? <Loader2 size={11} className="animate-spin" /> : <GitCommitHorizontal size={11} />}
         Commit
       </button>
-      <button type="button" onClick={push} disabled={busy !== null || !status || !!status.dirtyFiles || !status.branch} className="flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title="Push the current branch">
+      <button type="button" onClick={push} disabled={busy !== null || !status || !!status.dirtyFiles || !status.branch} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title="Push the current branch">
         {busy === 'push' ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
         Push
       </button>
-      <button type="button" onClick={createPr} disabled={busy !== null || !status || !!status.dirtyFiles || !!status.ahead || !status.branch} className={clsx('flex items-center gap-1 rounded border border-accent/50 px-2 py-1 text-[10px] text-accent-fg transition-colors hover:bg-accent-bg/20 disabled:cursor-not-allowed disabled:opacity-40')} title="Create a pull request with GitHub CLI">
+      <button type="button" onClick={createPr} disabled={busy !== null || !status || !!status.dirtyFiles || !!status.ahead || !status.branch} className={clsx('flex shrink-0 items-center gap-1 rounded border border-accent/50 px-2 py-1 text-[10px] text-accent-fg transition-colors hover:bg-accent-bg/20 disabled:cursor-not-allowed disabled:opacity-40')} title="Create a pull request with GitHub CLI">
         {busy === 'pr' ? <Loader2 size={11} className="animate-spin" /> : <GitPullRequest size={11} />}
         PR
       </button>

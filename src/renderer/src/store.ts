@@ -2113,7 +2113,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   handleSessionRuntime: (runtime) => {
-    const state = get()
     set((current) => ({
       sessionRuntimes: { ...current.sessionRuntimes, [runtime.runtimeId]: runtime },
       activeSessionRuntimeId: runtime.active
@@ -2125,14 +2124,20 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         piStatus: runtime.status,
         piPid: runtime.pid,
         piError: runtime.error,
+        ...(runtime.status === 'error' || runtime.status === 'stopped' ? { sessionLoading: false } : {}),
       } : {}),
     }))
+    // A newly-created session is intentionally empty, so its renderer stays
+    // in sessionLoading until Pi reports the generated session path. Hydrate
+    // that expected active runtime even though loading is still true; the old
+    // guard made New Session look stuck forever after Pi was already ready.
+    const current = get()
     if (
       runtime.active &&
       runtime.status === 'running' &&
       runtime.sessionPath &&
-      state.sessionState?.sessionFile !== runtime.sessionPath &&
-      !state.sessionLoading
+      current.sessionState?.sessionFile !== runtime.sessionPath &&
+      (!current.sessionLoading || current.activeSessionRuntimeId === runtime.runtimeId)
     ) {
       void get().reloadActiveSession({ refreshList: false })
     }
