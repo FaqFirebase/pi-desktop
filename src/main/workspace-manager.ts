@@ -1,4 +1,4 @@
-import { dirname, basename } from 'path'
+import { dirname, basename, resolve } from 'path'
 import { readFile, writeFile, mkdir, rename, copyFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { PiRpcManager } from './pi-rpc-manager'
@@ -690,7 +690,9 @@ export class WorkspaceManager {
     }
 
     const entries = await listGitWorktrees(sourcePath).catch(() => [])
-    const candidates = entries.filter((entry) => !entry.bare && existsSync(entry.path) && entry.branch)
+    const candidates = entries
+      .filter((entry) => !entry.bare && existsSync(entry.path) && entry.branch)
+      .map((entry) => ({ ...entry, path: resolve(entry.path) }))
     const matches = candidates.filter((entry) => {
       const branch = entry.branch!
       if (pullRequestBranch) return branch === pullRequestBranch
