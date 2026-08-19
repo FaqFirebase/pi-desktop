@@ -357,23 +357,20 @@ test('confirmSessionChange labels the dialog for the action being confirmed', as
   assert.equal(await pending, false)
 })
 
-test('declining the warning leaves the streaming turn untouched', async () => {
+test('switching sessions does not warn or stop the previous process', async () => {
   enterStreamingState()
-  answerConfirm(false)
 
   await useAppStore.getState().switchSession(SESSION_PATH)
 
   const state = useAppStore.getState()
-  assert.deepEqual(calls, [], 'a declined switch must not reach Pi at all')
-  assert.equal(state.isStreaming, true, 'the running turn must survive a declined switch')
-  assert.equal(state.streamingContent, 'partial answer')
-  assert.deepEqual(state.pendingSteering, ['steer me'])
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
+  assert.equal(state.isStreaming, false, 'the newly selected session starts with a clean local stream')
+  assert.equal(state.streamingContent, '')
+  assert.deepEqual(state.pendingSteering, [])
 })
 
-test('accepting the warning switches and clears the abandoned turn', async () => {
+test('switching sessions clears the local streaming state', async () => {
   enterStreamingState()
-  answerConfirm(true)
-
   await useAppStore.getState().switchSession(SESSION_PATH)
 
   const state = useAppStore.getState()
@@ -407,14 +404,13 @@ test('switchSession clears streaming state even when Pi refuses the switch', asy
   )
 })
 
-test('createNewSession is gated by the same warning', async () => {
+test('createNewSession starts an independent runtime without warning', async () => {
   enterStreamingState()
-  answerConfirm(false)
 
   await useAppStore.getState().createNewSession()
 
-  assert.deepEqual(calls, [], 'a declined new session must not reach Pi')
-  assert.equal(useAppStore.getState().isStreaming, true)
+  assert.equal(calls.includes('createNew'), true)
+  assert.equal(useAppStore.getState().isStreaming, false)
 })
 
 test('createNewSession opens the new conversation in Chat', async () => {
@@ -1477,36 +1473,21 @@ test('the activity map going quiet after an attach stops the indicator and backf
   assert.equal(calls.filter((c) => c === 'getMessages').length, loadsBefore + 1)
 })
 
-test('opening the mid-turn session row skips the killing RPC and re-attaches', async () => {
-  // Return path two: sidebar recents / Sessions tab / quick-switcher row
-  // click into a workspace with a background turn running. The switch_session
-  // RPC aborts an in-flight turn EVEN for the session Pi is already on
-  // (verified against real Pi), so the working-workspace guard must ask Pi
-  // where it is and reload instead of switching.
+test('opening a mid-turn session row leaves the other runtime working', async () => {
   enterWorkspacesWithBackgroundTurn()
   sessionStateResult = sessionStateWith(SESSION_PATH)
 
   await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
 
   const state = useAppStore.getState()
-  assert.equal(
-    calls.includes(`switch:${SESSION_PATH}`),
-    false,
-    'switch_session mid-turn kills the running turn — it must not be sent'
-  )
-  assert.equal(calls.includes('getMessages'), true, 'history must still load')
-  assert.equal(state.isStreaming, true)
-  assert.equal(state.reattachedMidTurn, true)
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
+  assert.equal(calls.includes('getMessages'), true, 'the selected runtime still hydrates history')
+  assert.equal(state.isStreaming, false, 'the selected session starts idle until its own events arrive')
 })
 
-test('opening a DIFFERENT session mid-turn warns, then switches on accept', async () => {
+test('opening a different session mid-turn does not prompt or stop the other runtime', async () => {
   enterWorkspacesWithBackgroundTurn()
-  // Pi reports it is working on another session than the row being opened —
-  // switching kills that background turn, so a warning must gate it (the
-  // renderer's isStreaming is false for background turns, so the ordinary
-  // confirmSessionChange gate stays silent here).
   sessionStateResult = sessionStateWith('/tmp/other-turn-session.jsonl')
-  answerConfirm(true)
 
   await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
 
@@ -1514,18 +1495,14 @@ test('opening a DIFFERENT session mid-turn warns, then switches on accept', asyn
   assert.equal(useAppStore.getState().reattachedMidTurn, false)
 })
 
-test('declining the background-turn warning aborts the session switch', async () => {
+test('a background runtime never blocks session navigation with a warning', async () => {
   enterWorkspacesWithBackgroundTurn()
   sessionStateResult = sessionStateWith('/tmp/other-turn-session.jsonl')
-  answerConfirm(false)
 
   await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
 
-  assert.equal(
-    calls.includes(`switch:${SESSION_PATH}`),
-    false,
-    'a declined warning must not send the turn-killing switch_session RPC'
-  )
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
+  assert.equal(useAppStore.getState().confirmRequest, null)
 })
 
 test('a mid-turn message_end keeps the attach armed and restores the indicator', async () => {
@@ -1573,19 +1550,13 @@ test('the boot arm stays out of session-change teardown windows', async () => {
   assert.equal(useAppStore.getState().reattachedMidTurn, false)
 })
 
-test('an attach whose turn ends is settled by the next activity broadcast', async () => {
+test('session navigation does not require workspace re-attachment', async () => {
   enterWorkspacesWithBackgroundTurn()
   sessionStateResult = sessionStateWith(SESSION_PATH)
   await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
-  assert.equal(useAppStore.getState().reattachedMidTurn, true)
 
-  // The turn finished; the workspace goes idle in the next broadcast.
-  useAppStore.getState().handleWorkspaceActivity({})
-  await new Promise((resolve) => setTimeout(resolve, 20))
-
-  const state = useAppStore.getState()
-  assert.equal(state.isStreaming, false)
-  assert.equal(state.reattachedMidTurn, false)
+  assert.equal(useAppStore.getState().reattachedMidTurn, false)
+  assert.equal(useAppStore.getState().isStreaming, false)
 })
 
 test('a live on-screen stream is never re-attached over', async () => {

@@ -11,6 +11,7 @@ export function usePiEvents(): void {
   const handlePiEvent = useAppStore((state) => state.handlePiEvent)
   const handlePendingPromptCounts = useAppStore((state) => state.handlePendingPromptCounts)
   const handleWorkspaceActivity = useAppStore((state) => state.handleWorkspaceActivity)
+  const handleSessionRuntime = useAppStore((state) => state.handleSessionRuntime)
   const recoverPendingPrompts = useAppStore((state) => state.recoverPendingPrompts)
 
   useEffect(() => {
@@ -18,6 +19,7 @@ export function usePiEvents(): void {
     const unsubscribeEvent = window.piDesktop.onEvent(handlePiEvent)
     const unsubscribeCounts = window.piDesktop.onPendingPrompts(handlePendingPromptCounts)
     const unsubscribeActivity = window.piDesktop.onWorkspaceActivity(handleWorkspaceActivity)
+    const unsubscribeSessionRuntime = window.piDesktop.onSessionRuntime(handleSessionRuntime)
 
     // A desktop-notification click hands the renderer the switch intent so the
     // usual streaming/dirty-editor confirms still run; landing on chat shows
@@ -34,7 +36,7 @@ export function usePiEvents(): void {
         if (state.currentView !== 'chat') state.setCurrentView('chat')
         return
       }
-      void state.switchWorkspace(workspaceId).then((switched) => {
+      void state.activateWorkspace(workspaceId).then((switched) => {
         if (switched) useAppStore.getState().setCurrentView('chat')
       })
     }
@@ -64,9 +66,10 @@ export function usePiEvents(): void {
       unsubscribeEvent()
       unsubscribeCounts()
       unsubscribeActivity()
+      unsubscribeSessionRuntime()
       unsubscribeActivate()
     }
-  }, [handlePiEvent, handlePendingPromptCounts, handleWorkspaceActivity, recoverPendingPrompts])
+  }, [handlePiEvent, handlePendingPromptCounts, handleWorkspaceActivity, handleSessionRuntime, recoverPendingPrompts])
 }
 
 /**
@@ -432,6 +435,9 @@ export function useInitialize(): void {
 
       // Workspaces are needed for the shell chrome; land the UI immediately after.
       await loadWorkspaces()
+      void window.piDesktop.session.listRuntimes()
+        .then((runtimes) => runtimes.forEach((runtime) => useAppStore.getState().handleSessionRuntime(runtime)))
+        .catch(() => undefined)
 
       if (openToHome) {
         // Interactive ASAP — do NOT wait on the session-store walk (can be tens
@@ -458,26 +464,12 @@ export function useInitialize(): void {
         return
       }
 
-      // Legacy: boot into Chat and resume the last session. reloadActiveSession
-      // pulls the resumed session's message history (refreshSessionState alone
-      // only loads metadata, leaving the chat empty).
-      await startPi()
-      await useAppStore.getState().reloadActiveSession()
-      await refreshSessionStats()
-
-      // Re-pull the activity snapshot AFTER the boot load: a renderer reload
-      // (Ctrl+R) mid-turn boots idle, the load's teardown clears any attach
-      // the earlier snapshot armed, and broadcasts only fire on transitions —
-      // without this pull the running turn would stream invisibly and its
-      // in-flight message would commit truncated. handleWorkspaceActivity
-      // arms the attach when the active workspace is working.
-      try {
-        useAppStore
-          .getState()
-          .handleWorkspaceActivity(await window.piDesktop.workspace.getActivity())
-      } catch {
-        // Non-fatal: the next activity broadcast catches the renderer up.
-      }
+      // Boot Pi in the background. The shell is already interactive; the
+      // session-runtime running event hydrates Chat when the process is ready.
+      void startPi().then(() => refreshSessionStats()).catch(() => undefined)
+      void window.piDesktop.workspace.getActivity()
+        .then((activity) => useAppStore.getState().handleWorkspaceActivity(activity))
+        .catch(() => undefined)
     }
 
     initialize()

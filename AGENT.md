@@ -155,7 +155,8 @@ src/
 ### Workspace Management
 
 - Multiple workspaces (project directories)
-- Each workspace has its own Pi process, sessions, and file service
+- Each workspace owns a file service; every live session in that project owns an independent Pi process bound to that workspace cwd and its own `--session` file
+- Session navigation is immediate; Pi startup and history hydration continue in the background
 - Default workspace: user's home directory
 - Workspace switcher in sidebar
 - Auto-creates workspace when switching to a session from a different project
@@ -164,6 +165,9 @@ src/
 ### Session Management
 
 - Sessions organized by working directory (Pi native), decoded correctly cross-platform including Windows drive-letter paths
+- One independent Pi runtime per live session, including multiple sessions sharing one project directory
+- Switching sessions never sends a destructive `switch_session` to the previous process; the previous turn continues in the background
+- Session tabs and sidebar rows show working, approval, completed, and failed indicators
 - Sessions grouped by project in the session panel
 - **Session tags**: type `#tag-name` in chat to tag the current session
 - Tags persisted to `~/.pi-desktop-gui/session-tags.json`
@@ -203,7 +207,8 @@ src/
 
 ### Workspace Activity & Desktop Notifications
 
-- Main derives per-workspace activity (working / needs approval / completed / failed) from every workspace's Pi events — the renderer's stream state only follows the active workspace, so this ships as its own map (`workspace-activity.ts`, broadcast on `event:workspace-activity`)
+- Main derives aggregate per-workspace activity (working / needs approval / completed / failed) from every session runtime's Pi events — the renderer's stream state only follows the active runtime, so this ships as its own map (`workspace-activity.ts`, broadcast on `event:workspace-activity`)
+- A separate session-runtime snapshot stream exposes each live session's process status, PID, activity, and active binding for per-session indicators
 - Sidebar shows per-workspace dots (pulsing while working; success/error until the workspace is next viewed) alongside the existing held-prompt badges
 - OS notifications (toggleable in Settings → Behavior) fire when a turn finishes, fails, or waits for approval outside the focused view; clicking one focuses the window and switches to that workspace via the renderer's guarded switch
 
@@ -352,10 +357,10 @@ npm run package       # Create installer
 
 ## Pi Integration
 
-Pi runs in RPC mode as a subprocess:
+Pi runs in RPC mode as a subprocess; one `PiRpcManager` is retained for each live session runtime:
 
 ```
-pi --mode rpc [--provider <name>] [--model <id>] [--no-session]
+pi --mode rpc [--session <session-file>] [--provider <name>] [--model <id>] [--no-session]
 ```
 
 Communication via JSONL over stdin/stdout:

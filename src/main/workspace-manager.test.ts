@@ -65,6 +65,29 @@ test('workspaceIdFor reverse-maps a manager to its owning workspace', async () =
   })
 })
 
+test('multiple session runtimes share a project cwd without sharing a Pi process', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const ws = await mgr.createWorkspace('Alpha', await project())
+    const fallback = mgr.getPiManager(ws.id)
+    const first = await mgr.createNewSessionRuntime(ws.id)
+    const second = await mgr.createNewSessionRuntime(ws.id)
+
+    assert.notEqual(first.runtimeId, second.runtimeId)
+    assert.notEqual(mgr.getActivePiManager(), fallback, 'the active session runtime replaces the workspace fallback')
+    assert.equal(mgr.getSessionRuntimes(ws.id).length, 2)
+    assert.equal(mgr.workspaceIdFor(mgr.getActivePiManager()!), ws.id)
+
+    const existingPath = join(await project(), 'session.jsonl')
+    await writeFile(existingPath, '{}\n', 'utf-8')
+    const activated = await mgr.activateSession(ws.id, existingPath)
+    assert.equal(activated.sessionPath, existingPath)
+    assert.equal(mgr.getSessionRuntimeForPath(existingPath)?.runtimeId, activated.runtimeId)
+    assert.equal(mgr.getActiveSessionRuntime()?.runtimeId, activated.runtimeId)
+  })
+})
+
 test('changeWorkspacePath stops the workspace Pi so it cannot keep the old cwd', async () => {
   await freshDataDir()
 

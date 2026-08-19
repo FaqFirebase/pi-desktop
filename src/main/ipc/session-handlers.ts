@@ -8,13 +8,13 @@ import {
   projectNameFromPath,
   JSONL_EXTENSION,
 } from '../session-paths'
-import { pathGroupKey as workspaceMatchKey } from '../../shared/path-compare'
+import { pathGroupKey as workspaceMatchKey, pathsEqual } from '../../shared/path-compare'
 import { readSessionMetadataCached } from '../session-metadata'
 import { mapWithConcurrency } from '../map-concurrent'
 import { readSessionLineage } from '../session-lineage-reader'
 import { trimGetMessagesResponse } from '../get-messages-trim'
 import { activityStatsStore } from '../activity-stats'
-import type { SessionDeleteResult, SessionListItem } from '../../shared/ipc-contracts'
+import type { SessionDeleteResult, SessionListItem, SessionRuntimeInfo } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { readdir, stat, unlink } from 'fs/promises'
 import { basename, join } from 'path'
@@ -22,6 +22,8 @@ import { isPathWithin } from '../path-authorization'
 import { existsSync } from 'fs'
 import { spawnSync } from 'child_process'
 import { assertTrustedSender, isString } from './validation'
+import { applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
+import { loadAppSettings } from './settings'
 import type { IpcContext } from './context'
 
 const MAX_SESSION_LIST = 100
@@ -66,24 +68,54 @@ async function deleteSessionFile(sessionPath: string): Promise<SessionDeleteResu
 export function registerSessionHandlers(ctx: IpcContext): void {
   const { workspaceManager, getActivePi, tagManager, archivedSessions } = ctx
 
+  const startRuntime = async (runtime: SessionRuntimeInfo, sessionPath?: string): Promise<void> => {
+    const settings = await loadAppSettings(workspaceManager)
+    const workspace = workspaceManager.getWorkspaces().find((item) => item.id === runtime.workspaceId)
+    if (!workspace) return
+    const options = {
+      cwd: workspace.path,
+      ...(sessionPath ? { sessionPath } : {}),
+      provider: settings.defaultProvider ?? undefined,
+      model: settings.defaultModel ?? undefined,
+    }
+    await workspaceManager.startSessionRuntime(runtime.runtimeId, applyPermissionModeToStartOptions(
+      sessionPath ? applyResumePreference(options, settings) : options,
+      settings
+    ))
+  }
+
   // ─── Session Management ─────────────────────────────────────────────────
 
-  ipcMain.handle(IPC_CHANNELS.SESSION_NEW, async () => {
-    const pi = workspaceManager.getActivePiManager()
-    if (!pi || pi.getStatus().status !== 'running') {
-      return { success: false, error: 'Pi not running. Start Pi first.' }
-    }
-    return pi.sendCommand({ type: 'new_session' })
+  ipcMain.handle(IPC_CHANNELS.SESSION_NEW, async (): Promise<SessionRuntimeInfo> => {
+    const workspace = workspaceManager.getActiveWorkspace()
+    if (!workspace) throw new Error('No active workspace')
+    const runtime = await workspaceManager.createNewSessionRuntime(workspace.id)
+    // Navigation must not wait for Pi startup. The runtime event marks it
+    // starting/running and hydrates the renderer when ready.
+    void startRuntime(runtime).catch(() => undefined)
+    return runtime
   })
 
-  ipcMain.handle(IPC_CHANNELS.SESSION_SWITCH, async (_event, sessionPath: unknown) => {
-    if (!isString(sessionPath)) throw new Error('sessionPath must be a string')
-    const pi = workspaceManager.getActivePiManager()
-    if (!pi || pi.getStatus().status !== 'running') {
-      // Pi not running — just store the path for when it starts
-      return { success: false, error: 'Pi not running. Start Pi first.' }
+  const activateSession = async (sessionPath: string, cwd?: string): Promise<SessionRuntimeInfo> => {
+    if (!isPathWithin(getSessionsRoot(), sessionPath) || !existsSync(sessionPath)) {
+      throw new Error('sessionPath must point to an existing Pi session file')
     }
-    return pi.sendCommand({ type: 'switch_session', sessionPath })
+    const workspace = workspaceManager.getActiveWorkspace()
+    if (!workspace) throw new Error('No active workspace')
+    if (cwd && !pathsEqual(workspace.path, cwd)) throw new Error('Session project does not match the active workspace')
+    const runtime = await workspaceManager.activateSession(workspace.id, sessionPath)
+    if (runtime.status !== 'running') void startRuntime(runtime, sessionPath).catch(() => undefined)
+    return runtime
+  }
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_SWITCH, async (_event, sessionPath: unknown, cwd?: unknown) => {
+    if (!isString(sessionPath)) throw new Error('sessionPath must be a string')
+    if (cwd !== undefined && !isString(cwd)) throw new Error('cwd must be a string')
+    return activateSession(sessionPath, isString(cwd) ? cwd : undefined)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_LIST_RUNTIMES, async () => {
+    return workspaceManager.getSessionRuntimes()
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_FORK, async (_event, entryId?: unknown) => {

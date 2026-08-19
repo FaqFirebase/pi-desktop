@@ -9,11 +9,14 @@ import { pathsEqual } from '../../../shared/path-compare'
 import { useContextMenu, buildSessionContextMenu } from './context-menu'
 import { getSessionMenuPosition, type MenuPosition } from './session-menu-position'
 import { resolveRunSessionId } from '../utils/workflow-runs'
+import { SessionRuntimeIndicator } from './session-runtime-indicator'
 
 export function SessionPanel(): React.JSX.Element {
   const sessionList = useAppStore((state) => state.sessionList)
   const sessionState = useAppStore((state) => state.sessionState)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
+  const activeSessionRuntimeId = useAppStore((state) => state.activeSessionRuntimeId)
+  const sessionRuntimes = useAppStore((state) => state.sessionRuntimes)
   const createNewSession = useAppStore((state) => state.createNewSession)
   const refreshSessionList = useAppStore((state) => state.refreshSessionList)
   const archivedSessions = useAppStore((state) => state.archivedSessions)
@@ -313,7 +316,7 @@ export function SessionPanel(): React.JSX.Element {
                         <SessionEntry
                           key={session.path}
                           session={session}
-                          isActive={sessionState?.sessionFile === session.path}
+                          isActive={sessionState?.sessionFile === session.path || sessionRuntimes[activeSessionRuntimeId ?? '']?.sessionPath === session.path}
                           onSelect={() => handleSwitchSession(session)}
                         />
                       ))}
@@ -367,6 +370,7 @@ function SessionEntry({
   const unarchiveSession = useAppStore((state) => state.unarchiveSession)
   const deleteSession = useAppStore((state) => state.deleteSession)
   const openWorkflowRunsForSession = useAppStore((state) => state.openWorkflowRunsForSession)
+  const sessionRuntimes = useAppStore((state) => state.sessionRuntimes)
 
   const tags = sessionTags[session.sessionId] ?? []
   const autoTag = autoTags[session.sessionId]
@@ -561,6 +565,10 @@ function SessionEntry({
             active
           </span>
         )}
+        {(() => {
+          const runtime = Object.values(sessionRuntimes).find((item) => item.sessionPath && pathsEqual(item.sessionPath, session.path))
+          return runtime ? <SessionRuntimeIndicator runtime={runtime} /> : null
+        })()}
       </div>
 
       {/* Kebab menu trigger — always visible so the actions are discoverable.

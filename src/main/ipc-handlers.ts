@@ -39,6 +39,12 @@ export function registerIpcHandlers(
 ): void {
   const ctx = createIpcContext(workspaceManager)
 
+  // Session runtime snapshots are separate from workspace activity: several
+  // live Pi processes may share one project cwd.
+  workspaceManager.onSessionRuntime((runtime) => {
+    ctx.broadcast(IPC_CHANNELS.EVENT_SESSION_RUNTIME, runtime)
+  })
+
   registerPiHandlers(ctx)
   registerTerminalHandlers(ctx)
   registerSessionHandlers(ctx)

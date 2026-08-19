@@ -8,6 +8,7 @@ import { getSessionsRoot } from '../pi-paths'
 import { isPathWithin } from '../path-authorization'
 import { existsSync } from 'fs'
 import type { IpcContext } from './context'
+import { appLog } from '../app-log'
 
 function validateWorkspaceTabOptions(value: unknown): WorkspaceTabOptions {
   if (value === undefined || value === null) return {}
@@ -104,7 +105,9 @@ export function registerWorkspaceHandlers(ctx: IpcContext): void {
 
     const settings = await loadAppSettings(workspaceManager)
     const workspace = await workspaceManager.createWorktreeWorkspace(options)
-    await workspaceManager.startPiForWorkspace(
+    // Return the new project tab immediately. Its session runtime starts in the
+    // background so the tab/file contents are usable before Pi is ready.
+    void workspaceManager.startPiForWorkspace(
       workspace.id,
       applyPermissionModeToStartOptions(
         applyResumePreference(
@@ -118,7 +121,7 @@ export function registerWorkspaceHandlers(ctx: IpcContext): void {
         ),
         settings
       )
-    )
+    ).catch((error) => appLog.warn('workspaces', 'Background worktree Pi start failed', error))
     return workspace
   })
 }

@@ -58,6 +58,7 @@ import type {
   WorkflowRunDetail,
   WorkflowControlAction,
   WorkflowControlResult,
+  SessionRuntimeInfo,
 } from '../shared/ipc-contracts'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -85,8 +86,9 @@ interface PiDesktopAPI {
 
   // Session management
   session: {
-    createNew(): Promise<unknown>
-    switch(sessionPath: string): Promise<unknown>
+    createNew(): Promise<SessionRuntimeInfo>
+    switch(sessionPath: string, cwd?: string): Promise<SessionRuntimeInfo>
+    listRuntimes(): Promise<SessionRuntimeInfo[]>
     fork(entryId?: string): Promise<unknown>
     clone(): Promise<unknown>
     list(cwd?: string): Promise<SessionListItem[]>
@@ -312,6 +314,7 @@ interface PiDesktopAPI {
   onEvent(callback: (event: PiRpcEvent) => void): () => void
   onPendingPrompts(callback: (counts: PendingPromptCounts) => void): () => void
   onWorkspaceActivity(callback: (map: WorkspaceActivityMap) => void): () => void
+  onSessionRuntime(callback: (runtime: SessionRuntimeInfo) => void): () => void
   onActivateWorkspace(callback: (payload: { workspaceId: string }) => void): () => void
   onFileChange(callback: (event: FileChangeEvent) => void): () => void
   onMenuAction(callback: (action: string) => void): () => void
@@ -338,7 +341,8 @@ const api: PiDesktopAPI = {
 
   session: {
     createNew: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_NEW),
-    switch: (sessionPath) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SWITCH, sessionPath),
+    switch: (sessionPath, cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SWITCH, sessionPath, cwd),
+    listRuntimes: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_RUNTIMES),
     fork: (entryId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_FORK, entryId),
     clone: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_CLONE),
     list: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST, cwd),
@@ -558,6 +562,14 @@ const api: PiDesktopAPI = {
     ipcRenderer.on(IPC_CHANNELS.EVENT_WORKSPACE_ACTIVITY, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.EVENT_WORKSPACE_ACTIVITY, handler)
+    }
+  },
+
+  onSessionRuntime: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: SessionRuntimeInfo) => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.EVENT_SESSION_RUNTIME, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.EVENT_SESSION_RUNTIME, handler)
     }
   },
 
