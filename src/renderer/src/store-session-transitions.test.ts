@@ -474,8 +474,10 @@ test('createNewSession opens the new conversation in Chat', async () => {
 
   await useAppStore.getState().createNewSession()
 
+  const state = useAppStore.getState()
   assert.equal(calls.includes('createNew'), true)
-  assert.equal(useAppStore.getState().currentView, 'chat')
+  assert.equal(state.currentView, 'chat')
+  assert.equal(state.sessionLoading, false, 'an empty new session should render immediately')
 })
 
 test('forkFrom is gated by the same warning', async () => {

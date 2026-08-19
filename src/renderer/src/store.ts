@@ -1202,10 +1202,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         currentView: 'chat',
         sessionState: null,
         sessionStats: null,
-        sessionLoading: runtime?.status !== 'running',
+        // A new session has no history to wait for. Show the empty chat
+        // immediately; the runtime event hydrates its generated session path
+        // when Pi is ready, while piStatus still communicates startup.
+        sessionLoading: false,
         ...(runtime ? {
           activeSessionRuntimeId: runtime.runtimeId,
-          piStatus: runtime.status,
+          piStatus: runtime.status === 'stopped' ? 'starting' : runtime.status,
           piPid: runtime.pid,
           piError: runtime.error,
         } : {}),
