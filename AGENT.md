@@ -106,6 +106,8 @@ src/
             ├── sidebar.tsx        # Workspace switcher, nav, sessions grouped by folder, inline rename
             ├── sidebar-session-labels.ts # Session row label helpers
             ├── home-screen.tsx    # Full Home launcher (stats, recents, open folder / new session)
+            ├── task-launcher.tsx  # New-task modal that starts a real background session
+            ├── mission-control.tsx # Global live-session and workflow inbox
             ├── stats-panel.tsx    # Activity stats dashboard on Home
             ├── chat-panel.tsx     # Main streaming chat; empty session = center prompt + project picker
             ├── chat-project-picker.tsx # Empty-chat project / no-project picker under the composer
@@ -154,6 +156,7 @@ src/
 
 ### Workspace Management
 
+- Mission Control summarizes all live session runtimes and workflow runs across projects; New Task launches a prompt into a dedicated background runtime
 - Multiple workspaces (project directories)
 - Each workspace owns a file service; every live session in that project owns an independent Pi process bound to that workspace cwd and its own `--session` file
 - Session navigation is immediate; Pi startup and history hydration continue in the background

@@ -53,6 +53,7 @@ import type {
   WorkspaceActivityMap,
   WorkflowRunSummary,
   SessionRuntimeInfo,
+  SessionLaunchTaskOptions,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -229,7 +230,7 @@ interface AppState {
   pendingFollowUp: string[]
 
   // UI
-  currentView: 'home' | 'chat' | 'settings' | 'sessions' | 'timeline' | 'packages' | 'diff' | 'notes' | 'skills' | 'diagnostics'
+  currentView: 'home' | 'chat' | 'mission-control' | 'settings' | 'sessions' | 'timeline' | 'packages' | 'diff' | 'notes' | 'skills' | 'diagnostics'
   // Scope for the Sessions view: 'current' shows only the active workspace's
   // sessions, 'all' keeps every project's history visible. Entry points set it
   // (sidebar Sessions = current, View all / command palette = all); the panel's
@@ -358,6 +359,7 @@ interface AppState {
   notes: Note[]
   notePickerOpen: boolean
   commandPaletteOpen: boolean
+  taskLauncherOpen: boolean
   // A prompt queued for insertion into the chat input. The nonce lets the
   // chat input re-apply the same text on repeated inserts.
   pendingInsert: { text: string; nonce: number; replace?: boolean } | null
@@ -398,6 +400,7 @@ interface AppActions {
 
   // Session
   createNewSession: () => Promise<void>
+  launchTask: (options: SessionLaunchTaskOptions) => Promise<boolean>
   switchSession: (path: string, projectPath?: string) => Promise<void>
   /**
    * Open a session row from any surface (sidebar, session panel, quick
@@ -552,6 +555,7 @@ interface AppActions {
   clearPendingInsert: () => void
   setNotePickerOpen: (open: boolean) => void
   setCommandPalette: (open: boolean) => void
+  setTaskLauncherOpen: (open: boolean) => void
   startNoteFromText: (text: string) => void
   clearNoteDraft: () => void
 
@@ -858,6 +862,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   notes: [],
   notePickerOpen: false,
   commandPaletteOpen: false,
+  taskLauncherOpen: false,
   pendingInsert: null,
   noteDraft: null,
   updateInfo: null,
@@ -1216,6 +1221,46 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         content: `New session error: ${err instanceof Error ? err.message : String(err)}`,
         timestamp: Date.now(),
       })
+    }
+  },
+
+  launchTask: async (options) => {
+    const prompt = options.prompt.trim()
+    if (!prompt) return false
+    if (get().activeWorkspace?.id !== options.workspaceId) {
+      if (!(await get().activateWorkspace(options.workspaceId, { start: false }))) return false
+    }
+
+    const gen = ++sessionLoadGeneration
+    try {
+      const runtime = await window.piDesktop.session.launchTask({
+        workspaceId: options.workspaceId,
+        prompt,
+      })
+      if (gen !== sessionLoadGeneration) return false
+      get().clearMessages()
+      set({
+        currentView: 'chat',
+        sessionState: null,
+        sessionStats: null,
+        sessionLoading: true,
+        activeSessionRuntimeId: runtime.runtimeId,
+        piStatus: runtime.status === 'stopped' ? 'starting' : runtime.status,
+        piPid: runtime.pid,
+        piError: runtime.error,
+      })
+      scheduleSessionListRefresh(get)
+      return true
+    } catch (err) {
+      if (gen !== sessionLoadGeneration) return false
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: `Task launch error: ${err instanceof Error ? err.message : String(err)}`,
+        timestamp: Date.now(),
+      })
+      set({ sessionLoading: false })
+      return false
     }
   },
 
@@ -2804,6 +2849,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   setNotePickerOpen: (open) => set({ notePickerOpen: open }),
 
   setCommandPalette: (open) => set({ commandPaletteOpen: open }),
+  setTaskLauncherOpen: (open) => set({ taskLauncherOpen: open }),
 
   startNoteFromText: (text) =>
     set({ noteDraft: text, notePickerOpen: false, currentView: 'notes' }),

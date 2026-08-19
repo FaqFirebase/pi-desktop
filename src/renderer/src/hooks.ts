@@ -388,6 +388,7 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
   const compactContext = useAppStore((s) => s.compactContext)
   const cloneBranch = useAppStore((s) => s.cloneBranch)
   const createNewSession = useAppStore((s) => s.createNewSession)
+  const setTaskLauncherOpen = useAppStore((s) => s.setTaskLauncherOpen)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
 
   const builtins = useMemo<BuiltinCommand[]>(
@@ -395,11 +396,12 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
       { name: 'compact', description: 'Compact the conversation to free up context', run: () => { void compactContext() } },
       { name: 'clone', description: 'Clone the current branch into a new session', run: () => { void cloneBranch() } },
       { name: 'new', description: 'Start a new session', run: () => { void createNewSession() } },
+      { name: 'task', description: 'Launch a task in a new Pi session', run: () => setTaskLauncherOpen(true) },
       { name: 'resume', description: 'Open the Sessions list', run: () => setCurrentView('sessions') },
       { name: 'fork', description: 'Open Branches to fork from a message', run: () => setCurrentView('timeline') },
       { name: 'settings', description: 'Open Settings', run: () => setCurrentView('settings') },
     ],
-    [compactContext, cloneBranch, createNewSession, setCurrentView]
+    [compactContext, cloneBranch, createNewSession, setTaskLauncherOpen, setCurrentView]
   )
 
   const allCommands = useMemo<PiCommand[]>(

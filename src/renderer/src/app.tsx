@@ -10,6 +10,8 @@ import { HomeScreen } from './components/home-screen'
 import { NotesPanel } from './components/notes-panel'
 import { SkillsPanel } from './components/skills-panel'
 import { DiagnosticsPanel } from './components/diagnostics-panel'
+import { MissionControl } from './components/mission-control'
+import { TaskLauncher } from './components/task-launcher'
 import { NotePicker } from './components/note-picker'
 import { CommandPalette } from './components/command-palette'
 import { ExtensionUiDialog, AppConfirmDialog } from './components/extension-ui-dialog'
@@ -154,6 +156,7 @@ export function App(): React.JSX.Element {
               ) : (
                 <>
                   {currentView === 'home' && <HomeScreen />}
+                  {currentView === 'mission-control' && <MissionControl />}
                   {/* Kept mounted (just hidden) so the chat scroll position survives
                       navigating to another view and back. */}
                   <div className={currentView === 'chat' ? 'flex min-w-0 flex-1 flex-col overflow-hidden' : 'hidden'}>
@@ -180,6 +183,7 @@ export function App(): React.JSX.Element {
       <ExtensionUiDialog />
       <AppConfirmDialog />
       <NotePicker />
+      <TaskLauncher />
       <CommandPalette />
       {ContextMenuComponent}
     </div>

@@ -9,6 +9,7 @@ import {
   GitCompare,
   AlertTriangle,
   Settings as SettingsIcon,
+  Play,
 } from 'lucide-react'
 import { useAppStore } from '../store'
 import piLogo from '../assets/pi-logo.svg'
@@ -282,6 +283,7 @@ function HomeScreenInfo(): React.JSX.Element {
   const activateWorkspace = useAppStore((s) => s.activateWorkspace)
   const createWorkspace = useAppStore((s) => s.createWorkspace)
   const createNewSession = useAppStore((s) => s.createNewSession)
+  const setTaskLauncherOpen = useAppStore((s) => s.setTaskLauncherOpen)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
   const requestChatScrollToBottom = useAppStore((s) => s.requestChatScrollToBottom)
   const [busy, setBusy] = useState(false)
@@ -340,7 +342,7 @@ function HomeScreenInfo(): React.JSX.Element {
           <p className="mt-1 text-sm text-dim">Open a workspace or pick up where you left off.</p>
         </div>
 
-        <div className="mb-6 grid gap-3 sm:grid-cols-2">
+        <div className="mb-6 grid gap-3 sm:grid-cols-3">
           <button
             onClick={() => void openFolder()}
             className="flex w-full items-center gap-3 rounded-lg border border-border-strong bg-surface px-4 py-3 text-left transition-colors hover:border-border-strong-hover hover:bg-surface-hover"
@@ -361,6 +363,16 @@ function HomeScreenInfo(): React.JSX.Element {
               <div className="truncate text-xs text-dim">
                 {activeWorkspace ? `In ${activeWorkspace.name}` : 'Pick a folder first'}
               </div>
+            </div>
+          </button>
+          <button
+            onClick={() => setTaskLauncherOpen(true)}
+            className="flex w-full items-center gap-3 rounded-lg border border-accent/50 bg-accent-bg/30 px-4 py-3 text-left transition-colors hover:border-accent hover:bg-accent-bg/50"
+          >
+            <Play size={18} className="shrink-0 text-accent-fg" />
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-primary">New Task</div>
+              <div className="truncate text-xs text-dim">Start work in a fresh Pi session</div>
             </div>
           </button>
         </div>
