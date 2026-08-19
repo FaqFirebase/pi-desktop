@@ -21,7 +21,7 @@ import { basename, join } from 'path'
 import { isPathWithin } from '../path-authorization'
 import { existsSync } from 'fs'
 import { spawnSync } from 'child_process'
-import { assertTrustedSender, isString } from './validation'
+import { assertTrustedSender, isObject, isString } from './validation'
 import { applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
 import { loadAppSettings } from './settings'
 import type { IpcContext } from './context'
@@ -93,6 +93,25 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     // Navigation must not wait for Pi startup. The runtime event marks it
     // starting/running and hydrates the renderer when ready.
     void startRuntime(runtime).catch(() => undefined)
+    return runtime
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_LAUNCH_TASK, async (_event, input: unknown): Promise<SessionRuntimeInfo> => {
+    if (!isObject(input) || !isString(input.workspaceId) || !isString(input.prompt) || !input.prompt.trim()) {
+      throw new Error('workspaceId and a non-empty prompt are required')
+    }
+    const workspace = workspaceManager.getWorkspaces().find((item) => item.id === input.workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+    const runtime = await workspaceManager.createNewSessionRuntime(workspace.id)
+    // Keep the prompt attached to this runtime. It must not go through the
+    // renderer's active-manager shortcut because the user can switch away
+    // before Pi finishes starting.
+    void startRuntime(runtime)
+      .then(() => workspaceManager.sendCommandToSessionRuntime(runtime.runtimeId, {
+        type: 'prompt',
+        message: input.prompt,
+      }))
+      .catch(() => undefined)
     return runtime
   })
 

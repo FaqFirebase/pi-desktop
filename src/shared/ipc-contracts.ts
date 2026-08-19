@@ -25,6 +25,7 @@ export const IPC_CHANNELS = {
 
   // Session management
   SESSION_NEW: 'session:new',
+  SESSION_LAUNCH_TASK: 'session:launch-task',
   SESSION_SWITCH: 'session:switch',
   SESSION_LIST_RUNTIMES: 'session:list-runtimes',
   SESSION_FORK: 'session:fork',
@@ -206,6 +207,11 @@ export interface SessionRuntimeInfo extends PiStatus {
   sessionId: string | null
   activity: SessionRuntimeActivity | null
   active: boolean
+}
+
+export interface SessionLaunchTaskOptions {
+  workspaceId: string
+  prompt: string
 }
 
 export interface PiStartOptions {

@@ -377,6 +377,12 @@ export class WorkspaceManager {
     entry.manager.stop()
   }
 
+  sendCommandToSessionRuntime(runtimeId: string, command: Record<string, unknown>): Promise<unknown> {
+    const entry = this.sessionRuntimes.get(runtimeId)
+    if (!entry) return Promise.reject(new Error(`Session runtime not found: ${runtimeId}`))
+    return entry.manager.sendCommand(command)
+  }
+
   async initialize(): Promise<void> {
     await this.loadWorkspaces()
 

@@ -59,6 +59,7 @@ import type {
   WorkflowControlAction,
   WorkflowControlResult,
   SessionRuntimeInfo,
+  SessionLaunchTaskOptions,
 } from '../shared/ipc-contracts'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -87,6 +88,7 @@ interface PiDesktopAPI {
   // Session management
   session: {
     createNew(): Promise<SessionRuntimeInfo>
+    launchTask(options: SessionLaunchTaskOptions): Promise<SessionRuntimeInfo>
     switch(sessionPath: string, cwd?: string): Promise<SessionRuntimeInfo>
     listRuntimes(): Promise<SessionRuntimeInfo[]>
     fork(entryId?: string): Promise<unknown>
@@ -341,6 +343,7 @@ const api: PiDesktopAPI = {
 
   session: {
     createNew: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_NEW),
+    launchTask: (options) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LAUNCH_TASK, options),
     switch: (sessionPath, cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SWITCH, sessionPath, cwd),
     listRuntimes: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_RUNTIMES),
     fork: (entryId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_FORK, entryId),

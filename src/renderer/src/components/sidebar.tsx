@@ -11,6 +11,7 @@ import {
   PanelLeftClose,
   Clock,
   Activity,
+  LayoutDashboard,
   Package,
   Layers,
   ChevronDown,
@@ -56,6 +57,7 @@ export function Sidebar(): React.JSX.Element {
   const sessionRuntimes = useAppStore((state) => state.sessionRuntimes)
   const activeSessionRuntimeId = useAppStore((state) => state.activeSessionRuntimeId)
   const createNewSession = useAppStore((state) => state.createNewSession)
+  const setTaskLauncherOpen = useAppStore((state) => state.setTaskLauncherOpen)
   const openFolderAsWorkspace = useAppStore((state) => state.openFolderAsWorkspace)
   const openWorkflowRunsForSession = useAppStore((state) => state.openWorkflowRunsForSession)
   const openWorkflowRunsForWorkspace = useAppStore((state) => state.openWorkflowRunsForWorkspace)
@@ -503,6 +505,13 @@ export function Sidebar(): React.JSX.Element {
               }}
               title="Sessions in this project"
             />
+            <SidebarItem
+              icon={<Plus size={14} />}
+              label="New task"
+              active={false}
+              onClick={() => setTaskLauncherOpen(true)}
+              title="Start a task in a new Pi session"
+            />
           </div>
         </div>
         <div>
@@ -513,6 +522,16 @@ export function Sidebar(): React.JSX.Element {
             )}
           </div>
           <div className="space-y-0.5">
+            <SidebarItem
+              icon={<LayoutDashboard size={14} />}
+              label="Mission Control"
+              active={currentView === 'mission-control'}
+              onClick={() => {
+                setWorkflowPanelOpen(false)
+                setCurrentView('mission-control')
+              }}
+              title="All background sessions and workflows"
+            />
             <SidebarItem
               icon={<WorkflowIcon size={14} />}
               label="Workflows"
