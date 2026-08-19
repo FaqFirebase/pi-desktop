@@ -44,7 +44,8 @@ export function WorkspaceTabs(): React.JSX.Element {
   const sessionTabs = useMemo(
     () => Object.values(sessionRuntimes)
       .filter((runtime) => runtime.workspaceId === activeWorkspace?.id && runtime.sessionPath)
-      .sort((a, b) => Number(b.active) - Number(a.active)),
+      // Newest runtime first; selecting a tab never changes its position.
+      .reverse(),
     [activeWorkspace?.id, sessionRuntimes]
   )
 
