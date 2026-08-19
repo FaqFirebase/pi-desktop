@@ -76,6 +76,18 @@ test('agent_end in a background workspace marks completed and notifies', () => {
   assert.deepEqual(h.notifications, [{ workspaceId: 'ws-bg', kind: 'completed' }])
 })
 
+test('agent_end preserves the exact runtime session target for notification clicks', () => {
+  const h = makeHarness('ws-active')
+  h.tracker.handleAgentStart('ws-bg')
+  h.tracker.handleAgentEnd('ws-bg', { runtimeId: 'rt-1', sessionPath: '/sessions/finished.jsonl' })
+  assert.deepEqual(h.notifications, [{
+    workspaceId: 'ws-bg',
+    kind: 'completed',
+    runtimeId: 'rt-1',
+    sessionPath: '/sessions/finished.jsonl',
+  }])
+})
+
 test('pending prompts override working and notify needs-approval', () => {
   const h = makeHarness('ws-active')
   h.tracker.handleAgentStart('ws-bg')

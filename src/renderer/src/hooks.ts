@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState } fr
 import { useAppStore } from './store'
 import { DEFAULT_SETTINGS } from '../../shared/default-settings'
 import { BUILTIN_SOURCE, type PiCommand } from '../../shared/pi-command'
+import type { WorkspaceActivationIntent } from '../../shared/ipc-contracts'
 
 /**
  * Subscribes to Pi events from the main process and routes them to the store.
@@ -24,28 +25,39 @@ export function usePiEvents(): void {
     // A desktop-notification click hands the renderer the switch intent so the
     // usual streaming/dirty-editor confirms still run; landing on chat shows
     // the finished (or waiting) turn the notification was about.
-    const activateWorkspaceIntent = (workspaceId: string): void => {
+    const activateWorkspaceIntent = (intent: WorkspaceActivationIntent): void => {
       const state = useAppStore.getState()
+      const { workspaceId, sessionPath } = intent
       // A stale intent for a removed workspace must not run confirm dialogs
       // for a doomed switch. An empty list means it just hasn't loaded yet
       // (boot) — proceed and let main validate.
-      if (state.workspaces.length > 0 && !state.workspaces.some((ws) => ws.id === workspaceId)) {
-        return
-      }
-      if (state.activeWorkspace?.id === workspaceId) {
-        if (state.currentView !== 'chat') state.setCurrentView('chat')
-        return
-      }
-      void state.activateWorkspace(workspaceId).then((switched) => {
+      if (state.workspaces.length > 0 && !state.workspaces.some((ws) => ws.id === workspaceId)) return
+
+      void (async () => {
+        if (sessionPath) {
+          if (state.activeWorkspace?.id !== workspaceId) {
+            if (!(await state.activateWorkspace(workspaceId, { start: false }))) return
+          }
+          const workspace = useAppStore.getState().activeWorkspace
+          if (!workspace) return
+          await useAppStore.getState().switchSession(sessionPath, workspace.path)
+          useAppStore.getState().setCurrentView('chat')
+          return
+        }
+        if (state.activeWorkspace?.id === workspaceId) {
+          if (state.currentView !== 'chat') state.setCurrentView('chat')
+          return
+        }
+        const switched = await state.activateWorkspace(workspaceId)
         if (switched) useAppStore.getState().setCurrentView('chat')
-      })
+      })()
     }
-    const unsubscribeActivate = window.piDesktop.onActivateWorkspace(({ workspaceId }) => {
+    const unsubscribeActivate = window.piDesktop.onActivateWorkspace((intent) => {
       // Main stashes every click's intent in case this broadcast never lands
       // (boot/reload race). It did land — consume the stash so a later boot
       // cannot replay a long-stale activation.
       void window.piDesktop.workspace.takePendingActivation().catch(() => undefined)
-      activateWorkspaceIntent(workspaceId)
+      activateWorkspaceIntent(intent)
     })
 
     // A reload leaves the dialog slot empty while main still holds the prompt.
@@ -55,8 +67,8 @@ export function usePiEvents(): void {
     // main; deliver it now that the subscriptions above are live.
     void window.piDesktop.workspace
       .takePendingActivation()
-      .then((workspaceId) => {
-        if (workspaceId) activateWorkspaceIntent(workspaceId)
+      .then((intent) => {
+        if (intent) activateWorkspaceIntent(intent)
       })
       .catch(() => {
         // Non-fatal: the user can switch manually.
