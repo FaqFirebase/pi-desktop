@@ -143,6 +143,76 @@ test('creates and removes a clean managed worktree tab', async () => {
   })
 })
 
+test('reuses the same managed worktree for the same task', async () => {
+  await freshDataDir()
+  const repo = await project()
+  await writeFile(join(repo, 'README.md'), 'task reuse\n', 'utf-8')
+  const git = (args: string[], cwd = repo): string => {
+    const result = spawnSync('git', args, { cwd, encoding: 'utf-8' })
+    assert.equal(result.status, 0, result.stderr || `git ${args.join(' ')} failed`)
+    return result.stdout.trim()
+  }
+  git(['init'])
+  git(['config', 'user.email', 'pi-desktop@example.test'])
+  git(['config', 'user.name', 'Pi Desktop Tests'])
+  git(['add', '.'])
+  git(['commit', '-m', 'initial'])
+
+  await withManager(async (mgr) => {
+    const source = await mgr.createWorkspace('Repo', repo)
+    const task = 'Fix the task reuse test'
+    const first = await mgr.createWorktreeWorkspace({
+      sourceWorkspaceId: source.id,
+      name: 'Fix task reuse',
+      taskPrompt: task,
+    })
+    const second = await mgr.createWorktreeWorkspace({
+      sourceWorkspaceId: source.id,
+      name: 'Should not create another tab',
+      taskPrompt: task,
+    })
+
+    assert.equal(second.id, first.id)
+    assert.equal(mgr.getWorkspaces().filter((workspace) => workspace.kind === 'worktree').length, 1)
+    await mgr.removeWorkspace(first.id)
+  })
+})
+
+test('adopts an explicitly named external worktree without deleting it on close', async () => {
+  await freshDataDir()
+  const repo = await project()
+  await writeFile(join(repo, 'README.md'), 'external worktree\n', 'utf-8')
+  const git = (args: string[], cwd = repo): string => {
+    const result = spawnSync('git', args, { cwd, encoding: 'utf-8' })
+    assert.equal(result.status, 0, result.stderr || `git ${args.join(' ')} failed`)
+    return result.stdout.trim()
+  }
+  git(['init'])
+  git(['config', 'user.email', 'pi-desktop@example.test'])
+  git(['config', 'user.name', 'Pi Desktop Tests'])
+  git(['add', '.'])
+  git(['commit', '-m', 'initial'])
+  const external = join(await project(), 'checkout')
+  git(['worktree', 'add', '-b', 'feature/existing', external])
+
+  await withManager(async (mgr) => {
+    const source = await mgr.createWorkspace('Repo', repo)
+    const adopted = await mgr.createWorktreeWorkspace({
+      sourceWorkspaceId: source.id,
+      taskPrompt: 'Continue work in feature/existing',
+    })
+
+    assert.equal(adopted.path.replaceAll('\\', '/'), external.replaceAll('\\', '/'))
+    assert.equal(adopted.branch, 'feature/existing')
+    assert.equal(adopted.managed, false)
+    const result = await mgr.removeWorkspace(adopted.id)
+    assert.equal(result.worktreeRemoved, undefined)
+    assert.equal(existsSync(external), true)
+  })
+
+  git(['worktree', 'remove', external])
+})
+
 test('load recovers from .bak when the live workspaces file is corrupted', async () => {
   await freshDataDir()
   const proj = await project()

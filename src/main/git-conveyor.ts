@@ -26,6 +26,22 @@ export function extractUrl(output: string): string | null {
   return output.match(/https?:\/\/[^\s]+/)?.[0] ?? null
 }
 
+export function extractGitHubPullRequestUrl(value: string): string | null {
+  return value.match(/https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+/i)?.[0] ?? null
+}
+
+export async function resolvePullRequestHeadBranch(cwd: string, url: string): Promise<string | null> {
+  const output = await runCommand('gh', ['pr', 'view', url, '--json', 'headRefName'], cwd)
+  try {
+    const value = JSON.parse(output) as { headRefName?: unknown }
+    return typeof value.headRefName === 'string' && value.headRefName.trim()
+      ? value.headRefName.trim()
+      : null
+  } catch {
+    return null
+  }
+}
+
 export function githubRepoFromRemote(remote: string | null): string | null {
   if (!remote) return null
   const match = remote.trim().replace(/\.git$/, '').match(/github\.com[:/]([^/]+\/[^/]+)$/i)

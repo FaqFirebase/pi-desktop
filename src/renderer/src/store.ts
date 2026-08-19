@@ -1233,13 +1233,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       if (get().activeWorkspace?.id !== workspaceId) {
         if (!(await get().activateWorkspace(workspaceId, { start: false }))) return false
       }
+      let reusedWorktree = false
       if (options.isolated) {
         const label = prompt.split(/\r?\n/, 1)[0]?.trim().slice(0, 60) || 'Task'
+        const knownWorkspaceIds = new Set(get().workspaces.map((workspace) => workspace.id))
         const workspace = await window.piDesktop.workspace.createTab({
           name: label,
           sourceWorkspaceId: workspaceId,
+          taskPrompt: prompt,
           startPi: false,
         })
+        reusedWorktree = knownWorkspaceIds.has(workspace.id) || workspace.managed === false
         await get().loadWorkspaces()
         if (!(await get().activateWorkspace(workspace.id, { start: false }))) return false
         workspaceId = workspace.id
@@ -1262,6 +1266,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         piPid: runtime.pid,
         piError: runtime.error,
       })
+      if (reusedWorktree) {
+        get().addMessage({
+          id: generateId(),
+          role: 'system',
+          content: 'Found the related existing Git worktree and continued the task there.',
+          timestamp: Date.now(),
+        })
+      }
       scheduleSessionListRefresh(get)
       return true
     } catch (err) {
@@ -2458,10 +2470,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   removeWorkspace: async (workspaceId) => {
     const workspace = get().workspaces.find((w) => w.id === workspaceId)
     const isWorktree = workspace?.kind === 'worktree'
+    const isManagedWorktree = isWorktree && workspace?.managed !== false
     const confirmed = await get().requestConfirm({
       title: isWorktree ? 'Close tab' : 'Remove workspace',
       message: isWorktree
-        ? `Close "${workspace?.name ?? workspaceId}"? Clean worktrees are removed; tabs with uncommitted changes are preserved on disk.`
+        ? isManagedWorktree
+          ? `Close "${workspace?.name ?? workspaceId}"? Clean worktrees are removed; tabs with uncommitted changes are preserved on disk.`
+          : `Close "${workspace?.name ?? workspaceId}"? This existing worktree and its files remain on disk.`
         : `Remove "${workspace?.name ?? workspaceId}" from the sidebar? Its Pi process stops; files on disk are not touched.`,
       confirmLabel: isWorktree ? 'Close tab' : 'Remove',
       cancelLabel: 'Cancel',

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { countPorcelainFiles, extractUrl, githubRepoFromRemote, parseAheadBehind } from './git-conveyor'
+import { countPorcelainFiles, extractGitHubPullRequestUrl, extractUrl, githubRepoFromRemote, parseAheadBehind } from './git-conveyor'
 
 test('countPorcelainFiles counts changed porcelain rows, not changed lines', () => {
   assert.equal(countPorcelainFiles(' M src/a.ts\n?? src/new.ts\n'), 2)
@@ -15,6 +15,14 @@ test('parseAheadBehind handles upstream counts and missing upstreams', () => {
 test('extractUrl returns the first CLI URL without inventing one', () => {
   assert.equal(extractUrl('Created pull request: https://github.com/example/repo/pull/42'), 'https://github.com/example/repo/pull/42')
   assert.equal(extractUrl('authentication required'), null)
+})
+
+test('extractGitHubPullRequestUrl finds a PR URL inside a task', () => {
+  assert.equal(
+    extractGitHubPullRequestUrl('Continue https://github.com/FaqFirebase/pi-desktop/pull/55.'),
+    'https://github.com/FaqFirebase/pi-desktop/pull/55'
+  )
+  assert.equal(extractGitHubPullRequestUrl('Fix issue #55'), null)
 })
 
 test('githubRepoFromRemote normalizes HTTPS and SSH remotes', () => {
