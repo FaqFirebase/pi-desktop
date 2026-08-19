@@ -1,9 +1,10 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, ArrowUpRight, CheckCircle2, Inbox, Loader2, Play, RefreshCw, XCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAppStore } from '../store'
 import { getSessionTitle } from '../utils/session-title'
 import { pathsEqual } from '../../../shared/path-compare'
+import { canResumeRun } from '../utils/workflow-runs'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import type { SessionRuntimeInfo, WorkflowRunSummary } from '../../../shared/ipc-contracts'
 
@@ -19,6 +20,8 @@ export function MissionControl(): React.JSX.Element {
   const setCurrentView = useAppStore((state) => state.setCurrentView)
   const setTaskLauncherOpen = useAppStore((state) => state.setTaskLauncherOpen)
   const openWorkflowRunsForWorkspace = useAppStore((state) => state.openWorkflowRunsForWorkspace)
+  const [controlBusy, setControlBusy] = useState<string | null>(null)
+  const [controlError, setControlError] = useState<string | null>(null)
 
   useEffect(() => {
     void refreshWorkflowRuns()
@@ -38,6 +41,21 @@ export function MissionControl(): React.JSX.Element {
   )
   const attentionCount = runtimes.filter((runtime) => runtime.activity === 'needs-approval' || runtime.activity === 'failed' || runtime.status === 'error').length +
     workflowRuns.filter((run) => run.status === 'paused' || run.status === 'failed').length
+
+  const resumeRun = async (run: WorkflowRunSummary): Promise<void> => {
+    if (controlBusy) return
+    setControlBusy(run.runId)
+    setControlError(null)
+    try {
+      const result = await window.piDesktop.workflows.control(run.workspaceId, run.runId, 'resume')
+      if (!result.ok) setControlError(`Could not proceed with ${run.workflowName}: ${result.reason ?? 'control unavailable'}`)
+      else await refreshWorkflowRuns()
+    } catch {
+      setControlError(`Could not proceed with ${run.workflowName}. Open the run for details.`)
+    } finally {
+      setControlBusy(null)
+    }
+  }
 
   const openRuntime = async (runtime: SessionRuntimeInfo): Promise<void> => {
     if (!runtime.sessionPath) return
@@ -143,9 +161,20 @@ export function MissionControl(): React.JSX.Element {
           {recentRuns.length === 0 ? (
             <EmptyState>No workflow runs yet.</EmptyState>
           ) : (
-            <div className="space-y-2">
-              {recentRuns.map((run) => <WorkflowRow key={`${run.workspaceId}:${run.runId}`} run={run} onOpen={() => openWorkflowRunsForWorkspace(run.workspaceId)} />)}
-            </div>
+            <>
+              {controlError && <div className="mb-2 rounded border border-error/40 bg-error-bg/20 px-3 py-2 text-[11px] text-error" role="status">{controlError}</div>}
+              <div className="space-y-2">
+              {recentRuns.map((run) => (
+                <WorkflowRow
+                  key={`${run.workspaceId}:${run.runId}`}
+                  run={run}
+                  onOpen={() => openWorkflowRunsForWorkspace(run.workspaceId)}
+                  onResume={() => void resumeRun(run)}
+                  resumeBusy={controlBusy === run.runId}
+                />
+                ))}
+              </div>
+            </>
           )}
         </section>
       </div>
@@ -153,21 +182,41 @@ export function MissionControl(): React.JSX.Element {
   )
 }
 
-function WorkflowRow({ run, onOpen }: { run: WorkflowRunSummary; onOpen: () => void }): React.JSX.Element {
+function WorkflowRow({
+  run,
+  onOpen,
+  onResume,
+  resumeBusy,
+}: {
+  run: WorkflowRunSummary
+  onOpen: () => void
+  onResume: () => void
+  resumeBusy: boolean
+}): React.JSX.Element {
   const Icon = run.status === 'completed' ? CheckCircle2 : run.status === 'failed' || run.status === 'aborted' ? XCircle : run.status === 'paused' ? AlertCircle : Loader2
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="flex w-full items-center gap-3 rounded-lg border border-border bg-surface/50 px-3 py-3 text-left transition-colors hover:border-border-strong hover:bg-surface-hover"
-    >
-      <Icon size={14} className={clsx('shrink-0', run.status === 'running' || run.status === 'pending' ? 'animate-spin text-accent-fg' : run.status === 'completed' ? 'text-success' : run.status === 'paused' ? 'text-warning' : 'text-error')} />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm text-primary">{run.workflowName}</div>
-        <div className="truncate text-[11px] text-faint">{run.workspaceName} · {run.currentPhase ?? run.status}</div>
-      </div>
-      <span className="shrink-0 text-[11px] capitalize text-muted">{run.status}</span>
-    </button>
+    <div className="flex w-full items-center gap-3 rounded-lg border border-border bg-surface/50 px-3 py-2 transition-colors hover:border-border-strong hover:bg-surface-hover">
+      <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 py-1 text-left">
+        <Icon size={14} className={clsx('shrink-0', run.status === 'running' || run.status === 'pending' ? 'animate-spin text-accent-fg' : run.status === 'completed' ? 'text-success' : run.status === 'paused' ? 'text-warning' : 'text-error')} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm text-primary">{run.workflowName}</div>
+          <div className="truncate text-[11px] text-faint">{run.workspaceName} · {run.currentPhase ?? run.status}</div>
+        </div>
+        <span className="shrink-0 text-[11px] capitalize text-muted">{run.status}</span>
+      </button>
+      {canResumeRun(run.status) && (
+        <button
+          type="button"
+          onClick={onResume}
+          disabled={resumeBusy}
+          className="flex shrink-0 items-center gap-1 rounded border border-success/40 px-2 py-1 text-[10px] font-medium text-success transition-colors hover:bg-success-bg/20 disabled:cursor-not-allowed disabled:opacity-50"
+          title={run.status === 'paused' ? 'Proceed with this workflow' : 'Retry this workflow'}
+        >
+          {resumeBusy ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
+          {run.status === 'paused' ? 'Proceed' : 'Retry'}
+        </button>
+      )}
+    </div>
   )
 }
 
