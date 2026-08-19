@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { mkdtemp, readFile, writeFile, access } from 'fs/promises'
+import { existsSync } from 'fs'
+import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { configureGuiDataDir, getGuiDataPath } from './app-data-paths'
@@ -78,6 +80,43 @@ test('changeWorkspacePath stops the workspace Pi so it cannot keep the old cwd',
     await mgr.changeWorkspacePath(ws.id, await project())
 
     assert.equal(stopped, true, "Pi's cwd is bound at spawn; a repoint must stop it")
+  })
+})
+
+test('creates and removes a clean managed worktree tab', async () => {
+  await freshDataDir()
+  const repo = await project()
+  await writeFile(join(repo, 'README.md'), 'worktree test\\n', 'utf-8')
+  const git = (args: string[], cwd = repo): string => {
+    const result = spawnSync('git', args, { cwd, encoding: 'utf-8' })
+    assert.equal(result.status, 0, result.stderr || `git ${args.join(' ')} failed`)
+    return result.stdout.trim()
+  }
+  git(['init'])
+  git(['config', 'user.email', 'pi-desktop@example.test'])
+  git(['config', 'user.name', 'Pi Desktop Tests'])
+  git(['add', '.'])
+  git(['commit', '-m', 'initial'])
+
+  await withManager(async (mgr) => {
+    await mgr.createWorkspace('Repo', repo)
+    const tab = await mgr.createWorktreeWorkspace()
+
+    assert.equal(tab.kind, 'worktree')
+    assert.equal(tab.branch, 'pi/repo-tab-' + tab.id.replace(/^ws-/, ''))
+    assert.equal(existsSync(tab.path), true)
+    assert.equal(git(['branch', '--show-current'], tab.path), tab.branch)
+
+    const result = await mgr.removeWorkspace(tab.id)
+    assert.equal(result.worktreeRemoved, true)
+    assert.equal(result.preservedWorktreePath, undefined)
+    assert.equal(existsSync(tab.path), false)
+
+    await writeFile(join(repo, 'source-dirty.txt'), 'stays in source\\n', 'utf-8')
+    const dirtySourceTab = await mgr.createWorktreeWorkspace()
+    assert.equal(dirtySourceTab.sourceWasDirty, true)
+    assert.equal(existsSync(join(dirtySourceTab.path, 'source-dirty.txt')), false)
+    await mgr.removeWorkspace(dirtySourceTab.id)
   })
 })
 

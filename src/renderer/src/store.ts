@@ -51,6 +51,7 @@ import type {
   PermissionRulesScope,
   PendingPromptCounts,
   WorkspaceActivityMap,
+  WorkflowRunSummary,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -225,6 +226,17 @@ interface AppState {
 
   // UI
   currentView: 'home' | 'chat' | 'settings' | 'sessions' | 'timeline' | 'packages' | 'diff' | 'notes' | 'skills' | 'diagnostics'
+  // Scope for the Sessions view: 'current' shows only the active workspace's
+  // sessions, 'all' keeps every project's history visible. Entry points set it
+  // (sidebar Sessions = current, View all / command palette = all); the panel's
+  // toggle flips it live.
+  sessionsScope: 'all' | 'current'
+  workflowPanelOpen: boolean
+  // When set, the workflow navigator only lists runs recorded for this Pi
+  // session id (run.sessionId). null = no session scope.
+  workflowPanelFilter: string | null
+  // Project/workspace scope for the sidebar Activity entry. null = global.
+  workflowPanelWorkspaceId: string | null
   // Bumped to request the chat scroll jump to the bottom (used when resuming a
   // session/workspace from Home). In-app session switches leave it untouched so
   // the chat restores each session's remembered scroll position instead.
@@ -259,6 +271,8 @@ interface AppState {
   pendingPromptCounts: PendingPromptCounts
   // Per-workspace background activity derived in main (idle entries omitted).
   workspaceActivity: WorkspaceActivityMap
+  // Dynamic workflow runs read from the extension's persisted run journal.
+  workflowRuns: WorkflowRunSummary[]
   // Extension status entries (setStatus fire-and-forget). Keyed by statusKey.
   extensionStatuses: Record<string, string>
   // Live subagent progress from tool_execution_update events (subagent tool).
@@ -411,6 +425,11 @@ interface AppActions {
 
   // UI
   setCurrentView: (view: AppState['currentView']) => void
+  setSessionsScope: (scope: 'all' | 'current') => void
+  setWorkflowPanelOpen: (open: boolean) => void
+  openWorkflowRunsForSession: (sessionId: string) => void
+  openWorkflowRunsForWorkspace: (workspaceId: string | null) => void
+  refreshWorkflowRuns: () => Promise<void>
   requestChatScrollToBottom: () => void
   // Resolves false when a dirty-editor discard was declined (diff pane only).
   setChatSidePanel: (panel: AppState['chatSidePanel']) => Promise<boolean>
@@ -453,14 +472,17 @@ interface AppActions {
   // Workspaces
   loadWorkspaces: () => Promise<void>
   createWorkspace: (name: string, path: string) => Promise<void>
+  /** Create a clean Git worktree and start it as a new independent tab. */
+  createWorktreeTab: () => Promise<void>
   /**
    * Open a folder as a workspace (create if needed, switch into it, show Chat).
    * Used by File → Open Project and by drag-dropping a folder onto the window.
-   * Resolves false if the still-working confirm was declined or switch failed.
+   * Resolves false if the editor discard was declined or the switch failed.
    */
   openFolderAsWorkspace: (folderPath: string) => Promise<boolean>
   /**
-   * Resolves false when the user declined the still-working warning, or the switch failed.
+   * Resolves false when the editor discard was declined or the switch failed.
+   * Workspace tabs keep their Pi processes running in the background.
    * skipSessionLoad: when opening a specific session next, skip resume+history —
    * switchSession will load the target once.
    */
@@ -622,12 +644,37 @@ function adoptMainSideActivation(
   previousActiveId: string | null
 ): void {
   const active = get().activeWorkspace
-  if (!active || active.id === previousActiveId) return
-  // The preview closes for the same reason switchWorkspace closes it: its
-  // file belongs to a workspace that is no longer active, and the new
-  // workspace's file service refuses paths outside its root.
-  set({ extensionUiRequest: null, previewTarget: null, editorDirty: false })
+  if (active?.id === previousActiveId) return
+
+  // The preview and chat belong to the workspace that just disappeared or was
+  // activated by main. Reset them before attaching the replacement manager;
+  // otherwise closing the active tab leaves the old conversation on screen.
+  sessionLoadGeneration += 1
+  set({
+    extensionUiRequest: null,
+    previewTarget: null,
+    editorDirty: false,
+    sessionState: null,
+    sessionStats: null,
+    timelineEvents: [],
+    piStatus: 'stopped',
+    piPid: null,
+    piError: null,
+    ...idleTurnState(),
+  })
+  if (!active) return
+
   void window.piDesktop.ui.flushPendingPrompts(active.id)
+  // A main-side activation is used by workspace removal and first-workspace
+  // creation, neither of which goes through switchWorkspace's normal Pi start.
+  // Start the promoted workspace when there was a previous active workspace;
+  // the first-workspace open flow starts it through its regular switch path.
+  if (previousActiveId !== null) {
+    void get().startPi().then(() => {
+      if (get().activeWorkspace?.id !== active.id || get().piStatus !== 'running') return
+      void get().reloadActiveSession()
+    })
+  }
 }
 
 function scheduleSessionListRefresh(get: () => AppState & AppActions): void {
@@ -747,6 +794,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // Default to the Home/launcher view; useInitialize switches to 'chat' when
   // the openToHomeOnLaunch setting is off (legacy boot-into-chat behavior).
   currentView: 'home',
+  sessionsScope: 'all',
+  workflowPanelOpen: false,
+  workflowPanelFilter: null,
+  workflowPanelWorkspaceId: null,
   chatScrollBottomNonce: 0,
   chatSidePanel: null,
   sidebarOpen: true,
@@ -761,6 +812,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   extensionNotify: null,
   pendingPromptCounts: {},
   workspaceActivity: {},
+  workflowRuns: [],
   extensionStatuses: {},
   subagentProgress: [],
   confirmRequest: null,
@@ -883,6 +935,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Prompts ──────────────────────────────────────────────────────────
 
   sendPrompt: async (message, options) => {
+    const trimmed = message.trim().toLowerCase()
+    if (trimmed === '/workflow' || trimmed === '/workflows') {
+      // Route through the action so a session-scoped filter can never leak
+      // into the global view opened from chat.
+      get().setWorkflowPanelOpen(true)
+      return
+    }
+    if (trimmed.startsWith('/workflows run ')) get().setWorkflowPanelOpen(true)
+
     const { piStatus, isStreaming, sessionState, settings } = get()
 
     if (piStatus !== 'running') return
@@ -1082,14 +1143,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
-  // Gate on every action that abandons the live turn. Pi runs one session per
-  // workspace process, and `switch_session`, `new_session`, `fork` and `clone`
-  // all tear the current one down — that disposal aborts the running turn along
-  // with its bash commands, retries and compaction, and detaches the listeners
-  // that would have emitted the rest of its events. A workspace switch spares the
-  // turn but clears the chat rendering it. Either way the user loses the response,
-  // so the loss is made explicit instead of happening on a stray sidebar click.
-  // Returns true when the caller may proceed.
+  // Gate actions that replace the active session in the same Pi process. A
+  // workspace/tab switch is deliberately not included: every workspace owns a
+  // separate Pi process, so leaving it running is safe and is the whole point
+  // of the tab model.
   //
   // Must be consulted BEFORE anything calls clearMessages(): that resets
   // `isStreaming`, which is the signal this gate reads.
@@ -1129,6 +1186,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         return
       }
       get().clearMessages()
+      // Creating a session is a navigation action too: show the new empty
+      // conversation immediately instead of leaving the user in Sessions to
+      // find and click the row Pi just created.
+      set({ currentView: 'chat' })
       await get().refreshSessionState()
       await get().refreshSessionStats()
       if (gen !== sessionLoadGeneration) return
@@ -1340,9 +1401,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (projectPath && !(activeWorkspace && pathsEqual(activeWorkspace.path, projectPath))) {
       const matchingWs = workspaces.find((w) => pathsEqual(w.path, projectPath))
       if (matchingWs) {
-        // The workspace switch carries the "Pi is still working" warning for
-        // this whole flow; a decline there must stop the session switch too,
-        // or the declined turn gets torn down anyway by the change below.
         if (!(await get().switchWorkspace(matchingWs.id, { skipSessionLoad: true }))) return
       } else {
         await get().createWorkspace(session.projectName, projectPath)
@@ -1352,9 +1410,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
     // switchSession's working-workspace guard covers the live-turn cases from
     // here on: the turn's own session re-attaches instead of switching, and
-    // opening a different session of a mid-turn workspace warns first (the
-    // switchWorkspace gates above only cover a turn whose streaming is on
-    // screen in the departing workspace).
+    // opening a different session of a mid-turn workspace warns first.
     await get().switchSession(session.path)
     // Bring the chat into view (may be on Settings/Notes/etc.). In-app
     // switches keep their remembered scroll position, so no force-to-bottom.
@@ -1415,6 +1471,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
               // or timestamp until the next list refresh supplies a preview.
               preview: null,
               sessionId: sessionState.sessionId,
+              piSessionId: sessionState.sessionId,
               lastModified: Date.now(),
               messageCount: sessionState.messageCount,
               projectPath: activeWorkspace?.path ?? '',
@@ -1550,6 +1607,39 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── UI ───────────────────────────────────────────────────────────────
 
   setCurrentView: (view) => set({ currentView: view }),
+  // Lifted into the store so the scope survives SessionPanel remounts (it
+  // unmounts on every navigation) and so sidebar entry points can set it.
+  setSessionsScope: (scope) => set({ sessionsScope: scope }),
+  // A direct global entry point (slash command) clears project/session scope.
+  // Closing merely hides the panel and PRESERVES the scope so a reopen stays in
+  // the same project or session.
+  setWorkflowPanelOpen: (open) =>
+    set((state) => ({
+      workflowPanelOpen: open,
+      workflowPanelFilter: open ? null : state.workflowPanelFilter,
+      workflowPanelWorkspaceId: open ? null : state.workflowPanelWorkspaceId,
+    })),
+  openWorkflowRunsForSession: (sessionId) => set({
+    workflowPanelOpen: true,
+    workflowPanelFilter: sessionId,
+    workflowPanelWorkspaceId: null,
+  }),
+  // Project/workspace scope for the sidebar Activity entry. null = global.
+  // The signature is null-widened: the Tools entry opens the global list with
+  // an explicit null (the same value a direct global open falls back to).
+  openWorkflowRunsForWorkspace: (workspaceId: string | null) => set({
+    workflowPanelOpen: true,
+    workflowPanelFilter: null,
+    workflowPanelWorkspaceId: workspaceId,
+  }),
+  refreshWorkflowRuns: async () => {
+    try {
+      const workflowRuns = await window.piDesktop.workflows.list()
+      set({ workflowRuns })
+    } catch {
+      set({ workflowRuns: [] })
+    }
+  },
   requestChatScrollToBottom: () =>
     set((state) => ({ chatScrollBottomNonce: state.chatScrollBottomNonce + 1 })),
   setChatSidePanel: async (panel) => {
@@ -2074,9 +2164,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   createWorkspace: async (name, path) => {
     // Main activates an existing workspace on a duplicate path — inside the
     // create call, with none of the switch teardown. Route the duplicate
-    // through switchWorkspace instead, so every caller gets the still-working
-    // confirm, the dirty-editor ask, the chat clear, and the status resync;
-    // the already-active duplicate needs nothing at all.
+    // through switchWorkspace instead, so every caller gets the dirty-editor
+    // ask, the chat clear, and the status resync; the already-active duplicate
+    // needs nothing at all.
     const duplicate = get().workspaces.find((w) => pathsEqual(w.path, path))
     if (duplicate) {
       if (duplicate.id !== get().activeWorkspace?.id) {
@@ -2094,6 +2184,40 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         id: generateId(),
         role: 'system',
         content: `Create workspace error: ${err instanceof Error ? err.message : String(err)}`,
+        timestamp: Date.now(),
+      })
+    }
+  },
+
+  createWorktreeTab: async () => {
+    if (!(await get().confirmDiscardEditorChanges())) return
+    try {
+      // A new tab starts from the repository's HEAD, never by copying the
+      // source tab's dirty files. That makes opening a tab safe while the old
+      // Pi is actively editing its own checkout.
+      const workspace = await window.piDesktop.workspace.createTab()
+      await get().loadWorkspaces()
+      const switched = await get().switchWorkspace(workspace.id)
+      if (switched) {
+        get().setCurrentView('chat')
+        if (workspace.sourceWasDirty) {
+          get().addMessage({
+            id: generateId(),
+            role: 'system',
+            content: 'This tab starts from the last commit. Uncommitted files remain in the source tab.',
+            timestamp: Date.now(),
+          })
+        }
+      }
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err)
+      const content = /not a git repository/i.test(detail)
+        ? 'This project is not a Git repository. Use New session for another conversation, or open a Git project for an isolated tab.'
+        : `New isolated tab error: ${detail}`
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content,
         timestamp: Date.now(),
       })
     }
@@ -2157,11 +2281,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     // workspace the user never actually switched to.
     let switchCommitted = false
     try {
-      // Ask first: everything below clears the chat, and `clearMessages()` resets
-      // the `isStreaming` flag that the gate on any follow-up session change reads.
-      // Without this the cross-workspace path in the sidebar and session panel
-      // (switch workspace, then switch session) skipped the warning entirely.
-      if (!(await get().confirmSessionChange('workspace'))) return false
+      // Workspace switches are safe: the old workspace's Pi process keeps
+      // running and the activity tracker continues to observe it. Only the
+      // editor buffer needs a confirmation because it cannot follow the path.
       // The editor buffer belongs to the workspace being left, and the new
       // workspace's file service refuses paths outside its root — unsaved
       // edits would be stranded unsaveable. Ask before committing the switch.
@@ -2238,10 +2360,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   removeWorkspace: async (workspaceId) => {
     const workspace = get().workspaces.find((w) => w.id === workspaceId)
+    const isWorktree = workspace?.kind === 'worktree'
     const confirmed = await get().requestConfirm({
-      title: 'Remove workspace',
-      message: `Remove "${workspace?.name ?? workspaceId}" from the sidebar? Its Pi process stops; files on disk are not touched.`,
-      confirmLabel: 'Remove',
+      title: isWorktree ? 'Close tab' : 'Remove workspace',
+      message: isWorktree
+        ? `Close "${workspace?.name ?? workspaceId}"? Clean worktrees are removed; tabs with uncommitted changes are preserved on disk.`
+        : `Remove "${workspace?.name ?? workspaceId}" from the sidebar? Its Pi process stops; files on disk are not touched.`,
+      confirmLabel: isWorktree ? 'Close tab' : 'Remove',
       cancelLabel: 'Cancel',
       danger: true,
     })
@@ -2253,9 +2378,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
     const previousActiveId = get().activeWorkspace?.id ?? null
     try {
-      await window.piDesktop.workspace.remove(workspaceId)
+      const result = await window.piDesktop.workspace.remove(workspaceId)
       await get().loadWorkspaces()
       adoptMainSideActivation(get, set, previousActiveId)
+      if (result.preservedWorktreePath) {
+        get().addMessage({
+          id: generateId(),
+          role: 'system',
+          content: `Tab closed, but its uncommitted worktree was preserved at ${result.preservedWorktreePath}`,
+          timestamp: Date.now(),
+        })
+      }
     } catch (err) {
       get().addMessage({
         id: generateId(),

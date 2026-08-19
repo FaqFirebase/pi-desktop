@@ -49,7 +49,7 @@ function toolsForPermissionMode(mode: PermissionMode): string | null {
  * session or an ephemeral (no-session) run.
  */
 export function applyResumePreference(options: PiStartOptions, settings: AppSettings): PiStartOptions {
-  if (settings.resumeLastSession && !options.sessionPath && !options.noSession) {
+  if (settings.resumeLastSession && !options.sessionPath && !options.forkSessionPath && !options.noSession) {
     return { ...options, continueSession: true }
   }
   return options
@@ -99,6 +99,7 @@ export function validateStartOptions(value: unknown): PiStartOptions {
   if (!isOptionalString(value.model)) throw new Error('model must be a string')
   if (!isOptionalString(value.provider)) throw new Error('provider must be a string')
   if (!isOptionalString(value.sessionPath)) throw new Error('sessionPath must be a string')
+  if (!isOptionalString(value.forkSessionPath)) throw new Error('forkSessionPath must be a string')
   if (!isOptionalBoolean(value.noSession)) throw new Error('noSession must be a boolean')
   if (!isOptionalStringArray(value.args)) throw new Error('args must be a string array')
   if (value.env !== undefined && !isObject(value.env)) throw new Error('env must be an object')
@@ -107,6 +108,7 @@ export function validateStartOptions(value: unknown): PiStartOptions {
   if (isString(value.model)) opts.model = value.model
   if (isString(value.provider)) opts.provider = value.provider
   if (isString(value.sessionPath)) opts.sessionPath = value.sessionPath
+  if (isString(value.forkSessionPath)) opts.forkSessionPath = value.forkSessionPath
   if (value.noSession === true) opts.noSession = true
   if (Array.isArray(value.args)) opts.args = value.args as string[]
   if (isObject(value.env)) {

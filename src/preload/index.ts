@@ -8,6 +8,8 @@ import type {
   ArchivedSessionsMap,
   AppSettings,
   Workspace,
+  WorkspaceTabOptions,
+  WorkspaceRemoveResult,
   InstalledPackage,
   InstalledSkill,
   CatalogPackage,
@@ -52,6 +54,10 @@ import type {
   PermissionRulesRemoveResult,
   PendingPromptCounts,
   WorkspaceActivityMap,
+  WorkflowRunSummary,
+  WorkflowRunDetail,
+  WorkflowControlAction,
+  WorkflowControlResult,
 } from '../shared/ipc-contracts'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -145,7 +151,8 @@ interface PiDesktopAPI {
   workspace: {
     list(): Promise<Workspace[]>
     create(name: string, path: string): Promise<Workspace>
-    remove(workspaceId: string): Promise<void>
+    createTab(options?: WorkspaceTabOptions): Promise<Workspace>
+    remove(workspaceId: string): Promise<WorkspaceRemoveResult>
     rename(workspaceId: string, name: string): Promise<void>
     changePath(workspaceId: string, newPath: string): Promise<void>
     pathExists(): Promise<boolean>
@@ -249,6 +256,18 @@ interface PiDesktopAPI {
   // Activity stats
   activity: {
     getStats(): Promise<ActivityStatsResult>
+  }
+
+  // Dynamic workflow run monitoring
+  workflows: {
+    list(): Promise<WorkflowRunSummary[]>
+    getRun(workspaceId: string, runId: string): Promise<WorkflowRunDetail>
+    /**
+     * Dispatch stop/resume to the run's owning workspace Pi process. Never
+     * fakes a local status change; the persisted run flips on the next poll.
+     */
+    control(workspaceId: string, runId: string, action: WorkflowControlAction): Promise<WorkflowControlResult>
+    setPersistAgentSessions(enabled: boolean): Promise<void>
   }
 
   // Diagnostics report
@@ -386,6 +405,7 @@ const api: PiDesktopAPI = {
     getActive: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GET_ACTIVE),
     startPi: (workspaceId, options) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_START_PI, workspaceId, options),
     stopPi: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_STOP_PI, workspaceId),
+    createTab: (options) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CREATE_TAB, options),
     getActivity: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_ACTIVITY_GET),
     takePendingActivation: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_TAKE_PENDING_ACTIVATION),
   },
@@ -468,6 +488,13 @@ const api: PiDesktopAPI = {
 
   activity: {
     getStats: () => ipcRenderer.invoke(IPC_CHANNELS.ACTIVITY_GET_STATS),
+  },
+
+  workflows: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.WORKFLOW_LIST),
+    getRun: (workspaceId, runId) => ipcRenderer.invoke(IPC_CHANNELS.WORKFLOW_GET_RUN, workspaceId, runId),
+    control: (workspaceId, runId, action) => ipcRenderer.invoke(IPC_CHANNELS.WORKFLOW_CONTROL, workspaceId, runId, action),
+    setPersistAgentSessions: (enabled) => ipcRenderer.invoke(IPC_CHANNELS.WORKFLOW_SET_PERSISTENCE, enabled),
   },
 
   diagnostics: {

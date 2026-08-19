@@ -417,6 +417,21 @@ test('createNewSession is gated by the same warning', async () => {
   assert.equal(useAppStore.getState().isStreaming, true)
 })
 
+test('createNewSession opens the new conversation in Chat', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE]
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    currentView: 'sessions',
+  })
+
+  await useAppStore.getState().createNewSession()
+
+  assert.equal(calls.includes('createNew'), true)
+  assert.equal(useAppStore.getState().currentView, 'chat')
+})
+
 test('forkFrom is gated by the same warning', async () => {
   enterStreamingState()
   answerConfirm(false)
@@ -427,24 +442,11 @@ test('forkFrom is gated by the same warning', async () => {
   assert.equal(useAppStore.getState().isStreaming, true)
 })
 
-// Regression: the cross-workspace path in the sidebar and session panel switches
-// workspace first, and that calls clearMessages() — which resets `isStreaming`,
-// the very flag the session-change gate reads. The warning has to be raised by
-// switchWorkspace itself, before anything clears state.
-test('switchWorkspace warns before it clears the streaming flag', async () => {
+// Workspace switches are safe because each workspace owns a separate Pi
+// process. Switching tabs must not block on, abort, or warn about the turn that
+// remains active in the background.
+test('switchWorkspace leaves a running Pi in the background without warning', async () => {
   enterStreamingState()
-  answerConfirm(false)
-
-  const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
-
-  assert.equal(proceed, false, 'a declined workspace switch must report failure to its caller')
-  assert.deepEqual(calls, [], 'a declined workspace switch must not reach the main process')
-  assert.equal(useAppStore.getState().isStreaming, true, 'the running turn must survive')
-})
-
-test('an accepted workspace switch leaves no stale streaming flag behind', async () => {
-  enterStreamingState()
-  answerConfirm(true)
 
   const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
 
@@ -486,19 +488,18 @@ test('an accepted workspace switch clears the held dialog without answering it',
   )
 })
 
-test('a declined workspace switch keeps the dialog on screen', async () => {
-  enterStreamingState()
+test('a workspace switch clears the old dialog without answering it', async () => {
   useAppStore.setState({ extensionUiRequest: EXTENSION_DIALOG })
-  answerConfirm(false)
 
   const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
 
-  assert.equal(proceed, false)
-  assert.equal(useAppStore.getState().extensionUiRequest?.id, EXTENSION_DIALOG.id)
+  assert.equal(proceed, true)
+  assert.equal(useAppStore.getState().extensionUiRequest, null)
+  assert.equal(calls.includes(`flushPendingPrompts:${WORKSPACE_ID}`), true)
   assert.equal(
-    calls.some((c) => c.startsWith('flushPendingPrompts')),
+    calls.some((c) => c.startsWith('respond')),
     false,
-    'a declined switch must not replay prompts for a workspace the user never left for'
+    'switching tabs must not synthesize a deny for the background prompt'
   )
 })
 
@@ -733,12 +734,9 @@ test('openFolderAsWorkspace skips switch when the dropped folder is already acti
   assert.equal(useAppStore.getState().currentView, 'chat')
 })
 
-// Regression: a dropped folder that is already a registered (but inactive)
-// workspace must activate through switchWorkspace's confirm gate only. Routing
-// it through createWorkspace lets main activate the duplicate path before the
-// "still working" dialog appears, so declining left main and the sidebar on the
-// new workspace while the chat pane still held the old one.
-test('declining the confirm while dropping an existing workspace leaves everything in place', async () => {
+// A dropped folder that is already registered should use the normal background-safe
+// workspace switch rather than asking the user to stop the old Pi turn.
+test('dropping an existing workspace switches without a streaming confirmation', async () => {
   workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
   activeWorkspaceResult = WORKSPACE_ONE
   useAppStore.setState({
@@ -747,28 +745,15 @@ test('declining the confirm while dropping an existing workspace leaves everythi
     currentView: 'home',
   })
   enterStreamingState()
-  answerConfirm(false)
 
   const ok = await useAppStore.getState().openFolderAsWorkspace(WORKSPACE_TWO.path)
 
-  assert.equal(ok, false)
-  assert.equal(
-    calls.some((c) => c.startsWith('createWorkspace:')),
-    false,
-    'create activates a duplicate path on main before the confirm can run'
-  )
-  assert.equal(
-    calls.some((c) => c.startsWith('setActiveWorkspace:')),
-    false,
-    'a declined switch must leave the main-side active workspace untouched'
-  )
-  assert.equal(useAppStore.getState().activeWorkspace?.id, WORKSPACE_ONE.id)
-  assert.equal(
-    useAppStore.getState().messages[0]?.id,
-    'm1',
-    'the streaming chat must survive a declined switch'
-  )
-  assert.equal(useAppStore.getState().isStreaming, true)
+  assert.equal(ok, true)
+  assert.equal(calls.some((c) => c.startsWith('createWorkspace:')), false)
+  assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_TWO.id}`), true)
+  assert.equal(useAppStore.getState().activeWorkspace?.id, WORKSPACE_TWO.id)
+  assert.equal(useAppStore.getState().messages.length, 0)
+  assert.equal(useAppStore.getState().isStreaming, false)
 })
 
 test('openFolderAsWorkspace preserves surrounding whitespace in the folder path', async () => {
@@ -1118,7 +1103,7 @@ test('a duplicate-path create routes through the full workspace switch', async (
   )
 })
 
-test('a duplicate-path create warns while Pi is streaming', async () => {
+test('a duplicate-path create switches while Pi keeps working in the background', async () => {
   workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
   activeWorkspaceResult = WORKSPACE_ONE
   useAppStore.setState({
@@ -1126,17 +1111,12 @@ test('a duplicate-path create warns while Pi is streaming', async () => {
     workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
   })
   enterStreamingState()
-  answerConfirm(false)
 
   await useAppStore.getState().createWorkspace(WORKSPACE_TWO.name, WORKSPACE_TWO.path)
 
   assert.equal(calls.some((c) => c.startsWith('createWorkspace:')), false)
-  assert.equal(
-    calls.some((c) => c.startsWith('setActiveWorkspace:')),
-    false,
-    'declining the still-working warning must abort the activation'
-  )
-  assert.equal(useAppStore.getState().isStreaming, true)
+  assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_TWO.id}`), true)
+  assert.equal(useAppStore.getState().isStreaming, false)
 })
 
 test('creating the already-active path is a no-op', async () => {
@@ -1393,7 +1373,7 @@ test('openSessionItem auto-switches to the owning workspace first', async () => 
   assert.equal(useAppStore.getState().currentView, 'chat')
 })
 
-test('a declined streaming warning aborts the whole openSessionItem flow', async () => {
+test('openSessionItem switches tabs before opening the requested session', async () => {
   workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
   activeWorkspaceResult = WORKSPACE_ONE
   useAppStore.setState({
@@ -1402,13 +1382,12 @@ test('a declined streaming warning aborts the whole openSessionItem flow', async
     currentView: 'sessions',
   })
   enterStreamingState()
-  answerConfirm(false)
 
   await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
 
-  assert.equal(calls.some((c) => c.startsWith('setActiveWorkspace')), false)
-  assert.equal(calls.includes(`switch:${SESSION_PATH}`), false)
-  assert.equal(useAppStore.getState().currentView, 'sessions')
+  assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_TWO.id}`), true)
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
+  assert.equal(useAppStore.getState().currentView, 'chat')
 })
 
 test('openSessionItem creates a workspace for an unknown project path', async () => {
@@ -1714,4 +1693,54 @@ test('the notify toast sits above the blocking dialog backdrop', () => {
     NOTIFY_TOAST_Z_INDEX > DIALOG_OVERLAY_Z_INDEX,
     'a toast at or below the backdrop tier turns a toast click into a hard deny'
   )
+})
+
+// ─── View scopes (sessions + workflow panel) ─────────────────────────────────
+
+// The sessions scope is lifted into the store so SessionPanel remounts (every
+// navigation) can't drop it and sidebar entry points can set it explicitly.
+test('setSessionsScope toggles the sessions view scope', () => {
+  assert.equal(useAppStore.getState().sessionsScope, 'all')
+  useAppStore.getState().setSessionsScope('current')
+  assert.equal(useAppStore.getState().sessionsScope, 'current')
+  useAppStore.getState().setSessionsScope('all')
+  assert.equal(useAppStore.getState().sessionsScope, 'all')
+})
+
+test('openWorkflowRunsForWorkspace opens a project scope and clears session scope', () => {
+  useAppStore.getState().openWorkflowRunsForWorkspace(WORKSPACE_ONE.id)
+  const state = useAppStore.getState()
+  assert.equal(state.workflowPanelOpen, true)
+  assert.equal(state.workflowPanelWorkspaceId, WORKSPACE_ONE.id)
+  assert.equal(state.workflowPanelFilter, null)
+})
+
+test('openWorkflowRunsForWorkspace(null) opens the global scope (Tools entry)', () => {
+  useAppStore.getState().openWorkflowRunsForWorkspace(null)
+  const state = useAppStore.getState()
+  assert.equal(state.workflowPanelOpen, true)
+  assert.equal(state.workflowPanelWorkspaceId, null)
+  assert.equal(state.workflowPanelFilter, null)
+})
+
+test('openWorkflowRunsForSession overrides a project scope (session wins)', () => {
+  useAppStore.getState().openWorkflowRunsForWorkspace(WORKSPACE_ONE.id)
+  useAppStore.getState().openWorkflowRunsForSession('01b2b3c4-d5e6-4f70-a8b9-0c1d2e3f4a5b')
+  const state = useAppStore.getState()
+  assert.equal(state.workflowPanelWorkspaceId, null)
+  assert.equal(state.workflowPanelFilter, '01b2b3c4-d5e6-4f70-a8b9-0c1d2e3f4a5b')
+})
+
+test('setWorkflowPanelOpen: direct open clears scope, close preserves it', () => {
+  useAppStore.getState().openWorkflowRunsForWorkspace(WORKSPACE_ONE.id)
+  useAppStore.getState().setWorkflowPanelOpen(false)
+  assert.equal(useAppStore.getState().workflowPanelOpen, false)
+  assert.equal(
+    useAppStore.getState().workflowPanelWorkspaceId,
+    WORKSPACE_ONE.id,
+    'closing must preserve the scope so a reopen stays in the same project'
+  )
+  useAppStore.getState().setWorkflowPanelOpen(true)
+  assert.equal(useAppStore.getState().workflowPanelWorkspaceId, null)
+  assert.equal(useAppStore.getState().workflowPanelFilter, null)
 })

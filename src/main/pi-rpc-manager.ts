@@ -39,6 +39,7 @@ const MODE_FLAG = '--mode'
 const PROVIDER_FLAG = '--provider'
 const MODEL_FLAG = '--model'
 const SESSION_FLAG = '--session'
+const FORK_FLAG = '--fork'
 const CONTINUE_FLAG = '--continue'
 const IS_WINDOWS = process.platform === 'win32'
 const SPAWN_STARTUP_TIMEOUT_MS = 15_000
@@ -669,7 +670,9 @@ export class PiRpcManager extends EventEmitter {
       args.push(MODEL_FLAG, options.model)
     }
 
-    if (options.sessionPath) {
+    if (options.forkSessionPath) {
+      args.push(FORK_FLAG, options.forkSessionPath)
+    } else if (options.sessionPath) {
       args.push(SESSION_FLAG, options.sessionPath)
     } else if (options.continueSession && !options.noSession) {
       // Resume the most recent session for the cwd. Pi falls back to a fresh

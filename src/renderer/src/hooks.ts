@@ -443,6 +443,10 @@ export function useInitialize(): void {
 
       // Background: session list, tags, notes, models, updates.
       void refreshSessionList()
+      // Load the workflow journal once at boot so the status-bar badge and the
+      // sidebar workflow entries show live runs before the navigator is first
+      // opened (its poll loop keeps it fresh afterwards).
+      void useAppStore.getState().refreshWorkflowRuns()
       void useAppStore.getState().loadTags()
       void useAppStore.getState().loadArchivedSessions()
       void useAppStore.getState().loadNotes()

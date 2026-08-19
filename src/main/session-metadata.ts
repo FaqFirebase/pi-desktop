@@ -45,6 +45,13 @@ export interface SessionHeader {
   id: string
   /** Absolute path to the session this one was forked from, or null. */
   parentSession: string | null
+  /**
+   * Working directory the session actually ran in, or null when the header
+   * omits it (legacy sessions). Authoritative where it exists: session dir
+   * names are lossy decodes of paths, so this is the only reliable anchor
+   * back to the real project.
+   */
+  cwd: string | null
 }
 
 export interface SessionMetadata {
@@ -69,12 +76,13 @@ export function sessionHeaderFromLine(line: string): SessionHeader | null {
   }
   if (typeof record !== 'object' || record === null) return null
 
-  const rec = record as { type?: unknown; id?: unknown; parentSession?: unknown }
+  const rec = record as { type?: unknown; id?: unknown; parentSession?: unknown; cwd?: unknown }
   if (rec.type !== 'session' || typeof rec.id !== 'string') return null
 
   return {
     id: rec.id,
     parentSession: typeof rec.parentSession === 'string' ? rec.parentSession : null,
+    cwd: typeof rec.cwd === 'string' && rec.cwd.length > 0 ? rec.cwd : null,
   }
 }
 
