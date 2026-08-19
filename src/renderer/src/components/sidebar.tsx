@@ -30,6 +30,7 @@ import { getSessionRowLabels } from './sidebar-session-labels'
 import { ResizeHandle } from './resize-handle'
 import { getSessionTitle } from '../utils/session-title'
 import { formatRelativeTime } from '../utils/format-relative-time'
+import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import { resolveRunSessionId } from '../utils/workflow-runs'
 import { clampSidebarWidth, resolveSidebarWidth } from '../../../shared/sidebar-width'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
@@ -52,6 +53,8 @@ export function Sidebar(): React.JSX.Element {
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
   const sessionState = useAppStore((state) => state.sessionState)
   const sessionList = useAppStore((state) => state.sessionList)
+  const sessionRuntimes = useAppStore((state) => state.sessionRuntimes)
+  const activeSessionRuntimeId = useAppStore((state) => state.activeSessionRuntimeId)
   const createNewSession = useAppStore((state) => state.createNewSession)
   const openFolderAsWorkspace = useAppStore((state) => state.openFolderAsWorkspace)
   const openWorkflowRunsForSession = useAppStore((state) => state.openWorkflowRunsForSession)
@@ -288,7 +291,8 @@ export function Sidebar(): React.JSX.Element {
     // tags/archive registry key). The stem suffix IS the UUID, so it is a
     // safe fallback when a row's header is unreadable.
     const workflowSessionId = resolveRunSessionId(session.piSessionId, session.sessionId) ?? session.sessionId
-    const isActive = sessionState?.sessionFile === session.path
+    const runtime = Object.values(sessionRuntimes).find((item) => item.sessionPath && pathsEqual(item.sessionPath, session.path))
+    const isActive = sessionState?.sessionFile === session.path || runtime?.runtimeId === activeSessionRuntimeId
     const nested = options?.nested ?? false
 
     // Inline rename for the active row.
@@ -337,6 +341,7 @@ export function Sidebar(): React.JSX.Element {
               {formatRelativeTime(session.lastModified, Date.now())}
             </div>
           </div>
+          {runtime && <SessionRuntimeIndicator runtime={runtime} />}
         </button>
         {/* Sibling (not child) of the row button, so no nested interactive
             elements: the row's click/double-click/context-menu never fire for
@@ -717,7 +722,7 @@ export function Sidebar(): React.JSX.Element {
 function WorkspaceSwitcher({ onOpenProject }: { onOpenProject: () => void }): React.JSX.Element {
   const workspaces = useAppStore((state) => state.workspaces)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
-  const switchWorkspace = useAppStore((state) => state.switchWorkspace)
+  const activateWorkspace = useAppStore((state) => state.activateWorkspace)
   const removeWorkspace = useAppStore((state) => state.removeWorkspace)
   const renameWorkspace = useAppStore((state) => state.renameWorkspace)
   const changeWorkspaceFolder = useAppStore((state) => state.changeWorkspaceFolder)
@@ -866,7 +871,7 @@ function WorkspaceSwitcher({ onOpenProject }: { onOpenProject: () => void }): Re
             >
               <button
                 onClick={() => {
-                  switchWorkspace(ws.id)
+                  void activateWorkspace(ws.id)
                   setIsOpen(false)
                 }}
                 className="flex items-center gap-2 min-w-0 flex-1 text-left"

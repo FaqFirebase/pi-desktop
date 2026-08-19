@@ -2,6 +2,9 @@ import { useMemo } from 'react'
 import { AlertCircle, CheckCircle2, FolderOpen, GitBranch, Loader2, MessageSquarePlus, PanelLeft, Plus, Settings, X, XCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAppStore } from '../store'
+import { getSessionTitle } from '../utils/session-title'
+import { pathsEqual } from '../../../shared/path-compare'
+import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import type { Workspace } from '../../../shared/ipc-contracts'
 
 function tabLabel(workspace: Workspace): string {
@@ -11,6 +14,9 @@ function tabLabel(workspace: Workspace): string {
 export function WorkspaceTabs(): React.JSX.Element {
   const workspaces = useAppStore((state) => state.workspaces)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
+  const sessionList = useAppStore((state) => state.sessionList)
+  const sessionRuntimes = useAppStore((state) => state.sessionRuntimes)
+  const activeSessionRuntimeId = useAppStore((state) => state.activeSessionRuntimeId)
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
   const workspaceActivity = useAppStore((state) => state.workspaceActivity)
@@ -19,7 +25,8 @@ export function WorkspaceTabs(): React.JSX.Element {
   const workflowPanelFilter = useAppStore((state) => state.workflowPanelFilter)
   const workflowPanelWorkspaceId = useAppStore((state) => state.workflowPanelWorkspaceId)
   const setWorkflowPanelOpen = useAppStore((state) => state.setWorkflowPanelOpen)
-  const switchWorkspace = useAppStore((state) => state.switchWorkspace)
+  const activateWorkspace = useAppStore((state) => state.activateWorkspace)
+  const switchSession = useAppStore((state) => state.switchSession)
   const removeWorkspace = useAppStore((state) => state.removeWorkspace)
   const createWorktreeTab = useAppStore((state) => state.createWorktreeTab)
   const createNewSession = useAppStore((state) => state.createNewSession)
@@ -34,9 +41,16 @@ export function WorkspaceTabs(): React.JSX.Element {
     () => [...workspaces].sort((a, b) => a.createdAt - b.createdAt),
     [workspaces]
   )
+  const sessionTabs = useMemo(
+    () => Object.values(sessionRuntimes)
+      .filter((runtime) => runtime.workspaceId === activeWorkspace?.id && runtime.sessionPath)
+      .sort((a, b) => Number(b.active) - Number(a.active)),
+    [activeWorkspace?.id, sessionRuntimes]
+  )
 
   return (
-    <div className="flex h-10 shrink-0 items-end gap-1 overflow-x-auto border-b border-border bg-app px-2 pt-1">
+    <div className="flex shrink-0 flex-col bg-app">
+    <div className="flex h-10 items-end gap-1 overflow-x-auto border-b border-border px-2 pt-1">
       {!sidebarOpen && (
         <button
           type="button"
@@ -75,7 +89,7 @@ export function WorkspaceTabs(): React.JSX.Element {
                   setCurrentView('chat')
                   return
                 }
-                void switchWorkspace(workspace.id).then((switched) => {
+                void activateWorkspace(workspace.id).then((switched) => {
                   if (switched) setCurrentView('chat')
                 })
               }}
@@ -148,6 +162,38 @@ export function WorkspaceTabs(): React.JSX.Element {
       >
         <Plus size={15} />
       </button>
+    </div>
+    {sessionTabs.length > 1 && (
+      <div className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border/70 px-2">
+        <span className="mr-1 shrink-0 text-[10px] uppercase tracking-wide text-faint">Sessions</span>
+        {sessionTabs.map((runtime) => {
+          const session = sessionList.find((item) => runtime.sessionPath && pathsEqual(item.path, runtime.sessionPath))
+          const active = runtime.runtimeId === activeSessionRuntimeId || runtime.active
+          return (
+            <button
+              key={runtime.runtimeId}
+              type="button"
+              onClick={() => {
+                if (!runtime.sessionPath) return
+                setCurrentView('chat')
+                void switchSession(runtime.sessionPath, activeWorkspace?.path)
+              }}
+              className={clsx(
+                'flex min-w-0 max-w-[220px] shrink-0 items-center gap-1.5 rounded px-2 py-1 text-[11px] transition-colors',
+                active ? 'bg-card text-primary' : 'text-muted hover:bg-highlight hover:text-secondary'
+              )}
+              title={runtime.sessionPath ?? undefined}
+              aria-current={active ? 'page' : undefined}
+            >
+              <SessionRuntimeIndicator runtime={runtime} />
+              <span className="truncate">
+                {session ? getSessionTitle(session.name, session.sessionId, session.preview) : 'New session'}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    )}
     </div>
   )
 }

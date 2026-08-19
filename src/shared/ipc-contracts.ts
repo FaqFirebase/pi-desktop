@@ -26,6 +26,7 @@ export const IPC_CHANNELS = {
   // Session management
   SESSION_NEW: 'session:new',
   SESSION_SWITCH: 'session:switch',
+  SESSION_LIST_RUNTIMES: 'session:list-runtimes',
   SESSION_FORK: 'session:fork',
   SESSION_CLONE: 'session:clone',
   SESSION_LIST: 'session:list',
@@ -177,6 +178,7 @@ export const IPC_CHANNELS = {
   EVENT_PI: 'event:pi',
   EVENT_PENDING_PROMPTS: 'event:pending-prompts',
   EVENT_WORKSPACE_ACTIVITY: 'event:workspace-activity',
+  EVENT_SESSION_RUNTIME: 'event:session-runtime',
   EVENT_ACTIVATE_WORKSPACE: 'event:activate-workspace',
   EVENT_FILE_CHANGE: 'event:file-change',
   EVENT_TERMINAL_DATA: 'event:terminal-data',
@@ -192,6 +194,18 @@ export interface PiStatus {
   status: PiProcessStatus
   pid: number | null
   error: string | null
+}
+
+export type SessionRuntimeActivity = 'working' | 'needs-approval' | 'completed' | 'failed'
+
+/** Live runtime for one Pi session. Multiple runtimes may share one workspace cwd. */
+export interface SessionRuntimeInfo extends PiStatus {
+  runtimeId: string
+  workspaceId: string
+  sessionPath: string | null
+  sessionId: string | null
+  activity: SessionRuntimeActivity | null
+  active: boolean
 }
 
 export interface PiStartOptions {

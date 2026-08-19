@@ -13,7 +13,7 @@ import { pathsEqual } from '../../../shared/path-compare'
 export function ChatProjectPicker(): React.JSX.Element {
   const workspaces = useAppStore((s) => s.workspaces)
   const activeWorkspace = useAppStore((s) => s.activeWorkspace)
-  const switchWorkspace = useAppStore((s) => s.switchWorkspace)
+  const activateWorkspace = useAppStore((s) => s.activateWorkspace)
   const createWorkspace = useAppStore((s) => s.createWorkspace)
   const startPi = useAppStore((s) => s.startPi)
 
@@ -77,13 +77,13 @@ export function ChatProjectPicker(): React.JSX.Element {
     setBusy(true)
     try {
       if (id) {
-        if (!(await switchWorkspace(id, { skipSessionLoad: true }))) {
+        if (!(await activateWorkspace(id))) {
           setSelectedId(previousId)
         }
       } else {
         const homeWs = await ensureHomeWorkspace()
         if (homeWs) {
-          if (!(await switchWorkspace(homeWs.id, { skipSessionLoad: true }))) {
+          if (!(await activateWorkspace(homeWs.id))) {
             setSelectedId(previousId)
           }
         } else {

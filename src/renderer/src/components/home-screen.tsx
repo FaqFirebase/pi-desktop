@@ -38,10 +38,9 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
   const activeWorkspace = useAppStore((s) => s.activeWorkspace)
   const sessionList = useAppStore((s) => s.sessionList)
   const archivedSessions = useAppStore((s) => s.archivedSessions)
-  const switchWorkspace = useAppStore((s) => s.switchWorkspace)
+  const activateWorkspace = useAppStore((s) => s.activateWorkspace)
   const createWorkspace = useAppStore((s) => s.createWorkspace)
   const switchSession = useAppStore((s) => s.switchSession)
-  const startPi = useAppStore((s) => s.startPi)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
   const requestChatScrollToBottom = useAppStore((s) => s.requestChatScrollToBottom)
 
@@ -82,7 +81,7 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
   const openWorkspace = async (workspaceId: string): Promise<void> => {
     setBusy(true)
     try {
-      if (!(await switchWorkspace(workspaceId))) return
+      if (!(await activateWorkspace(workspaceId))) return
       if (useAppStore.getState().piStatus !== 'error') {
         requestChatScrollToBottom()
         setCurrentView('chat')
@@ -104,15 +103,13 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
         }
         targetId = ws?.id
       }
-      // A declined "Pi is still working" warning stops the whole open, since the
-      // session switch below would tear the running turn down regardless.
+      // Workspace/session activation is non-destructive; the target Pi runtime
+      // hydrates in the background while Chat opens immediately.
       if (targetId) {
-        if (!(await switchWorkspace(targetId))) return
-      } else {
-        await startPi()
+        if (!(await activateWorkspace(targetId, { start: false }))) return
       }
       if (useAppStore.getState().piStatus === 'error') return
-      await switchSession(session.path)
+      await switchSession(session.path, session.projectPath)
       requestChatScrollToBottom()
       setCurrentView('chat')
     } finally {
@@ -124,7 +121,7 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
     if (!activeWorkspace) return
     setBusy(true)
     try {
-      if (!(await switchWorkspace(activeWorkspace.id))) return
+      if (!(await activateWorkspace(activeWorkspace.id))) return
       if (useAppStore.getState().piStatus !== 'error') setCurrentView('diff')
     } finally {
       setBusy(false)
@@ -282,7 +279,7 @@ function EmptyHint({ children }: { children: React.ReactNode }): React.JSX.Eleme
 
 function HomeScreenInfo(): React.JSX.Element {
   const activeWorkspace = useAppStore((s) => s.activeWorkspace)
-  const switchWorkspace = useAppStore((s) => s.switchWorkspace)
+  const activateWorkspace = useAppStore((s) => s.activateWorkspace)
   const createWorkspace = useAppStore((s) => s.createWorkspace)
   const createNewSession = useAppStore((s) => s.createNewSession)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
@@ -307,7 +304,7 @@ function HomeScreenInfo(): React.JSX.Element {
         ws = useAppStore.getState().workspaces.find((w) => pathsEqual(w.path, path))
       }
       if (ws) {
-        if (!(await switchWorkspace(ws.id))) return
+        if (!(await activateWorkspace(ws.id))) return
         goChatUnlessError()
       }
     } finally {
@@ -322,7 +319,7 @@ function HomeScreenInfo(): React.JSX.Element {
     }
     setBusy(true)
     try {
-      if (!(await switchWorkspace(activeWorkspace.id))) return
+      if (!(await activateWorkspace(activeWorkspace.id))) return
       if (useAppStore.getState().piStatus === 'error') return
       await createNewSession()
       requestChatScrollToBottom()

@@ -52,6 +52,7 @@ import type {
   PendingPromptCounts,
   WorkspaceActivityMap,
   WorkflowRunSummary,
+  SessionRuntimeInfo,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -196,6 +197,9 @@ interface AppState {
   sessionState: SessionState | null
   sessionStats: SessionStats | null
   sessionList: SessionListItem[]
+  // Live Pi runtimes keyed by runtime id. Several can share one project cwd.
+  sessionRuntimes: Record<string, SessionRuntimeInfo>
+  activeSessionRuntimeId: string | null
   forkMessages: ForkPoint[]
 
   // Messages
@@ -394,12 +398,12 @@ interface AppActions {
 
   // Session
   createNewSession: () => Promise<void>
-  switchSession: (path: string) => Promise<void>
+  switchSession: (path: string, projectPath?: string) => Promise<void>
   /**
    * Open a session row from any surface (sidebar, session panel, quick
    * switcher): auto-switches or creates the owning workspace first, then
-   * switches to the session and shows Chat. A declined "Pi is still working"
-   * confirm aborts the whole flow.
+   * switches to the session and shows Chat. The previous session runtime keeps
+   * running in the background while the new one hydrates.
    */
   openSessionItem: (session: SessionListItem) => Promise<void>
   reloadActiveSession: (options?: { refreshList?: boolean }) => Promise<void>
@@ -449,6 +453,7 @@ interface AppActions {
   handlePiEvent: (event: PiRpcEvent) => void
   handlePendingPromptCounts: (counts: PendingPromptCounts) => void
   handleWorkspaceActivity: (map: WorkspaceActivityMap) => void
+  handleSessionRuntime: (runtime: SessionRuntimeInfo) => void
   /**
    * Boot/reload recovery: the dialog slot and the counts are renderer memory
    * only, while main keeps every held prompt. Pulls the counts snapshot and
@@ -486,6 +491,7 @@ interface AppActions {
    * skipSessionLoad: when opening a specific session next, skip resume+history —
    * switchSession will load the target once.
    */
+  activateWorkspace: (workspaceId: string, options?: { start?: boolean }) => Promise<boolean>
   switchWorkspace: (
     workspaceId: string,
     options?: { skipSessionLoad?: boolean }
@@ -656,6 +662,7 @@ function adoptMainSideActivation(
     editorDirty: false,
     sessionState: null,
     sessionStats: null,
+    activeSessionRuntimeId: null,
     timelineEvents: [],
     piStatus: 'stopped',
     piPid: null,
@@ -777,6 +784,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   sessionState: null,
   sessionStats: null,
   sessionList: [],
+  sessionRuntimes: {},
+  activeSessionRuntimeId: null,
   forkMessages: [],
 
   messages: [],
@@ -1143,10 +1152,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
-  // Gate actions that replace the active session in the same Pi process. A
-  // workspace/tab switch is deliberately not included: every workspace owns a
-  // separate Pi process, so leaving it running is safe and is the whole point
-  // of the tab model.
+  // Gate destructive actions that still replace or discard work in the active
+  // runtime. Session navigation itself is deliberately not included: every
+  // session owns a separate Pi process, so leaving it running is safe.
   //
   // Must be consulted BEFORE anything calls clearMessages(): that resets
   // `isStreaming`, which is the signal this gate reads.
@@ -1169,30 +1177,36 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   createNewSession: async () => {
     const gen = ++sessionLoadGeneration
     try {
-      if (!(await get().confirmSessionChange('new'))) return
-      const result = await window.piDesktop.session.createNew() as { success?: boolean; error?: string } | null
+      // A new session owns a new Pi process. Never stop or warn about the
+      // session the user is leaving; it continues working in the background.
+      const result = await window.piDesktop.session.createNew() as SessionRuntimeInfo | { success?: boolean; error?: string } | null
       if (gen !== sessionLoadGeneration) return
-      if (result && result.success === false) {
+      if (result && 'success' in result && result.success === false) {
         get().addMessage({
           id: generateId(),
           role: 'system',
-          content: result.error ?? 'Cannot create session — Pi not running',
+          content: result.error ?? 'Cannot create session',
           timestamp: Date.now(),
         })
-        // The session did not change, so the chat still belongs here and must be
-        // kept. Only the turn is written off: Pi is not running to finish it, and
-        // its closing events will never arrive.
         set(idleTurnState())
         return
       }
       get().clearMessages()
-      // Creating a session is a navigation action too: show the new empty
-      // conversation immediately instead of leaving the user in Sessions to
-      // find and click the row Pi just created.
-      set({ currentView: 'chat' })
-      await get().refreshSessionState()
-      await get().refreshSessionStats()
-      if (gen !== sessionLoadGeneration) return
+      const runtime = result && 'runtimeId' in result ? result : null
+      set({
+        currentView: 'chat',
+        sessionState: null,
+        sessionStats: null,
+        sessionLoading: runtime?.status !== 'running',
+        ...(runtime ? {
+          activeSessionRuntimeId: runtime.runtimeId,
+          piStatus: runtime.status,
+          piPid: runtime.pid,
+          piError: runtime.error,
+        } : {}),
+      })
+      // The runtime start is intentionally asynchronous. Its runtime event
+      // hydrates this empty chat once Pi is ready.
       scheduleSessionListRefresh(get)
     } catch (err) {
       if (gen !== sessionLoadGeneration) return
@@ -1205,11 +1219,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
-  switchSession: async (path) => {
-    // Already on this session — avoid a full history reload. Only when its
-    // history is actually on screen: a skipSessionLoad workspace switch clears
-    // the chat while sessionState may already name this session, and skipping
-    // then would leave an empty chat and a dead session click.
+  switchSession: async (path, projectPath) => {
+    // Already on this session — avoid a full history reload. The explicit
+    // sessionLoading check still handles a fast workspace switch that cleared
+    // the view before the target runtime was bound.
     if (
       get().sessionState?.sessionFile === path &&
       !get().sessionLoading &&
@@ -1218,14 +1231,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       return
     }
 
-    // Gate first — must read isStreaming before clearMessages/idleTurnState.
-    if (!(await get().confirmSessionChange('switch'))) return
-
-    // Coalesce rapid clicks after the user has confirmed: only the last path runs.
+    // Coalesce rapid clicks: only the last target starts hydration.
     pendingSwitchPath = path
     const gen = ++sessionLoadGeneration
-
-    // Supersede any prior coalesce wait so its promise does not leak.
     if (switchCoalesceTimer) {
       clearTimeout(switchCoalesceTimer)
       switchCoalesceTimer = null
@@ -1241,85 +1249,49 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         switchCoalesceTimer = null
         switchCoalesceResolve = null
         resolve()
-      }, 80)
+      }, 40)
     })
-
-    // Superseded by a newer click.
     if (gen !== sessionLoadGeneration || pendingSwitchPath !== path) return
 
-    // Serialize against other in-flight switches so Pi never gets N concurrent
-    // get_messages (each multi‑MB IPC clone freezes the app).
     const run = async (): Promise<void> => {
       if (gen !== sessionLoadGeneration || pendingSwitchPath !== path) return
       try {
-        // A live turn in this workspace: the switch_session RPC ABORTS it —
-        // Pi treats the command as a session change even when the target is
-        // the very session it is already on (verified live: the in-flight
-        // response is discarded and never reaches the session file). When the
-        // activity map says this workspace is working, ask Pi which session
-        // it is on (get_state answers mid-turn): the turn's own session
-        // re-attaches instead of switching; anything else — including a
-        // failed/stale get_state, which must fail CLOSED — warns before
-        // killing a turn whose streaming was never on screen.
-        const activeId = get().activeWorkspace?.id
-        const activity = activeId ? get().workspaceActivity[activeId]?.state : undefined
-        if (activity === 'working' || activity === 'needs-approval') {
-          await get().refreshSessionState()
-          if (gen !== sessionLoadGeneration) return
-          if (get().sessionState?.sessionFile === path) {
-            set({ sessionLoading: true })
-            get().clearMessages()
-            await get().reloadActiveSession({ refreshList: false })
-            if (gen !== sessionLoadGeneration) return
-            scheduleSessionListRefresh(get)
-            // The reload only shows persisted messages; arm the attach so the
-            // working banner shows and turn boundaries backfill. Re-check the
-            // map first: the turn may have ended during the reload, and its
-            // disarming broadcast may already be behind us.
-            const still = activeId ? get().workspaceActivity[activeId]?.state : undefined
-            if (still === 'working' || still === 'needs-approval') {
-              set({ isStreaming: true, reattachedMidTurn: true })
-            }
-            return
-          }
-          // A different session (or an unconfirmable one): switching kills
-          // the background turn. When its streaming is on screen the
-          // confirmSessionChange gate above already warned; a background
-          // turn's isStreaming is false, so warn here before the teardown.
-          if (!get().isStreaming) {
-            const confirmed = await get().requestConfirm({
-              title: 'Pi is still working',
-              message:
-                'Pi has not finished responding in another session of this ' +
-                'workspace. Opening this session stops it: whatever Pi already ' +
-                'wrote to that session is kept, but the rest of the response ' +
-                'is discarded.',
-              confirmLabel: 'Switch anyway',
-              danger: true,
-            })
-            if (!confirmed || gen !== sessionLoadGeneration) return
-          }
-        }
-
-        set({ sessionLoading: true })
+        // Binding a different session is safe: its Pi process continues in the
+        // background. Render the new target immediately; only hydration waits.
+        set({
+          sessionLoading: true,
+          sessionState: null,
+          sessionStats: null,
+          activeSessionRuntimeId: null,
+        })
         get().clearMessages()
-        const result = (await window.piDesktop.session.switch(path)) as {
-          success?: boolean
-          error?: string
-        } | null
+        const result = await window.piDesktop.session.switch(path, projectPath) as SessionRuntimeInfo | { success?: boolean; error?: string } | null
         if (gen !== sessionLoadGeneration) return
-        if (result && result.success === false) {
+        if (result && 'success' in result && result.success === false) {
           set({ sessionLoading: false, ...idleTurnState() })
           get().addMessage({
             id: generateId(),
             role: 'system',
-            content: result.error ?? 'Cannot switch session — Pi not running',
+            content: result.error ?? 'Cannot activate session',
             timestamp: Date.now(),
           })
           return
         }
-        await get().reloadActiveSession({ refreshList: false })
-        if (gen !== sessionLoadGeneration) return
+        const runtime = result && 'runtimeId' in result ? result : null
+        if (get().activeWorkspace?.id) void window.piDesktop.ui.flushPendingPrompts(get().activeWorkspace!.id)
+        set({
+          currentView: 'chat',
+          sessionLoading: runtime?.status !== 'running',
+          ...(runtime ? {
+            activeSessionRuntimeId: runtime.runtimeId,
+            piStatus: runtime.status,
+            piPid: runtime.pid,
+            piError: runtime.error,
+          } : {}),
+        })
+        // If the runtime is already ready this starts hydration now. If it is
+        // still starting, handleSessionRuntime retries on its running event.
+        void get().reloadActiveSession({ refreshList: false })
         scheduleSessionListRefresh(get)
       } catch (err) {
         if (gen !== sessionLoadGeneration) return
@@ -1401,17 +1373,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (projectPath && !(activeWorkspace && pathsEqual(activeWorkspace.path, projectPath))) {
       const matchingWs = workspaces.find((w) => pathsEqual(w.path, projectPath))
       if (matchingWs) {
-        if (!(await get().switchWorkspace(matchingWs.id, { skipSessionLoad: true }))) return
+        if (!(await get().activateWorkspace(matchingWs.id, { start: false }))) return
       } else {
         await get().createWorkspace(session.projectName, projectPath)
         const newWs = get().workspaces.find((w) => pathsEqual(w.path, projectPath))
-        if (newWs && !(await get().switchWorkspace(newWs.id, { skipSessionLoad: true }))) return
+        if (newWs && !(await get().activateWorkspace(newWs.id, { start: false }))) return
       }
     }
     // switchSession's working-workspace guard covers the live-turn cases from
     // here on: the turn's own session re-attaches instead of switching, and
     // opening a different session of a mid-turn workspace warns first.
-    await get().switchSession(session.path)
+    await get().switchSession(session.path, projectPath)
     // Bring the chat into view (may be on Settings/Notes/etc.). In-app
     // switches keep their remembered scroll position, so no force-to-bottom.
     get().setCurrentView('chat')
@@ -2070,6 +2042,32 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     set({ workspaceActivity: map })
   },
 
+  handleSessionRuntime: (runtime) => {
+    const state = get()
+    set((current) => ({
+      sessionRuntimes: { ...current.sessionRuntimes, [runtime.runtimeId]: runtime },
+      activeSessionRuntimeId: runtime.active
+        ? runtime.runtimeId
+        : current.activeSessionRuntimeId === runtime.runtimeId
+          ? null
+          : current.activeSessionRuntimeId,
+      ...(runtime.active ? {
+        piStatus: runtime.status,
+        piPid: runtime.pid,
+        piError: runtime.error,
+      } : {}),
+    }))
+    if (
+      runtime.active &&
+      runtime.status === 'running' &&
+      runtime.sessionPath &&
+      state.sessionState?.sessionFile !== runtime.sessionPath &&
+      !state.sessionLoading
+    ) {
+      void get().reloadActiveSession({ refreshList: false })
+    }
+  },
+
   recoverPendingPrompts: async () => {
     // Isolated: the activity snapshot is cosmetic and must never block the
     // prompt flush below, which recovers a held blocking dialog.
@@ -2170,7 +2168,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const duplicate = get().workspaces.find((w) => pathsEqual(w.path, path))
     if (duplicate) {
       if (duplicate.id !== get().activeWorkspace?.id) {
-        await get().switchWorkspace(duplicate.id)
+        await get().activateWorkspace(duplicate.id)
       }
       return
     }
@@ -2197,7 +2195,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // Pi is actively editing its own checkout.
       const workspace = await window.piDesktop.workspace.createTab()
       await get().loadWorkspaces()
-      const switched = await get().switchWorkspace(workspace.id)
+      const switched = await get().activateWorkspace(workspace.id)
       if (switched) {
         get().setCurrentView('chat')
         if (workspace.sourceWasDirty) {
@@ -2260,7 +2258,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         ws = get().workspaces.find((w) => pathsEqual(w.path, folderPath))
         if (!ws) return false
       }
-      const switched = await get().switchWorkspace(ws.id)
+      const switched = await get().activateWorkspace(ws.id)
       if (switched) get().setCurrentView('chat')
       return switched
     } catch (err) {
@@ -2268,6 +2266,47 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         id: generateId(),
         role: 'system',
         content: `Open folder error: ${err instanceof Error ? err.message : String(err)}`,
+        timestamp: Date.now(),
+      })
+      return false
+    }
+  },
+
+  // Fast workspace activation commits the project pointer immediately. Pi
+  // startup and session hydration continue in the background.
+  activateWorkspace: async (workspaceId, options) => {
+    if (get().activeWorkspace?.id === workspaceId) {
+      if (options?.start !== false && get().piStatus !== 'running') void get().startPi()
+      return true
+    }
+    if (!(await get().confirmDiscardEditorChanges())) return false
+    try {
+      const workspace = await window.piDesktop.workspace.setActive(workspaceId)
+      sessionLoadGeneration += 1
+      get().clearMessages()
+      set((state) => ({
+        workspaces: state.workspaces.some((item) => item.id === workspace.id)
+          ? state.workspaces.map((item) => item.id === workspace.id ? workspace : item)
+          : [...state.workspaces, workspace],
+        activeWorkspace: workspace,
+        sessionState: null,
+        sessionStats: null,
+        sessionLoading: true,
+        piStatus: 'starting',
+        piPid: null,
+        piError: null,
+        extensionUiRequest: null,
+        previewTarget: null,
+        editorDirty: false,
+      }))
+      void window.piDesktop.ui.flushPendingPrompts(workspace.id)
+      if (options?.start !== false) void get().startPi()
+      return true
+    } catch (err) {
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: `Switch workspace error: ${err instanceof Error ? err.message : String(err)}`,
         timestamp: Date.now(),
       })
       return false

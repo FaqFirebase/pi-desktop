@@ -8,9 +8,11 @@ import type {
   PiStartOptions,
   WorkspaceRemoveResult,
   WorkspaceTabOptions,
+  SessionRuntimeInfo,
+  SessionRuntimeActivity,
 } from '../shared/ipc-contracts'
 import { getGuiDataPath } from './app-data-paths'
-import { pathsEqual } from './session-paths'
+import { pathsEqual, pathGroupKey } from './session-paths'
 import { appLog } from './app-log'
 import {
   createGitWorktree,
@@ -21,7 +23,9 @@ import {
 } from './git-worktree'
 
 /**
- * Manages multiple workspaces (project directories), each with its own Pi process.
+ * Manages project workspaces and their independent Pi session runtimes.
+ * Multiple runtimes may share one workspace directory; the workspace list is
+ * persisted, while live runtime processes are intentionally in-memory.
  *
  * Persistence: workspace list stored in the Electron userData directory.
  */
@@ -57,12 +61,25 @@ export type PiManagerListener = (manager: PiRpcManager) => void
 export type ActiveWorkspaceListener = (workspaceId: string | null) => void
 export type FileChangeListener = (event: FileChangeEvent) => void
 export type WorkspaceRemovedListener = (workspaceId: string) => void
+export type SessionRuntimeListener = (runtime: SessionRuntimeInfo) => void
+
+interface SessionRuntimeEntry {
+  info: SessionRuntimeInfo
+  manager: PiRpcManager
+}
 
 export class WorkspaceManager {
   private workspaces: Workspace[] = []
   private activeWorkspaceId: string | null = null
   private piManagers = new Map<string, PiRpcManager>()
   private fileServices = new Map<string, FileService>()
+  // A workspace is a project container. Each live session gets its own Pi
+  // process, even when several sessions share the same workspace cwd.
+  private sessionRuntimes = new Map<string, SessionRuntimeEntry>()
+  private runtimeBySessionPath = new Map<string, string>()
+  private activeRuntimeByWorkspace = new Map<string, string>()
+  private activeRuntimeId: string | null = null
+  private sessionRuntimeListeners: SessionRuntimeListener[] = []
   private configPath: string
   private nextColorIndex = 0
   private piManagerListeners: PiManagerListener[] = []
@@ -128,6 +145,9 @@ export class WorkspaceManager {
     for (const manager of this.piManagers.values()) {
       this.attachListenerOnce(manager, listener)
     }
+    for (const entry of this.sessionRuntimes.values()) {
+      this.attachListenerOnce(entry.manager, listener)
+    }
   }
 
   onActiveWorkspaceChanged(listener: ActiveWorkspaceListener): void {
@@ -164,6 +184,199 @@ export class WorkspaceManager {
     listener(manager)
   }
 
+  onSessionRuntime(listener: SessionRuntimeListener): void {
+    this.sessionRuntimeListeners.push(listener)
+    for (const entry of this.sessionRuntimes.values()) listener(this.snapshotRuntime(entry))
+  }
+
+  private snapshotRuntime(entry: SessionRuntimeEntry): SessionRuntimeInfo {
+    return {
+      ...entry.info,
+      ...entry.manager.getStatus(),
+      active: entry.info.runtimeId === this.activeRuntimeId,
+    }
+  }
+
+  private emitSessionRuntime(entry: SessionRuntimeEntry): void {
+    const snapshot = this.snapshotRuntime(entry)
+    entry.info = { ...entry.info, ...snapshot }
+    for (const listener of this.sessionRuntimeListeners) listener(snapshot)
+  }
+
+  private emitRuntimeActivity(entry: SessionRuntimeEntry, activity: SessionRuntimeActivity | null): void {
+    if (entry.info.activity === activity) return
+    entry.info = { ...entry.info, activity }
+    this.emitSessionRuntime(entry)
+  }
+
+  private attachSessionRuntime(entry: SessionRuntimeEntry): void {
+    const { manager } = entry
+    manager.on('status-change', () => {
+      entry.info = { ...entry.info, ...manager.getStatus() }
+      if (entry.info.status === 'running' && entry.info.activity === 'failed') {
+        entry.info = { ...entry.info, activity: null }
+      }
+      this.emitSessionRuntime(entry)
+    })
+    manager.on('agent_start', () => this.emitRuntimeActivity(entry, 'working'))
+    manager.on('agent_end', () => this.emitRuntimeActivity(entry, 'completed'))
+    manager.on('extension_ui_request', (event: { method?: string }) => {
+      if (event.method === 'select' || event.method === 'confirm' || event.method === 'input' || event.method === 'editor') {
+        this.emitRuntimeActivity(entry, 'needs-approval')
+      }
+    })
+    manager.on('exit', () => {
+      // PiRpcManager only emits exit for an unexpected process death; deliberate
+      // stop() detaches listeners first. Preserve a visible failure marker even
+      // when the process died while idle.
+      this.emitRuntimeActivity(entry, 'failed')
+    })
+  }
+
+  private createSessionRuntime(workspaceId: string, sessionPath: string | null): SessionRuntimeEntry {
+    const runtimeId = `rt-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+    const manager = new PiRpcManager()
+    const entry: SessionRuntimeEntry = {
+      manager,
+      info: {
+        runtimeId,
+        workspaceId,
+        sessionPath,
+        sessionId: null,
+        status: 'stopped',
+        pid: null,
+        error: null,
+        activity: null,
+        active: false,
+      },
+    }
+    this.sessionRuntimes.set(runtimeId, entry)
+    if (sessionPath) this.runtimeBySessionPath.set(pathGroupKey(sessionPath), runtimeId)
+    this.wirePiManager(manager)
+    this.attachSessionRuntime(entry)
+    this.emitSessionRuntime(entry)
+    return entry
+  }
+
+  private setActiveRuntime(workspaceId: string, runtimeId: string | null): void {
+    const previous = this.activeRuntimeId
+    if (runtimeId) this.activeRuntimeByWorkspace.set(workspaceId, runtimeId)
+    else this.activeRuntimeByWorkspace.delete(workspaceId)
+    this.activeRuntimeId = this.activeWorkspaceId === workspaceId ? runtimeId : this.activeRuntimeId
+    if (previous && previous !== this.activeRuntimeId) {
+      const old = this.sessionRuntimes.get(previous)
+      if (old) this.emitSessionRuntime(old)
+    }
+    if (this.activeRuntimeId) {
+      const next = this.sessionRuntimes.get(this.activeRuntimeId)
+      if (next) this.emitSessionRuntime(next)
+    }
+  }
+
+  getSessionRuntimes(workspaceId?: string): SessionRuntimeInfo[] {
+    return [...this.sessionRuntimes.values()]
+      .filter((entry) => workspaceId === undefined || entry.info.workspaceId === workspaceId)
+      .map((entry) => this.snapshotRuntime(entry))
+  }
+
+  getActiveSessionRuntime(): SessionRuntimeInfo | null {
+    if (!this.activeRuntimeId) return null
+    const entry = this.sessionRuntimes.get(this.activeRuntimeId)
+    return entry ? this.snapshotRuntime(entry) : null
+  }
+
+  getSessionRuntime(runtimeId: string): SessionRuntimeInfo | null {
+    const entry = this.sessionRuntimes.get(runtimeId)
+    return entry ? this.snapshotRuntime(entry) : null
+  }
+
+  getSessionRuntimeForPath(sessionPath: string): SessionRuntimeInfo | null {
+    const runtimeId = this.runtimeBySessionPath.get(pathGroupKey(sessionPath))
+    return runtimeId ? this.getSessionRuntime(runtimeId) : null
+  }
+
+  runtimeIdFor(manager: PiRpcManager): string | null {
+    for (const [runtimeId, entry] of this.sessionRuntimes) {
+      if (entry.manager === manager) return runtimeId
+    }
+    return this.workspaceIdFor(manager)
+  }
+
+  sessionPathFor(manager: PiRpcManager): string | null {
+    for (const entry of this.sessionRuntimes.values()) {
+      if (entry.manager === manager) return entry.info.sessionPath
+    }
+    return null
+  }
+
+  /** Activate a session without waiting for Pi startup. */
+  async activateSession(workspaceId: string, sessionPath: string): Promise<SessionRuntimeInfo> {
+    const workspace = this.workspaces.find((item) => item.id === workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    if (this.activeWorkspaceId !== workspaceId) await this.setActiveWorkspace(workspaceId)
+    const key = pathGroupKey(sessionPath)
+    let runtimeId = this.runtimeBySessionPath.get(key)
+    let entry = runtimeId ? this.sessionRuntimes.get(runtimeId) : undefined
+    if (entry && entry.info.workspaceId !== workspaceId) {
+      throw new Error('Session is already attached to a different workspace runtime')
+    }
+    if (!entry) entry = this.createSessionRuntime(workspaceId, sessionPath)
+    runtimeId = entry.info.runtimeId
+    entry.info = { ...entry.info, activity: null }
+    this.setActiveRuntime(workspaceId, runtimeId)
+    this.emitSessionRuntime(entry)
+    return this.snapshotRuntime(entry)
+  }
+
+  /** Create an empty session runtime and make it active immediately. */
+  async createNewSessionRuntime(workspaceId: string): Promise<SessionRuntimeInfo> {
+    const workspace = this.workspaces.find((item) => item.id === workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    if (this.activeWorkspaceId !== workspaceId) await this.setActiveWorkspace(workspaceId)
+    const entry = this.createSessionRuntime(workspaceId, null)
+    this.setActiveRuntime(workspaceId, entry.info.runtimeId)
+    return this.snapshotRuntime(entry)
+  }
+
+  async startSessionRuntime(runtimeId: string, options: PiStartOptions = {}): Promise<SessionRuntimeInfo> {
+    const entry = this.sessionRuntimes.get(runtimeId)
+    if (!entry) throw new Error(`Session runtime not found: ${runtimeId}`)
+    const workspace = this.workspaces.find((item) => item.id === entry.info.workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${entry.info.workspaceId}`)
+    const startOptions = {
+      cwd: workspace.path,
+      ...(entry.info.sessionPath && !options.sessionPath && !options.forkSessionPath
+        ? { sessionPath: entry.info.sessionPath }
+        : {}),
+      ...options,
+    }
+    await entry.manager.start(startOptions)
+    const response = await entry.manager.sendCommand({ type: 'get_state' }).catch(() => null)
+    const data = response?.data as { sessionFile?: unknown; sessionId?: unknown } | undefined
+    const sessionPath = typeof data?.sessionFile === 'string' ? data.sessionFile : entry.info.sessionPath
+    if (sessionPath && sessionPath !== entry.info.sessionPath) {
+      if (entry.info.sessionPath) this.runtimeBySessionPath.delete(pathGroupKey(entry.info.sessionPath))
+      this.runtimeBySessionPath.set(pathGroupKey(sessionPath), runtimeId)
+    }
+    entry.info = {
+      ...entry.info,
+      sessionPath: sessionPath ?? null,
+      sessionId: typeof data?.sessionId === 'string' ? data.sessionId : entry.info.sessionId,
+      activity: null,
+      ...entry.manager.getStatus(),
+    }
+    this.emitSessionRuntime(entry)
+    return this.snapshotRuntime(entry)
+  }
+
+  stopSessionRuntime(runtimeId: string): void {
+    const entry = this.sessionRuntimes.get(runtimeId)
+    if (!entry) return
+    entry.info = { ...entry.info, activity: null }
+    this.emitSessionRuntime(entry)
+    entry.manager.stop()
+  }
+
   async initialize(): Promise<void> {
     await this.loadWorkspaces()
 
@@ -194,18 +407,32 @@ export class WorkspaceManager {
   }
 
   getPiManager(workspaceId: string): PiRpcManager | null {
+    const runtimeId = this.activeRuntimeByWorkspace.get(workspaceId)
+    if (runtimeId) return this.sessionRuntimes.get(runtimeId)?.manager ?? null
     return this.piManagers.get(workspaceId) ?? null
   }
 
   getActivePiManager(): PiRpcManager | null {
     if (!this.activeWorkspaceId) return null
-    return this.piManagers.get(this.activeWorkspaceId) ?? null
+    return this.getPiManager(this.activeWorkspaceId)
+  }
+
+  getPiManagerForSession(workspaceId: string, sessionId?: string): PiRpcManager | null {
+    if (sessionId) {
+      for (const entry of this.sessionRuntimes.values()) {
+        if (entry.info.workspaceId === workspaceId && entry.info.sessionId === sessionId) return entry.manager
+      }
+    }
+    return this.getPiManager(workspaceId)
   }
 
   /** Reverse lookup: the workspace id owning a given Pi manager, if any. */
   workspaceIdFor(manager: PiRpcManager): string | null {
     for (const [workspaceId, candidate] of this.piManagers) {
       if (candidate === manager) return workspaceId
+    }
+    for (const entry of this.sessionRuntimes.values()) {
+      if (entry.manager === manager) return entry.info.workspaceId
     }
     return null
   }
@@ -264,10 +491,20 @@ export class WorkspaceManager {
 
     const changed = this.activeWorkspaceId !== workspaceId
     workspace.lastActiveAt = Date.now()
+    const previousRuntimeId = this.activeRuntimeId
     this.activeWorkspaceId = workspaceId
+    this.activeRuntimeId = this.activeRuntimeByWorkspace.get(workspaceId) ?? null
 
     await this.saveWorkspaces()
     if (changed) this.emitActiveWorkspaceChanged()
+    if (previousRuntimeId && previousRuntimeId !== this.activeRuntimeId) {
+      const previous = this.sessionRuntimes.get(previousRuntimeId)
+      if (previous) this.emitSessionRuntime(previous)
+    }
+    if (this.activeRuntimeId) {
+      const active = this.sessionRuntimes.get(this.activeRuntimeId)
+      if (active) this.emitSessionRuntime(active)
+    }
     return workspace
   }
 
@@ -286,6 +523,14 @@ export class WorkspaceManager {
       piManager.stop()
       this.piManagers.delete(workspaceId)
     }
+    for (const [runtimeId, entry] of this.sessionRuntimes) {
+      if (entry.info.workspaceId !== workspaceId) continue
+      if (this.activeRuntimeId === runtimeId) this.activeRuntimeId = null
+      entry.manager.stop()
+      if (entry.info.sessionPath) this.runtimeBySessionPath.delete(pathGroupKey(entry.info.sessionPath))
+      this.sessionRuntimes.delete(runtimeId)
+    }
+    this.activeRuntimeByWorkspace.delete(workspaceId)
     const fileService = this.fileServices.get(workspaceId)
     if (fileService) {
       fileService.stopWatching()
@@ -308,11 +553,18 @@ export class WorkspaceManager {
     let activeChanged = false
     if (this.activeWorkspaceId === workspaceId) {
       this.activeWorkspaceId = this.workspaces.length > 0 ? this.workspaces[0].id : null
+      this.activeRuntimeId = this.activeWorkspaceId
+        ? this.activeRuntimeByWorkspace.get(this.activeWorkspaceId) ?? null
+        : null
       activeChanged = true
     }
 
     await this.saveWorkspaces()
     if (activeChanged) this.emitActiveWorkspaceChanged()
+    if (activeChanged && this.activeRuntimeId) {
+      const active = this.sessionRuntimes.get(this.activeRuntimeId)
+      if (active) this.emitSessionRuntime(active)
+    }
     for (const listener of this.workspaceRemovedListeners) {
       listener(workspaceId)
     }
@@ -342,10 +594,13 @@ export class WorkspaceManager {
     if (!existsSync(newPath)) throw new Error(`Folder does not exist: ${newPath}`)
 
     workspace.path = newPath
-    // Pi's working directory is bound at spawn, so a running Pi would keep
-    // operating in the old folder. Stop it here; the renderer restarts the
-    // active workspace's Pi, and an inactive one starts fresh on activation.
+    // Pi's working directory is bound at spawn, so every session runtime must
+    // stop before the project path changes. The renderer restarts the active
+    // runtime after this commits; inactive sessions restart when selected.
     this.piManagers.get(workspaceId)?.stop()
+    for (const entry of this.sessionRuntimes.values()) {
+      if (entry.info.workspaceId === workspaceId) this.stopSessionRuntime(entry.info.runtimeId)
+    }
     const oldFs = this.fileServices.get(workspaceId)
     oldFs?.stopWatching()
     this.fileServices.set(workspaceId, new FileService(newPath))
@@ -411,37 +666,37 @@ export class WorkspaceManager {
     const workspace = this.workspaces.find((w) => w.id === workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
-    let piManager = this.piManagers.get(workspaceId)
-    if (!piManager) {
-      piManager = new PiRpcManager()
-      this.piManagers.set(workspaceId, piManager)
+    const runtimeId = this.activeRuntimeByWorkspace.get(workspaceId)
+    let runtime = runtimeId ? this.sessionRuntimes.get(runtimeId) : undefined
+    if (!runtime) {
+      runtime = this.createSessionRuntime(workspaceId, options?.sessionPath ?? null)
+      this.activeRuntimeByWorkspace.set(workspaceId, runtime.info.runtimeId)
+      if (this.activeWorkspaceId === workspaceId) this.activeRuntimeId = runtime.info.runtimeId
     }
-    this.wirePiManager(piManager)
 
-    // Caller-supplied cwd (e.g. a validated fallback) takes precedence over the
-    // workspace path. Default to the workspace path when no override is given.
-    await piManager.start({
+    await this.startSessionRuntime(runtime.info.runtimeId, {
       cwd: workspace.path,
       ...options,
     })
   }
 
   stopPiForWorkspace(workspaceId: string): void {
-    const piManager = this.piManagers.get(workspaceId)
-    if (piManager) {
-      piManager.stop()
-    }
+    const runtimeId = this.activeRuntimeByWorkspace.get(workspaceId)
+    const runtime = runtimeId ? this.sessionRuntimes.get(runtimeId) : undefined
+    if (runtime) this.stopSessionRuntime(runtimeId!)
+    else this.piManagers.get(workspaceId)?.stop()
   }
 
   stopAll(): void {
-    for (const [, manager] of this.piManagers) {
-      manager.stop()
-    }
-    for (const [, fs] of this.fileServices) {
-      fs.stopWatching()
-    }
+    for (const [, manager] of this.piManagers) manager.stop()
+    for (const [, entry] of this.sessionRuntimes) entry.manager.stop()
+    for (const [, fs] of this.fileServices) fs.stopWatching()
     this.watchingWorkspaceId = null
     this.piManagers.clear()
+    this.sessionRuntimes.clear()
+    this.runtimeBySessionPath.clear()
+    this.activeRuntimeByWorkspace.clear()
+    this.activeRuntimeId = null
     this.fileServices.clear()
   }
 

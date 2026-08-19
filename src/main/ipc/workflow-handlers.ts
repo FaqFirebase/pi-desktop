@@ -82,7 +82,7 @@ export function registerWorkflowHandlers(ctx: IpcContext): void {
 
       // Route to the run's OWN workspace Pi process, never the active one —
       // the active session and its Pi stay untouched.
-      const pi = ctx.workspaceManager.getPiManager(workspaceId)
+      const pi = ctx.workspaceManager.getPiManagerForSession(workspaceId, run.sessionId)
       if (!pi) return fail('no-pi')
       if (pi.getStatus().status !== 'running') return fail('pi-not-running')
 
