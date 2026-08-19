@@ -21,6 +21,7 @@ import {
   Sparkles,
   Stethoscope,
   Pencil,
+  Workflow as WorkflowIcon,
 } from 'lucide-react'
 import { useMemo, useState, useRef } from 'react'
 import { StatusPopover } from './status-popover'
@@ -29,6 +30,7 @@ import { getSessionRowLabels } from './sidebar-session-labels'
 import { ResizeHandle } from './resize-handle'
 import { getSessionTitle } from '../utils/session-title'
 import { formatRelativeTime } from '../utils/format-relative-time'
+import { resolveRunSessionId } from '../utils/workflow-runs'
 import { clampSidebarWidth, resolveSidebarWidth } from '../../../shared/sidebar-width'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 
@@ -51,6 +53,14 @@ export function Sidebar(): React.JSX.Element {
   const sessionState = useAppStore((state) => state.sessionState)
   const sessionList = useAppStore((state) => state.sessionList)
   const createNewSession = useAppStore((state) => state.createNewSession)
+  const openFolderAsWorkspace = useAppStore((state) => state.openFolderAsWorkspace)
+  const openWorkflowRunsForSession = useAppStore((state) => state.openWorkflowRunsForSession)
+  const openWorkflowRunsForWorkspace = useAppStore((state) => state.openWorkflowRunsForWorkspace)
+  const setWorkflowPanelOpen = useAppStore((state) => state.setWorkflowPanelOpen)
+  const workflowPanelOpen = useAppStore((state) => state.workflowPanelOpen)
+  const workflowPanelWorkspaceId = useAppStore((state) => state.workflowPanelWorkspaceId)
+  const workflowPanelFilter = useAppStore((state) => state.workflowPanelFilter)
+  const setSessionsScope = useAppStore((state) => state.setSessionsScope)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const archivedSessions = useAppStore((state) => state.archivedSessions)
   const archiveSession = useAppStore((state) => state.archiveSession)
@@ -203,6 +213,33 @@ export function Sidebar(): React.JSX.Element {
     }))
   }
 
+  const recentSessionsForWorkspace = useMemo(() => {
+    if (!activeWorkspace?.path) return []
+    return activeSessions
+      .filter((session) => pathsEqual(session.projectPath, activeWorkspace.path))
+      .sort((a, b) => b.lastModified - a.lastModified)
+      .slice(0, MAX_SESSIONS_PER_GROUP)
+  }, [activeSessions, activeWorkspace?.path])
+
+  const startNewSession = async (): Promise<void> => {
+    if (!activeWorkspace) {
+      setCurrentView('home')
+      return
+    }
+    setCurrentView('chat')
+    await createNewSession()
+  }
+
+  const openProject = async (): Promise<void> => {
+    const path = await window.piDesktop.system.openDialog({ title: 'Open Project' })
+    if (path) await openFolderAsWorkspace(path)
+  }
+
+  const openToolView = (view: 'packages' | 'notes' | 'skills' | 'diagnostics' | 'settings'): void => {
+    setWorkflowPanelOpen(false)
+    setCurrentView(view)
+  }
+
   // Workspace auto-switch/create + session switch + show Chat, shared with the
   // session panel and the quick switcher.
   const openSession = useAppStore((state) => state.openSessionItem)
@@ -223,6 +260,7 @@ export function Sidebar(): React.JSX.Element {
         onDelete: (s) => { deleteSession(s) },
         // Rename only offered for the active session (Pi renames the active one).
         onRename: isActive ? () => startSessionRename('recent') : undefined,
+        onRuns: (s) => openWorkflowRunsForSession(resolveRunSessionId(s.piSessionId, s.sessionId) ?? s.sessionId),
       })
     )
   }
@@ -246,6 +284,10 @@ export function Sidebar(): React.JSX.Element {
     options?: { nested?: boolean }
   ): React.JSX.Element => {
     const labels = getSessionRowLabels(session)
+    // Runs are keyed by Pi's header UUID, never the filename stem (the
+    // tags/archive registry key). The stem suffix IS the UUID, so it is a
+    // safe fallback when a row's header is unreadable.
+    const workflowSessionId = resolveRunSessionId(session.piSessionId, session.sessionId) ?? session.sessionId
     const isActive = sessionState?.sessionFile === session.path
     const nested = options?.nested ?? false
 
@@ -266,36 +308,49 @@ export function Sidebar(): React.JSX.Element {
     }
 
     return (
-      <button
-        key={session.path}
-        onClick={() => openSession(session)}
-        onDoubleClick={() => { if (isActive) startSessionRename('recent') }}
-        onContextMenu={(e) => handleSessionRightClick(e, session)}
-        // The full title leads, so a preview too long for the current width is
-        // still readable on hover.
-        title={`${labels.title}\n\n${isActive
-          ? 'Click to open · double-click to rename · right-click for actions'
-          : 'Click to open · right-click for actions'}`}
-        className={clsx(
-          'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
-          nested && 'pl-2',
-          isActive
-            ? 'bg-card text-primary'
-            : 'hover:bg-highlight text-muted hover:text-secondary'
-        )}
-      >
-        <Clock size={12} className="shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate">{labels.title}</div>
-          {/* The title is now the session's name or first message, so the time it
-              displaced moves here. Recent rows are already grouped by workspace,
-              which makes the project name the less useful of the two subtitles —
-              the home screen, which is not grouped, shows the project instead. */}
-          <div className="truncate text-[11px] text-faint">
-            {formatRelativeTime(session.lastModified, Date.now())}
+      <div key={session.path} className="group relative">
+        <button
+          onClick={() => openSession(session)}
+          onDoubleClick={() => { if (isActive) startSessionRename('recent') }}
+          onContextMenu={(e) => handleSessionRightClick(e, session)}
+          // The full title leads, so a preview too long for the current width is
+          // still readable on hover.
+          title={`${labels.title}\n\n${isActive
+            ? 'Click to open · double-click to rename · right-click for actions'
+            : 'Click to open · right-click for actions'}`}
+          className={clsx(
+            'flex w-full items-center gap-2 rounded px-2 py-1.5 pr-7 text-left text-sm transition-colors',
+            nested && 'pl-2',
+            isActive
+              ? 'bg-card text-primary'
+              : 'hover:bg-highlight text-muted hover:text-secondary'
+          )}
+        >
+          <Clock size={12} className="shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate">{labels.title}</div>
+            {/* The title is now the session's name or first message, so the time it
+                displaced moves here. Recent rows are already grouped by workspace,
+                which makes the project name the less useful of the two subtitles —
+                the home screen, which is not grouped, shows the project instead. */}
+            <div className="truncate text-[11px] text-faint">
+              {formatRelativeTime(session.lastModified, Date.now())}
+            </div>
           </div>
-        </div>
-      </button>
+        </button>
+        {/* Sibling (not child) of the row button, so no nested interactive
+            elements: the row's click/double-click/context-menu never fire for
+            this icon. Shows an empty filtered state when the session has no runs. */}
+        <button
+          type="button"
+          onClick={() => openWorkflowRunsForSession(workflowSessionId)}
+          className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-faint opacity-0 transition-opacity hover:bg-highlight hover:text-accent-fg focus-visible:opacity-100 group-hover:opacity-100"
+          title="Workflow runs for this session"
+          aria-label="Workflow runs for this session"
+        >
+          <WorkflowIcon size={12} />
+        </button>
+      </div>
     )
   }
 
@@ -360,6 +415,23 @@ export function Sidebar(): React.JSX.Element {
       <div className="flex h-12 items-center justify-between border-b border-border px-3">
         <div className="flex items-center gap-2">
           <StatusPopover />
+          {/* Compact Home replaces the duplicate Pi-activity popover: workspace
+              activity already lives in the switcher row, tab icons, and switcher
+              dropdown, so the header keeps only system status + Home. */}
+          <button
+            type="button"
+            onClick={() => setCurrentView('home')}
+            className={clsx(
+              'rounded p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus',
+              currentView === 'home'
+                ? 'bg-card text-accent-fg'
+                : 'text-muted hover:bg-surface-hover hover:text-primary'
+            )}
+            title="Home (Esc to launcher)"
+            aria-label="Home"
+          >
+            <Home size={16} />
+          </button>
           <span className="text-sm font-medium text-primary">Pi Desktop</span>
         </div>
         <button
@@ -372,76 +444,95 @@ export function Sidebar(): React.JSX.Element {
         </button>
       </div>
 
-      {/* Workspace switcher */}
-      <WorkspaceSwitcher />
-
-      {/* New session button */}
-      <div className="px-3 py-2">
-        <button
-          onClick={createNewSession}
-          className="flex w-full items-center gap-2 rounded-md bg-card px-3 py-2 text-sm text-primary hover:bg-elevated transition-colors"
-        >
-          <Plus size={14} />
-          New Session
-        </button>
+      {/* Project + primary action */}
+      <div className="border-b border-border pb-3">
+        <div className="flex items-center justify-between px-3 pt-3">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">Project</div>
+          <button
+            type="button"
+            onClick={() => void openProject()}
+            className="rounded p-1 text-muted transition-colors hover:bg-highlight hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
+            title="Open project folder (Ctrl/Cmd+O)"
+            aria-label="Open project folder"
+          >
+            <FolderOpen size={14} />
+          </button>
+        </div>
+        <WorkspaceSwitcher onOpenProject={() => void openProject()} />
+        <div className="px-3">
+          <button
+            type="button"
+            onClick={() => void startNewSession()}
+            disabled={!activeWorkspace}
+            className="group flex w-full items-center gap-2 rounded-lg bg-accent px-3 py-2.5 text-sm font-medium text-white shadow-sm shadow-accent/20 transition-colors hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+            title={activeWorkspace ? 'Start a new session in this project (Ctrl/Cmd+N)' : 'Open a project first'}
+          >
+            <Plus size={15} className="shrink-0 transition-transform group-hover:rotate-90" />
+            <span className="flex-1 text-left">New session</span>
+            <kbd className="rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-white/75">Ctrl N</kbd>
+          </button>
+          <div className="mt-1.5 px-1 text-[11px] text-faint">
+            {activeWorkspace ? `Starts in ${activeWorkspace.name}` : 'Open a project to begin'}
+          </div>
+        </div>
       </div>
 
       {/* Navigation */}
-      <nav className="space-y-0.5 px-2 py-1">
-        <SidebarItem
-          icon={<Home size={14} />}
-          label="Home"
-          active={currentView === 'home'}
-          onClick={() => setCurrentView('home')}
-        />
-        <SidebarItem
-          icon={<MessageSquare size={14} />}
-          label="Chat"
-          active={currentView === 'chat'}
-          onClick={() => setCurrentView('chat')}
-        />
-        <SidebarItem
-          icon={<FolderOpen size={14} />}
-          label="Sessions"
-          active={currentView === 'sessions'}
-          onClick={() => setCurrentView('sessions')}
-        />
-        <SidebarItem
-          icon={<Activity size={14} />}
-          label="Timeline"
-          active={currentView === 'timeline'}
-          onClick={() => setCurrentView('timeline')}
-        />
-        <SidebarItem
-          icon={<Package size={14} />}
-          label="Packages"
-          active={currentView === 'packages'}
-          onClick={() => setCurrentView('packages')}
-        />
-        <SidebarItem
-          icon={<StickyNote size={14} />}
-          label="Notes"
-          active={currentView === 'notes'}
-          onClick={() => setCurrentView('notes')}
-        />
-        <SidebarItem
-          icon={<Sparkles size={14} />}
-          label="Skills"
-          active={currentView === 'skills'}
-          onClick={() => setCurrentView('skills')}
-        />
-        <SidebarItem
-          icon={<Stethoscope size={14} />}
-          label="Diagnostics"
-          active={currentView === 'diagnostics'}
-          onClick={() => setCurrentView('diagnostics')}
-        />
-        <SidebarItem
-          icon={<Settings size={14} />}
-          label="Settings"
-          active={currentView === 'settings'}
-          onClick={() => setCurrentView('settings')}
-        />
+      <nav className="space-y-3 border-b border-border px-2 py-3">
+        <div>
+          <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">Workspace</div>
+          <div className="space-y-0.5">
+            <SidebarItem
+              icon={<MessageSquare size={14} />}
+              label="Chat"
+              active={currentView === 'chat'}
+              onClick={() => setCurrentView('chat')}
+            />
+            <SidebarItem
+              icon={<FolderOpen size={14} />}
+              label="Sessions"
+              active={currentView === 'sessions'}
+              onClick={() => {
+                setSessionsScope('current')
+                setCurrentView('sessions')
+              }}
+              title="Sessions in this project"
+            />
+          </div>
+        </div>
+        <div>
+          <div className="mb-1 flex items-center gap-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">
+            <span>Activity</span>
+            {activeWorkspace && (
+              <span className="min-w-0 truncate normal-case">· {activeWorkspace.name}</span>
+            )}
+          </div>
+          <div className="space-y-0.5">
+            <SidebarItem
+              icon={<WorkflowIcon size={14} />}
+              label="Workflows"
+              // Only highlighted when THIS project's scope is open, so it never
+              // fights the Tools' global "All Workflows" entry. With no project
+              // open the entry falls back to the global list (same as the old
+              // behavior) but stays unhighlighted.
+              active={
+                !!activeWorkspace &&
+                workflowPanelOpen &&
+                !workflowPanelFilter &&
+                workflowPanelWorkspaceId === activeWorkspace.id
+              }
+              onClick={() => openWorkflowRunsForWorkspace(activeWorkspace?.id ?? null)}
+              title={activeWorkspace ? `Workflow runs in ${activeWorkspace.name}` : 'All workflow runs (no project open)'}
+            />
+            <SidebarItem
+              icon={<Activity size={14} />}
+              label="Timeline"
+              active={currentView === 'timeline'}
+              onClick={() => setCurrentView('timeline')}
+              title={activeWorkspace ? `Timeline for ${activeWorkspace.name}` : 'Timeline'}
+            />
+          </div>
+        </div>
       </nav>
 
       {/* Current session info */}
@@ -456,37 +547,80 @@ export function Sidebar(): React.JSX.Element {
             <div className="mt-1 text-xs text-dim">{sessionState.messageCount} messages</div>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => setCurrentView('chat')}
-            onDoubleClick={() => startSessionRename('current')}
-            onContextMenu={handleCurrentSessionRightClick}
-            className="mx-3 mt-2 rounded-md bg-surface p-3 text-left transition-colors hover:bg-surface-hover focus:outline-none focus:ring-1 focus:ring-border-strong"
-            title="Open current session in chat · double-click to rename"
-          >
-            <div className="text-xs font-medium text-muted uppercase tracking-wider">Current Session</div>
-            <div className="mt-1.5 text-sm text-primary truncate">
-              {getSessionTitle(sessionState.sessionName, sessionState.sessionId)}
-            </div>
-            {sessionState.model && (
-              <div className="mt-1 text-xs text-dim">
-                {sessionState.model.name}
+          <div className="group relative mx-3 mt-2">
+            <button
+              type="button"
+              onClick={() => setCurrentView('chat')}
+              onDoubleClick={() => startSessionRename('current')}
+              onContextMenu={handleCurrentSessionRightClick}
+              className="w-full rounded-md bg-surface p-3 pr-9 text-left transition-colors hover:bg-surface-hover focus:outline-none focus:ring-1 focus:ring-border-strong"
+              title="Open current session in chat · double-click to rename"
+            >
+              <div className="text-xs font-medium text-muted uppercase tracking-wider">Current Session</div>
+              <div className="mt-1.5 text-sm text-primary truncate">
+                {getSessionTitle(sessionState.sessionName, sessionState.sessionId)}
               </div>
-            )}
-            <div className="mt-1 text-xs text-dim">
-              {sessionState.messageCount} messages
-            </div>
-          </button>
+              {sessionState.model && (
+                <div className="mt-1 text-xs text-dim">
+                  {sessionState.model.name}
+                </div>
+              )}
+              <div className="mt-1 text-xs text-dim">
+                {sessionState.messageCount} messages
+              </div>
+            </button>
+            {/* Sibling overlay — the panel above stays a single non-nested button. */}
+            <button
+              type="button"
+              onClick={() => openWorkflowRunsForSession(sessionState.sessionId)}
+              className="absolute right-2 top-3 rounded p-1.5 text-faint opacity-0 transition-opacity hover:bg-highlight hover:text-accent-fg focus-visible:opacity-100 group-hover:opacity-100"
+              title="Workflow runs for this session"
+              aria-label="Workflow runs for this session"
+            >
+              <WorkflowIcon size={13} />
+            </button>
+          </div>
         )
       )}
 
-      {/* Recent sessions — one dropdown per workspace */}
-      <div className="mt-4 flex-1 overflow-y-auto px-2">
-        <div className="px-2 py-1 text-xs font-medium text-dim uppercase tracking-wider">
-          Recent Sessions
+      {/* Recent sessions for the active project. Cross-project history stays in Sessions. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+        <div className="mb-1 flex items-center justify-between px-2">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">
+            {activeWorkspace ? `Recent in ${activeWorkspace.name}` : 'Recent sessions'}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSessionsScope('all')
+              setCurrentView('sessions')
+            }}
+            className="text-[11px] text-muted transition-colors hover:text-accent-fg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
+          >
+            View all
+          </button>
         </div>
-        {recentGroups.length === 0 ? (
-          <div className="px-2 py-2 text-xs text-faint">No sessions yet</div>
+        {activeWorkspace ? (
+          recentSessionsForWorkspace.length === 0 ? (
+            <div className="mx-2 mt-2 rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-faint">
+              No sessions in this project yet.
+              <button
+                type="button"
+                onClick={() => void startNewSession()}
+                className="mt-1 block w-full text-accent-fg transition-colors hover:text-accent"
+              >
+                Start one now
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-0.5">
+              {recentSessionsForWorkspace.map((session) => renderSessionRow(session))}
+            </div>
+          )
+        ) : recentGroups.length === 0 ? (
+          <div className="mx-2 mt-2 rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-faint">
+            Open a project to see its sessions.
+          </div>
         ) : (
           recentGroups.map(renderRecentGroup)
         )}
@@ -514,6 +648,60 @@ export function Sidebar(): React.JSX.Element {
           )}
         </div>
       )}
+
+      {/* Secondary tools stay available without competing with project/session work. */}
+      <div className="shrink-0 border-t border-border px-2 py-2">
+        <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">Tools</div>
+        <div className="grid grid-cols-2 gap-0.5">
+          <SidebarItem
+            compact
+            icon={<Package size={13} />}
+            label="Packages"
+            active={currentView === 'packages'}
+            onClick={() => openToolView('packages')}
+          />
+          <SidebarItem
+            compact
+            icon={<StickyNote size={13} />}
+            label="Notes"
+            active={currentView === 'notes'}
+            onClick={() => openToolView('notes')}
+          />
+          <SidebarItem
+            compact
+            icon={<Sparkles size={13} />}
+            label="Skills"
+            active={currentView === 'skills'}
+            onClick={() => openToolView('skills')}
+          />
+          <SidebarItem
+            compact
+            icon={<Stethoscope size={13} />}
+            label="Diagnostics"
+            active={currentView === 'diagnostics'}
+            onClick={() => openToolView('diagnostics')}
+          />
+          {/* Global workflow list lives here — "browse everything" territory —
+              so the Activity section stays scoped to the current project. */}
+          <SidebarItem
+            compact
+            icon={<WorkflowIcon size={13} />}
+            label="All Workflows"
+            // Highlighted only when the global scope is open (never alongside
+            // the Activity entry, whose active state requires a workspace id).
+            active={workflowPanelOpen && !workflowPanelFilter && workflowPanelWorkspaceId === null}
+            onClick={() => openWorkflowRunsForWorkspace(null)}
+            title="Workflow runs from every project"
+          />
+          <SidebarItem
+            compact
+            icon={<Settings size={13} />}
+            label="Settings"
+            active={currentView === 'settings'}
+            onClick={() => openToolView('settings')}
+          />
+        </div>
+      </div>
       {SessionMenu}
     </aside>
     <ResizeHandle
@@ -526,11 +714,10 @@ export function Sidebar(): React.JSX.Element {
 
 // ─── Workspace Switcher ──────────────────────────────────────────────────────
 
-function WorkspaceSwitcher(): React.JSX.Element {
+function WorkspaceSwitcher({ onOpenProject }: { onOpenProject: () => void }): React.JSX.Element {
   const workspaces = useAppStore((state) => state.workspaces)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const switchWorkspace = useAppStore((state) => state.switchWorkspace)
-  const createWorkspace = useAppStore((state) => state.createWorkspace)
   const removeWorkspace = useAppStore((state) => state.removeWorkspace)
   const renameWorkspace = useAppStore((state) => state.renameWorkspace)
   const changeWorkspaceFolder = useAppStore((state) => state.changeWorkspaceFolder)
@@ -552,18 +739,8 @@ function WorkspaceSwitcher(): React.JSX.Element {
   )
 
   const [isOpen, setIsOpen] = useState(false)
-  const [isCreating, setIsCreating] = useState(false)
   const [isRenaming, setIsRenaming] = useState(false)
   const [newName, setNewName] = useState('')
-  const [newPath, setNewPath] = useState('')
-
-  const handleCreate = async () => {
-    if (!newName.trim() || !newPath.trim()) return
-    await createWorkspace(newName.trim(), newPath.trim())
-    setNewName('')
-    setNewPath('')
-    setIsCreating(false)
-  }
 
   const handleRename = async () => {
     if (!activeWorkspace || !newName.trim()) return
@@ -606,11 +783,6 @@ function WorkspaceSwitcher(): React.JSX.Element {
     ])
   }
 
-  const handleSelectFolder = async () => {
-    const path = await window.piDesktop.system.openDialog({ title: 'Select Workspace Folder' })
-    if (path) setNewPath(path)
-  }
-
   return (
     <div className="px-3 py-2">
       {/* Current workspace */}
@@ -643,9 +815,14 @@ function WorkspaceSwitcher(): React.JSX.Element {
           title="Click to switch · double-click to rename · right-click for options"
           className="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-primary hover:bg-surface-hover transition-colors"
         >
-          <div className="flex items-center gap-2 min-w-0">
-            <Layers size={14} style={{ color: activeWorkspace?.color ?? '#6b7280' }} />
-            <span className="truncate">{activeWorkspace?.name ?? 'No workspace'}</span>
+          <div className="flex min-w-0 items-center gap-2 text-left">
+            <Layers size={14} className="shrink-0" style={{ color: activeWorkspace?.color ?? '#6b7280' }} />
+            <div className="min-w-0">
+              <div className="truncate text-sm">{activeWorkspace?.name ?? 'No workspace'}</div>
+              {activeWorkspace && (
+                <div className="truncate text-[10px] text-faint">{activeWorkspace.path}</div>
+              )}
+            </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             {backgroundActivity && (
@@ -740,57 +917,17 @@ function WorkspaceSwitcher(): React.JSX.Element {
             </div>
           ))}
 
-          {/* Create new */}
-          {isCreating ? (
-            <div className="border-t border-border px-3 py-2 space-y-2">
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Workspace name"
-                className="w-full rounded border border-border-strong bg-card px-2 py-1 text-xs text-primary placeholder:text-faint focus:border-focus focus:outline-none"
-                autoFocus
-              />
-              <div className="flex gap-1">
-                <input
-                  type="text"
-                  value={newPath}
-                  onChange={(e) => setNewPath(e.target.value)}
-                  placeholder="/path/to/project"
-                  className="flex-1 rounded border border-border-strong bg-card px-2 py-1 text-xs text-primary placeholder:text-faint focus:border-focus focus:outline-none"
-                />
-                <button
-                  onClick={handleSelectFolder}
-                  className="rounded border border-border-strong px-2 py-1 text-xs text-muted hover:bg-elevated"
-                >
-                  ...
-                </button>
-              </div>
-              <div className="flex gap-1">
-                <button
-                  onClick={handleCreate}
-                  disabled={!newName.trim() || !newPath.trim()}
-                  className="flex-1 rounded bg-accent px-2 py-1 text-xs text-white hover:bg-accent-hover disabled:opacity-50"
-                >
-                  Create
-                </button>
-                <button
-                  onClick={() => setIsCreating(false)}
-                  className="rounded px-2 py-1 text-xs text-muted hover:text-primary"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              onClick={() => setIsCreating(true)}
-              className="flex w-full items-center gap-2 border-t border-border px-3 py-2 text-xs text-muted hover:bg-surface-hover hover:text-secondary transition-colors"
-            >
-              <Plus size={12} />
-              Add Workspace
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => {
+              setIsOpen(false)
+              onOpenProject()
+            }}
+            className="flex w-full items-center gap-2 border-t border-border px-3 py-2 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
+          >
+            <FolderOpen size={12} />
+            Open project…
+          </button>
         </div>
       )}
     </div>
@@ -804,24 +941,31 @@ function SidebarItem({
   label,
   active,
   onClick,
+  compact = false,
+  title,
 }: {
   icon: React.ReactNode
   label: string
   active: boolean
   onClick: () => void
+  compact?: boolean
+  title?: string
 }): React.JSX.Element {
   return (
     <button
+      type="button"
       onClick={onClick}
+      title={title}
       className={clsx(
-        'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+        'flex w-full items-center gap-2 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus',
+        compact ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm',
         active
           ? 'bg-card text-primary'
-          : 'hover:bg-highlight text-muted hover:text-secondary'
+          : 'text-muted hover:bg-highlight hover:text-secondary'
       )}
     >
       {icon}
-      {label}
+      <span className="truncate">{label}</span>
     </button>
   )
 }

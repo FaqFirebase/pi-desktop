@@ -1,9 +1,27 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
-import { isString } from './validation'
-import { validateStartOptions, applyPermissionModeToStartOptions } from './pi-start-options'
+import { isString, isObject, isOptionalString } from './validation'
+import { validateStartOptions, applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
 import { loadAppSettings } from './settings'
+import type { WorkspaceTabOptions } from '../../shared/ipc-contracts'
+import { getSessionsRoot } from '../pi-paths'
+import { isPathWithin } from '../path-authorization'
+import { existsSync } from 'fs'
 import type { IpcContext } from './context'
+
+function validateWorkspaceTabOptions(value: unknown): WorkspaceTabOptions {
+  if (value === undefined || value === null) return {}
+  if (!isObject(value)) throw new Error('Tab options must be an object')
+  if (!isOptionalString(value.name)) throw new Error('tab name must be a string')
+  if (!isOptionalString(value.sourceWorkspaceId)) throw new Error('sourceWorkspaceId must be a string')
+  if (!isOptionalString(value.forkSessionPath)) throw new Error('forkSessionPath must be a string')
+
+  return {
+    ...(isString(value.name) ? { name: value.name } : {}),
+    ...(isString(value.sourceWorkspaceId) ? { sourceWorkspaceId: value.sourceWorkspaceId } : {}),
+    ...(isString(value.forkSessionPath) ? { forkSessionPath: value.forkSessionPath } : {}),
+  }
+}
 
 export function registerWorkspaceHandlers(ctx: IpcContext): void {
   const { workspaceManager, notesManager } = ctx
@@ -22,9 +40,10 @@ export function registerWorkspaceHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_REMOVE, async (_event, workspaceId: unknown) => {
     if (!isString(workspaceId)) throw new Error('workspaceId must be a string')
-    await workspaceManager.removeWorkspace(workspaceId)
+    const result = await workspaceManager.removeWorkspace(workspaceId)
     // Notes scoped to the removed workspace fall back to global so they survive.
     await notesManager.reassignToGlobal(workspaceId)
+    return result
   })
 
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_RENAME, async (_event, workspaceId: unknown, name: unknown) => {
@@ -60,7 +79,10 @@ export function registerWorkspaceHandlers(ctx: IpcContext): void {
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     await workspaceManager.startPiForWorkspace(
       workspaceId,
-      applyPermissionModeToStartOptions({ cwd: workspace.path, ...opts }, settings)
+      applyPermissionModeToStartOptions(
+        applyResumePreference({ cwd: workspace.path, ...opts }, settings),
+        settings
+      )
     )
     const pi = workspaceManager.getPiManager(workspaceId)
     return pi?.getStatus() ?? { status: 'stopped', pid: null, error: null }
@@ -70,5 +92,33 @@ export function registerWorkspaceHandlers(ctx: IpcContext): void {
     if (!isString(workspaceId)) throw new Error('workspaceId must be a string')
     workspaceManager.stopPiForWorkspace(workspaceId)
     return { status: 'stopped', pid: null, error: null }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_CREATE_TAB, async (_event, value: unknown) => {
+    const options = validateWorkspaceTabOptions(value)
+    if (options.forkSessionPath) {
+      if (!isPathWithin(getSessionsRoot(), options.forkSessionPath) || !existsSync(options.forkSessionPath)) {
+        throw new Error('forkSessionPath must point to an existing Pi session file')
+      }
+    }
+
+    const settings = await loadAppSettings(workspaceManager)
+    const workspace = await workspaceManager.createWorktreeWorkspace(options)
+    await workspaceManager.startPiForWorkspace(
+      workspace.id,
+      applyPermissionModeToStartOptions(
+        applyResumePreference(
+          {
+            cwd: workspace.path,
+            provider: settings.defaultProvider ?? undefined,
+            model: settings.defaultModel ?? undefined,
+            forkSessionPath: options.forkSessionPath,
+          },
+          settings
+        ),
+        settings
+      )
+    )
+    return workspace
   })
 }

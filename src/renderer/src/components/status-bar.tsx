@@ -14,6 +14,7 @@ import {
   Loader2,
   Check,
   GitBranch,
+  Workflow as WorkflowIcon,
 } from 'lucide-react'
 
 export function StatusBar(): React.JSX.Element {
@@ -32,6 +33,13 @@ export function StatusBar(): React.JSX.Element {
   const isCompacting = useAppStore((state) => state.sessionState?.isCompacting ?? false)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const pendingPromptCounts = useAppStore((state) => state.pendingPromptCounts)
+  const workflowPanelOpen = useAppStore((state) => state.workflowPanelOpen)
+  const workflowRuns = useAppStore((state) => state.workflowRuns)
+  const activeWorkflowCount = workflowRuns.filter(
+    (run) =>
+      (!activeWorkspace || run.workspaceId === activeWorkspace.id) &&
+      (run.status === 'running' || run.status === 'paused')
+  ).length
 
   // Blocking prompts held for OTHER workspaces (any extension's select/
   // confirm/input/editor) — the active workspace's prompt is already on screen.
@@ -125,6 +133,29 @@ export function StatusBar(): React.JSX.Element {
 
       {/* Right section */}
       <div className="flex items-center gap-3">
+        {/* Dedicated workflow navigator */}
+        <button
+          onClick={() => {
+            // Session-surface button: opens the active session's runs (scoped by
+            // Pi's header UUID, the exact identifier persisted runs carry). The
+            // global list is only a fallback for the no-session state; closing
+            // preserves the scope so a close/reopen stays in-session.
+            const state = useAppStore.getState()
+            if (state.workflowPanelOpen) state.setWorkflowPanelOpen(false)
+            else if (state.sessionState?.sessionId) state.openWorkflowRunsForSession(state.sessionState.sessionId)
+            else state.setWorkflowPanelOpen(true)
+          }}
+          className={clsx(
+            'flex items-center gap-1 transition-colors',
+            workflowPanelOpen || activeWorkflowCount > 0 ? 'text-accent-fg' : 'text-dim hover:text-secondary'
+          )}
+          title="Open workflow runs"
+          aria-label="Open workflow runs"
+        >
+          <WorkflowIcon size={11} />
+          <span>{activeWorkflowCount > 0 ? `${activeWorkflowCount} workflow${activeWorkflowCount === 1 ? '' : 's'}` : 'workflows'}</span>
+        </button>
+
         {/* Model selector */}
         <ModelSelector />
 

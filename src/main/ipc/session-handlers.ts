@@ -215,9 +215,20 @@ const SESSION_NAME_READ_CONCURRENCY = 24
  */
 async function fillSessionLabels(entries: SessionEntry[]): Promise<void> {
   await mapWithConcurrency(entries, SESSION_NAME_READ_CONCURRENCY, async (entry) => {
-    const { name, preview } = await readSessionMetadataCached(entry.path, entry.lastModified)
+    const { name, preview, header } = await readSessionMetadataCached(entry.path, entry.lastModified)
     entry.name = name
     entry.preview = preview
+    entry.piSessionId = header?.id
+    // The session header's cwd is authoritative: session directory names are
+    // lossy decodes of real paths (hyphens vs separators collide), so the
+    // workspace-match/desanitize values from collectSessionFiles can point at
+    // a phantom path. Repair the project from the header so opening the
+    // session creates/activates the REAL workspace and never re-persists a
+    // phantom one. The filename-stem sessionId (tags/archive key) is untouched.
+    if (header?.cwd) {
+      entry.projectPath = header.cwd
+      entry.projectName = projectNameFromPath(header.cwd)
+    }
   })
 }
 

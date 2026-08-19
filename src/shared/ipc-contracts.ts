@@ -83,6 +83,12 @@ export const IPC_CHANNELS = {
   // Activity
   ACTIVITY_GET_STATS: 'activity:get-stats',
 
+  // Workflow run monitoring
+  WORKFLOW_LIST: 'workflow:list',
+  WORKFLOW_GET_RUN: 'workflow:get-run',
+  WORKFLOW_CONTROL: 'workflow:control',
+  WORKFLOW_SET_PERSISTENCE: 'workflow:set-persistence',
+
   // Diagnostics
   DIAGNOSTICS_GET: 'diagnostics:get',
 
@@ -97,6 +103,7 @@ export const IPC_CHANNELS = {
   WORKSPACE_PATH_EXISTS: 'workspace:path-exists',
   WORKSPACE_START_PI: 'workspace:start-pi',
   WORKSPACE_STOP_PI: 'workspace:stop-pi',
+  WORKSPACE_CREATE_TAB: 'workspace:create-tab',
   WORKSPACE_ACTIVITY_GET: 'workspace:activity',
   WORKSPACE_TAKE_PENDING_ACTIVATION: 'workspace:take-pending-activation',
 
@@ -193,10 +200,13 @@ export interface PiStartOptions {
   provider?: string
   sessionPath?: string
   noSession?: boolean
-  // When true (and neither sessionPath nor noSession is set), Pi is launched
-  // with --continue so it resumes the most recent session for the cwd instead
-  // of creating a fresh one.
+  // When true (and neither sessionPath, forkSessionPath nor noSession is set),
+  // Pi is launched with --continue so it resumes the most recent session for
+  // the cwd instead of creating a fresh one.
   continueSession?: boolean
+  // Start a new session by forking this existing Pi session file. The new
+  // session is created in the supplied cwd.
+  forkSessionPath?: string
   args?: string[]
   env?: Record<string, string>
 }
@@ -377,6 +387,117 @@ export interface WorkspaceActivity {
 /** Keyed by workspace id; idle workspaces are omitted. */
 export type WorkspaceActivityMap = Record<string, WorkspaceActivity>
 
+// ─── Workflow monitoring ────────────────────────────────────────────────────
+
+export type WorkflowRunStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'aborted'
+export type WorkflowAgentStatus = 'queued' | 'running' | 'done' | 'error' | 'skipped'
+
+export interface WorkflowAgentSummary {
+  id: number
+  callId?: string
+  label: string
+  phase?: string
+  status: WorkflowAgentStatus
+  error?: string
+  errorCode?: string
+  recoverable?: boolean
+  hasHistory: boolean
+  resultPreview?: string
+  tokens?: number
+  model?: string
+  startedAt?: string
+  endedAt?: string
+  tokenUsage?: {
+    input: number
+    output: number
+    total: number
+    cost?: number
+    cacheRead?: number
+    cacheWrite?: number
+  }
+}
+
+/**
+ * Control action dispatched to the run's owning workspace Pi process. `stop`
+ * maps to the extension's `/workflows stop <id>` (marks the run aborted),
+ * `resume` to `/workflows resume <id>` (paused/failed/pending only).
+ */
+export type WorkflowControlAction = 'stop' | 'resume'
+
+export type WorkflowControlReason =
+  | 'no-pi'
+  | 'pi-not-running'
+  | 'extension-missing'
+  | 'status-not-permitted'
+  | 'dispatch-failed'
+  | 'timeout'
+
+/** Result of a workflow control dispatch (never a fake local status change). */
+export interface WorkflowControlResult {
+  action: WorkflowControlAction
+  runId: string
+  ok: boolean
+  reason?: WorkflowControlReason
+  /** True only when the extension command was actually handed to Pi. */
+  dispatched?: boolean
+}
+
+/** Safe, renderer-sized projection of a dynamic-workflow persisted run. */
+export interface WorkflowRunSummary {
+  workspaceId: string
+  workspaceName: string
+  cwd: string
+  runId: string
+  workflowName: string
+  sessionId?: string
+  status: WorkflowRunStatus
+  pauseReason?: string
+  resetHint?: string
+  phases: string[]
+  currentPhase?: string
+  agents: WorkflowAgentSummary[]
+  startedAt: string
+  updatedAt: string
+  durationMs?: number
+  tokenUsage?: {
+    input: number
+    output: number
+    total: number
+    cost?: number
+    cacheRead?: number
+    cacheWrite?: number
+  }
+}
+
+export interface WorkflowHistoryEntry {
+  id?: string
+  timestamp?: string
+  role: string
+  kind: string
+  text: string
+  toolName?: string
+  path?: string
+  diff?: string
+  isError?: boolean
+}
+
+export interface WorkflowAgentDetail extends WorkflowAgentSummary {
+  prompt?: string
+  resultText?: string
+  history: WorkflowHistoryEntry[]
+  transcriptSource: 'persisted-session' | 'run-history' | 'none'
+  transcriptComplete: boolean
+}
+
+/** Lazy-loaded detail for one run; large fields never travel in list polling. */
+export interface WorkflowRunDetail extends WorkflowRunSummary {
+  script?: string
+  argsText?: string
+  resultText?: string
+  logs: string[]
+  agents: WorkflowAgentDetail[]
+}
+
 export interface PiMessageStartEvent {
   type: 'message_start'
   message: Record<string, unknown>
@@ -489,7 +610,10 @@ export interface SessionListItem {
   name: string | null
   /** Preview of the session's first user message, or null if it has none. */
   preview: string | null
+  /** Filename stem used by GUI registries (tags/archive), e.g. timestamp_uuid. */
   sessionId: string
+  /** Pi's header UUID, used to correlate workflow runs with this session. */
+  piSessionId?: string
   lastModified: number
   messageCount: number
   projectPath: string
@@ -813,6 +937,22 @@ export interface UpdateCheckResult {
 
 // ─── Workspace Types ────────────────────────────────────────────────────────
 
+export type WorkspaceKind = 'folder' | 'worktree'
+
+/** Options for creating an isolated tab from the active Git workspace. */
+export interface WorkspaceTabOptions {
+  name?: string
+  sourceWorkspaceId?: string
+  /** Optional Pi session to fork into the new worktree. */
+  forkSessionPath?: string
+}
+
+/** Result of closing a workspace tab. Dirty worktrees are preserved. */
+export interface WorkspaceRemoveResult {
+  worktreeRemoved?: boolean
+  preservedWorktreePath?: string
+}
+
 export interface Workspace {
   id: string
   name: string
@@ -820,6 +960,16 @@ export interface Workspace {
   createdAt: number
   lastActiveAt: number
   color: string
+  /** Optional for backward compatibility with older workspaces.json files. */
+  kind?: WorkspaceKind
+  /** Main repository root for managed worktrees. */
+  repoRoot?: string
+  /** Branch checked out by a managed worktree. */
+  branch?: string
+  /** Commit used as the worktree base. */
+  baseRef?: string
+  /** The source tab had local changes that were intentionally not copied. */
+  sourceWasDirty?: boolean
 }
 
 // ─── Notes Types ────────────────────────────────────────────────────────────

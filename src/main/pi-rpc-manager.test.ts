@@ -64,6 +64,14 @@ test('buildPiInvocation leaves a direct POSIX spawn byte-identical', () => {
   })
 })
 
+test('buildPiInvocation preserves fork startup arguments', () => {
+  const cli = piCli()
+  assert.deepEqual(buildPiInvocation(cli, ['--mode', 'rpc', '--fork', '/sessions/source.jsonl']), {
+    file: '/usr/local/bin/pi',
+    args: ['--mode', 'rpc', '--fork', '/sessions/source.jsonl'],
+  })
+})
+
 test('buildPiInvocation rejects arguments cmd.exe cannot carry', () => {
   const cli = piCli({ script: String.raw`C:\npm\pi.cmd`, needsShell: true })
   assert.throws(

@@ -3,10 +3,22 @@ import { readFile, writeFile, mkdir, rename, copyFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { PiRpcManager } from './pi-rpc-manager'
 import { FileService } from './file-service'
-import type { FileChangeEvent, PiStartOptions } from '../shared/ipc-contracts'
+import type {
+  FileChangeEvent,
+  PiStartOptions,
+  WorkspaceRemoveResult,
+  WorkspaceTabOptions,
+} from '../shared/ipc-contracts'
 import { getGuiDataPath } from './app-data-paths'
 import { pathsEqual } from './session-paths'
 import { appLog } from './app-log'
+import {
+  createGitWorktree,
+  inspectGitRepository,
+  removeGitWorktree,
+  worktreeBranchName,
+  worktreeTargetPath,
+} from './git-worktree'
 
 /**
  * Manages multiple workspaces (project directories), each with its own Pi process.
@@ -23,6 +35,12 @@ export interface Workspace {
   createdAt: number
   lastActiveAt: number
   color: string
+  /** Optional on disk for backward compatibility with older workspace files. */
+  kind?: 'folder' | 'worktree'
+  repoRoot?: string
+  branch?: string
+  baseRef?: string
+  sourceWasDirty?: boolean
 }
 
 interface WorkspaceState {
@@ -216,6 +234,7 @@ export class WorkspaceManager {
       createdAt: Date.now(),
       lastActiveAt: Date.now(),
       color: WORKSPACE_COLORS[this.nextColorIndex % WORKSPACE_COLORS.length],
+      kind: 'folder',
     }
 
     this.nextColorIndex++
@@ -252,11 +271,16 @@ export class WorkspaceManager {
     return workspace
   }
 
-  async removeWorkspace(workspaceId: string): Promise<void> {
+  async removeWorkspace(workspaceId: string): Promise<WorkspaceRemoveResult> {
     const index = this.workspaces.findIndex((w) => w.id === workspaceId)
     if (index === -1) throw new Error(`Workspace not found: ${workspaceId}`)
+    const workspace = this.workspaces[index]
+    let worktreeRemoved: boolean | undefined
+    let preservedWorktreePath: string | undefined
 
-    // Stop Pi process and file watcher for this workspace
+    // Stop Pi process and file watcher for this workspace before touching a
+    // managed worktree. Git refuses dirty worktree removal, which is exactly
+    // the protection we want when a tab is closed with edits still present.
     const piManager = this.piManagers.get(workspaceId)
     if (piManager) {
       piManager.stop()
@@ -266,6 +290,16 @@ export class WorkspaceManager {
     if (fileService) {
       fileService.stopWatching()
       this.fileServices.delete(workspaceId)
+    }
+    if (workspace.kind === 'worktree' && workspace.repoRoot) {
+      try {
+        await removeGitWorktree(workspace.repoRoot, workspace.path)
+        worktreeRemoved = true
+      } catch (err) {
+        // Keep dirty/missing worktrees on disk instead of forcing deletion.
+        preservedWorktreePath = workspace.path
+        appLog.warn('workspaces', 'Preserved managed worktree while closing tab', err)
+      }
     }
 
     this.workspaces.splice(index, 1)
@@ -282,6 +316,7 @@ export class WorkspaceManager {
     for (const listener of this.workspaceRemovedListeners) {
       listener(workspaceId)
     }
+    return { worktreeRemoved, preservedWorktreePath }
   }
 
   async renameWorkspace(workspaceId: string, name: string): Promise<void> {
@@ -301,6 +336,9 @@ export class WorkspaceManager {
   async changeWorkspacePath(workspaceId: string, newPath: string): Promise<void> {
     const workspace = this.workspaces.find((w) => w.id === workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    if (workspace.kind === 'worktree') {
+      throw new Error('Managed worktree tabs cannot change folder; close the tab and create another one')
+    }
     if (!existsSync(newPath)) throw new Error(`Folder does not exist: ${newPath}`)
 
     workspace.path = newPath
@@ -323,6 +361,50 @@ export class WorkspaceManager {
   activeWorkspacePathExists(): boolean {
     const ws = this.getActiveWorkspace()
     return ws ? existsSync(ws.path) : false
+  }
+
+  /**
+   * Create an app-owned Git worktree that becomes an independent tab. The
+   * worktree starts from HEAD; source-tab edits stay in the source tab.
+   * The new workspace is not activated here; the renderer performs the normal
+   * guarded tab switch after the Pi process has been started.
+   */
+  async createWorktreeWorkspace(options: WorkspaceTabOptions = {}): Promise<Workspace> {
+    const source = options.sourceWorkspaceId
+      ? this.workspaces.find((w) => w.id === options.sourceWorkspaceId)
+      : this.getActiveWorkspace()
+    if (!source) throw new Error('No source workspace available for a new tab')
+    if (!existsSync(source.path)) throw new Error(`Source folder does not exist: ${source.path}`)
+
+    const git = await inspectGitRepository(source.path)
+    const sourceWasDirty = git.status.trim().length > 0
+    const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const label = options.name?.trim() || `${source.name}-tab`
+    const branch = worktreeBranchName(label, id)
+    const targetPath = worktreeTargetPath(getGuiDataPath('worktrees'), git.repoRoot, id)
+    await createGitWorktree({ sourceCwd: source.path, targetPath, branch })
+
+    const workspace: Workspace = {
+      id,
+      name: options.name?.trim() || `${source.name} · tab`,
+      path: targetPath,
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+      color: WORKSPACE_COLORS[this.nextColorIndex % WORKSPACE_COLORS.length],
+      kind: 'worktree',
+      repoRoot: git.repoRoot,
+      branch,
+      baseRef: git.head,
+      sourceWasDirty,
+    }
+    this.nextColorIndex++
+    this.workspaces.push(workspace)
+    const piManager = new PiRpcManager()
+    this.piManagers.set(workspace.id, piManager)
+    this.wirePiManager(piManager)
+    this.fileServices.set(workspace.id, new FileService(targetPath))
+    await this.saveWorkspaces()
+    return workspace
   }
 
   async startPiForWorkspace(workspaceId: string, options?: PiStartOptions): Promise<void> {
@@ -375,7 +457,10 @@ export class WorkspaceManager {
       return
     }
 
-    this.workspaces = state.workspaces ?? []
+    this.workspaces = (state.workspaces ?? []).map((workspace) => ({
+      ...workspace,
+      kind: workspace.kind ?? 'folder',
+    }))
     this.activeWorkspaceId = state.activeWorkspaceId ?? null
 
     // Create file services and Pi managers for loaded workspaces

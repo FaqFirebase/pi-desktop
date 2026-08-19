@@ -36,6 +36,7 @@ import {
   X,
   ChevronDown,
   Loader2,
+  Workflow as WorkflowIcon,
 } from 'lucide-react'
 
 // Fallback padding when the composer has not measured yet (~idle pill + gradient).
@@ -72,6 +73,7 @@ export function ChatPanel(): React.JSX.Element {
   const fileSearchOpen = useAppStore((state) => state.fileSearchOpen)
   const toggleFileSearch = useAppStore((state) => state.toggleFileSearch)
   const previewTarget = useAppStore((state) => state.previewTarget)
+  const workflowPanelOpen = useAppStore((state) => state.workflowPanelOpen)
 
   // sidePanel lives in the store so it survives view switches (e.g. Settings
   // round-trip). Widths stay local — resetting them on remount is benign.
@@ -192,6 +194,21 @@ export function ChatPanel(): React.JSX.Element {
                 active={terminalOpen}
                 onClick={() => useAppStore.getState().toggleTerminal()}
                 title="Terminal"
+              />
+              <ToolbarButton
+                icon={<WorkflowIcon size={14} />}
+                active={workflowPanelOpen}
+                onClick={() => {
+                  // Session-surface button: while a session is active this opens
+                  // THAT session's runs (scoped by Pi's header UUID, the exact
+                  // identifier persisted runs carry). The global list is only a
+                  // fallback for the no-session state; closing preserves scope.
+                  const state = useAppStore.getState()
+                  if (state.workflowPanelOpen) state.setWorkflowPanelOpen(false)
+                  else if (state.sessionState?.sessionId) state.openWorkflowRunsForSession(state.sessionState.sessionId)
+                  else state.setWorkflowPanelOpen(true)
+                }}
+                title="Workflow runs"
               />
             </div>
           </div>
