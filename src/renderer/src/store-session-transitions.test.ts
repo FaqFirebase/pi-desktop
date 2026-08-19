@@ -1,6 +1,6 @@
 import { test, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import type { PiExtensionUiRequest, SessionListItem, SessionState, Workspace } from '../../shared/ipc-contracts'
+import type { PiExtensionUiRequest, SessionListItem, SessionRuntimeInfo, SessionState, Workspace } from '../../shared/ipc-contracts'
 import type { PreviewTarget } from './store'
 
 // Each recorded call is appended to `calls`, so tests can assert both that a
@@ -317,6 +317,56 @@ beforeEach(() => {
   // reset itself when the previous test left the flag set, and that push
   // belongs to cleanup, not to the test about to run.
   calls.length = 0
+})
+
+test('a ready new runtime hydrates while the empty session is still loading', async () => {
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    activeSessionRuntimeId: 'rt-new',
+    sessionLoading: true,
+    sessionState: null,
+    messages: [],
+  })
+
+  const runtime: SessionRuntimeInfo = {
+    runtimeId: 'rt-new',
+    workspaceId: WORKSPACE_ONE.id,
+    sessionPath: SESSION_PATH,
+    sessionId: 'session-new',
+    status: 'running',
+    pid: 123,
+    error: null,
+    activity: null,
+    active: true,
+  }
+  useAppStore.getState().handleSessionRuntime(runtime)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+
+  assert.equal(calls.includes('getMessages'), true)
+  assert.equal(useAppStore.getState().sessionLoading, false)
+})
+
+test('an active runtime error ends the session loading state', () => {
+  useAppStore.setState({
+    activeSessionRuntimeId: 'rt-failed',
+    sessionLoading: true,
+  })
+
+  useAppStore.getState().handleSessionRuntime({
+    runtimeId: 'rt-failed',
+    workspaceId: WORKSPACE_ONE.id,
+    sessionPath: null,
+    sessionId: null,
+    status: 'error',
+    pid: null,
+    error: 'Pi failed to start',
+    activity: 'failed',
+    active: true,
+  })
+
+  assert.equal(useAppStore.getState().sessionLoading, false)
+  assert.equal(useAppStore.getState().piError, 'Pi failed to start')
 })
 
 test('clearMessages resets every per-turn streaming field', () => {
