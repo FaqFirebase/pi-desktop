@@ -1,4 +1,4 @@
-import { dirname } from 'path'
+import { dirname, basename } from 'path'
 import { readFile, writeFile, mkdir, rename, copyFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { PiRpcManager } from './pi-rpc-manager'
@@ -17,10 +17,13 @@ import { appLog } from './app-log'
 import {
   createGitWorktree,
   inspectGitRepository,
+  listGitWorktrees,
   removeGitWorktree,
+  slugifyWorktreePart,
   worktreeBranchName,
   worktreeTargetPath,
 } from './git-worktree'
+import { extractGitHubPullRequestUrl, resolvePullRequestHeadBranch } from './git-conveyor'
 
 /**
  * Manages project workspaces and their independent Pi session runtimes.
@@ -45,6 +48,10 @@ export interface Workspace {
   branch?: string
   baseRef?: string
   sourceWasDirty?: boolean
+  /** False for an existing user worktree adopted by the app; never delete it on close. */
+  managed?: boolean
+  /** Original task text when the app created or adopted this worktree. */
+  taskPrompt?: string
 }
 
 interface WorkspaceState {
@@ -542,7 +549,7 @@ export class WorkspaceManager {
       fileService.stopWatching()
       this.fileServices.delete(workspaceId)
     }
-    if (workspace.kind === 'worktree' && workspace.repoRoot) {
+    if (workspace.kind === 'worktree' && workspace.managed !== false && workspace.repoRoot) {
       try {
         await removeGitWorktree(workspace.repoRoot, workspace.path)
         worktreeRemoved = true
@@ -624,11 +631,89 @@ export class WorkspaceManager {
     return ws ? existsSync(ws.path) : false
   }
 
+  private async adoptExistingWorktree(
+    repoRoot: string,
+    entry: { path: string; head: string | null; branch: string | null },
+    taskPrompt: string,
+  ): Promise<Workspace> {
+    const existing = this.workspaces.find((workspace) => pathsEqual(workspace.path, entry.path))
+    if (existing) return existing
+
+    const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const branchLabel = entry.branch?.split('/').pop() || basename(entry.path) || 'Existing worktree'
+    const workspace: Workspace = {
+      id,
+      name: branchLabel,
+      path: entry.path,
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+      color: WORKSPACE_COLORS[this.nextColorIndex % WORKSPACE_COLORS.length],
+      kind: 'worktree',
+      repoRoot,
+      ...(entry.branch ? { branch: entry.branch } : {}),
+      ...(entry.head ? { baseRef: entry.head } : {}),
+      managed: false,
+      taskPrompt,
+    }
+    this.nextColorIndex++
+    this.workspaces.push(workspace)
+    const piManager = new PiRpcManager()
+    this.piManagers.set(workspace.id, piManager)
+    this.wirePiManager(piManager)
+    this.fileServices.set(workspace.id, new FileService(entry.path))
+    await this.saveWorkspaces()
+    return workspace
+  }
+
   /**
-   * Create an app-owned Git worktree that becomes an independent tab. The
-   * worktree starts from HEAD; source-tab edits stay in the source tab.
-   * The new workspace is not activated here; the renderer performs the normal
-   * guarded tab switch after the Pi process has been started.
+   * Reuse an existing checkout when the task identifies it safely. Exact task
+   * metadata and a GitHub PR head branch are deterministic; a branch named in
+   * the task is also accepted, but ambiguous matches are ignored.
+   */
+  private async findRelatedWorktree(sourcePath: string, repoRoot: string, taskPrompt: string): Promise<Workspace | null> {
+    const normalizedTask = taskPrompt.trim().replace(/\s+/g, ' ').toLowerCase()
+    if (!normalizedTask) return null
+
+    const savedMatch = this.workspaces.find((workspace) =>
+      workspace.kind === 'worktree' &&
+      workspace.taskPrompt?.trim().replace(/\s+/g, ' ').toLowerCase() === normalizedTask &&
+      !!workspace.repoRoot &&
+      pathsEqual(workspace.repoRoot, repoRoot) &&
+      existsSync(workspace.path)
+    )
+    if (savedMatch) return savedMatch
+
+    let pullRequestBranch: string | null = null
+    const pullRequestUrl = extractGitHubPullRequestUrl(taskPrompt)
+    if (pullRequestUrl) {
+      pullRequestBranch = await resolvePullRequestHeadBranch(sourcePath, pullRequestUrl).catch(() => null)
+    }
+
+    const entries = await listGitWorktrees(sourcePath).catch(() => [])
+    const candidates = entries.filter((entry) => !entry.bare && existsSync(entry.path) && entry.branch)
+    const matches = candidates.filter((entry) => {
+      const branch = entry.branch!
+      if (pullRequestBranch) return branch === pullRequestBranch
+      // Generated Pi task branches carry the slug of the first task line. A
+      // branch explicitly written in the prompt is also safe when it is not a
+      // generic default branch; never guess from arbitrary short words.
+      const firstLineSlug = taskPrompt.split(/\r?\n/, 1)[0]?.trim().slice(0, 60)
+      const generatedPrefix = firstLineSlug ? `pi/${slugifyWorktreePart(firstLineSlug)}-` : ''
+      return (generatedPrefix && branch.toLowerCase().startsWith(generatedPrefix.toLowerCase())) ||
+        (branch.includes('/') && normalizedTask.includes(branch.toLowerCase()))
+    })
+    if (matches.length !== 1) return null
+
+    const match = matches[0]
+    const existing = this.workspaces.find((workspace) => pathsEqual(workspace.path, match.path))
+    return existing ?? this.adoptExistingWorktree(repoRoot, match, taskPrompt.trim())
+  }
+
+  /**
+   * Create an app-owned Git worktree that becomes an independent tab, unless
+   * the task already points at a related local worktree. New worktrees start
+   * from HEAD; source-tab edits stay in the source tab. The workspace is not
+   * activated here; the renderer performs the normal guarded tab switch.
    */
   async createWorktreeWorkspace(options: WorkspaceTabOptions = {}): Promise<Workspace> {
     const source = options.sourceWorkspaceId
@@ -638,6 +723,11 @@ export class WorkspaceManager {
     if (!existsSync(source.path)) throw new Error(`Source folder does not exist: ${source.path}`)
 
     const git = await inspectGitRepository(source.path)
+    const taskPrompt = options.taskPrompt?.trim() || ''
+    if (taskPrompt) {
+      const related = await this.findRelatedWorktree(source.path, git.repoRoot, taskPrompt)
+      if (related) return related
+    }
     const sourceWasDirty = git.status.trim().length > 0
     const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const label = options.name?.trim() || `${source.name}-tab`
@@ -657,6 +747,8 @@ export class WorkspaceManager {
       branch,
       baseRef: git.head,
       sourceWasDirty,
+      managed: true,
+      ...(taskPrompt ? { taskPrompt } : {}),
     }
     this.nextColorIndex++
     this.workspaces.push(workspace)

@@ -78,7 +78,8 @@ export function TaskLauncher(): React.JSX.Element | null {
                 value={workspaceId}
                 onChange={(event) => setWorkspaceId(event.target.value)}
                 disabled={busy || workspaces.length === 0}
-                className="min-w-0 flex-1 bg-transparent text-sm text-primary outline-none"
+                data-themed-select="true"
+                className="task-launcher-select min-w-0 flex-1 bg-transparent text-sm text-primary outline-none"
               >
                 {workspaces.length === 0 && <option value="">Open a project first</option>}
                 {workspaces.map((workspace) => (
@@ -119,13 +120,13 @@ export function TaskLauncher(): React.JSX.Element | null {
               <GitBranch size={14} className="mt-0.5 shrink-0 text-special" />
               <span>
                 <span className="block text-xs font-medium text-secondary">Use an isolated Git worktree</span>
-                <span className="mt-0.5 block text-[11px] text-faint">Recommended for PR work; the source project remains untouched.</span>
+                <span className="mt-0.5 block text-[11px] text-faint">Reuses a matching local PR/task worktree; otherwise creates one. The source project stays untouched.</span>
               </span>
             </span>
           </label>
 
           <p className="text-[11px] text-faint">
-            The task runs in a new session and continues in the background if you switch away. Ctrl/Cmd+Enter starts it.
+            The task runs in a new session and continues in the background if you switch away. Existing matching PR/task worktrees are reused. Ctrl/Cmd+Enter starts it.
           </p>
         </div>
 

@@ -159,7 +159,7 @@ src/
 ### Workspace Management
 
 - Mission Control summarizes all live session runtimes and workflow runs across projects; New Task launches a prompt into a dedicated background runtime
-- New Task can create an isolated Git worktree, and Diff Review exposes explicit Commit → Push → PR actions with upstream-aware GitHub CLI routing
+- New Task can create or reuse an isolated Git worktree (matching task metadata, explicit branches, and GitHub PR URLs are detected), and Diff Review exposes explicit Commit → Push → PR actions with upstream-aware GitHub CLI routing
 - Multiple workspaces (project directories)
 - Each workspace owns a file service; every live session in that project owns an independent Pi process bound to that workspace cwd and its own `--session` file
 - Session navigation is immediate; Pi startup and history hydration continue in the background
@@ -213,7 +213,7 @@ src/
 
 ### Issue-to-PR Conveyor
 
-- Task Launcher accepts an issue description or URL, optionally creates a clean isolated Git worktree, and sends the task to a dedicated Pi runtime.
+- Task Launcher accepts an issue description or URL, optionally creates or reuses a local Git worktree, and sends the task to a dedicated Pi runtime. PR URLs are resolved with `gh pr view`; unrelated or ambiguous worktrees are never guessed.
 - Diff Review exposes explicit Commit, Push, and PR actions; mutating Git operations never happen implicitly.
 - PR creation uses GitHub CLI when available, targets the configured `upstream` remote when present, and opens the returned PR URL.
 

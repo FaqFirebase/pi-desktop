@@ -17,6 +17,13 @@ export interface GitRepositoryInfo {
   status: string
 }
 
+export interface GitWorktreeEntry {
+  path: string
+  head: string | null
+  branch: string | null
+  bare: boolean
+}
+
 export function runGit(args: readonly string[], cwd: string): Promise<GitCommandResult> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn('git', [...args], {
@@ -42,6 +49,45 @@ export function runGit(args: readonly string[], cwd: string): Promise<GitCommand
 
 async function gitValue(args: readonly string[], cwd: string): Promise<string> {
   return (await runGit(args, cwd)).stdout.trim()
+}
+
+/** Parse `git worktree list --porcelain` without losing Windows paths. */
+export function parseGitWorktrees(output: string): GitWorktreeEntry[] {
+  const entries: GitWorktreeEntry[] = []
+  let current: GitWorktreeEntry | null = null
+
+  const flush = (): void => {
+    if (current) entries.push(current)
+    current = null
+  }
+
+  for (const line of output.split(/\r?\n/)) {
+    if (!line.trim()) {
+      flush()
+      continue
+    }
+    const separator = line.indexOf(' ')
+    const key = separator === -1 ? line : line.slice(0, separator)
+    const value = separator === -1 ? '' : line.slice(separator + 1)
+    if (key === 'worktree') {
+      flush()
+      current = { path: value, head: null, branch: null, bare: false }
+    } else if (!current) {
+      continue
+    } else if (key === 'HEAD') {
+      current.head = value || null
+    } else if (key === 'branch') {
+      current.branch = value.replace(/^refs\/heads\//, '') || null
+    } else if (key === 'bare') {
+      current.bare = true
+    }
+  }
+  flush()
+  return entries
+}
+
+export async function listGitWorktrees(cwd: string): Promise<GitWorktreeEntry[]> {
+  return parseGitWorktrees(await gitValue(['worktree', 'list', '--porcelain'], cwd))
 }
 
 /**

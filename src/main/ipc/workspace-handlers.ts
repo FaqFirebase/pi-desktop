@@ -16,12 +16,14 @@ function validateWorkspaceTabOptions(value: unknown): WorkspaceTabOptions {
   if (!isOptionalString(value.name)) throw new Error('tab name must be a string')
   if (!isOptionalString(value.sourceWorkspaceId)) throw new Error('sourceWorkspaceId must be a string')
   if (!isOptionalString(value.forkSessionPath)) throw new Error('forkSessionPath must be a string')
+  if (!isOptionalString(value.taskPrompt)) throw new Error('taskPrompt must be a string')
   if (!isOptionalBoolean(value.startPi)) throw new Error('startPi must be a boolean')
 
   return {
     ...(isString(value.name) ? { name: value.name } : {}),
     ...(isString(value.sourceWorkspaceId) ? { sourceWorkspaceId: value.sourceWorkspaceId } : {}),
     ...(isString(value.forkSessionPath) ? { forkSessionPath: value.forkSessionPath } : {}),
+    ...(isString(value.taskPrompt) ? { taskPrompt: value.taskPrompt } : {}),
     ...(typeof value.startPi === 'boolean' ? { startPi: value.startPi } : {}),
   }
 }

@@ -1003,6 +1003,8 @@ export interface WorkspaceTabOptions {
   sourceWorkspaceId?: string
   /** Optional Pi session to fork into the new worktree. */
   forkSessionPath?: string
+  /** Original task text used to reuse the same worktree on a later launch. */
+  taskPrompt?: string
   /** Skip the default runtime when another action will launch a task there. */
   startPi?: boolean
 }
@@ -1030,6 +1032,10 @@ export interface Workspace {
   baseRef?: string
   /** The source tab had local changes that were intentionally not copied. */
   sourceWasDirty?: boolean
+  /** False for an existing user worktree adopted by the app; never delete it on close. */
+  managed?: boolean
+  /** Original task text when the app created or adopted this worktree. */
+  taskPrompt?: string
 }
 
 // ─── Notes Types ────────────────────────────────────────────────────────────
