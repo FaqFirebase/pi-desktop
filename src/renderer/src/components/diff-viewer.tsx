@@ -13,6 +13,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { formatIpcError } from '../utils/ipc-error'
+import { GitConveyorActions } from './git-conveyor-actions'
 
 interface DiffLine {
   type: 'add' | 'remove' | 'context' | 'header' | 'hunk'
@@ -73,44 +74,51 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
-          <GitCompare size={16} className="text-muted" />
-          <h2 className="text-sm font-medium text-primary">Diff Viewer</h2>
-          <span className="rounded-full bg-card px-2 py-0.5 text-xs text-dim">
-            {files.length} file{files.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setStagedMode(!stagedMode)}
-            className={clsx(
-              'rounded px-2 py-1 text-xs transition-colors',
-              stagedMode
-                ? 'bg-success-bg text-success'
-                : 'bg-card text-muted hover:text-secondary'
-            )}
-          >
-            {stagedMode ? 'Staged' : 'Working'}
-          </button>
-          <button
-            onClick={loadDiff}
-            className="rounded p-1.5 text-dim hover:bg-surface-hover hover:text-secondary transition-colors"
-          >
-            <RefreshCw size={14} />
-          </button>
-          <button
-            onClick={() => {
-              if (onClose) {
-                onClose()
-              } else {
-                setCurrentView('chat')
-              }
-            }}
-            className="rounded p-1.5 text-dim hover:bg-surface-hover hover:text-secondary transition-colors"
-          >
-            <X size={14} />
-          </button>
+      <div className="shrink-0 border-b border-border px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="order-1 flex min-w-0 flex-1 items-center gap-2">
+            <GitCompare size={16} className="shrink-0 text-muted" />
+            <h2 className="truncate text-sm font-medium text-primary">Diff Viewer</h2>
+            <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-xs text-dim">
+              {files.length} file{files.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="order-2 flex shrink-0 items-center gap-2">
+            <button
+              onClick={() => setStagedMode(!stagedMode)}
+              className={clsx(
+                'rounded px-2 py-1 text-xs transition-colors',
+                stagedMode
+                  ? 'bg-success-bg text-success'
+                  : 'bg-card text-muted hover:text-secondary'
+              )}
+            >
+              {stagedMode ? 'Staged' : 'Working'}
+            </button>
+            <button
+              onClick={loadDiff}
+              className="rounded p-1.5 text-dim transition-colors hover:bg-surface-hover hover:text-secondary"
+              aria-label="Refresh diff"
+            >
+              <RefreshCw size={14} />
+            </button>
+            <button
+              onClick={() => {
+                if (onClose) {
+                  onClose()
+                } else {
+                  setCurrentView('chat')
+                }
+              }}
+              className="rounded p-1.5 text-dim transition-colors hover:bg-surface-hover hover:text-secondary"
+              aria-label="Close diff viewer"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="order-3 min-w-0 basis-full border-t border-border pt-2">
+            <GitConveyorActions onChanged={loadDiff} />
+          </div>
         </div>
       </div>
 

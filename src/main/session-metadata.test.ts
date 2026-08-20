@@ -133,18 +133,26 @@ test('userMessageText returns null for non-record input', () => {
 
 // ─── sessionHeaderFromLine ───────────────────────────────────────────────────
 
-test('sessionHeaderFromLine parses the id and parentSession', () => {
+test('sessionHeaderFromLine parses the id, parentSession and cwd', () => {
   const header = sessionHeaderFromLine(
     headerLine({ parentSession: '/home/u/.pi/agent/sessions/proj/parent.jsonl' })
   )
   assert.deepEqual(header, {
     id: SESSION_ID,
     parentSession: '/home/u/.pi/agent/sessions/proj/parent.jsonl',
+    cwd: '/home/u/proj',
   })
 })
 
 test('sessionHeaderFromLine reports a missing parentSession as null', () => {
   assert.equal(sessionHeaderFromLine(headerLine())?.parentSession, null)
+})
+
+test('sessionHeaderFromLine reports a missing cwd as null (legacy headers)', () => {
+  const header = JSON.parse(headerLine()) as Record<string, unknown>
+  delete header.cwd
+  assert.equal(sessionHeaderFromLine(JSON.stringify(header))?.cwd, null)
+  assert.equal(sessionHeaderFromLine(headerLine({ cwd: '' }))?.cwd, null)
 })
 
 test('sessionHeaderFromLine rejects a line that is not a session header', () => {

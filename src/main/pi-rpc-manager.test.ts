@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildPiInvocation, type PiCli } from './pi-rpc-manager'
+import { buildPiInvocation, RpcFrameDecoder, type PiCli } from './pi-rpc-manager'
 
 /**
  * A resolution fixture. `needsShell` is only ever true on Windows for a
@@ -19,6 +19,30 @@ function piCli(overrides: Partial<PiCli> = {}): PiCli {
     ...overrides,
   }
 }
+
+test('RpcFrameDecoder reassembles a lossless OMP protocol-v2 frame', () => {
+  const payload = JSON.stringify({ type: 'response', command: 'get_messages', success: true, data: 'x'.repeat(1_100_000) })
+  const bytes = Buffer.from(payload, 'utf8')
+  const chunkSize = 256 * 1024
+  const count = Math.ceil(bytes.length / chunkSize)
+  const decoder = new RpcFrameDecoder()
+  let decoded: object | undefined
+
+  for (let index = 0; index < count; index++) {
+    const frame = {
+      type: 'rpc_chunk',
+      chunkId: 'rpc-test',
+      index,
+      count,
+      byteLength: bytes.length,
+      data: bytes.subarray(index * chunkSize, (index + 1) * chunkSize).toString('base64'),
+    }
+    const result = decoder.push(frame)
+    if (result) decoded = result
+  }
+
+  assert.equal((decoded as { data?: string }).data?.length, 1_100_000)
+})
 
 test('buildPiInvocation escapes the shim path and args for the Windows cmd.exe hop', () => {
   const cli = piCli({ script: String.raw`C:\Program Files\nodejs\pi.cmd`, needsShell: true })
@@ -61,6 +85,14 @@ test('buildPiInvocation leaves a direct POSIX spawn byte-identical', () => {
   assert.deepEqual(buildPiInvocation(cli, ['--mode', 'rpc', '--session', 'a&calc']), {
     file: '/home/tester/my agents/pi',
     args: ['--mode', 'rpc', '--session', 'a&calc'],
+  })
+})
+
+test('buildPiInvocation preserves fork startup arguments', () => {
+  const cli = piCli()
+  assert.deepEqual(buildPiInvocation(cli, ['--mode', 'rpc', '--fork', '/sessions/source.jsonl']), {
+    file: '/usr/local/bin/pi',
+    args: ['--mode', 'rpc', '--fork', '/sessions/source.jsonl'],
   })
 })
 

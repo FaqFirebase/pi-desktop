@@ -7,7 +7,10 @@ import type {
   SessionDeleteResult,
   ArchivedSessionsMap,
   AppSettings,
+  AgentInstallationsResult,
   Workspace,
+  WorkspaceTabOptions,
+  WorkspaceRemoveResult,
   InstalledPackage,
   InstalledSkill,
   CatalogPackage,
@@ -52,6 +55,18 @@ import type {
   PermissionRulesRemoveResult,
   PendingPromptCounts,
   WorkspaceActivityMap,
+  WorkflowRunSummary,
+  WorkflowRunDetail,
+  WorkflowControlAction,
+  WorkflowControlResult,
+  SessionRuntimeInfo,
+  SessionRuntimeCloseResult,
+  SessionLaunchTaskOptions,
+  WorkspaceActivationIntent,
+  GitConveyorStatus,
+  GitConveyorCommitOptions,
+  GitConveyorPullRequestOptions,
+  GitConveyorPullRequestResult,
 } from '../shared/ipc-contracts'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -65,6 +80,7 @@ interface PiDesktopAPI {
     stop(): Promise<PiStatus>
     restart(options?: PiStartOptions): Promise<PiStatus>
     getStatus(): Promise<PiStatus>
+    detectInstallations(): Promise<AgentInstallationsResult>
   }
 
   // Pi commands
@@ -79,8 +95,11 @@ interface PiDesktopAPI {
 
   // Session management
   session: {
-    createNew(): Promise<unknown>
-    switch(sessionPath: string): Promise<unknown>
+    createNew(): Promise<SessionRuntimeInfo>
+    launchTask(options: SessionLaunchTaskOptions): Promise<SessionRuntimeInfo>
+    closeRuntime(runtimeId: string): Promise<SessionRuntimeCloseResult | null>
+    switch(sessionPath: string, cwd?: string): Promise<SessionRuntimeInfo>
+    listRuntimes(): Promise<SessionRuntimeInfo[]>
     fork(entryId?: string): Promise<unknown>
     clone(): Promise<unknown>
     list(cwd?: string): Promise<SessionListItem[]>
@@ -145,7 +164,8 @@ interface PiDesktopAPI {
   workspace: {
     list(): Promise<Workspace[]>
     create(name: string, path: string): Promise<Workspace>
-    remove(workspaceId: string): Promise<void>
+    createTab(options?: WorkspaceTabOptions): Promise<Workspace>
+    remove(workspaceId: string): Promise<WorkspaceRemoveResult>
     rename(workspaceId: string, name: string): Promise<void>
     changePath(workspaceId: string, newPath: string): Promise<void>
     pathExists(): Promise<boolean>
@@ -159,7 +179,7 @@ interface PiDesktopAPI {
      * Consume the activation intent from a notification clicked while no
      * window existed (macOS closed-window case). Null when there is none.
      */
-    takePendingActivation(): Promise<string | null>
+    takePendingActivation(): Promise<WorkspaceActivationIntent | null>
   }
 
   // Package management
@@ -204,6 +224,14 @@ interface PiDesktopAPI {
     autoGetAll(): Promise<Record<string, string>>
     autoEnsure(sessions: Array<{ sessionId: string; path: string }>): Promise<Record<string, string>>
     autoRemove(sessionId: string): Promise<void>
+  }
+
+  // Git issue-to-PR conveyor. All mutating actions require explicit renderer clicks.
+  git: {
+    status(): Promise<GitConveyorStatus>
+    commit(options: GitConveyorCommitOptions): Promise<GitConveyorStatus>
+    push(): Promise<GitConveyorStatus>
+    createPullRequest(options: GitConveyorPullRequestOptions): Promise<GitConveyorPullRequestResult>
   }
 
   // Notes (reusable prompts / commands)
@@ -251,6 +279,18 @@ interface PiDesktopAPI {
     getStats(): Promise<ActivityStatsResult>
   }
 
+  // Dynamic workflow run monitoring
+  workflows: {
+    list(): Promise<WorkflowRunSummary[]>
+    getRun(workspaceId: string, runId: string): Promise<WorkflowRunDetail>
+    /**
+     * Dispatch stop/resume to the run's owning workspace Pi process. Never
+     * fakes a local status change; the persisted run flips on the next poll.
+     */
+    control(workspaceId: string, runId: string, action: WorkflowControlAction): Promise<WorkflowControlResult>
+    setPersistAgentSessions(enabled: boolean): Promise<void>
+  }
+
   // Diagnostics report
   diagnostics: {
     get(): Promise<DiagnosticsReport>
@@ -293,7 +333,8 @@ interface PiDesktopAPI {
   onEvent(callback: (event: PiRpcEvent) => void): () => void
   onPendingPrompts(callback: (counts: PendingPromptCounts) => void): () => void
   onWorkspaceActivity(callback: (map: WorkspaceActivityMap) => void): () => void
-  onActivateWorkspace(callback: (payload: { workspaceId: string }) => void): () => void
+  onSessionRuntime(callback: (runtime: SessionRuntimeInfo) => void): () => void
+  onActivateWorkspace(callback: (payload: WorkspaceActivationIntent) => void): () => void
   onFileChange(callback: (event: FileChangeEvent) => void): () => void
   onMenuAction(callback: (action: string) => void): () => void
 }
@@ -306,6 +347,7 @@ const api: PiDesktopAPI = {
     stop: () => ipcRenderer.invoke(IPC_CHANNELS.PI_STOP),
     restart: (options?: PiStartOptions) => ipcRenderer.invoke(IPC_CHANNELS.PI_RESTART, options),
     getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.PI_STATUS),
+    detectInstallations: () => ipcRenderer.invoke(IPC_CHANNELS.PI_DETECT_INSTALLATIONS),
   },
 
   commands: {
@@ -319,7 +361,10 @@ const api: PiDesktopAPI = {
 
   session: {
     createNew: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_NEW),
-    switch: (sessionPath) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SWITCH, sessionPath),
+    launchTask: (options) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LAUNCH_TASK, options),
+    closeRuntime: (runtimeId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_CLOSE_RUNTIME, runtimeId),
+    switch: (sessionPath, cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SWITCH, sessionPath, cwd),
+    listRuntimes: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_RUNTIMES),
     fork: (entryId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_FORK, entryId),
     clone: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_CLONE),
     list: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST, cwd),
@@ -386,6 +431,7 @@ const api: PiDesktopAPI = {
     getActive: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GET_ACTIVE),
     startPi: (workspaceId, options) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_START_PI, workspaceId, options),
     stopPi: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_STOP_PI, workspaceId),
+    createTab: (options) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CREATE_TAB, options),
     getActivity: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_ACTIVITY_GET),
     takePendingActivation: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_TAKE_PENDING_ACTIVATION),
   },
@@ -435,6 +481,13 @@ const api: PiDesktopAPI = {
     autoRemove: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.TAG_AUTO_REMOVE, sessionId),
   },
 
+  git: {
+    status: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_STATUS),
+    commit: (options) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_COMMIT, options),
+    push: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_PUSH),
+    createPullRequest: (options) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_CREATE_PR, options),
+  },
+
   notes: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.NOTES_LIST),
     create: (input) => ipcRenderer.invoke(IPC_CHANNELS.NOTES_CREATE, input),
@@ -468,6 +521,13 @@ const api: PiDesktopAPI = {
 
   activity: {
     getStats: () => ipcRenderer.invoke(IPC_CHANNELS.ACTIVITY_GET_STATS),
+  },
+
+  workflows: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.WORKFLOW_LIST),
+    getRun: (workspaceId, runId) => ipcRenderer.invoke(IPC_CHANNELS.WORKFLOW_GET_RUN, workspaceId, runId),
+    control: (workspaceId, runId, action) => ipcRenderer.invoke(IPC_CHANNELS.WORKFLOW_CONTROL, workspaceId, runId, action),
+    setPersistAgentSessions: (enabled) => ipcRenderer.invoke(IPC_CHANNELS.WORKFLOW_SET_PERSISTENCE, enabled),
   },
 
   diagnostics: {
@@ -534,8 +594,16 @@ const api: PiDesktopAPI = {
     }
   },
 
+  onSessionRuntime: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: SessionRuntimeInfo) => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.EVENT_SESSION_RUNTIME, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.EVENT_SESSION_RUNTIME, handler)
+    }
+  },
+
   onActivateWorkspace: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, data: { workspaceId: string }) => callback(data)
+    const handler = (_event: Electron.IpcRendererEvent, data: WorkspaceActivationIntent) => callback(data)
     ipcRenderer.on(IPC_CHANNELS.EVENT_ACTIVATE_WORKSPACE, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.EVENT_ACTIVATE_WORKSPACE, handler)

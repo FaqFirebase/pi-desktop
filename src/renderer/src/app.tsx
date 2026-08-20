@@ -10,10 +10,14 @@ import { HomeScreen } from './components/home-screen'
 import { NotesPanel } from './components/notes-panel'
 import { SkillsPanel } from './components/skills-panel'
 import { DiagnosticsPanel } from './components/diagnostics-panel'
+import { MissionControl } from './components/mission-control'
+import { TaskLauncher } from './components/task-launcher'
 import { NotePicker } from './components/note-picker'
 import { CommandPalette } from './components/command-palette'
 import { ExtensionUiDialog, AppConfirmDialog } from './components/extension-ui-dialog'
 import { ReviewRail } from './components/review-rail'
+import { WorkspaceTabs } from './components/workspace-tabs'
+import { WorkflowNavigator } from './components/workflow-navigator'
 import { useContextMenu, buildDefaultContextMenu } from './components/context-menu'
 import { usePiEvents, useMenuActions, useInitialize, useNotePickerShortcut } from './hooks'
 import { useFolderDrop } from './hooks/use-folder-drop'
@@ -34,6 +38,9 @@ export function App(): React.JSX.Element {
   const updateInfo = useAppStore((state) => state.updateInfo)
   const updateDismissed = useAppStore((state) => state.updateDismissed)
   const dismissUpdate = useAppStore((state) => state.dismissUpdate)
+  const workflowPanelOpen = useAppStore((state) => state.workflowPanelOpen)
+  const workflowPanelFilter = useAppStore((state) => state.workflowPanelFilter)
+  const workflowPanelWorkspaceId = useAppStore((state) => state.workflowPanelWorkspaceId)
 
   // Global context menu
   const { show, ContextMenuComponent } = useContextMenu()
@@ -80,11 +87,9 @@ export function App(): React.JSX.Element {
   // empty-chat center prompt is the "minimal" launch surface when not opening Home.
   const isHome = currentView === 'home'
   const showChrome = !isHome
-  // Chat has its own toolbar toggle; other chrome views need a top-left reopen
-  // control when the sidebar is closed (otherwise only the status bar has one).
-  const showSidebarReopen = showChrome && !sidebarOpen && currentView !== 'chat'
-
   const showUpdateBanner = !!updateInfo?.updateAvailable && !updateDismissed
+  const globalWorkflowOpen =
+    showChrome && workflowPanelOpen && !workflowPanelFilter && workflowPanelWorkspaceId === null
 
   return (
     <div className="relative flex h-screen flex-col bg-app text-primary">
@@ -128,45 +133,57 @@ export function App(): React.JSX.Element {
           </button>
         </div>
       )}
+      {isHome && !sidebarOpen && (
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          className="absolute left-3 top-3 z-30 animate-fade-in rounded-md border border-border-strong bg-surface/95 p-1.5 text-muted shadow-sm backdrop-blur-sm transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
+          title="Show sidebar"
+          aria-label="Show sidebar"
+        >
+          <PanelLeft size={16} />
+        </button>
+      )}
       <div className="flex flex-1 overflow-hidden">
         {sidebarOpen && showChrome && <Sidebar />}
 
-        <div className="relative flex min-w-0 flex-1 overflow-hidden">
-          {showSidebarReopen && (
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              className="absolute left-2 top-2 z-30 rounded-md border border-border-strong bg-surface/95 p-1.5 text-muted shadow-sm backdrop-blur-sm hover:bg-surface-hover hover:text-primary transition-colors"
-              title="Show sidebar"
-              aria-label="Show sidebar"
-            >
-              <PanelLeft size={16} />
-            </button>
-          )}
-          <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            {currentView === 'home' && <HomeScreen />}
-            {/* Kept mounted (just hidden) so the chat scroll position survives
-                navigating to another view and back. */}
-            <div className={currentView === 'chat' ? 'flex min-w-0 flex-1 flex-col overflow-hidden' : 'hidden'}>
-              <ChatPanel />
-            </div>
-            {currentView === 'settings' && <SettingsPanel />}
-            {currentView === 'sessions' && <SessionPanel />}
-            {currentView === 'timeline' && <Timeline />}
-            {currentView === 'packages' && <PackageBrowser />}
-            {currentView === 'diff' && <DiffViewer />}
-            {currentView === 'notes' && <NotesPanel />}
-            {currentView === 'skills' && <SkillsPanel />}
-            {currentView === 'diagnostics' && <DiagnosticsPanel />}
-          </main>
-          {currentView === 'chat' && <ReviewRail />}
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+          {showChrome && <WorkspaceTabs />}
+          <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+              {globalWorkflowOpen ? (
+                <WorkflowNavigator embedded />
+              ) : (
+                <>
+                  {currentView === 'home' && <HomeScreen />}
+                  {currentView === 'mission-control' && <MissionControl />}
+                  {/* Kept mounted (just hidden) so the chat scroll position survives
+                      navigating to another view and back. */}
+                  <div className={currentView === 'chat' ? 'flex min-w-0 flex-1 flex-col overflow-hidden' : 'hidden'}>
+                    <ChatPanel />
+                  </div>
+                  {currentView === 'settings' && <SettingsPanel />}
+                  {currentView === 'sessions' && <SessionPanel />}
+                  {currentView === 'timeline' && <Timeline />}
+                  {currentView === 'packages' && <PackageBrowser />}
+                  {currentView === 'diff' && <DiffViewer />}
+                  {currentView === 'notes' && <NotesPanel />}
+                  {currentView === 'skills' && <SkillsPanel />}
+                  {currentView === 'diagnostics' && <DiagnosticsPanel />}
+                </>
+              )}
+            </main>
+            {currentView === 'chat' && !globalWorkflowOpen && <ReviewRail />}
+          </div>
         </div>
       </div>
 
       {showChrome && <StatusBar />}
+      {showChrome && !globalWorkflowOpen && <WorkflowNavigator />}
       <ExtensionUiDialog />
       <AppConfirmDialog />
       <NotePicker />
+      <TaskLauncher />
       <CommandPalette />
       {ContextMenuComponent}
     </div>
