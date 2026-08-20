@@ -158,6 +158,10 @@ export function formatPromptsWaiting(count: number): string {
   return `${count} Pi prompt${count === 1 ? '' : 's'} waiting`
 }
 
+function councilErrorMessage(error: unknown): string {
+  return `Council failed: ${error instanceof Error ? error.message : String(error)}`
+}
+
 /**
  * The per-turn state left behind once a turn is over. `isStreaming` otherwise
  * only clears on `agent_end` / `turn_end`, so any path that ends a turn without
@@ -1059,74 +1063,78 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
     set({ councilRun: { phase: 'detecting', request, results: [] } })
 
-    const detectResult = await window.piDesktop.council.detect()
-    const detected = { pi: false, claude: false, codex: false } as Record<CouncilAgentId, boolean>
-    for (const a of detectResult.agents) detected[a.id] = a.found
-
-    const resolution = resolveActiveMembers(config, detected)
-    if (!resolution.canRun) {
-      set({ councilRun: { phase: 'refused', request, results: [], reason: resolution.reason } })
-      return
-    }
-
-    set({
-      councilRun: {
-        phase: 'consulting',
-        request,
-        results: [],
-        members: resolution.active,
-        partials: {},
-        startedAt: Date.now(),
-      },
-    })
-
-    // Stream live consultant output into councilRun.partials while consulting.
-    const unsubscribe = window.piDesktop.council.onProgress(({ id, chunk }) => {
-      const run = get().councilRun
-      if (!run || run.phase !== 'consulting') return
-      const partials = { ...(run.partials ?? {}) }
-      partials[id] = (partials[id] ?? '') + chunk
-      set({ councilRun: { ...run, partials } })
-    })
-
-    let results
     try {
-      ;({ results } = await window.piDesktop.council.runConsultants({
-        request,
-        members: resolution.active,
-        timeoutSeconds: config.timeoutSeconds,
-        consensusMode: config.consensusMode,
-      }))
-    } finally {
-      unsubscribe()
-    }
+      const detectResult = await window.piDesktop.council.detect()
+      const detected = { pi: false, claude: false, codex: false } as Record<CouncilAgentId, boolean>
+      for (const a of detectResult.agents) detected[a.id] = a.found
 
-    if (!hasQuorum(results)) {
+      const resolution = resolveActiveMembers(config, detected)
+      if (!resolution.canRun) {
+        set({ councilRun: { phase: 'refused', request, results: [], reason: resolution.reason } })
+        return
+      }
+
       set({
         councilRun: {
-          phase: 'refused',
+          phase: 'consulting',
           request,
-          results,
-          reason: 'No consultant produced a plan (all timed out or errored). Council aborted.',
+          results: [],
+          members: resolution.active,
+          partials: {},
+          startedAt: Date.now(),
         },
       })
-      return
-    }
 
-    // The arbiter runs in an isolated read-only Pi subprocess. Consultant plans
-    // are untrusted input, so they are never fed to the live (writable) session —
-    // only the vetted consensus plan is, and only after the user approves it.
-    const merged = await runArbiterStep(
-      { kind: 'merge', request, results, timeoutSeconds: config.timeoutSeconds },
-      { request, results },
-      get,
-      set,
-    )
-    if (merged.error) {
-      set({ councilRun: { phase: 'refused', request, results, reason: merged.error } })
-      return
+      // Stream live consultant output into councilRun.partials while consulting.
+      const unsubscribe = window.piDesktop.council.onProgress(({ id, chunk }) => {
+        const run = get().councilRun
+        if (!run || run.phase !== 'consulting') return
+        const partials = { ...(run.partials ?? {}) }
+        partials[id] = (partials[id] ?? '') + chunk
+        set({ councilRun: { ...run, partials } })
+      })
+
+      let results: ConsultantResult[]
+      try {
+        ;({ results } = await window.piDesktop.council.runConsultants({
+          request,
+          members: resolution.active,
+          timeoutSeconds: config.timeoutSeconds,
+          consensusMode: config.consensusMode,
+        }))
+      } finally {
+        unsubscribe()
+      }
+
+      if (!hasQuorum(results)) {
+        set({
+          councilRun: {
+            phase: 'refused',
+            request,
+            results,
+            reason: 'No consultant produced a plan (all timed out or errored). Council aborted.',
+          },
+        })
+        return
+      }
+
+      // The arbiter runs in an isolated read-only Pi subprocess. Consultant plans
+      // are untrusted input, so they are never fed to the live (writable) session —
+      // only the vetted consensus plan is, and only after the user approves it.
+      const merged = await runArbiterStep(
+        { kind: 'merge', request, results, timeoutSeconds: config.timeoutSeconds },
+        { request, results },
+        get,
+        set,
+      )
+      if (merged.error) {
+        set({ councilRun: { phase: 'refused', request, results, reason: merged.error } })
+        return
+      }
+      set({ councilRun: { phase: 'awaiting-approval', request, results, consensus: merged.plan } })
+    } catch (error) {
+      set({ councilRun: { phase: 'refused', request, results: [], reason: councilErrorMessage(error) } })
     }
-    set({ councilRun: { phase: 'awaiting-approval', request, results, consensus: merged.plan } })
   },
 
   approveCouncilPlan: async () => {

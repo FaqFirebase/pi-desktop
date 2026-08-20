@@ -510,6 +510,13 @@ export class PiRpcManager extends EventEmitter {
       appLog.error('pi', 'Pre-flight failed', this.stderrBuffer)
       return this.getStatus()
     }
+    if (options.cwd && (!existsSync(options.cwd) || !statSync(options.cwd).isDirectory())) {
+      this.stderrBuffer = `Pi working directory does not exist or is not a directory:\n  ${options.cwd}`
+      this.setStatus('error')
+      console.error('[Pi] Pre-flight failed:', this.stderrBuffer)
+      appLog.error('pi', 'Pre-flight failed', this.stderrBuffer)
+      return this.getStatus()
+    }
 
     // Spawn, with one retry reserved for a crash before readiness. See
     // STARTUP_MAX_ATTEMPTS: a crash is often transient; a timeout is not.

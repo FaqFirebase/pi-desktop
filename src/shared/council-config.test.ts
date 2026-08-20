@@ -191,6 +191,11 @@ test('consultant command uses read-only flags per agent', () => {
   assert.ok(codex.args.includes('exec'))
 })
 
+test('OMP consultant command uses its native read-only tool allowlist', () => {
+  const omp = buildConsultantCommand('pi', 'omp', 'omp')
+  assert.deepEqual(omp.args, ['-p', '--mode', 'json', '--no-session', '--tools', 'read,grep,glob'])
+})
+
 test('consultant command never puts the prompt in argv (stdin-only delivery)', () => {
   // Untrusted prompt text must not reach the command line — on Windows the args
   // pass through cmd.exe and would be open to shell-metacharacter injection.

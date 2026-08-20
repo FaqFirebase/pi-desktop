@@ -4,6 +4,7 @@ import { spawnSync } from 'child_process'
 import type { CouncilAgentId } from '../shared/council-config'
 import { COUNCIL_AGENT_IDS } from '../shared/council-config'
 import { buildNpmPrefixCommand } from './cmd-escape'
+import { getPiCli } from './pi-rpc-manager'
 
 const IS_WINDOWS = process.platform === 'win32'
 
@@ -80,6 +81,10 @@ function npmGlobalPrefix(): string | null {
 }
 
 function resolveAgent(id: CouncilAgentId): string | null {
+  if (id === 'pi') {
+    const configured = getPiCli()
+    if (configured.found) return configured.script
+  }
   const base = AGENT_BINARIES[id]
   // 1. PATH (respects PATHEXT on Windows)
   const fromPath = whichInPath(base)

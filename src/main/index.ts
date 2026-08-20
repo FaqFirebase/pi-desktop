@@ -414,6 +414,12 @@ app.whenReady().then(async () => {
   // Lock the HTML preview partition to local files before any preview can load.
   hardenPreviewSession()
 
+  // Resolve the configured engine before exposing IPC or creating the renderer;
+  // otherwise the renderer can win the startup race and launch the default Pi
+  // binary before this setting is applied.
+  const settings = await loadAppSettings(workspaceManager)
+  setPiExecutableOverride(settings.piExecutablePath)
+
   // Register IPC handlers before creating windows. The window getter is a
   // lazy closure — mainWindow is created later and the notification wiring
   // only dereferences it at event time. showMainWindow recreates the window
@@ -437,11 +443,6 @@ app.whenReady().then(async () => {
 
   // System tray: inject deps once, then enable it if the setting is on. The
   // one-time "still running" hint reads/persists via app settings.
-  const settings = await loadAppSettings(workspaceManager)
-
-  // Apply the configured Pi executable path before anything can start Pi.
-  setPiExecutableOverride(settings.piExecutablePath)
-
   setupTray({
     getWindow: () => mainWindow,
     quit: () => app.quit(),

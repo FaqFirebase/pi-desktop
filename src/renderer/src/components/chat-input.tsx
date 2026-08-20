@@ -652,6 +652,7 @@ export function ChatInput(): React.JSX.Element {
           </button>
           {councilEnabled && (
             <button
+              type="button"
               onClick={() => {
                 const value = textareaRef.current?.value.trim()
                 if (value) {
@@ -664,7 +665,7 @@ export function ChatInput(): React.JSX.Element {
               }}
               disabled={isDisabled || isStreaming}
               className="hover:bg-highlight-strong flex items-center justify-center rounded-md p-1.5 text-dim hover:text-secondary transition-colors disabled:opacity-50"
-              title="Plan with Council"
+              title={isDisabled ? 'Start Pi/OMP before planning with Council' : 'Plan with Council'}
               aria-label="Plan with Council"
             >
               <Users size={15} />
