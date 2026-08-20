@@ -191,6 +191,10 @@ const piDesktopStub = {
       calls.push('createNew')
       return { success: true }
     },
+    closeRuntime: async (runtimeId: string) => {
+      calls.push(`closeRuntime:${runtimeId}`)
+      return { runtimeId, workspaceId: WORKSPACE_ONE.id, sessionPath: SESSION_PATH, empty: false, deleted: false }
+    },
     fork: async (entryId: string) => {
       calls.push(`fork:${entryId}`)
       return { success: true }
@@ -367,6 +371,41 @@ test('an active runtime error ends the session loading state', () => {
 
   assert.equal(useAppStore.getState().sessionLoading, false)
   assert.equal(useAppStore.getState().piError, 'Pi failed to start')
+})
+
+test('closed runtime events remove session tabs from renderer state', () => {
+  useAppStore.setState({
+    sessionRuntimes: {
+      'rt-closed': {
+        runtimeId: 'rt-closed',
+        workspaceId: WORKSPACE_ONE.id,
+        sessionPath: SESSION_PATH,
+        sessionId: 'closed-session',
+        status: 'stopped',
+        pid: null,
+        error: null,
+        activity: null,
+        active: true,
+      },
+    },
+    activeSessionRuntimeId: 'rt-closed',
+  })
+
+  useAppStore.getState().handleSessionRuntime({
+    runtimeId: 'rt-closed',
+    workspaceId: WORKSPACE_ONE.id,
+    sessionPath: SESSION_PATH,
+    sessionId: 'closed-session',
+    status: 'stopped',
+    pid: null,
+    error: null,
+    activity: null,
+    active: false,
+    closed: true,
+  })
+
+  assert.equal(useAppStore.getState().sessionRuntimes['rt-closed'], undefined)
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, null)
 })
 
 test('clearMessages resets every per-turn streaming field', () => {

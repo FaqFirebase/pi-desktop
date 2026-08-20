@@ -27,6 +27,7 @@ export function WorkspaceTabs(): React.JSX.Element {
   const setWorkflowPanelOpen = useAppStore((state) => state.setWorkflowPanelOpen)
   const activateWorkspace = useAppStore((state) => state.activateWorkspace)
   const switchSession = useAppStore((state) => state.switchSession)
+  const closeSessionTab = useAppStore((state) => state.closeSessionTab)
   const removeWorkspace = useAppStore((state) => state.removeWorkspace)
   const createWorktreeTab = useAppStore((state) => state.createWorktreeTab)
   const createNewSession = useAppStore((state) => state.createNewSession)
@@ -75,6 +76,13 @@ export function WorkspaceTabs(): React.JSX.Element {
         return (
           <div
             key={workspace.id}
+            onAuxClick={(event) => {
+              // DOM button 1 is the middle mouse button. Keep right-click for
+              // the normal context menu and use the middle button as tab-close.
+              if (event.button !== 1) return
+              event.preventDefault()
+              void removeWorkspace(workspace.id)
+            }}
             className={clsx(
               'group flex h-9 min-w-[150px] max-w-[240px] shrink-0 items-center gap-2 rounded-t-md border border-b-0 px-2.5 text-xs transition-colors',
               active
@@ -164,33 +172,51 @@ export function WorkspaceTabs(): React.JSX.Element {
         <Plus size={15} />
       </button>
     </div>
-    {sessionTabs.length > 1 && (
+    {sessionTabs.length > 0 && (
       <div className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border/70 px-2">
         <span className="mr-1 shrink-0 text-[10px] uppercase tracking-wide text-faint">Sessions</span>
         {sessionTabs.map((runtime) => {
           const session = sessionList.find((item) => runtime.sessionPath && pathsEqual(item.path, runtime.sessionPath))
           const active = runtime.runtimeId === activeSessionRuntimeId || runtime.active
           return (
-            <button
+            <div
               key={runtime.runtimeId}
-              type="button"
-              onClick={() => {
-                if (!runtime.sessionPath) return
-                setCurrentView('chat')
-                void switchSession(runtime.sessionPath, activeWorkspace?.path)
+              onAuxClick={(event) => {
+                if (event.button !== 1) return
+                event.preventDefault()
+                void closeSessionTab(runtime.runtimeId)
               }}
               className={clsx(
-                'flex min-w-0 max-w-[220px] shrink-0 items-center gap-1.5 rounded px-2 py-1 text-[11px] transition-colors',
+                'group flex min-w-0 max-w-[240px] shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[11px] transition-colors',
                 active ? 'bg-card text-primary' : 'text-muted hover:bg-highlight hover:text-secondary'
               )}
-              title={runtime.sessionPath ?? undefined}
-              aria-current={active ? 'page' : undefined}
             >
-              <SessionRuntimeIndicator runtime={runtime} />
-              <span className="truncate">
-                {session ? getSessionTitle(session.name, session.sessionId, session.preview) : 'New session'}
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!runtime.sessionPath) return
+                  setCurrentView('chat')
+                  void switchSession(runtime.sessionPath, activeWorkspace?.path)
+                }}
+                className="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-0.5 text-left"
+                title={runtime.sessionPath ?? undefined}
+                aria-current={active ? 'page' : undefined}
+              >
+                <SessionRuntimeIndicator runtime={runtime} />
+                <span className="truncate">
+                  {session ? getSessionTitle(session.name, session.sessionId, session.preview) : 'New session'}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void closeSessionTab(runtime.runtimeId)}
+                className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-all hover:bg-highlight-strong hover:text-primary group-hover:opacity-100"
+                title="Close session tab"
+                aria-label="Close session tab"
+              >
+                <X size={11} />
+              </button>
+            </div>
           )
         })}
       </div>

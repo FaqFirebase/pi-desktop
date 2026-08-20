@@ -26,6 +26,7 @@ export const IPC_CHANNELS = {
   // Session management
   SESSION_NEW: 'session:new',
   SESSION_LAUNCH_TASK: 'session:launch-task',
+  SESSION_CLOSE_RUNTIME: 'session:close-runtime',
   SESSION_SWITCH: 'session:switch',
   SESSION_LIST_RUNTIMES: 'session:list-runtimes',
   SESSION_FORK: 'session:fork',
@@ -211,6 +212,17 @@ export interface SessionRuntimeInfo extends PiStatus {
   sessionId: string | null
   activity: SessionRuntimeActivity | null
   active: boolean
+  /** Main emitted marker telling the renderer to remove this closed tab. */
+  closed?: boolean
+}
+
+export interface SessionRuntimeCloseResult {
+  runtimeId: string
+  workspaceId: string
+  sessionPath: string | null
+  /** Header-only sessions are disposable and are deleted when closed. */
+  empty: boolean
+  deleted: boolean
 }
 
 export interface SessionLaunchTaskOptions {

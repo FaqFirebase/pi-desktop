@@ -10,10 +10,12 @@ import type {
   WorkspaceTabOptions,
   SessionRuntimeInfo,
   SessionRuntimeActivity,
+  SessionRuntimeCloseResult,
 } from '../shared/ipc-contracts'
 import { getGuiDataPath } from './app-data-paths'
 import { pathsEqual, pathGroupKey } from './session-paths'
 import { appLog } from './app-log'
+import { readFirstUserMessage } from './session-metadata'
 import {
   createGitWorktree,
   inspectGitRepository,
@@ -382,6 +384,51 @@ export class WorkspaceManager {
     entry.info = { ...entry.info, activity: null }
     this.emitSessionRuntime(entry)
     entry.manager.stop()
+  }
+
+  /** Close a session tab without deleting a non-empty session from disk. */
+  async closeSessionRuntime(runtimeId: string): Promise<SessionRuntimeCloseResult | null> {
+    const entry = this.sessionRuntimes.get(runtimeId)
+    if (!entry) return null
+
+    const { workspaceId, sessionPath } = entry.info
+    const empty = sessionPath ? (await readFirstUserMessage(sessionPath)) === null : true
+    const wasActive = this.activeRuntimeId === runtimeId
+    const replacementCandidates = wasActive
+      ? [...this.sessionRuntimes.values()]
+        .filter((candidate) => candidate.info.workspaceId === workspaceId && candidate.info.runtimeId !== runtimeId)
+        .reverse()
+      : []
+    const replacement = replacementCandidates.find((candidate) => candidate.info.sessionPath) ?? replacementCandidates[0]
+
+    entry.info = { ...entry.info, activity: null }
+    entry.manager.stop()
+    if (sessionPath) this.runtimeBySessionPath.delete(pathGroupKey(sessionPath))
+    this.sessionRuntimes.delete(runtimeId)
+
+    if (this.activeRuntimeByWorkspace.get(workspaceId) === runtimeId) {
+      if (replacement) this.activeRuntimeByWorkspace.set(workspaceId, replacement.info.runtimeId)
+      else this.activeRuntimeByWorkspace.delete(workspaceId)
+    }
+    if (wasActive) this.activeRuntimeId = replacement?.info.runtimeId ?? null
+
+    const closed: SessionRuntimeInfo = {
+      ...entry.info,
+      ...entry.manager.getStatus(),
+      active: false,
+      activity: null,
+      closed: true,
+    }
+    for (const listener of this.sessionRuntimeListeners) listener(closed)
+    if (replacement && wasActive) this.emitSessionRuntime(replacement)
+
+    return {
+      runtimeId,
+      workspaceId,
+      sessionPath,
+      empty,
+      deleted: false,
+    }
   }
 
   sendCommandToSessionRuntime(runtimeId: string, command: Record<string, unknown>): Promise<unknown> {

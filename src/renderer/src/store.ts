@@ -401,6 +401,7 @@ interface AppActions {
   // Session
   createNewSession: () => Promise<void>
   launchTask: (options: SessionLaunchTaskOptions) => Promise<boolean>
+  closeSessionTab: (runtimeId: string) => Promise<void>
   switchSession: (path: string, projectPath?: string) => Promise<void>
   /**
    * Open a session row from any surface (sidebar, session panel, quick
@@ -1292,6 +1293,66 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
+  closeSessionTab: async (runtimeId) => {
+    const runtime = get().sessionRuntimes[runtimeId]
+    if (!runtime) return
+
+    if (runtime.activity === 'working' || runtime.activity === 'needs-approval') {
+      const confirmed = await get().requestConfirm({
+        title: 'Close session tab?',
+        message: 'Pi is still working in this session. Closing the tab stops its runtime; saved messages remain available from Sessions.',
+        confirmLabel: 'Close tab',
+        cancelLabel: 'Keep working',
+        danger: true,
+      })
+      if (!confirmed) return
+    }
+
+    const wasActive = runtimeId === get().activeSessionRuntimeId || runtime.active
+    try {
+      const result = await window.piDesktop.session.closeRuntime(runtimeId)
+      if (!result) return
+
+      // The main process broadcasts the closed marker, but remove locally too
+      // so a renderer that races that event cannot leave a ghost tab behind.
+      set((state) => {
+        const { [runtimeId]: _closed, ...remaining } = state.sessionRuntimes
+        return {
+          sessionRuntimes: remaining,
+          ...(state.activeSessionRuntimeId === runtimeId ? { activeSessionRuntimeId: null } : {}),
+        }
+      })
+
+      if (wasActive) {
+        const replacement = Object.values(get().sessionRuntimes)
+          .filter((candidate) => candidate.workspaceId === result.workspaceId && candidate.sessionPath)
+          .reverse()[0]
+        if (replacement?.sessionPath) {
+          await get().switchSession(replacement.sessionPath, get().activeWorkspace?.path)
+        } else {
+          get().clearMessages()
+          set({
+            sessionState: null,
+            sessionStats: null,
+            sessionLoading: false,
+            activeSessionRuntimeId: null,
+            piStatus: 'stopped',
+            piPid: null,
+            piError: null,
+          })
+        }
+      }
+      void get().refreshSessionList()
+    } catch (err) {
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: `Close session error: ${err instanceof Error ? err.message : String(err)}`,
+        timestamp: Date.now(),
+      })
+    }
+  },
+
   switchSession: async (path, projectPath) => {
     // Already on this session — avoid a full history reload. The explicit
     // sessionLoading check still handles a fast workspace switch that cleared
@@ -1500,13 +1561,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       const list = await window.piDesktop.session.list()
       const sessionState = get().sessionState
       const activeWorkspace = get().activeWorkspace
-      const hasActiveSession = sessionState?.sessionFile
+      const activeHasContent = (sessionState?.messageCount ?? 0) > 0
+      const hasActiveSession = activeHasContent && sessionState?.sessionFile
         ? list.some((item) => item.path === sessionState.sessionFile || item.sessionId === sessionState.sessionId)
         : false
 
       const sessionList = hasActiveSession
         ? list
-        : sessionState?.sessionFile
+        : activeHasContent && sessionState?.sessionFile
         ? [
             {
               path: sessionState.sessionFile,
@@ -2116,6 +2178,16 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   handleSessionRuntime: (runtime) => {
+    if (runtime.closed) {
+      set((current) => {
+        const { [runtime.runtimeId]: _closed, ...remaining } = current.sessionRuntimes
+        return {
+          sessionRuntimes: remaining,
+          ...(current.activeSessionRuntimeId === runtime.runtimeId ? { activeSessionRuntimeId: null } : {}),
+        }
+      })
+      return
+    }
     set((current) => ({
       sessionRuntimes: { ...current.sessionRuntimes, [runtime.runtimeId]: runtime },
       activeSessionRuntimeId: runtime.active

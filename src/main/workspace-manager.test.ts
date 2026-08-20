@@ -213,6 +213,32 @@ test('adopts an explicitly named external worktree without deleting it on close'
   git(['worktree', 'remove', external])
 })
 
+test('closing a session runtime removes its tab and only marks empty sessions disposable', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const workspace = await mgr.createWorkspace('Alpha', await project())
+    const emptyPath = join(await project(), 'empty.jsonl')
+    await writeFile(emptyPath, JSON.stringify({ type: 'session', id: 'empty' }) + '\n', 'utf-8')
+    const emptyRuntime = await mgr.activateSession(workspace.id, emptyPath)
+    const emptyResult = await mgr.closeSessionRuntime(emptyRuntime.runtimeId)
+
+    assert.equal(emptyResult?.empty, true)
+    assert.equal(mgr.getSessionRuntime(emptyRuntime.runtimeId), null)
+
+    const contentPath = join(await project(), 'content.jsonl')
+    await writeFile(contentPath, [
+      JSON.stringify({ type: 'session', id: 'content' }),
+      JSON.stringify({ type: 'message', message: { role: 'user', content: [{ type: 'text', text: 'keep me' }] } }),
+    ].join('\n') + '\n', 'utf-8')
+    const contentRuntime = await mgr.activateSession(workspace.id, contentPath)
+    const contentResult = await mgr.closeSessionRuntime(contentRuntime.runtimeId)
+
+    assert.equal(contentResult?.empty, false)
+    assert.equal(existsSync(contentPath), true)
+  })
+})
+
 test('load recovers from .bak when the live workspaces file is corrupted', async () => {
   await freshDataDir()
   const proj = await project()

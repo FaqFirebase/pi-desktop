@@ -14,7 +14,7 @@ import { mapWithConcurrency } from '../map-concurrent'
 import { readSessionLineage } from '../session-lineage-reader'
 import { trimGetMessagesResponse } from '../get-messages-trim'
 import { activityStatsStore } from '../activity-stats'
-import type { SessionDeleteResult, SessionListItem, SessionRuntimeInfo } from '../../shared/ipc-contracts'
+import type { SessionDeleteResult, SessionListItem, SessionRuntimeCloseResult, SessionRuntimeInfo } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { readdir, stat, unlink } from 'fs/promises'
 import { basename, join } from 'path'
@@ -127,6 +127,26 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     return runtime
   }
 
+  ipcMain.handle(IPC_CHANNELS.SESSION_CLOSE_RUNTIME, async (_event, runtimeId: unknown): Promise<SessionRuntimeCloseResult | null> => {
+    if (!isString(runtimeId)) throw new Error('runtimeId must be a string')
+    const result = await workspaceManager.closeSessionRuntime(runtimeId)
+    if (!result) return null
+
+    let deleted = false
+    if (result.empty && result.sessionPath && isPathWithin(getSessionsRoot(), result.sessionPath) && existsSync(result.sessionPath)) {
+      activityStatsStore.captureBeforeDelete(result.sessionPath)
+      const deleteResult = await deleteSessionFile(result.sessionPath)
+      deleted = deleteResult.ok
+      if (deleted) {
+        const sessionId = sessionIdFromPath(result.sessionPath)
+        await archivedSessions.forget(sessionId)
+        await tagManager.setTags(sessionId, [])
+        await tagManager.forgetAuto(sessionId)
+      }
+    }
+    return { ...result, deleted }
+  })
+
   ipcMain.handle(IPC_CHANNELS.SESSION_SWITCH, async (_event, sessionPath: unknown, cwd?: unknown) => {
     if (!isString(sessionPath)) throw new Error('sessionPath must be a string')
     if (cwd !== undefined && !isString(cwd)) throw new Error('cwd must be a string')
@@ -205,6 +225,12 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     if (!isPathWithin(getSessionsRoot(), sessionPath)) {
       throw new Error('sessionPath must be inside the Pi sessions directory')
     }
+
+    // Detach any live tab first. Otherwise deleting an active/session-tab file
+    // leaves a runtime pointing at a path that SESSION_SWITCH can no longer
+    // validate, producing a stale "existing Pi session file" error.
+    const runtime = workspaceManager.getSessionRuntimeForPath(sessionPath)
+    if (runtime) await workspaceManager.closeSessionRuntime(runtime.runtimeId)
 
     // Roll this session into the persisted stats store *before* removing the
     // file, so its activity survives the deletion (see activity-stats.ts).
@@ -299,7 +325,10 @@ function createListSessions(wm: WorkspaceManager) {
       // whole store), then surface each session's latest session_info name.
       const top = entries.slice(0, MAX_SESSION_LIST)
       await fillSessionLabels(top)
-      return top
+      // Pi creates the JSONL header before the first user turn. Do not expose
+      // those disposable empty sessions in Recent/Sessions; they cannot be
+      // resumed meaningfully and become stale switch targets after a restart.
+      return top.filter((entry) => entry.preview !== null)
     } catch {
       return []
     }
