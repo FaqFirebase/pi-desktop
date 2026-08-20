@@ -1,18 +1,15 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useAppStore, countPromptsWaitingElsewhere, formatPromptsWaiting } from '../store'
-import { ModelSelector } from './model-selector'
 import { clsx } from 'clsx'
 import {
   PanelLeft,
   PanelLeftClose,
   Terminal,
-  Zap,
   DollarSign,
   Layers,
   Minimize2,
   Settings,
   Loader2,
-  Check,
   GitBranch,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
@@ -156,12 +153,6 @@ export function StatusBar(): React.JSX.Element {
           <span>{activeWorkflowCount > 0 ? `${activeWorkflowCount} workflow${activeWorkflowCount === 1 ? '' : 's'}` : 'workflows'}</span>
         </button>
 
-        {/* Model selector */}
-        <ModelSelector />
-
-        {/* Thinking level */}
-        <ThinkingLevelSelector />
-
         {/* Token usage */}
         {sessionStats?.contextUsage && (
           <div className="flex items-center gap-1 text-dim" title={`Context: ${sessionStats.contextUsage.tokens?.toLocaleString() ?? '?'} / ${sessionStats.contextUsage.contextWindow.toLocaleString()} tokens`}>
@@ -232,75 +223,6 @@ export function StatusBar(): React.JSX.Element {
           <Settings size={12} />
         </button>
       </div>
-    </div>
-  )
-}
-
-// ─── Thinking Level Selector ─────────────────────────────────────────────────
-
-function ThinkingLevelSelector(): React.JSX.Element {
-  const sessionState = useAppStore((state) => state.sessionState)
-  const setThinkingLevel = useAppStore((state) => state.setThinkingLevel)
-  const piStatus = useAppStore((state) => state.piStatus)
-
-  const [isOpen, setIsOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  const modelEfforts = sessionState?.model?.thinking?.efforts?.filter((level) => typeof level === 'string' && level.length > 0)
-  const levels = modelEfforts && modelEfforts.length > 0
-    ? ['off', ...modelEfforts.filter((level) => level !== 'off')]
-    : ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
-  const currentLevel = sessionState?.thinkingLevel ?? 'medium'
-
-  // Close on click outside
-  useEffect(() => {
-    if (!isOpen) return
-
-    const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [isOpen])
-
-  if (piStatus !== 'running') return <></>
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1 text-dim hover:text-secondary transition-colors"
-        title="Thinking level"
-      >
-        <Zap size={10} />
-        <span>{currentLevel}</span>
-      </button>
-
-      {isOpen && (
-        <div className="absolute bottom-full right-0 mb-1 w-32 rounded-lg border border-border-strong bg-surface shadow-xl shadow-black/40 py-1 animate-fade-in z-50">
-          {levels.map((level) => (
-            <button
-              key={level}
-              onClick={() => {
-                setThinkingLevel(level)
-                setIsOpen(false)
-              }}
-              className={clsx(
-                'flex w-full items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-surface-hover transition-colors',
-                currentLevel === level
-                  ? 'text-primary'
-                  : 'text-muted'
-              )}
-            >
-              {currentLevel === level && <Check size={10} className="text-success" />}
-              <span className={currentLevel === level ? '' : 'ml-[18px]'}>{level}</span>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

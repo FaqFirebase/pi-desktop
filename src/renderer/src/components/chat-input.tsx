@@ -4,6 +4,8 @@ import { useChatKeyboard, useCommandCatalog } from '../hooks'
 import { ComposerPermissionMenu } from './composer-permission-menu'
 import { CommandResults } from './command-results'
 import { SubagentProgress } from './subagent-progress'
+import { ModelSelector } from './model-selector'
+import { ThinkingLevelSelector } from './thinking-level-selector'
 import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users, Search } from 'lucide-react'
 import {
   SUPPORTED_IMAGE_EXTENSIONS,
@@ -672,13 +674,21 @@ export function ChatInput(): React.JSX.Element {
             </button>
           )}
 
-          <span className="ml-auto mr-1 text-[11px] text-faint">
+          <span className="ml-auto mr-1 hidden text-[11px] text-faint sm:inline">
             {isStreaming ? (
               <span className="text-warning animate-pulse">Streaming…</span>
             ) : (
               'Shift+Enter newline'
             )}
           </span>
+
+          {!isDisabled && (
+            <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-border-strong/80 bg-card/60 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <ModelSelector compact />
+              <div className="h-4 w-px bg-border" aria-hidden="true" />
+              <ThinkingLevelSelector />
+            </div>
+          )}
 
           {isStreaming ? (
             <button
