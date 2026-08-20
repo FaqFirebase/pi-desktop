@@ -154,6 +154,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST_RUNTIMES, async () => {
+    await workspaceManager.pruneEmptySessionRuntimes()
     return workspaceManager.getSessionRuntimes()
   })
 
@@ -312,6 +313,7 @@ async function fillSessionLabels(entries: SessionEntry[]): Promise<void> {
 function createListSessions(wm: WorkspaceManager) {
   return async function listSessions(_cwd: string): Promise<SessionEntry[]> {
     try {
+      await wm.pruneEmptySessionRuntimes()
       const sessionsDir = getSessionsRoot()
       const entries: SessionEntry[] = []
       // Precompute workspace match map once (was O(workspaces) per file).

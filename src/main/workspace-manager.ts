@@ -288,6 +288,19 @@ export class WorkspaceManager {
       .map((entry) => this.snapshotRuntime(entry))
   }
 
+  /** Drop inactive header-only sessions so abandoned New Session tabs do not linger. */
+  async pruneEmptySessionRuntimes(): Promise<SessionRuntimeCloseResult[]> {
+    const candidates = [...this.sessionRuntimes.values()]
+      .filter((entry) => entry.info.runtimeId !== this.activeRuntimeId && entry.info.sessionPath && entry.info.activity === null)
+    const closed: SessionRuntimeCloseResult[] = []
+    for (const entry of candidates) {
+      if (await readFirstUserMessage(entry.info.sessionPath!) !== null) continue
+      const result = await this.closeSessionRuntime(entry.info.runtimeId)
+      if (result) closed.push(result)
+    }
+    return closed
+  }
+
   getActiveSessionRuntime(): SessionRuntimeInfo | null {
     if (!this.activeRuntimeId) return null
     const entry = this.sessionRuntimes.get(this.activeRuntimeId)

@@ -221,10 +221,6 @@ test('closing a session runtime removes its tab and only marks empty sessions di
     const emptyPath = join(await project(), 'empty.jsonl')
     await writeFile(emptyPath, JSON.stringify({ type: 'session', id: 'empty' }) + '\n', 'utf-8')
     const emptyRuntime = await mgr.activateSession(workspace.id, emptyPath)
-    const emptyResult = await mgr.closeSessionRuntime(emptyRuntime.runtimeId)
-
-    assert.equal(emptyResult?.empty, true)
-    assert.equal(mgr.getSessionRuntime(emptyRuntime.runtimeId), null)
 
     const contentPath = join(await project(), 'content.jsonl')
     await writeFile(contentPath, [
@@ -232,8 +228,11 @@ test('closing a session runtime removes its tab and only marks empty sessions di
       JSON.stringify({ type: 'message', message: { role: 'user', content: [{ type: 'text', text: 'keep me' }] } }),
     ].join('\n') + '\n', 'utf-8')
     const contentRuntime = await mgr.activateSession(workspace.id, contentPath)
+    const pruned = await mgr.pruneEmptySessionRuntimes()
     const contentResult = await mgr.closeSessionRuntime(contentRuntime.runtimeId)
 
+    assert.equal(pruned.some((result) => result.runtimeId === emptyRuntime.runtimeId && result.empty), true)
+    assert.equal(mgr.getSessionRuntime(emptyRuntime.runtimeId), null)
     assert.equal(contentResult?.empty, false)
     assert.equal(existsSync(contentPath), true)
   })
