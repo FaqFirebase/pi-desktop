@@ -41,7 +41,7 @@ export function ThinkingLevelSelector({ className }: ThinkingLevelSelectorProps)
         type="button"
         onClick={() => setIsOpen((open) => !open)}
         className={clsx(
-          'flex h-7 items-center gap-1 rounded-md px-2 text-[11px] transition-colors active:scale-[0.98]',
+          'flex h-6 items-center gap-1 rounded-md px-2 text-[11px] transition-colors active:scale-[0.98]',
           isOpen ? 'bg-surface-hover text-primary' : 'text-dim hover:bg-surface-hover hover:text-secondary',
         )}
         title={`Thinking effort: ${currentLevel}`}

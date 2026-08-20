@@ -683,9 +683,9 @@ export function ChatInput(): React.JSX.Element {
           </span>
 
           {!isDisabled && (
-            <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-border-strong/80 bg-card/60 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <div className="flex h-6 shrink-0 items-center gap-0 rounded-md bg-card/60 ring-1 ring-inset ring-border-strong/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
               <ModelSelector compact />
-              <div className="h-4 w-px bg-border" aria-hidden="true" />
+              <div className="h-3.5 w-px bg-border" aria-hidden="true" />
               <ThinkingLevelSelector />
             </div>
           )}

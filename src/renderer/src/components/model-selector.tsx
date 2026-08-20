@@ -119,9 +119,9 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
         type="button"
         onClick={() => void open()}
         className={clsx(
-          'flex h-7 max-w-52 items-center gap-1 rounded-md px-2 text-[11px] transition-colors active:scale-[0.98]',
+          'flex h-6 max-w-52 items-center gap-1 rounded-md px-2 text-[11px] transition-colors active:scale-[0.98]',
           isOpen ? 'bg-surface-hover text-primary' : 'text-dim hover:bg-surface-hover hover:text-secondary',
-          compact && 'max-w-40',
+          compact && 'max-w-36',
         )}
         title="Select model (Ctrl+P to cycle when Pi is running)"
         aria-label="Select model"
