@@ -20,7 +20,7 @@ Still in alpha, so expect rough edges.
 - Multiple workspaces, each with its own Pi process and sessions; Mission Control and sidebar activity dots surface background work across projects, with optional desktop notifications when a session finishes, fails, or waits for approval
 - New Task launcher starts a real fresh Pi session in a selected project, optionally in an isolated Git worktree, and sends the issue immediately while work continues in the background; matching task metadata, explicit branches, and GitHub PR URLs reuse an existing local worktree when found
 - Diff Review conveyor with explicit Commit → Push → PR actions, upstream-aware GitHub CLI PR creation, and exact notification clicks back to the finished session
-- Diagnostics view: Pi install and PATH resolution, provider configuration, permissions, and recent errors
+- Diagnostics view: Pi/OMP install and PATH resolution, provider configuration, permissions, and recent errors
 - Review rail (toggleable) with permissions, approvals, changed files, and session status
 - Custom permission rules: allow/deny glob rules per Pi tool that refine the permission modes, with per-workspace rule files, import/export, and live edits that apply without restarting Pi
 - File tree, code/image/PDF/HTML preview panes, code editor (CodeMirror 6 with syntax highlighting), diff viewer, file search
@@ -42,6 +42,12 @@ Changed files use readable status badges:
 | `ADD` | New file staged in git |
 | `STG` | Modified file staged in git |
 | `REN` | File was renamed |
+
+## Pi and OMP engines
+
+Pi Desktop speaks Pi's RPC protocol directly, so it can run either the standard `pi` CLI or the compatible `omp` binary from [oh-my-pi](https://github.com/can1357/oh-my-pi). Set **Settings → Agent Configuration → Agent Executable** to `omp` (or its full path). OMP sessions are placed in Desktop's existing session store, OMP's protocol-v2 large-frame transport is negotiated automatically, and model-specific thinking efforts—including `max`—are shown when advertised.
+
+OMP's native `read`, `grep`, and `glob` tools are used for Plan / Read-only mode; its plugin install/update/remove verbs are mapped behind the existing package actions.
 
 ## Permissions
 

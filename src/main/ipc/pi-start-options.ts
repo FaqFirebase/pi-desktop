@@ -6,8 +6,10 @@ import { join } from 'path'
 import { existsSync } from 'fs'
 import { PERMISSION_RULES_FILE_NAME } from '../../../resources/permission-rules'
 import { isString, isObject, isOptionalString, isOptionalBoolean, isOptionalStringArray } from './validation'
+import { getPiCli } from '../pi-rpc-manager'
 
 const READ_ONLY_TOOLS = 'read,grep,find,ls'
+const OMP_READ_ONLY_TOOLS = 'read,grep,glob'
 
 const PERMISSIONS_EXTENSION_PATH = app.isPackaged
   ? join(process.resourcesPath, 'resources', 'pi-desktop-permissions.ts')
@@ -32,10 +34,10 @@ function removeToolArgs(args: string[]): string[] {
   return filtered
 }
 
-function toolsForPermissionMode(mode: PermissionMode): string | null {
+function toolsForPermissionMode(mode: PermissionMode, runtime: 'pi' | 'omp' = 'pi'): string | null {
   switch (mode) {
     case 'plan-readonly':
-      return READ_ONLY_TOOLS
+      return runtime === 'omp' ? OMP_READ_ONLY_TOOLS : READ_ONLY_TOOLS
     case 'ask-commands':
     case 'ask-edits':
     case 'trusted':
@@ -59,7 +61,7 @@ export function applyPermissionModeToStartOptions(
   options: PiStartOptions,
   settings: AppSettings
 ): PiStartOptions {
-  const toolList = toolsForPermissionMode(settings.permissionMode)
+  const toolList = toolsForPermissionMode(settings.permissionMode, getPiCli().kind ?? 'pi')
   const args = toolList
     ? [...removeToolArgs(options.args ?? []), '--tools', toolList]
     : [...(options.args ?? [])]

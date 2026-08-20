@@ -413,7 +413,7 @@ export interface PiResponseEvent {
 export interface PiExtensionUiRequest {
   type: 'extension_ui_request'
   id: string
-  method: 'select' | 'confirm' | 'input' | 'editor' | 'notify' | 'setStatus' | 'setWidget' | 'setTitle' | 'set_editor_text'
+  method: 'select' | 'confirm' | 'input' | 'editor' | 'notify' | 'setStatus' | 'setWidget' | 'setTitle' | 'set_editor_text' | 'open_url' | 'cancel'
   title?: string
   message?: string
   options?: string[]
@@ -426,6 +426,10 @@ export interface PiExtensionUiRequest {
   widgetLines?: string[]
   widgetPlacement?: string
   timeout?: number
+  url?: string
+  launchUrl?: string
+  instructions?: string
+  targetId?: string
 }
 
 /**
@@ -593,6 +597,39 @@ export interface PiSessionInfoChangedEvent {
   name?: string | null
 }
 
+/** OMP's RPC spelling for a live session title update. */
+export interface PiSessionInfoUpdateEvent {
+  type: 'session_info_update'
+  title?: string | null
+  sessionId?: string
+}
+
+/** OMP emits this when its slash-command catalog changes. */
+export interface PiAvailableCommandsUpdateEvent {
+  type: 'available_commands_update'
+  commands: unknown[]
+}
+
+/** Output from a local-only OMP slash command. */
+export interface PiCommandOutputEvent {
+  type: 'command_output'
+  text: string
+}
+
+/** Completion signal for an accepted prompt that did not invoke the agent. */
+export interface PiPromptResultEvent {
+  type: 'prompt_result'
+  id?: string
+  agentInvoked: boolean
+}
+
+/** OMP config changes that should cause the renderer to re-read get_state. */
+export interface PiConfigUpdateEvent {
+  type: 'config_update'
+  model?: unknown
+  thinkingLevel?: string
+}
+
 export type PiRpcEvent =
   | PiAgentStartEvent
   | PiAgentEndEvent
@@ -614,6 +651,11 @@ export type PiRpcEvent =
   | PiExtensionUiRequest
   | PiStatusChangeEvent
   | PiSessionInfoChangedEvent
+  | PiSessionInfoUpdateEvent
+  | PiAvailableCommandsUpdateEvent
+  | PiCommandOutputEvent
+  | PiPromptResultEvent
+  | PiConfigUpdateEvent
 
 // ─── Model Types ────────────────────────────────────────────────────────────
 
@@ -632,6 +674,11 @@ export interface ModelInfo {
     output: number
     cacheRead: number
     cacheWrite: number
+  }
+  /** OMP exposes the effort values supported by the active model. */
+  thinking?: {
+    mode?: string
+    efforts?: string[]
   }
 }
 

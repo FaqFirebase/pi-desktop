@@ -4,6 +4,7 @@ import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import type { IpcContext } from './context'
+import { getPiCli } from '../pi-rpc-manager'
 
 export function registerSkillsMcpHandlers(ctx: IpcContext): void {
   const { workspaceManager } = ctx
@@ -20,7 +21,8 @@ export function registerSkillsMcpHandlers(ctx: IpcContext): void {
     const pi = workspaceManager.getActivePiManager()
     if (!pi || pi.getStatus().status !== 'running') return []
     try {
-      const response = await pi.sendCommand({ type: 'get_commands' }) as { success?: boolean; data?: { commands?: unknown[] } } | null
+      const command = getPiCli().kind === 'omp' ? 'get_available_commands' : 'get_commands'
+      const response = await pi.sendCommand({ type: command }) as { success?: boolean; data?: { commands?: unknown[] } } | null
       if (response?.success && response.data?.commands) {
         return response.data.commands
       }
@@ -53,6 +55,7 @@ async function listSkills(cwd: string): Promise<InstalledSkill[]> {
   // Global skills
   const globalPaths = [
     join(homeDir, '.pi', 'agent', 'skills'),
+    join(homeDir, '.omp', 'agent', 'skills'),
     join(homeDir, '.agents', 'skills'),
   ]
 
@@ -63,6 +66,7 @@ async function listSkills(cwd: string): Promise<InstalledSkill[]> {
   // Project skills
   const projectPaths = [
     join(cwd, '.pi', 'skills'),
+    join(cwd, '.omp', 'skills'),
     join(cwd, '.agents', 'skills'),
   ]
 
@@ -165,13 +169,25 @@ async function listMcpServers(wsPath?: string): Promise<McpServerInfo[]> {
   const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
 
   // Check Pi global settings for mcpServers
-  const globalSettingsPath = join(homeDir, '.pi', 'agent', 'settings.json')
-  await collectMcpServers(globalSettingsPath, servers, 'global')
+  const globalSettingsPaths = [
+    join(homeDir, '.pi', 'agent', 'settings.json'),
+    join(homeDir, '.omp', 'agent', 'mcp.json'),
+    join(homeDir, '.omp', 'agent', '.mcp.json'),
+  ]
+  for (const settingsPath of globalSettingsPaths) {
+    await collectMcpServers(settingsPath, servers, 'global')
+  }
 
   // Check project settings
   if (wsPath) {
-    const projectSettingsPath = join(wsPath, '.pi', 'settings.json')
-    await collectMcpServers(projectSettingsPath, servers, 'project')
+    const projectSettingsPaths = [
+      join(wsPath, '.pi', 'settings.json'),
+      join(wsPath, '.omp', 'mcp.json'),
+      join(wsPath, '.omp', '.mcp.json'),
+    ]
+    for (const settingsPath of projectSettingsPaths) {
+      await collectMcpServers(settingsPath, servers, 'project')
+    }
   }
 
   // Also check common MCP config locations

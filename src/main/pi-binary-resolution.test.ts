@@ -88,6 +88,11 @@ test('normalizeOverride treats the bare binary name as auto-detect', () => {
   assert.equal(normalizeOverride('PI.CMD', POSIX_HOME), null)
 })
 
+test('normalizeOverride keeps omp as an explicit engine selector', () => {
+  assert.equal(normalizeOverride('omp', POSIX_HOME), 'omp')
+  assert.equal(normalizeOverride('OMP.EXE', POSIX_HOME), 'OMP.EXE')
+})
+
 test('normalizeOverride strips surrounding quotes pasted from a file manager', () => {
   assert.equal(normalizeOverride('"/opt/pi/cli.js"', POSIX_HOME), '/opt/pi/cli.js')
   assert.equal(normalizeOverride("'/opt/pi/cli.js'", POSIX_HOME), '/opt/pi/cli.js')
@@ -259,6 +264,27 @@ test('versionManagerPrefixes returns nothing when no manager is installed', () =
 })
 
 // ─── resolvePiBinary: configured override ────────────────────────────────────
+
+test('resolvePiBinary resolves the omp engine selector from PATH', () => {
+  const deps = fakeDeps({ env: { HOME: POSIX_HOME, PATH: '/opt/omp' }, files: ['/opt/omp/omp'] })
+  const resolution = resolvePiBinary(deps, 'omp')
+  assert.deepEqual(resolution, {
+    script: '/opt/omp/omp',
+    useNode: false,
+    needsShell: false,
+    source: 'override',
+    found: true,
+    rejectedOverride: null,
+    pathEnv: '/opt/omp',
+  })
+})
+
+test('resolvePiBinary auto-detects OMP when Pi is not installed', () => {
+  const deps = fakeDeps({ env: { HOME: POSIX_HOME, PATH: '/opt/omp' }, files: ['/opt/omp/omp'] })
+  const resolution = resolvePiBinary(deps, null)
+  assert.equal(resolution.script, '/opt/omp/omp')
+  assert.equal(resolution.source, 'omp')
+})
 
 test('resolvePiBinary uses a configured cli.js override ahead of auto-detection', () => {
   const override = join(POSIX_HOME, '.nvm/versions/node', NVM_VERSION_NEW, 'lib', PI_CLI_REL)

@@ -228,7 +228,7 @@ export function SettingsPanel(): React.JSX.Element {
   }, [settings])
 
   const handleSelectPath = async () => {
-    const path = await window.piDesktop.system.openDialog({ title: 'Select Pi Executable', mode: 'file' })
+    const path = await window.piDesktop.system.openDialog({ title: 'Select Agent Executable', mode: 'file' })
     if (path) {
       setPiPath(path)
       setSettingsDraft({ piExecutablePath: path })
@@ -533,11 +533,11 @@ export function SettingsPanel(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Pi Configuration */}
-        <SettingsSection title="Pi Configuration">
+        {/* Agent Configuration */}
+        <SettingsSection title="Agent Configuration">
           <SettingsRow
-            label="Pi Executable"
-            description="Path to Pi's cli.js or its install directory. Leave as 'pi' to auto-detect."
+            label="Agent Executable"
+            description="Path to Pi/OMP, their cli.js, or an install directory. Use 'pi' or 'omp' to select an installed engine."
           >
             <div className="flex gap-2">
               <input

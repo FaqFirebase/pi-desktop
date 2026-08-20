@@ -575,6 +575,18 @@ function generateId(): string {
   return `msg-${Date.now()}-${++messageCounter}`
 }
 
+function normalizePiCommands(raw: unknown): PiCommand[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((command): command is Record<string, unknown> => typeof command === 'object' && command !== null)
+    .map((command) => ({
+      name: String(command.name ?? ''),
+      description: String(command.description ?? ''),
+      source: typeof command.source === 'string' ? command.source : 'extension',
+    }))
+    .filter((command) => command.name.length > 0)
+}
+
 // Bumps on every session switch / explicit reload so in-flight getMessages
 // results from a previous switch are dropped instead of fighting the UI.
 let sessionLoadGeneration = 0
@@ -1831,18 +1843,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   loadCommands: async () => {
     try {
-      const raw = await window.piDesktop.piCommands.list()
-      const commands: PiCommand[] = Array.isArray(raw)
-        ? raw
-            .filter((c): c is Record<string, unknown> => typeof c === 'object' && c !== null)
-            .map((c) => ({
-              name: String(c.name ?? ''),
-              description: String(c.description ?? ''),
-              source: typeof c.source === 'string' ? c.source : 'extension',
-            }))
-            .filter((c) => c.name.length > 0)
-        : []
-      set({ commands })
+      set({ commands: normalizePiCommands(await window.piDesktop.piCommands.list()) })
     } catch {
       set({ commands: [] })
     }
@@ -2048,9 +2049,37 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         })
         break
 
+      case 'available_commands_update':
+        set({ commands: normalizePiCommands((event as { commands?: unknown }).commands) })
+        break
+
+      case 'command_output': {
+        const text = (event as { text?: unknown }).text
+        if (typeof text === 'string' && text.trim()) {
+          get().addMessage({ id: generateId(), role: 'system', content: text, timestamp: Date.now() })
+        }
+        break
+      }
+
+      case 'prompt_result':
+        if (!(event as { agentInvoked?: unknown }).agentInvoked) {
+          set({ isStreaming: false })
+          void get().refreshSessionState()
+        }
+        break
+
+      case 'config_update':
+        void get().refreshSessionState()
+        break
+
       case 'extension_ui_request': {
         const uiEvent = event as PiExtensionUiRequest
-        if (uiEvent.method === 'setWidget') {
+        if (uiEvent.method === 'open_url') {
+          const url = uiEvent.launchUrl ?? uiEvent.url
+          if (url) void window.piDesktop.system.openExternal(url)
+        } else if (uiEvent.method === 'cancel') {
+          set((state) => state.extensionUiRequest?.id === uiEvent.targetId ? { extensionUiRequest: null } : state)
+        } else if (uiEvent.method === 'setWidget') {
           // Fire-and-forget: no renderer surface consumes widget lines yet.
         } else if (uiEvent.method === 'setStatus') {
           set((state) => {
@@ -2072,24 +2101,30 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           // Toast slot: kept apart from the dialog slot so a notification can
           // never clobber an unanswered blocking prompt.
           set({ extensionNotify: uiEvent })
-        } else {
-          // Blocking dialog methods (select, confirm, input, editor).
+        } else if (uiEvent.method === 'select' || uiEvent.method === 'confirm' || uiEvent.method === 'input' || uiEvent.method === 'editor') {
           set({ extensionUiRequest: uiEvent })
         }
         break
       }
 
-      case 'session_info_changed': {
+      case 'session_info_changed':
+      case 'session_info_update': {
         // Live title update (auto-title extension, /name, or our rename).
         // Apply the new name directly to the active session's state + list row
         // so both the Current Session panel and its Recent row update instantly,
         // with no file read or RPC round-trip.
-        const newName = (typeof event.name === 'string' && event.name.trim()) || null
+        const info = event as { name?: unknown; title?: unknown; sessionId?: unknown }
+        const rawName = info.name ?? info.title
+        const newName = (typeof rawName === 'string' && rawName.trim()) || null
         set((state) => {
           const activeFile = state.sessionState?.sessionFile ?? null
           return {
             sessionState: state.sessionState
-              ? { ...state.sessionState, sessionName: newName }
+              ? {
+                  ...state.sessionState,
+                  sessionName: newName,
+                  ...(typeof info.sessionId === 'string' ? { sessionId: info.sessionId } : {}),
+                }
               : state.sessionState,
             sessionList: activeFile
               ? state.sessionList.map((s) => (s.path === activeFile ? { ...s, name: newName } : s))

@@ -246,7 +246,10 @@ function ThinkingLevelSelector(): React.JSX.Element {
   const [isOpen, setIsOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  const levels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+  const modelEfforts = sessionState?.model?.thinking?.efforts?.filter((level) => typeof level === 'string' && level.length > 0)
+  const levels = modelEfforts && modelEfforts.length > 0
+    ? ['off', ...modelEfforts.filter((level) => level !== 'off')]
+    : ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
   const currentLevel = sessionState?.thinkingLevel ?? 'medium'
 
   // Close on click outside
