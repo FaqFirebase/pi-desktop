@@ -286,6 +286,27 @@ test('resolvePiBinary auto-detects OMP when Pi is not installed', () => {
   assert.equal(resolution.source, 'omp')
 })
 
+test('resolvePiBinary can resolve each engine independently for the chooser', () => {
+  const deps = fakeDeps({
+    env: { HOME: POSIX_HOME, PATH: '/opt/pi:/opt/omp' },
+    files: ['/opt/pi/pi', '/opt/omp/omp'],
+  })
+  assert.equal(resolvePiBinary(deps, null, 'pi').script, '/opt/pi/pi')
+  assert.equal(resolvePiBinary(deps, null, 'omp').script, '/opt/omp/omp')
+})
+
+test('resolvePiBinary finds an npm-global OMP shim outside PATH', () => {
+  const prefix = '/opt/npm'
+  const omp = join(prefix, 'bin', 'omp')
+  const deps = fakeDeps({
+    env: { HOME: POSIX_HOME, PATH: '/nowhere' },
+    files: [omp],
+    dirs: [prefix],
+    captures: { 'npm prefix -g': `${prefix}\n` },
+  })
+  assert.equal(resolvePiBinary(deps, null, 'omp').script, omp)
+})
+
 test('resolvePiBinary uses a configured cli.js override ahead of auto-detection', () => {
   const override = join(POSIX_HOME, '.nvm/versions/node', NVM_VERSION_NEW, 'lib', PI_CLI_REL)
   const deps = fakeDeps({ files: [override, '/usr/local/bin/pi'] })

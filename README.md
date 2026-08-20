@@ -45,7 +45,7 @@ Changed files use readable status badges:
 
 ## Pi and OMP engines
 
-Pi Desktop speaks Pi's RPC protocol directly, so it can run either the standard `pi` CLI or the compatible `omp` binary from [oh-my-pi](https://github.com/can1357/oh-my-pi). Set **Settings → Agent Configuration → Agent Executable** to `omp` (or its full path). OMP sessions are placed in Desktop's existing session store, OMP's protocol-v2 large-frame transport is negotiated automatically, and model-specific thinking efforts—including `max`—are shown when advertised.
+Pi Desktop speaks Pi's RPC protocol directly, so it can run either the standard `pi` CLI or the compatible `omp` binary from [oh-my-pi](https://github.com/can1357/oh-my-pi). **Settings → Agent Configuration → Agent Installation** scans for installed Pi/OMP engines, lets you select one, and also supports a custom executable or install directory. OMP sessions are placed in Desktop's existing session store, OMP's protocol-v2 large-frame transport is negotiated automatically, and model-specific thinking efforts—including `max`—are shown when advertised.
 
 OMP's native `read`, `grep`, and `glob` tools are used for Plan / Read-only mode; its plugin install/update/remove verbs are mapped behind the existing package actions.
 

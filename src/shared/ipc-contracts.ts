@@ -14,6 +14,7 @@ export const IPC_CHANNELS = {
   PI_STOP: 'pi:stop',
   PI_RESTART: 'pi:restart',
   PI_STATUS: 'pi:status',
+  PI_DETECT_INSTALLATIONS: 'pi:detect-installations',
 
   // Pi commands
   PI_PROMPT: 'pi:prompt',
@@ -988,6 +989,16 @@ export interface PermissionRulesWorkspaceStatus {
   // Whether the workspace rules file actually contains any allow rules — the
   // only case where trust changes behavior.
   hasAllowRules: boolean
+}
+
+export interface AgentInstallation {
+  kind: 'pi' | 'omp'
+  path: string
+  source: string
+}
+
+export interface AgentInstallationsResult {
+  installations: AgentInstallation[]
 }
 
 export interface AppSettings {

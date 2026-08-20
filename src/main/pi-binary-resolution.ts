@@ -63,6 +63,8 @@ export interface ResolutionDeps {
   capture(command: string, args: string[], options: CaptureOptions): string | null
 }
 
+export type PiEngine = 'auto' | 'pi' | 'omp'
+
 export interface PiResolution {
   /** Path to spawn: either a cli.js (with node) or an executable/shim. */
   script: string
@@ -333,13 +335,22 @@ function npmGlobalPrefix(deps: ResolutionDeps, pathEnv: string): string | null {
 }
 
 /** Hardcoded install locations, used only after every dynamic probe fails. */
+function ompShimCandidates(deps: ResolutionDeps, prefix: string): string[] {
+  return deps.isWindows
+    ? [join(prefix, 'omp.cmd'), join(prefix, 'omp.ps1'), join(prefix, 'omp.exe')]
+    : [join(prefix, 'bin', 'omp'), join(prefix, 'omp')]
+}
+
 function ompLocations(deps: ResolutionDeps): string[] {
   const { env } = deps
   const home = homeDir(env)
   if (deps.isWindows) {
+    const appData = env.APPDATA ?? ''
     const localAppData = env.LOCALAPPDATA ?? ''
     const userProfile = env.USERPROFILE ?? home
     return [
+      appData ? join(appData, 'npm', OMP_FALLBACK_BINARY_WINDOWS) : '',
+      localAppData ? join(localAppData, 'npm', OMP_FALLBACK_BINARY_WINDOWS) : '',
       localAppData ? join(localAppData, 'omp', OMP_FALLBACK_BINARY_WINDOWS) : '',
       join(userProfile, '.bun', 'bin', OMP_FALLBACK_BINARY_WINDOWS),
     ].filter(Boolean)
@@ -347,6 +358,8 @@ function ompLocations(deps: ResolutionDeps): string[] {
   return [
     join(home, '.local', 'bin', OMP_FALLBACK_BINARY_POSIX),
     join(home, '.bun', 'bin', OMP_FALLBACK_BINARY_POSIX),
+    join(home, '.npm-global', 'bin', OMP_FALLBACK_BINARY_POSIX),
+    join(home, '.npm-packages', 'bin', OMP_FALLBACK_BINARY_POSIX),
     '/opt/homebrew/bin/omp',
     '/usr/local/bin/omp',
     '/usr/bin/omp',
@@ -358,6 +371,12 @@ function resolveOmpBinary(deps: ResolutionDeps, pathEnv: string): string | null 
   if (onPath) return onPath
   for (const candidate of ompLocations(deps)) {
     if (deps.exists(candidate)) return candidate
+  }
+  const prefix = npmGlobalPrefix(deps, pathEnv)
+  if (prefix) {
+    for (const candidate of ompShimCandidates(deps, prefix)) {
+      if (deps.exists(candidate)) return candidate
+    }
   }
   return null
 }
@@ -432,13 +451,27 @@ function finalize(
  */
 export function resolvePiBinary(
   deps: ResolutionDeps,
-  overridePath: string | null
+  overridePath: string | null,
+  engine: PiEngine = 'auto'
 ): PiResolution {
   const basePath = deps.env.PATH ?? ''
   const shellPath = loginShellPath(deps)
   const pathEnv = shellPath ? mergePathEntries(basePath, shellPath, deps.isWindows) : basePath
 
   let rejectedOverride: string | null = null
+  if (engine === 'omp') {
+    const omp = resolveOmpBinary(deps, pathEnv)
+    return omp
+      ? finalize(deps, omp, 'omp', true, null, pathEnv)
+      : finalize(
+          deps,
+          deps.isWindows ? OMP_FALLBACK_BINARY_WINDOWS : OMP_FALLBACK_BINARY_POSIX,
+          'fallback',
+          false,
+          null,
+          pathEnv
+        )
+  }
   if (overridePath && (overridePath.toLowerCase() === OMP_FALLBACK_BINARY_POSIX || overridePath.toLowerCase() === OMP_FALLBACK_BINARY_WINDOWS)) {
     const omp = resolveOmpBinary(deps, pathEnv)
     if (omp) return finalize(deps, omp, 'override', true, null, pathEnv)
@@ -495,16 +528,18 @@ export function resolvePiBinary(
 
   // Keep the historical Pi-first preference, but make an OMP-only machine
   // work without forcing the user to discover the Agent Executable field.
-  const omp = resolveOmpBinary(deps, pathEnv)
-  if (omp) return finalize(deps, omp, 'omp', true, rejectedOverride, pathEnv)
+  if (engine === 'auto') {
+    const omp = resolveOmpBinary(deps, pathEnv)
+    if (omp) return finalize(deps, omp, 'omp', true, rejectedOverride, pathEnv)
+  }
 
   const fallback = deps.isWindows ? PI_FALLBACK_BINARY_WINDOWS : PI_FALLBACK_BINARY_POSIX
   return finalize(deps, fallback, 'fallback', false, rejectedOverride, pathEnv)
 }
 
-const SETTINGS_HINT = 'Settings > Pi Configuration > Pi Executable'
+const SETTINGS_HINT = 'Settings > Agent Configuration > Agent Installation'
 const INSTALL_HINT =
-  'Install Pi with:\n  npm install -g @earendil-works/pi-coding-agent\nor on Windows:\n  irm https://pi.dev/install.ps1 | iex'
+  'Install Pi with:\n  npm install -g @earendil-works/pi-coding-agent\nor install OMP with:\n  bun install -g @oh-my-pi/pi-coding-agent'
 
 /**
  * Explain a failed resolution. A stale configured path is the headline when

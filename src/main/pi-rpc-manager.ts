@@ -9,6 +9,7 @@ import type {
   PiProcessStatus,
   PiStatus,
   PiResponseEvent,
+  AgentInstallation,
 } from '../shared/ipc-contracts'
 import type { CaptureOptions, PiResolution, ResolutionDeps } from './pi-binary-resolution'
 import {
@@ -291,6 +292,22 @@ function getResolution(): PiResolution {
  */
 export function getPiResolution(): PiResolution {
   return getResolution()
+}
+
+/** Detect the first usable installation for each supported engine. */
+export function detectPiInstallations(): AgentInstallation[] {
+  const candidates: Array<{ kind: AgentInstallation['kind']; resolution: PiResolution }> = [
+    { kind: 'pi', resolution: resolvePiBinary(RESOLUTION_DEPS, null, 'pi') },
+    { kind: 'omp', resolution: resolvePiBinary(RESOLUTION_DEPS, null, 'omp') },
+  ]
+  const seen = new Set<string>()
+  return candidates.flatMap(({ kind, resolution }) => {
+    if (!resolution.found) return []
+    const key = resolution.script.toLowerCase()
+    if (seen.has(key)) return []
+    seen.add(key)
+    return [{ kind, path: resolution.script, source: resolution.source }]
+  })
 }
 
 function logResolution(resolution: PiResolution): void {

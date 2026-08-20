@@ -7,6 +7,7 @@ import type {
   SessionDeleteResult,
   ArchivedSessionsMap,
   AppSettings,
+  AgentInstallationsResult,
   Workspace,
   WorkspaceTabOptions,
   WorkspaceRemoveResult,
@@ -79,6 +80,7 @@ interface PiDesktopAPI {
     stop(): Promise<PiStatus>
     restart(options?: PiStartOptions): Promise<PiStatus>
     getStatus(): Promise<PiStatus>
+    detectInstallations(): Promise<AgentInstallationsResult>
   }
 
   // Pi commands
@@ -345,6 +347,7 @@ const api: PiDesktopAPI = {
     stop: () => ipcRenderer.invoke(IPC_CHANNELS.PI_STOP),
     restart: (options?: PiStartOptions) => ipcRenderer.invoke(IPC_CHANNELS.PI_RESTART, options),
     getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.PI_STATUS),
+    detectInstallations: () => ipcRenderer.invoke(IPC_CHANNELS.PI_DETECT_INSTALLATIONS),
   },
 
   commands: {
