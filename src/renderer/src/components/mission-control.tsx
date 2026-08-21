@@ -65,7 +65,7 @@ export function MissionControl(): React.JSX.Element {
     if (session) {
       await openSessionItem(session)
     } else {
-      if (!(await activateWorkspace(workspace.id, { start: false }))) return
+      if (!(await activateWorkspace(workspace.id, { awaitingSession: true }))) return
       await switchSession(runtime.sessionPath, workspace.path)
       setCurrentView('chat')
     }

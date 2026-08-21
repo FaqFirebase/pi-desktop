@@ -107,7 +107,7 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
       // Workspace/session activation is non-destructive; the target Pi runtime
       // hydrates in the background while Chat opens immediately.
       if (targetId) {
-        if (!(await activateWorkspace(targetId, { start: false }))) return
+        if (!(await activateWorkspace(targetId, { awaitingSession: true }))) return
       }
       if (useAppStore.getState().piStatus === 'error') return
       await switchSession(session.path, session.projectPath)

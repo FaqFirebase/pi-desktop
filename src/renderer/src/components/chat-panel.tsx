@@ -280,7 +280,7 @@ export function ChatPanel(): React.JSX.Element {
                     {sessionLoading && messages.length === 0 ? (
                       <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-dim">
                         <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
-                        Loading session…
+                        {piStatus === 'running' ? 'Loading session…' : 'Starting agent…'}
                       </div>
                     ) : (
                       <NowContext.Provider value={now}>

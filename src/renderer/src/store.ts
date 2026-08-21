@@ -496,10 +496,11 @@ interface AppActions {
   /**
    * Resolves false when the editor discard was declined or the switch failed.
    * Workspace tabs keep their Pi processes running in the background.
-   * skipSessionLoad: when opening a specific session next, skip resume+history —
-   * switchSession will load the target once.
+   * Never spawns a process. awaitingSession: a switchSession follows
+   * immediately — hold the loading state instead of flashing the empty
+   * new-session view in between.
    */
-  activateWorkspace: (workspaceId: string, options?: { start?: boolean; skipDirtyConfirm?: boolean }) => Promise<boolean>
+  activateWorkspace: (workspaceId: string, options?: { awaitingSession?: boolean; skipDirtyConfirm?: boolean }) => Promise<boolean>
   switchWorkspace: (
     workspaceId: string,
     options?: { skipSessionLoad?: boolean }
@@ -1261,7 +1262,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     let gen = 0
     try {
       if (get().activeWorkspace?.id !== workspaceId) {
-        if (!(await get().activateWorkspace(workspaceId, { start: false }))) return false
+        if (!(await get().activateWorkspace(workspaceId, { awaitingSession: true }))) return false
       }
       let reusedWorktree = false
       if (options.isolated) {
@@ -1275,7 +1276,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         })
         reusedWorktree = knownWorkspaceIds.has(workspace.id) || workspace.managed === false
         await get().loadWorkspaces()
-        if (!(await get().activateWorkspace(workspace.id, { start: false }))) return false
+        if (!(await get().activateWorkspace(workspace.id, { awaitingSession: true }))) return false
         workspaceId = workspace.id
       }
 
@@ -1476,6 +1477,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const gen = sessionLoadGeneration
     const refreshList = options?.refreshList ?? true
 
+    // A runtime that has not finished starting cannot answer get_messages —
+    // its 'running' event re-runs this. Ending the loading state here would
+    // flash the empty new-session view between the click and startup.
+    if (get().piStatus !== 'running') return
+
     get().clearMessages()
     set({ sessionLoading: true })
     void get().refreshSessionState()
@@ -1536,11 +1542,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (projectPath && !(activeWorkspace && pathsEqual(activeWorkspace.path, projectPath))) {
       const matchingWs = workspaces.find((w) => pathsEqual(w.path, projectPath))
       if (matchingWs) {
-        if (!(await get().activateWorkspace(matchingWs.id, { start: false }))) return
+        if (!(await get().activateWorkspace(matchingWs.id, { awaitingSession: true }))) return
       } else {
         await get().createWorkspace(session.projectName, projectPath)
         const newWs = get().workspaces.find((w) => pathsEqual(w.path, projectPath))
-        if (newWs && !(await get().activateWorkspace(newWs.id, { start: false }))) return
+        if (newWs && !(await get().activateWorkspace(newWs.id, { awaitingSession: true }))) return
       }
     }
     // switchSession's working-workspace guard covers the live-turn cases from
@@ -2484,9 +2490,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       const workspace = await window.piDesktop.workspace.setActive(workspaceId)
       sessionLoadGeneration += 1
       get().clearMessages()
-      // Each workspace owns its PiRpcManager, so re-sync status from main
-      // before deciding what this workspace shows.
-      const status = await window.piDesktop.pi.getStatus()
+      // Decide from the runtime snapshots the main process already pushed —
+      // one IPC roundtrip total, no serial status probe before first render.
+      // The status broadcast that follows the main-side activation corrects
+      // any snapshot staleness.
+      const live = Object.values(get().sessionRuntimes).some(
+        (runtime) => runtime.workspaceId === workspace.id && runtime.status === 'running'
+      )
       set((state) => ({
         workspaces: state.workspaces.some((item) => item.id === workspace.id)
           ? state.workspaces.map((item) => item.id === workspace.id ? workspace : item)
@@ -2497,14 +2507,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         extensionUiRequest: null,
         previewTarget: null,
         editorDirty: false,
-        piStatus: status.status,
-        piPid: status.pid,
-        piError: status.error,
-        sessionLoading: status.status === 'running',
+        piStatus: live ? 'running' : 'stopped',
+        piPid: null,
+        piError: null,
+        sessionLoading: live || options?.awaitingSession === true,
       }))
       void window.piDesktop.ui.flushPendingPrompts(workspace.id)
       scheduleSessionListRefresh(get)
-      if (status.status === 'running') {
+      if (live && options?.awaitingSession !== true) {
         void get().reloadActiveSession({ refreshList: false })
         // A turn may already be running here (that is what the sidebar dot
         // advertised). Arm the mid-turn attach so the next turn boundary
@@ -2540,7 +2550,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // workspace's file service refuses paths outside its root — unsaved
       // edits would be stranded unsaveable. Ask before committing the switch.
       if (!(await get().confirmDiscardEditorChanges())) return false
-      await window.piDesktop.workspace.setActive(workspaceId)
+      const workspace = await window.piDesktop.workspace.setActive(workspaceId)
       switchCommitted = true
       // The dialog on screen belongs to the workspace being left. Clear it
       // WITHOUT answering: main retains the request and re-broadcasts it on
@@ -2552,22 +2562,35 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // The switch has committed on the main side as of this point — an
       // unsaved workspace-rules draft belongs to the workspace being left, so
       // discard it now rather than at the end of this chain. Doing it here
-      // (before any of the awaits below, and before loadWorkspaces() updates
-      // `activeWorkspace`) means it can't be skipped by a later throw in this
-      // chain, and the settings panel's own activeWorkspace-change effect can
-      // never observe a stale draft under the new workspace.
+      // (before any of the awaits below) means it can't be skipped by a later
+      // throw in this chain, and the settings panel's own activeWorkspace-change
+      // effect can never observe a stale draft under the new workspace.
       get().setPermissionRulesDraft('workspace', null)
       get().clearMessages()
-      // Re-sync Pi status from main: each workspace has its own PiRpcManager,
-      // so the target workspace's process may be in a different state than
-      // what piStatus is currently showing.
-      const status = await window.piDesktop.pi.getStatus()
+      sessionLoadGeneration += 1
+      // Render the target workspace immediately from pushed runtime snapshots,
+      // then reconcile status + workspace list in one parallel roundtrip.
+      const live = Object.values(get().sessionRuntimes).some(
+        (runtime) => runtime.workspaceId === workspace.id && runtime.status === 'running'
+      )
+      set((state) => ({
+        workspaces: state.workspaces.some((item) => item.id === workspace.id)
+          ? state.workspaces.map((item) => item.id === workspace.id ? workspace : item)
+          : [...state.workspaces, workspace],
+        activeWorkspace: workspace,
+        piStatus: live ? 'running' : 'stopped',
+        piPid: null,
+        piError: null,
+        sessionLoading: live && !skipSessionLoad,
+      }))
+      const [status] = await Promise.all([
+        window.piDesktop.pi.getStatus(),
+        get().loadWorkspaces(),
+      ])
       set({ piStatus: status.status, piPid: status.pid, piError: status.error })
-      await get().loadWorkspaces()
       // Session list refresh only — navigation never spawns a process.
       scheduleSessionListRefresh(get)
       if (!skipSessionLoad && get().piStatus === 'running') {
-        sessionLoadGeneration += 1
         await get().reloadActiveSession({ refreshList: false })
         // A turn may already be running here (that is what the sidebar dot
         // advertised). The reload above only shows persisted messages, so

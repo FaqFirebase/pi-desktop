@@ -36,7 +36,7 @@ export function usePiEvents(): void {
       void (async () => {
         if (sessionPath) {
           if (state.activeWorkspace?.id !== workspaceId) {
-            if (!(await state.activateWorkspace(workspaceId, { start: false }))) return
+            if (!(await state.activateWorkspace(workspaceId, { awaitingSession: true }))) return
           }
           const workspace = useAppStore.getState().activeWorkspace
           if (!workspace) return

@@ -6,7 +6,7 @@ import type { PreviewTarget } from './store'
 // Each recorded call is appended to `calls`, so tests can assert both that a
 // session change reached Pi and that nothing reached Pi when it was declined.
 const calls: string[] = []
-let switchResult: { success?: boolean; error?: string } | null = { success: true }
+let switchResult: { success?: boolean; error?: string } | SessionRuntimeInfo | null = { success: true }
 // Non-null makes the stubbed pi.getStatus reject, simulating a main-side
 // failure AFTER a workspace switch has already committed.
 let getStatusFailure: string | null = null
@@ -292,7 +292,6 @@ beforeEach(() => {
   getStatusFailure = null
   piStatusResult = 'stopped'
   setActiveFailure = null
-  pendingPromptsFailure = null
   pendingPromptsSnapshot = {}
   workspaceActivityFailure = null
   workspaceActivitySnapshot = {}
@@ -317,6 +316,8 @@ beforeEach(() => {
     pendingPromptCounts: {},
     workspaceActivity: {},
     reattachedMidTurn: false,
+    sessionLoading: false,
+    activeSessionRuntimeId: null,
     activeWorkspace: null,
     workspaces: [],
     piStatus: 'stopped',
@@ -1624,13 +1625,44 @@ test('the activity map going quiet after an attach stops the indicator and backf
 test('opening a mid-turn session row leaves the other runtime working', async () => {
   enterWorkspacesWithBackgroundTurn()
   sessionStateResult = sessionStateWith(SESSION_PATH)
+  switchResult = {
+    runtimeId: 'rt-opened',
+    workspaceId: WORKSPACE_TWO.id,
+    sessionPath: SESSION_PATH,
+    sessionId: 'session-2',
+    status: 'stopped',
+    pid: null,
+    error: null,
+    activity: null,
+    active: true,
+  }
 
   await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
 
   const state = useAppStore.getState()
   assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
-  assert.equal(calls.includes('getMessages'), true, 'the selected runtime still hydrates history')
+  assert.equal(state.sessionLoading, true, 'hydration defers until the runtime reports running')
   assert.equal(state.isStreaming, false, 'the selected session starts idle until its own events arrive')
+
+  // Main finishes spawning the selected runtime; its running event hydrates.
+  useAppStore.getState().handleSessionRuntime({
+    runtimeId: 'rt-opened',
+    workspaceId: WORKSPACE_TWO.id,
+    sessionPath: SESSION_PATH,
+    sessionId: 'session-2',
+    status: 'running',
+    pid: 7,
+    error: null,
+    activity: null,
+    active: true,
+  })
+  // Flush the microtask chain the fire-and-forget hydration rides on — no
+  // wall-clock wait needed for a mocked getMessages.
+  await Promise.resolve()
+  await Promise.resolve()
+
+  assert.equal(calls.includes('getMessages'), true, 'the running event hydrates history')
+  assert.equal(useAppStore.getState().sessionLoading, false)
 })
 
 test('opening a different session mid-turn does not prompt or stop the other runtime', async () => {
