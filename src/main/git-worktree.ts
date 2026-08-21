@@ -101,7 +101,9 @@ export async function inspectGitRepository(cwd: string): Promise<GitRepositoryIn
   const commonDir = resolve(cwd, commonDirRaw)
   const repoRoot = dirname(commonDir)
   const [head, branch, status] = await Promise.all([
-    gitValue(['rev-parse', 'HEAD'], cwd),
+    // An unborn branch has no HEAD yet, but its worktree is still valid and
+    // must be able to reach the first commit through the conveyor.
+    gitValue(['rev-parse', '--verify', 'HEAD'], cwd).catch(() => ''),
     gitValue(['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd).catch(() => null),
     gitValue(['status', '--porcelain=v1', '--untracked-files=all'], cwd),
   ])

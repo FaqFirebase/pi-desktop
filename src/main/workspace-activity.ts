@@ -7,166 +7,170 @@ import type {
 } from '../shared/ipc-contracts'
 
 /**
- * Derives per-workspace background activity (working / needs-approval /
- * completed / failed) from every workspace's Pi lifecycle signals.
+ * Derives aggregate workspace activity from independent session runtimes.
  *
- * The renderer's stream state deliberately follows only the ACTIVE workspace
- * (see pi-event-router.ts), so cross-workspace awareness must be computed
- * main-side and pushed as its own map — this module is that computation.
- *
- * Electron-free factory: all I/O goes through injected deps, so tests drive it
- * with plain calls and an injected clock.
+ * The renderer's stream state follows only the active runtime, while this
+ * tracker must preserve every background runtime's turn independently. A
+ * workspace-level boolean loses that information as soon as a sibling runtime
+ * starts or stops.
  */
 
 export type WorkspaceActivityNotification = {
   workspaceId: string
   kind: 'completed' | 'failed' | 'needs-approval'
-  /** Exact runtime/session target when the event came from a session manager. */
   runtimeId?: string
   sessionPath?: string
 }
 
+type RuntimeTarget = { runtimeId?: string; sessionPath?: string }
+
 export interface WorkspaceActivityTrackerDeps {
   getActiveWorkspaceId(): string | null
   now(): number
-  /** Called with the full map after any derived state changes. */
   onChange(map: WorkspaceActivityMap): void
-  /**
-   * Called on the raw events (turn finished, process failed, prompt queued)
-   * for EVERY workspace including the active one — the map suppresses
-   * outcomes for the active workspace (its state is on screen), but a
-   * notification decision also cares about window focus, which only the
-   * caller can judge (see notify-decision.ts).
-   */
   onNotify(notification: WorkspaceActivityNotification): void
 }
 
 export interface WorkspaceActivityTracker {
-  handleAgentStart(workspaceId: string): void
-  handleAgentEnd(workspaceId: string, target?: { runtimeId?: string; sessionPath?: string }): void
-  handleStatusChange(workspaceId: string, status: PiProcessStatus, target?: { runtimeId?: string; sessionPath?: string }): void
-  /**
-   * The manager's 'exit' emission: the process died UNEXPECTEDLY after
-   * reaching running (a deliberate stop() detaches listeners first and never
-   * emits it). This — not the 'stopped' status both paths share — is the
-   * failure signal, so quitting or stopping Pi mid-turn stays silent.
-   */
-  handleProcessExit(workspaceId: string, target?: { runtimeId?: string; sessionPath?: string }): void
+  handleAgentStart(workspaceId: string, target?: RuntimeTarget): void
+  handleAgentEnd(workspaceId: string, target?: RuntimeTarget): void
+  handleStatusChange(workspaceId: string, status: PiProcessStatus, target?: RuntimeTarget): void
+  handleProcessExit(workspaceId: string, target?: RuntimeTarget): void
   handlePendingCounts(counts: PendingPromptCounts): void
-  /** The user is now looking at this workspace — clear finished outcomes. */
   handleWorkspaceSeen(workspaceId: string): void
   handleWorkspaceRemoved(workspaceId: string): void
   getMap(): WorkspaceActivityMap
 }
 
-interface WorkspaceSignals {
+interface RuntimeSignals {
+  workspaceId: string
   turnActive: boolean
-  pendingCount: number
   outcome: 'completed' | 'failed' | null
+  outcomeAt: number
   /**
-   * The status hit 'stopped' while a turn was running. Kept because the
-   * crash path emits status-change 'stopped' BEFORE 'exit', so by the time
-   * handleProcessExit runs, turnActive has already been cleared.
+   * The status hit 'stopped' while a turn was running. A subsequent exit
+   * distinguishes an unexpected crash from deliberate stop().
    */
   stoppedMidTurn: boolean
 }
 
-function deriveState(signals: WorkspaceSignals): WorkspaceActivityState | null {
-  if (signals.pendingCount > 0) return 'needs-approval'
-  if (signals.turnActive) return 'working'
-  return signals.outcome
+function runtimeKey(workspaceId: string, target?: RuntimeTarget): string {
+  return target?.runtimeId ?? target?.sessionPath ?? workspaceId
 }
 
 export function createWorkspaceActivityTracker(
   deps: WorkspaceActivityTrackerDeps,
 ): WorkspaceActivityTracker {
-  const signals = new Map<string, WorkspaceSignals>()
-  // Last derived state per workspace, with the timestamp it was entered.
+  const signals = new Map<string, RuntimeSignals>()
+  const pendingByWorkspace = new Map<string, number>()
   const derived = new Map<string, WorkspaceActivity>()
 
-  const signalsFor = (workspaceId: string): WorkspaceSignals => {
-    let entry = signals.get(workspaceId)
+  const signalsFor = (workspaceId: string, target?: RuntimeTarget): RuntimeSignals => {
+    const key = runtimeKey(workspaceId, target)
+    let entry = signals.get(key)
+    if (!entry && target) {
+      const fallback = signals.get(workspaceId)
+      if (fallback && fallback.workspaceId === workspaceId) {
+        signals.delete(workspaceId)
+        signals.set(key, fallback)
+        entry = fallback
+      }
+    }
     if (!entry) {
-      entry = { turnActive: false, pendingCount: 0, outcome: null, stoppedMidTurn: false }
-      signals.set(workspaceId, entry)
+      entry = {
+        workspaceId,
+        turnActive: false,
+        outcome: null,
+        outcomeAt: 0,
+        stoppedMidTurn: false,
+      }
+      signals.set(key, entry)
     }
     return entry
   }
 
   const buildMap = (): WorkspaceActivityMap => {
     const map: WorkspaceActivityMap = {}
-    for (const [workspaceId, activity] of derived) {
-      map[workspaceId] = { ...activity }
-    }
+    for (const [workspaceId, activity] of derived) map[workspaceId] = { ...activity }
     return map
   }
 
-  // Recompute derived states and emit the map when anything actually changed.
   const recompute = (): void => {
+    const workspaceIds = new Set<string>([
+      ...[...signals.values()].map((entry) => entry.workspaceId),
+      ...pendingByWorkspace.keys(),
+      ...derived.keys(),
+    ])
     let changed = false
-    for (const [workspaceId, entry] of signals) {
-      const nextState = deriveState(entry)
+
+    for (const workspaceId of workspaceIds) {
+      const workspaceSignals = [...signals.values()].filter((entry) => entry.workspaceId === workspaceId)
+      const pending = pendingByWorkspace.get(workspaceId) ?? 0
+      const latestOutcome = workspaceSignals
+        .filter((entry) => entry.outcome !== null)
+        .sort((left, right) => right.outcomeAt - left.outcomeAt)[0]?.outcome ?? null
+      const nextState: WorkspaceActivityState | null =
+        pending > 0
+          ? 'needs-approval'
+          : workspaceSignals.some((entry) => entry.turnActive)
+            ? 'working'
+            : latestOutcome
       const previous = derived.get(workspaceId) ?? null
       if (nextState === (previous?.state ?? null)) continue
       changed = true
-      if (nextState === null) {
-        derived.delete(workspaceId)
-        continue
-      }
-      derived.set(workspaceId, { state: nextState, since: deps.now() })
+      if (nextState === null) derived.delete(workspaceId)
+      else derived.set(workspaceId, { state: nextState, since: deps.now() })
     }
     if (changed) deps.onChange(buildMap())
   }
 
   return {
-    handleAgentStart(workspaceId) {
-      const entry = signalsFor(workspaceId)
+    handleAgentStart(workspaceId, target) {
+      const entry = signalsFor(workspaceId, target)
       entry.turnActive = true
       entry.outcome = null
+      entry.outcomeAt = 0
       entry.stoppedMidTurn = false
       recompute()
     },
 
     handleAgentEnd(workspaceId, target) {
-      const entry = signalsFor(workspaceId)
+      const entry = signalsFor(workspaceId, target)
       const wasTurnActive = entry.turnActive
       entry.turnActive = false
       entry.stoppedMidTurn = false
-      // Finishing while watched needs no map marker; finishing in the
-      // background stays visible until the user looks at that workspace. The
-      // notification fires either way — focus, not activity, decides there.
       entry.outcome = deps.getActiveWorkspaceId() === workspaceId ? null : 'completed'
+      entry.outcomeAt = deps.now()
       if (wasTurnActive) deps.onNotify({ workspaceId, kind: 'completed', ...target })
       recompute()
     },
 
     handleStatusChange(workspaceId, status, target) {
-      const entry = signalsFor(workspaceId)
+      const entry = signalsFor(workspaceId, target)
       const isActive = deps.getActiveWorkspaceId() === workspaceId
       if (status === 'error') {
         entry.turnActive = false
         entry.stoppedMidTurn = false
         entry.outcome = isActive ? null : 'failed'
+        entry.outcomeAt = deps.now()
         deps.onNotify({ workspaceId, kind: 'failed', ...target })
       } else if (status === 'stopped') {
-        // 'stopped' alone is neutral — deliberate stops (user stop, quit,
-        // folder change) land here too. Only a following 'exit' emission
-        // (unexpected death) turns a mid-turn stop into a failure.
         entry.stoppedMidTurn = entry.turnActive
         entry.turnActive = false
       } else if (status === 'running') {
-        // Fresh (re)start — previous outcomes no longer describe this process.
         entry.turnActive = false
         entry.stoppedMidTurn = false
         entry.outcome = null
+        entry.outcomeAt = 0
       }
       recompute()
     },
 
     handleProcessExit(workspaceId, target) {
-      const entry = signalsFor(workspaceId)
+      const entry = signalsFor(workspaceId, target)
       if (entry.stoppedMidTurn || entry.turnActive) {
         entry.outcome = deps.getActiveWorkspaceId() === workspaceId ? null : 'failed'
+        entry.outcomeAt = deps.now()
         deps.onNotify({ workspaceId, kind: 'failed', ...target })
       }
       entry.stoppedMidTurn = false
@@ -176,32 +180,34 @@ export function createWorkspaceActivityTracker(
 
     handlePendingCounts(counts) {
       for (const workspaceId of Object.keys(counts)) {
-        const entry = signalsFor(workspaceId)
-        // A workspace newly waiting on an answer is notification-worthy; a
-        // count moving 2 -> 3 while already waiting is not.
-        if (entry.pendingCount === 0 && counts[workspaceId] > 0) {
+        const previous = pendingByWorkspace.get(workspaceId) ?? 0
+        const next = counts[workspaceId]
+        if (previous === 0 && next > 0) {
           deps.onNotify({ workspaceId, kind: 'needs-approval' })
         }
-        entry.pendingCount = counts[workspaceId]
+        pendingByWorkspace.set(workspaceId, next)
       }
-      // Zero entries are omitted from the broadcast shape.
-      for (const [workspaceId, entry] of signals) {
-        if (!(workspaceId in counts)) entry.pendingCount = 0
+      for (const workspaceId of pendingByWorkspace.keys()) {
+        if (!(workspaceId in counts)) pendingByWorkspace.delete(workspaceId)
       }
       recompute()
     },
 
     handleWorkspaceSeen(workspaceId) {
-      const entry = signals.get(workspaceId)
-      if (!entry) return
-      entry.outcome = null
+      for (const entry of signals.values()) {
+        if (entry.workspaceId !== workspaceId) continue
+        entry.outcome = null
+        entry.outcomeAt = 0
+      }
       recompute()
     },
 
     handleWorkspaceRemoved(workspaceId) {
-      const hadState = derived.delete(workspaceId)
-      signals.delete(workspaceId)
-      if (hadState) deps.onChange(buildMap())
+      for (const [key, entry] of signals) {
+        if (entry.workspaceId === workspaceId) signals.delete(key)
+      }
+      pendingByWorkspace.delete(workspaceId)
+      if (derived.delete(workspaceId)) deps.onChange(buildMap())
     },
 
     getMap: buildMap,

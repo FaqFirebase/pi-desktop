@@ -17,7 +17,7 @@ import { activityStatsStore } from '../activity-stats'
 import type { SessionDeleteResult, SessionListItem, SessionRuntimeCloseResult, SessionRuntimeInfo } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { readdir, stat, unlink } from 'fs/promises'
-import { basename, join } from 'path'
+import { basename, join, resolve } from 'path'
 import { isPathWithin } from '../path-authorization'
 import { existsSync } from 'fs'
 import { spawnSync } from 'child_process'
@@ -103,6 +103,9 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     const workspace = workspaceManager.getWorkspaces().find((item) => item.id === input.workspaceId)
     if (!workspace) throw new Error('Workspace not found')
     const runtime = await workspaceManager.createNewSessionRuntime(workspace.id)
+    // Reserve the runtime while startup and prompt delivery are asynchronous;
+    // list polling must not classify its header-only file as disposable.
+    workspaceManager.setSessionRuntimeActivity(runtime.runtimeId, 'working')
     // Keep the prompt attached to this runtime. It must not go through the
     // renderer's active-manager shortcut because the user can switch away
     // before Pi finishes starting.
@@ -111,7 +114,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
         type: 'prompt',
         message: input.prompt,
       }))
-      .catch(() => undefined)
+      .catch(() => workspaceManager.setSessionRuntimeActivity(runtime.runtimeId, 'failed'))
     return runtime
   })
 
@@ -161,11 +164,19 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   ipcMain.handle(IPC_CHANNELS.SESSION_FORK, async (_event, entryId?: unknown) => {
     const cmd: Record<string, unknown> = { type: 'fork' }
     if (isString(entryId)) cmd.entryId = entryId
-    return getActivePi().sendCommand(cmd)
+    const pi = getActivePi()
+    const response = await pi.sendCommand(cmd)
+    const runtimeId = workspaceManager.runtimeIdFor(pi)
+    if (runtimeId) await workspaceManager.refreshSessionRuntime(runtimeId).catch(() => null)
+    return response
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_CLONE, async () => {
-    return getActivePi().sendCommand({ type: 'clone' })
+    const pi = getActivePi()
+    const response = await pi.sendCommand({ type: 'clone' })
+    const runtimeId = workspaceManager.runtimeIdFor(pi)
+    if (runtimeId) await workspaceManager.refreshSessionRuntime(runtimeId).catch(() => null)
+    return response
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async (_event, cwd?: unknown) => {
@@ -293,9 +304,10 @@ const SESSION_NAME_READ_CONCURRENCY = 24
  */
 async function fillSessionLabels(entries: SessionEntry[]): Promise<void> {
   await mapWithConcurrency(entries, SESSION_NAME_READ_CONCURRENCY, async (entry) => {
-    const { name, preview, header } = await readSessionMetadataCached(entry.path, entry.lastModified)
+    const { name, preview, contentState, header } = await readSessionMetadataCached(entry.path, entry.lastModified)
     entry.name = name
     entry.preview = preview
+    entry.contentState = contentState
     entry.piSessionId = header?.id
     // The session header's cwd is authoritative: session directory names are
     // lossy decodes of real paths (hyphens vs separators collide), so the
@@ -304,8 +316,8 @@ async function fillSessionLabels(entries: SessionEntry[]): Promise<void> {
     // session creates/activates the REAL workspace and never re-persists a
     // phantom one. The filename-stem sessionId (tags/archive key) is untouched.
     if (header?.cwd) {
-      entry.projectPath = header.cwd
-      entry.projectName = projectNameFromPath(header.cwd)
+      entry.projectPath = resolve(header.cwd)
+      entry.projectName = projectNameFromPath(entry.projectPath)
     }
   })
 }
@@ -327,10 +339,10 @@ function createListSessions(wm: WorkspaceManager) {
       // whole store), then surface each session's latest session_info name.
       const top = entries.slice(0, MAX_SESSION_LIST)
       await fillSessionLabels(top)
-      // Pi creates the JSONL header before the first user turn. Do not expose
-      // those disposable empty sessions in Recent/Sessions; they cannot be
-      // resumed meaningfully and become stale switch targets after a restart.
-      return top.filter((entry) => entry.preview !== null)
+      // Pi creates the JSONL header before the first user turn. Only hide rows
+      // proven to be header-only; image-only, unreadable, malformed, and
+      // over-budget sessions remain openable and recoverable.
+      return top.filter((entry) => entry.contentState !== 'empty')
     } catch {
       return []
     }

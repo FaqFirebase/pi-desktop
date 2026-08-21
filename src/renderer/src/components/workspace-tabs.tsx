@@ -132,21 +132,35 @@ export function WorkspaceTabs(): React.JSX.Element {
       })}
 
       {toolsActive && (
-        <button
-          type="button"
-          aria-current="page"
-          onClick={() => {
-            if (!toolView.includes(currentView as (typeof toolView)[number])) {
+        <div className="group flex h-9 min-w-[140px] shrink-0 items-center rounded-t-md border border-b-0 border-border bg-surface text-primary">
+          <button
+            type="button"
+            aria-current="page"
+            onClick={() => {
+              if (!toolView.includes(currentView as (typeof toolView)[number])) {
+                setWorkflowPanelOpen(false)
+                setCurrentView('settings')
+              }
+            }}
+            className="flex min-w-0 flex-1 items-center gap-2 px-2.5 text-left text-xs"
+            title="Tools"
+          >
+            <Settings size={13} className="shrink-0 text-accent-fg" />
+            <span className="truncate font-medium">Tools</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
               setWorkflowPanelOpen(false)
-              setCurrentView('settings')
-            }
-          }}
-          className="group flex h-9 min-w-[110px] shrink-0 items-center gap-2 rounded-t-md border border-b-0 border-border bg-surface px-2.5 text-left text-xs text-primary"
-          title="Tools"
-        >
-          <Settings size={13} className="shrink-0 text-accent-fg" />
-          <span className="truncate font-medium">Tools</span>
-        </button>
+              setCurrentView('chat')
+            }}
+            className="mr-1 rounded p-1 text-faint opacity-0 transition-all hover:bg-highlight hover:text-primary group-hover:opacity-100"
+            title="Close tools"
+            aria-label="Close tools"
+          >
+            <X size={12} />
+          </button>
+        </div>
       )}
 
       <button

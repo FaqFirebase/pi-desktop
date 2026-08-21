@@ -499,7 +499,7 @@ interface AppActions {
    * skipSessionLoad: when opening a specific session next, skip resume+history —
    * switchSession will load the target once.
    */
-  activateWorkspace: (workspaceId: string, options?: { start?: boolean }) => Promise<boolean>
+  activateWorkspace: (workspaceId: string, options?: { start?: boolean; skipDirtyConfirm?: boolean }) => Promise<boolean>
   switchWorkspace: (
     workspaceId: string,
     options?: { skipSessionLoad?: boolean }
@@ -1344,11 +1344,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       })
 
       if (wasActive) {
-        const replacement = Object.values(get().sessionRuntimes)
-          .filter((candidate) => candidate.workspaceId === result.workspaceId && candidate.sessionPath)
-          .reverse()[0]
-        if (replacement?.sessionPath) {
-          await get().switchSession(replacement.sessionPath, get().activeWorkspace?.path)
+        const replacementPath = result.replacementSessionPath
+        if (replacementPath) {
+          await get().switchSession(replacementPath, get().activeWorkspace?.path)
         } else {
           get().clearMessages()
           set({
@@ -1417,6 +1415,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           sessionState: null,
           sessionStats: null,
           activeSessionRuntimeId: null,
+          // The dialog belongs to the runtime being left. Main retains its
+          // origin and replays it when the user switches back.
+          extensionUiRequest: null,
         })
         get().clearMessages()
         const result = await window.piDesktop.session.switch(path, projectPath) as SessionRuntimeInfo | { success?: boolean; error?: string } | null
@@ -1432,6 +1433,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           return
         }
         const runtime = result && 'runtimeId' in result ? result : null
+        const reattaching = runtime?.activity === 'working' || runtime?.activity === 'needs-approval'
         if (get().activeWorkspace?.id) void window.piDesktop.ui.flushPendingPrompts(get().activeWorkspace!.id)
         set({
           currentView: 'chat',
@@ -1442,6 +1444,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
             piPid: runtime.pid,
             piError: runtime.error,
           } : {}),
+          ...(reattaching ? { isStreaming: true, reattachedMidTurn: true } : {}),
         })
         // If the runtime is already ready this starts hydration now. If it is
         // still starting, handleSessionRuntime retries on its running event.
@@ -2385,10 +2388,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       // A new tab starts from the repository's HEAD, never by copying the
       // source tab's dirty files. That makes opening a tab safe while the old
-      // Pi is actively editing its own checkout.
       const workspace = await window.piDesktop.workspace.createTab()
       await get().loadWorkspaces()
-      const switched = await get().activateWorkspace(workspace.id)
+      const switched = await get().activateWorkspace(workspace.id, { skipDirtyConfirm: true })
       if (switched) {
         get().setCurrentView('chat')
         if (workspace.sourceWasDirty) {
@@ -2472,7 +2474,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       if (options?.start !== false && get().piStatus !== 'running') void get().startPi()
       return true
     }
-    if (!(await get().confirmDiscardEditorChanges())) return false
+    if (!options?.skipDirtyConfirm && !(await get().confirmDiscardEditorChanges())) return false
     try {
       const workspace = await window.piDesktop.workspace.setActive(workspaceId)
       sessionLoadGeneration += 1

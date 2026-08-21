@@ -177,16 +177,28 @@ export function registerPermissionRulesHandlers(ctx: IpcContext): void {
           await workspaceTrustStore.revoke(activeWs.path)
         }
 
-        // Trust is read into PI_DESKTOP_WORKSPACE_TRUSTED at spawn time and gates
-        // the preview guest at attach time, so restart this workspace's Pi to
-        // apply the change to a live session. (Open previews reflect it on reopen.)
-        const pi = workspaceManager.getPiManager(activeWs.id)
-        if (pi && pi.getStatus().status === 'running') {
-          const fresh = await loadAppSettings(workspaceManager)
-          pi.stop()
-          await pi.start(
-            applyPermissionModeToStartOptions(applyResumePreference({ cwd: activeWs.path }, fresh), fresh)
-          )
+        // Trust is read into PI_DESKTOP_WORKSPACE_TRUSTED at spawn time and
+        // gates the preview guest at attach time. Restart every live session
+        // runtime in this workspace, not only the foreground one.
+        const fresh = await loadAppSettings(workspaceManager)
+        const liveRuntimes = workspaceManager
+          .getSessionRuntimes(activeWs.id)
+          .filter((runtime) => runtime.status === 'running')
+        if (liveRuntimes.length > 0) {
+          await Promise.all(liveRuntimes.map((runtime) =>
+            workspaceManager.restartSessionRuntime(
+              runtime.runtimeId,
+              applyPermissionModeToStartOptions(applyResumePreference({ cwd: activeWs.path }, fresh), fresh)
+            )
+          ))
+        } else {
+          const pi = workspaceManager.getPiManager(activeWs.id)
+          if (pi && pi.getStatus().status === 'running') {
+            pi.stop()
+            await pi.start(
+              applyPermissionModeToStartOptions(applyResumePreference({ cwd: activeWs.path }, fresh), fresh)
+            )
+          }
         }
       }
       return buildWorkspaceRulesStatus(workspaceManager)

@@ -120,18 +120,18 @@ export function wireWorkspaceActivity(
   // resolved at event time so pre-registration races cannot mislabel events.
   workspaceManager.onPiManager((manager) => {
     const workspaceIdOf = (): string | null => workspaceManager.workspaceIdFor(manager)
-    manager.on('agent_start', () => {
-      const id = workspaceIdOf()
-      if (id) tracker.handleAgentStart(id)
-    })
     const sessionTarget = (): { runtimeId?: string; sessionPath?: string } => {
       const sessionPath = workspaceManager.sessionPathFor(manager)
       const runtimeId = workspaceManager.runtimeIdFor(manager)
       return {
         ...(sessionPath ? { sessionPath } : {}),
-        ...(sessionPath && runtimeId ? { runtimeId } : {}),
+        ...(runtimeId ? { runtimeId } : {}),
       }
     }
+    manager.on('agent_start', () => {
+      const id = workspaceIdOf()
+      if (id) tracker.handleAgentStart(id, sessionTarget())
+    })
     manager.on('agent_end', () => {
       const id = workspaceIdOf()
       if (id) tracker.handleAgentEnd(id, sessionTarget())

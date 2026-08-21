@@ -132,6 +132,7 @@ export function StatusBar(): React.JSX.Element {
       <div className="flex items-center gap-3">
         {/* Dedicated workflow navigator */}
         <button
+          data-workflow-toggle="true"
           onClick={() => {
             // Session-surface button: opens the active session's runs (scoped by
             // Pi's header UUID, the exact identifier persisted runs carry). The

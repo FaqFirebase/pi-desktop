@@ -75,7 +75,7 @@ test('isTerminalRun covers the finished statuses only', () => {
   for (const status of ['completed', 'failed', 'aborted'] as WorkflowRunStatus[]) {
     assert.equal(isTerminalRun(status), true, status)
   }
-  for (const status of ['pending', 'running', 'paused'] as WorkflowRunStatus[]) {
+  for (const status of ['pending', 'running', 'paused', 'unknown'] as WorkflowRunStatus[]) {
     assert.equal(isTerminalRun(status), false, status)
   }
 })
@@ -108,7 +108,7 @@ test('canAbortRun is true only for running/paused', () => {
   for (const status of ['running', 'paused'] as WorkflowRunStatus[]) {
     assert.equal(canAbortRun(status), true, status)
   }
-  for (const status of ['pending', 'completed', 'failed', 'aborted'] as WorkflowRunStatus[]) {
+  for (const status of ['pending', 'completed', 'failed', 'aborted', 'unknown'] as WorkflowRunStatus[]) {
     assert.equal(canAbortRun(status), false, status)
   }
 })
@@ -117,7 +117,7 @@ test('canResumeRun is true only for paused/failed/pending — never completed/ab
   for (const status of ['paused', 'failed', 'pending'] as WorkflowRunStatus[]) {
     assert.equal(canResumeRun(status), true, status)
   }
-  for (const status of ['running', 'completed', 'aborted'] as WorkflowRunStatus[]) {
+  for (const status of ['running', 'completed', 'aborted', 'unknown'] as WorkflowRunStatus[]) {
     assert.equal(canResumeRun(status), false, status)
   }
 })

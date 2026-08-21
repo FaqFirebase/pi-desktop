@@ -8,6 +8,8 @@ import {
   MAX_PREVIEW_SCAN_BYTES,
   TAIL_SCAN_BYTES,
   clearSessionMetadataCache,
+  inspectSessionContent,
+  isUserMessageRecord,
   readFirstUserMessage,
   readSessionMetadata,
   readSessionMetadataCached,
@@ -118,6 +120,11 @@ test('userMessageText keeps text blocks and drops image blocks', () => {
 test('userMessageText returns null for a user message with no text', () => {
   const record = JSON.parse(userLine([{ type: 'image', source: { data: 'AAAA' } }]))
   assert.equal(userMessageText(record), null)
+})
+
+test('image-only user turns are still classified as real messages', () => {
+  const record = JSON.parse(userLine([{ type: 'image', source: { data: 'AAAA' } }]))
+  assert.equal(isUserMessageRecord(record), true)
 })
 
 test('userMessageText returns null for whitespace-only text', () => {
@@ -282,6 +289,7 @@ test('readSessionMetadata returns the header and a display preview together', as
       assert.equal(meta.header?.parentSession, '/s/parent.jsonl')
       // Newlines and whitespace runs collapse for single-line rendering.
       assert.equal(meta.preview, 'Refactor auth module login logic')
+      assert.equal(meta.contentState, 'non-empty')
       // A file this small is read whole, so the fallbacks must not have run.
       assert.equal(meta.name, null)
     }
@@ -289,9 +297,6 @@ test('readSessionMetadata returns the header and a display preview together', as
 })
 
 test('readSessionMetadata previews a user turn whose line exceeds the head buffer', async () => {
-  // Same 643 KB single-line case as readFirstUserMessage, through the metadata
-  // path: the header still comes from the head read, the preview from the
-  // streaming fallback.
   const oversizedImage = 'A'.repeat(HEAD_SCAN_BYTES + TAIL_SCAN_BYTES + HEAD_SCAN_BYTES)
   await withSessionFile(
     [
@@ -305,6 +310,7 @@ test('readSessionMetadata previews a user turn whose line exceeds the head buffe
       const meta = await readSessionMetadata(path)
       assert.equal(meta.header?.id, SESSION_ID)
       assert.equal(meta.preview, 'describe image')
+      assert.equal(meta.contentState, 'non-empty')
     }
   )
 })
@@ -321,27 +327,23 @@ test('readSessionMetadata strips the planning-mode preamble from the preview', a
   await withSessionFile([headerLine(), userLine(textBlocks(injected))], async (path) => {
     const meta = await readSessionMetadata(path)
     assert.equal(meta.preview, 'Add a remember-me checkbox')
+    assert.equal(meta.contentState, 'non-empty')
   })
 })
 
-test('readSessionMetadata reports a null preview when there is no user turn', async () => {
+test('readSessionMetadata reports a null preview for a header-only session', async () => {
   await withSessionFile([headerLine()], async (path) => {
     const meta = await readSessionMetadata(path)
     assert.equal(meta.header?.id, SESSION_ID)
     assert.equal(meta.preview, null)
+    assert.equal(meta.contentState, 'empty')
+    assert.equal(await inspectSessionContent(path), 'empty')
   })
 })
 
-test('readSessionMetadata reports a null header for a file with no session record', async () => {
-  await withSessionFile([userLine(textBlocks('orphan message'))], async (path) => {
-    const meta = await readSessionMetadata(path)
-    assert.equal(meta.header, null)
-  })
-})
-
-test('readSessionMetadata returns empty metadata for a missing file', async () => {
+test('readSessionMetadata returns unknown content for a missing file', async () => {
   const meta = await readSessionMetadata('/no/such/session.jsonl')
-  assert.deepEqual(meta, { header: null, name: null, preview: null })
+  assert.deepEqual(meta, { header: null, name: null, preview: null, contentState: 'unknown' })
 })
 
 // ─── Name resolution (relocated from session-name.test.ts) ───────────────────

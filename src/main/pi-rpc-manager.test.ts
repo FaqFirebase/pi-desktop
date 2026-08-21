@@ -44,6 +44,23 @@ test('RpcFrameDecoder reassembles a lossless OMP protocol-v2 frame', () => {
   assert.equal((decoded as { data?: string }).data?.length, 1_100_000)
 })
 
+test('RpcFrameDecoder can be reset after an interrupted sequence', () => {
+  const decoder = new RpcFrameDecoder()
+  const first = {
+    type: 'rpc_chunk',
+    chunkId: 'rpc-a',
+    index: 0,
+    count: 2,
+    byteLength: 1_048_576,
+    data: Buffer.from('a').toString('base64'),
+  }
+  decoder.push(first)
+  assert.equal(decoder.hasPending(), true)
+  assert.throws(() => decoder.push({ ...first, chunkId: 'rpc-b' }), /sequence mismatch/)
+  decoder.reset()
+  assert.equal(decoder.hasPending(), false)
+})
+
 test('buildPiInvocation escapes the shim path and args for the Windows cmd.exe hop', () => {
   const cli = piCli({ script: String.raw`C:\Program Files\nodejs\pi.cmd`, needsShell: true })
   assert.deepEqual(buildPiInvocation(cli, ['--mode', 'rpc', '--session', 'a&calc']), {

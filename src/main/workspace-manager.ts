@@ -15,7 +15,7 @@ import type {
 import { getGuiDataPath } from './app-data-paths'
 import { pathsEqual, pathGroupKey } from './session-paths'
 import { appLog } from './app-log'
-import { readFirstUserMessage } from './session-metadata'
+import { inspectSessionContent } from './session-metadata'
 import {
   createGitWorktree,
   inspectGitRepository,
@@ -243,6 +243,12 @@ export class WorkspaceManager {
   }
 
   private createSessionRuntime(workspaceId: string, sessionPath: string | null): SessionRuntimeEntry {
+    if (sessionPath) {
+      const existingId = this.runtimeBySessionPath.get(pathGroupKey(sessionPath))
+      if (existingId && this.sessionRuntimes.has(existingId)) {
+        throw new Error('Session file is already attached to a live runtime')
+      }
+    }
     const runtimeId = `rt-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
     const manager = new PiRpcManager()
     const entry: SessionRuntimeEntry = {
@@ -291,10 +297,24 @@ export class WorkspaceManager {
   /** Drop inactive header-only sessions so abandoned New Session tabs do not linger. */
   async pruneEmptySessionRuntimes(): Promise<SessionRuntimeCloseResult[]> {
     const candidates = [...this.sessionRuntimes.values()]
-      .filter((entry) => entry.info.runtimeId !== this.activeRuntimeId && entry.info.sessionPath && entry.info.activity === null)
+      .filter((entry) =>
+        entry.info.runtimeId !== this.activeRuntimeId &&
+        entry.info.sessionPath &&
+        entry.info.activity === null &&
+        entry.manager.getStatus().status !== 'starting'
+      )
     const closed: SessionRuntimeCloseResult[] = []
     for (const entry of candidates) {
-      if (await readFirstUserMessage(entry.info.sessionPath!) !== null) continue
+      if (await inspectSessionContent(entry.info.sessionPath!) !== 'empty') continue
+      // A candidate may have become active or started work while the bounded
+      // file scan was in flight. Re-check before stopping it.
+      const current = this.sessionRuntimes.get(entry.info.runtimeId)
+      if (
+        !current ||
+        current.info.runtimeId === this.activeRuntimeId ||
+        current.info.activity !== null ||
+        current.manager.getStatus().status === 'starting'
+      ) continue
       const result = await this.closeSessionRuntime(entry.info.runtimeId)
       if (result) closed.push(result)
     }
@@ -323,6 +343,10 @@ export class WorkspaceManager {
     }
     return this.workspaceIdFor(manager)
   }
+  setSessionRuntimeActivity(runtimeId: string, activity: SessionRuntimeActivity | null): void {
+    const entry = this.sessionRuntimes.get(runtimeId)
+    if (entry) this.emitRuntimeActivity(entry, activity)
+  }
 
   sessionPathFor(manager: PiRpcManager): string | null {
     for (const entry of this.sessionRuntimes.values()) {
@@ -344,7 +368,6 @@ export class WorkspaceManager {
     }
     if (!entry) entry = this.createSessionRuntime(workspaceId, sessionPath)
     runtimeId = entry.info.runtimeId
-    entry.info = { ...entry.info, activity: null }
     this.setActiveRuntime(workspaceId, runtimeId)
     this.emitSessionRuntime(entry)
     return this.snapshotRuntime(entry)
@@ -373,22 +396,48 @@ export class WorkspaceManager {
       ...options,
     }
     await entry.manager.start(startOptions)
+    // closeSessionRuntime() can win while startup is waiting for Pi. Do not
+    // emit the now-detached entry after the closed marker was broadcast.
+    if (this.sessionRuntimes.get(runtimeId) !== entry) {
+      return { ...entry.info, ...entry.manager.getStatus(), active: false, closed: true }
+    }
     const response = await entry.manager.sendCommand({ type: 'get_state' }).catch(() => null)
-    const data = response?.data as { sessionFile?: unknown; sessionId?: unknown } | undefined
+    if (this.sessionRuntimes.get(runtimeId) !== entry) {
+      return { ...entry.info, ...entry.manager.getStatus(), active: false, closed: true }
+    }
+    return this.applySessionRuntimeState(entry, response)
+  }
+
+  private applySessionRuntimeState(entry: SessionRuntimeEntry, response: unknown): SessionRuntimeInfo {
+    const data = response && typeof response === 'object' && 'data' in response
+      ? response.data as { sessionFile?: unknown; sessionId?: unknown }
+      : undefined
     const sessionPath = typeof data?.sessionFile === 'string' ? data.sessionFile : entry.info.sessionPath
     if (sessionPath && sessionPath !== entry.info.sessionPath) {
       if (entry.info.sessionPath) this.runtimeBySessionPath.delete(pathGroupKey(entry.info.sessionPath))
-      this.runtimeBySessionPath.set(pathGroupKey(sessionPath), runtimeId)
+      this.runtimeBySessionPath.set(pathGroupKey(sessionPath), entry.info.runtimeId)
     }
     entry.info = {
       ...entry.info,
       sessionPath: sessionPath ?? null,
       sessionId: typeof data?.sessionId === 'string' ? data.sessionId : entry.info.sessionId,
-      activity: null,
       ...entry.manager.getStatus(),
     }
     this.emitSessionRuntime(entry)
     return this.snapshotRuntime(entry)
+  }
+  async restartSessionRuntime(runtimeId: string, options: PiStartOptions = {}): Promise<SessionRuntimeInfo> {
+    const entry = this.sessionRuntimes.get(runtimeId)
+    if (!entry) throw new Error(`Session runtime not found: ${runtimeId}`)
+    entry.manager.stop()
+    return this.startSessionRuntime(runtimeId, options)
+  }
+
+  async refreshSessionRuntime(runtimeId: string): Promise<SessionRuntimeInfo | null> {
+    const entry = this.sessionRuntimes.get(runtimeId)
+    if (!entry) return null
+    const response = await entry.manager.sendCommand({ type: 'get_state' })
+    return this.applySessionRuntimeState(entry, response)
   }
 
   stopSessionRuntime(runtimeId: string): void {
@@ -405,7 +454,10 @@ export class WorkspaceManager {
     if (!entry) return null
 
     const { workspaceId, sessionPath } = entry.info
-    const empty = sessionPath ? (await readFirstUserMessage(sessionPath)) === null : true
+    const contentState = sessionPath ? await inspectSessionContent(sessionPath) : 'empty'
+    // Unknown is treated as non-empty. A failed/partial metadata read must
+    // never turn a real conversation into a destructive delete.
+    const empty = contentState === 'empty'
     const wasActive = this.activeRuntimeId === runtimeId
     const replacementCandidates = wasActive
       ? [...this.sessionRuntimes.values()]
@@ -439,6 +491,7 @@ export class WorkspaceManager {
       runtimeId,
       workspaceId,
       sessionPath,
+      replacementSessionPath: replacement?.info.sessionPath ?? null,
       empty,
       deleted: false,
     }
@@ -490,13 +543,11 @@ export class WorkspaceManager {
     return this.getPiManager(this.activeWorkspaceId)
   }
 
-  getPiManagerForSession(workspaceId: string, sessionId?: string): PiRpcManager | null {
-    if (sessionId) {
-      for (const entry of this.sessionRuntimes.values()) {
-        if (entry.info.workspaceId === workspaceId && entry.info.sessionId === sessionId) return entry.manager
-      }
+  getPiManagerForSession(workspaceId: string, sessionId: string): PiRpcManager | null {
+    for (const entry of this.sessionRuntimes.values()) {
+      if (entry.info.workspaceId === workspaceId && entry.info.sessionId === sessionId) return entry.manager
     }
-    return this.getPiManager(workspaceId)
+    return null
   }
 
   /** Reverse lookup: the workspace id owning a given Pi manager, if any. */
@@ -593,13 +644,13 @@ export class WorkspaceManager {
     // the protection we want when a tab is closed with edits still present.
     const piManager = this.piManagers.get(workspaceId)
     if (piManager) {
-      piManager.stop()
+      await piManager.stopAndWait()
       this.piManagers.delete(workspaceId)
     }
     for (const [runtimeId, entry] of this.sessionRuntimes) {
       if (entry.info.workspaceId !== workspaceId) continue
       if (this.activeRuntimeId === runtimeId) this.activeRuntimeId = null
-      entry.manager.stop()
+      await entry.manager.stopAndWait()
       if (entry.info.sessionPath) this.runtimeBySessionPath.delete(pathGroupKey(entry.info.sessionPath))
       this.sessionRuntimes.delete(runtimeId)
     }
@@ -731,11 +782,13 @@ export class WorkspaceManager {
    * the task is also accepted, but ambiguous matches are ignored.
    */
   private async findRelatedWorktree(sourcePath: string, repoRoot: string, taskPrompt: string): Promise<Workspace | null> {
+    const sourceResolved = resolve(sourcePath)
     const normalizedTask = taskPrompt.trim().replace(/\s+/g, ' ').toLowerCase()
     if (!normalizedTask) return null
 
     const savedMatch = this.workspaces.find((workspace) =>
       workspace.kind === 'worktree' &&
+      !pathsEqual(resolve(workspace.path), sourceResolved) &&
       workspace.taskPrompt?.trim().replace(/\s+/g, ' ').toLowerCase() === normalizedTask &&
       !!workspace.repoRoot &&
       pathsEqual(workspace.repoRoot, repoRoot) &&
@@ -751,7 +804,12 @@ export class WorkspaceManager {
 
     const entries = await listGitWorktrees(sourcePath).catch(() => [])
     const candidates = entries
-      .filter((entry) => !entry.bare && existsSync(entry.path) && entry.branch)
+      .filter((entry) =>
+        !entry.bare &&
+        !pathsEqual(resolve(entry.path), sourceResolved) &&
+        existsSync(entry.path) &&
+        entry.branch
+      )
       .map((entry) => ({ ...entry, path: resolve(entry.path) }))
     const matches = candidates.filter((entry) => {
       const branch = entry.branch!
@@ -786,9 +844,13 @@ export class WorkspaceManager {
 
     const git = await inspectGitRepository(source.path)
     const taskPrompt = options.taskPrompt?.trim() || ''
+    const pullRequestUrl = extractGitHubPullRequestUrl(taskPrompt)
     if (taskPrompt) {
       const related = await this.findRelatedWorktree(source.path, git.repoRoot, taskPrompt)
       if (related) return related
+    }
+    if (pullRequestUrl) {
+      throw new Error('The task references a GitHub pull request that is not checked out in a local worktree')
     }
     const sourceWasDirty = git.status.trim().length > 0
     const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`

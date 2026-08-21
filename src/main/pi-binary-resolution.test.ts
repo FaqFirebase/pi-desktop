@@ -307,6 +307,15 @@ test('resolvePiBinary finds an npm-global OMP shim outside PATH', () => {
   assert.equal(resolvePiBinary(deps, null, 'omp').script, omp)
 })
 
+test('resolvePiBinary honors an explicit OMP engine for a renamed executable', () => {
+  const override = '/opt/tools/agent-runner'
+  const deps = fakeDeps({ env: { HOME: POSIX_HOME, PATH: '/nowhere' }, files: [override] })
+  const resolution = resolvePiBinary(deps, override, 'omp')
+  assert.equal(resolution.script, override)
+  assert.equal(resolution.source, 'override')
+  assert.equal(resolution.found, true)
+})
+
 test('resolvePiBinary uses a configured cli.js override ahead of auto-detection', () => {
   const override = join(POSIX_HOME, '.nvm/versions/node', NVM_VERSION_NEW, 'lib', PI_CLI_REL)
   const deps = fakeDeps({ files: [override, '/usr/local/bin/pi'] })

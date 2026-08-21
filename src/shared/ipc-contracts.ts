@@ -221,6 +221,8 @@ export interface SessionRuntimeCloseResult {
   runtimeId: string
   workspaceId: string
   sessionPath: string | null
+  /** Active replacement chosen atomically with the close, if one exists. */
+  replacementSessionPath?: string | null
   /** Header-only sessions are disposable and are deleted when closed. */
   empty: boolean
   deleted: boolean
@@ -240,6 +242,12 @@ export interface GitConveyorStatus {
   ahead: number
   behind: number
   hasUpstream: boolean
+  /** Remote branch used by the explicit push target, when configured. */
+  pushRemote: string | null
+  /** Branch configured as this branch's upstream, when one exists. */
+  upstreamBranch: string | null
+  /** Default base branch discovered from the upstream remote, when available. */
+  baseBranch: string | null
   remoteUrl: string | null
 }
 
@@ -250,6 +258,8 @@ export interface GitConveyorCommitOptions {
 export interface GitConveyorPullRequestOptions {
   title: string
   body: string
+  /** Optional explicit base branch; otherwise the upstream remote HEAD is used. */
+  base?: string
   draft?: boolean
 }
 
@@ -464,7 +474,7 @@ export interface WorkspaceActivationIntent {
 
 // ─── Workflow monitoring ────────────────────────────────────────────────────
 
-export type WorkflowRunStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'aborted'
+export type WorkflowRunStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'aborted' | 'unknown'
 export type WorkflowAgentStatus = 'queued' | 'running' | 'done' | 'error' | 'skipped'
 
 export interface WorkflowAgentSummary {
@@ -728,6 +738,8 @@ export interface SessionListItem {
   name: string | null
   /** Preview of the session's first user message, or null if it has none. */
   preview: string | null
+  /** `empty` is provably header-only; `unknown` must remain recoverable. */
+  contentState?: 'empty' | 'non-empty' | 'unknown'
   /** Filename stem used by GUI registries (tags/archive), e.g. timestamp_uuid. */
   sessionId: string
   /** Pi's header UUID, used to correlate workflow runs with this session. */
@@ -814,7 +826,7 @@ export type AttachmentReadResult =
 /** Options for the native open dialog. Defaults to picking a directory. */
 export interface OpenDialogOptions {
   title?: string
-  mode?: 'file' | 'directory'
+  mode?: 'file' | 'directory' | 'either'
   filters?: Array<{ name: string; extensions: string[] }>
 }
 
@@ -991,6 +1003,8 @@ export interface PermissionRulesWorkspaceStatus {
   hasAllowRules: boolean
 }
 
+export type AgentEngine = 'auto' | 'pi' | 'omp'
+
 export interface AgentInstallation {
   kind: 'pi' | 'omp'
   path: string
@@ -1003,6 +1017,8 @@ export interface AgentInstallationsResult {
 
 export interface AppSettings {
   piExecutablePath: string
+  /** Explicit engine identity; auto preserves legacy Pi/OMP detection. */
+  piEngine: AgentEngine
   defaultArgs: string[]
   theme: string // 'system' or a theme id (built-in or user theme)
   defaultModel: string | null

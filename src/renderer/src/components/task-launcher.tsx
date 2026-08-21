@@ -15,11 +15,19 @@ export function TaskLauncher(): React.JSX.Element | null {
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    if (!open) return
-    setWorkspaceId(activeWorkspace?.id ?? workspaces[0]?.id ?? '')
+    const state = useAppStore.getState()
+    setWorkspaceId(state.activeWorkspace?.id ?? state.workspaces[0]?.id ?? '')
     setPrompt('')
     setIsolated(false)
     requestAnimationFrame(() => inputRef.current?.focus())
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    setWorkspaceId((current) => {
+      if (current && workspaces.some((workspace) => workspace.id === current)) return current
+      return activeWorkspace?.id ?? workspaces[0]?.id ?? ''
+    })
   }, [open, activeWorkspace?.id, workspaces])
 
   if (!open) return null

@@ -7,6 +7,7 @@ import { join } from 'path'
 import { existsSync } from 'fs'
 import { assertTrustedSender, isString } from './validation'
 import { runPiCli } from './run-pi-cli'
+import { getPiCli } from '../pi-rpc-manager'
 import type { IpcContext } from './context'
 
 export function registerPackageHandlers(ctx: IpcContext): void {
@@ -14,10 +15,13 @@ export function registerPackageHandlers(ctx: IpcContext): void {
 
   // ─── Package Management ─────────────────────────────────────────────────
 
+  const activeEngine = (): 'pi' | 'omp' =>
+    workspaceManager.getActivePiManager()?.getEngineKind() ?? getPiCli().kind ?? 'pi'
+
   ipcMain.handle(IPC_CHANNELS.PACKAGE_LIST_INSTALLED, async () => {
     const ws = workspaceManager.getActiveWorkspace()
     const cwd = ws?.path ?? process.cwd()
-    return listInstalledPackages(cwd)
+    return listInstalledPackages(cwd, activeEngine())
   })
 
   ipcMain.handle(IPC_CHANNELS.PACKAGE_INSTALL, async (event, packageSpec: unknown) => {
@@ -63,22 +67,20 @@ interface InstalledPackage {
   path: string
 }
 
-async function listInstalledPackages(cwd: string): Promise<InstalledPackage[]> {
+async function listInstalledPackages(cwd: string, engine: 'pi' | 'omp'): Promise<InstalledPackage[]> {
   try {
     const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-    const globalSettingsPath = join(homeDir, '.pi', 'agent', 'settings.json')
-    const projectSettingsPath = join(cwd, '.pi', 'settings.json')
+    const agentRoot = engine === 'omp' ? join(homeDir, '.omp', 'agent') : join(homeDir, '.pi', 'agent')
+    const globalSettingsPath = join(agentRoot, 'settings.json')
+    const projectSettingsPath = engine === 'omp'
+      ? join(cwd, '.omp', 'settings.json')
+      : join(cwd, '.pi', 'settings.json')
 
     const packages: InstalledPackage[] = []
-
-    // Read global settings
     const globalPackages = await readPackagesFromSettings(globalSettingsPath)
     packages.push(...globalPackages.map((p) => ({ ...p, scope: 'global' })))
-
-    // Read project settings
     const projectPackages = await readPackagesFromSettings(projectSettingsPath)
     packages.push(...projectPackages.map((p) => ({ ...p, scope: 'project' })))
-
     return packages
   } catch {
     return []

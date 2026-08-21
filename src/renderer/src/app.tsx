@@ -151,27 +151,24 @@ export function App(): React.JSX.Element {
           {showChrome && <WorkspaceTabs />}
           <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-              {globalWorkflowOpen ? (
-                <WorkflowNavigator embedded />
-              ) : (
-                <>
-                  {currentView === 'home' && <HomeScreen />}
-                  {currentView === 'mission-control' && <MissionControl />}
-                  {/* Kept mounted (just hidden) so the chat scroll position survives
-                      navigating to another view and back. */}
-                  <div className={currentView === 'chat' ? 'flex min-w-0 flex-1 flex-col overflow-hidden' : 'hidden'}>
-                    <ChatPanel />
-                  </div>
-                  {currentView === 'settings' && <SettingsPanel />}
-                  {currentView === 'sessions' && <SessionPanel />}
-                  {currentView === 'timeline' && <Timeline />}
-                  {currentView === 'packages' && <PackageBrowser />}
-                  {currentView === 'diff' && <DiffViewer />}
-                  {currentView === 'notes' && <NotesPanel />}
-                  {currentView === 'skills' && <SkillsPanel />}
-                  {currentView === 'diagnostics' && <DiagnosticsPanel />}
-                </>
-              )}
+              <div className={globalWorkflowOpen ? 'hidden' : 'contents'}>
+                {currentView === 'home' && <HomeScreen />}
+                {currentView === 'mission-control' && <MissionControl />}
+                {/* Kept mounted (just hidden) so chat drafts and scroll state survive
+                    navigating to another view or opening global workflows. */}
+                <div className={currentView === 'chat' ? 'flex min-w-0 flex-1 flex-col overflow-hidden' : 'hidden'}>
+                  <ChatPanel />
+                </div>
+                {currentView === 'settings' && <SettingsPanel />}
+                {currentView === 'sessions' && <SessionPanel />}
+                {currentView === 'timeline' && <Timeline />}
+                {currentView === 'packages' && <PackageBrowser />}
+                {currentView === 'diff' && <DiffViewer />}
+                {currentView === 'notes' && <NotesPanel />}
+                {currentView === 'skills' && <SkillsPanel />}
+                {currentView === 'diagnostics' && <DiagnosticsPanel />}
+              </div>
+              {globalWorkflowOpen && <WorkflowNavigator embedded />}
             </main>
             {currentView === 'chat' && !globalWorkflowOpen && <ReviewRail />}
           </div>

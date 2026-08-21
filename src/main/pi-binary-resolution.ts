@@ -284,17 +284,32 @@ function shimCandidates(deps: ResolutionDeps, prefix: string): string[] {
     : [join(prefix, 'bin', 'pi'), join(prefix, 'pi')]
 }
 
+function usableFile(deps: ResolutionDeps, path: string): boolean {
+  return deps.exists(path) && !deps.isDirectory(path)
+}
+
 /**
- * Resolve a prefix to a spawnable Pi path, preferring the JS entry point so we
- * can run it with our own Node and skip the shell wrapper entirely.
+ * Resolve a prefix to a spawnable Pi path, preferring its JS entry point.
  */
 function resolveFromPrefix(deps: ResolutionDeps, prefix: string): string | null {
   const cliJs = findCliJsNear(deps, prefix)
   if (cliJs) return cliJs
   for (const shim of shimCandidates(deps, prefix)) {
-    if (deps.exists(shim)) return shim
+    if (usableFile(deps, shim)) return shim
   }
   return null
+}
+/**
+ * Resolve a configured OMP executable or install directory.
+ */
+function resolveOmpOverride(deps: ResolutionDeps, overridePath: string): string | null {
+  if (deps.isDirectory(overridePath)) {
+    for (const shim of ompShimCandidates(deps, overridePath)) {
+      if (usableFile(deps, shim)) return shim
+    }
+    return null
+  }
+  return usableFile(deps, overridePath) ? overridePath : null
 }
 
 /** Search PATH for an executable, honoring PATHEXT on Windows. */
@@ -307,13 +322,12 @@ export function whichInPath(deps: ResolutionDeps, name: string, pathEnv: string)
   for (const dir of dirs) {
     for (const extension of extensions) {
       const candidate = pathJoin(dir, name + extension)
-      if (deps.exists(candidate)) return candidate
-      // Tests inject a platform independent `isWindows` flag while running on
-      // the host OS. Accept the host join spelling as a fallback in that seam;
-      // real processes always take the first branch for their native platform.
+      if (usableFile(deps, candidate)) return candidate
+      // Tests inject a platform independent path separator while running on
+      // the host OS; accept that spelling as a fallback in the seam.
       if (!deps.isWindows) {
         const hostCandidate = join(dir, name + extension)
-        if (hostCandidate !== candidate && deps.exists(hostCandidate)) return hostCandidate
+        if (hostCandidate !== candidate && usableFile(deps, hostCandidate)) return hostCandidate
       }
     }
   }
@@ -337,7 +351,7 @@ function npmGlobalPrefix(deps: ResolutionDeps, pathEnv: string): string | null {
 /** Hardcoded install locations, used only after every dynamic probe fails. */
 function ompShimCandidates(deps: ResolutionDeps, prefix: string): string[] {
   return deps.isWindows
-    ? [join(prefix, 'omp.cmd'), join(prefix, 'omp.ps1'), join(prefix, 'omp.exe')]
+    ? [join(prefix, 'omp.cmd'), join(prefix, 'omp.exe'), join(prefix, 'omp.ps1')]
     : [join(prefix, 'bin', 'omp'), join(prefix, 'omp')]
 }
 
@@ -370,12 +384,12 @@ function resolveOmpBinary(deps: ResolutionDeps, pathEnv: string): string | null 
   const onPath = whichInPath(deps, OMP_FALLBACK_BINARY_POSIX, pathEnv)
   if (onPath) return onPath
   for (const candidate of ompLocations(deps)) {
-    if (deps.exists(candidate)) return candidate
+    if (usableFile(deps, candidate)) return candidate
   }
   const prefix = npmGlobalPrefix(deps, pathEnv)
   if (prefix) {
     for (const candidate of ompShimCandidates(deps, prefix)) {
-      if (deps.exists(candidate)) return candidate
+      if (usableFile(deps, candidate)) return candidate
     }
   }
   return null
@@ -457,9 +471,22 @@ export function resolvePiBinary(
   const basePath = deps.env.PATH ?? ''
   const shellPath = loginShellPath(deps)
   const pathEnv = shellPath ? mergePathEntries(basePath, shellPath, deps.isWindows) : basePath
-
   let rejectedOverride: string | null = null
+
   if (engine === 'omp') {
+    if (overridePath && overridePath.toLowerCase() !== OMP_FALLBACK_BINARY_POSIX && overridePath.toLowerCase() !== OMP_FALLBACK_BINARY_WINDOWS) {
+      const override = resolveOmpOverride(deps, overridePath)
+      return override
+        ? finalize(deps, override, 'override', true, null, pathEnv)
+        : finalize(
+            deps,
+            deps.isWindows ? OMP_FALLBACK_BINARY_WINDOWS : OMP_FALLBACK_BINARY_POSIX,
+            'fallback',
+            false,
+            overridePath,
+            pathEnv
+          )
+    }
     const omp = resolveOmpBinary(deps, pathEnv)
     return omp
       ? finalize(deps, omp, 'omp', true, null, pathEnv)

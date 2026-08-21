@@ -198,6 +198,7 @@ export function ChatPanel(): React.JSX.Element {
               <ToolbarButton
                 icon={<WorkflowIcon size={14} />}
                 active={workflowPanelOpen}
+                workflowToggle
                 onClick={() => {
                   // Session-surface button: while a session is active this opens
                   // THAT session's runs (scoped by Pi's header UUID, the exact
@@ -438,21 +439,23 @@ export function ChatPanel(): React.JSX.Element {
   )
 }
 
-
 function ToolbarButton({
   icon,
   active,
   onClick,
   title,
+  workflowToggle = false,
 }: {
   icon: React.ReactNode
   active: boolean
   onClick: () => void
   title: string
+  workflowToggle?: boolean
 }): React.JSX.Element {
   return (
     <button
       onClick={onClick}
+      data-workflow-toggle={workflowToggle ? 'true' : undefined}
       className={clsx(
         'rounded p-1 transition-colors',
         active

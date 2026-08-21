@@ -732,7 +732,7 @@ export function WorkflowNavigator({ embedded = false }: { embedded?: boolean }):
 
   const refreshDetail = useCallback(async (): Promise<void> => {
     const current = detailRef.current
-    if (!current) return
+    if (!current || isTerminalRun(current.status)) return
     try {
       const next = await window.piDesktop.workflows.getRun(current.workspaceId, current.runId)
       setDetail(next)
@@ -751,6 +751,7 @@ export function WorkflowNavigator({ embedded = false }: { embedded?: boolean }):
     }
     const handleOutsidePointer = (event: PointerEvent): void => {
       const target = event.target
+      if (target instanceof Element && target.closest('[data-workflow-toggle]')) return
       if (target instanceof Node && !panelRef.current?.contains(target)) {
         setMaximized(false)
         setOpen(false)

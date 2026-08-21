@@ -235,6 +235,16 @@ test('closing a session runtime removes its tab and only marks empty sessions di
     assert.equal(mgr.getSessionRuntime(emptyRuntime.runtimeId), null)
     assert.equal(contentResult?.empty, false)
     assert.equal(existsSync(contentPath), true)
+
+    const imagePath = join(await project(), 'image-only.jsonl')
+    await writeFile(imagePath, [
+      JSON.stringify({ type: 'session', id: 'image-only' }),
+      JSON.stringify({ type: 'message', message: { role: 'user', content: [{ type: 'image', source: { data: 'AAAA' } }] } }),
+    ].join('\n') + '\n', 'utf-8')
+    const imageRuntime = await mgr.activateSession(workspace.id, imagePath)
+    const imageResult = await mgr.closeSessionRuntime(imageRuntime.runtimeId)
+    assert.equal(imageResult?.empty, false)
+    assert.equal(existsSync(imagePath), true)
   })
 })
 

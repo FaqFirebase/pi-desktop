@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, ArrowUpRight, CheckCircle2, Inbox, Loader2, Play, RefreshCw, XCircle } from 'lucide-react'
+import { AlertCircle, ArrowUpRight, CheckCircle2, Circle, Inbox, Loader2, Play, RefreshCw, XCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAppStore } from '../store'
 import { getSessionTitle } from '../utils/session-title'
@@ -209,11 +209,28 @@ function WorkflowRow({
   onResume: () => void
   resumeBusy: boolean
 }): React.JSX.Element {
-  const Icon = run.status === 'completed' ? CheckCircle2 : run.status === 'failed' || run.status === 'aborted' ? XCircle : run.status === 'paused' ? AlertCircle : Loader2
+  const Icon = run.status === 'completed'
+    ? CheckCircle2
+    : run.status === 'failed' || run.status === 'aborted'
+      ? XCircle
+      : run.status === 'paused'
+        ? AlertCircle
+        : run.status === 'unknown'
+          ? Circle
+          : Loader2
+  const iconClass = run.status === 'running' || run.status === 'pending'
+    ? 'animate-spin text-accent-fg'
+    : run.status === 'completed'
+      ? 'text-success'
+      : run.status === 'paused'
+        ? 'text-warning'
+        : run.status === 'unknown'
+          ? 'text-muted'
+          : 'text-error'
   return (
     <div className="flex w-full items-center gap-3 rounded-lg border border-border bg-surface/50 px-3 py-2 transition-colors hover:border-border-strong hover:bg-surface-hover">
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 py-1 text-left">
-        <Icon size={14} className={clsx('shrink-0', run.status === 'running' || run.status === 'pending' ? 'animate-spin text-accent-fg' : run.status === 'completed' ? 'text-success' : run.status === 'paused' ? 'text-warning' : 'text-error')} />
+        <Icon size={14} className={clsx('shrink-0', iconClass)} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm text-primary">{run.workflowName}</div>
           <div className="truncate text-[11px] text-faint">{run.workspaceName} · {run.currentPhase ?? run.status}</div>

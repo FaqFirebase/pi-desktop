@@ -61,6 +61,12 @@ interface CachedRun {
 }
 
 const runCache = new Map<string, CachedRun>()
+const persistedSessionCache = new Map<string, {
+  mtimeMs: number
+  size: number
+  value: PersistedSessionMatch | null
+}>()
+const MAX_PERSISTED_SESSION_BYTES = 4 * 1024 * 1024
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -442,7 +448,7 @@ export async function resolveWorkflowWorkspaces(
 function toStatus(value: unknown): WorkflowRunStatus {
   return typeof value === 'string' && RUN_STATUSES.has(value as WorkflowRunStatus)
     ? (value as WorkflowRunStatus)
-    : 'pending'
+    : 'unknown'
 }
 
 function toAgentStatus(value: unknown): WorkflowAgentStatus {
@@ -674,10 +680,51 @@ function sessionHistory(entries: UnknownRecord[]): WorkflowHistoryEntry[] {
   }
   return normalizeHistory(result)
 }
-
 interface PersistedSessionMatch {
   history: WorkflowHistoryEntry[]
   sessionName: string
+}
+
+async function readPersistedSession(filePath: string): Promise<PersistedSessionMatch | null> {
+  let file
+  try {
+    file = await stat(filePath)
+  } catch {
+    return null
+  }
+  const cached = persistedSessionCache.get(filePath)
+  if (cached && cached.mtimeMs === file.mtimeMs && cached.size === file.size) return cached.value
+  if (file.size > MAX_PERSISTED_SESSION_BYTES) {
+    persistedSessionCache.set(filePath, { mtimeMs: file.mtimeMs, size: file.size, value: null })
+    return null
+  }
+
+  let lines: string[]
+  try {
+    lines = (await readFile(filePath, 'utf8')).split(/\r?\n/)
+  } catch {
+    return null
+  }
+  const entries: UnknownRecord[] = []
+  let sessionName: string | undefined
+  for (const line of lines) {
+    if (!line.trim()) continue
+    try {
+      const value: unknown = JSON.parse(line)
+      if (!isRecord(value)) continue
+      if (value.type === 'session_info') sessionName = stringValue(value.name)
+      entries.push(value)
+    } catch {
+      // A live session can end with a partial JSONL line; keep the readable prefix.
+    }
+  }
+  const value = sessionName ? { history: sessionHistory(entries), sessionName } : null
+  persistedSessionCache.set(filePath, { mtimeMs: file.mtimeMs, size: file.size, value })
+  if (persistedSessionCache.size > 5000) {
+    const oldest = persistedSessionCache.keys().next().value
+    if (oldest !== undefined) persistedSessionCache.delete(oldest)
+  }
+  return value
 }
 
 async function findPersistedSession(cwd: string, runId: string, agent: UnknownRecord): Promise<PersistedSessionMatch | null> {
@@ -690,41 +737,31 @@ async function findPersistedSession(cwd: string, runId: string, agent: UnknownRe
 
   const expected = `workflow:${runId} `
   const prompt = stringValue(agent.prompt)
-  const matches: PersistedSessionMatch[] = []
+  const label = stringValue(agent.label)
+  const labelMatches: PersistedSessionMatch[] = []
+  const promptMatches: PersistedSessionMatch[] = []
+  const fallbackMatches: PersistedSessionMatch[] = []
   for (const name of names) {
-    let lines: string[]
-    try {
-      lines = (await readFile(join(workflowSessionsDir(cwd), name), 'utf8')).split(/\r?\n/)
-    } catch {
+    const match = await readPersistedSession(join(workflowSessionsDir(cwd), name))
+    if (!match || !match.sessionName.startsWith(expected)) continue
+    const suffix = match.sessionName.slice(expected.length).trim()
+    const matchesLabel = !!label && (suffix === label || suffix.startsWith(`${label} `))
+    if (matchesLabel) {
+      labelMatches.push(match)
       continue
     }
-    const entries: UnknownRecord[] = []
-    let sessionName: string | undefined
-    for (const line of lines) {
-      if (!line.trim()) continue
-      try {
-        const value: unknown = JSON.parse(line)
-        if (!isRecord(value)) continue
-        if (value.type === 'session_info') sessionName = stringValue(value.name)
-        entries.push(value)
-      } catch {
-        // A live session can end with a partial JSONL line; keep the readable prefix.
-      }
+    if (prompt && match.history.some((item) => item.role === 'user' && item.text.includes(prompt))) {
+      promptMatches.push(match)
+      continue
     }
-    if (!sessionName?.startsWith(expected)) continue
-    // The header cwd is authoritative: session dir names are lossy decodes of
-    // real paths (hyphens vs separators collide), so a caller holding a
-    // phantom/decoded path still lands on the same physical dir — the
-    // runId-prefixed name, not the cwd, is what uniquely identifies this
-    // run's transcript. Rejecting on a cwd mismatch is what silently degraded
-    // transcripts to run-history for hyphenated projects.
-    const history = sessionHistory(entries)
-    const matchesPrompt = prompt && history.some((item) => item.role === 'user' && item.text.includes(prompt))
-    const match = { history, sessionName }
-    if (matchesPrompt) return match
-    matches.push(match)
+    fallbackMatches.push(match)
   }
-  return matches[0] ?? null
+
+  // Never use readdir order to assign a transcript to an agent. A persisted
+  // session is safe only when its label, prompt, or unique run prefix selects it.
+  if (labelMatches.length === 1) return labelMatches[0]
+  if (promptMatches.length === 1) return promptMatches[0]
+  return fallbackMatches.length === 1 ? fallbackMatches[0] : null
 }
 
 async function projectAgentDetail(

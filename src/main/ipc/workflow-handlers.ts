@@ -32,12 +32,13 @@ function actionAllowedForStatus(action: WorkflowControlAction, status: string): 
 
 /** Probe the workspace's Pi for the `/workflows` extension command. */
 async function hasWorkflowsExtension(pi: PiRpcManager): Promise<boolean> {
-  const response = await pi.sendCommand({ type: 'get_commands' }) as
+  const command = pi.getEngineKind() === 'omp' ? 'get_available_commands' : 'get_commands'
+  const response = await pi.sendCommand({ type: command }) as
     | { success?: boolean; data?: { commands?: Array<{ name?: unknown; source?: unknown }> } }
     | null
   if (!response?.success || !Array.isArray(response.data?.commands)) return false
   return response.data.commands.some(
-    (command) => command?.name === 'workflows' && command?.source === 'extension'
+    (candidate) => candidate?.name === 'workflows' && candidate?.source === 'extension'
   )
 }
 
@@ -80,11 +81,11 @@ export function registerWorkflowHandlers(ctx: IpcContext): void {
       if (!run) return fail('status-not-permitted')
       if (!actionAllowedForStatus(action, run.status)) return fail('status-not-permitted')
 
-      // Route to the run's OWN workspace Pi process, never the active one —
-      // the active session and its Pi stay untouched.
+      // Route to the run's OWN session runtime, never the active one. A
+      // missing session identity is unsafe to guess, so fail closed.
+      if (!run.sessionId) return fail('no-pi')
       const pi = ctx.workspaceManager.getPiManagerForSession(workspaceId, run.sessionId)
       if (!pi) return fail('no-pi')
-      if (pi.getStatus().status !== 'running') return fail('pi-not-running')
 
       // The extension command is what executes the control; only dispatch when
       // it is actually registered in that Pi process. Without this probe an

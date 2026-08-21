@@ -418,7 +418,7 @@ app.whenReady().then(async () => {
   // otherwise the renderer can win the startup race and launch the default Pi
   // binary before this setting is applied.
   const settings = await loadAppSettings(workspaceManager)
-  setPiExecutableOverride(settings.piExecutablePath)
+  setPiExecutableOverride(settings.piExecutablePath, settings.piEngine)
 
   // Register IPC handlers before creating windows. The window getter is a
   // lazy closure — mainWindow is created later and the notification wiring
