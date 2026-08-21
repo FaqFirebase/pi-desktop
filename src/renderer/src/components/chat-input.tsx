@@ -368,7 +368,9 @@ export function ChatInput(): React.JSX.Element {
     }
   }, [])
 
-  const isDisabled = piStatus !== 'running'
+  // A stopped agent stays typable: the first send lazy-starts Pi/OMP.
+  // Only transient/error states block input.
+  const isDisabled = piStatus === 'starting' || piStatus === 'error'
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {

@@ -975,9 +975,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
     if (trimmed.startsWith('/workflows run ')) get().setWorkflowPanelOpen(true)
 
-    const { piStatus, isStreaming, sessionState, settings } = get()
+    // Navigation never spawns Pi; the first prompt does. startPi applies the
+    // resume preference, so a previously-used project continues its last
+    // conversation; a fresh one gets a new session.
+    if (get().piStatus !== 'running') {
+      await get().startPi()
+      if (get().piStatus !== 'running') return
+    }
 
-    if (piStatus !== 'running') return
+    const { isStreaming, sessionState, settings } = get()
 
     // Extract #tags from message
     const tagMatches = message.match(/#([a-z0-9_-]+)/gi)
@@ -2467,18 +2473,20 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
-  // Fast workspace activation commits the project pointer immediately. Pi
-  // startup and session hydration continue in the background.
+  // Instant navigation: committing the project pointer never spawns a
+  // process. A workspace with a live runtime shows that session right away
+  // (the process is already up — only history hydrates); anything else shows
+  // the empty new-session view immediately. Pi starts lazily on first prompt.
   activateWorkspace: async (workspaceId, options) => {
-    if (get().activeWorkspace?.id === workspaceId) {
-      if (options?.start !== false && get().piStatus !== 'running') void get().startPi()
-      return true
-    }
+    if (get().activeWorkspace?.id === workspaceId) return true
     if (!options?.skipDirtyConfirm && !(await get().confirmDiscardEditorChanges())) return false
     try {
       const workspace = await window.piDesktop.workspace.setActive(workspaceId)
       sessionLoadGeneration += 1
       get().clearMessages()
+      // Each workspace owns its PiRpcManager, so re-sync status from main
+      // before deciding what this workspace shows.
+      const status = await window.piDesktop.pi.getStatus()
       set((state) => ({
         workspaces: state.workspaces.some((item) => item.id === workspace.id)
           ? state.workspaces.map((item) => item.id === workspace.id ? workspace : item)
@@ -2486,16 +2494,26 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         activeWorkspace: workspace,
         sessionState: null,
         sessionStats: null,
-        sessionLoading: true,
-        piStatus: 'starting',
-        piPid: null,
-        piError: null,
         extensionUiRequest: null,
         previewTarget: null,
         editorDirty: false,
+        piStatus: status.status,
+        piPid: status.pid,
+        piError: status.error,
+        sessionLoading: status.status === 'running',
       }))
       void window.piDesktop.ui.flushPendingPrompts(workspace.id)
-      if (options?.start !== false) void get().startPi()
+      scheduleSessionListRefresh(get)
+      if (status.status === 'running') {
+        void get().reloadActiveSession({ refreshList: false })
+        // A turn may already be running here (that is what the sidebar dot
+        // advertised). Arm the mid-turn attach so the next turn boundary
+        // backfills the prefix the stream buffers never saw.
+        const activity = get().workspaceActivity[workspaceId]?.state
+        if (activity === 'working' || activity === 'needs-approval') {
+          set({ isStreaming: true, reattachedMidTurn: true })
+        }
+      }
       return true
     } catch (err) {
       get().addMessage({
@@ -2541,16 +2559,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       get().setPermissionRulesDraft('workspace', null)
       get().clearMessages()
       // Re-sync Pi status from main: each workspace has its own PiRpcManager,
-      // so the new active workspace's Pi may be in a different state than
-      // what piStatus is currently showing. Without this, the `if running return`
-      // guard in startPi() would skip starting the new active workspace's Pi.
+      // so the target workspace's process may be in a different state than
+      // what piStatus is currently showing.
       const status = await window.piDesktop.pi.getStatus()
       set({ piStatus: status.status, piPid: status.pid, piError: status.error })
       await get().loadWorkspaces()
-      // Session list + Pi start; skip full history when a follow-up switchSession
-      // will load the target session (sidebar/session panel open flow).
+      // Session list refresh only — navigation never spawns a process.
       scheduleSessionListRefresh(get)
-      await get().startPi()
       if (!skipSessionLoad && get().piStatus === 'running') {
         sessionLoadGeneration += 1
         await get().reloadActiveSession({ refreshList: false })
@@ -2563,7 +2578,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         if (activity === 'working' || activity === 'needs-approval') {
           set({ isStreaming: true, reattachedMidTurn: true })
         }
-      } else if (get().piStatus === 'running') {
+      } else if (get().piStatus !== 'running') {
+        // Idle workspace: the empty new-session view renders instantly. No
+        // spinner, no process — Pi starts when the first prompt is sent.
+        set({ sessionState: null, sessionStats: null, sessionLoading: false })
+      } else {
         // Stats only. Refreshing sessionState here races the follow-up
         // switchSession this flow contracts for: when the refresh lands
         // first, the fast path sees its target "already active" over the

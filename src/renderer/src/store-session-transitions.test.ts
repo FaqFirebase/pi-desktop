@@ -10,6 +10,9 @@ let switchResult: { success?: boolean; error?: string } | null = { success: true
 // Non-null makes the stubbed pi.getStatus reject, simulating a main-side
 // failure AFTER a workspace switch has already committed.
 let getStatusFailure: string | null = null
+// Status the stubbed pi.getStatus reports for the ACTIVE workspace. A live
+// background turn means the target workspace's own process is running.
+let piStatusResult: 'stopped' | 'running' = 'stopped'
 // Non-null makes the stubbed workspace.setActive reject, simulating a switch
 // that never commits on the main side.
 let setActiveFailure: string | null = null
@@ -141,7 +144,7 @@ const piDesktopStub = {
   pi: {
     getStatus: async () => {
       if (getStatusFailure) throw new Error(getStatusFailure)
-      return { status: 'stopped' as const, pid: null, error: null }
+      return { status: piStatusResult, pid: piStatusResult === 'running' ? 1 : null, error: null }
     },
     start: async () => {
       calls.push('pi.start')
@@ -179,6 +182,10 @@ const piDesktopStub = {
   commands: {
     abort: async () => {
       calls.push('abort')
+      return null
+    },
+    prompt: async (message: string) => {
+      calls.push(`prompt:${message}`)
       return null
     },
   },
@@ -283,6 +290,7 @@ beforeEach(() => {
   }
   switchResult = { success: true }
   getStatusFailure = null
+  piStatusResult = 'stopped'
   setActiveFailure = null
   pendingPromptsFailure = null
   pendingPromptsSnapshot = {}
@@ -762,7 +770,7 @@ test('a create that leaves the active workspace alone touches neither slot nor p
 
 // Regression: openFolderAsWorkspace must not treat "main activated the target on
 // create" as "we were already on that workspace". Skipping switchWorkspace leaves
-// the previous chat/messages and a stale piStatus that blocks starting the new Pi.
+// the previous chat/messages on screen.
 test('openFolderAsWorkspace switches when the dropped folder is an existing other workspace', async () => {
   workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
   activeWorkspaceResult = WORKSPACE_ONE
@@ -790,12 +798,58 @@ test('openFolderAsWorkspace switches when the dropped folder is an existing othe
   assert.equal(useAppStore.getState().currentView, 'chat')
   assert.equal(
     useAppStore.getState().piStatus,
-    'running',
-    'switchWorkspace resyncs status then startPi can start the target manager'
+    'stopped',
+    'an idle target shows the empty view instantly — no process is spawned'
   )
-  // After create main already activated TWO; startPi still runs because status
-  // was resynced to stopped from getStatus before start.
-  assert.equal(calls.includes('pi.start'), true)
+  assert.equal(
+    calls.includes('pi.start'),
+    false,
+    'navigation must not spawn a process'
+  )
+})
+
+test('activating an idle workspace shows the empty view without starting Pi', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    messages: [{ id: 'old', role: 'user', content: 'old chat', timestamp: 0 }],
+    piStatus: 'running',
+  })
+
+  const ok = await useAppStore.getState().switchWorkspace(WORKSPACE_TWO.id)
+
+  assert.equal(ok, true)
+  const state = useAppStore.getState()
+  assert.equal(calls.includes('pi.start'), false, 'selection must stay process-free')
+  assert.equal(state.activeWorkspace?.id, WORKSPACE_TWO.id)
+  assert.deepEqual(state.messages, [])
+  assert.equal(state.sessionLoading, false, 'no spinner without a process')
+  assert.equal(state.sessionState, null)
+  assert.equal(state.piStatus, 'stopped')
+})
+
+test('the first prompt lazy-starts an idle workspace', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+  })
+  await useAppStore.getState().switchWorkspace(WORKSPACE_TWO.id)
+  calls.length = 0
+
+  await useAppStore.getState().sendPrompt('ship it')
+
+  const startAt = calls.indexOf('pi.start')
+  assert.notEqual(startAt, -1, 'the first send must spawn the agent')
+  assert.equal(
+    calls.findIndex((c) => c.startsWith('prompt:')),
+    startAt + 1,
+    'the prompt goes out only after startup completes'
+  )
+  assert.equal(useAppStore.getState().piStatus, 'running')
 })
 
 test('openFolderAsWorkspace skips switch when the dropped folder is already active', async () => {
@@ -1460,6 +1514,21 @@ test('openSessionItem auto-switches to the owning workspace first', async () => 
   assert.equal(useAppStore.getState().currentView, 'chat')
 })
 
+// ─── Mid-turn re-attach on workspace switch-back ─────────────────────────────
+
+function enterWorkspacesWithBackgroundTurn(): void {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  // The background turn lives in WORKSPACE_TWO's own process, so main reports
+  // that workspace's manager as running and its activity as working.
+  piStatusResult = 'running'
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    workspaceActivity: { [WORKSPACE_ID]: { state: 'working', since: 1 } },
+  })
+}
+
 test('openSessionItem switches tabs before opening the requested session', async () => {
   workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
   activeWorkspaceResult = WORKSPACE_ONE
@@ -1495,18 +1564,6 @@ test('openSessionItem creates a workspace for an unknown project path', async ()
   )
   assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
 })
-
-// ─── Mid-turn re-attach on workspace switch-back ─────────────────────────────
-
-function enterWorkspacesWithBackgroundTurn(): void {
-  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
-  activeWorkspaceResult = WORKSPACE_ONE
-  useAppStore.setState({
-    activeWorkspace: WORKSPACE_ONE,
-    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
-    workspaceActivity: { [WORKSPACE_ID]: { state: 'working', since: 1 } },
-  })
-}
 
 test('switching into a working workspace shows the indicator and marks the attach', async () => {
   enterWorkspacesWithBackgroundTurn()
