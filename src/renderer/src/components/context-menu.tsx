@@ -13,6 +13,7 @@ import {
   MessageSquare,
   StickyNote,
   Pencil,
+  Workflow as WorkflowIcon,
 } from 'lucide-react'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { useAppStore } from '../store'
@@ -351,6 +352,10 @@ export interface SessionContextMenuActions {
   // Optional: when provided, a "Rename…" item is shown (above Delete). Callers
   // pass this only for the active session, since Pi's rename targets it.
   onRename?: (session: SessionListItem) => void
+  // Optional: when provided, a "Workflow Runs" item is shown (below Open). It
+  // must open scoped to Pi's header UUID — the identifier runs carry — never
+  // the session filename stem.
+  onRuns?: (session: SessionListItem) => void
 }
 
 export function buildSessionContextMenu(
@@ -366,6 +371,14 @@ export function buildSessionContextMenu(
       icon: <MessageSquare size={14} />,
       action: () => actions.onOpen(session),
     },
+    ...(actions.onRuns
+      ? [{
+          id: 'session-runs',
+          label: 'Workflow Runs',
+          icon: <WorkflowIcon size={14} />,
+          action: () => actions.onRuns!(session),
+        }]
+      : []),
     {
       id: 'divider-session-1',
       label: '',

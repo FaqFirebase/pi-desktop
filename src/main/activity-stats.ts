@@ -10,6 +10,7 @@ import {
 } from 'fs'
 import { basename, dirname, join } from 'path'
 import { getSessionsRoot } from './pi-paths'
+import { getPiCli } from './pi-rpc-manager'
 import { getGuiDataPath } from './app-data-paths'
 import type {
   ActivityStatsResult,
@@ -169,7 +170,8 @@ export class ActivityStatsStore {
   private modelsPath(): string {
     if (this.modelsConfigPathOverride) return this.modelsConfigPathOverride
     const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-    return join(homeDir, '.pi', 'agent', 'models.json')
+    const root = getPiCli().kind === 'omp' ? join(homeDir, '.omp', 'agent') : join(homeDir, '.pi', 'agent')
+    return join(root, 'models.json')
   }
 
   // Resolved lazily: the production singleton is constructed at import time,

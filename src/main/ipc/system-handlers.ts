@@ -13,11 +13,17 @@ export function registerSystemHandlers(ctx: IpcContext): void {
   // ─── System ─────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.SYSTEM_OPEN_DIALOG, async (_event, options?: unknown) => {
-    // Default to directory selection for back-compat with workspace pickers;
-    // callers pass mode: 'file' (and optional filters) to attach files.
-    const pickFile = isObject(options) && options.mode === 'file'
+    // Default to directory selection for back-compat with workspace pickers.
+    const mode = isObject(options) && (options.mode === 'file' || options.mode === 'either')
+      ? options.mode
+      : 'directory'
+    const pickFile = mode === 'file'
     const dialogOptions: Electron.OpenDialogOptions = {
-      properties: [pickFile ? 'openFile' : 'openDirectory'],
+      properties: mode === 'file'
+        ? ['openFile']
+        : mode === 'either'
+          ? ['openFile', 'openDirectory']
+          : ['openDirectory'],
     }
     if (isObject(options)) {
       if (isString(options.title)) dialogOptions.title = options.title

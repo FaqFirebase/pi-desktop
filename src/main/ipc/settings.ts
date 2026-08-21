@@ -28,8 +28,11 @@ export async function loadAppSettings(workspaceManager: WorkspaceManager): Promi
     const settingsPath = getSettingsPath()
     if (existsSync(settingsPath)) {
       const data = await readFile(settingsPath, 'utf-8')
-      const saved = JSON.parse(data)
-      return { ...DEFAULT_SETTINGS, ...saved }
+      const merged = { ...DEFAULT_SETTINGS, ...JSON.parse(data) }
+      if (merged.piEngine !== 'auto' && merged.piEngine !== 'pi' && merged.piEngine !== 'omp') {
+        merged.piEngine = 'auto'
+      }
+      return merged
     }
   } catch {
     // Fall through to defaults
@@ -94,12 +97,13 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
     if ('minimizeToTrayOnClose' in settings) {
       setTrayEnabled(Boolean((settings as Partial<AppSettings>).minimizeToTrayOnClose))
     }
-    // Re-resolve the Pi binary so a corrected executable path takes effect on
-    // the next start instead of requiring an app restart.
-    if ('piExecutablePath' in settings) {
-      setPiExecutableOverride((settings as Partial<AppSettings>).piExecutablePath)
+    // Re-resolve the Pi binary so a corrected executable path or explicit engine
+    // takes effect on the next runtime start without relying on filename sniffing.
+    const updated = await loadAppSettings(workspaceManager)
+    if ('piExecutablePath' in settings || 'piEngine' in settings) {
+      setPiExecutableOverride(updated.piExecutablePath, updated.piEngine)
     }
-    return loadAppSettings(workspaceManager)
+    return updated
   })
 
   // Reconcile the OS-level "run on startup" state with the saved preference on

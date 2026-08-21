@@ -109,6 +109,20 @@
   .chat-center > .border-b { border-bottom-color: var(--color-chat-column-border); }
   .chat-center > .border-t { border-top-color: var(--color-chat-column-border); }
 
+  /* Native Chromium select popups otherwise fall back to the OS light palette
+     even when the app has a dark theme. Keep the popup and its text on the
+     same semantic tokens as the rest of the launcher. */
+  select[data-themed-select] {
+    color-scheme: dark;
+  }
+  html.light select[data-themed-select] {
+    color-scheme: light;
+  }
+  select[data-themed-select] option {
+    background-color: var(--color-surface);
+    color: var(--color-primary);
+  }
+
   /* Reveal the thinking copy button on hover. Plain CSS avoids the nested-group
      ambiguity with the message-level `group` (Tailwind group-hover didn't fire). */
   .thinking-copy-btn {

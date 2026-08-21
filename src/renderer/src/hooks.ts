@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState } fr
 import { useAppStore } from './store'
 import { DEFAULT_SETTINGS } from '../../shared/default-settings'
 import { BUILTIN_SOURCE, type PiCommand } from '../../shared/pi-command'
+import type { WorkspaceActivationIntent } from '../../shared/ipc-contracts'
 
 /**
  * Subscribes to Pi events from the main process and routes them to the store.
@@ -11,6 +12,7 @@ export function usePiEvents(): void {
   const handlePiEvent = useAppStore((state) => state.handlePiEvent)
   const handlePendingPromptCounts = useAppStore((state) => state.handlePendingPromptCounts)
   const handleWorkspaceActivity = useAppStore((state) => state.handleWorkspaceActivity)
+  const handleSessionRuntime = useAppStore((state) => state.handleSessionRuntime)
   const recoverPendingPrompts = useAppStore((state) => state.recoverPendingPrompts)
 
   useEffect(() => {
@@ -18,32 +20,44 @@ export function usePiEvents(): void {
     const unsubscribeEvent = window.piDesktop.onEvent(handlePiEvent)
     const unsubscribeCounts = window.piDesktop.onPendingPrompts(handlePendingPromptCounts)
     const unsubscribeActivity = window.piDesktop.onWorkspaceActivity(handleWorkspaceActivity)
+    const unsubscribeSessionRuntime = window.piDesktop.onSessionRuntime(handleSessionRuntime)
 
     // A desktop-notification click hands the renderer the switch intent so the
     // usual streaming/dirty-editor confirms still run; landing on chat shows
     // the finished (or waiting) turn the notification was about.
-    const activateWorkspaceIntent = (workspaceId: string): void => {
+    const activateWorkspaceIntent = (intent: WorkspaceActivationIntent): void => {
       const state = useAppStore.getState()
+      const { workspaceId, sessionPath } = intent
       // A stale intent for a removed workspace must not run confirm dialogs
       // for a doomed switch. An empty list means it just hasn't loaded yet
       // (boot) — proceed and let main validate.
-      if (state.workspaces.length > 0 && !state.workspaces.some((ws) => ws.id === workspaceId)) {
-        return
-      }
-      if (state.activeWorkspace?.id === workspaceId) {
-        if (state.currentView !== 'chat') state.setCurrentView('chat')
-        return
-      }
-      void state.switchWorkspace(workspaceId).then((switched) => {
+      if (state.workspaces.length > 0 && !state.workspaces.some((ws) => ws.id === workspaceId)) return
+
+      void (async () => {
+        if (sessionPath) {
+          if (state.activeWorkspace?.id !== workspaceId) {
+            if (!(await state.activateWorkspace(workspaceId, { awaitingSession: true }))) return
+          }
+          const workspace = useAppStore.getState().activeWorkspace
+          if (!workspace) return
+          await useAppStore.getState().switchSession(sessionPath, workspace.path)
+          useAppStore.getState().setCurrentView('chat')
+          return
+        }
+        if (state.activeWorkspace?.id === workspaceId) {
+          if (state.currentView !== 'chat') state.setCurrentView('chat')
+          return
+        }
+        const switched = await state.activateWorkspace(workspaceId)
         if (switched) useAppStore.getState().setCurrentView('chat')
-      })
+      })()
     }
-    const unsubscribeActivate = window.piDesktop.onActivateWorkspace(({ workspaceId }) => {
+    const unsubscribeActivate = window.piDesktop.onActivateWorkspace((intent) => {
       // Main stashes every click's intent in case this broadcast never lands
       // (boot/reload race). It did land — consume the stash so a later boot
       // cannot replay a long-stale activation.
       void window.piDesktop.workspace.takePendingActivation().catch(() => undefined)
-      activateWorkspaceIntent(workspaceId)
+      activateWorkspaceIntent(intent)
     })
 
     // A reload leaves the dialog slot empty while main still holds the prompt.
@@ -53,8 +67,8 @@ export function usePiEvents(): void {
     // main; deliver it now that the subscriptions above are live.
     void window.piDesktop.workspace
       .takePendingActivation()
-      .then((workspaceId) => {
-        if (workspaceId) activateWorkspaceIntent(workspaceId)
+      .then((intent) => {
+        if (intent) activateWorkspaceIntent(intent)
       })
       .catch(() => {
         // Non-fatal: the user can switch manually.
@@ -64,9 +78,10 @@ export function usePiEvents(): void {
       unsubscribeEvent()
       unsubscribeCounts()
       unsubscribeActivity()
+      unsubscribeSessionRuntime()
       unsubscribeActivate()
     }
-  }, [handlePiEvent, handlePendingPromptCounts, handleWorkspaceActivity, recoverPendingPrompts])
+  }, [handlePiEvent, handlePendingPromptCounts, handleWorkspaceActivity, handleSessionRuntime, recoverPendingPrompts])
 }
 
 /**
@@ -385,6 +400,7 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
   const compactContext = useAppStore((s) => s.compactContext)
   const cloneBranch = useAppStore((s) => s.cloneBranch)
   const createNewSession = useAppStore((s) => s.createNewSession)
+  const setTaskLauncherOpen = useAppStore((s) => s.setTaskLauncherOpen)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
 
   const builtins = useMemo<BuiltinCommand[]>(
@@ -392,11 +408,12 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
       { name: 'compact', description: 'Compact the conversation to free up context', run: () => { void compactContext() } },
       { name: 'clone', description: 'Clone the current branch into a new session', run: () => { void cloneBranch() } },
       { name: 'new', description: 'Start a new session', run: () => { void createNewSession() } },
+      { name: 'task', description: 'Launch a task in a new Pi session', run: () => setTaskLauncherOpen(true) },
       { name: 'resume', description: 'Open the Sessions list', run: () => setCurrentView('sessions') },
       { name: 'fork', description: 'Open Branches to fork from a message', run: () => setCurrentView('timeline') },
       { name: 'settings', description: 'Open Settings', run: () => setCurrentView('settings') },
     ],
-    [compactContext, cloneBranch, createNewSession, setCurrentView]
+    [compactContext, cloneBranch, createNewSession, setTaskLauncherOpen, setCurrentView]
   )
 
   const allCommands = useMemo<PiCommand[]>(
@@ -432,6 +449,9 @@ export function useInitialize(): void {
 
       // Workspaces are needed for the shell chrome; land the UI immediately after.
       await loadWorkspaces()
+      void window.piDesktop.session.listRuntimes()
+        .then((runtimes) => runtimes.forEach((runtime) => useAppStore.getState().handleSessionRuntime(runtime)))
+        .catch(() => undefined)
 
       if (openToHome) {
         // Interactive ASAP — do NOT wait on the session-store walk (can be tens
@@ -443,6 +463,10 @@ export function useInitialize(): void {
 
       // Background: session list, tags, notes, models, updates.
       void refreshSessionList()
+      // Load the workflow journal once at boot so the status-bar badge and the
+      // sidebar workflow entries show live runs before the navigator is first
+      // opened (its poll loop keeps it fresh afterwards).
+      void useAppStore.getState().refreshWorkflowRuns()
       void useAppStore.getState().loadTags()
       void useAppStore.getState().loadArchivedSessions()
       void useAppStore.getState().loadNotes()
@@ -454,26 +478,12 @@ export function useInitialize(): void {
         return
       }
 
-      // Legacy: boot into Chat and resume the last session. reloadActiveSession
-      // pulls the resumed session's message history (refreshSessionState alone
-      // only loads metadata, leaving the chat empty).
-      await startPi()
-      await useAppStore.getState().reloadActiveSession()
-      await refreshSessionStats()
-
-      // Re-pull the activity snapshot AFTER the boot load: a renderer reload
-      // (Ctrl+R) mid-turn boots idle, the load's teardown clears any attach
-      // the earlier snapshot armed, and broadcasts only fire on transitions —
-      // without this pull the running turn would stream invisibly and its
-      // in-flight message would commit truncated. handleWorkspaceActivity
-      // arms the attach when the active workspace is working.
-      try {
-        useAppStore
-          .getState()
-          .handleWorkspaceActivity(await window.piDesktop.workspace.getActivity())
-      } catch {
-        // Non-fatal: the next activity broadcast catches the renderer up.
-      }
+      // Boot Pi in the background. The shell is already interactive; the
+      // session-runtime running event hydrates Chat when the process is ready.
+      void startPi().then(() => refreshSessionStats()).catch(() => undefined)
+      void window.piDesktop.workspace.getActivity()
+        .then((activity) => useAppStore.getState().handleWorkspaceActivity(activity))
+        .catch(() => undefined)
     }
 
     initialize()

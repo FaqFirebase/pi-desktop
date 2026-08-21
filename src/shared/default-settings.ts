@@ -10,6 +10,7 @@ import { DEFAULT_SIDEBAR_WIDTH } from './sidebar-width'
  */
 export const DEFAULT_SETTINGS: AppSettings = {
   piExecutablePath: 'pi',
+  piEngine: 'auto',
   defaultArgs: [],
   theme: 'dark',
   defaultModel: null,

@@ -67,6 +67,7 @@ src/
 │   ├── renderer-origin.ts        # Trusted-renderer URL check (navigation + IPC sender)
 │   ├── workspace-trust.ts        # Per-workspace trust registry (gates allow rules + preview)
 │   ├── workspace-manager.ts      # Multi-workspace management
+│   ├── git-conveyor.ts           # Validated commit, push, and GitHub PR commands
 │   ├── file-service.ts           # File tree, search, git status, read/write
 │   ├── terminal-service.ts       # node-pty PTY management
 │   ├── agent-detection.ts        # Detect claude/codex/pi CLIs (council)
@@ -106,6 +107,9 @@ src/
             ├── sidebar.tsx        # Workspace switcher, nav, sessions grouped by folder, inline rename
             ├── sidebar-session-labels.ts # Session row label helpers
             ├── home-screen.tsx    # Full Home launcher (stats, recents, open folder / new session)
+            ├── task-launcher.tsx  # New-task modal that starts a real background session
+            ├── mission-control.tsx # Global live-session and workflow inbox
+            ├── git-conveyor-actions.tsx # Explicit commit/push/PR controls for reviewed diffs
             ├── stats-panel.tsx    # Activity stats dashboard on Home
             ├── chat-panel.tsx     # Main streaming chat; empty session = center prompt + project picker
             ├── chat-project-picker.tsx # Empty-chat project / no-project picker under the composer
@@ -154,8 +158,11 @@ src/
 
 ### Workspace Management
 
+- Mission Control summarizes all live session runtimes and workflow runs across projects; New Task launches a prompt into a dedicated background runtime
+- New Task can create or reuse an isolated Git worktree (matching task metadata, explicit branches, and GitHub PR URLs are detected), and Diff Review exposes explicit Commit → Push → PR actions with upstream-aware GitHub CLI routing
 - Multiple workspaces (project directories)
-- Each workspace has its own Pi process, sessions, and file service
+- Each workspace owns a file service; every live session in that project owns an independent Pi process bound to that workspace cwd and its own `--session` file
+- Session navigation is immediate; Pi startup and history hydration continue in the background
 - Default workspace: user's home directory
 - Workspace switcher in sidebar
 - Auto-creates workspace when switching to a session from a different project
@@ -164,6 +171,9 @@ src/
 ### Session Management
 
 - Sessions organized by working directory (Pi native), decoded correctly cross-platform including Windows drive-letter paths
+- One independent Pi runtime per live session, including multiple sessions sharing one project directory
+- Switching sessions never sends a destructive `switch_session` to the previous process; the previous turn continues in the background
+- Session tabs and sidebar rows show working, approval, completed, and failed indicators
 - Sessions grouped by project in the session panel
 - **Session tags**: type `#tag-name` in chat to tag the current session
 - Tags persisted to `~/.pi-desktop-gui/session-tags.json`
@@ -201,9 +211,16 @@ src/
 - Skills/prompts/extensions insert their token (`/skill:name`, `/template`, `/cmd`) for Pi to expand; built-ins (`/compact`, `/clone`, `/new`, `/resume`, `/fork`, `/settings`) run the GUI action directly
 - Workspace/session/file picks route through the store's guarded actions, so the streaming and dirty-editor confirms still apply
 
+### Issue-to-PR Conveyor
+
+- Task Launcher accepts an issue description or URL, optionally creates or reuses a local Git worktree, and sends the task to a dedicated Pi runtime. PR URLs are resolved with `gh pr view`; unrelated or ambiguous worktrees are never guessed.
+- Diff Review exposes explicit Commit, Push, and PR actions; mutating Git operations never happen implicitly.
+- PR creation uses GitHub CLI when available, targets the configured `upstream` remote when present, and opens the returned PR URL.
+
 ### Workspace Activity & Desktop Notifications
 
-- Main derives per-workspace activity (working / needs approval / completed / failed) from every workspace's Pi events — the renderer's stream state only follows the active workspace, so this ships as its own map (`workspace-activity.ts`, broadcast on `event:workspace-activity`)
+- Main derives aggregate per-workspace activity (working / needs approval / completed / failed) from every session runtime's Pi events — the renderer's stream state only follows the active runtime, so this ships as its own map (`workspace-activity.ts`, broadcast on `event:workspace-activity`)
+- A separate session-runtime snapshot stream exposes each live session's process status, PID, activity, and active binding for per-session indicators
 - Sidebar shows per-workspace dots (pulsing while working; success/error until the workspace is next viewed) alongside the existing held-prompt badges
 - OS notifications (toggleable in Settings → Behavior) fire when a turn finishes, fails, or waits for approval outside the focused view; clicking one focuses the window and switches to that workspace via the renderer's guarded switch
 
@@ -352,10 +369,10 @@ npm run package       # Create installer
 
 ## Pi Integration
 
-Pi runs in RPC mode as a subprocess:
+Pi runs in RPC mode as a subprocess; one `PiRpcManager` is retained for each live session runtime:
 
 ```
-pi --mode rpc [--provider <name>] [--model <id>] [--no-session]
+pi --mode rpc [--session <session-file>] [--provider <name>] [--model <id>] [--no-session]
 ```
 
 Communication via JSONL over stdin/stdout:

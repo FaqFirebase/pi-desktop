@@ -8,20 +8,22 @@ import {
   projectNameFromPath,
   JSONL_EXTENSION,
 } from '../session-paths'
-import { pathGroupKey as workspaceMatchKey } from '../../shared/path-compare'
+import { pathGroupKey as workspaceMatchKey, pathsEqual } from '../../shared/path-compare'
 import { readSessionMetadataCached } from '../session-metadata'
 import { mapWithConcurrency } from '../map-concurrent'
 import { readSessionLineage } from '../session-lineage-reader'
 import { trimGetMessagesResponse } from '../get-messages-trim'
 import { activityStatsStore } from '../activity-stats'
-import type { SessionDeleteResult, SessionListItem } from '../../shared/ipc-contracts'
+import type { SessionDeleteResult, SessionListItem, SessionRuntimeCloseResult, SessionRuntimeInfo } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { readdir, stat, unlink } from 'fs/promises'
-import { basename, join } from 'path'
+import { basename, join, resolve } from 'path'
 import { isPathWithin } from '../path-authorization'
 import { existsSync } from 'fs'
 import { spawnSync } from 'child_process'
-import { assertTrustedSender, isString } from './validation'
+import { assertTrustedSender, isObject, isString } from './validation'
+import { applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
+import { loadAppSettings } from './settings'
 import type { IpcContext } from './context'
 
 const MAX_SESSION_LIST = 100
@@ -66,34 +68,115 @@ async function deleteSessionFile(sessionPath: string): Promise<SessionDeleteResu
 export function registerSessionHandlers(ctx: IpcContext): void {
   const { workspaceManager, getActivePi, tagManager, archivedSessions } = ctx
 
+  const startRuntime = async (runtime: SessionRuntimeInfo, sessionPath?: string): Promise<void> => {
+    const settings = await loadAppSettings(workspaceManager)
+    const workspace = workspaceManager.getWorkspaces().find((item) => item.id === runtime.workspaceId)
+    if (!workspace) return
+    const options = {
+      cwd: workspace.path,
+      ...(sessionPath ? { sessionPath } : {}),
+      provider: settings.defaultProvider ?? undefined,
+      model: settings.defaultModel ?? undefined,
+    }
+    await workspaceManager.startSessionRuntime(runtime.runtimeId, applyPermissionModeToStartOptions(
+      sessionPath ? applyResumePreference(options, settings) : options,
+      settings
+    ))
+  }
+
   // ─── Session Management ─────────────────────────────────────────────────
 
-  ipcMain.handle(IPC_CHANNELS.SESSION_NEW, async () => {
-    const pi = workspaceManager.getActivePiManager()
-    if (!pi || pi.getStatus().status !== 'running') {
-      return { success: false, error: 'Pi not running. Start Pi first.' }
-    }
-    return pi.sendCommand({ type: 'new_session' })
+  ipcMain.handle(IPC_CHANNELS.SESSION_NEW, async (): Promise<SessionRuntimeInfo> => {
+    const workspace = workspaceManager.getActiveWorkspace()
+    if (!workspace) throw new Error('No active workspace')
+    const runtime = await workspaceManager.createNewSessionRuntime(workspace.id)
+    // Navigation must not wait for Pi startup. The runtime event marks it
+    // starting/running and hydrates the renderer when ready.
+    void startRuntime(runtime).catch(() => undefined)
+    return runtime
   })
 
-  ipcMain.handle(IPC_CHANNELS.SESSION_SWITCH, async (_event, sessionPath: unknown) => {
-    if (!isString(sessionPath)) throw new Error('sessionPath must be a string')
-    const pi = workspaceManager.getActivePiManager()
-    if (!pi || pi.getStatus().status !== 'running') {
-      // Pi not running — just store the path for when it starts
-      return { success: false, error: 'Pi not running. Start Pi first.' }
+  ipcMain.handle(IPC_CHANNELS.SESSION_LAUNCH_TASK, async (_event, input: unknown): Promise<SessionRuntimeInfo> => {
+    if (!isObject(input) || !isString(input.workspaceId) || !isString(input.prompt) || !input.prompt.trim()) {
+      throw new Error('workspaceId and a non-empty prompt are required')
     }
-    return pi.sendCommand({ type: 'switch_session', sessionPath })
+    const workspace = workspaceManager.getWorkspaces().find((item) => item.id === input.workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+    const runtime = await workspaceManager.createNewSessionRuntime(workspace.id)
+    // Reserve the runtime while startup and prompt delivery are asynchronous;
+    // list polling must not classify its header-only file as disposable.
+    workspaceManager.setSessionRuntimeActivity(runtime.runtimeId, 'working')
+    // Keep the prompt attached to this runtime. It must not go through the
+    // renderer's active-manager shortcut because the user can switch away
+    // before Pi finishes starting.
+    void startRuntime(runtime)
+      .then(() => workspaceManager.sendCommandToSessionRuntime(runtime.runtimeId, {
+        type: 'prompt',
+        message: input.prompt,
+      }))
+      .catch(() => workspaceManager.setSessionRuntimeActivity(runtime.runtimeId, 'failed'))
+    return runtime
+  })
+
+  const activateSession = async (sessionPath: string, cwd?: string): Promise<SessionRuntimeInfo> => {
+    if (!isPathWithin(getSessionsRoot(), sessionPath) || !existsSync(sessionPath)) {
+      throw new Error('sessionPath must point to an existing Pi session file')
+    }
+    const workspace = workspaceManager.getActiveWorkspace()
+    if (!workspace) throw new Error('No active workspace')
+    if (cwd && !pathsEqual(workspace.path, cwd)) throw new Error('Session project does not match the active workspace')
+    const runtime = await workspaceManager.activateSession(workspace.id, sessionPath)
+    if (runtime.status !== 'running') void startRuntime(runtime, sessionPath).catch(() => undefined)
+    return runtime
+  }
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_CLOSE_RUNTIME, async (_event, runtimeId: unknown): Promise<SessionRuntimeCloseResult | null> => {
+    if (!isString(runtimeId)) throw new Error('runtimeId must be a string')
+    const result = await workspaceManager.closeSessionRuntime(runtimeId)
+    if (!result) return null
+
+    let deleted = false
+    if (result.empty && result.sessionPath && isPathWithin(getSessionsRoot(), result.sessionPath) && existsSync(result.sessionPath)) {
+      activityStatsStore.captureBeforeDelete(result.sessionPath)
+      const deleteResult = await deleteSessionFile(result.sessionPath)
+      deleted = deleteResult.ok
+      if (deleted) {
+        const sessionId = sessionIdFromPath(result.sessionPath)
+        await archivedSessions.forget(sessionId)
+        await tagManager.setTags(sessionId, [])
+        await tagManager.forgetAuto(sessionId)
+      }
+    }
+    return { ...result, deleted }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_SWITCH, async (_event, sessionPath: unknown, cwd?: unknown) => {
+    if (!isString(sessionPath)) throw new Error('sessionPath must be a string')
+    if (cwd !== undefined && !isString(cwd)) throw new Error('cwd must be a string')
+    return activateSession(sessionPath, isString(cwd) ? cwd : undefined)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_LIST_RUNTIMES, async () => {
+    await workspaceManager.pruneEmptySessionRuntimes()
+    return workspaceManager.getSessionRuntimes()
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_FORK, async (_event, entryId?: unknown) => {
     const cmd: Record<string, unknown> = { type: 'fork' }
     if (isString(entryId)) cmd.entryId = entryId
-    return getActivePi().sendCommand(cmd)
+    const pi = getActivePi()
+    const response = await pi.sendCommand(cmd)
+    const runtimeId = workspaceManager.runtimeIdFor(pi)
+    if (runtimeId) await workspaceManager.refreshSessionRuntime(runtimeId).catch(() => null)
+    return response
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_CLONE, async () => {
-    return getActivePi().sendCommand({ type: 'clone' })
+    const pi = getActivePi()
+    const response = await pi.sendCommand({ type: 'clone' })
+    const runtimeId = workspaceManager.runtimeIdFor(pi)
+    if (runtimeId) await workspaceManager.refreshSessionRuntime(runtimeId).catch(() => null)
+    return response
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async (_event, cwd?: unknown) => {
@@ -155,6 +238,12 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       throw new Error('sessionPath must be inside the Pi sessions directory')
     }
 
+    // Detach any live tab first. Otherwise deleting an active/session-tab file
+    // leaves a runtime pointing at a path that SESSION_SWITCH can no longer
+    // validate, producing a stale "existing Pi session file" error.
+    const runtime = workspaceManager.getSessionRuntimeForPath(sessionPath)
+    if (runtime) await workspaceManager.closeSessionRuntime(runtime.runtimeId)
+
     // Roll this session into the persisted stats store *before* removing the
     // file, so its activity survives the deletion (see activity-stats.ts).
     activityStatsStore.captureBeforeDelete(sessionPath)
@@ -215,15 +304,28 @@ const SESSION_NAME_READ_CONCURRENCY = 24
  */
 async function fillSessionLabels(entries: SessionEntry[]): Promise<void> {
   await mapWithConcurrency(entries, SESSION_NAME_READ_CONCURRENCY, async (entry) => {
-    const { name, preview } = await readSessionMetadataCached(entry.path, entry.lastModified)
+    const { name, preview, contentState, header } = await readSessionMetadataCached(entry.path, entry.lastModified)
     entry.name = name
     entry.preview = preview
+    entry.contentState = contentState
+    entry.piSessionId = header?.id
+    // The session header's cwd is authoritative: session directory names are
+    // lossy decodes of real paths (hyphens vs separators collide), so the
+    // workspace-match/desanitize values from collectSessionFiles can point at
+    // a phantom path. Repair the project from the header so opening the
+    // session creates/activates the REAL workspace and never re-persists a
+    // phantom one. The filename-stem sessionId (tags/archive key) is untouched.
+    if (header?.cwd) {
+      entry.projectPath = resolve(header.cwd)
+      entry.projectName = projectNameFromPath(entry.projectPath)
+    }
   })
 }
 
 function createListSessions(wm: WorkspaceManager) {
   return async function listSessions(_cwd: string): Promise<SessionEntry[]> {
     try {
+      await wm.pruneEmptySessionRuntimes()
       const sessionsDir = getSessionsRoot()
       const entries: SessionEntry[] = []
       // Precompute workspace match map once (was O(workspaces) per file).
@@ -237,7 +339,10 @@ function createListSessions(wm: WorkspaceManager) {
       // whole store), then surface each session's latest session_info name.
       const top = entries.slice(0, MAX_SESSION_LIST)
       await fillSessionLabels(top)
-      return top
+      // Pi creates the JSONL header before the first user turn. Only hide rows
+      // proven to be header-only; image-only, unreadable, malformed, and
+      // over-budget sessions remain openable and recoverable.
+      return top.filter((entry) => entry.contentState !== 'empty')
     } catch {
       return []
     }

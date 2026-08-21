@@ -5,6 +5,7 @@ import { isString, isObject } from './validation'
 import { validateStartOptions, applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
 import { loadAppSettings } from './settings'
 import type { IpcContext } from './context'
+import { detectPiInstallations } from '../pi-rpc-manager'
 
 export function registerPiHandlers(ctx: IpcContext): void {
   const { workspaceManager, getActivePi } = ctx
@@ -60,12 +61,15 @@ export function registerPiHandlers(ctx: IpcContext): void {
     if (!pi) throw new Error('No Pi manager for workspace')
 
     pi.stop()
-    return pi.start(
+    const status = await pi.start(
       applyPermissionModeToStartOptions(
         applyResumePreference({ cwd: activeWs.path, ...opts }, settings),
         settings
       )
     )
+    const runtimeId = workspaceManager.runtimeIdFor(pi)
+    if (runtimeId) await workspaceManager.refreshSessionRuntime(runtimeId).catch(() => null)
+    return status
   })
 
   ipcMain.handle(IPC_CHANNELS.PI_STATUS, async () => {
@@ -73,6 +77,10 @@ export function registerPiHandlers(ctx: IpcContext): void {
     if (!pi) return { status: 'stopped', pid: null, error: null }
     return pi.getStatus()
   })
+
+  ipcMain.handle(IPC_CHANNELS.PI_DETECT_INSTALLATIONS, async () => ({
+    installations: detectPiInstallations(),
+  }))
 
   // ─── Pi Commands ────────────────────────────────────────────────────────
 

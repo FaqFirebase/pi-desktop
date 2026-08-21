@@ -5,6 +5,7 @@ import { join } from 'path'
  * Centralized so session listing, lineage, and activity aggregation agree.
  */
 export function getSessionsRoot(): string {
-  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-  return join(homeDir, '.pi', 'agent', 'sessions')
+  const agentDir = process.env.PI_CODING_AGENT_DIR ||
+    join(process.env.HOME ?? process.env.USERPROFILE ?? '', '.pi', 'agent')
+  return join(agentDir, 'sessions')
 }

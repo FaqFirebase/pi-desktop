@@ -1,19 +1,17 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useAppStore, countPromptsWaitingElsewhere, formatPromptsWaiting } from '../store'
-import { ModelSelector } from './model-selector'
 import { clsx } from 'clsx'
 import {
   PanelLeft,
   PanelLeftClose,
   Terminal,
-  Zap,
   DollarSign,
   Layers,
   Minimize2,
   Settings,
   Loader2,
-  Check,
   GitBranch,
+  Workflow as WorkflowIcon,
 } from 'lucide-react'
 
 export function StatusBar(): React.JSX.Element {
@@ -32,6 +30,13 @@ export function StatusBar(): React.JSX.Element {
   const isCompacting = useAppStore((state) => state.sessionState?.isCompacting ?? false)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const pendingPromptCounts = useAppStore((state) => state.pendingPromptCounts)
+  const workflowPanelOpen = useAppStore((state) => state.workflowPanelOpen)
+  const workflowRuns = useAppStore((state) => state.workflowRuns)
+  const activeWorkflowCount = workflowRuns.filter(
+    (run) =>
+      (!activeWorkspace || run.workspaceId === activeWorkspace.id) &&
+      (run.status === 'running' || run.status === 'paused')
+  ).length
 
   // Blocking prompts held for OTHER workspaces (any extension's select/
   // confirm/input/editor) — the active workspace's prompt is already on screen.
@@ -125,11 +130,29 @@ export function StatusBar(): React.JSX.Element {
 
       {/* Right section */}
       <div className="flex items-center gap-3">
-        {/* Model selector */}
-        <ModelSelector />
-
-        {/* Thinking level */}
-        <ThinkingLevelSelector />
+        {/* Dedicated workflow navigator */}
+        <button
+          data-workflow-toggle="true"
+          onClick={() => {
+            // Session-surface button: opens the active session's runs (scoped by
+            // Pi's header UUID, the exact identifier persisted runs carry). The
+            // global list is only a fallback for the no-session state; closing
+            // preserves the scope so a close/reopen stays in-session.
+            const state = useAppStore.getState()
+            if (state.workflowPanelOpen) state.setWorkflowPanelOpen(false)
+            else if (state.sessionState?.sessionId) state.openWorkflowRunsForSession(state.sessionState.sessionId)
+            else state.setWorkflowPanelOpen(true)
+          }}
+          className={clsx(
+            'flex items-center gap-1 transition-colors',
+            workflowPanelOpen || activeWorkflowCount > 0 ? 'text-accent-fg' : 'text-dim hover:text-secondary'
+          )}
+          title="Open workflow runs"
+          aria-label="Open workflow runs"
+        >
+          <WorkflowIcon size={11} />
+          <span>{activeWorkflowCount > 0 ? `${activeWorkflowCount} workflow${activeWorkflowCount === 1 ? '' : 's'}` : 'workflows'}</span>
+        </button>
 
         {/* Token usage */}
         {sessionStats?.contextUsage && (
@@ -201,72 +224,6 @@ export function StatusBar(): React.JSX.Element {
           <Settings size={12} />
         </button>
       </div>
-    </div>
-  )
-}
-
-// ─── Thinking Level Selector ─────────────────────────────────────────────────
-
-function ThinkingLevelSelector(): React.JSX.Element {
-  const sessionState = useAppStore((state) => state.sessionState)
-  const setThinkingLevel = useAppStore((state) => state.setThinkingLevel)
-  const piStatus = useAppStore((state) => state.piStatus)
-
-  const [isOpen, setIsOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  const levels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const
-  const currentLevel = sessionState?.thinkingLevel ?? 'medium'
-
-  // Close on click outside
-  useEffect(() => {
-    if (!isOpen) return
-
-    const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [isOpen])
-
-  if (piStatus !== 'running') return <></>
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1 text-dim hover:text-secondary transition-colors"
-        title="Thinking level"
-      >
-        <Zap size={10} />
-        <span>{currentLevel}</span>
-      </button>
-
-      {isOpen && (
-        <div className="absolute bottom-full right-0 mb-1 w-32 rounded-lg border border-border-strong bg-surface shadow-xl shadow-black/40 py-1 animate-fade-in z-50">
-          {levels.map((level) => (
-            <button
-              key={level}
-              onClick={() => {
-                setThinkingLevel(level)
-                setIsOpen(false)
-              }}
-              className={clsx(
-                'flex w-full items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-surface-hover transition-colors',
-                currentLevel === level
-                  ? 'text-primary'
-                  : 'text-muted'
-              )}
-            >
-              {currentLevel === level && <Check size={10} className="text-success" />}
-              <span className={currentLevel === level ? '' : 'ml-[18px]'}>{level}</span>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

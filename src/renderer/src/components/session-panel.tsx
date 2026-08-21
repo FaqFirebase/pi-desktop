@@ -1,22 +1,29 @@
 import { useAppStore } from '../store'
 import { getSessionTitle } from '../utils/session-title'
-import { FolderOpen, Plus, Clock, Search, ChevronRight, ChevronDown, FolderTree, Tag, X, MoreVertical, Archive, ArchiveRestore, Trash2, Sparkles } from 'lucide-react'
+import { FolderOpen, Plus, Clock, Search, ChevronRight, ChevronDown, FolderTree, Tag, X, MoreVertical, Archive, ArchiveRestore, Trash2, Sparkles, Workflow as WorkflowIcon } from 'lucide-react'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
+import { pathsEqual } from '../../../shared/path-compare'
 import { useContextMenu, buildSessionContextMenu } from './context-menu'
 import { getSessionMenuPosition, type MenuPosition } from './session-menu-position'
+import { resolveRunSessionId } from '../utils/workflow-runs'
+import { SessionRuntimeIndicator } from './session-runtime-indicator'
 
 export function SessionPanel(): React.JSX.Element {
   const sessionList = useAppStore((state) => state.sessionList)
   const sessionState = useAppStore((state) => state.sessionState)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
+  const activeSessionRuntimeId = useAppStore((state) => state.activeSessionRuntimeId)
+  const sessionRuntimes = useAppStore((state) => state.sessionRuntimes)
   const createNewSession = useAppStore((state) => state.createNewSession)
   const refreshSessionList = useAppStore((state) => state.refreshSessionList)
   const archivedSessions = useAppStore((state) => state.archivedSessions)
   const showArchived = useAppStore((state) => state.showArchived)
   const toggleShowArchived = useAppStore((state) => state.toggleShowArchived)
+  const sessionsScope = useAppStore((state) => state.sessionsScope)
+  const setSessionsScope = useAppStore((state) => state.setSessionsScope)
   const ensureAutoTags = useAppStore((state) => state.ensureAutoTags)
   const settings = useAppStore((state) => state.settings)
   const toggleSessionGroupCollapsed = useAppStore((state) => state.toggleSessionGroupCollapsed)
@@ -32,7 +39,6 @@ export function SessionPanel(): React.JSX.Element {
   }, [sessionList, ensureAutoTags])
 
   const [searchQuery, setSearchQuery] = useState('')
-  const [showAllProjects, setShowAllProjects] = useState(true)
 
   // Collapsed project groups are persisted in settings so the layout survives
   // navigating away and app restarts.
@@ -45,13 +51,18 @@ export function SessionPanel(): React.JSX.Element {
     return sessionList.filter((s) => s.sessionId in archivedSessions).length
   }, [sessionList, archivedSessions])
 
-  // Group sessions by project (after filtering by archive state)
+  // Group sessions by project (after filtering by archive state and the
+  // All Sessions / Current Only scope). The scope lives in the store so it
+  // survives panel remounts and can be set by sidebar entry points.
   const groupedSessions = useMemo(() => {
     const groups = new Map<string, SessionListItem[]>()
+    const scopedToCurrent = sessionsScope === 'current'
+    const activePath = activeWorkspace?.path
 
     for (const session of sessionList) {
       const isArchived = session.sessionId in archivedSessions
       if (isArchived && !showArchived) continue
+      if (scopedToCurrent && (!activePath || !pathsEqual(session.projectPath, activePath))) continue
 
       const key = session.projectPath || 'unknown'
       if (!groups.has(key)) groups.set(key, [])
@@ -66,7 +77,7 @@ export function SessionPanel(): React.JSX.Element {
     })
 
     return sorted
-  }, [sessionList, archivedSessions, showArchived])
+  }, [sessionList, archivedSessions, showArchived, sessionsScope, activeWorkspace?.path])
 
   // Filter by search
   const filteredGroups = useMemo(() => {
@@ -95,7 +106,7 @@ export function SessionPanel(): React.JSX.Element {
     void toggleSessionGroupCollapsed(project)
   }
 
-  const totalSessions = sessionList.length
+  const totalSessions = groupedSessions.reduce((total, [, sessions]) => total + sessions.length, 0)
   const totalProjects = groupedSessions.length
 
   return (
@@ -140,15 +151,21 @@ export function SessionPanel(): React.JSX.Element {
             />
           </div>
           <button
-            onClick={() => setShowAllProjects(!showAllProjects)}
+            onClick={() => setSessionsScope(sessionsScope === 'current' ? 'all' : 'current')}
+            aria-pressed={sessionsScope === 'current'}
+            title={
+              sessionsScope === 'current'
+                ? 'Show sessions from every project'
+                : 'Only show sessions from the current project'
+            }
             className={clsx(
               'rounded-md px-3 py-2 text-xs transition-colors',
-              showAllProjects
+              sessionsScope === 'all'
                 ? 'bg-accent-bg text-accent-fg'
                 : 'bg-card text-muted hover:text-secondary'
             )}
           >
-            {showAllProjects ? 'All Projects' : 'Current Only'}
+            {sessionsScope === 'all' ? 'All Sessions' : 'Current Only'}
           </button>
           <button
             onClick={toggleShowArchived}
@@ -175,14 +192,21 @@ export function SessionPanel(): React.JSX.Element {
           </div>
         )}
 
-        {/* Sessions grouped by project */}
+        {/* Sessions grouped by project. Current Only is intentionally a flat,
+            non-collapsible project view; grouping remains useful in All Sessions. */}
         {filteredGroups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-dim">
             <FolderOpen size={32} className="mb-3 text-faint" />
             <p className="text-sm">
-              {searchQuery ? 'No sessions match your search' : 'No sessions yet'}
+              {searchQuery
+                ? 'No sessions match your search'
+                : sessionsScope === 'current' && activeWorkspace
+                  ? 'No sessions in this project yet'
+                  : sessionsScope === 'current'
+                    ? 'Open a project to see its sessions'
+                    : 'No sessions yet'}
             </p>
-            {!searchQuery && (
+            {!searchQuery && sessionsScope !== 'current' && (
               <button
                 onClick={createNewSession}
                 className="mt-3 text-sm text-accent-fg/80 hover:text-accent-fg"
@@ -194,71 +218,105 @@ export function SessionPanel(): React.JSX.Element {
         ) : (
           <div className="space-y-2">
             {filteredGroups.map(([projectPath, sessions]) => {
-              // Default expanded; collapse only when the user has collapsed this
-              // group. An active search force-expands so matches stay visible.
-              const isExpanded = searchQuery.trim() !== '' || !collapsedGroups.has(projectPath)
-              const isCurrentProject = projectPath === activeWorkspace?.path
+              const projectScoped = sessionsScope === 'current'
+              // Current Only always shows its sessions. All Sessions keeps the
+              // persisted collapse preference and expands search matches.
+              const isExpanded = projectScoped || searchQuery.trim() !== '' || !collapsedGroups.has(projectPath)
               const projectName = sessions[0]?.projectName ?? 'Unknown'
               const latestSession = sessions[0]
+              const isCurrentProject = !!activeWorkspace && pathsEqual(projectPath, activeWorkspace.path)
 
               return (
                 <div
                   key={projectPath}
                   className={clsx(
-                    'rounded-lg border overflow-hidden',
+                    'overflow-hidden rounded-lg border',
                     isCurrentProject
                       ? 'border-accent-bg bg-accent-bg'
                       : 'border-border bg-surface/30'
                   )}
                 >
                   {/* Project header */}
-                  <button
-                    onClick={() => toggleProject(projectPath)}
-                    className="flex w-full items-center gap-2 px-4 py-2.5 hover:bg-surface-hover/30 transition-colors"
-                  >
-                    {isExpanded ? (
-                      <ChevronDown size={14} className="text-dim shrink-0" />
-                    ) : (
-                      <ChevronRight size={14} className="text-dim shrink-0" />
-                    )}
-                    <FolderTree
-                      size={14}
-                      className={clsx(
-                        'shrink-0',
-                        isCurrentProject ? 'text-accent-fg' : 'text-dim'
-                      )}
-                    />
-                    <div className="min-w-0 flex-1 text-left">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-primary">
-                          {projectName}
-                        </span>
-                        {isCurrentProject && (
-                          <span className="rounded bg-accent-bg px-1.5 py-0.5 text-[10px] text-accent-fg">
-                            current
-                          </span>
+                  {projectScoped ? (
+                    <div className="flex items-center gap-2 px-4 py-2.5">
+                      <FolderTree
+                        size={14}
+                        className={clsx(
+                          'shrink-0',
+                          isCurrentProject ? 'text-accent-fg' : 'text-dim'
                         )}
-                        <span className="text-xs text-faint">
-                          {sessions.length} session{sessions.length !== 1 ? 's' : ''}
-                        </span>
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-primary">
+                            {projectName}
+                          </span>
+                          {isCurrentProject && (
+                            <span className="rounded bg-accent-bg px-1.5 py-0.5 text-[10px] text-accent-fg">
+                              current
+                            </span>
+                          )}
+                          <span className="text-xs text-faint">
+                            {sessions.length} session{sessions.length !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        <div className="truncate text-[11px] text-faint">
+                          {projectPath}
+                        </div>
                       </div>
-                      <div className="text-[11px] text-faint truncate">
-                        {projectPath}
+                      <div className="shrink-0 text-[10px] text-faint">
+                        {formatRelativeTime(latestSession.lastModified)}
                       </div>
                     </div>
-                    <div className="text-[10px] text-faint shrink-0">
-                      {formatRelativeTime(latestSession.lastModified)}
-                    </div>
-                  </button>
+                  ) : (
+                    <button
+                      onClick={() => void toggleProject(projectPath)}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 transition-colors hover:bg-surface-hover/30"
+                      aria-expanded={isExpanded}
+                    >
+                      {isExpanded ? (
+                        <ChevronDown size={14} className="shrink-0 text-dim" />
+                      ) : (
+                        <ChevronRight size={14} className="shrink-0 text-dim" />
+                      )}
+                      <FolderTree
+                        size={14}
+                        className={clsx(
+                          'shrink-0',
+                          isCurrentProject ? 'text-accent-fg' : 'text-dim'
+                        )}
+                      />
+                      <div className="min-w-0 flex-1 text-left">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-primary">
+                            {projectName}
+                          </span>
+                          {isCurrentProject && (
+                            <span className="rounded bg-accent-bg px-1.5 py-0.5 text-[10px] text-accent-fg">
+                              current
+                            </span>
+                          )}
+                          <span className="text-xs text-faint">
+                            {sessions.length} session{sessions.length !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        <div className="truncate text-[11px] text-faint">
+                          {projectPath}
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-[10px] text-faint">
+                        {formatRelativeTime(latestSession.lastModified)}
+                      </div>
+                    </button>
+                  )}
 
-                  {/* Sessions in this project */}
                   {isExpanded && (
                     <div className="border-t border-border/50">
                       {sessions.map((session) => (
                         <SessionEntry
                           key={session.path}
                           session={session}
-                          isActive={sessionState?.sessionFile === session.path}
+                          isActive={sessionState?.sessionFile === session.path || sessionRuntimes[activeSessionRuntimeId ?? '']?.sessionPath === session.path}
                           onSelect={() => handleSwitchSession(session)}
                         />
                       ))}
@@ -311,6 +369,8 @@ function SessionEntry({
   const archiveSession = useAppStore((state) => state.archiveSession)
   const unarchiveSession = useAppStore((state) => state.unarchiveSession)
   const deleteSession = useAppStore((state) => state.deleteSession)
+  const openWorkflowRunsForSession = useAppStore((state) => state.openWorkflowRunsForSession)
+  const sessionRuntimes = useAppStore((state) => state.sessionRuntimes)
 
   const tags = sessionTags[session.sessionId] ?? []
   const autoTag = autoTags[session.sessionId]
@@ -363,7 +423,7 @@ function SessionEntry({
     setMenuPosition(getSessionMenuPosition({
       triggerRect: rect,
       menuWidth: 150,
-      menuHeight: 74,
+      menuHeight: 112,
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
     }))
@@ -412,6 +472,7 @@ function SessionEntry({
         // Use the inline confirmation row in this surface (UX matches the
         // existing flow) instead of a window.confirm.
         onDelete: () => setConfirmingDelete(true),
+        onRuns: (s) => openWorkflowRunsForSession(resolveRunSessionId(s.piSessionId, s.sessionId) ?? s.sessionId),
       })
     )
   }
@@ -504,6 +565,10 @@ function SessionEntry({
             active
           </span>
         )}
+        {(() => {
+          const runtime = Object.values(sessionRuntimes).find((item) => item.sessionPath && pathsEqual(item.sessionPath, session.path))
+          return runtime ? <SessionRuntimeIndicator runtime={runtime} /> : null
+        })()}
       </div>
 
       {/* Kebab menu trigger — always visible so the actions are discoverable.
@@ -527,6 +592,15 @@ function SessionEntry({
           className="fixed z-[9999] min-w-[150px] rounded-md border border-border-strong bg-surface py-1 text-sm shadow-xl shadow-black/40"
           style={{ left: menuPosition.x, top: menuPosition.y }}
         >
+          <button
+            onClick={() => {
+              setMenuOpen(false)
+              openWorkflowRunsForSession(resolveRunSessionId(session.piSessionId, session.sessionId) ?? session.sessionId)
+            }}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-secondary hover:bg-surface-hover"
+          >
+            <WorkflowIcon size={13} /> Workflow runs
+          </button>
           <button
             onClick={handleArchive}
             className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-secondary hover:bg-surface-hover"

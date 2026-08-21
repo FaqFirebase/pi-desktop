@@ -45,7 +45,15 @@ export interface SessionHeader {
   id: string
   /** Absolute path to the session this one was forked from, or null. */
   parentSession: string | null
+  /**
+   * Working directory the session actually ran in, or null when the header
+   * omits it (legacy sessions). Authoritative where it exists: session dir
+   * names are lossy decodes of paths, so this is the only reliable anchor
+   * back to the real project.
+   */
+  cwd: string | null
 }
+export type SessionContentState = 'empty' | 'non-empty' | 'unknown'
 
 export interface SessionMetadata {
   header: SessionHeader | null
@@ -53,6 +61,8 @@ export interface SessionMetadata {
   name: string | null
   /** First user message, normalized for display, or null if there is none. */
   preview: string | null
+  /** Conservative content classification used before destructive cleanup. */
+  contentState: SessionContentState
 }
 
 /** Parse the `type:"session"` record that opens every session file. */
@@ -69,12 +79,13 @@ export function sessionHeaderFromLine(line: string): SessionHeader | null {
   }
   if (typeof record !== 'object' || record === null) return null
 
-  const rec = record as { type?: unknown; id?: unknown; parentSession?: unknown }
+  const rec = record as { type?: unknown; id?: unknown; parentSession?: unknown; cwd?: unknown }
   if (rec.type !== 'session' || typeof rec.id !== 'string') return null
 
   return {
     id: rec.id,
     parentSession: typeof rec.parentSession === 'string' ? rec.parentSession : null,
+    cwd: typeof rec.cwd === 'string' && rec.cwd.length > 0 ? rec.cwd : null,
   }
 }
 
@@ -85,17 +96,19 @@ export function sessionHeaderFromLine(line: string): SessionHeader | null {
  * `type:"message"` carrying a text-block content array, and tool results
  * outnumber user turns roughly ten to one in a real session.
  */
+export function isUserMessageRecord(
+  record: unknown,
+): record is { type: 'message'; message: { role: 'user'; content?: unknown } } {
+  if (typeof record !== 'object' || record === null || !('message' in record)) return false
+  const message = record.message
+  if (typeof message !== 'object' || message === null || !('role' in message)) return false
+  if (!('type' in record) || record.type !== 'message') return false
+  return message.role === 'user'
+}
+
 export function userMessageText(record: unknown): string | null {
-  if (typeof record !== 'object' || record === null) return null
-
-  const rec = record as { type?: unknown; message?: unknown }
-  if (rec.type !== 'message') return null
-  if (typeof rec.message !== 'object' || rec.message === null) return null
-
-  const message = rec.message as { role?: unknown; content?: unknown }
-  if (message.role !== 'user') return null
-
-  return contentText(message.content) || null
+  if (!isUserMessageRecord(record)) return null
+  return contentText(record.message.content) || null
 }
 
 /** The session format allows `content` as a bare string or as a block array. */
@@ -116,6 +129,8 @@ function contentText(content: unknown): string {
 interface RangeScan {
   header: SessionHeader | null
   text: string | null
+  hasUserMessage: boolean
+  parseFailure: boolean
   /** `undefined` when the range held no session_info record at all. */
   name: string | null | undefined
 }
@@ -138,6 +153,8 @@ function scanLines(lines: readonly string[], options: ScanOptions = {}): RangeSc
   const { skipPartialFirstLine = false, wantName = true } = options
   let header: SessionHeader | null = null
   let text: string | null = null
+  let hasUserMessage = false
+  let parseFailure = false
   let name: string | null | undefined = undefined
 
   for (const [index, line] of lines.entries()) {
@@ -162,23 +179,27 @@ function scanLines(lines: readonly string[], options: ScanOptions = {}): RangeSc
       }
     }
 
-    // The first user turn is all we need from the message records, but when a
-    // rename could still appear we keep scanning so the later one wins.
-    if (text === null) {
+    // A user message with image-only content is still a real conversation.
+    // Keep that fact separate from the text preview, which intentionally omits
+    // image payloads.
+    if (!hasUserMessage) {
       let record: unknown
       try {
         record = JSON.parse(line)
       } catch {
-        // A malformed record must not end the scan.
+        parseFailure = true
         continue
       }
-      text = userMessageText(record)
+      if (isUserMessageRecord(record)) {
+        hasUserMessage = true
+        text = userMessageText(record)
+      }
     }
 
-    if (!wantName && header !== null && text !== null) break
+    if (!wantName && header !== null && hasUserMessage) break
   }
 
-  return { header, text, name }
+  return { header, text, hasUserMessage, parseFailure, name }
 }
 
 /**
@@ -246,6 +267,51 @@ async function streamFirstUserMessage(filePath: string): Promise<string | null> 
     return null
   } catch {
     return null
+  } finally {
+    stream?.destroy()
+  }
+}
+
+/**
+ * Classify whether a session is provably header-only.
+ *
+ * This deliberately returns `unknown` for unreadable, malformed, or
+ * over-budget files. Callers may hide an unknown row, but must never delete it.
+ */
+export async function inspectSessionContent(filePath: string): Promise<SessionContentState> {
+  let stream
+  let sawHeader = false
+  let scanned = 0
+  try {
+    stream = createReadStream(filePath, { encoding: 'utf-8' })
+    const rl = createInterface({ input: stream, crlfDelay: Infinity })
+    for await (const line of rl) {
+      scanned += Buffer.byteLength(line, 'utf-8') + 1
+      if (!line) continue
+      const header = sessionHeaderFromLine(line)
+      if (header) {
+        sawHeader = true
+        continue
+      }
+      let record: unknown
+      try {
+        record = JSON.parse(line)
+      } catch {
+        rl.close()
+        return 'unknown'
+      }
+      if (isUserMessageRecord(record)) {
+        rl.close()
+        return 'non-empty'
+      }
+      if (scanned >= MAX_PREVIEW_SCAN_BYTES) {
+        rl.close()
+        return 'unknown'
+      }
+    }
+    return sawHeader ? 'empty' : 'unknown'
+  } catch {
+    return 'unknown'
   } finally {
     stream?.destroy()
   }
@@ -381,7 +447,7 @@ async function readRanges(filePath: string): Promise<RangeReads | null> {
 /** Header, name and display preview from one open. Never throws. */
 export async function readSessionMetadata(filePath: string): Promise<SessionMetadata> {
   const reads = await readRanges(filePath)
-  if (!reads) return { header: null, name: null, preview: null }
+  if (!reads) return { header: null, name: null, preview: null, contentState: 'unknown' }
 
   const { scan, headTruncated, tailName, sawWholeFile } = reads
 
@@ -395,11 +461,17 @@ export async function readSessionMetadata(filePath: string): Promise<SessionMeta
   }
 
   const text = scan.text ?? (headTruncated ? await streamFirstUserMessage(filePath) : null)
+  const contentState = scan.hasUserMessage
+    ? 'non-empty'
+    : sawWholeFile
+      ? scan.header && !scan.parseFailure ? 'empty' : 'unknown'
+      : await inspectSessionContent(filePath)
 
   return {
     header: scan.header,
     name,
     preview: text === null ? null : sessionPreview(stripInjectedPreamble(text)),
+    contentState,
   }
 }
 

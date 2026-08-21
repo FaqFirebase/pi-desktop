@@ -2,6 +2,8 @@ import { useAppStore } from '../store'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { clsx } from 'clsx'
 import type {
+  AgentEngine,
+  AgentInstallation,
   AppSettings,
   PermissionMode,
   CouncilConfig,
@@ -10,7 +12,7 @@ import type {
   PermissionRulesWorkspaceStatus,
 } from '../../../shared/ipc-contracts'
 import type { ThemeFile } from '../../../shared/theme/theme-file'
-import { Settings, Save, RotateCcw, FolderOpen, Check, ChevronDown } from 'lucide-react'
+import { Settings, Save, RotateCcw, FolderOpen, RefreshCw, Check, ChevronDown } from 'lucide-react'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { PermissionSelector } from './permission-selector'
 import { PermissionRulesEditor } from './permission-rules-editor'
@@ -58,7 +60,16 @@ export function SettingsPanel(): React.JSX.Element {
   // what makes edits survive leaving/returning to Settings without saving.
   const draft0 = useAppStore.getState().settingsDraft
 
-  const [piPath, setPiPath] = useState(draft0.piExecutablePath ?? settings?.piExecutablePath ?? DEFAULT_SETTINGS.piExecutablePath)
+  const initialPiPath = draft0.piExecutablePath ?? settings?.piExecutablePath ?? DEFAULT_SETTINGS.piExecutablePath
+  const initialPiEngine = draft0.piEngine ?? settings?.piEngine ?? DEFAULT_SETTINGS.piEngine
+  const [piPath, setPiPath] = useState(initialPiPath)
+  const [piEngine, setPiEngine] = useState<AgentEngine>(initialPiEngine)
+  const [customAgentPathMode, setCustomAgentPathMode] = useState(() => {
+    const normalized = initialPiPath.trim().toLowerCase()
+    return Boolean(initialPiPath.trim()) && normalized !== 'pi' && normalized !== 'omp'
+  })
+  const [detectedAgentInstalls, setDetectedAgentInstalls] = useState<AgentInstallation[]>([])
+  const [scanningAgentInstalls, setScanningAgentInstalls] = useState(false)
   const [theme, setTheme] = useState(draft0.theme ?? settings?.theme ?? DEFAULT_SETTINGS.theme)
   const [themeActionError, setThemeActionError] = useState<string | null>(null)
   const [themeEditorState, setThemeEditorState] = useState<{
@@ -99,6 +110,34 @@ export function SettingsPanel(): React.JSX.Element {
   // Free-text draft for the timeout field so the user can clear it and type a
   // new value; it is clamped and persisted only on blur / Enter (not per keystroke).
   const [timeoutDraft, setTimeoutDraft] = useState('')
+  const agentScanToken = useRef(0)
+
+  const scanAgentInstallations = useCallback(async (): Promise<void> => {
+    const token = ++agentScanToken.current
+    setScanningAgentInstalls(true)
+    try {
+      const result = await window.piDesktop.pi.detectInstallations()
+      if (token === agentScanToken.current) setDetectedAgentInstalls(result.installations)
+    } catch {
+      if (token === agentScanToken.current) setDetectedAgentInstalls([])
+    } finally {
+      if (token === agentScanToken.current) setScanningAgentInstalls(false)
+    }
+  }, [])
+
+  useEffect(() => () => {
+    agentScanToken.current++
+  }, [])
+
+  // Detect available agent engines on mount.
+  useEffect(() => {
+    void scanAgentInstallations()
+  }, [scanAgentInstallations])
+
+  useEffect(() => {
+    const installation = detectedAgentInstalls.find((candidate) => candidate.path === piPath)
+    if (installation && installation.kind === piEngine) setCustomAgentPathMode(false)
+  }, [detectedAgentInstalls, piEngine, piPath])
 
   // Detect available council agents on mount
   useEffect(() => {
@@ -212,7 +251,12 @@ export function SettingsPanel(): React.JSX.Element {
     didInitRef.current = true
     const store = useAppStore.getState()
     const draft = store.settingsDraft
-    setPiPath(draft.piExecutablePath ?? settings.piExecutablePath)
+    const nextPiPath = draft.piExecutablePath ?? settings.piExecutablePath
+    const nextPiEngine = draft.piEngine ?? settings.piEngine
+    setPiPath(nextPiPath)
+    setPiEngine(nextPiEngine)
+    const normalizedPiPath = nextPiPath.trim().toLowerCase()
+    setCustomAgentPathMode(Boolean(nextPiPath.trim()) && normalizedPiPath !== 'pi' && normalizedPiPath !== 'omp')
     setTheme(draft.theme ?? settings.theme)
     setFontSize(draft.fontSize ?? settings.fontSize)
     setTerminalFontSize(draft.terminalFontSize ?? settings.terminalFontSize)
@@ -227,13 +271,53 @@ export function SettingsPanel(): React.JSX.Element {
     setPermissionMode(draft.permissionMode ?? settings.permissionMode)
   }, [settings])
 
-  const handleSelectPath = async () => {
-    const path = await window.piDesktop.system.openDialog({ title: 'Select Pi Executable', mode: 'file' })
+  const setAgentPath = (path: string, custom = true): void => {
+    setPiPath(path)
+    setCustomAgentPathMode(custom)
+    setSettingsDraft({ piExecutablePath: path })
+  }
+
+  const setAgentEngine = (engine: AgentEngine): void => {
+    setPiEngine(engine)
+    setSettingsDraft({ piEngine: engine })
+  }
+
+  const handleAgentSelection = (value: string): void => {
+    if (value === '__auto__') {
+      setAgentPath('pi', false)
+      setAgentEngine('auto')
+      return
+    }
+    if (value === '__custom__') {
+      if (!customAgentPathMode) setAgentPath('', true)
+      return
+    }
+    const installation = detectedAgentInstalls.find((candidate) => candidate.path === value)
+    setAgentPath(value, false)
+    setAgentEngine(installation?.kind ?? (value.toLowerCase() === 'omp' ? 'omp' : 'auto'))
+  }
+
+  const handleSelectPath = async (): Promise<void> => {
+    const path = await window.piDesktop.system.openDialog({ title: 'Select Agent Executable or Directory', mode: 'either' })
     if (path) {
-      setPiPath(path)
-      setSettingsDraft({ piExecutablePath: path })
+      const installation = detectedAgentInstalls.find((candidate) => candidate.path === path)
+      setAgentPath(path)
+      if (installation) setAgentEngine(installation.kind)
     }
   }
+
+  const autoAgentSelection = !customAgentPathMode && (piPath.trim().toLowerCase() === 'pi' || piPath.trim() === '')
+  const detectedAgentSelection = !customAgentPathMode && detectedAgentInstalls.some((installation) => installation.path === piPath)
+  const agentSelection = customAgentPathMode
+    ? '__custom__'
+    : autoAgentSelection
+      ? '__auto__'
+      : detectedAgentSelection
+        ? piPath
+        : piPath.trim().toLowerCase() === 'omp' && !detectedAgentInstalls.some((installation) => installation.kind === 'omp')
+          ? 'omp'
+          : '__custom__'
+  const showCustomAgentPath = customAgentPathMode || agentSelection === 'omp'
 
   const resolveEffectiveThemeId = (themeId: string): string => {
     if (themeId !== 'system') return themeId
@@ -421,6 +505,7 @@ export function SettingsPanel(): React.JSX.Element {
 
     const updated: Partial<AppSettings> = {
       piExecutablePath: piPath,
+      piEngine,
       theme,
       fontSize,
       terminalFontSize,
@@ -478,6 +563,7 @@ export function SettingsPanel(): React.JSX.Element {
     // Values come from the shared DEFAULT_SETTINGS so there's one source of truth.
     const defaults: Partial<AppSettings> = {
       piExecutablePath: DEFAULT_SETTINGS.piExecutablePath,
+      piEngine: DEFAULT_SETTINGS.piEngine,
       theme: DEFAULT_SETTINGS.theme,
       fontSize: DEFAULT_SETTINGS.fontSize,
       terminalFontSize: DEFAULT_SETTINGS.terminalFontSize,
@@ -493,6 +579,8 @@ export function SettingsPanel(): React.JSX.Element {
     }
 
     setPiPath(defaults.piExecutablePath!)
+    setPiEngine(defaults.piEngine!)
+    setCustomAgentPathMode(false)
     setTheme(defaults.theme!)
     setFontSize(defaults.fontSize!)
     setTerminalFontSize(defaults.terminalFontSize!)
@@ -533,28 +621,73 @@ export function SettingsPanel(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Pi Configuration */}
-        <SettingsSection title="Pi Configuration">
+        {/* Agent Configuration */}
+        <SettingsSection title="Agent Configuration">
           <SettingsRow
-            label="Pi Executable"
-            description="Path to Pi's cli.js or its install directory. Leave as 'pi' to auto-detect."
+            label="Agent Installation"
+            description="Auto-detect Pi and OMP, choose an installed engine, or use a custom executable/path."
+            stack
           >
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={piPath}
-                onChange={(e) => {
-                  setPiPath(e.target.value)
-                  setSettingsDraft({ piExecutablePath: e.target.value })
-                }}
-                className="flex-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary focus:border-focus focus:outline-none"
-              />
-              <button
-                onClick={handleSelectPath}
-                className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
-              >
-                <FolderOpen size={14} />
-              </button>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <select
+                  value={agentSelection}
+                  onChange={(e) => handleAgentSelection(e.target.value)}
+                  className="min-w-0 flex-1 appearance-none rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary hover:border-border-strong-hover focus:border-focus focus:outline-none"
+                >
+                  <option value="__auto__">Auto-detect (Pi first, then OMP)</option>
+                  {detectedAgentInstalls.map((installation) => (
+                    <option key={`${installation.kind}:${installation.path}`} value={installation.path}>
+                      {installation.kind === 'omp' ? 'OMP' : 'Pi'} — {installation.path}
+                    </option>
+                  ))}
+                  {agentSelection === 'omp' && <option value="omp">OMP (not found)</option>}
+                  <option value="__custom__">Custom path…</option>
+                </select>
+                <button
+                  onClick={handleSelectPath}
+                  title="Choose executable or install directory"
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+                >
+                  <FolderOpen size={14} />
+                </button>
+                <button
+                  onClick={() => void scanAgentInstallations()}
+                  disabled={scanningAgentInstalls}
+                  title="Rescan installed agents"
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={scanningAgentInstalls ? 'animate-spin' : undefined} />
+                </button>
+              </div>
+              {showCustomAgentPath && (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={piPath}
+                    onChange={(e) => setAgentPath(e.target.value)}
+                    placeholder="Path to executable, cli.js, or install directory"
+                    className="min-w-0 flex-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary focus:border-focus focus:outline-none"
+                  />
+                  <select
+                    value={piEngine}
+                    onChange={(e) => setAgentEngine(e.target.value as AgentEngine)}
+                    aria-label="Agent engine"
+                    className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm text-primary focus:border-focus focus:outline-none"
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="pi">Pi</option>
+                    <option value="omp">OMP</option>
+                  </select>
+                </div>
+              )}
+              <div className="text-xs text-dim">
+                {scanningAgentInstalls
+                  ? 'Scanning common install locations and PATH…'
+                  : detectedAgentInstalls.length > 0
+                    ? `${detectedAgentInstalls.length} installed engine${detectedAgentInstalls.length === 1 ? '' : 's'} detected`
+                    : 'No Pi or OMP installation detected yet'}
+              </div>
             </div>
           </SettingsRow>
         </SettingsSection>

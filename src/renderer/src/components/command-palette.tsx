@@ -144,7 +144,7 @@ export function CommandPalette(): React.JSX.Element | null {
       if ('kind' in entry) {
         if (entry.kind === 'workspace') {
           if (entry.workspace.id !== activeWorkspace?.id) {
-            void useAppStore.getState().switchWorkspace(entry.workspace.id)
+            void useAppStore.getState().activateWorkspace(entry.workspace.id)
           }
         } else if (entry.kind === 'session') {
           void useAppStore.getState().openSessionItem(entry.session)

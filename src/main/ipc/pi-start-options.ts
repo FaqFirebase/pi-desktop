@@ -6,8 +6,10 @@ import { join } from 'path'
 import { existsSync } from 'fs'
 import { PERMISSION_RULES_FILE_NAME } from '../../../resources/permission-rules'
 import { isString, isObject, isOptionalString, isOptionalBoolean, isOptionalStringArray } from './validation'
+import { getPiCli } from '../pi-rpc-manager'
 
 const READ_ONLY_TOOLS = 'read,grep,find,ls'
+const OMP_READ_ONLY_TOOLS = 'read,grep,glob'
 
 const PERMISSIONS_EXTENSION_PATH = app.isPackaged
   ? join(process.resourcesPath, 'resources', 'pi-desktop-permissions.ts')
@@ -32,10 +34,10 @@ function removeToolArgs(args: string[]): string[] {
   return filtered
 }
 
-function toolsForPermissionMode(mode: PermissionMode): string | null {
+function toolsForPermissionMode(mode: PermissionMode, runtime: 'pi' | 'omp' = 'pi'): string | null {
   switch (mode) {
     case 'plan-readonly':
-      return READ_ONLY_TOOLS
+      return runtime === 'omp' ? OMP_READ_ONLY_TOOLS : READ_ONLY_TOOLS
     case 'ask-commands':
     case 'ask-edits':
     case 'trusted':
@@ -49,7 +51,7 @@ function toolsForPermissionMode(mode: PermissionMode): string | null {
  * session or an ephemeral (no-session) run.
  */
 export function applyResumePreference(options: PiStartOptions, settings: AppSettings): PiStartOptions {
-  if (settings.resumeLastSession && !options.sessionPath && !options.noSession) {
+  if (settings.resumeLastSession && !options.sessionPath && !options.forkSessionPath && !options.noSession) {
     return { ...options, continueSession: true }
   }
   return options
@@ -59,7 +61,7 @@ export function applyPermissionModeToStartOptions(
   options: PiStartOptions,
   settings: AppSettings
 ): PiStartOptions {
-  const toolList = toolsForPermissionMode(settings.permissionMode)
+  const toolList = toolsForPermissionMode(settings.permissionMode, getPiCli().kind ?? 'pi')
   const args = toolList
     ? [...removeToolArgs(options.args ?? []), '--tools', toolList]
     : [...(options.args ?? [])]
@@ -99,6 +101,7 @@ export function validateStartOptions(value: unknown): PiStartOptions {
   if (!isOptionalString(value.model)) throw new Error('model must be a string')
   if (!isOptionalString(value.provider)) throw new Error('provider must be a string')
   if (!isOptionalString(value.sessionPath)) throw new Error('sessionPath must be a string')
+  if (!isOptionalString(value.forkSessionPath)) throw new Error('forkSessionPath must be a string')
   if (!isOptionalBoolean(value.noSession)) throw new Error('noSession must be a boolean')
   if (!isOptionalStringArray(value.args)) throw new Error('args must be a string array')
   if (value.env !== undefined && !isObject(value.env)) throw new Error('env must be an object')
@@ -107,6 +110,7 @@ export function validateStartOptions(value: unknown): PiStartOptions {
   if (isString(value.model)) opts.model = value.model
   if (isString(value.provider)) opts.provider = value.provider
   if (isString(value.sessionPath)) opts.sessionPath = value.sessionPath
+  if (isString(value.forkSessionPath)) opts.forkSessionPath = value.forkSessionPath
   if (value.noSession === true) opts.noSession = true
   if (Array.isArray(value.args)) opts.args = value.args as string[]
   if (isObject(value.env)) {

@@ -7,13 +7,14 @@ import { Cpu, ChevronUp, Check, Loader2, Search } from 'lucide-react'
 
 interface ModelSelectorProps {
   className?: string
+  compact?: boolean
 }
 
 /**
  * Searchable model picker for the status bar.
  * Opens upward; loads models when Pi is running.
  */
-export function ModelSelector({ className }: ModelSelectorProps): React.JSX.Element {
+export function ModelSelector({ className, compact = false }: ModelSelectorProps): React.JSX.Element {
   const sessionState = useAppStore((state) => state.sessionState)
   const setModel = useAppStore((state) => state.setModel)
   const piStatus = useAppStore((state) => state.piStatus)
@@ -117,7 +118,11 @@ export function ModelSelector({ className }: ModelSelectorProps): React.JSX.Elem
       <button
         type="button"
         onClick={() => void open()}
-        className="flex items-center gap-1 text-dim hover:text-secondary transition-colors"
+        className={clsx(
+          'flex h-6 max-w-52 items-center gap-1 rounded-md px-2 text-[11px] transition-colors active:scale-[0.98]',
+          isOpen ? 'bg-surface-hover text-primary' : 'text-dim hover:bg-surface-hover hover:text-secondary',
+          compact && 'max-w-36',
+        )}
         title="Select model (Ctrl+P to cycle when Pi is running)"
         aria-label="Select model"
         aria-expanded={isOpen}

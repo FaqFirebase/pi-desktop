@@ -159,10 +159,15 @@ export type ToolCallDecision =
   | { action: 'allow' }
   | { action: 'prompt' }
 
-// Tools each ask mode gates when no rule decides first. Mirrors the previous
-// shouldConfirm behavior in pi-desktop-permissions.ts exactly.
-const ASK_EDITS_GATED_TOOLS = new Set(['edit', 'write', 'bash'])
-const ASK_COMMANDS_GATED_TOOLS = new Set(['bash'])
+// Pi's original ask modes only needed the three built-ins below. OMP exposes
+// additional write/execute surfaces, so keep the same safety posture when the
+// engine is selected explicitly.
+const ASK_EDITS_GATED_TOOLS = new Set([
+  'edit', 'write', 'bash', 'ast_edit', 'eval', 'browser', 'computer', 'lsp', 'dap', 'task',
+])
+const ASK_COMMANDS_GATED_TOOLS = new Set([
+  'bash', 'eval', 'browser', 'computer', 'dap', 'lsp', 'task',
+])
 
 const MODE_ASK_EDITS = 'ask-edits'
 const MODE_ASK_COMMANDS = 'ask-commands'

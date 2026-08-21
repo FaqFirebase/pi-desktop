@@ -9,10 +9,12 @@ import type {
   PiProcessStatus,
   PiStatus,
   PiResponseEvent,
+  AgentInstallation,
 } from '../shared/ipc-contracts'
-import type { CaptureOptions, PiResolution, ResolutionDeps } from './pi-binary-resolution'
+import type { CaptureOptions, PiEngine, PiResolution, ResolutionDeps } from './pi-binary-resolution'
 import {
   describePiResolutionFailure,
+  isOmpExecutable,
   normalizeOverride,
   resolvePiBinary,
   whichInPath,
@@ -20,6 +22,7 @@ import {
 import { escapeCmdSpawn } from './cmd-escape'
 import { appLog } from './app-log'
 import { getGuiDataPath } from './app-data-paths'
+import { getSessionsRoot } from './pi-paths'
 
 /**
  * Manages a Pi RPC child process.
@@ -39,6 +42,7 @@ const MODE_FLAG = '--mode'
 const PROVIDER_FLAG = '--provider'
 const MODEL_FLAG = '--model'
 const SESSION_FLAG = '--session'
+const FORK_FLAG = '--fork'
 const CONTINUE_FLAG = '--continue'
 const IS_WINDOWS = process.platform === 'win32'
 const SPAWN_STARTUP_TIMEOUT_MS = 15_000
@@ -62,6 +66,84 @@ const STARTUP_PROBE_ID = '__startup_probe__'
 const STARTUP_PROBE_COMMAND = 'get_state'
 const STARTUP_PROBE_INTERVAL_MS = 750
 const FORCE_KILL_TIMEOUT_MS = 3_000
+const RPC_MAX_FRAME_BYTES = 1024 * 1024
+const RPC_MAX_REASSEMBLED_BYTES = 64 * 1024 * 1024
+const RPC_CHUNK_PAYLOAD_BYTES = 256 * 1024
+
+interface PendingRpcChunks {
+  chunkId: string
+  count: number
+  byteLength: number
+  nextIndex: number
+  chunks: Buffer[]
+  receivedBytes: number
+}
+
+function isRpcChunkFrame(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && (value as { type?: unknown }).type === 'rpc_chunk'
+}
+
+/** Minimal lossless decoder for OMP RPC protocol v2 physical frames. */
+export class RpcFrameDecoder {
+  private pending: PendingRpcChunks | null = null
+
+  hasPending(): boolean {
+    return this.pending !== null
+  }
+
+  reset(): void {
+    this.pending = null
+  }
+
+  push(value: Record<string, unknown>): object | undefined {
+    const chunkId = value.chunkId
+    const index = typeof value.index === 'number' ? value.index : Number.NaN
+    const count = typeof value.count === 'number' ? value.count : Number.NaN
+    const byteLength = typeof value.byteLength === 'number' ? value.byteLength : Number.NaN
+    const data = value.data
+    if (
+      typeof chunkId !== 'string' || chunkId.length === 0 || chunkId.length > 128 ||
+      !Number.isSafeInteger(index) || !Number.isSafeInteger(count) || !Number.isSafeInteger(byteLength) ||
+      index < 0 || count < 2 || count > Math.ceil(RPC_MAX_REASSEMBLED_BYTES / RPC_CHUNK_PAYLOAD_BYTES) || index >= count ||
+      byteLength < RPC_MAX_FRAME_BYTES ||
+      byteLength > RPC_MAX_REASSEMBLED_BYTES || typeof data !== 'string' || data.length === 0 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)
+    ) {
+      throw new Error('invalid rpc chunk metadata')
+    }
+    const chunkIndex = index as number
+    const chunkCount = count as number
+    const declaredByteLength = byteLength as number
+    const bytes = Buffer.from(data, 'base64')
+    if (bytes.toString('base64') !== data || bytes.byteLength > RPC_CHUNK_PAYLOAD_BYTES) {
+      throw new Error('invalid rpc chunk data')
+    }
+
+    if (!this.pending) {
+      if (chunkIndex !== 0) throw new Error('rpc chunk sequence must start at index 0')
+      this.pending = { chunkId, count: chunkCount, byteLength: declaredByteLength, nextIndex: 0, chunks: [], receivedBytes: 0 }
+    }
+    const pending = this.pending!
+    if (
+      pending.chunkId !== chunkId || pending.count !== chunkCount || pending.byteLength !== declaredByteLength ||
+      pending.nextIndex !== chunkIndex
+    ) {
+      throw new Error('rpc chunk sequence mismatch')
+    }
+    pending.chunks.push(bytes)
+    pending.receivedBytes += bytes.byteLength
+    pending.nextIndex++
+    if (pending.receivedBytes > pending.byteLength) throw new Error('rpc chunk sequence exceeds declared length')
+    if (pending.nextIndex < pending.count) return undefined
+    if (pending.receivedBytes !== pending.byteLength) throw new Error('rpc chunk sequence length mismatch')
+
+    this.pending = null
+    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(pending.chunks))
+    const frame = JSON.parse(decoded) as unknown
+    if (typeof frame !== 'object' || frame === null || Array.isArray(frame)) throw new Error('rpc frame must be an object')
+    return frame as object
+  }
+}
 
 // Real filesystem/process access for the resolver in pi-binary-resolution.ts.
 // Kept in one object so the search order stays testable against a fake.
@@ -163,6 +245,8 @@ function findNodeBinary(): string {
  * `script` is only a hopeful fallback; `failureReason` then explains why.
  */
 export interface PiCli {
+  /** The selected engine. OMP deliberately keeps the Pi-compatible RPC path. */
+  kind?: 'pi' | 'omp'
   script: string
   node: string
   useNode: boolean
@@ -173,29 +257,32 @@ export interface PiCli {
 }
 
 // Resolution is lazy and cached rather than computed at import time, because
-// it depends on the `piExecutablePath` setting, which is only readable once
-// the app has loaded settings. setPiExecutableOverride() invalidates the cache.
+// it depends on the executable path and explicit engine setting, which are only
+// readable once app settings have loaded.
 let configuredOverride: string | null = null
+let configuredEngine: PiEngine = 'auto'
 let cachedResolution: PiResolution | null = null
 let cachedNodeBinary: string | null = null
-
+let detectedInstallationsCache: { at: number; value: AgentInstallation[] } | null = null
 /**
- * Apply the `piExecutablePath` setting. Call on startup once settings are
- * loaded and again whenever the setting changes; the next Pi start picks it up
- * without an app restart.
+ * Apply the selected executable and engine. The engine is persisted separately
+ * so a custom path named something other than `omp` cannot silently change the
+ * protocol/tool surface.
  */
-export function setPiExecutableOverride(raw: string | undefined | null): void {
+export function setPiExecutableOverride(raw: string | undefined | null, engine: PiEngine = 'auto'): void {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? ''
   const next = normalizeOverride(raw, home)
-  if (next === configuredOverride && cachedResolution) return
+  if (next === configuredOverride && engine === configuredEngine && cachedResolution) return
   configuredOverride = next
+  configuredEngine = engine
   cachedResolution = null
   cachedNodeBinary = null
 }
 
+
 function getResolution(): PiResolution {
   if (cachedResolution) return cachedResolution
-  const resolution = resolvePiBinary(RESOLUTION_DEPS, configuredOverride)
+  const resolution = resolvePiBinary(RESOLUTION_DEPS, configuredOverride, configuredEngine)
   // Adopt the login shell's PATH process-wide so Pi itself — and every helper
   // we spawn — can find node, npm and the tools the user's shell exposes.
   if (resolution.pathEnv && resolution.pathEnv !== process.env.PATH) {
@@ -212,6 +299,26 @@ function getResolution(): PiResolution {
  */
 export function getPiResolution(): PiResolution {
   return getResolution()
+}
+
+/** Detect the first usable installation for each supported engine. */
+export function detectPiInstallations(): AgentInstallation[] {
+  const cached = detectedInstallationsCache
+  if (cached && Date.now() - cached.at < 30_000) return cached.value.map((item) => ({ ...item }))
+  const candidates: Array<{ kind: AgentInstallation['kind']; resolution: PiResolution }> = [
+    { kind: 'pi', resolution: resolvePiBinary(RESOLUTION_DEPS, null, 'pi') },
+    { kind: 'omp', resolution: resolvePiBinary(RESOLUTION_DEPS, null, 'omp') },
+  ]
+  const seen = new Set<string>()
+  const value = candidates.flatMap(({ kind, resolution }) => {
+    if (!resolution.found) return []
+    const key = resolution.script.toLowerCase()
+    if (seen.has(key)) return []
+    seen.add(key)
+    return [{ kind, path: resolution.script, source: resolution.source }]
+  })
+  detectedInstallationsCache = { at: Date.now(), value }
+  return value.map((item) => ({ ...item }))
 }
 
 function logResolution(resolution: PiResolution): void {
@@ -256,6 +363,11 @@ export function getPiCli(): PiCli {
       'or set the NODE env var to your Node binary path.'
   }
   return {
+    kind: configuredEngine === 'omp'
+      ? 'omp'
+      : configuredEngine === 'pi'
+        ? 'pi'
+        : isOmpExecutable(resolution.script) ? 'omp' : 'pi',
     script: resolution.script,
     node,
     useNode: resolution.useNode,
@@ -359,7 +471,10 @@ export class PiRpcManager extends EventEmitter {
   private pendingResponses = new Map<string, PendingResponse>()
   private nextRequestId = 1
   private decoder = new StringDecoder('utf8')
+  private rpcFrameDecoder = new RpcFrameDecoder()
   private startInFlight: Promise<PiStatus> | null = null
+  private runningEngine: 'pi' | 'omp' | null = null
+  private readonly exitWaiters = new Map<ChildProcess, Set<() => void>>()
   // Set while a spawn attempt awaits readiness; handleLine invokes it when the
   // startup probe's correlated response arrives. Cleared once the attempt settles.
   private markReady: (() => void) | null = null
@@ -379,6 +494,10 @@ export class PiRpcManager extends EventEmitter {
       // error misleads the UI into showing healthy startup logs as ERROR.
       error: this.status === 'error' ? (this.stderrBuffer || null) : null,
     }
+  }
+  /** Engine identity of the live child, not the currently configured future one. */
+  getEngineKind(): 'pi' | 'omp' {
+    return this.runningEngine ?? getPiCli().kind ?? 'pi'
   }
 
   async start(options: PiStartOptions = {}): Promise<PiStatus> {
@@ -407,6 +526,13 @@ export class PiRpcManager extends EventEmitter {
     const cli = getPiCli()
     if (cli.failureReason) {
       this.stderrBuffer = cli.failureReason
+      this.setStatus('error')
+      console.error('[Pi] Pre-flight failed:', this.stderrBuffer)
+      appLog.error('pi', 'Pre-flight failed', this.stderrBuffer)
+      return this.getStatus()
+    }
+    if (options.cwd && (!existsSync(options.cwd) || !statSync(options.cwd).isDirectory())) {
+      this.stderrBuffer = `Pi working directory does not exist or is not a directory:\n  ${options.cwd}`
       this.setStatus('error')
       console.error('[Pi] Pre-flight failed:', this.stderrBuffer)
       appLog.error('pi', 'Pre-flight failed', this.stderrBuffer)
@@ -496,6 +622,7 @@ export class PiRpcManager extends EventEmitter {
       return Promise.resolve('crashed')
     }
     this.process = proc
+    this.runningEngine = cli.kind ?? 'pi'
     this.setupStreams()
 
     return new Promise<'ready' | 'crashed' | 'timeout' | 'aborted'>((resolve) => {
@@ -581,6 +708,37 @@ export class PiRpcManager extends EventEmitter {
     this.setStatus('stopped')
   }
 
+  /**
+   * Stop the child and wait until Windows releases its cwd/handles.
+   * Ordinary stop() remains fire-and-forget for UI navigation.
+   */
+  async stopAndWait(timeoutMs = FORCE_KILL_TIMEOUT_MS + 500): Promise<void> {
+    const proc = this.process
+    if (!proc) {
+      this.stop()
+      return
+    }
+    await new Promise<void>((resolvePromise) => {
+      let settled = false
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const finish = (): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        const waiters = this.exitWaiters.get(proc)
+        waiters?.delete(finish)
+        if (waiters && waiters.size === 0) this.exitWaiters.delete(proc)
+        resolvePromise()
+      }
+      const waiters = this.exitWaiters.get(proc) ?? new Set<() => void>()
+      waiters.add(finish)
+      this.exitWaiters.set(proc, waiters)
+      this.stop()
+      if (proc.exitCode !== null || proc.signalCode !== null) finish()
+      else timer = setTimeout(finish, timeoutMs)
+    })
+  }
+
   restart(options: PiStartOptions = {}): Promise<PiStatus> {
     this.kill()
     return this.start(options)
@@ -656,6 +814,14 @@ export class PiRpcManager extends EventEmitter {
 
   private buildArgs(options: PiStartOptions): string[] {
     const args: string[] = [MODE_FLAG, RPC_MODE]
+    const cli = getPiCli()
+
+    // OMP stores sessions under ~/.omp by default. Keep Desktop's single
+    // session index authoritative by pointing OMP at the same JSONL root.
+    // Explicit caller args win so advanced users can intentionally separate it.
+    if (cli.kind === 'omp' && !options.args?.some((arg) => arg === '--session-dir' || arg.startsWith('--session-dir='))) {
+      args.push('--session-dir', getSessionsRoot())
+    }
 
     if (options.noSession) {
       args.push(NO_SESSION_FLAG)
@@ -669,7 +835,9 @@ export class PiRpcManager extends EventEmitter {
       args.push(MODEL_FLAG, options.model)
     }
 
-    if (options.sessionPath) {
+    if (options.forkSessionPath) {
+      args.push(FORK_FLAG, options.forkSessionPath)
+    } else if (options.sessionPath) {
       args.push(SESSION_FLAG, options.sessionPath)
     } else if (options.continueSession && !options.noSession) {
       // Resume the most recent session for the cwd. Pi falls back to a fresh
@@ -729,11 +897,30 @@ export class PiRpcManager extends EventEmitter {
   }
 
   private handleLine(line: string): void {
-    let event: PiRpcEvent
+    let parsed: unknown
     try {
-      event = JSON.parse(line) as PiRpcEvent
+      parsed = JSON.parse(line)
+      if (isRpcChunkFrame(parsed)) {
+        parsed = this.rpcFrameDecoder.push(parsed)
+        if (parsed === undefined) return
+      } else if (this.rpcFrameDecoder.hasPending()) {
+        throw new Error('rpc chunk sequence interrupted')
+      }
     } catch {
+      this.rpcFrameDecoder.reset()
       this.emit('parse-error', line)
+      return
+    }
+    const event = parsed as PiRpcEvent
+
+    // OMP advertises readiness explicitly. Keep the probe fallback for the
+    // original Pi RPC implementation, which has no ready frame.
+    if ((event as { type?: unknown }).type === 'ready') {
+      this.markReady?.()
+      const ready = event as { supportedProtocolVersions?: unknown }
+      if (Array.isArray(ready.supportedProtocolVersions) && ready.supportedProtocolVersions.includes(2)) {
+        void this.sendCommand({ type: 'negotiate_protocol', protocolVersion: 2 }).catch(() => {})
+      }
       return
     }
 
@@ -786,6 +973,15 @@ export class PiRpcManager extends EventEmitter {
       proc.removeAllListeners()
       proc.stdout?.removeAllListeners()
       proc.stderr?.removeAllListeners()
+      const waiters = this.exitWaiters.get(proc)
+      if (waiters?.size) {
+        const settle = (): void => {
+          this.exitWaiters.delete(proc)
+          for (const waiter of waiters) waiter()
+        }
+        proc.once('exit', settle)
+        proc.once('close', settle)
+      }
       proc.stdin?.end()
 
       // Kill entire process group (negative PID)
@@ -813,6 +1009,7 @@ export class PiRpcManager extends EventEmitter {
 
     this.stdoutBuffer = ''
     this.decoder = new StringDecoder('utf8')
+    this.rpcFrameDecoder = new RpcFrameDecoder()
   }
 
   private rejectAllPending(reason: string): void {
