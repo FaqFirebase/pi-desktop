@@ -52,5 +52,5 @@ new/updated tests, platforms tested (Linux/Windows), etc.
 - [ ] Tests added or updated for changed modules (colocated `*.test.ts`)
 - [ ] Electron security posture preserved (context isolation, IPC through preload bridge, validated payloads)
 - [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
-- [ ] If AI-assisted, the agent was pointed at [`AGENT.md`](https://github.com/FaqFirebase/pi-desktop/blob/master/AGENT.md) and its Final Delivery Checklist
+- [ ] If AI-assisted, the agent was pointed at [`AGENTS.md`](https://github.com/FaqFirebase/pi-desktop/blob/master/AGENTS.md) and its Final Delivery Checklist
 - [ ] I have read and agree to the [CLA](https://github.com/FaqFirebase/pi-desktop/blob/master/CLA.md)
