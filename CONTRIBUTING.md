@@ -176,10 +176,15 @@ src/
 ├── shared/ipc-contracts.ts    # IPC channel definitions
 ├── main/                      # Electron main process
 │   ├── index.ts               # App lifecycle
-│   ├── ipc-handlers.ts        # IPC handler registration
-│   ├── pi-rpc-manager.ts      # Pi subprocess management
-│   ├── workspace-manager.ts   # Multi-workspace
+│   ├── ipc-handlers.ts        # Registers the handlers in ipc/
+│   ├── ipc/                   # One module per handler group, plus payload validation
+│   ├── pi-rpc-manager.ts      # Agent subprocess management (Pi and OMP)
+│   ├── pi-binary-resolution.ts # Locating and identifying the agent executable
+│   ├── pi-paths.ts            # Session stores per engine, and which engine owns a session
+│   ├── workspace-manager.ts   # Workspaces and per-session runtimes
 │   ├── file-service.ts        # File tree, search, git, file write
+│   ├── git-worktree.ts        # Isolated worktrees for tasks
+│   ├── git-conveyor.ts        # Validated commit, push, and PR commands
 │   ├── terminal-service.ts    # node-pty PTY management
 │   ├── session-tags.ts        # Tag persistence
 │   └── archived-sessions.ts   # Archived session persistence
@@ -190,6 +195,8 @@ src/
         ├── hooks.ts           # Event subscriptions
         └── components/        # React components
 ```
+
+This is a guide, not a full listing. `AGENTS.md` carries the complete module map.
 
 ## Getting help
 
