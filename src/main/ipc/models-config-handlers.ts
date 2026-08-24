@@ -4,11 +4,16 @@ import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { existsSync } from 'fs'
+import { getPiCli } from '../pi-rpc-manager'
 
-/** Read `~/.pi/agent/models.json`; also consumed by the diagnostics report. */
-export async function readModelsConfigFile(): Promise<ModelsReadResult> {
+function modelsConfigPaths(): { dir: string; file: string } {
   const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-  const file = join(homeDir, '.pi', 'agent', 'models.json')
+  const root = getPiCli().kind === 'omp' ? join(homeDir, '.omp', 'agent') : join(homeDir, '.pi', 'agent')
+  return { dir: root, file: join(root, 'models.json') }
+}
+
+export async function readModelsConfigFile(): Promise<ModelsReadResult> {
+  const { file } = modelsConfigPaths()
   if (!existsSync(file)) return { config: { providers: {} } }
   let raw: string
   try {
@@ -18,8 +23,6 @@ export async function readModelsConfigFile(): Promise<ModelsReadResult> {
   }
   try {
     const parsed = JSON.parse(raw) as ModelsConfig
-    // typeof null is 'object' and arrays pass typeof too — both would blow up
-    // every consumer iterating providers as a record.
     if (
       typeof parsed !== 'object' ||
       parsed === null ||
@@ -36,8 +39,6 @@ export async function readModelsConfigFile(): Promise<ModelsReadResult> {
 }
 
 export function registerModelsConfigHandlers(): void {
-  // ─── Models Config ──────────────────────────────────────────────────────
-
   ipcMain.handle(IPC_CHANNELS.MODELS_READ, async (): Promise<ModelsReadResult> => {
     return readModelsConfigFile()
   })
@@ -53,9 +54,7 @@ export function registerModelsConfigHandlers(): void {
     ) {
       return { success: false, error: 'Invalid models config' }
     }
-    const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-    const dir = join(homeDir, '.pi', 'agent')
-    const file = join(dir, 'models.json')
+    const { dir, file } = modelsConfigPaths()
     try {
       if (!existsSync(dir)) await mkdir(dir, { recursive: true })
       await writeFile(file, JSON.stringify(config, null, 2) + '\n', 'utf-8')

@@ -9,6 +9,8 @@ import {
   XCircle,
 } from 'lucide-react'
 import type { AppLogEntry, DiagnosticsReport } from '../../../shared/ipc-contracts'
+import { useAppStore } from '../store'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { formatRelativeTime } from '../utils/format-relative-time'
 import { formatIpcError } from '../utils/ipc-error'
 import { CopyButton } from './copy-button'
@@ -36,6 +38,9 @@ export function DiagnosticsPanel(): React.JSX.Element {
   const [report, setReport] = useState<DiagnosticsReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // The report describes whichever CLI resolved, so labelling it "Pi version"
+  // while OMP is configured reports the wrong program's version number.
+  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -105,7 +110,7 @@ export function DiagnosticsPanel(): React.JSX.Element {
               <DiagRow label="Platform" value={report.app.platform} />
             </DiagSection>
 
-            <DiagSection title="Pi Binary">
+            <DiagSection title={`${engineLabel} Binary`}>
               {report.piBinary.failureReason && (
                 <div className="mb-2 whitespace-pre-wrap rounded-md border border-border bg-error-bg px-3 py-2 text-xs text-error">
                   {report.piBinary.failureReason}
@@ -121,7 +126,7 @@ export function DiagnosticsPanel(): React.JSX.Element {
                 value={report.piBinary.found ? 'yes' : 'no'}
                 tone={report.piBinary.found ? 'ok' : 'fail'}
               />
-              <DiagRow label="Pi version" value={report.piVersion ?? 'unknown'} tone={report.piVersion ? 'plain' : 'warn'} />
+              <DiagRow label={`${engineLabel} version`} value={report.piVersion ?? 'unknown'} tone={report.piVersion ? 'plain' : 'warn'} />
               <DiagRow label="Script" value={report.piBinary.script} mono />
               <DiagRow label="Resolution source" value={report.piBinary.source} />
               {report.piBinary.useNode && (

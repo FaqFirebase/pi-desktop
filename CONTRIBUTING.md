@@ -2,13 +2,13 @@
 
 This guide covers bug reports, feature requests, and the pull request workflow.
 
-## Architecture reference: `AGENT.md`
+## Architecture reference: `AGENTS.md`
 
-[`AGENT.md`](AGENT.md) is the canonical reference for the project's architecture, module layout, data-storage locations, distribution model, and delivery standards. Read it before making non-trivial changes; it is kept more current and more detailed than the summary in this guide.
+[`AGENTS.md`](AGENTS.md) is the canonical reference for the project's architecture, module layout, data-storage locations, distribution model, and delivery standards. Read it before making non-trivial changes; it is kept more current and more detailed than the summary in this guide.
 
 ### For AI coding agents
 
-If you use an AI coding agent (Claude Code, Codex, Kilo, Cursor, etc.) to work on this repository, the agent must read and follow [`AGENT.md`](AGENT.md), in particular its Final Delivery Checklist, before proposing or committing changes. Point your agent at it explicitly at the start of a session; most agents do not load a file named `AGENT.md` automatically.
+If you use an AI coding agent (Claude Code, Codex, Kilo, Cursor, etc.) to work on this repository, the agent must read and follow [`AGENTS.md`](AGENTS.md), in particular its Final Delivery Checklist, before proposing or committing changes. Most agents load a file named `AGENTS.md` automatically; if yours does not, point it at the file explicitly at the start of a session.
 
 At minimum, an agent's work must:
 
@@ -48,7 +48,7 @@ By submitting a pull request, you acknowledge that you have read and agree to th
 
 This repository uses two long-lived branches:
 
-- `master` holds public-facing docs only (`README.md`, `AGENT.md`, `LICENSE`, `CLA.md`, `CONTRIBUTING.md`, `.gitignore`). Do not target PRs here.
+- `master` holds public-facing docs only (`README.md`, `AGENTS.md`, `LICENSE`, `CLA.md`, `CONTRIBUTING.md`, `.gitignore`). Do not target PRs here.
 - `Dev` holds all application source and is where active development happens. **Target your pull requests against `Dev`.**
 
 Steps:
@@ -176,10 +176,15 @@ src/
 ├── shared/ipc-contracts.ts    # IPC channel definitions
 ├── main/                      # Electron main process
 │   ├── index.ts               # App lifecycle
-│   ├── ipc-handlers.ts        # IPC handler registration
-│   ├── pi-rpc-manager.ts      # Pi subprocess management
-│   ├── workspace-manager.ts   # Multi-workspace
+│   ├── ipc-handlers.ts        # Registers the handlers in ipc/
+│   ├── ipc/                   # One module per handler group, plus payload validation
+│   ├── pi-rpc-manager.ts      # Agent subprocess management (Pi and OMP)
+│   ├── pi-binary-resolution.ts # Locating and identifying the agent executable
+│   ├── pi-paths.ts            # Session stores per engine, and which engine owns a session
+│   ├── workspace-manager.ts   # Workspaces and per-session runtimes
 │   ├── file-service.ts        # File tree, search, git, file write
+│   ├── git-worktree.ts        # Isolated worktrees for tasks
+│   ├── git-conveyor.ts        # Validated commit, push, and PR commands
 │   ├── terminal-service.ts    # node-pty PTY management
 │   ├── session-tags.ts        # Tag persistence
 │   └── archived-sessions.ts   # Archived session persistence
@@ -190,6 +195,8 @@ src/
         ├── hooks.ts           # Event subscriptions
         └── components/        # React components
 ```
+
+This is a guide, not a full listing. `AGENTS.md` carries the complete module map.
 
 ## Getting help
 

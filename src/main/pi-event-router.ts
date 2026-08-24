@@ -64,11 +64,13 @@ export interface PiEventRouter {
 }
 
 export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
-  // Blocking dialogs not yet shown, per workspace, in arrival order.
-  const queues = new Map<string, QueuedPrompt[]>()
-  // The one dialog currently owned by the renderer slot per workspace. The
+  // Blocking dialogs are owned by a Pi process, not a project. Multiple live
+  // session runtimes may share one workspace cwd, so workspace-keyed queues
+  // would deliver one session's prompt to another.
+  const queues = new Map<PiRpcManager, QueuedPrompt[]>()
+  // The one dialog currently owned by the renderer slot per Pi process. The
   // full payload is retained until answered or evicted so flush can replay it.
-  const delivered = new Map<string, QueuedPrompt>()
+  const delivered = new Map<PiRpcManager, QueuedPrompt>()
   // Every blocking dialog's asking manager, until answered or evicted.
   const origins = new Map<string, PiRpcManager>()
   const attached = new WeakSet<PiRpcManager>()
@@ -102,20 +104,22 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
   }
 
   /** An empty queue is deleted rather than stored, so counts omit zero entries. */
-  const storeQueue = (workspaceId: string, entries: QueuedPrompt[]): void => {
-    if (entries.length === 0) queues.delete(workspaceId)
-    else queues.set(workspaceId, entries)
+  const storeQueue = (manager: PiRpcManager, entries: QueuedPrompt[]): void => {
+    if (entries.length === 0) queues.delete(manager)
+    else queues.set(manager, entries)
   }
 
   const getPendingCounts = (): PendingPromptCounts => {
     const counts: PendingPromptCounts = {}
-    for (const [workspaceId, entries] of queues) {
+    for (const [manager, entries] of queues) {
       const live = reapExpired(entries)
-      if (live.length !== entries.length) storeQueue(workspaceId, live)
-      if (live.length > 0) counts[workspaceId] = live.length
+      if (live.length !== entries.length) storeQueue(manager, live)
+      const workspaceId = deps.workspaceIdFor(manager)
+      if (workspaceId && live.length > 0) counts[workspaceId] = (counts[workspaceId] ?? 0) + live.length
     }
-    for (const workspaceId of delivered.keys()) {
-      counts[workspaceId] = (counts[workspaceId] ?? 0) + 1
+    for (const manager of delivered.keys()) {
+      const workspaceId = deps.workspaceIdFor(manager)
+      if (workspaceId) counts[workspaceId] = (counts[workspaceId] ?? 0) + 1
     }
     return counts
   }
@@ -128,25 +132,25 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
    * Pop the workspace's queue into its empty delivered slot and broadcast,
    * reaping expired entries on the way. Returns whether state changed.
    */
-  const deliverNext = (workspaceId: string): boolean => {
-    if (delivered.has(workspaceId)) return false
-    const entries = queues.get(workspaceId)
+  const deliverNext = (manager: PiRpcManager): boolean => {
+    if (delivered.has(manager)) return false
+    const entries = queues.get(manager)
     if (entries === undefined) return false
     const live = reapExpired(entries)
     const next = live.shift()
     if (next !== undefined) {
-      delivered.set(workspaceId, next)
+      delivered.set(manager, next)
       deps.broadcastEvent(next.event)
     }
-    storeQueue(workspaceId, live)
+    storeQueue(manager, live)
     return live.length !== entries.length
   }
 
-  const enqueue = (workspaceId: string, event: PiExtensionUiRequest): void => {
+  const enqueue = (manager: PiRpcManager, event: PiExtensionUiRequest): void => {
     const entry = track(event)
-    const queue = queues.get(workspaceId)
+    const queue = queues.get(manager)
     if (queue) queue.push(entry)
-    else queues.set(workspaceId, [entry])
+    else queues.set(manager, [entry])
   }
 
   const handleBlockingDialog = (manager: PiRpcManager, event: PiExtensionUiRequest): void => {
@@ -159,12 +163,12 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
       if (manager === deps.getActiveManager()) deps.broadcastEvent(event)
       return
     }
-    if (manager === deps.getActiveManager() && !delivered.has(workspaceId)) {
-      delivered.set(workspaceId, track(event))
+    if (manager === deps.getActiveManager() && !delivered.has(manager)) {
+      delivered.set(manager, track(event))
       deps.broadcastEvent(event)
     } else {
-      // Inactive workspace, or a dialog already on screen: hold for later.
-      enqueue(workspaceId, event)
+      // Inactive session runtime, or a dialog already on screen: hold for later.
+      enqueue(manager, event)
     }
     emitCounts()
   }
@@ -191,12 +195,12 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
     }
     if (ownedIds.size === 0) return
     for (const id of ownedIds) origins.delete(id)
-    for (const [workspaceId, entries] of queues) {
+    for (const [manager, entries] of queues) {
       const kept = entries.filter((entry) => !ownedIds.has(entry.event.id))
-      if (kept.length !== entries.length) storeQueue(workspaceId, kept)
+      if (kept.length !== entries.length) storeQueue(manager, kept)
     }
-    for (const [workspaceId, entry] of delivered) {
-      if (ownedIds.has(entry.event.id)) delivered.delete(workspaceId)
+    for (const [manager, entry] of delivered) {
+      if (ownedIds.has(entry.event.id)) delivered.delete(manager)
     }
     emitCounts()
   }
@@ -221,33 +225,35 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
     origins.delete(id)
     // Purge the id everywhere FIRST — regardless of a routing hit — so an
     // answered request can never linger as a queued or delivered ghost.
-    let purgedWorkspaceId: string | null = null
-    for (const [workspaceId, entries] of queues) {
+    let purgedManager: PiRpcManager | null = null
+    for (const [manager, entries] of queues) {
       const kept = entries.filter((entry) => entry.event.id !== id)
       if (kept.length === entries.length) continue
-      purgedWorkspaceId = workspaceId
-      storeQueue(workspaceId, kept)
+      purgedManager = manager
+      storeQueue(manager, kept)
     }
-    for (const [workspaceId, entry] of delivered) {
+    for (const [manager, entry] of delivered) {
       if (entry.event.id !== id) continue
-      delivered.delete(workspaceId)
-      purgedWorkspaceId = workspaceId
+      delivered.delete(manager)
+      purgedManager = manager
     }
     // Origin miss (notify dismissal, evicted prompt): fall back to the active
     // manager — Pi ignores unknown ids — or drop when no workspace is active.
     const target = origin ?? deps.getActiveManager()
     target?.sendExtensionUiResponse(id, response)
-    if (purgedWorkspaceId !== null && purgedWorkspaceId === activeWorkspaceId()) {
-      deliverNext(purgedWorkspaceId)
+    if (purgedManager !== null && purgedManager === deps.getActiveManager()) {
+      deliverNext(purgedManager)
     }
     emitCounts()
   }
 
   const flush = (workspaceId: string): void => {
-    // Only the workspace on screen may be flushed: a stale flush must not
-    // resurface a dialog the user just switched away from.
+    // Only the active workspace and its active session runtime may be flushed:
+    // a stale flush must not resurface another session's dialog.
     if (workspaceId !== activeWorkspaceId()) return
-    const held = delivered.get(workspaceId)
+    const manager = deps.getActiveManager()
+    if (!manager) return
+    const held = delivered.get(manager)
     if (held !== undefined && !isExpired(held)) {
       // Self-healing re-broadcast: rebuilds the renderer slot after a reload,
       // a switch-back, or a same-workspace re-activation. The renderer's
@@ -259,10 +265,10 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
       // The slot's dialog timed out while the workspace was away: releasing it
       // lets the next queued dialog take the slot instead of waiting on an
       // answer Pi would discard.
-      delivered.delete(workspaceId)
+      delivered.delete(manager)
       origins.delete(held.event.id)
     }
-    const promoted = deliverNext(workspaceId)
+    const promoted = deliverNext(manager)
     if (held !== undefined || promoted) emitCounts()
   }
 

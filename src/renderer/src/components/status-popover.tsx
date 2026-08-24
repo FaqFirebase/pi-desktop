@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { getSessionTitle } from '../utils/session-title'
 import { useAppStore } from '../store'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import type { InstalledSkill } from '../../../shared/ipc-contracts'
 import { clsx } from 'clsx'
 import {
@@ -45,6 +46,7 @@ export function StatusPopover(): React.JSX.Element {
   const [loading, setLoading] = useState(false)
 
   const piStatus = useAppStore((state) => state.piStatus)
+  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const piPid = useAppStore((state) => state.piPid)
   const piError = useAppStore((state) => state.piError)
   const [errorCopied, setErrorCopied] = useState(false)
@@ -145,8 +147,8 @@ export function StatusPopover(): React.JSX.Element {
           </div>
 
           <div className="max-h-[70vh] overflow-y-auto">
-            {/* Pi Agent */}
-            <StatusSection title="Pi Agent" icon={<Cpu size={13} />}>
+            {/* Agent process */}
+            <StatusSection title={`${engineLabel} Agent`} icon={<Cpu size={13} />}>
               <StatusRow
                 label="Status"
                 value={

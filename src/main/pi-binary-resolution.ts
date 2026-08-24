@@ -1,5 +1,5 @@
-import { basename, join } from 'path'
-import { buildNpmPrefixCommand } from './cmd-escape'
+import { basename, join, posix as posixPath } from 'path'
+import { buildNpmPrefixCommand, escapeCmdSpawn } from './cmd-escape'
 
 /**
  * Locating the Pi CLI is the single most failure-prone step at startup, and the
@@ -16,6 +16,8 @@ export const PI_PACKAGE = '@earendil-works/pi-coding-agent'
 export const PI_CLI_REL = join('node_modules', PI_PACKAGE, 'dist', 'cli.js')
 export const PI_FALLBACK_BINARY_POSIX = 'pi'
 export const PI_FALLBACK_BINARY_WINDOWS = 'pi.cmd'
+export const OMP_FALLBACK_BINARY_POSIX = 'omp'
+export const OMP_FALLBACK_BINARY_WINDOWS = 'omp.exe'
 export const DEFAULT_LOGIN_SHELL = '/bin/bash'
 export const FISH_SHELL_NAME = 'fish'
 /** Sentinels bracket the PATH so rc-file chatter can be discarded. */
@@ -24,12 +26,18 @@ export const SHELL_PATH_END = '__PI_PATH_END__'
 /** A login shell sources the user's whole rc chain; give it room but bound it. */
 export const SHELL_PROBE_TIMEOUT_MS = 5_000
 export const NPM_PREFIX_TIMEOUT_MS = 5_000
+/** `--version` prints a cached string and exits; it never waits on the network. */
+const IDENTITY_PROBE_TIMEOUT_MS = 5_000
+const VERSION_FLAG = '--version'
+/** Any dotted number in the output: both `0.4.1` and `omp 0.4.1` qualify. */
+const VERSION_OUTPUT_PATTERN = /\d+\.\d+/
 const WINDOWS_PATH_DELIMITER = ';'
 const POSIX_PATH_DELIMITER = ':'
 const DEFAULT_WINDOWS_PATHEXT = '.COM;.EXE;.BAT;.CMD'
 const JS_EXTENSION = '.js'
 const SHELL_SCRIPT_PATTERN = /\.(cmd|bat|ps1)$/i
 const VERSION_NUMBER_PATTERN = /\d+/g
+const OMP_BINARY_PATTERN = /(?:^|[\\/])omp(?:\.(?:cmd|exe|bat|ps1))?$/i
 
 /** Where a resolved path came from, for logging and error messaging. */
 export type PiResolutionSource =
@@ -38,6 +46,7 @@ export type PiResolutionSource =
   | 'path'
   | 'version-manager'
   | 'common-location'
+  | 'omp'
   | 'fallback'
 
 export interface CaptureOptions {
@@ -58,6 +67,8 @@ export interface ResolutionDeps {
   /** Run a command and return trimmed stdout, or null if it failed. */
   capture(command: string, args: string[], options: CaptureOptions): string | null
 }
+
+export type PiEngine = 'auto' | 'pi' | 'omp'
 
 export interface PiResolution {
   /** Path to spawn: either a cli.js (with node) or an executable/shim. */
@@ -100,6 +111,10 @@ export function normalizeOverride(raw: string | undefined | null, home: string):
 
   const lower = value.toLowerCase()
   if (lower === PI_FALLBACK_BINARY_POSIX || lower === PI_FALLBACK_BINARY_WINDOWS) return null
+  // `omp` is an intentional engine selector, not a filesystem path. Keep it
+  // for resolvePiBinary() so the Settings field can switch runtimes without
+  // requiring the user to find the installed executable.
+  if (lower === OMP_FALLBACK_BINARY_POSIX || lower === OMP_FALLBACK_BINARY_WINDOWS) return value
 
   if (value === '~') return home
   if (value.startsWith('~/') || value.startsWith('~\\')) {
@@ -274,29 +289,51 @@ function shimCandidates(deps: ResolutionDeps, prefix: string): string[] {
     : [join(prefix, 'bin', 'pi'), join(prefix, 'pi')]
 }
 
+function usableFile(deps: ResolutionDeps, path: string): boolean {
+  return deps.exists(path) && !deps.isDirectory(path)
+}
+
 /**
- * Resolve a prefix to a spawnable Pi path, preferring the JS entry point so we
- * can run it with our own Node and skip the shell wrapper entirely.
+ * Resolve a prefix to a spawnable Pi path, preferring its JS entry point.
  */
 function resolveFromPrefix(deps: ResolutionDeps, prefix: string): string | null {
   const cliJs = findCliJsNear(deps, prefix)
   if (cliJs) return cliJs
   for (const shim of shimCandidates(deps, prefix)) {
-    if (deps.exists(shim)) return shim
+    if (usableFile(deps, shim)) return shim
   }
   return null
+}
+/**
+ * Resolve a configured OMP executable or install directory.
+ */
+function resolveOmpOverride(deps: ResolutionDeps, overridePath: string): string | null {
+  if (deps.isDirectory(overridePath)) {
+    for (const shim of ompShimCandidates(deps, overridePath)) {
+      if (usableFile(deps, shim)) return shim
+    }
+    return null
+  }
+  return usableFile(deps, overridePath) ? overridePath : null
 }
 
 /** Search PATH for an executable, honoring PATHEXT on Windows. */
 export function whichInPath(deps: ResolutionDeps, name: string, pathEnv: string): string | null {
   const dirs = pathEnv.split(pathDelimiterFor(deps.isWindows)).filter(Boolean)
+  const pathJoin = deps.isWindows ? join : posixPath.join
   const extensions = deps.isWindows
     ? (deps.env.PATHEXT ?? DEFAULT_WINDOWS_PATHEXT).split(';').map((e) => e.toLowerCase())
     : ['']
   for (const dir of dirs) {
     for (const extension of extensions) {
-      const candidate = join(dir, name + extension)
-      if (deps.exists(candidate)) return candidate
+      const candidate = pathJoin(dir, name + extension)
+      if (usableFile(deps, candidate)) return candidate
+      // Tests inject a platform independent path separator while running on
+      // the host OS; accept that spelling as a fallback in the seam.
+      if (!deps.isWindows) {
+        const hostCandidate = join(dir, name + extension)
+        if (hostCandidate !== candidate && usableFile(deps, hostCandidate)) return hostCandidate
+      }
     }
   }
   return null
@@ -317,6 +354,98 @@ function npmGlobalPrefix(deps: ResolutionDeps, pathEnv: string): string | null {
 }
 
 /** Hardcoded install locations, used only after every dynamic probe fails. */
+function ompShimCandidates(deps: ResolutionDeps, prefix: string): string[] {
+  return deps.isWindows
+    ? [join(prefix, 'omp.cmd'), join(prefix, 'omp.exe'), join(prefix, 'omp.ps1')]
+    : [join(prefix, 'bin', 'omp'), join(prefix, 'omp')]
+}
+
+function ompLocations(deps: ResolutionDeps): string[] {
+  const { env } = deps
+  const home = homeDir(env)
+  if (deps.isWindows) {
+    const appData = env.APPDATA ?? ''
+    const localAppData = env.LOCALAPPDATA ?? ''
+    const userProfile = env.USERPROFILE ?? home
+    return [
+      appData ? join(appData, 'npm', OMP_FALLBACK_BINARY_WINDOWS) : '',
+      localAppData ? join(localAppData, 'npm', OMP_FALLBACK_BINARY_WINDOWS) : '',
+      localAppData ? join(localAppData, 'omp', OMP_FALLBACK_BINARY_WINDOWS) : '',
+      join(userProfile, '.bun', 'bin', OMP_FALLBACK_BINARY_WINDOWS),
+    ].filter(Boolean)
+  }
+  return [
+    join(home, '.local', 'bin', OMP_FALLBACK_BINARY_POSIX),
+    join(home, '.bun', 'bin', OMP_FALLBACK_BINARY_POSIX),
+    join(home, '.npm-global', 'bin', OMP_FALLBACK_BINARY_POSIX),
+    join(home, '.npm-packages', 'bin', OMP_FALLBACK_BINARY_POSIX),
+    '/opt/homebrew/bin/omp',
+    '/usr/local/bin/omp',
+    '/usr/bin/omp',
+  ]
+}
+
+/**
+ * Every OMP candidate, most authoritative first. A generator rather than an
+ * array so the `npm prefix -g` subprocess is only spawned when the cheaper
+ * PATH and common-location lookups came up empty.
+ */
+function* ompCandidates(deps: ResolutionDeps, pathEnv: string): Generator<string> {
+  const onPath = whichInPath(deps, OMP_FALLBACK_BINARY_POSIX, pathEnv)
+  if (onPath) yield onPath
+  for (const candidate of ompLocations(deps)) {
+    if (usableFile(deps, candidate)) yield candidate
+  }
+  const prefix = npmGlobalPrefix(deps, pathEnv)
+  if (prefix) {
+    for (const candidate of ompShimCandidates(deps, prefix)) {
+      if (usableFile(deps, candidate)) yield candidate
+    }
+  }
+}
+
+/** The first OMP candidate, taken on trust because the engine is explicit. */
+function resolveOmpBinary(deps: ResolutionDeps, pathEnv: string): string | null {
+  for (const candidate of ompCandidates(deps, pathEnv)) return candidate
+  return null
+}
+
+/**
+ * Ask a candidate to identify itself. `deps.capture` yields stdout only for a
+ * clean exit, so an unreadable file, a non-executable one and a script that
+ * errors out all answer null.
+ */
+function respondsToVersion(deps: ResolutionDeps, script: string, pathEnv: string): boolean {
+  // A .cmd/.ps1 shim only starts through cmd.exe, which quotes nothing itself:
+  // escape both tokens exactly as the real spawn path does.
+  const viaCmd = deps.isWindows && SHELL_SCRIPT_PATTERN.test(script)
+  const command = escapeCmdSpawn(viaCmd, script, [VERSION_FLAG])
+  const stdout = deps.capture(command.file, command.args, {
+    shell: viaCmd,
+    timeoutMs: IDENTITY_PROBE_TIMEOUT_MS,
+    pathEnv,
+  })
+  return stdout !== null && VERSION_OUTPUT_PATTERN.test(stdout)
+}
+
+/**
+ * The first OMP candidate that behaves like a CLI. `omp` is a short, common
+ * name, and auto-detection reaches this point only when the user asked for
+ * nothing in particular — accepting a same-named data file or unrelated script
+ * would mark the resolution found, replacing the actionable "install Pi with…"
+ * message with a spawn timeout minutes later.
+ */
+function resolveVerifiedOmpBinary(deps: ResolutionDeps, pathEnv: string): string | null {
+  for (const candidate of ompCandidates(deps, pathEnv)) {
+    if (respondsToVersion(deps, candidate, pathEnv)) return candidate
+  }
+  return null
+}
+
+export function isOmpExecutable(script: string): boolean {
+  return OMP_BINARY_PATTERN.test(script)
+}
+
 function commonLocations(deps: ResolutionDeps): string[] {
   const { env } = deps
   const home = homeDir(env)
@@ -378,17 +507,58 @@ function finalize(
  *   3. A PATH search.
  *   4. Per-version prefixes created by node version managers.
  *   5. Hardcoded common install locations.
- *   6. The bare binary name, flagged as not found.
+ *   6. OMP fallback when Pi is not installed, accepted only after the
+ *      candidate answers a `--version` probe.
+ *   7. The bare binary name, flagged as not found.
  */
 export function resolvePiBinary(
   deps: ResolutionDeps,
-  overridePath: string | null
+  overridePath: string | null,
+  engine: PiEngine = 'auto'
 ): PiResolution {
   const basePath = deps.env.PATH ?? ''
   const shellPath = loginShellPath(deps)
   const pathEnv = shellPath ? mergePathEntries(basePath, shellPath, deps.isWindows) : basePath
-
   let rejectedOverride: string | null = null
+
+  if (engine === 'omp') {
+    if (overridePath && overridePath.toLowerCase() !== OMP_FALLBACK_BINARY_POSIX && overridePath.toLowerCase() !== OMP_FALLBACK_BINARY_WINDOWS) {
+      const override = resolveOmpOverride(deps, overridePath)
+      return override
+        ? finalize(deps, override, 'override', true, null, pathEnv)
+        : finalize(
+            deps,
+            deps.isWindows ? OMP_FALLBACK_BINARY_WINDOWS : OMP_FALLBACK_BINARY_POSIX,
+            'fallback',
+            false,
+            overridePath,
+            pathEnv
+          )
+    }
+    const omp = resolveOmpBinary(deps, pathEnv)
+    return omp
+      ? finalize(deps, omp, 'omp', true, null, pathEnv)
+      : finalize(
+          deps,
+          deps.isWindows ? OMP_FALLBACK_BINARY_WINDOWS : OMP_FALLBACK_BINARY_POSIX,
+          'fallback',
+          false,
+          null,
+          pathEnv
+        )
+  }
+  if (overridePath && (overridePath.toLowerCase() === OMP_FALLBACK_BINARY_POSIX || overridePath.toLowerCase() === OMP_FALLBACK_BINARY_WINDOWS)) {
+    const omp = resolveOmpBinary(deps, pathEnv)
+    if (omp) return finalize(deps, omp, 'override', true, null, pathEnv)
+    return finalize(
+      deps,
+      deps.isWindows ? OMP_FALLBACK_BINARY_WINDOWS : OMP_FALLBACK_BINARY_POSIX,
+      'fallback',
+      false,
+      overridePath,
+      pathEnv
+    )
+  }
   if (overridePath) {
     if (deps.isDirectory(overridePath)) {
       const fromDir = resolveFromPrefix(deps, overridePath)
@@ -431,13 +601,22 @@ export function resolvePiBinary(
     }
   }
 
+  // Keep the historical Pi-first preference, but make an OMP-only machine
+  // work without forcing the user to discover the Agent Executable field.
+  // This is the one branch nobody asked for, so it is also the one that has to
+  // prove the binary is real before claiming the search succeeded.
+  if (engine === 'auto') {
+    const omp = resolveVerifiedOmpBinary(deps, pathEnv)
+    if (omp) return finalize(deps, omp, 'omp', true, rejectedOverride, pathEnv)
+  }
+
   const fallback = deps.isWindows ? PI_FALLBACK_BINARY_WINDOWS : PI_FALLBACK_BINARY_POSIX
   return finalize(deps, fallback, 'fallback', false, rejectedOverride, pathEnv)
 }
 
-const SETTINGS_HINT = 'Settings > Pi Configuration > Pi Executable'
+const SETTINGS_HINT = 'Settings > Agent Configuration > Agent Installation'
 const INSTALL_HINT =
-  'Install Pi with:\n  npm install -g @earendil-works/pi-coding-agent\nor on Windows:\n  irm https://pi.dev/install.ps1 | iex'
+  'Install Pi with:\n  npm install -g @earendil-works/pi-coding-agent\nor install OMP with:\n  bun install -g @oh-my-pi/pi-coding-agent'
 
 /**
  * Explain a failed resolution. A stale configured path is the headline when

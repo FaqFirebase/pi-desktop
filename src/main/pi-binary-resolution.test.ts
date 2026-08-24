@@ -23,6 +23,13 @@ const POSIX_HOME = '/Users/tester'
 const WINDOWS_HOME = 'C:\\Users\\tester'
 const NVM_VERSION_OLD = 'v20.11.0'
 const NVM_VERSION_NEW = 'v24.14.1'
+/** What a real agent CLI prints for `--version`. */
+const OMP_VERSION_OUTPUT = 'omp 0.4.1\n'
+
+/** The capture key for the identity probe of an auto-detected candidate. */
+function versionProbe(script: string): string {
+  return `${script} --version`
+}
 
 interface FakeFs {
   /** Absolute file paths that exist. */
@@ -86,6 +93,11 @@ test('normalizeOverride treats the bare binary name as auto-detect', () => {
   assert.equal(normalizeOverride('  pi  ', POSIX_HOME), null)
   assert.equal(normalizeOverride('pi.cmd', POSIX_HOME), null)
   assert.equal(normalizeOverride('PI.CMD', POSIX_HOME), null)
+})
+
+test('normalizeOverride keeps omp as an explicit engine selector', () => {
+  assert.equal(normalizeOverride('omp', POSIX_HOME), 'omp')
+  assert.equal(normalizeOverride('OMP.EXE', POSIX_HOME), 'OMP.EXE')
 })
 
 test('normalizeOverride strips surrounding quotes pasted from a file manager', () => {
@@ -259,6 +271,109 @@ test('versionManagerPrefixes returns nothing when no manager is installed', () =
 })
 
 // ─── resolvePiBinary: configured override ────────────────────────────────────
+
+test('resolvePiBinary resolves the omp engine selector from PATH', () => {
+  const deps = fakeDeps({ env: { HOME: POSIX_HOME, PATH: '/opt/omp' }, files: ['/opt/omp/omp'] })
+  const resolution = resolvePiBinary(deps, 'omp')
+  assert.deepEqual(resolution, {
+    script: '/opt/omp/omp',
+    useNode: false,
+    needsShell: false,
+    source: 'override',
+    found: true,
+    rejectedOverride: null,
+    pathEnv: '/opt/omp',
+  })
+})
+
+test('resolvePiBinary auto-detects OMP when Pi is not installed', () => {
+  const deps = fakeDeps({
+    env: { HOME: POSIX_HOME, PATH: '/opt/omp' },
+    files: ['/opt/omp/omp'],
+    captures: { [versionProbe('/opt/omp/omp')]: OMP_VERSION_OUTPUT },
+  })
+  const resolution = resolvePiBinary(deps, null)
+  assert.equal(resolution.script, '/opt/omp/omp')
+  assert.equal(resolution.source, 'omp')
+  assert.equal(resolution.found, true)
+})
+
+test('resolvePiBinary refuses an auto-detected omp that cannot run', () => {
+  // A data file, a stale symlink or an unrelated script named `omp` all fail
+  // to answer. Accepting one would report found and hide the install guidance
+  // behind a spawn timeout minutes later.
+  const deps = fakeDeps({ env: { HOME: POSIX_HOME, PATH: '/opt/omp' }, files: ['/opt/omp/omp'] })
+  const resolution = resolvePiBinary(deps, null)
+  assert.equal(resolution.script, PI_FALLBACK_BINARY_POSIX)
+  assert.equal(resolution.source, 'fallback')
+  assert.equal(resolution.found, false)
+  assert.match(describePiResolutionFailure(resolution), /npm install -g @earendil-works\/pi-coding-agent/)
+})
+
+test('resolvePiBinary refuses an auto-detected omp whose output carries no version', () => {
+  const deps = fakeDeps({
+    env: { HOME: POSIX_HOME, PATH: '/opt/omp' },
+    files: ['/opt/omp/omp'],
+    captures: { [versionProbe('/opt/omp/omp')]: 'usage: omp [options]\n' },
+  })
+  assert.equal(resolvePiBinary(deps, null).found, false)
+})
+
+test('resolvePiBinary skips an unusable omp for a later candidate that answers', () => {
+  const installed = join(POSIX_HOME, '.local', 'bin', 'omp')
+  const deps = fakeDeps({
+    env: { HOME: POSIX_HOME, PATH: '/opt/decoy' },
+    files: ['/opt/decoy/omp', installed],
+    captures: { [versionProbe(installed)]: OMP_VERSION_OUTPUT },
+  })
+  const resolution = resolvePiBinary(deps, null)
+  assert.equal(resolution.script, installed)
+  assert.equal(resolution.source, 'omp')
+})
+
+test('resolvePiBinary does not probe when the engine or the override is explicit', () => {
+  // Both are the user naming the runtime, and the probe costs a subprocess on
+  // a path that runs at every start; only the guess nobody asked for pays it.
+  const captureLog: FakeDepsInit['captureLog'] = []
+  const init: FakeDepsInit = {
+    env: { HOME: POSIX_HOME, PATH: '/opt/omp' },
+    files: ['/opt/omp/omp'],
+    captureLog,
+  }
+  assert.equal(resolvePiBinary(fakeDeps(init), null, 'omp').script, '/opt/omp/omp')
+  assert.equal(resolvePiBinary(fakeDeps(init), 'omp').script, '/opt/omp/omp')
+  assert.equal(captureLog.filter((call) => call.args.includes('--version')).length, 0)
+})
+
+test('resolvePiBinary can resolve each engine independently for the chooser', () => {
+  const deps = fakeDeps({
+    env: { HOME: POSIX_HOME, PATH: '/opt/pi:/opt/omp' },
+    files: ['/opt/pi/pi', '/opt/omp/omp'],
+  })
+  assert.equal(resolvePiBinary(deps, null, 'pi').script, '/opt/pi/pi')
+  assert.equal(resolvePiBinary(deps, null, 'omp').script, '/opt/omp/omp')
+})
+
+test('resolvePiBinary finds an npm-global OMP shim outside PATH', () => {
+  const prefix = '/opt/npm'
+  const omp = join(prefix, 'bin', 'omp')
+  const deps = fakeDeps({
+    env: { HOME: POSIX_HOME, PATH: '/nowhere' },
+    files: [omp],
+    dirs: [prefix],
+    captures: { 'npm prefix -g': `${prefix}\n` },
+  })
+  assert.equal(resolvePiBinary(deps, null, 'omp').script, omp)
+})
+
+test('resolvePiBinary honors an explicit OMP engine for a renamed executable', () => {
+  const override = '/opt/tools/agent-runner'
+  const deps = fakeDeps({ env: { HOME: POSIX_HOME, PATH: '/nowhere' }, files: [override] })
+  const resolution = resolvePiBinary(deps, override, 'omp')
+  assert.equal(resolution.script, override)
+  assert.equal(resolution.source, 'override')
+  assert.equal(resolution.found, true)
+})
 
 test('resolvePiBinary uses a configured cli.js override ahead of auto-detection', () => {
   const override = join(POSIX_HOME, '.nvm/versions/node', NVM_VERSION_NEW, 'lib', PI_CLI_REL)

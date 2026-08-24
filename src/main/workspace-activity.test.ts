@@ -76,6 +76,28 @@ test('agent_end in a background workspace marks completed and notifies', () => {
   assert.deepEqual(h.notifications, [{ workspaceId: 'ws-bg', kind: 'completed' }])
 })
 
+test('sibling runtime lifecycle changes do not clear another turn', () => {
+  const h = makeHarness('ws-active')
+  h.tracker.handleAgentStart('ws-bg', { runtimeId: 'rt-1' })
+  h.tracker.handleAgentStart('ws-bg', { runtimeId: 'rt-2' })
+  h.tracker.handleStatusChange('ws-bg', 'stopped', { runtimeId: 'rt-2' })
+  assert.equal(h.tracker.getMap()['ws-bg'].state, 'working')
+  h.tracker.handleAgentEnd('ws-bg', { runtimeId: 'rt-1', sessionPath: '/sessions/one.jsonl' })
+  assert.equal(h.tracker.getMap()['ws-bg'].state, 'completed')
+})
+
+test('agent_end preserves the exact runtime session target for notification clicks', () => {
+  const h = makeHarness('ws-active')
+  h.tracker.handleAgentStart('ws-bg')
+  h.tracker.handleAgentEnd('ws-bg', { runtimeId: 'rt-1', sessionPath: '/sessions/finished.jsonl' })
+  assert.deepEqual(h.notifications, [{
+    workspaceId: 'ws-bg',
+    kind: 'completed',
+    runtimeId: 'rt-1',
+    sessionPath: '/sessions/finished.jsonl',
+  }])
+})
+
 test('pending prompts override working and notify needs-approval', () => {
   const h = makeHarness('ws-active')
   h.tracker.handleAgentStart('ws-bg')

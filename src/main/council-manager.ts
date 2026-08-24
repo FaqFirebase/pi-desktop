@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 import { StringDecoder } from 'string_decoder'
-import type { CouncilAgentId, ConsensusMode, ConsultantResult } from '../shared/council-config'
+import type { CouncilAgentId, ConsensusMode, ConsultantResult, CouncilPiEngine } from '../shared/council-config'
 import {
   buildConsultantPrompt,
   buildConsensusPrompt,
@@ -13,6 +13,7 @@ import {
 } from '../shared/council-config'
 import { detectAgents } from './agent-detection'
 import { escapeCmdSpawn } from './cmd-escape'
+import { getPiCli } from './pi-rpc-manager'
 
 const IS_WINDOWS = process.platform === 'win32'
 const MS_PER_SECOND = 1000
@@ -145,15 +146,22 @@ export function buildConsultantSpawn(
   id: CouncilAgentId,
   executable: string,
   isWindows: boolean,
+  engine: CouncilPiEngine = 'pi',
 ): { file: string; args: string[] } {
-  const command = buildConsultantCommand(id, executable)
+  const command = buildConsultantCommand(id, executable, engine)
   return escapeCmdSpawn(isWindows, command.file, command.args)
 }
 
 /** Default spawn: run the consultant CLI, stream output, enforce timeout. */
 export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeoutMs, onChunk) =>
   new Promise<SpawnOutcome>((resolve) => {
-    const { file, args } = buildConsultantSpawn(id, resolveExecutable(id), IS_WINDOWS)
+    const piCli = id === 'pi' ? getPiCli() : null
+    const { file, args } = buildConsultantSpawn(
+      id,
+      resolveExecutable(id),
+      IS_WINDOWS,
+      piCli?.kind === 'omp' ? 'omp' : 'pi',
+    )
     const child = spawn(file, args, {
       cwd,
       shell: IS_WINDOWS,
@@ -247,6 +255,10 @@ export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeout
 
 // Resolve the executable path from agent detection; falls back to the bare id.
 function resolveExecutable(id: CouncilAgentId): string {
+  if (id === 'pi') {
+    const configured = getPiCli()
+    if (configured.found) return configured.script
+  }
   const found = detectAgents().find((a) => a.id === id)
   return found?.path ?? id
 }

@@ -1,9 +1,12 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from 'react'
 import { useAppStore } from '../store'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { useChatKeyboard, useCommandCatalog } from '../hooks'
 import { ComposerPermissionMenu } from './composer-permission-menu'
 import { CommandResults } from './command-results'
 import { SubagentProgress } from './subagent-progress'
+import { ModelSelector } from './model-selector'
+import { ThinkingLevelSelector } from './thinking-level-selector'
 import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users, Search } from 'lucide-react'
 import {
   SUPPORTED_IMAGE_EXTENSIONS,
@@ -75,6 +78,7 @@ export function ChatInput(): React.JSX.Element {
   const abort = useAppStore((state) => state.abort)
   const isStreaming = useAppStore((state) => state.isStreaming)
   const piStatus = useAppStore((state) => state.piStatus)
+  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const pendingInsert = useAppStore((state) => state.pendingInsert)
   const clearPendingInsert = useAppStore((state) => state.clearPendingInsert)
   const setNotePickerOpen = useAppStore((state) => state.setNotePickerOpen)
@@ -366,7 +370,9 @@ export function ChatInput(): React.JSX.Element {
     }
   }, [])
 
-  const isDisabled = piStatus !== 'running'
+  // A stopped agent stays typable: the first send lazy-starts Pi/OMP.
+  // Only transient/error states block input.
+  const isDisabled = piStatus === 'starting' || piStatus === 'error'
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -494,10 +500,10 @@ export function ChatInput(): React.JSX.Element {
           ref={textareaRef}
           placeholder={
             isDisabled
-              ? 'Pi agent is not running...'
+              ? `${engineLabel} agent is not running...`
               : isStreaming
                 ? 'Type to steer the agent...'
-                : 'Ask Pi anything — / for commands'
+                : `Ask ${engineLabel} anything — / for commands`
           }
           disabled={isDisabled}
           rows={1}
@@ -652,6 +658,7 @@ export function ChatInput(): React.JSX.Element {
           </button>
           {councilEnabled && (
             <button
+              type="button"
               onClick={() => {
                 const value = textareaRef.current?.value.trim()
                 if (value) {
@@ -664,20 +671,28 @@ export function ChatInput(): React.JSX.Element {
               }}
               disabled={isDisabled || isStreaming}
               className="hover:bg-highlight-strong flex items-center justify-center rounded-md p-1.5 text-dim hover:text-secondary transition-colors disabled:opacity-50"
-              title="Plan with Council"
+              title={isDisabled ? 'Start Pi/OMP before planning with Council' : 'Plan with Council'}
               aria-label="Plan with Council"
             >
               <Users size={15} />
             </button>
           )}
 
-          <span className="ml-auto mr-1 text-[11px] text-faint">
+          <span className="ml-auto mr-1 hidden text-[11px] text-faint sm:inline">
             {isStreaming ? (
               <span className="text-warning animate-pulse">Streaming…</span>
             ) : (
               'Shift+Enter newline'
             )}
           </span>
+
+          {!isDisabled && (
+            <div className="flex h-6 shrink-0 items-center gap-0 rounded-md bg-card/60 ring-1 ring-inset ring-border-strong/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <ModelSelector compact />
+              <div className="h-3.5 w-px bg-border" aria-hidden="true" />
+              <ThinkingLevelSelector />
+            </div>
+          )}
 
           {isStreaming ? (
             <button

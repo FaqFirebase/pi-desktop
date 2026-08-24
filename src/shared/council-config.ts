@@ -225,9 +225,12 @@ export function buildDebatePrompt(
  * on the command line would allow shell-metacharacter injection. Keeping only
  * static flags in argv closes that vector.
  */
+export type CouncilPiEngine = 'pi' | 'omp'
+
 export function buildConsultantCommand(
   id: CouncilAgentId,
   executable: string,
+  engine: CouncilPiEngine = 'pi',
 ): { file: string; args: string[] } {
   switch (id) {
     case 'pi':
@@ -237,7 +240,10 @@ export function buildConsultantCommand(
       // keeps it ephemeral.
       return {
         file: executable,
-        args: ['-p', '--mode', 'json', '--no-session', '--exclude-tools', 'bash,edit,write'],
+        args:
+          engine === 'omp'
+            ? ['-p', '--mode', 'json', '--no-session', '--tools', 'read,grep,glob']
+            : ['-p', '--mode', 'json', '--no-session', '--exclude-tools', 'bash,edit,write'],
       }
     case 'claude':
       // stream-json + partial messages let us render Claude's plan live as it

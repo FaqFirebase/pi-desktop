@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getSessionTitle } from '../utils/session-title'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { clsx } from 'clsx'
 import {
   FolderOpen,
@@ -9,6 +10,7 @@ import {
   GitCompare,
   AlertTriangle,
   Settings as SettingsIcon,
+  Play,
 } from 'lucide-react'
 import { useAppStore } from '../store'
 import piLogo from '../assets/pi-logo.svg'
@@ -38,10 +40,9 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
   const activeWorkspace = useAppStore((s) => s.activeWorkspace)
   const sessionList = useAppStore((s) => s.sessionList)
   const archivedSessions = useAppStore((s) => s.archivedSessions)
-  const switchWorkspace = useAppStore((s) => s.switchWorkspace)
+  const activateWorkspace = useAppStore((s) => s.activateWorkspace)
   const createWorkspace = useAppStore((s) => s.createWorkspace)
   const switchSession = useAppStore((s) => s.switchSession)
-  const startPi = useAppStore((s) => s.startPi)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
   const requestChatScrollToBottom = useAppStore((s) => s.requestChatScrollToBottom)
 
@@ -82,7 +83,7 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
   const openWorkspace = async (workspaceId: string): Promise<void> => {
     setBusy(true)
     try {
-      if (!(await switchWorkspace(workspaceId))) return
+      if (!(await activateWorkspace(workspaceId))) return
       if (useAppStore.getState().piStatus !== 'error') {
         requestChatScrollToBottom()
         setCurrentView('chat')
@@ -104,15 +105,13 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
         }
         targetId = ws?.id
       }
-      // A declined "Pi is still working" warning stops the whole open, since the
-      // session switch below would tear the running turn down regardless.
+      // Workspace/session activation is non-destructive; the target Pi runtime
+      // hydrates in the background while Chat opens immediately.
       if (targetId) {
-        if (!(await switchWorkspace(targetId))) return
-      } else {
-        await startPi()
+        if (!(await activateWorkspace(targetId, { awaitingSession: true }))) return
       }
       if (useAppStore.getState().piStatus === 'error') return
-      await switchSession(session.path)
+      await switchSession(session.path, session.projectPath)
       requestChatScrollToBottom()
       setCurrentView('chat')
     } finally {
@@ -124,7 +123,7 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
     if (!activeWorkspace) return
     setBusy(true)
     try {
-      if (!(await switchWorkspace(activeWorkspace.id))) return
+      if (!(await activateWorkspace(activeWorkspace.id))) return
       if (useAppStore.getState().piStatus !== 'error') setCurrentView('diff')
     } finally {
       setBusy(false)
@@ -239,15 +238,16 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
 function PiErrorBanner(): React.JSX.Element | null {
   const piStatus = useAppStore((s) => s.piStatus)
   const piError = useAppStore((s) => s.piError)
+  const engineLabel = useAppStore((s) => agentEngineLabel(s.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
   if (piStatus !== 'error' || !piError) return null
   return (
     <div className="mb-6 flex items-start gap-3 rounded-lg border border-error-bg bg-error-bg px-4 py-3 text-sm text-error">
       <AlertTriangle size={16} className="mt-0.5 shrink-0" />
       <div className="flex-1">
-        <div className="font-medium">Couldn&apos;t start Pi</div>
+        <div className="font-medium">Couldn&apos;t start {engineLabel}</div>
         <div className="mt-0.5 text-error/80">{piError}</div>
-        <div className="mt-1 text-xs text-error/70">Check that Pi is installed and its path is correct.</div>
+        <div className="mt-1 text-xs text-error/70">Check that {engineLabel} is installed and its path is correct.</div>
       </div>
       <button
         onClick={() => setCurrentView('settings')}
@@ -282,9 +282,10 @@ function EmptyHint({ children }: { children: React.ReactNode }): React.JSX.Eleme
 
 function HomeScreenInfo(): React.JSX.Element {
   const activeWorkspace = useAppStore((s) => s.activeWorkspace)
-  const switchWorkspace = useAppStore((s) => s.switchWorkspace)
+  const activateWorkspace = useAppStore((s) => s.activateWorkspace)
   const createWorkspace = useAppStore((s) => s.createWorkspace)
   const createNewSession = useAppStore((s) => s.createNewSession)
+  const setTaskLauncherOpen = useAppStore((s) => s.setTaskLauncherOpen)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
   const requestChatScrollToBottom = useAppStore((s) => s.requestChatScrollToBottom)
   const [busy, setBusy] = useState(false)
@@ -307,7 +308,7 @@ function HomeScreenInfo(): React.JSX.Element {
         ws = useAppStore.getState().workspaces.find((w) => pathsEqual(w.path, path))
       }
       if (ws) {
-        if (!(await switchWorkspace(ws.id))) return
+        if (!(await activateWorkspace(ws.id))) return
         goChatUnlessError()
       }
     } finally {
@@ -322,7 +323,7 @@ function HomeScreenInfo(): React.JSX.Element {
     }
     setBusy(true)
     try {
-      if (!(await switchWorkspace(activeWorkspace.id))) return
+      if (!(await activateWorkspace(activeWorkspace.id))) return
       if (useAppStore.getState().piStatus === 'error') return
       await createNewSession()
       requestChatScrollToBottom()
@@ -343,7 +344,7 @@ function HomeScreenInfo(): React.JSX.Element {
           <p className="mt-1 text-sm text-dim">Open a workspace or pick up where you left off.</p>
         </div>
 
-        <div className="mb-6 grid gap-3 sm:grid-cols-2">
+        <div className="mb-6 grid gap-3 sm:grid-cols-3">
           <button
             onClick={() => void openFolder()}
             className="flex w-full items-center gap-3 rounded-lg border border-border-strong bg-surface px-4 py-3 text-left transition-colors hover:border-border-strong-hover hover:bg-surface-hover"
@@ -364,6 +365,16 @@ function HomeScreenInfo(): React.JSX.Element {
               <div className="truncate text-xs text-dim">
                 {activeWorkspace ? `In ${activeWorkspace.name}` : 'Pick a folder first'}
               </div>
+            </div>
+          </button>
+          <button
+            onClick={() => setTaskLauncherOpen(true)}
+            className="flex w-full items-center gap-3 rounded-lg border border-accent/50 bg-accent-bg/30 px-4 py-3 text-left transition-colors hover:border-accent hover:bg-accent-bg/50"
+          >
+            <Play size={18} className="shrink-0 text-accent-fg" />
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-primary">New Task</div>
+              <div className="truncate text-xs text-dim">Start work in a fresh Pi session</div>
             </div>
           </button>
         </div>

@@ -1,15 +1,18 @@
 import { test, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import type { PiExtensionUiRequest, SessionListItem, SessionState, Workspace } from '../../shared/ipc-contracts'
+import type { PiExtensionUiRequest, SessionDeleteResult, SessionListItem, SessionRuntimeInfo, SessionState, Workspace } from '../../shared/ipc-contracts'
 import type { PreviewTarget } from './store'
 
 // Each recorded call is appended to `calls`, so tests can assert both that a
 // session change reached Pi and that nothing reached Pi when it was declined.
 const calls: string[] = []
-let switchResult: { success?: boolean; error?: string } | null = { success: true }
+let switchResult: { success?: boolean; error?: string } | SessionRuntimeInfo | null = { success: true }
 // Non-null makes the stubbed pi.getStatus reject, simulating a main-side
 // failure AFTER a workspace switch has already committed.
 let getStatusFailure: string | null = null
+// Status the stubbed pi.getStatus reports for the ACTIVE workspace. A live
+// background turn means the target workspace's own process is running.
+let piStatusResult: 'stopped' | 'running' = 'stopped'
 // Non-null makes the stubbed workspace.setActive reject, simulating a switch
 // that never commits on the main side.
 let setActiveFailure: string | null = null
@@ -34,6 +37,9 @@ let fileSearchResults: Array<{
 let fileSearchHook: (() => void) | null = null
 // What the stubbed session.getState returns as data (null = no state).
 let sessionStateResult: SessionState | null = null
+// What the stubbed session.delete reports. `replacementSessionPath` mirrors
+// the runtime main promoted while closing the deleted session's tab.
+let sessionDeleteResult: SessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: null }
 
 // Only sessionFile is read by the code under test; the cast keeps this
 // fixture from churning as SessionState grows fields.
@@ -42,6 +48,8 @@ function sessionStateWith(sessionFile: string): SessionState {
 }
 
 const SESSION_PATH = '/tmp/session-b.jsonl'
+// The sibling session main promotes when the active one is deleted or closed.
+const REPLACEMENT_SESSION_PATH = '/tmp/session-sibling.jsonl'
 const FORK_ENTRY_ID = 'entry-7'
 
 const WORKSPACE_ID = 'ws-2'
@@ -141,7 +149,7 @@ const piDesktopStub = {
   pi: {
     getStatus: async () => {
       if (getStatusFailure) throw new Error(getStatusFailure)
-      return { status: 'stopped' as const, pid: null, error: null }
+      return { status: piStatusResult, pid: piStatusResult === 'running' ? 1 : null, error: null }
     },
     start: async () => {
       calls.push('pi.start')
@@ -181,6 +189,10 @@ const piDesktopStub = {
       calls.push('abort')
       return null
     },
+    prompt: async (message: string) => {
+      calls.push(`prompt:${message}`)
+      return null
+    },
   },
   session: {
     switch: async (path: string) => {
@@ -190,6 +202,14 @@ const piDesktopStub = {
     createNew: async () => {
       calls.push('createNew')
       return { success: true }
+    },
+    closeRuntime: async (runtimeId: string) => {
+      calls.push(`closeRuntime:${runtimeId}`)
+      return { runtimeId, workspaceId: WORKSPACE_ONE.id, sessionPath: SESSION_PATH, empty: false, deleted: false }
+    },
+    delete: async (path: string) => {
+      calls.push(`deleteSession:${path}`)
+      return sessionDeleteResult
     },
     fork: async (entryId: string) => {
       calls.push(`fork:${entryId}`)
@@ -279,8 +299,8 @@ beforeEach(() => {
   }
   switchResult = { success: true }
   getStatusFailure = null
+  piStatusResult = 'stopped'
   setActiveFailure = null
-  pendingPromptsFailure = null
   pendingPromptsSnapshot = {}
   workspaceActivityFailure = null
   workspaceActivitySnapshot = {}
@@ -289,6 +309,7 @@ beforeEach(() => {
   fileSearchResults = []
   fileSearchHook = null
   sessionStateResult = null
+  sessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: null }
   useAppStore.setState({
     isStreaming: false,
     streamingContent: '',
@@ -305,6 +326,9 @@ beforeEach(() => {
     pendingPromptCounts: {},
     workspaceActivity: {},
     reattachedMidTurn: false,
+    sessionLoading: false,
+    sessionRuntimes: {},
+    activeSessionRuntimeId: null,
     activeWorkspace: null,
     workspaces: [],
     piStatus: 'stopped',
@@ -317,6 +341,91 @@ beforeEach(() => {
   // reset itself when the previous test left the flag set, and that push
   // belongs to cleanup, not to the test about to run.
   calls.length = 0
+})
+
+test('a ready new runtime hydrates while the empty session is still loading', async () => {
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    activeSessionRuntimeId: 'rt-new',
+    sessionLoading: true,
+    sessionState: null,
+    messages: [],
+  })
+
+  const runtime: SessionRuntimeInfo = {
+    runtimeId: 'rt-new',
+    workspaceId: WORKSPACE_ONE.id,
+    sessionPath: SESSION_PATH,
+    sessionId: 'session-new',
+    status: 'running',
+    pid: 123,
+    error: null,
+    activity: null,
+    active: true,
+  }
+  useAppStore.getState().handleSessionRuntime(runtime)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+
+  assert.equal(calls.includes('getMessages'), true)
+  assert.equal(useAppStore.getState().sessionLoading, false)
+})
+
+test('an active runtime error ends the session loading state', () => {
+  useAppStore.setState({
+    activeSessionRuntimeId: 'rt-failed',
+    sessionLoading: true,
+  })
+
+  useAppStore.getState().handleSessionRuntime({
+    runtimeId: 'rt-failed',
+    workspaceId: WORKSPACE_ONE.id,
+    sessionPath: null,
+    sessionId: null,
+    status: 'error',
+    pid: null,
+    error: 'Pi failed to start',
+    activity: 'failed',
+    active: true,
+  })
+
+  assert.equal(useAppStore.getState().sessionLoading, false)
+  assert.equal(useAppStore.getState().piError, 'Pi failed to start')
+})
+
+test('closed runtime events remove session tabs from renderer state', () => {
+  useAppStore.setState({
+    sessionRuntimes: {
+      'rt-closed': {
+        runtimeId: 'rt-closed',
+        workspaceId: WORKSPACE_ONE.id,
+        sessionPath: SESSION_PATH,
+        sessionId: 'closed-session',
+        status: 'stopped',
+        pid: null,
+        error: null,
+        activity: null,
+        active: true,
+      },
+    },
+    activeSessionRuntimeId: 'rt-closed',
+  })
+
+  useAppStore.getState().handleSessionRuntime({
+    runtimeId: 'rt-closed',
+    workspaceId: WORKSPACE_ONE.id,
+    sessionPath: SESSION_PATH,
+    sessionId: 'closed-session',
+    status: 'stopped',
+    pid: null,
+    error: null,
+    activity: null,
+    active: false,
+    closed: true,
+  })
+
+  assert.equal(useAppStore.getState().sessionRuntimes['rt-closed'], undefined)
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, null)
 })
 
 test('clearMessages resets every per-turn streaming field', () => {
@@ -357,23 +466,20 @@ test('confirmSessionChange labels the dialog for the action being confirmed', as
   assert.equal(await pending, false)
 })
 
-test('declining the warning leaves the streaming turn untouched', async () => {
+test('switching sessions does not warn or stop the previous process', async () => {
   enterStreamingState()
-  answerConfirm(false)
 
   await useAppStore.getState().switchSession(SESSION_PATH)
 
   const state = useAppStore.getState()
-  assert.deepEqual(calls, [], 'a declined switch must not reach Pi at all')
-  assert.equal(state.isStreaming, true, 'the running turn must survive a declined switch')
-  assert.equal(state.streamingContent, 'partial answer')
-  assert.deepEqual(state.pendingSteering, ['steer me'])
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
+  assert.equal(state.isStreaming, false, 'the newly selected session starts with a clean local stream')
+  assert.equal(state.streamingContent, '')
+  assert.deepEqual(state.pendingSteering, [])
 })
 
-test('accepting the warning switches and clears the abandoned turn', async () => {
+test('switching sessions clears the local streaming state', async () => {
   enterStreamingState()
-  answerConfirm(true)
-
   await useAppStore.getState().switchSession(SESSION_PATH)
 
   const state = useAppStore.getState()
@@ -407,14 +513,30 @@ test('switchSession clears streaming state even when Pi refuses the switch', asy
   )
 })
 
-test('createNewSession is gated by the same warning', async () => {
+test('createNewSession starts an independent runtime without warning', async () => {
   enterStreamingState()
-  answerConfirm(false)
 
   await useAppStore.getState().createNewSession()
 
-  assert.deepEqual(calls, [], 'a declined new session must not reach Pi')
-  assert.equal(useAppStore.getState().isStreaming, true)
+  assert.equal(calls.includes('createNew'), true)
+  assert.equal(useAppStore.getState().isStreaming, false)
+})
+
+test('createNewSession opens the new conversation in Chat', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE]
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    currentView: 'sessions',
+  })
+
+  await useAppStore.getState().createNewSession()
+
+  const state = useAppStore.getState()
+  assert.equal(calls.includes('createNew'), true)
+  assert.equal(state.currentView, 'chat')
+  assert.equal(state.sessionLoading, false, 'an empty new session should render immediately')
 })
 
 test('forkFrom is gated by the same warning', async () => {
@@ -427,24 +549,11 @@ test('forkFrom is gated by the same warning', async () => {
   assert.equal(useAppStore.getState().isStreaming, true)
 })
 
-// Regression: the cross-workspace path in the sidebar and session panel switches
-// workspace first, and that calls clearMessages() — which resets `isStreaming`,
-// the very flag the session-change gate reads. The warning has to be raised by
-// switchWorkspace itself, before anything clears state.
-test('switchWorkspace warns before it clears the streaming flag', async () => {
+// Workspace switches are safe because each workspace owns a separate Pi
+// process. Switching tabs must not block on, abort, or warn about the turn that
+// remains active in the background.
+test('switchWorkspace leaves a running Pi in the background without warning', async () => {
   enterStreamingState()
-  answerConfirm(false)
-
-  const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
-
-  assert.equal(proceed, false, 'a declined workspace switch must report failure to its caller')
-  assert.deepEqual(calls, [], 'a declined workspace switch must not reach the main process')
-  assert.equal(useAppStore.getState().isStreaming, true, 'the running turn must survive')
-})
-
-test('an accepted workspace switch leaves no stale streaming flag behind', async () => {
-  enterStreamingState()
-  answerConfirm(true)
 
   const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
 
@@ -486,19 +595,18 @@ test('an accepted workspace switch clears the held dialog without answering it',
   )
 })
 
-test('a declined workspace switch keeps the dialog on screen', async () => {
-  enterStreamingState()
+test('a workspace switch clears the old dialog without answering it', async () => {
   useAppStore.setState({ extensionUiRequest: EXTENSION_DIALOG })
-  answerConfirm(false)
 
   const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
 
-  assert.equal(proceed, false)
-  assert.equal(useAppStore.getState().extensionUiRequest?.id, EXTENSION_DIALOG.id)
+  assert.equal(proceed, true)
+  assert.equal(useAppStore.getState().extensionUiRequest, null)
+  assert.equal(calls.includes(`flushPendingPrompts:${WORKSPACE_ID}`), true)
   assert.equal(
-    calls.some((c) => c.startsWith('flushPendingPrompts')),
+    calls.some((c) => c.startsWith('respond')),
     false,
-    'a declined switch must not replay prompts for a workspace the user never left for'
+    'switching tabs must not synthesize a deny for the background prompt'
   )
 })
 
@@ -674,7 +782,7 @@ test('a create that leaves the active workspace alone touches neither slot nor p
 
 // Regression: openFolderAsWorkspace must not treat "main activated the target on
 // create" as "we were already on that workspace". Skipping switchWorkspace leaves
-// the previous chat/messages and a stale piStatus that blocks starting the new Pi.
+// the previous chat/messages on screen.
 test('openFolderAsWorkspace switches when the dropped folder is an existing other workspace', async () => {
   workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
   activeWorkspaceResult = WORKSPACE_ONE
@@ -702,12 +810,137 @@ test('openFolderAsWorkspace switches when the dropped folder is an existing othe
   assert.equal(useAppStore.getState().currentView, 'chat')
   assert.equal(
     useAppStore.getState().piStatus,
-    'running',
-    'switchWorkspace resyncs status then startPi can start the target manager'
+    'stopped',
+    'an idle target shows the empty view instantly — no process is spawned'
   )
-  // After create main already activated TWO; startPi still runs because status
-  // was resynced to stopped from getStatus before start.
-  assert.equal(calls.includes('pi.start'), true)
+  assert.equal(
+    calls.includes('pi.start'),
+    false,
+    'navigation must not spawn a process'
+  )
+})
+
+test('activating an idle workspace shows the empty view without starting Pi', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    messages: [{ id: 'old', role: 'user', content: 'old chat', timestamp: 0 }],
+    piStatus: 'running',
+  })
+
+  const ok = await useAppStore.getState().switchWorkspace(WORKSPACE_TWO.id)
+
+  assert.equal(ok, true)
+  const state = useAppStore.getState()
+  assert.equal(calls.includes('pi.start'), false, 'selection must stay process-free')
+  assert.equal(state.activeWorkspace?.id, WORKSPACE_TWO.id)
+  assert.deepEqual(state.messages, [])
+  assert.equal(state.sessionLoading, false, 'no spinner without a process')
+  assert.equal(state.sessionState, null)
+  assert.equal(state.piStatus, 'stopped')
+})
+
+test('the first prompt lazy-starts an idle workspace', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+  })
+  await useAppStore.getState().switchWorkspace(WORKSPACE_TWO.id)
+  calls.length = 0
+
+  await useAppStore.getState().sendPrompt('ship it')
+
+  const startAt = calls.indexOf('pi.start')
+  assert.notEqual(startAt, -1, 'the first send must spawn the agent')
+  assert.equal(
+    calls.findIndex((c) => c.startsWith('prompt:')),
+    startAt + 1,
+    'the prompt goes out only after startup completes'
+  )
+  assert.equal(useAppStore.getState().piStatus, 'running')
+})
+
+// Runtime snapshots as main pushes them. `active` marks the one runtime main
+// resolves for the workspace — the only manager a prompt can reach.
+function runtimeIn(workspace: Workspace, overrides: Partial<SessionRuntimeInfo>): SessionRuntimeInfo {
+  return {
+    runtimeId: 'rt',
+    workspaceId: workspace.id,
+    sessionPath: SESSION_PATH,
+    sessionId: 'session',
+    status: 'stopped',
+    pid: null,
+    error: null,
+    activity: null,
+    active: false,
+    ...overrides,
+  }
+}
+
+test('a stopped active runtime reports stopped even with a live sibling', async () => {
+  // Two tabs in the same workspace: the one main resolves for prompts is
+  // stopped, a background tab is still running. Reading "any runtime" here
+  // reported running, so the first prompt skipped its lazy start and hit a
+  // stopped manager.
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    sessionRuntimes: {
+      'rt-active': runtimeIn(WORKSPACE_TWO, { runtimeId: 'rt-active', status: 'stopped', active: true }),
+      'rt-background': runtimeIn(WORKSPACE_TWO, {
+        runtimeId: 'rt-background',
+        sessionPath: REPLACEMENT_SESSION_PATH,
+        status: 'running',
+        pid: 5,
+        activity: 'working',
+      }),
+    },
+  })
+
+  const ok = await useAppStore.getState().activateWorkspace(WORKSPACE_TWO.id)
+
+  assert.equal(ok, true)
+  const state = useAppStore.getState()
+  assert.equal(state.piStatus, 'stopped', 'a background sibling must not mask the stopped active runtime')
+  assert.equal(state.sessionLoading, false, 'nothing hydrates while the active runtime is down')
+  assert.equal(calls.includes('getMessages'), false)
+})
+
+test('the first prompt lazy-starts a workspace whose active runtime is stopped', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    sessionRuntimes: {
+      'rt-active': runtimeIn(WORKSPACE_TWO, { runtimeId: 'rt-active', status: 'stopped', active: true }),
+      'rt-background': runtimeIn(WORKSPACE_TWO, {
+        runtimeId: 'rt-background',
+        sessionPath: REPLACEMENT_SESSION_PATH,
+        status: 'running',
+        pid: 5,
+        activity: 'working',
+      }),
+    },
+  })
+  await useAppStore.getState().activateWorkspace(WORKSPACE_TWO.id)
+  calls.length = 0
+
+  await useAppStore.getState().sendPrompt('ship it')
+
+  const startAt = calls.indexOf('pi.start')
+  assert.notEqual(startAt, -1, 'the prompt must not be sent into a stopped manager')
+  assert.equal(
+    calls.findIndex((c) => c.startsWith('prompt:')),
+    startAt + 1,
+    'the prompt goes out only after startup completes'
+  )
 })
 
 test('openFolderAsWorkspace skips switch when the dropped folder is already active', async () => {
@@ -733,12 +966,9 @@ test('openFolderAsWorkspace skips switch when the dropped folder is already acti
   assert.equal(useAppStore.getState().currentView, 'chat')
 })
 
-// Regression: a dropped folder that is already a registered (but inactive)
-// workspace must activate through switchWorkspace's confirm gate only. Routing
-// it through createWorkspace lets main activate the duplicate path before the
-// "still working" dialog appears, so declining left main and the sidebar on the
-// new workspace while the chat pane still held the old one.
-test('declining the confirm while dropping an existing workspace leaves everything in place', async () => {
+// A dropped folder that is already registered should use the normal background-safe
+// workspace switch rather than asking the user to stop the old Pi turn.
+test('dropping an existing workspace switches without a streaming confirmation', async () => {
   workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
   activeWorkspaceResult = WORKSPACE_ONE
   useAppStore.setState({
@@ -747,28 +977,15 @@ test('declining the confirm while dropping an existing workspace leaves everythi
     currentView: 'home',
   })
   enterStreamingState()
-  answerConfirm(false)
 
   const ok = await useAppStore.getState().openFolderAsWorkspace(WORKSPACE_TWO.path)
 
-  assert.equal(ok, false)
-  assert.equal(
-    calls.some((c) => c.startsWith('createWorkspace:')),
-    false,
-    'create activates a duplicate path on main before the confirm can run'
-  )
-  assert.equal(
-    calls.some((c) => c.startsWith('setActiveWorkspace:')),
-    false,
-    'a declined switch must leave the main-side active workspace untouched'
-  )
-  assert.equal(useAppStore.getState().activeWorkspace?.id, WORKSPACE_ONE.id)
-  assert.equal(
-    useAppStore.getState().messages[0]?.id,
-    'm1',
-    'the streaming chat must survive a declined switch'
-  )
-  assert.equal(useAppStore.getState().isStreaming, true)
+  assert.equal(ok, true)
+  assert.equal(calls.some((c) => c.startsWith('createWorkspace:')), false)
+  assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_TWO.id}`), true)
+  assert.equal(useAppStore.getState().activeWorkspace?.id, WORKSPACE_TWO.id)
+  assert.equal(useAppStore.getState().messages.length, 0)
+  assert.equal(useAppStore.getState().isStreaming, false)
 })
 
 test('openFolderAsWorkspace preserves surrounding whitespace in the folder path', async () => {
@@ -1118,7 +1335,7 @@ test('a duplicate-path create routes through the full workspace switch', async (
   )
 })
 
-test('a duplicate-path create warns while Pi is streaming', async () => {
+test('a duplicate-path create switches while Pi keeps working in the background', async () => {
   workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
   activeWorkspaceResult = WORKSPACE_ONE
   useAppStore.setState({
@@ -1126,17 +1343,12 @@ test('a duplicate-path create warns while Pi is streaming', async () => {
     workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
   })
   enterStreamingState()
-  answerConfirm(false)
 
   await useAppStore.getState().createWorkspace(WORKSPACE_TWO.name, WORKSPACE_TWO.path)
 
   assert.equal(calls.some((c) => c.startsWith('createWorkspace:')), false)
-  assert.equal(
-    calls.some((c) => c.startsWith('setActiveWorkspace:')),
-    false,
-    'declining the still-working warning must abort the activation'
-  )
-  assert.equal(useAppStore.getState().isStreaming, true)
+  assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_TWO.id}`), true)
+  assert.equal(useAppStore.getState().isStreaming, false)
 })
 
 test('creating the already-active path is a no-op', async () => {
@@ -1393,7 +1605,22 @@ test('openSessionItem auto-switches to the owning workspace first', async () => 
   assert.equal(useAppStore.getState().currentView, 'chat')
 })
 
-test('a declined streaming warning aborts the whole openSessionItem flow', async () => {
+// ─── Mid-turn re-attach on workspace switch-back ─────────────────────────────
+
+function enterWorkspacesWithBackgroundTurn(): void {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  // The background turn lives in WORKSPACE_TWO's own process, so main reports
+  // that workspace's manager as running and its activity as working.
+  piStatusResult = 'running'
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    workspaceActivity: { [WORKSPACE_ID]: { state: 'working', since: 1 } },
+  })
+}
+
+test('openSessionItem switches tabs before opening the requested session', async () => {
   workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
   activeWorkspaceResult = WORKSPACE_ONE
   useAppStore.setState({
@@ -1402,13 +1629,12 @@ test('a declined streaming warning aborts the whole openSessionItem flow', async
     currentView: 'sessions',
   })
   enterStreamingState()
-  answerConfirm(false)
 
   await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
 
-  assert.equal(calls.some((c) => c.startsWith('setActiveWorkspace')), false)
-  assert.equal(calls.includes(`switch:${SESSION_PATH}`), false)
-  assert.equal(useAppStore.getState().currentView, 'sessions')
+  assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_TWO.id}`), true)
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
+  assert.equal(useAppStore.getState().currentView, 'chat')
 })
 
 test('openSessionItem creates a workspace for an unknown project path', async () => {
@@ -1430,18 +1656,6 @@ test('openSessionItem creates a workspace for an unknown project path', async ()
   assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
 })
 
-// ─── Mid-turn re-attach on workspace switch-back ─────────────────────────────
-
-function enterWorkspacesWithBackgroundTurn(): void {
-  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
-  activeWorkspaceResult = WORKSPACE_ONE
-  useAppStore.setState({
-    activeWorkspace: WORKSPACE_ONE,
-    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
-    workspaceActivity: { [WORKSPACE_ID]: { state: 'working', since: 1 } },
-  })
-}
-
 test('switching into a working workspace shows the indicator and marks the attach', async () => {
   enterWorkspacesWithBackgroundTurn()
 
@@ -1462,6 +1676,54 @@ test('switching into an idle workspace attaches nothing', async () => {
   const state = useAppStore.getState()
   assert.equal(state.isStreaming, false)
   assert.equal(state.reattachedMidTurn, false)
+})
+
+test('reopening a working session keeps the mid-turn attach armed', async () => {
+  // The runtime main hands back is already mid-turn. The hydration that
+  // follows tears the chat down (clearMessages resets every per-turn field),
+  // so the attach must be armed after it — otherwise the reply streams into a
+  // chat that looks idle and the turn end commits only the post-switch suffix.
+  workspaceListResult = [WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_TWO
+  useAppStore.setState({ activeWorkspace: WORKSPACE_TWO, workspaces: [WORKSPACE_TWO] })
+  switchResult = runtimeIn(WORKSPACE_TWO, {
+    runtimeId: 'rt-working',
+    sessionId: 'session-working',
+    status: 'running',
+    pid: 11,
+    activity: 'working',
+    active: true,
+  })
+
+  await useAppStore.getState().switchSession(SESSION_PATH, WORKSPACE_TWO.path)
+  // The hydration switchSession fires is not awaited; let it settle so the
+  // assertions see the state the user is left looking at.
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  const state = useAppStore.getState()
+  assert.equal(calls.includes('getMessages'), true, 'the persisted history still has to load')
+  assert.equal(state.isStreaming, true, 'a session reopened mid-turn must not render as idle')
+  assert.equal(state.reattachedMidTurn, true, 'the turn end has to backfill the prefix the stream missed')
+})
+
+test('reopening an idle session arms no attach', async () => {
+  workspaceListResult = [WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_TWO
+  useAppStore.setState({ activeWorkspace: WORKSPACE_TWO, workspaces: [WORKSPACE_TWO] })
+  switchResult = runtimeIn(WORKSPACE_TWO, {
+    runtimeId: 'rt-idle',
+    sessionId: 'session-idle',
+    status: 'running',
+    pid: 12,
+    active: true,
+  })
+
+  await useAppStore.getState().switchSession(SESSION_PATH, WORKSPACE_TWO.path)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  const state = useAppStore.getState()
+  assert.equal(state.isStreaming, false)
+  assert.equal(state.reattachedMidTurn, false, 'an idle runtime must not trigger a backfill on the next turn')
 })
 
 test('agent_end after a mid-turn attach backfills from the session', async () => {
@@ -1498,36 +1760,52 @@ test('the activity map going quiet after an attach stops the indicator and backf
   assert.equal(calls.filter((c) => c === 'getMessages').length, loadsBefore + 1)
 })
 
-test('opening the mid-turn session row skips the killing RPC and re-attaches', async () => {
-  // Return path two: sidebar recents / Sessions tab / quick-switcher row
-  // click into a workspace with a background turn running. The switch_session
-  // RPC aborts an in-flight turn EVEN for the session Pi is already on
-  // (verified against real Pi), so the working-workspace guard must ask Pi
-  // where it is and reload instead of switching.
+test('opening a mid-turn session row leaves the other runtime working', async () => {
   enterWorkspacesWithBackgroundTurn()
   sessionStateResult = sessionStateWith(SESSION_PATH)
+  switchResult = {
+    runtimeId: 'rt-opened',
+    workspaceId: WORKSPACE_TWO.id,
+    sessionPath: SESSION_PATH,
+    sessionId: 'session-2',
+    status: 'stopped',
+    pid: null,
+    error: null,
+    activity: null,
+    active: true,
+  }
 
   await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
 
   const state = useAppStore.getState()
-  assert.equal(
-    calls.includes(`switch:${SESSION_PATH}`),
-    false,
-    'switch_session mid-turn kills the running turn — it must not be sent'
-  )
-  assert.equal(calls.includes('getMessages'), true, 'history must still load')
-  assert.equal(state.isStreaming, true)
-  assert.equal(state.reattachedMidTurn, true)
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
+  assert.equal(state.sessionLoading, true, 'hydration defers until the runtime reports running')
+  assert.equal(state.isStreaming, false, 'the selected session starts idle until its own events arrive')
+
+  // Main finishes spawning the selected runtime; its running event hydrates.
+  useAppStore.getState().handleSessionRuntime({
+    runtimeId: 'rt-opened',
+    workspaceId: WORKSPACE_TWO.id,
+    sessionPath: SESSION_PATH,
+    sessionId: 'session-2',
+    status: 'running',
+    pid: 7,
+    error: null,
+    activity: null,
+    active: true,
+  })
+  // Flush the microtask chain the fire-and-forget hydration rides on — no
+  // wall-clock wait needed for a mocked getMessages.
+  await Promise.resolve()
+  await Promise.resolve()
+
+  assert.equal(calls.includes('getMessages'), true, 'the running event hydrates history')
+  assert.equal(useAppStore.getState().sessionLoading, false)
 })
 
-test('opening a DIFFERENT session mid-turn warns, then switches on accept', async () => {
+test('opening a different session mid-turn does not prompt or stop the other runtime', async () => {
   enterWorkspacesWithBackgroundTurn()
-  // Pi reports it is working on another session than the row being opened —
-  // switching kills that background turn, so a warning must gate it (the
-  // renderer's isStreaming is false for background turns, so the ordinary
-  // confirmSessionChange gate stays silent here).
   sessionStateResult = sessionStateWith('/tmp/other-turn-session.jsonl')
-  answerConfirm(true)
 
   await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
 
@@ -1535,18 +1813,14 @@ test('opening a DIFFERENT session mid-turn warns, then switches on accept', asyn
   assert.equal(useAppStore.getState().reattachedMidTurn, false)
 })
 
-test('declining the background-turn warning aborts the session switch', async () => {
+test('a background runtime never blocks session navigation with a warning', async () => {
   enterWorkspacesWithBackgroundTurn()
   sessionStateResult = sessionStateWith('/tmp/other-turn-session.jsonl')
-  answerConfirm(false)
 
   await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
 
-  assert.equal(
-    calls.includes(`switch:${SESSION_PATH}`),
-    false,
-    'a declined warning must not send the turn-killing switch_session RPC'
-  )
+  assert.equal(calls.includes(`switch:${SESSION_PATH}`), true)
+  assert.equal(useAppStore.getState().confirmRequest, null)
 })
 
 test('a mid-turn message_end keeps the attach armed and restores the indicator', async () => {
@@ -1594,19 +1868,13 @@ test('the boot arm stays out of session-change teardown windows', async () => {
   assert.equal(useAppStore.getState().reattachedMidTurn, false)
 })
 
-test('an attach whose turn ends is settled by the next activity broadcast', async () => {
+test('session navigation does not require workspace re-attachment', async () => {
   enterWorkspacesWithBackgroundTurn()
   sessionStateResult = sessionStateWith(SESSION_PATH)
   await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_TWO))
-  assert.equal(useAppStore.getState().reattachedMidTurn, true)
 
-  // The turn finished; the workspace goes idle in the next broadcast.
-  useAppStore.getState().handleWorkspaceActivity({})
-  await new Promise((resolve) => setTimeout(resolve, 20))
-
-  const state = useAppStore.getState()
-  assert.equal(state.isStreaming, false)
-  assert.equal(state.reattachedMidTurn, false)
+  assert.equal(useAppStore.getState().reattachedMidTurn, false)
+  assert.equal(useAppStore.getState().isStreaming, false)
 })
 
 test('a live on-screen stream is never re-attached over', async () => {
@@ -1640,6 +1908,61 @@ test('an activity update that still shows working keeps the attach alive', async
   assert.equal(state.isStreaming, true)
   assert.equal(state.reattachedMidTurn, true)
   assert.equal(calls.filter((c) => c === 'getMessages').length, loadsBefore)
+})
+
+// ─── Deleting the session on screen ──────────────────────────────────────────
+// SESSION_DELETE closes the deleted session's runtime before unlinking the
+// file. That close promotes a sibling runtime in the same workspace and
+// broadcasts it as active, so the renderer has to follow the promotion.
+
+function activeWorkspaceShowing(sessionFile: string): void {
+  workspaceListResult = [WORKSPACE_ONE]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    sessionState: sessionStateWith(sessionFile),
+  })
+}
+
+test('deleting the session on screen opens the runtime main promoted', async () => {
+  activeWorkspaceShowing(SESSION_PATH)
+  sessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: REPLACEMENT_SESSION_PATH }
+
+  const result = await useAppStore.getState().deleteSession(sessionItemFor(WORKSPACE_ONE))
+
+  assert.equal(result.ok, true)
+  assert.equal(
+    calls.includes(`switch:${REPLACEMENT_SESSION_PATH}`),
+    true,
+    'the chat must land on the sibling main already made active'
+  )
+  assert.equal(
+    calls.includes('createNew'),
+    false,
+    'a third runtime would steal activation from the promoted sibling'
+  )
+})
+
+test('deleting the last session in the workspace falls back to a new one', async () => {
+  activeWorkspaceShowing(SESSION_PATH)
+  sessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: null }
+
+  await useAppStore.getState().deleteSession(sessionItemFor(WORKSPACE_ONE))
+
+  assert.equal(calls.includes('createNew'), true, 'nothing is left to show, so the empty view needs a runtime')
+  assert.equal(calls.some((c) => c.startsWith('switch:')), false)
+})
+
+test('deleting a session that is not on screen leaves the chat alone', async () => {
+  activeWorkspaceShowing(REPLACEMENT_SESSION_PATH)
+  sessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: REPLACEMENT_SESSION_PATH }
+
+  await useAppStore.getState().deleteSession(sessionItemFor(WORKSPACE_ONE))
+
+  assert.equal(calls.includes(`deleteSession:${SESSION_PATH}`), true)
+  assert.equal(calls.includes('createNew'), false, 'deleting a background session must not replace the chat')
+  assert.equal(calls.some((c) => c.startsWith('switch:')), false)
 })
 
 // ─── Boot/reload recovery ────────────────────────────────────────────────────
@@ -1714,4 +2037,54 @@ test('the notify toast sits above the blocking dialog backdrop', () => {
     NOTIFY_TOAST_Z_INDEX > DIALOG_OVERLAY_Z_INDEX,
     'a toast at or below the backdrop tier turns a toast click into a hard deny'
   )
+})
+
+// ─── View scopes (sessions + workflow panel) ─────────────────────────────────
+
+// The sessions scope is lifted into the store so SessionPanel remounts (every
+// navigation) can't drop it and sidebar entry points can set it explicitly.
+test('setSessionsScope toggles the sessions view scope', () => {
+  assert.equal(useAppStore.getState().sessionsScope, 'all')
+  useAppStore.getState().setSessionsScope('current')
+  assert.equal(useAppStore.getState().sessionsScope, 'current')
+  useAppStore.getState().setSessionsScope('all')
+  assert.equal(useAppStore.getState().sessionsScope, 'all')
+})
+
+test('openWorkflowRunsForWorkspace opens a project scope and clears session scope', () => {
+  useAppStore.getState().openWorkflowRunsForWorkspace(WORKSPACE_ONE.id)
+  const state = useAppStore.getState()
+  assert.equal(state.workflowPanelOpen, true)
+  assert.equal(state.workflowPanelWorkspaceId, WORKSPACE_ONE.id)
+  assert.equal(state.workflowPanelFilter, null)
+})
+
+test('openWorkflowRunsForWorkspace(null) opens the global scope (Tools entry)', () => {
+  useAppStore.getState().openWorkflowRunsForWorkspace(null)
+  const state = useAppStore.getState()
+  assert.equal(state.workflowPanelOpen, true)
+  assert.equal(state.workflowPanelWorkspaceId, null)
+  assert.equal(state.workflowPanelFilter, null)
+})
+
+test('openWorkflowRunsForSession overrides a project scope (session wins)', () => {
+  useAppStore.getState().openWorkflowRunsForWorkspace(WORKSPACE_ONE.id)
+  useAppStore.getState().openWorkflowRunsForSession('01b2b3c4-d5e6-4f70-a8b9-0c1d2e3f4a5b')
+  const state = useAppStore.getState()
+  assert.equal(state.workflowPanelWorkspaceId, null)
+  assert.equal(state.workflowPanelFilter, '01b2b3c4-d5e6-4f70-a8b9-0c1d2e3f4a5b')
+})
+
+test('setWorkflowPanelOpen: direct open clears scope, close preserves it', () => {
+  useAppStore.getState().openWorkflowRunsForWorkspace(WORKSPACE_ONE.id)
+  useAppStore.getState().setWorkflowPanelOpen(false)
+  assert.equal(useAppStore.getState().workflowPanelOpen, false)
+  assert.equal(
+    useAppStore.getState().workflowPanelWorkspaceId,
+    WORKSPACE_ONE.id,
+    'closing must preserve the scope so a reopen stays in the same project'
+  )
+  useAppStore.getState().setWorkflowPanelOpen(true)
+  assert.equal(useAppStore.getState().workflowPanelWorkspaceId, null)
+  assert.equal(useAppStore.getState().workflowPanelFilter, null)
 })

@@ -17,8 +17,10 @@ Still in alpha, so expect rough edges.
 - Skills browser, session fork/branch tree, and one-click context compaction
 - Session naming (read from Pi) with inline rename, and a themed in-app confirmation for delete
 - Custom models & providers editor in Settings, which edits `~/.pi/agent/models.json`
-- Multiple workspaces, each with its own Pi process and sessions; sidebar activity dots and optional desktop notifications when a background workspace finishes, fails, or waits for approval
-- Diagnostics view: Pi install and PATH resolution, provider configuration, permissions, and recent errors
+- Multiple workspaces, with an independent agent process per live session, so a turn keeps running when you switch away from it; Mission Control and sidebar activity dots surface background work across projects, with optional desktop notifications when a session finishes, fails, or waits for approval
+- New Task launcher starts a real fresh Pi session in a selected project, optionally in an isolated Git worktree, and sends the issue immediately while work continues in the background; matching task metadata, explicit branches, and GitHub PR URLs reuse an existing local worktree when found
+- Diff Review conveyor with explicit Commit → Push → PR actions, upstream-aware GitHub CLI PR creation, and exact notification clicks back to the finished session
+- Diagnostics view: Pi/OMP install and PATH resolution, provider configuration, permissions, and recent errors
 - Review rail (toggleable) with permissions, approvals, changed files, and session status
 - Custom permission rules: allow/deny glob rules per Pi tool that refine the permission modes, with per-workspace rule files, import/export, and live edits that apply without restarting Pi
 - File tree, code/image/PDF/HTML preview panes, code editor (CodeMirror 6 with syntax highlighting), diff viewer, file search
@@ -40,6 +42,14 @@ Changed files use readable status badges:
 | `ADD` | New file staged in git |
 | `STG` | Modified file staged in git |
 | `REN` | File was renamed |
+
+## Pi and OMP engines
+
+Pi Desktop speaks Pi's RPC protocol directly, so it can run either the standard `pi` CLI or the compatible `omp` binary from [oh-my-pi](https://github.com/can1357/oh-my-pi). **Settings → Agent Configuration → Agent Installation** scans for installed engines, lets you select one, and also supports a custom executable or install directory.
+
+Each engine keeps its own sessions: Pi writes to `~/.pi/agent/sessions`, OMP to `~/.omp/agent/sessions`. The app reads both, so switching engines never hides your history. When sessions from both appear in one list, each row is tagged `Pi` or `OMP`, and opening one starts the engine that wrote it.
+
+OMP's protocol-v2 large-frame transport is negotiated automatically, and model-specific thinking efforts, including `max`, are shown when advertised. Its native `read`, `grep`, and `glob` tools are used for Plan / Read-only mode, and its plugin install/update/remove verbs are mapped behind the existing package actions.
 
 ## Permissions
 

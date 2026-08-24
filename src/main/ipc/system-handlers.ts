@@ -1,5 +1,5 @@
 import { ipcMain, dialog, shell, app } from 'electron'
-import type { ActivityStatsResult } from '../../shared/ipc-contracts'
+import type { ActivityStatsResult, OpenDialogOptions } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { activityStatsStore } from '../activity-stats'
 import { stat } from 'fs/promises'
@@ -7,17 +7,39 @@ import { resolve } from 'path'
 import { isString, isObject } from './validation'
 import type { IpcContext } from './context'
 
+type OpenDialogMode = NonNullable<OpenDialogOptions['mode']>
+
+/**
+ * Only macOS shows one dialog that accepts a file OR a directory. Windows and
+ * Linux silently turn `['openFile', 'openDirectory']` into a directory-only
+ * selector, which would take the file half of `mode: 'either'` away from every
+ * platform this app actually ships to. Degrade to the file half there instead:
+ * a directory is reachable by asking for `mode: 'directory'`, an executable
+ * inside one is not reachable from a directory picker at all.
+ */
+const SUPPORTS_COMBINED_DIALOG = process.platform === 'darwin'
+
+function dialogProperties(mode: OpenDialogMode): Electron.OpenDialogOptions['properties'] {
+  if (mode === 'directory') return ['openDirectory']
+  if (mode === 'either' && SUPPORTS_COMBINED_DIALOG) return ['openFile', 'openDirectory']
+  return ['openFile']
+}
+
 export function registerSystemHandlers(ctx: IpcContext): void {
   const { approvedAttachmentPaths } = ctx
 
   // ─── System ─────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.SYSTEM_OPEN_DIALOG, async (_event, options?: unknown) => {
-    // Default to directory selection for back-compat with workspace pickers;
-    // callers pass mode: 'file' (and optional filters) to attach files.
-    const pickFile = isObject(options) && options.mode === 'file'
+    // Default to directory selection for back-compat with workspace pickers.
+    const mode: OpenDialogMode = isObject(options) && (options.mode === 'file' || options.mode === 'either')
+      ? options.mode
+      : 'directory'
+    // Only the explicit attachment mode widens the attachment allowlist; a
+    // path chosen for a settings field is never read back as file content.
+    const pickFile = mode === 'file'
     const dialogOptions: Electron.OpenDialogOptions = {
-      properties: [pickFile ? 'openFile' : 'openDirectory'],
+      properties: dialogProperties(mode),
     }
     if (isObject(options)) {
       if (isString(options.title)) dialogOptions.title = options.title
