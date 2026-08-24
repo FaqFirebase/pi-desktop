@@ -1,5 +1,6 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from 'react'
 import { useAppStore } from '../store'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { useChatKeyboard, useCommandCatalog } from '../hooks'
 import { ComposerPermissionMenu } from './composer-permission-menu'
 import { CommandResults } from './command-results'
@@ -77,6 +78,7 @@ export function ChatInput(): React.JSX.Element {
   const abort = useAppStore((state) => state.abort)
   const isStreaming = useAppStore((state) => state.isStreaming)
   const piStatus = useAppStore((state) => state.piStatus)
+  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const pendingInsert = useAppStore((state) => state.pendingInsert)
   const clearPendingInsert = useAppStore((state) => state.clearPendingInsert)
   const setNotePickerOpen = useAppStore((state) => state.setNotePickerOpen)
@@ -498,10 +500,10 @@ export function ChatInput(): React.JSX.Element {
           ref={textareaRef}
           placeholder={
             isDisabled
-              ? 'Pi agent is not running...'
+              ? `${engineLabel} agent is not running...`
               : isStreaming
                 ? 'Type to steer the agent...'
-                : 'Ask Pi anything — / for commands'
+                : `Ask ${engineLabel} anything — / for commands`
           }
           disabled={isDisabled}
           rows={1}

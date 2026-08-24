@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getSessionTitle } from '../utils/session-title'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { clsx } from 'clsx'
 import {
   FolderOpen,
@@ -237,15 +238,16 @@ export function HomeInfoSummary({ compact }: { compact?: boolean }): React.JSX.E
 function PiErrorBanner(): React.JSX.Element | null {
   const piStatus = useAppStore((s) => s.piStatus)
   const piError = useAppStore((s) => s.piError)
+  const engineLabel = useAppStore((s) => agentEngineLabel(s.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
   if (piStatus !== 'error' || !piError) return null
   return (
     <div className="mb-6 flex items-start gap-3 rounded-lg border border-error-bg bg-error-bg px-4 py-3 text-sm text-error">
       <AlertTriangle size={16} className="mt-0.5 shrink-0" />
       <div className="flex-1">
-        <div className="font-medium">Couldn&apos;t start Pi</div>
+        <div className="font-medium">Couldn&apos;t start {engineLabel}</div>
         <div className="mt-0.5 text-error/80">{piError}</div>
-        <div className="mt-1 text-xs text-error/70">Check that Pi is installed and its path is correct.</div>
+        <div className="mt-1 text-xs text-error/70">Check that {engineLabel} is installed and its path is correct.</div>
       </div>
       <button
         onClick={() => setCurrentView('settings')}

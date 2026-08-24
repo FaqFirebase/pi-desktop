@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useAppStore } from '../store'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import type { ModelInfo } from '../../../shared/ipc-contracts'
 import { filterModels } from '../utils/model-search'
 import { clsx } from 'clsx'
@@ -18,6 +19,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
   const sessionState = useAppStore((state) => state.sessionState)
   const setModel = useAppStore((state) => state.setModel)
   const piStatus = useAppStore((state) => state.piStatus)
+  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const settings = useAppStore((state) => state.settings)
 
   const [isOpen, setIsOpen] = useState(false)
@@ -123,7 +125,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
           isOpen ? 'bg-surface-hover text-primary' : 'text-dim hover:bg-surface-hover hover:text-secondary',
           compact && 'max-w-36',
         )}
-        title="Select model (Ctrl+P to cycle when Pi is running)"
+        title={`Select model (Ctrl+P to cycle when ${engineLabel} is running)`}
         aria-label="Select model"
         aria-expanded={isOpen}
       >

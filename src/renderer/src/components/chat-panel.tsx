@@ -1,4 +1,5 @@
 import { useAppStore } from '../store'
+import { agentEngineLabel } from '../../../shared/agent-engine-label'
 import { ChatInput } from './chat-input'
 import { ChatProjectPicker } from './chat-project-picker'
 import { CouncilPanels } from './council-panels'
@@ -22,7 +23,7 @@ import { FileTree, FileSearch, FilePreview } from './file-tree'
 import { ImageViewer } from './image-viewer'
 import { DiffViewer } from './diff-viewer'
 import { TerminalPanel } from './terminal'
-import { useChatScroll } from '../hooks'
+import { useChatScroll, useGlobalWorkflowOpen } from '../hooks'
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { clsx } from 'clsx'
 import piLogo from '../assets/pi-logo.svg'
@@ -67,6 +68,7 @@ export function ChatPanel(): React.JSX.Element {
   const streamingThinking = useAppStore((state) => state.streamingThinking)
   const streamingToolCalls = useAppStore((state) => state.streamingToolCalls)
   const piStatus = useAppStore((state) => state.piStatus)
+  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? 'Pi')
   const terminalOpen = useAppStore((state) => state.terminalOpen)
   const reviewOpen = useAppStore((state) => state.reviewOpen)
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
@@ -91,14 +93,22 @@ export function ChatPanel(): React.JSX.Element {
   }, [])
 
   const currentView = useAppStore((state) => state.currentView)
-  const { scrollRef, onScroll, atBottom, scrollToBottom } = useChatScroll(currentView === 'chat')
+  // The global workflow view replaces the main pane while this panel stays
+  // mounted behind `display: none`, so "chat is on screen" needs both checks.
+  // Without the second one the scroll hook never sees the hidden→shown edge and
+  // cannot re-anchor the reading position when the workflow view closes.
+  const globalWorkflowOpen = useGlobalWorkflowOpen()
+  const chatVisible = currentView === 'chat' && !globalWorkflowOpen
+  const { scrollRef, onScroll, atBottom, scrollToBottom } = useChatScroll(chatVisible)
 
   // In-conversation search (Ctrl/Cmd+F while in chat). The nonce bumps on every
   // press so re-triggering refocuses/selects the already-open input.
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchNonce, setSearchNonce] = useState(0)
   useEffect(() => {
-    if (currentView !== 'chat') return
+    // Same visibility test as the scroll hook: a hidden panel must not capture
+    // the shortcut and open its find bar off screen.
+    if (!chatVisible) return
     const onKey = (e: KeyboardEvent) => {
       // The 'F' (uppercase) case also covers Caps Lock. Ctrl/Cmd+F opens the
       // in-conversation find bar; adding Shift opens the workspace file-search
@@ -117,7 +127,7 @@ export function ChatPanel(): React.JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [currentView])
+  }, [chatVisible])
 
   // Fold consecutive tool-call/result runs into collapsed groups. Memoized so
   // the grouping only recomputes when the message list changes, and so lone
@@ -236,15 +246,15 @@ export function ChatPanel(): React.JSX.Element {
                         alt="Pi Desktop"
                         className="mx-auto mb-4 block h-14 w-14"
                       />
-                      <h2 className="text-2xl font-semibold text-primary">What should Pi work on?</h2>
+                      <h2 className="text-2xl font-semibold text-primary">What should {engineLabel} work on?</h2>
                       <p className="mt-1 text-sm text-dim">
                         {piStatus === 'running'
                           ? 'Pick a project and describe what you want done.'
                           : piStatus === 'starting'
-                            ? 'Starting Pi agent…'
+                            ? `Starting ${engineLabel} agent…`
                             : piStatus === 'error'
-                              ? 'Failed to start Pi. Check settings.'
-                              : 'Choose a project — Pi starts when you send.'}
+                              ? `Failed to start ${engineLabel}. Check settings.`
+                              : `Choose a project — ${engineLabel} starts when you send.`}
                       </p>
                     </div>
                     <div className="w-full max-w-3xl">
@@ -339,7 +349,7 @@ export function ChatPanel(): React.JSX.Element {
                       <div className="pointer-events-auto mx-auto mb-2 w-full max-w-5xl px-4">
                         <div className="flex items-center gap-2.5 rounded-md bg-accent px-4 py-2.5 text-sm text-white shadow-lg shadow-black/30">
                           <Loader2 size={16} className="shrink-0 animate-spin" />
-                          <span className="shrink-0 font-medium">Pi is still working in this session.</span>
+                          <span className="shrink-0 font-medium">{engineLabel} is still working in this session.</span>
                           <span className="min-w-0 flex-1 truncate text-white/80">
                             The response appears here the moment it finishes.
                           </span>

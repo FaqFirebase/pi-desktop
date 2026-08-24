@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAppStore, countPromptsWaitingElsewhere, formatPromptsWaiting } from '../store'
+import { agentEngineLabel } from '../../../shared/agent-engine-label'
 import { clsx } from 'clsx'
 import {
   PanelLeft,
@@ -17,6 +18,9 @@ import {
 export function StatusBar(): React.JSX.Element {
   const piStatus = useAppStore((state) => state.piStatus)
   const piPid = useAppStore((state) => state.piPid)
+  // Name the engine that is actually running; the two are not interchangeable
+  // and a user who switched to OMP should not be told Pi is running.
+  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? 'Pi')
   const sessionStats = useAppStore((state) => state.sessionStats)
   const isStreaming = useAppStore((state) => state.isStreaming)
   const pendingSteering = useAppStore((state) => state.pendingSteering)
@@ -85,7 +89,7 @@ export function StatusBar(): React.JSX.Element {
             )}
           />
           <span className="text-dim">
-            {piStatus === 'running' ? `Pi running (PID: ${piPid})` : `Pi ${piStatus}`}
+            {piStatus === 'running' ? `${engineLabel} running (PID: ${piPid})` : `${engineLabel} ${piStatus}`}
           </span>
         </div>
 
@@ -121,7 +125,7 @@ export function StatusBar(): React.JSX.Element {
         {promptsWaitingElsewhere > 0 && (
           <span
             className="text-warning"
-            title="Pi is waiting on a prompt in another workspace; switch to it to answer"
+            title={`${engineLabel} is waiting on a prompt in another workspace; switch to it to answer`}
           >
             {formatPromptsWaiting(promptsWaitingElsewhere)}
           </span>

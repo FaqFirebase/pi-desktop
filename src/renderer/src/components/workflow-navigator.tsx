@@ -32,6 +32,7 @@ import type {
   WorkflowRunSummary,
 } from '../../../shared/ipc-contracts'
 import { useAppStore } from '../store'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { canAbortRun, canResumeRun, filterRunsBySession, filterRunsByWorkspace, isTerminalRun, runActiveAgentCount } from '../utils/workflow-runs'
 import { MarkdownRenderer } from './markdown-renderer'
 
@@ -532,21 +533,25 @@ function AgentTranscript({ agent, onBack }: { agent: WorkflowAgentDetail; onBack
 
 type DetailTab = 'overview' | 'script' | 'logs' | 'result'
 
-function controlFailureText(action: WorkflowControlAction, reason: WorkflowControlReason | undefined): string {
+function controlFailureText(
+  action: WorkflowControlAction,
+  reason: WorkflowControlReason | undefined,
+  agent: string
+): string {
   switch (reason) {
     case 'no-pi':
     case 'pi-not-running':
-      return 'Pi is not running for this workspace, so the run cannot be controlled from here.'
+      return `${agent} is not running for this workspace, so the run cannot be controlled from here.`
     case 'extension-missing':
-      return 'The workflows extension is not loaded in this workspace\u2019s Pi process.'
+      return `The workflows extension is not loaded in this workspace\u2019s ${agent} process.`
     case 'status-not-permitted':
       return action === 'stop'
         ? 'This run can no longer be aborted in its current state.'
         : 'This run cannot be resumed in its current state.'
     case 'timeout':
-      return 'Pi did not respond. The run may have changed state — refresh to see the latest.'
+      return `${agent} did not respond. The run may have changed state — refresh to see the latest.`
     case 'dispatch-failed':
-      return 'The control command could not be sent to Pi.'
+      return `The control command could not be sent to ${agent}.`
     default:
       return 'The workflow control is unavailable for this workspace right now.'
   }
@@ -562,6 +567,7 @@ function RunDetail({ run, onBack, onRefresh, onSelectAgent }: {
   const [controlBusy, setControlBusy] = useState<WorkflowControlAction | null>(null)
   const [controlFeedback, setControlFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const feedbackTimer = useRef<number | null>(null)
+  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const counts = AgentCounts({ run })
 
   const clearFeedback = (): void => {
@@ -593,7 +599,7 @@ function RunDetail({ run, onBack, onRefresh, onSelectAgent }: {
         // the status flip is visible even before the next poll tick.
         window.setTimeout(() => void onRefresh(), 1200)
       } else {
-        setControlFeedback({ kind: 'error', text: controlFailureText(action, result.reason) })
+        setControlFeedback({ kind: 'error', text: controlFailureText(action, result.reason, engineLabel) })
         feedbackTimer.current = window.setTimeout(clearFeedback, 6000)
       }
     } catch {

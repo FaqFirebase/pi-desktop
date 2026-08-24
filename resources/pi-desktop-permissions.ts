@@ -7,6 +7,10 @@ const globalRulesPath = process.env.PI_DESKTOP_PERMISSION_RULES_PATH ?? null
 // then do this repo's own `allow` rules take effect; otherwise its allow rules
 // are ignored and only its deny rules apply (see loadEffectiveRules).
 const workspaceTrusted = process.env.PI_DESKTOP_WORKSPACE_TRUSTED === '1'
+// Which CLI this extension is running inside, as the GUI names it. The
+// extension cannot detect its own host, so an unset value means an older GUI
+// and falls back to Pi rather than guessing.
+const agentLabel = process.env.PI_DESKTOP_AGENT_LABEL || 'Pi'
 const MAX_INPUT_SUMMARY_LENGTH = 2000
 
 function summarizeInput(input: unknown): string {
@@ -37,7 +41,7 @@ export default function piDesktopPermissions(pi: ExtensionAPI): void {
     const confirmed = await ctx.ui.confirm(
       `Allow ${event.toolName}?`,
       [
-        `Pi wants to run the ${event.toolName} tool.`,
+        `${agentLabel} wants to run the ${event.toolName} tool.`,
         summary,
       ].filter(Boolean).join('\n\n')
     )

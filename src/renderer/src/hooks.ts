@@ -113,6 +113,34 @@ export function useMenuActions(): void {
   }, [createNewSession, setCurrentView])
 }
 
+/**
+ * The workflow navigator's scope, as the store holds it. Structural so the
+ * predicate below can be exercised without building a whole store state.
+ */
+interface WorkflowPanelScope {
+  workflowPanelOpen: boolean
+  workflowPanelFilter: string | null
+  workflowPanelWorkspaceId: string | null
+}
+
+/**
+ * Whether the global "All Workflows" surface owns the main pane — the navigator
+ * opened with neither a session nor a project scope. Session-scoped and
+ * project-scoped runs render in the docked panel instead and leave the current
+ * view on screen. Shared so every consumer (main pane, workspace tabs, sidebar,
+ * chat scroll) agrees on what "global" means.
+ */
+export function isGlobalWorkflowOpen(scope: WorkflowPanelScope): boolean {
+  return (
+    scope.workflowPanelOpen && !scope.workflowPanelFilter && scope.workflowPanelWorkspaceId === null
+  )
+}
+
+/** Component-side subscription to {@link isGlobalWorkflowOpen}. */
+export function useGlobalWorkflowOpen(): boolean {
+  return useAppStore(isGlobalWorkflowOpen)
+}
+
 // Distance (px) from the bottom within which we consider the user "at bottom"
 // and keep following new content.
 const AT_BOTTOM_THRESHOLD = 48
@@ -460,6 +488,17 @@ export function useInitialize(): void {
       } else {
         useAppStore.getState().setCurrentView('chat')
       }
+
+      // The status bar is on screen before any agent starts, and the engine is
+      // only carried on status payloads. Ask once at boot, or the bar reads
+      // "Pi stopped" for a user whose configured engine is OMP. Only the
+      // engine is adopted: the status itself is owned by the lifecycle
+      // actions, which may already be starting a session by now.
+      void window.piDesktop.pi.getStatus()
+        .then((status) => {
+          if (status.engine) useAppStore.setState({ piEngine: status.engine })
+        })
+        .catch(() => undefined)
 
       // Background: session list, tags, notes, models, updates.
       void refreshSessionList()

@@ -27,14 +27,18 @@ import {
 import { useMemo, useState, useRef } from 'react'
 import { StatusPopover } from './status-popover'
 import { useContextMenu, buildSessionContextMenu } from './context-menu'
-import { getSessionRowLabels } from './sidebar-session-labels'
+import { getSessionEngineLabel, getSessionRowLabels, hasMixedSessionEngines } from './sidebar-session-labels'
 import { ResizeHandle } from './resize-handle'
 import { getSessionTitle } from '../utils/session-title'
 import { formatRelativeTime } from '../utils/format-relative-time'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import { resolveRunSessionId } from '../utils/workflow-runs'
+import { useGlobalWorkflowOpen } from '../hooks'
 import { clampSidebarWidth, resolveSidebarWidth } from '../../../shared/sidebar-width'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
+
+/** Views reachable from the sidebar's Tools group. */
+type ToolView = 'packages' | 'notes' | 'skills' | 'diagnostics' | 'settings'
 
 /** Cap how many workspace groups appear in the Recent list. */
 const MAX_RECENT_GROUPS = 12
@@ -65,6 +69,7 @@ export function Sidebar(): React.JSX.Element {
   const workflowPanelOpen = useAppStore((state) => state.workflowPanelOpen)
   const workflowPanelWorkspaceId = useAppStore((state) => state.workflowPanelWorkspaceId)
   const workflowPanelFilter = useAppStore((state) => state.workflowPanelFilter)
+  const globalWorkflowOpen = useGlobalWorkflowOpen()
   const setSessionsScope = useAppStore((state) => state.setSessionsScope)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const archivedSessions = useAppStore((state) => state.archivedSessions)
@@ -218,6 +223,10 @@ export function Sidebar(): React.JSX.Element {
     }))
   }
 
+  // Gated on every known session, not on one section's slice, so the same chat
+  // carries the same tag in Recent, in a folder group and under Archived.
+  const showEngineTags = useMemo(() => hasMixedSessionEngines(sessionList), [sessionList])
+
   const recentSessionsForWorkspace = useMemo(() => {
     if (!activeWorkspace?.path) return []
     return activeSessions
@@ -240,9 +249,17 @@ export function Sidebar(): React.JSX.Element {
     if (path) await openFolderAsWorkspace(path)
   }
 
-  const openToolView = (view: 'packages' | 'notes' | 'skills' | 'diagnostics' | 'settings'): void => {
+  // A tool view is only "showing" when nothing covers it — the global workflow
+  // surface replaces the main pane while currentView stays put behind it.
+  const toolViewShowing = (view: ToolView): boolean => currentView === view && !globalWorkflowOpen
+
+  // Tool entries are toggles, like every other tab-like control here: clicking
+  // the one already on screen returns to Chat (what the Tools tab's close
+  // button does), while a covered one is revealed rather than dismissed.
+  const openToolView = (view: ToolView): void => {
+    const showing = toolViewShowing(view)
     setWorkflowPanelOpen(false)
-    setCurrentView(view)
+    setCurrentView(showing ? 'chat' : view)
   }
 
   // Workspace auto-switch/create + session switch + show Chat, shared with the
@@ -296,6 +313,7 @@ export function Sidebar(): React.JSX.Element {
     const runtime = Object.values(sessionRuntimes).find((item) => item.sessionPath && pathsEqual(item.sessionPath, session.path))
     const isActive = sessionState?.sessionFile === session.path || runtime?.runtimeId === activeSessionRuntimeId
     const nested = options?.nested ?? false
+    const engineLabel = showEngineTags ? getSessionEngineLabel(session) : null
 
     // Inline rename for the active row.
     if (isActive && renamingWhere === 'recent') {
@@ -338,8 +356,10 @@ export function Sidebar(): React.JSX.Element {
             {/* The title is now the session's name or first message, so the time it
                 displaced moves here. Recent rows are already grouped by workspace,
                 which makes the project name the less useful of the two subtitles —
-                the home screen, which is not grouped, shows the project instead. */}
+                the home screen, which is not grouped, shows the project instead.
+                The engine leads the line only when both engines are present. */}
             <div className="truncate text-[11px] text-faint">
+              {engineLabel && `${engineLabel} · `}
               {formatRelativeTime(session.lastModified, Date.now())}
             </div>
           </div>
@@ -681,28 +701,28 @@ export function Sidebar(): React.JSX.Element {
             compact
             icon={<Package size={13} />}
             label="Packages"
-            active={currentView === 'packages'}
+            active={toolViewShowing('packages')}
             onClick={() => openToolView('packages')}
           />
           <SidebarItem
             compact
             icon={<StickyNote size={13} />}
             label="Notes"
-            active={currentView === 'notes'}
+            active={toolViewShowing('notes')}
             onClick={() => openToolView('notes')}
           />
           <SidebarItem
             compact
             icon={<Sparkles size={13} />}
             label="Skills"
-            active={currentView === 'skills'}
+            active={toolViewShowing('skills')}
             onClick={() => openToolView('skills')}
           />
           <SidebarItem
             compact
             icon={<Stethoscope size={13} />}
             label="Diagnostics"
-            active={currentView === 'diagnostics'}
+            active={toolViewShowing('diagnostics')}
             onClick={() => openToolView('diagnostics')}
           />
           {/* Global workflow list lives here — "browse everything" territory —
@@ -713,7 +733,7 @@ export function Sidebar(): React.JSX.Element {
             label="All Workflows"
             // Highlighted only when the global scope is open (never alongside
             // the Activity entry, whose active state requires a workspace id).
-            active={workflowPanelOpen && !workflowPanelFilter && workflowPanelWorkspaceId === null}
+            active={globalWorkflowOpen}
             onClick={() => openWorkflowRunsForWorkspace(null)}
             title="Workflow runs from every project"
           />
@@ -721,7 +741,7 @@ export function Sidebar(): React.JSX.Element {
             compact
             icon={<Settings size={13} />}
             label="Settings"
-            active={currentView === 'settings'}
+            active={toolViewShowing('settings')}
             onClick={() => openToolView('settings')}
           />
         </div>

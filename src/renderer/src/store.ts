@@ -19,6 +19,7 @@ import {
 import type {
   PiRpcEvent,
   PiStatus,
+  AgentEngineKind,
   PiProcessStatus,
   SessionState,
   SessionStats,
@@ -54,6 +55,7 @@ import type {
   WorkflowRunSummary,
   SessionRuntimeInfo,
   SessionLaunchTaskOptions,
+  SessionDeleteResult,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -190,6 +192,24 @@ function idleTurnState(): Pick<
   }
 }
 
+/**
+ * Whether a workspace's Pi is reachable right now.
+ *
+ * Only the runtime main marked active backs that workspace's Pi manager, so a
+ * sibling still running in the background says nothing about whether a prompt
+ * can be delivered. Reading any runtime here reported a live workspace whose
+ * active runtime was stopped, which skipped the lazy start and lost the
+ * prompt in `getActivePi()`.
+ */
+function workspaceHasLivePi(
+  runtimes: Record<string, SessionRuntimeInfo>,
+  workspaceId: string
+): boolean {
+  return Object.values(runtimes).some(
+    (runtime) => runtime.workspaceId === workspaceId && runtime.active && runtime.status === 'running'
+  )
+}
+
 // ─── Store Shape ─────────────────────────────────────────────────────────────
 
 interface AppState {
@@ -197,6 +217,8 @@ interface AppState {
   piStatus: PiProcessStatus
   piPid: number | null
   piError: string | null
+  /** Which engine the live process actually is, so the UI names it correctly. */
+  piEngine: AgentEngineKind
 
   // Session
   sessionState: SessionState | null
@@ -549,7 +571,7 @@ interface AppActions {
   loadArchivedSessions: () => Promise<void>
   archiveSession: (sessionId: string) => Promise<void>
   unarchiveSession: (sessionId: string) => Promise<void>
-  deleteSession: (session: SessionListItem) => Promise<{ ok: boolean; method: 'trash' | 'unlink'; error?: string }>
+  deleteSession: (session: SessionListItem) => Promise<SessionDeleteResult>
   toggleShowArchived: () => void
 
   // Notes
@@ -802,6 +824,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   piStatus: 'stopped',
   piPid: null,
   piError: null,
+  piEngine: 'pi',
 
   sessionState: null,
   sessionStats: null,
@@ -896,7 +919,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
     try {
       const status = await window.piDesktop.pi.start(options as Record<string, unknown> | undefined)
-      set({ piStatus: status.status, piPid: status.pid, piError: status.error })
+      set({ piStatus: status.status, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
 
       if (status.status === 'running') {
         await get().refreshSessionState()
@@ -912,7 +935,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   stopPi: async () => {
     try {
       const status = await window.piDesktop.pi.stop()
-      set({ piStatus: status.status, piPid: status.pid, piError: status.error })
+      set({ piStatus: status.status, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
     } catch (err) {
       set({ piStatus: 'error', piError: err instanceof Error ? err.message : String(err) })
     }
@@ -921,7 +944,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   restartPi: async (options) => {
     try {
       const status = await window.piDesktop.pi.restart(options as Record<string, unknown> | undefined)
-      set({ piStatus: status.status, piPid: status.pid, piError: status.error })
+      set({ piStatus: status.status, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
 
       // Re-read session state after a restart so the status bar's model label
       // and stats reflect a changed models.json (mirrors startPi). Without this
@@ -1238,6 +1261,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           activeSessionRuntimeId: runtime.runtimeId,
           piStatus: runtime.status === 'stopped' ? 'starting' : runtime.status,
           piPid: runtime.pid,
+          piEngine: runtime.engine ?? 'pi',
           piError: runtime.error,
         } : {}),
       })
@@ -1295,6 +1319,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         activeSessionRuntimeId: runtime.runtimeId,
         piStatus: runtime.status === 'stopped' ? 'starting' : runtime.status,
         piPid: runtime.pid,
+        piEngine: runtime.engine ?? 'pi',
         piError: runtime.error,
       })
       if (reusedWorktree) {
@@ -1449,13 +1474,19 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
             activeSessionRuntimeId: runtime.runtimeId,
             piStatus: runtime.status,
             piPid: runtime.pid,
+            piEngine: runtime.engine ?? 'pi',
             piError: runtime.error,
           } : {}),
-          ...(reattaching ? { isStreaming: true, reattachedMidTurn: true } : {}),
         })
         // If the runtime is already ready this starts hydration now. If it is
         // still starting, handleSessionRuntime retries on its running event.
         void get().reloadActiveSession({ refreshList: false })
+        // Arm AFTER the reload, the way the workspace flows do: the reload
+        // runs past its guard synchronously and its clearMessages() resets
+        // every per-turn field. Armed first, both flags die before the first
+        // await — the reply then streams into a chat that looks idle and the
+        // turn end commits only the post-switch suffix as a truncated message.
+        if (reattaching) set({ isStreaming: true, reattachedMidTurn: true })
         scheduleSessionListRefresh(get)
       } catch (err) {
         if (gen !== sessionLoadGeneration) return
@@ -2163,6 +2194,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           piStatus: statusEvent.status,
           piPid: statusEvent.pid,
           piError: statusEvent.error,
+          ...(statusEvent.engine ? { piEngine: statusEvent.engine } : {}),
         })
         if (statusEvent.status === 'running') {
           get().loadCommands()
@@ -2256,6 +2288,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       ...(runtime.active ? {
         piStatus: runtime.status,
         piPid: runtime.pid,
+        piEngine: runtime.engine ?? 'pi',
         piError: runtime.error,
         ...(runtime.status === 'error' || runtime.status === 'stopped' ? { sessionLoading: false } : {}),
       } : {}),
@@ -2494,9 +2527,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // one IPC roundtrip total, no serial status probe before first render.
       // The status broadcast that follows the main-side activation corrects
       // any snapshot staleness.
-      const live = Object.values(get().sessionRuntimes).some(
-        (runtime) => runtime.workspaceId === workspace.id && runtime.status === 'running'
-      )
+      const live = workspaceHasLivePi(get().sessionRuntimes, workspace.id)
       set((state) => ({
         workspaces: state.workspaces.some((item) => item.id === workspace.id)
           ? state.workspaces.map((item) => item.id === workspace.id ? workspace : item)
@@ -2570,9 +2601,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       sessionLoadGeneration += 1
       // Render the target workspace immediately from pushed runtime snapshots,
       // then reconcile status + workspace list in one parallel roundtrip.
-      const live = Object.values(get().sessionRuntimes).some(
-        (runtime) => runtime.workspaceId === workspace.id && runtime.status === 'running'
-      )
+      const live = workspaceHasLivePi(get().sessionRuntimes, workspace.id)
       set((state) => ({
         workspaces: state.workspaces.some((item) => item.id === workspace.id)
           ? state.workspaces.map((item) => item.id === workspace.id ? workspace : item)
@@ -2587,7 +2616,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         window.piDesktop.pi.getStatus(),
         get().loadWorkspaces(),
       ])
-      set({ piStatus: status.status, piPid: status.pid, piError: status.error })
+      set({ piStatus: status.status, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
       // Session list refresh only — navigation never spawns a process.
       scheduleSessionListRefresh(get)
       if (!skipSessionLoad && get().piStatus === 'running') {
@@ -2982,10 +3011,19 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
         await get().refreshSessionList()
 
-        // If the deleted session was the active one, clear the chat and create a new session
+        // The deleted session was the one on screen. Main already closed its
+        // runtime and promoted a sibling in the same workspace, so follow that
+        // promotion — creating a session here would spawn a third runtime and
+        // steal activation from the one main just made active. Only a delete
+        // that left nothing running falls back to the empty new-session view.
         if (get().sessionState?.sessionFile === session.path) {
-          get().clearMessages()
-          await get().createNewSession()
+          const replacement = result.replacementSessionPath
+          if (replacement) {
+            await get().switchSession(replacement, get().activeWorkspace?.path)
+          } else {
+            get().clearMessages()
+            await get().createNewSession()
+          }
         }
       }
       return result
@@ -3273,10 +3311,10 @@ function handleToolStart(
       startedAt: Date.now(),
     })
     // Track subagent calls in subagentProgress
-    if (event.toolName === 'subagent' || event.toolName === 'subagent_wait') {
+    if (isSubagentTool(event.toolName)) {
       const args = event.args as Record<string, unknown>
-      const agent = typeof args.agent === 'string' ? args.agent : 'subagent'
-      const task = typeof args.task === 'string' ? args.task : ''
+      const agent = subagentAgentName(args)
+      const task = subagentTaskText(args)
       const newProgress = {
         toolCallId: event.toolCallId,
         agent,
@@ -3315,7 +3353,7 @@ function handleToolUpdate(
     }
 
     // Update subagent progress from details
-    if (event.toolName === 'subagent' || event.toolName === 'subagent_wait') {
+    if (isSubagentTool(event.toolName)) {
       const details = event.partialResult.details as Record<string, unknown> | undefined
       const progressList = details?.progress as Array<Record<string, unknown>> | undefined
       const results = details?.results as Array<Record<string, unknown>> | undefined
@@ -3360,7 +3398,7 @@ function handleToolEnd(
     // Finalize subagent progress: mark done and capture final stats
     const newProgress = state.subagentProgress.map((p) => {
       if (p.toolCallId !== event.toolCallId) return p
-      const details = (event.toolName === 'subagent' || event.toolName === 'subagent_wait')
+      const details = isSubagentTool(event.toolName)
         ? (event.result.details as Record<string, unknown> | undefined)
         : undefined
       const progressList = details?.progress as Array<Record<string, unknown>> | undefined
@@ -3384,6 +3422,49 @@ function handleToolEnd(
 }
 
 /** Fold tool details.progress / results into a single progress row (+ children). */
+/**
+ * Tool names that spawn a subagent.
+ *
+ * Pi delegates through the `pi-subagents` package, which registers `subagent`
+ * and `subagent_wait`. OMP has delegation built in and groups it under
+ * coordination as `task` (delegate one) and `hub` (fan out to several); `hub`
+ * is what a plain "use the reviewer agent" request actually calls, observed on
+ * the wire. The strip keyed off the Pi names only, so under OMP it stayed
+ * empty while five reviewers really were running.
+ */
+const SUBAGENT_TOOL_NAMES: ReadonlySet<string> = new Set(['subagent', 'subagent_wait', 'task', 'hub'])
+
+export function isSubagentTool(toolName: string): boolean {
+  return SUBAGENT_TOOL_NAMES.has(toolName)
+}
+
+/**
+ * First non-empty string among `keys`, or null.
+ *
+ * The two engines label a spawn with different argument names and OMP's schema
+ * is not published anywhere this code can read, so the label is resolved by
+ * trying the plausible keys rather than hard-coding one engine's spelling. A
+ * miss costs a generic label, never a missing progress row.
+ */
+function firstStringArg(args: Record<string, unknown> | undefined, keys: readonly string[]): string | null {
+  if (!args) return null
+  for (const key of keys) {
+    const value = args[key]
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return null
+}
+
+/** Which agent a spawn targets. Both engines have used `agent`; the rest are fallbacks. */
+export function subagentAgentName(args: Record<string, unknown> | undefined): string {
+  return firstStringArg(args, ['agent', 'agentType', 'subagent_type', 'name', 'type']) ?? 'subagent'
+}
+
+/** The instruction given to the spawn, used as the row's caption. */
+export function subagentTaskText(args: Record<string, unknown> | undefined): string {
+  return firstStringArg(args, ['task', 'prompt', 'description', 'instructions', 'message']) ?? ''
+}
+
 function aggregateSubagentDetails(
   prev: AppState['subagentProgress'][number],
   progressList: Array<Record<string, unknown>> | undefined,

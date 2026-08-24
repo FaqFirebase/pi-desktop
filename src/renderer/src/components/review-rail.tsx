@@ -1,6 +1,7 @@
 import { AlertCircle, CheckCircle2, FileSearch, GitCompare, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../store'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { PermissionSelector } from './permission-selector'
 import { formatIpcError } from '../utils/ipc-error'
 import type { GitFileStatus } from '../../../shared/ipc-contracts'
@@ -18,6 +19,7 @@ export function ReviewRail(): React.JSX.Element | null {
   const pendingFollowUp = useAppStore((state) => state.pendingFollowUp)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
   const isStreaming = useAppStore((state) => state.isStreaming)
+  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const messages = useAppStore((state) => state.messages)
   const [gitStatus, setGitStatus] = useState<Record<string, GitFileStatus>>({})
@@ -171,7 +173,7 @@ export function ReviewRail(): React.JSX.Element | null {
           <div className="rounded-md border border-border bg-surface/50 p-3 text-sm text-muted">
             <div className="flex items-center gap-2">
               <FileSearch size={15} className="text-dim" />
-              <span>{isStreaming ? 'Pi is working in the active session.' : 'Pi is idle in the active session.'}</span>
+              <span>{isStreaming ? `${engineLabel} is working in the active session.` : `${engineLabel} is idle in the active session.`}</span>
             </div>
           </div>
         </section>

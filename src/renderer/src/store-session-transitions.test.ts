@@ -1,6 +1,6 @@
 import { test, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import type { PiExtensionUiRequest, SessionListItem, SessionRuntimeInfo, SessionState, Workspace } from '../../shared/ipc-contracts'
+import type { PiExtensionUiRequest, SessionDeleteResult, SessionListItem, SessionRuntimeInfo, SessionState, Workspace } from '../../shared/ipc-contracts'
 import type { PreviewTarget } from './store'
 
 // Each recorded call is appended to `calls`, so tests can assert both that a
@@ -37,6 +37,9 @@ let fileSearchResults: Array<{
 let fileSearchHook: (() => void) | null = null
 // What the stubbed session.getState returns as data (null = no state).
 let sessionStateResult: SessionState | null = null
+// What the stubbed session.delete reports. `replacementSessionPath` mirrors
+// the runtime main promoted while closing the deleted session's tab.
+let sessionDeleteResult: SessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: null }
 
 // Only sessionFile is read by the code under test; the cast keeps this
 // fixture from churning as SessionState grows fields.
@@ -45,6 +48,8 @@ function sessionStateWith(sessionFile: string): SessionState {
 }
 
 const SESSION_PATH = '/tmp/session-b.jsonl'
+// The sibling session main promotes when the active one is deleted or closed.
+const REPLACEMENT_SESSION_PATH = '/tmp/session-sibling.jsonl'
 const FORK_ENTRY_ID = 'entry-7'
 
 const WORKSPACE_ID = 'ws-2'
@@ -202,6 +207,10 @@ const piDesktopStub = {
       calls.push(`closeRuntime:${runtimeId}`)
       return { runtimeId, workspaceId: WORKSPACE_ONE.id, sessionPath: SESSION_PATH, empty: false, deleted: false }
     },
+    delete: async (path: string) => {
+      calls.push(`deleteSession:${path}`)
+      return sessionDeleteResult
+    },
     fork: async (entryId: string) => {
       calls.push(`fork:${entryId}`)
       return { success: true }
@@ -300,6 +309,7 @@ beforeEach(() => {
   fileSearchResults = []
   fileSearchHook = null
   sessionStateResult = null
+  sessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: null }
   useAppStore.setState({
     isStreaming: false,
     streamingContent: '',
@@ -317,6 +327,7 @@ beforeEach(() => {
     workspaceActivity: {},
     reattachedMidTurn: false,
     sessionLoading: false,
+    sessionRuntimes: {},
     activeSessionRuntimeId: null,
     activeWorkspace: null,
     workspaces: [],
@@ -851,6 +862,85 @@ test('the first prompt lazy-starts an idle workspace', async () => {
     'the prompt goes out only after startup completes'
   )
   assert.equal(useAppStore.getState().piStatus, 'running')
+})
+
+// Runtime snapshots as main pushes them. `active` marks the one runtime main
+// resolves for the workspace — the only manager a prompt can reach.
+function runtimeIn(workspace: Workspace, overrides: Partial<SessionRuntimeInfo>): SessionRuntimeInfo {
+  return {
+    runtimeId: 'rt',
+    workspaceId: workspace.id,
+    sessionPath: SESSION_PATH,
+    sessionId: 'session',
+    status: 'stopped',
+    pid: null,
+    error: null,
+    activity: null,
+    active: false,
+    ...overrides,
+  }
+}
+
+test('a stopped active runtime reports stopped even with a live sibling', async () => {
+  // Two tabs in the same workspace: the one main resolves for prompts is
+  // stopped, a background tab is still running. Reading "any runtime" here
+  // reported running, so the first prompt skipped its lazy start and hit a
+  // stopped manager.
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    sessionRuntimes: {
+      'rt-active': runtimeIn(WORKSPACE_TWO, { runtimeId: 'rt-active', status: 'stopped', active: true }),
+      'rt-background': runtimeIn(WORKSPACE_TWO, {
+        runtimeId: 'rt-background',
+        sessionPath: REPLACEMENT_SESSION_PATH,
+        status: 'running',
+        pid: 5,
+        activity: 'working',
+      }),
+    },
+  })
+
+  const ok = await useAppStore.getState().activateWorkspace(WORKSPACE_TWO.id)
+
+  assert.equal(ok, true)
+  const state = useAppStore.getState()
+  assert.equal(state.piStatus, 'stopped', 'a background sibling must not mask the stopped active runtime')
+  assert.equal(state.sessionLoading, false, 'nothing hydrates while the active runtime is down')
+  assert.equal(calls.includes('getMessages'), false)
+})
+
+test('the first prompt lazy-starts a workspace whose active runtime is stopped', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    sessionRuntimes: {
+      'rt-active': runtimeIn(WORKSPACE_TWO, { runtimeId: 'rt-active', status: 'stopped', active: true }),
+      'rt-background': runtimeIn(WORKSPACE_TWO, {
+        runtimeId: 'rt-background',
+        sessionPath: REPLACEMENT_SESSION_PATH,
+        status: 'running',
+        pid: 5,
+        activity: 'working',
+      }),
+    },
+  })
+  await useAppStore.getState().activateWorkspace(WORKSPACE_TWO.id)
+  calls.length = 0
+
+  await useAppStore.getState().sendPrompt('ship it')
+
+  const startAt = calls.indexOf('pi.start')
+  assert.notEqual(startAt, -1, 'the prompt must not be sent into a stopped manager')
+  assert.equal(
+    calls.findIndex((c) => c.startsWith('prompt:')),
+    startAt + 1,
+    'the prompt goes out only after startup completes'
+  )
 })
 
 test('openFolderAsWorkspace skips switch when the dropped folder is already active', async () => {
@@ -1588,6 +1678,54 @@ test('switching into an idle workspace attaches nothing', async () => {
   assert.equal(state.reattachedMidTurn, false)
 })
 
+test('reopening a working session keeps the mid-turn attach armed', async () => {
+  // The runtime main hands back is already mid-turn. The hydration that
+  // follows tears the chat down (clearMessages resets every per-turn field),
+  // so the attach must be armed after it — otherwise the reply streams into a
+  // chat that looks idle and the turn end commits only the post-switch suffix.
+  workspaceListResult = [WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_TWO
+  useAppStore.setState({ activeWorkspace: WORKSPACE_TWO, workspaces: [WORKSPACE_TWO] })
+  switchResult = runtimeIn(WORKSPACE_TWO, {
+    runtimeId: 'rt-working',
+    sessionId: 'session-working',
+    status: 'running',
+    pid: 11,
+    activity: 'working',
+    active: true,
+  })
+
+  await useAppStore.getState().switchSession(SESSION_PATH, WORKSPACE_TWO.path)
+  // The hydration switchSession fires is not awaited; let it settle so the
+  // assertions see the state the user is left looking at.
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  const state = useAppStore.getState()
+  assert.equal(calls.includes('getMessages'), true, 'the persisted history still has to load')
+  assert.equal(state.isStreaming, true, 'a session reopened mid-turn must not render as idle')
+  assert.equal(state.reattachedMidTurn, true, 'the turn end has to backfill the prefix the stream missed')
+})
+
+test('reopening an idle session arms no attach', async () => {
+  workspaceListResult = [WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_TWO
+  useAppStore.setState({ activeWorkspace: WORKSPACE_TWO, workspaces: [WORKSPACE_TWO] })
+  switchResult = runtimeIn(WORKSPACE_TWO, {
+    runtimeId: 'rt-idle',
+    sessionId: 'session-idle',
+    status: 'running',
+    pid: 12,
+    active: true,
+  })
+
+  await useAppStore.getState().switchSession(SESSION_PATH, WORKSPACE_TWO.path)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  const state = useAppStore.getState()
+  assert.equal(state.isStreaming, false)
+  assert.equal(state.reattachedMidTurn, false, 'an idle runtime must not trigger a backfill on the next turn')
+})
+
 test('agent_end after a mid-turn attach backfills from the session', async () => {
   enterWorkspacesWithBackgroundTurn()
   await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
@@ -1770,6 +1908,61 @@ test('an activity update that still shows working keeps the attach alive', async
   assert.equal(state.isStreaming, true)
   assert.equal(state.reattachedMidTurn, true)
   assert.equal(calls.filter((c) => c === 'getMessages').length, loadsBefore)
+})
+
+// ─── Deleting the session on screen ──────────────────────────────────────────
+// SESSION_DELETE closes the deleted session's runtime before unlinking the
+// file. That close promotes a sibling runtime in the same workspace and
+// broadcasts it as active, so the renderer has to follow the promotion.
+
+function activeWorkspaceShowing(sessionFile: string): void {
+  workspaceListResult = [WORKSPACE_ONE]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    sessionState: sessionStateWith(sessionFile),
+  })
+}
+
+test('deleting the session on screen opens the runtime main promoted', async () => {
+  activeWorkspaceShowing(SESSION_PATH)
+  sessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: REPLACEMENT_SESSION_PATH }
+
+  const result = await useAppStore.getState().deleteSession(sessionItemFor(WORKSPACE_ONE))
+
+  assert.equal(result.ok, true)
+  assert.equal(
+    calls.includes(`switch:${REPLACEMENT_SESSION_PATH}`),
+    true,
+    'the chat must land on the sibling main already made active'
+  )
+  assert.equal(
+    calls.includes('createNew'),
+    false,
+    'a third runtime would steal activation from the promoted sibling'
+  )
+})
+
+test('deleting the last session in the workspace falls back to a new one', async () => {
+  activeWorkspaceShowing(SESSION_PATH)
+  sessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: null }
+
+  await useAppStore.getState().deleteSession(sessionItemFor(WORKSPACE_ONE))
+
+  assert.equal(calls.includes('createNew'), true, 'nothing is left to show, so the empty view needs a runtime')
+  assert.equal(calls.some((c) => c.startsWith('switch:')), false)
+})
+
+test('deleting a session that is not on screen leaves the chat alone', async () => {
+  activeWorkspaceShowing(REPLACEMENT_SESSION_PATH)
+  sessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: REPLACEMENT_SESSION_PATH }
+
+  await useAppStore.getState().deleteSession(sessionItemFor(WORKSPACE_ONE))
+
+  assert.equal(calls.includes(`deleteSession:${SESSION_PATH}`), true)
+  assert.equal(calls.includes('createNew'), false, 'deleting a background session must not replace the chat')
+  assert.equal(calls.some((c) => c.startsWith('switch:')), false)
 })
 
 // ─── Boot/reload recovery ────────────────────────────────────────────────────

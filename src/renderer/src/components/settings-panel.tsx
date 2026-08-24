@@ -1,7 +1,9 @@
 import { useAppStore } from '../store'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { clsx } from 'clsx'
 import type {
+  AgentDetectionOptions,
   AgentEngine,
   AgentInstallation,
   AppSettings,
@@ -64,6 +66,9 @@ export function SettingsPanel(): React.JSX.Element {
   const initialPiEngine = draft0.piEngine ?? settings?.piEngine ?? DEFAULT_SETTINGS.piEngine
   const [piPath, setPiPath] = useState(initialPiPath)
   const [piEngine, setPiEngine] = useState<AgentEngine>(initialPiEngine)
+  // The setting above may be 'auto'; this is the engine that actually resolved,
+  // which is what any sentence naming the running agent has to say.
+  const runningEngineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const [customAgentPathMode, setCustomAgentPathMode] = useState(() => {
     const normalized = initialPiPath.trim().toLowerCase()
     return Boolean(initialPiPath.trim()) && normalized !== 'pi' && normalized !== 'omp'
@@ -112,11 +117,11 @@ export function SettingsPanel(): React.JSX.Element {
   const [timeoutDraft, setTimeoutDraft] = useState('')
   const agentScanToken = useRef(0)
 
-  const scanAgentInstallations = useCallback(async (): Promise<void> => {
+  const scanAgentInstallations = useCallback(async (options?: AgentDetectionOptions): Promise<void> => {
     const token = ++agentScanToken.current
     setScanningAgentInstalls(true)
     try {
-      const result = await window.piDesktop.pi.detectInstallations()
+      const result = await window.piDesktop.pi.detectInstallations(options)
       if (token === agentScanToken.current) setDetectedAgentInstalls(result.installations)
     } catch {
       if (token === agentScanToken.current) setDetectedAgentInstalls([])
@@ -129,7 +134,8 @@ export function SettingsPanel(): React.JSX.Element {
     agentScanToken.current++
   }, [])
 
-  // Detect available agent engines on mount.
+  // Detect available agent engines on mount. Cached results are fine here —
+  // only the explicit Rescan below needs a fresh look at the disk.
   useEffect(() => {
     void scanAgentInstallations()
   }, [scanAgentInstallations])
@@ -652,7 +658,9 @@ export function SettingsPanel(): React.JSX.Element {
                   <FolderOpen size={14} />
                 </button>
                 <button
-                  onClick={() => void scanAgentInstallations()}
+                  // Forced: the user clicks this right after installing an
+                  // engine, so the cached detection result would be stale.
+                  onClick={() => void scanAgentInstallations({ force: true })}
                   disabled={scanningAgentInstalls}
                   title="Rescan installed agents"
                   className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors disabled:opacity-50"
@@ -1093,7 +1101,7 @@ export function SettingsPanel(): React.JSX.Element {
               Enable council planning?
             </h3>
             <p className="mb-6 text-sm text-muted">
-              Each run spawns Claude and Codex in addition to Pi. This can significantly increase
+              Each run spawns Claude and Codex in addition to {runningEngineLabel}. This can significantly increase
               token usage and credit/API costs. Only enable this if you are comfortable with the
               extra spend.
             </p>

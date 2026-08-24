@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { getSessionRowLabels } from './sidebar-session-labels'
+import { getSessionEngineLabel, getSessionRowLabels, hasMixedSessionEngines } from './sidebar-session-labels'
 
 const namelessCurrentWorkspace = {
   name: null,
@@ -50,3 +50,24 @@ assert.deepEqual(
     subtitle: 'pi gui',
   }
 )
+
+// The tag names the CLI that owns the session, matching the status bar wording.
+assert.equal(getSessionEngineLabel({ engine: 'pi' }), 'Pi')
+assert.equal(getSessionEngineLabel({ engine: 'omp' }), 'OMP')
+
+// A row from an older index carries no engine. It must stay untagged rather
+// than be guessed at, because guessing would open a session with the wrong CLI.
+assert.equal(getSessionEngineLabel({}), null)
+
+// With one engine installed the tag would only repeat what every row already is.
+assert.equal(hasMixedSessionEngines([]), false)
+assert.equal(hasMixedSessionEngines([{ engine: 'pi' }, { engine: 'pi' }]), false)
+assert.equal(hasMixedSessionEngines([{ engine: 'omp' }, { engine: 'omp' }]), false)
+
+// An untagged row is not a second engine, so it alone must not turn tags on.
+assert.equal(hasMixedSessionEngines([{ engine: 'omp' }, {}]), false)
+assert.equal(hasMixedSessionEngines([{}, {}]), false)
+
+// Two real engines on screen: the tag is now the only way to tell rows apart.
+assert.equal(hasMixedSessionEngines([{ engine: 'pi' }, {}, { engine: 'omp' }]), true)
+assert.equal(hasMixedSessionEngines([{ engine: 'omp' }, { engine: 'pi' }]), true)
