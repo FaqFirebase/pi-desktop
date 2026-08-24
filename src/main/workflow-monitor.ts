@@ -3,6 +3,7 @@ import { mkdir, open, readdir, readFile, rename, stat, writeFile } from 'fs/prom
 import { homedir } from 'os'
 import { basename, join, resolve } from 'path'
 import { pathGroupKey } from '../shared/path-compare'
+import { appLog } from './app-log'
 import { pathsEqual, sanitizePath } from './session-paths'
 import type {
   WorkflowAgentDetail,
@@ -31,6 +32,18 @@ const MAX_SESSION_FILES_INDEXED = 500
 const MAX_SESSION_HEADER_BYTES = 4 * 1024
 const MAX_RUNS_READ_PER_PROJECT = 3
 const MAX_RUN_FILE_BYTES = 2 * 1024 * 1024
+// Bounds for the per-agent transcript scan (see findPersistedSession). The scan
+// parses whole session files, so it is capped like every other walk here; 200
+// newest sessions of one project cover far more than one workflow run.
+export const MAX_TRANSCRIPT_FILES_SCANNED = 200
+// The prompt needle used to identify an agent's session. It must be short
+// enough to survive the MAX_ENTRY_CHARS truncation of the session text it is
+// compared against, even when the persisted user message wraps the prompt in a
+// preamble; 2 KB of prompt identifies an agent many times over.
+const PROMPT_MATCH_CHARS = 2_000
+/** Cache-key stamp for a store root that does not exist (see dirStamp). */
+const MISSING_DIR_STAMP = 'none'
+const LOG_SCOPE = 'workflow-monitor'
 // pi-dynamic-workflows names project dirs `<slug>-<sha256(cwd).slice(0,12)>`.
 const WORKFLOW_PROJECT_KEY_RE = /^[a-z0-9._-]{1,60}-[0-9a-f]{12}$/
 const RUN_STATUSES = new Set<WorkflowRunStatus>([
@@ -61,12 +74,97 @@ interface CachedRun {
 }
 
 const runCache = new Map<string, CachedRun>()
-const persistedSessionCache = new Map<string, {
+
+interface CachedPersistedSession {
   mtimeMs: number
   size: number
+  /** Approximate retained size, used for the eviction budget below. */
+  bytes: number
   value: PersistedSessionMatch | null
-}>()
-const MAX_PERSISTED_SESSION_BYTES = 4 * 1024 * 1024
+}
+
+/** A single session file larger than this is never parsed. */
+const MAX_PERSISTED_SESSION_FILE_BYTES = 4 * 1024 * 1024
+/**
+ * Retention budget for parsed transcripts held in the main process. Entry
+ * counts are the wrong unit: one entry retains up to MAX_TRANSCRIPT_CHARS of
+ * text, so a count-based ceiling is a byte ceiling three orders of magnitude
+ * higher than intended. ~32 MB holds roughly a hundred full-size transcripts
+ * and thousands of ordinary ones.
+ */
+const MAX_PERSISTED_SESSION_CACHE_BYTES = 32 * 1024 * 1024
+/** Per-entry cost of the key and the record itself, on top of its text. */
+const PERSISTED_SESSION_ENTRY_OVERHEAD_BYTES = 512
+/** JS strings are UTF-16; one char retains two bytes. */
+const BYTES_PER_CHAR = 2
+
+// Insertion order is the LRU order: every hit re-inserts its key, so the front
+// of the Map is always the coldest entry.
+const persistedSessionCache = new Map<string, CachedPersistedSession>()
+let persistedSessionCacheBytes = 0
+let persistedSessionCacheBudget = MAX_PERSISTED_SESSION_CACHE_BYTES
+
+/** Test helper: current retention of the persisted-session cache. */
+export function persistedSessionCacheStats(): { entries: number; bytes: number } {
+  return { entries: persistedSessionCache.size, bytes: persistedSessionCacheBytes }
+}
+
+/** Test helper: drop every cached transcript. */
+export function clearPersistedSessionCache(): void {
+  persistedSessionCache.clear()
+  persistedSessionCacheBytes = 0
+  persistedSessionCacheBudget = MAX_PERSISTED_SESSION_CACHE_BYTES
+}
+
+/**
+ * Test helper: shrink the retention budget (and evict down to it now) so
+ * eviction is observable without writing tens of megabytes of fixtures.
+ */
+export function setPersistedSessionCacheBudget(bytes: number): void {
+  persistedSessionCacheBudget = bytes
+  evictPersistedSessions()
+}
+
+function persistedSessionBytes(filePath: string, value: PersistedSessionMatch | null): number {
+  let chars = filePath.length
+  if (value) {
+    chars += value.sessionName.length + value.firstUserText.length
+    for (const entry of value.history) chars += entry.text.length + (entry.diff?.length ?? 0)
+  }
+  return PERSISTED_SESSION_ENTRY_OVERHEAD_BYTES + chars * BYTES_PER_CHAR
+}
+
+function evictPersistedSessions(): void {
+  for (const [key, entry] of persistedSessionCache) {
+    if (persistedSessionCacheBytes <= persistedSessionCacheBudget) return
+    persistedSessionCache.delete(key)
+    persistedSessionCacheBytes -= entry.bytes
+  }
+}
+
+/** Cache read that also marks the entry as the most recently used. */
+function takeCachedSession(filePath: string): CachedPersistedSession | undefined {
+  const cached = persistedSessionCache.get(filePath)
+  if (!cached) return undefined
+  persistedSessionCache.delete(filePath)
+  persistedSessionCache.set(filePath, cached)
+  return cached
+}
+
+function cachePersistedSession(
+  filePath: string,
+  file: { mtimeMs: number; size: number },
+  value: PersistedSessionMatch | null
+): void {
+  const previous = persistedSessionCache.get(filePath)
+  if (previous) persistedSessionCacheBytes -= previous.bytes
+  const bytes = persistedSessionBytes(filePath, value)
+  // Re-insert (never update in place) so the entry becomes the newest.
+  persistedSessionCache.delete(filePath)
+  persistedSessionCache.set(filePath, { mtimeMs: file.mtimeMs, size: file.size, bytes, value })
+  persistedSessionCacheBytes += bytes
+  evictPersistedSessions()
+}
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -155,11 +253,15 @@ function workflowRunDirs(workspace: Workspace): string[] {
   ]
 }
 
+/** Root of Pi's session store; read per call because tests override the env. */
+function piSessionsRoot(): string {
+  return join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions')
+}
+
 function workflowSessionsDir(cwd: string): string {
-  const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent')
   const resolvedCwd = resolve(cwd)
   const safePath = `--${resolvedCwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
-  return join(agentDir, 'sessions', safePath)
+  return join(piSessionsRoot(), safePath)
 }
 
 // ─── Workflow project discovery ─────────────────────────────────────────────
@@ -286,8 +388,7 @@ export async function discoverWorkflowProjects(
     if (projects.has(key) && projects.get(key) === null) projects.set(key, resolve(known))
   }
 
-  const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent')
-  const sessionsRoot = join(agentDir, 'sessions')
+  const sessionsRoot = piSessionsRoot()
   const sessionDirCwds = new Map<string, string>()
   const sessionUuidToFile = new Map<string, string>()
   let sessionDirsScanned = 0
@@ -371,19 +472,30 @@ export async function discoverWorkflowProjects(
   return value
 }
 
+/** mtime+size of a store root, or MISSING_DIR_STAMP when it does not exist. */
+async function dirStamp(dir: string): Promise<string> {
+  try {
+    const info = await stat(dir)
+    return `${info.mtimeMs}:${info.size}`
+  } catch {
+    return MISSING_DIR_STAMP
+  }
+}
+
 /** mtime+size of both store roots; null when the projects dir is missing. */
 async function discoveryCacheKey(knownPaths: readonly string[]): Promise<string | null> {
-  try {
-    const [projects, sessions] = await Promise.all([
-      stat(WORKFLOW_PROJECTS_DIR),
-      stat(join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions')),
-    ])
-    // Known paths are cheap to fold in and change only with workspace state.
-    const known = knownPaths.map((p) => workflowProjectKey(p)).join(',')
-    return `${projects.mtimeMs}:${projects.size}:${sessions.mtimeMs}:${sessions.size}:${known}`
-  } catch {
-    return null
-  }
+  const [projects, sessions] = await Promise.all([
+    dirStamp(WORKFLOW_PROJECTS_DIR),
+    dirStamp(piSessionsRoot()),
+  ])
+  // Only the projects dir can null the key: without it there are no runs to
+  // project at all. A missing session store just costs the walk its cwd
+  // evidence (its readdir already yields an empty list), so the projections
+  // built from the run files must survive it.
+  if (projects === MISSING_DIR_STAMP) return null
+  // Known paths are cheap to fold in and change only with workspace state.
+  const known = knownPaths.map((p) => workflowProjectKey(p)).join(',')
+  return `${projects}:${sessions}:${known}`
 }
 
 /**
@@ -642,7 +754,16 @@ function contentText(value: unknown): string {
     .join('\n')
 }
 
-function sessionHistory(entries: UnknownRecord[]): WorkflowHistoryEntry[] {
+/**
+ * The bounded transcript of one persisted session.
+ *
+ * `firstUserText` is kept apart from `history` on purpose: normalizeHistory
+ * retains only the newest MAX_HISTORY_ENTRIES entries, so on a long session the
+ * opening user message — the one carrying the agent prompt — is dropped, and
+ * with it the only evidence that identifies which agent this session belongs
+ * to. It is already bounded to MAX_ENTRY_CHARS by the loop below.
+ */
+function sessionTranscript(entries: UnknownRecord[]): Omit<PersistedSessionMatch, 'sessionName'> {
   const result: WorkflowHistoryEntry[] = []
   for (const entry of entries) {
     if (entry.type !== 'message' || !isRecord(entry.message)) continue
@@ -678,11 +799,17 @@ function sessionHistory(entries: UnknownRecord[]): WorkflowHistoryEntry[] {
       ...(message.isError === true ? { isError: true } : {}),
     })
   }
-  return normalizeHistory(result)
+  return {
+    history: normalizeHistory(result),
+    firstUserText: result.find((entry) => entry.role === 'user')?.text ?? '',
+  }
 }
+
 interface PersistedSessionMatch {
   history: WorkflowHistoryEntry[]
   sessionName: string
+  /** Bounded text of the session's FIRST user message; '' when it has none. */
+  firstUserText: string
 }
 
 async function readPersistedSession(filePath: string): Promise<PersistedSessionMatch | null> {
@@ -692,10 +819,10 @@ async function readPersistedSession(filePath: string): Promise<PersistedSessionM
   } catch {
     return null
   }
-  const cached = persistedSessionCache.get(filePath)
+  const cached = takeCachedSession(filePath)
   if (cached && cached.mtimeMs === file.mtimeMs && cached.size === file.size) return cached.value
-  if (file.size > MAX_PERSISTED_SESSION_BYTES) {
-    persistedSessionCache.set(filePath, { mtimeMs: file.mtimeMs, size: file.size, value: null })
+  if (file.size > MAX_PERSISTED_SESSION_FILE_BYTES) {
+    cachePersistedSession(filePath, file, null)
     return null
   }
 
@@ -718,60 +845,105 @@ async function readPersistedSession(filePath: string): Promise<PersistedSessionM
       // A live session can end with a partial JSONL line; keep the readable prefix.
     }
   }
-  const value = sessionName ? { history: sessionHistory(entries), sessionName } : null
-  persistedSessionCache.set(filePath, { mtimeMs: file.mtimeMs, size: file.size, value })
-  if (persistedSessionCache.size > 5000) {
-    const oldest = persistedSessionCache.keys().next().value
-    if (oldest !== undefined) persistedSessionCache.delete(oldest)
-  }
+  const value = sessionName ? { ...sessionTranscript(entries), sessionName } : null
+  cachePersistedSession(filePath, file, value)
   return value
 }
 
-async function findPersistedSession(cwd: string, runId: string, agent: UnknownRecord): Promise<PersistedSessionMatch | null> {
-  let names: string[]
-  try {
-    names = (await readdir(workflowSessionsDir(cwd))).filter((name) => name.endsWith('.jsonl'))
-  } catch {
-    return null
-  }
+/**
+ * Does this session carry the agent's prompt? Both sides are bounded to the
+ * same scale: a PROMPT_MATCH_CHARS prefix of the prompt against text already
+ * truncated to MAX_ENTRY_CHARS. The opening user message is checked separately
+ * because the history window can no longer contain it (see sessionTranscript).
+ */
+function sessionCarriesPrompt(match: PersistedSessionMatch, needle: string): boolean {
+  if (match.firstUserText.includes(needle)) return true
+  return match.history.some((entry) => entry.role === 'user' && entry.text.includes(needle))
+}
+
+interface SessionCandidate {
+  match: PersistedSessionMatch
+  labelMatch: boolean
+  promptMatch: boolean
+}
+
+/** Warned session dirs, so a per-agent scan cannot flood the log each poll. */
+const truncationWarnedDirs = new Set<string>()
+
+function warnScanTruncated(sessionDir: string, available: number): void {
+  if (truncationWarnedDirs.has(sessionDir)) return
+  // Bounded like every other set here; a reset only means the dirs get warned
+  // about once more.
+  if (truncationWarnedDirs.size >= MAX_SESSION_DIRS_SCANNED) truncationWarnedDirs.clear()
+  truncationWarnedDirs.add(sessionDir)
+  appLog.warn(
+    LOG_SCOPE,
+    `Transcript scan covered the ${MAX_TRANSCRIPT_FILES_SCANNED} newest of ${available} session files`,
+    { sessionDir, available, scanned: MAX_TRANSCRIPT_FILES_SCANNED }
+  )
+}
+
+/**
+ * The persisted session that belongs to ONE agent of a run, or null when the
+ * evidence does not single one out. `agentCount` is the number of agents in the
+ * run: it is what makes the last-resort tier safe, because a session that no
+ * label and no prompt claims belongs to one of the other agents.
+ */
+async function findPersistedSession(
+  cwd: string,
+  runId: string,
+  agent: UnknownRecord,
+  agentCount: number
+): Promise<PersistedSessionMatch | null> {
+  const sessionDir = workflowSessionsDir(cwd)
+  // Newest first, so the sessions of a recent run are always inside the cap.
+  const files = await sessionFilesNewestFirst(sessionDir)
+  const scanned = files.slice(0, MAX_TRANSCRIPT_FILES_SCANNED)
+  if (files.length > scanned.length) warnScanTruncated(sessionDir, files.length)
 
   const expected = `workflow:${runId} `
-  const prompt = stringValue(agent.prompt)
   const label = stringValue(agent.label)
-  const labelMatches: PersistedSessionMatch[] = []
-  const promptMatches: PersistedSessionMatch[] = []
-  const fallbackMatches: PersistedSessionMatch[] = []
-  for (const name of names) {
-    const match = await readPersistedSession(join(workflowSessionsDir(cwd), name))
+  const promptNeedle = stringValue(agent.prompt)?.slice(0, PROMPT_MATCH_CHARS)
+  const candidates: SessionCandidate[] = []
+  for (const file of scanned) {
+    const match = await readPersistedSession(file)
     if (!match || !match.sessionName.startsWith(expected)) continue
     const suffix = match.sessionName.slice(expected.length).trim()
-    const matchesLabel = !!label && (suffix === label || suffix.startsWith(`${label} `))
-    if (matchesLabel) {
-      labelMatches.push(match)
-      continue
-    }
-    if (prompt && match.history.some((item) => item.role === 'user' && item.text.includes(prompt))) {
-      promptMatches.push(match)
-      continue
-    }
-    fallbackMatches.push(match)
+    candidates.push({
+      match,
+      // Exact only: an agent labelled `build` must never claim the transcript
+      // of `build extras`.
+      labelMatch: !!label && suffix === label,
+      promptMatch: !!promptNeedle && sessionCarriesPrompt(match, promptNeedle),
+    })
   }
 
   // Never use readdir order to assign a transcript to an agent. A persisted
   // session is safe only when its label, prompt, or unique run prefix selects it.
-  if (labelMatches.length === 1) return labelMatches[0]
-  if (promptMatches.length === 1) return promptMatches[0]
-  return fallbackMatches.length === 1 ? fallbackMatches[0] : null
+  const labelMatches = candidates.filter((candidate) => candidate.labelMatch)
+  if (labelMatches.length === 1) return labelMatches[0].match
+  // Two agents can share a label (or one label can prefix another), which makes
+  // the label tier useless rather than conclusive: let the prompt decide, first
+  // inside the tied set and then across the whole run.
+  const tiedByPrompt = labelMatches.filter((candidate) => candidate.promptMatch)
+  if (tiedByPrompt.length === 1) return tiedByPrompt[0].match
+  const promptMatches = candidates.filter((candidate) => candidate.promptMatch)
+  if (promptMatches.length === 1) return promptMatches[0].match
+  // Last resort: the lone session of a single-agent run is unambiguous however
+  // it was named. With more agents in the run an unclaimed session belongs to
+  // one of the others, so it stays unassigned.
+  return agentCount === 1 && candidates.length === 1 ? candidates[0].match : null
 }
 
 async function projectAgentDetail(
   workspace: Workspace,
   runId: string,
   value: UnknownRecord,
-  summary: WorkflowAgentSummary
+  summary: WorkflowAgentSummary,
+  agentCount: number
 ): Promise<WorkflowAgentDetail> {
   const runHistory = normalizeHistory(value.history)
-  const persisted = await findPersistedSession(workspace.path, runId, value)
+  const persisted = await findPersistedSession(workspace.path, runId, value, agentCount)
   const history = persisted?.history.length ? persisted.history : runHistory
   const resultText = jsonText(value.result ?? value.resultPreview, MAX_ENTRY_CHARS)
   const prompt = stringValue(value.prompt)
@@ -829,7 +1001,7 @@ export async function getWorkflowRun(workspace: Workspace, runId: string): Promi
     const id = numberValue(agent.id)
     const fallback = summary.agents.find((candidate) => candidate.id === id)
     if (id === undefined || !fallback) return null
-    return projectAgentDetail(workspace, runId, agent, fallback)
+    return projectAgentDetail(workspace, runId, agent, fallback, rawAgents.length)
   }))
   const logs = Array.isArray(raw.logs)
     ? raw.logs

@@ -6,6 +6,7 @@ import {
   filterRunsBySession,
   filterRunsByWorkspace,
   isTerminalRun,
+  isWorkflowActionAllowed,
   resolveRunSessionId,
   runActiveAgentCount,
 } from './workflow-runs'
@@ -102,22 +103,28 @@ test('runActiveAgentCount counts running agents only while the run is live', () 
   assert.equal(runActiveAgentCount(agents, 'pending'), 2)
 })
 
-// ─── Control eligibility (mirrors the extension's allowedActions) ───────────
+// ─── Control eligibility ─────────────────────────────────────────────────────
 
-test('canAbortRun is true only for running/paused', () => {
-  for (const status of ['running', 'paused'] as WorkflowRunStatus[]) {
-    assert.equal(canAbortRun(status), true, status)
-  }
-  for (const status of ['pending', 'completed', 'failed', 'aborted', 'unknown'] as WorkflowRunStatus[]) {
-    assert.equal(canAbortRun(status), false, status)
-  }
-})
+/** The extension's allowedActions, spelled out for every run status. */
+const CONTROL_MATRIX: Record<WorkflowRunStatus, { stop: boolean; resume: boolean }> = {
+  pending: { stop: false, resume: true },
+  running: { stop: true, resume: false },
+  paused: { stop: true, resume: true },
+  completed: { stop: false, resume: false },
+  failed: { stop: false, resume: true },
+  aborted: { stop: false, resume: false },
+  unknown: { stop: false, resume: false },
+}
 
-test('canResumeRun is true only for paused/failed/pending — never completed/aborted', () => {
-  for (const status of ['paused', 'failed', 'pending'] as WorkflowRunStatus[]) {
-    assert.equal(canResumeRun(status), true, status)
-  }
-  for (const status of ['running', 'completed', 'aborted', 'unknown'] as WorkflowRunStatus[]) {
-    assert.equal(canResumeRun(status), false, status)
+test('the control matrix holds for every run status, through both entry points', () => {
+  for (const [name, expected] of Object.entries(CONTROL_MATRIX)) {
+    const status = name as WorkflowRunStatus
+    // The gate used by the main-process IPC handler...
+    assert.equal(isWorkflowActionAllowed('stop', status), expected.stop, `stop/${status}`)
+    assert.equal(isWorkflowActionAllowed('resume', status), expected.resume, `resume/${status}`)
+    // ...and the predicates the workflow components render with are the same
+    // implementation, so the two can never encode different rules.
+    assert.equal(canAbortRun(status), expected.stop, `canAbortRun/${status}`)
+    assert.equal(canResumeRun(status), expected.resume, `canResumeRun/${status}`)
   }
 })

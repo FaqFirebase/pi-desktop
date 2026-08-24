@@ -76,14 +76,9 @@ export function runActiveAgentCount(
   return agents.filter((agent) => agent.status === 'running').length
 }
 
-// ─── Control eligibility (mirrors the extension's allowedActions) ────────────
+// ─── Control eligibility ─────────────────────────────────────────────────────
+// One implementation, in shared/, so the main-process dispatch gate and these
+// renderer call sites cannot encode different rules. Re-exported here because
+// the workflow components already consume it from this module.
 
-/** Abort (`stop`) is meaningful only while the run can still be stopped. */
-export function canAbortRun(status: WorkflowRunStatus): boolean {
-  return status === 'running' || status === 'paused'
-}
-
-/** Resume is meaningful only where the extension actually supports it. */
-export function canResumeRun(status: WorkflowRunStatus): boolean {
-  return status === 'paused' || status === 'failed' || status === 'pending'
-}
+export { canAbortRun, canResumeRun, isWorkflowActionAllowed } from '../../../shared/workflow-control'

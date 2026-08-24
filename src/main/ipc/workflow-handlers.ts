@@ -1,5 +1,6 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { IPC_CHANNELS, type WorkflowControlAction, type WorkflowControlResult } from '../../shared/ipc-contracts'
+import { IPC_CHANNELS, type WorkflowControlResult } from '../../shared/ipc-contracts'
+import { isWorkflowActionAllowed } from '../../shared/workflow-control'
 import { getWorkflowRun, listWorkflowRuns, resolveWorkflowWorkspaces, setWorkflowPersistence } from '../workflow-monitor'
 import { assertTrustedSender, isString } from './validation'
 import type { PiRpcManager } from '../pi-rpc-manager'
@@ -18,16 +19,6 @@ async function workflowWorkspaces(ctx: IpcContext) {
 async function findWorkspace(ctx: IpcContext, workspaceId: string) {
   const workspaces = await workflowWorkspaces(ctx)
   return workspaces.find((workspace) => workspace.id === workspaceId) ?? null
-}
-
-// The extension's authoritative control matrix (workflow-control-tool.ts
-// `allowedActions`): stop = running|paused, resume = paused|failed|pending.
-// The extension enforces it again at dispatch time; this gate only decides
-// which buttons are meaningful and avoids dispatching doomed commands.
-function actionAllowedForStatus(action: WorkflowControlAction, status: string): boolean {
-  if (action === 'stop') return status === 'running' || status === 'paused'
-  if (action === 'resume') return status === 'paused' || status === 'failed' || status === 'pending'
-  return false
 }
 
 /** Probe the workspace's Pi for the `/workflows` extension command. */
@@ -79,13 +70,18 @@ export function registerWorkflowHandlers(ctx: IpcContext): void {
       if (!workspace) return fail('no-pi')
       const run = await getWorkflowRun(workspace, runId)
       if (!run) return fail('status-not-permitted')
-      if (!actionAllowedForStatus(action, run.status)) return fail('status-not-permitted')
+      if (!isWorkflowActionAllowed(action, run.status)) return fail('status-not-permitted')
 
       // Route to the run's OWN session runtime, never the active one. A
       // missing session identity is unsafe to guess, so fail closed.
       if (!run.sessionId) return fail('no-pi')
       const pi = ctx.workspaceManager.getPiManagerForSession(workspaceId, run.sessionId)
       if (!pi) return fail('no-pi')
+
+      // A matched but stopped runtime cannot answer the probe below: sendCommand
+      // throws 'Pi process is not running' and the catch would relabel that as a
+      // missing extension. Report the real reason instead.
+      if (pi.getStatus().status !== 'running') return fail('pi-not-running')
 
       // The extension command is what executes the control; only dispatch when
       // it is actually registered in that Pi process. Without this probe an

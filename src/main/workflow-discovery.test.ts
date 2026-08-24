@@ -201,6 +201,38 @@ test('an unresolved project is still listable/detail-openable via its display pa
   }
 })
 
+test('a missing session store never erases the projections built from the run files', async () => {
+  const fixture = await makeFixture()
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR
+  try {
+    clearWorkflowProjectDiscoveryCache()
+    // Point Pi's session store at a path that does not exist. Only the cwd
+    // evidence is lost; the run files are untouched, so every projection built
+    // from them must survive.
+    process.env.PI_CODING_AGENT_DIR = join(fixture.realCwd, 'no-such-agent-dir')
+    const key = projectKey(fixture.realCwd)
+
+    const discovery = await discoverWorkflowProjects()
+    assert.ok(discovery.projects.has(key), 'the project dir is still discovered')
+    assert.equal(discovery.projects.get(key), null, 'its cwd cannot be recovered')
+    assert.equal(discovery.sessionDirCwds.size, 0)
+
+    const resolved = await resolveWorkflowWorkspaces([])
+    const projection = resolved.find((ws) => ws.id === `workflow-${key}`)
+    assert.ok(projection, 'the unregistered project still gets a projection')
+    assert.equal(projection.path, join(homedir(), '.pi', 'workflows', 'projects', key))
+
+    const runs = await listWorkflowRuns([projection])
+    assert.equal(runs.length, 1)
+    assert.equal(runs[0].runId, RUN_ID)
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir
+    await fixture.cleanup()
+    clearWorkflowProjectDiscoveryCache()
+  }
+})
+
 test('discovery results are cached and reused between polls', async () => {
   const fixture = await makeFixture()
   try {
