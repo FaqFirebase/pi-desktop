@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import type { PiStartOptions, AppSettings, PermissionMode } from '../../shared/ipc-contracts'
+import type { AgentEngineKind, PiStartOptions, AppSettings, PermissionMode } from '../../shared/ipc-contracts'
 import { getGuiDataPath } from '../app-data-paths'
 import { workspaceTrustStore } from '../workspace-trust'
 import { join } from 'path'
@@ -7,6 +7,8 @@ import { existsSync } from 'fs'
 import { PERMISSION_RULES_FILE_NAME } from '../../../resources/permission-rules'
 import { isString, isObject, isOptionalString, isOptionalBoolean, isOptionalStringArray } from './validation'
 import { getPiCli } from '../pi-rpc-manager'
+import { engineForBoundSession } from '../pi-paths'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../shared/agent-engine-label'
 
 const READ_ONLY_TOOLS = 'read,grep,find,ls'
 const OMP_READ_ONLY_TOOLS = 'read,grep,glob'
@@ -34,7 +36,18 @@ function removeToolArgs(args: string[]): string[] {
   return filtered
 }
 
-function toolsForPermissionMode(mode: PermissionMode, runtime: 'pi' | 'omp' = 'pi'): string | null {
+/**
+ * The engine this start will actually run under. Plan mode names concrete
+ * tools and the two engines name them differently, so reading the configured
+ * default would hand OMP Pi's tool list whenever a session belonging to the
+ * other engine is opened — and Pi's `find`/`ls` do not exist in OMP, which
+ * silently strips plan mode of the tools it is meant to allow.
+ */
+function engineForStartOptions(options: PiStartOptions): AgentEngineKind {
+  return options.engine ?? engineForBoundSession(options) ?? getPiCli().kind ?? 'pi'
+}
+
+function toolsForPermissionMode(mode: PermissionMode, runtime: AgentEngineKind = 'pi'): string | null {
   switch (mode) {
     case 'plan-readonly':
       return runtime === 'omp' ? OMP_READ_ONLY_TOOLS : READ_ONLY_TOOLS
@@ -61,7 +74,8 @@ export function applyPermissionModeToStartOptions(
   options: PiStartOptions,
   settings: AppSettings
 ): PiStartOptions {
-  const toolList = toolsForPermissionMode(settings.permissionMode, getPiCli().kind ?? 'pi')
+  const engine = engineForStartOptions(options)
+  const toolList = toolsForPermissionMode(settings.permissionMode, engine)
   const args = toolList
     ? [...removeToolArgs(options.args ?? []), '--tools', toolList]
     : [...(options.args ?? [])]
@@ -76,6 +90,10 @@ export function applyPermissionModeToStartOptions(
     env: {
       ...options.env,
       PI_DESKTOP_PERMISSION_MODE: settings.permissionMode,
+      // The extension raises the approval prompt from inside the agent, so it
+      // has no other way to know which CLI it is running in. Without this the
+      // prompt says "Pi wants to run..." during an OMP session.
+      PI_DESKTOP_AGENT_LABEL: agentEngineLabel(engine) ?? DEFAULT_AGENT_ENGINE_LABEL,
       // Resolved here because the extension cannot re-derive the GUI data
       // dir (env override / canonical appData / legacy fallback).
       PI_DESKTOP_PERMISSION_RULES_PATH: globalRulesPath,

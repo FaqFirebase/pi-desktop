@@ -4,6 +4,7 @@ import { join } from 'path'
 import { EventEmitter } from 'events'
 import { StringDecoder } from 'string_decoder'
 import type {
+  AgentEngineKind,
   PiRpcEvent,
   PiStartOptions,
   PiProcessStatus,
@@ -22,7 +23,6 @@ import {
 import { escapeCmdSpawn } from './cmd-escape'
 import { appLog } from './app-log'
 import { getGuiDataPath } from './app-data-paths'
-import { getSessionsRoot } from './pi-paths'
 
 /**
  * Manages a Pi RPC child process.
@@ -66,9 +66,30 @@ const STARTUP_PROBE_ID = '__startup_probe__'
 const STARTUP_PROBE_COMMAND = 'get_state'
 const STARTUP_PROBE_INTERVAL_MS = 750
 const FORCE_KILL_TIMEOUT_MS = 3_000
-const RPC_MAX_FRAME_BYTES = 1024 * 1024
-const RPC_MAX_REASSEMBLED_BYTES = 64 * 1024 * 1024
-const RPC_CHUNK_PAYLOAD_BYTES = 256 * 1024
+/** Bound on the one `ps` call used to snapshot a child's descendants at kill time. */
+const PROCESS_TREE_TIMEOUT_MS = 2_000
+/**
+ * Fallbacks only. The engine advertises its real limits in the `ready` frame
+ * (`maxFrameBytes`, `maxReassembledFrameBytes`); configureLimits() adopts those
+ * so the receiver never enforces a stricter rule than the sender obeys. These
+ * defaults match what OMP 18 advertises and are used until `ready` arrives, and
+ * for the original Pi RPC implementation, which sends no ready frame.
+ */
+const RPC_DEFAULT_MAX_REASSEMBLED_BYTES = 64 * 1024 * 1024
+const RPC_DEFAULT_MAX_CHUNK_PAYLOAD_BYTES = 1024 * 1024
+/** Chunking only exists for frames a single line cannot carry. */
+const RPC_MIN_CHUNK_COUNT = 2
+const RPC_MAX_CHUNK_ID_LENGTH = 128
+/**
+ * Standard base64 with the padding the sender's encoder emits. The alphabet
+ * and the padding shape are enforced here; the round-trip re-encode in push()
+ * additionally rejects non-canonical trailing bits (`QR==` and `QQ==` both
+ * decode to one byte, only the latter is what an encoder produces), so one
+ * payload has exactly one legal wire spelling. Base64url and unpadded input
+ * are rejected by this pattern, not by the round-trip — the two checks state
+ * the same policy and are loosened or kept together.
+ */
+const RPC_CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
 interface PendingRpcChunks {
   chunkId: string
@@ -86,6 +107,8 @@ function isRpcChunkFrame(value: unknown): value is Record<string, unknown> {
 /** Minimal lossless decoder for OMP RPC protocol v2 physical frames. */
 export class RpcFrameDecoder {
   private pending: PendingRpcChunks | null = null
+  private maxReassembledBytes = RPC_DEFAULT_MAX_REASSEMBLED_BYTES
+  private maxChunkPayloadBytes = RPC_DEFAULT_MAX_CHUNK_PAYLOAD_BYTES
 
   hasPending(): boolean {
     return this.pending !== null
@@ -95,19 +118,41 @@ export class RpcFrameDecoder {
     this.pending = null
   }
 
+  /**
+   * Adopt the limits the engine advertised in its `ready` frame. A sender only
+   * chunks what exceeds its own single-frame cap, so that cap is also the
+   * largest payload any one chunk can carry. Ignores absent or nonsensical
+   * values so a malformed ready frame cannot widen or break the decoder.
+   */
+  configureLimits(limits: { maxFrameBytes?: unknown; maxReassembledFrameBytes?: unknown }): void {
+    const frame = limits.maxFrameBytes
+    const reassembled = limits.maxReassembledFrameBytes
+    if (typeof frame === 'number' && Number.isSafeInteger(frame) && frame > 0) {
+      this.maxChunkPayloadBytes = frame
+    }
+    if (typeof reassembled === 'number' && Number.isSafeInteger(reassembled) && reassembled > 0) {
+      this.maxReassembledBytes = reassembled
+    }
+  }
+
   push(value: Record<string, unknown>): object | undefined {
     const chunkId = value.chunkId
     const index = typeof value.index === 'number' ? value.index : Number.NaN
     const count = typeof value.count === 'number' ? value.count : Number.NaN
     const byteLength = typeof value.byteLength === 'number' ? value.byteLength : Number.NaN
     const data = value.data
+    // `byteLength` is bounded above only. How the sender splits a frame is its
+    // own business, so there is no floor: a floor of one whole frame would make
+    // every short chunk sequence undecodable if the sender ever lowered its
+    // frame cap. A wrong declared length is still caught while reassembling,
+    // against the bytes actually received.
+    const maxChunkCount = Math.ceil(this.maxReassembledBytes / this.maxChunkPayloadBytes)
     if (
-      typeof chunkId !== 'string' || chunkId.length === 0 || chunkId.length > 128 ||
+      typeof chunkId !== 'string' || chunkId.length === 0 || chunkId.length > RPC_MAX_CHUNK_ID_LENGTH ||
       !Number.isSafeInteger(index) || !Number.isSafeInteger(count) || !Number.isSafeInteger(byteLength) ||
-      index < 0 || count < 2 || count > Math.ceil(RPC_MAX_REASSEMBLED_BYTES / RPC_CHUNK_PAYLOAD_BYTES) || index >= count ||
-      byteLength < RPC_MAX_FRAME_BYTES ||
-      byteLength > RPC_MAX_REASSEMBLED_BYTES || typeof data !== 'string' || data.length === 0 ||
-      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)
+      index < 0 || count < RPC_MIN_CHUNK_COUNT || count > maxChunkCount || index >= count ||
+      byteLength <= 0 || byteLength > this.maxReassembledBytes ||
+      typeof data !== 'string' || data.length === 0 || !RPC_CANONICAL_BASE64.test(data)
     ) {
       throw new Error('invalid rpc chunk metadata')
     }
@@ -115,7 +160,7 @@ export class RpcFrameDecoder {
     const chunkCount = count as number
     const declaredByteLength = byteLength as number
     const bytes = Buffer.from(data, 'base64')
-    if (bytes.toString('base64') !== data || bytes.byteLength > RPC_CHUNK_PAYLOAD_BYTES) {
+    if (bytes.toString('base64') !== data || bytes.byteLength > this.maxChunkPayloadBytes) {
       throw new Error('invalid rpc chunk data')
     }
 
@@ -262,8 +307,16 @@ export interface PiCli {
 let configuredOverride: string | null = null
 let configuredEngine: PiEngine = 'auto'
 let cachedResolution: PiResolution | null = null
+/**
+ * Auto-detected resolution per engine, for starts that must run a specific
+ * engine rather than the configured one. Cached and invalidated exactly like
+ * `cachedResolution` — both read the same filesystem state.
+ */
+const engineResolutions = new Map<AgentEngineKind, PiResolution>()
 let cachedNodeBinary: string | null = null
 let detectedInstallationsCache: { at: number; value: AgentInstallation[] } | null = null
+/** How long a detection result is served without re-walking the filesystem. */
+const INSTALLATION_CACHE_TTL_MS = 30_000
 /**
  * Apply the selected executable and engine. The engine is persisted separately
  * so a custom path named something other than `omp` cannot silently change the
@@ -276,6 +329,7 @@ export function setPiExecutableOverride(raw: string | undefined | null, engine: 
   configuredOverride = next
   configuredEngine = engine
   cachedResolution = null
+  engineResolutions.clear()
   cachedNodeBinary = null
 }
 
@@ -301,10 +355,18 @@ export function getPiResolution(): PiResolution {
   return getResolution()
 }
 
-/** Detect the first usable installation for each supported engine. */
-export function detectPiInstallations(): AgentInstallation[] {
+/**
+ * Detect the first usable installation for each supported engine.
+ *
+ * `force` skips the cache. A rescan is the user telling us the filesystem
+ * changed since the last look — serving a cached answer there turns the
+ * Rescan button into a spinner that can never report a new install.
+ */
+export function detectPiInstallations(force = false): AgentInstallation[] {
   const cached = detectedInstallationsCache
-  if (cached && Date.now() - cached.at < 30_000) return cached.value.map((item) => ({ ...item }))
+  if (!force && cached && Date.now() - cached.at < INSTALLATION_CACHE_TTL_MS) {
+    return cached.value.map((item) => ({ ...item }))
+  }
   const candidates: Array<{ kind: AgentInstallation['kind']; resolution: PiResolution }> = [
     { kind: 'pi', resolution: resolvePiBinary(RESOLUTION_DEPS, null, 'pi') },
     { kind: 'omp', resolution: resolvePiBinary(RESOLUTION_DEPS, null, 'omp') },
@@ -344,13 +406,8 @@ function getNodeBinary(): string {
   return cachedNodeBinary
 }
 
-/**
- * The resolved Pi invocation. Also exported for ipc-handlers, which runs
- * `pi install/remove/update` with the same binary — Electron's own PATH won't
- * have `pi` on it.
- */
-export function getPiCli(): PiCli {
-  const resolution = getResolution()
+/** Pair a resolution with the Node binary and the failure text spawn needs. */
+function toPiCli(resolution: PiResolution, kind: AgentEngineKind): PiCli {
   const node = getNodeBinary()
   const nodeFound = !resolution.useNode || existsSync(node)
   let failureReason: string | null = null
@@ -363,11 +420,7 @@ export function getPiCli(): PiCli {
       'or set the NODE env var to your Node binary path.'
   }
   return {
-    kind: configuredEngine === 'omp'
-      ? 'omp'
-      : configuredEngine === 'pi'
-        ? 'pi'
-        : isOmpExecutable(resolution.script) ? 'omp' : 'pi',
+    kind,
     script: resolution.script,
     node,
     useNode: resolution.useNode,
@@ -376,6 +429,122 @@ export function getPiCli(): PiCli {
     nodeFound,
     failureReason,
   }
+}
+
+/**
+ * The resolved Pi invocation. Also exported for ipc-handlers, which runs
+ * `pi install/remove/update` with the same binary — Electron's own PATH won't
+ * have `pi` on it.
+ */
+export function getPiCli(): PiCli {
+  const resolution = getResolution()
+  return toPiCli(
+    resolution,
+    configuredEngine === 'omp'
+      ? 'omp'
+      : configuredEngine === 'pi'
+        ? 'pi'
+        : isOmpExecutable(resolution.script) ? 'omp' : 'pi'
+  )
+}
+
+/**
+ * The engine a start would use right now. Needed wherever the status of "no
+ * process yet" has to be reported: the window opens before anything is
+ * spawned, and a status with no engine reads as Pi, so the status bar named
+ * the wrong CLI until the first agent started.
+ */
+export function getConfiguredEngineKind(): AgentEngineKind {
+  return getPiCli().kind ?? 'pi'
+}
+
+/**
+ * The invocation for one named engine, whatever the configured default is.
+ *
+ * The engine is a PARAMETER here instead of a temporary write to
+ * `configuredEngine`: session runtimes start concurrently, so a global the
+ * caller flips before each spawn would let one session's engine leak into
+ * another session's start — the exact race a per-session engine has to avoid.
+ * Each engine's resolution is cached under its own key and cleared with the
+ * configured one.
+ */
+function getPiCliForEngine(engine: AgentEngineKind): PiCli {
+  const configured = getPiCli()
+  // The configured resolution already targets this engine, including any
+  // executable path the user set for it.
+  if (configured.kind === engine) return configured
+  // A configured override names the OTHER engine's binary, so this engine is
+  // auto-detected rather than inheriting a path that is not its own.
+  const cached = engineResolutions.get(engine)
+  if (cached) return toPiCli(cached, engine)
+  const resolution = resolvePiBinary(RESOLUTION_DEPS, null, engine)
+  // Only a hit is remembered. Caching "not installed" would keep answering
+  // that after the user installs the engine, for the whole run.
+  if (resolution.found) engineResolutions.set(engine, resolution)
+  return toPiCli(resolution, engine)
+}
+
+/**
+ * The CLI one start() spawns. `options.engine` names the engine that owns the
+ * session being opened and outranks the configured default, so a Pi session
+ * always resumes under Pi and an OMP session under OMP.
+ */
+export function resolveStartCli(options: PiStartOptions): PiCli {
+  if (!options.engine) return getPiCli()
+  const owner = getPiCliForEngine(options.engine)
+  if (owner.found) return owner
+  // The owning engine is not installed. Both engines write the same JSONL, so
+  // opening the conversation with the configured engine beats refusing to open
+  // it at all; getEngineKind then reports what actually runs.
+  appLog.warn(
+    'pi',
+    `Session engine ${options.engine} is not installed; starting the configured engine instead`
+  )
+  return getPiCli()
+}
+
+/**
+ * The argv for one RPC start, engine-independent.
+ *
+ * No `--session-dir` is injected: each engine keeps its sessions in its own
+ * default store and the index reads both. Forcing OMP at Pi's root only ever
+ * moved resumed sessions, because OMP ignores the flag for new ones, which
+ * split one conversation history across two trees. A caller that really wants
+ * a shared store passes `--session-dir` in `options.args`, and it survives —
+ * caller args are appended verbatim.
+ */
+export function buildPiArgs(options: PiStartOptions): string[] {
+  const args: string[] = [MODE_FLAG, RPC_MODE]
+
+  if (options.noSession) {
+    args.push(NO_SESSION_FLAG)
+  }
+
+  if (options.provider) {
+    args.push(PROVIDER_FLAG, options.provider)
+  }
+
+  if (options.model) {
+    args.push(MODEL_FLAG, options.model)
+  }
+
+  if (options.forkSessionPath) {
+    args.push(FORK_FLAG, options.forkSessionPath)
+  } else if (options.sessionPath) {
+    // Both engines honour an explicit session path, which is what lets a
+    // session be resumed out of the store its own engine owns.
+    args.push(SESSION_FLAG, options.sessionPath)
+  } else if (options.continueSession && !options.noSession) {
+    // Resume the most recent session for the cwd. Pi falls back to a fresh
+    // session when none exists, so this is safe on first run.
+    args.push(CONTINUE_FLAG)
+  }
+
+  if (options.args) {
+    args.push(...options.args)
+  }
+
+  return args
 }
 
 /**
@@ -493,11 +662,12 @@ export class PiRpcManager extends EventEmitter {
       // informational lines to stderr while running — surfacing those as an
       // error misleads the UI into showing healthy startup logs as ERROR.
       error: this.status === 'error' ? (this.stderrBuffer || null) : null,
+      engine: this.getEngineKind(),
     }
   }
   /** Engine identity of the live child, not the currently configured future one. */
-  getEngineKind(): 'pi' | 'omp' {
-    return this.runningEngine ?? getPiCli().kind ?? 'pi'
+  getEngineKind(): AgentEngineKind {
+    return this.runningEngine ?? getConfiguredEngineKind()
   }
 
   async start(options: PiStartOptions = {}): Promise<PiStatus> {
@@ -523,7 +693,7 @@ export class PiRpcManager extends EventEmitter {
 
     // Pre-flight: if the binary we resolved doesn't exist, fail fast with a
     // clear message instead of letting spawn die with a cryptic ENOENT.
-    const cli = getPiCli()
+    const cli = resolveStartCli(options)
     if (cli.failureReason) {
       this.stderrBuffer = cli.failureReason
       this.setStatus('error')
@@ -590,8 +760,8 @@ export class PiRpcManager extends EventEmitter {
   private spawnAndAwaitReady(
     options: PiStartOptions
   ): Promise<'ready' | 'crashed' | 'timeout' | 'aborted'> {
-    const args = this.buildArgs(options)
-    const cli = getPiCli()
+    const args = buildPiArgs(options)
+    const cli = resolveStartCli(options)
 
     const spawnOptions: SpawnOptions = {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -812,46 +982,6 @@ export class PiRpcManager extends EventEmitter {
     })
   }
 
-  private buildArgs(options: PiStartOptions): string[] {
-    const args: string[] = [MODE_FLAG, RPC_MODE]
-    const cli = getPiCli()
-
-    // OMP stores sessions under ~/.omp by default. Keep Desktop's single
-    // session index authoritative by pointing OMP at the same JSONL root.
-    // Explicit caller args win so advanced users can intentionally separate it.
-    if (cli.kind === 'omp' && !options.args?.some((arg) => arg === '--session-dir' || arg.startsWith('--session-dir='))) {
-      args.push('--session-dir', getSessionsRoot())
-    }
-
-    if (options.noSession) {
-      args.push(NO_SESSION_FLAG)
-    }
-
-    if (options.provider) {
-      args.push(PROVIDER_FLAG, options.provider)
-    }
-
-    if (options.model) {
-      args.push(MODEL_FLAG, options.model)
-    }
-
-    if (options.forkSessionPath) {
-      args.push(FORK_FLAG, options.forkSessionPath)
-    } else if (options.sessionPath) {
-      args.push(SESSION_FLAG, options.sessionPath)
-    } else if (options.continueSession && !options.noSession) {
-      // Resume the most recent session for the cwd. Pi falls back to a fresh
-      // session when none exists, so this is safe on first run.
-      args.push(CONTINUE_FLAG)
-    }
-
-    if (options.args) {
-      args.push(...options.args)
-    }
-
-    return args
-  }
-
   private setupStreams(): void {
     if (!this.process) return
 
@@ -917,7 +1047,14 @@ export class PiRpcManager extends EventEmitter {
     // original Pi RPC implementation, which has no ready frame.
     if ((event as { type?: unknown }).type === 'ready') {
       this.markReady?.()
-      const ready = event as { supportedProtocolVersions?: unknown }
+      const ready = event as {
+        supportedProtocolVersions?: unknown
+        maxFrameBytes?: unknown
+        maxReassembledFrameBytes?: unknown
+      }
+      // Adopt the engine's own framing limits before v2 traffic can arrive, so
+      // the decoder never rejects a frame the sender considers legal.
+      this.rpcFrameDecoder.configureLimits(ready)
       if (Array.isArray(ready.supportedProtocolVersions) && ready.supportedProtocolVersions.includes(2)) {
         void this.sendCommand({ type: 'negotiate_protocol', protocolVersion: 2 }).catch(() => {})
       }
@@ -958,6 +1095,47 @@ export class PiRpcManager extends EventEmitter {
     }
   }
 
+  /**
+   * PIDs descended from `root`, children before grandchildren.
+   *
+   * A negative-PID signal only reaches the killed process's own group, and OMP
+   * puts each subagent it spawns in a new group, so `hub` fan-out survives the
+   * parent dying: the app exits, the subagents are re-parented to init, and
+   * they keep running and keep billing. They have to be enumerated before the
+   * parent is signalled, because re-parenting erases the link immediately.
+   *
+   * POSIX only. Windows has the same gap but `taskkill /T` is the fix there and
+   * it cannot be verified from here, so that path is left as it was.
+   */
+  private descendantPids(root: number): number[] {
+    if (IS_WINDOWS) return []
+    const result = spawnSync('ps', ['-eo', 'pid=,ppid='], { encoding: 'utf-8', timeout: PROCESS_TREE_TIMEOUT_MS })
+    if (result.status !== 0 || typeof result.stdout !== 'string') return []
+
+    const childrenByParent = new Map<number, number[]>()
+    for (const line of result.stdout.split('\n')) {
+      const [pid, ppid] = line.trim().split(/\s+/).map(Number)
+      if (!Number.isInteger(pid) || !Number.isInteger(ppid)) continue
+      const siblings = childrenByParent.get(ppid)
+      if (siblings) siblings.push(pid)
+      else childrenByParent.set(ppid, [pid])
+    }
+
+    const found: number[] = []
+    const queue = [root]
+    // Breadth-first with a seen set: a malformed table must not loop forever.
+    const seen = new Set<number>([root])
+    while (queue.length > 0) {
+      for (const child of childrenByParent.get(queue.shift()!) ?? []) {
+        if (seen.has(child)) continue
+        seen.add(child)
+        found.push(child)
+        queue.push(child)
+      }
+    }
+    return found
+  }
+
   private kill(): void {
     // Settle any pending startup attempt first — after the listener teardown
     // below it could never settle on its own. No-op when already settled.
@@ -984,6 +1162,10 @@ export class PiRpcManager extends EventEmitter {
       }
       proc.stdin?.end()
 
+      // Snapshot the tree before signalling: once the parent dies its children
+      // are re-parented to init and can no longer be found from this pid.
+      const strays = proc.pid ? this.descendantPids(proc.pid) : []
+
       // Kill entire process group (negative PID)
       try {
         if (proc.pid) {
@@ -991,6 +1173,12 @@ export class PiRpcManager extends EventEmitter {
         }
       } catch {
         proc.kill('SIGTERM')
+      }
+
+      // Subagents sit in their own groups, so the group signal above misses
+      // them. Signal each directly; ESRCH just means it already exited.
+      for (const stray of strays) {
+        try { process.kill(stray, 'SIGTERM') } catch { /* already gone */ }
       }
 
       // Force kill after timeout
@@ -1001,6 +1189,9 @@ export class PiRpcManager extends EventEmitter {
           }
         } catch {
           try { proc.kill('SIGKILL') } catch { /* already dead */ }
+        }
+        for (const stray of strays) {
+          try { process.kill(stray, 'SIGKILL') } catch { /* already gone */ }
         }
       }, FORCE_KILL_TIMEOUT_MS)
 

@@ -1,5 +1,5 @@
 import { basename, join, posix as posixPath } from 'path'
-import { buildNpmPrefixCommand } from './cmd-escape'
+import { buildNpmPrefixCommand, escapeCmdSpawn } from './cmd-escape'
 
 /**
  * Locating the Pi CLI is the single most failure-prone step at startup, and the
@@ -26,6 +26,11 @@ export const SHELL_PATH_END = '__PI_PATH_END__'
 /** A login shell sources the user's whole rc chain; give it room but bound it. */
 export const SHELL_PROBE_TIMEOUT_MS = 5_000
 export const NPM_PREFIX_TIMEOUT_MS = 5_000
+/** `--version` prints a cached string and exits; it never waits on the network. */
+const IDENTITY_PROBE_TIMEOUT_MS = 5_000
+const VERSION_FLAG = '--version'
+/** Any dotted number in the output: both `0.4.1` and `omp 0.4.1` qualify. */
+const VERSION_OUTPUT_PATTERN = /\d+\.\d+/
 const WINDOWS_PATH_DELIMITER = ';'
 const POSIX_PATH_DELIMITER = ':'
 const DEFAULT_WINDOWS_PATHEXT = '.COM;.EXE;.BAT;.CMD'
@@ -380,17 +385,59 @@ function ompLocations(deps: ResolutionDeps): string[] {
   ]
 }
 
-function resolveOmpBinary(deps: ResolutionDeps, pathEnv: string): string | null {
+/**
+ * Every OMP candidate, most authoritative first. A generator rather than an
+ * array so the `npm prefix -g` subprocess is only spawned when the cheaper
+ * PATH and common-location lookups came up empty.
+ */
+function* ompCandidates(deps: ResolutionDeps, pathEnv: string): Generator<string> {
   const onPath = whichInPath(deps, OMP_FALLBACK_BINARY_POSIX, pathEnv)
-  if (onPath) return onPath
+  if (onPath) yield onPath
   for (const candidate of ompLocations(deps)) {
-    if (usableFile(deps, candidate)) return candidate
+    if (usableFile(deps, candidate)) yield candidate
   }
   const prefix = npmGlobalPrefix(deps, pathEnv)
   if (prefix) {
     for (const candidate of ompShimCandidates(deps, prefix)) {
-      if (usableFile(deps, candidate)) return candidate
+      if (usableFile(deps, candidate)) yield candidate
     }
+  }
+}
+
+/** The first OMP candidate, taken on trust because the engine is explicit. */
+function resolveOmpBinary(deps: ResolutionDeps, pathEnv: string): string | null {
+  for (const candidate of ompCandidates(deps, pathEnv)) return candidate
+  return null
+}
+
+/**
+ * Ask a candidate to identify itself. `deps.capture` yields stdout only for a
+ * clean exit, so an unreadable file, a non-executable one and a script that
+ * errors out all answer null.
+ */
+function respondsToVersion(deps: ResolutionDeps, script: string, pathEnv: string): boolean {
+  // A .cmd/.ps1 shim only starts through cmd.exe, which quotes nothing itself:
+  // escape both tokens exactly as the real spawn path does.
+  const viaCmd = deps.isWindows && SHELL_SCRIPT_PATTERN.test(script)
+  const command = escapeCmdSpawn(viaCmd, script, [VERSION_FLAG])
+  const stdout = deps.capture(command.file, command.args, {
+    shell: viaCmd,
+    timeoutMs: IDENTITY_PROBE_TIMEOUT_MS,
+    pathEnv,
+  })
+  return stdout !== null && VERSION_OUTPUT_PATTERN.test(stdout)
+}
+
+/**
+ * The first OMP candidate that behaves like a CLI. `omp` is a short, common
+ * name, and auto-detection reaches this point only when the user asked for
+ * nothing in particular — accepting a same-named data file or unrelated script
+ * would mark the resolution found, replacing the actionable "install Pi with…"
+ * message with a spawn timeout minutes later.
+ */
+function resolveVerifiedOmpBinary(deps: ResolutionDeps, pathEnv: string): string | null {
+  for (const candidate of ompCandidates(deps, pathEnv)) {
+    if (respondsToVersion(deps, candidate, pathEnv)) return candidate
   }
   return null
 }
@@ -460,7 +507,8 @@ function finalize(
  *   3. A PATH search.
  *   4. Per-version prefixes created by node version managers.
  *   5. Hardcoded common install locations.
- *   6. OMP fallback when Pi is not installed.
+ *   6. OMP fallback when Pi is not installed, accepted only after the
+ *      candidate answers a `--version` probe.
  *   7. The bare binary name, flagged as not found.
  */
 export function resolvePiBinary(
@@ -555,8 +603,10 @@ export function resolvePiBinary(
 
   // Keep the historical Pi-first preference, but make an OMP-only machine
   // work without forcing the user to discover the Agent Executable field.
+  // This is the one branch nobody asked for, so it is also the one that has to
+  // prove the binary is real before claiming the search succeeded.
   if (engine === 'auto') {
-    const omp = resolveOmpBinary(deps, pathEnv)
+    const omp = resolveVerifiedOmpBinary(deps, pathEnv)
     if (omp) return finalize(deps, omp, 'omp', true, rejectedOverride, pathEnv)
   }
 

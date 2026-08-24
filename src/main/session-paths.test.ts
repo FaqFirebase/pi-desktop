@@ -4,9 +4,34 @@ import {
   sanitizePath,
   sessionDirName,
   desanitizeSessionDir,
+  isSessionArtifactDir,
   projectNameFromPath,
   pathsEqual,
 } from './session-paths'
+
+/**
+ * OMP writes each subagent's transcript into `<timestamp>_<uuid>/` beside the
+ * session store root. Observed live: the index read that as a project, listed
+ * `SecurityReview.jsonl` as a chat, and spawned a real agent against it.
+ */
+test('a session artifact directory is not mistaken for a project', () => {
+  assert.equal(isSessionArtifactDir('2026-08-24T18-15-06-360Z_01a034fb-b578-7276-a10c-feee5492c0eb'), true)
+})
+
+test('real project directories are still listed', () => {
+  // Pi's sanitized form, and the two odd names OMP creates in practice.
+  assert.equal(isSessionArtifactDir('--home-alice--'), false)
+  assert.equal(isSessionArtifactDir('--mnt-data-Projects-thing--'), false)
+  assert.equal(isSessionArtifactDir('-tmp'), false)
+  assert.equal(isSessionArtifactDir('-'), false)
+  assert.equal(isSessionArtifactDir('C--Users-alice--'), false)
+})
+
+test('the guard needs both a timestamp and a uuid, not either alone', () => {
+  assert.equal(isSessionArtifactDir('2026-08-24T18-15-06-360Z'), false)
+  assert.equal(isSessionArtifactDir('01a034fb-b578-7276-a10c-feee5492c0eb'), false)
+  assert.equal(isSessionArtifactDir('2026-08-24T18-15-06-360Z_not-a-uuid'), false)
+})
 
 test('sanitizePath encodes POSIX paths like Pi', () => {
   assert.equal(sanitizePath('/home/alice'), '--home-alice--')

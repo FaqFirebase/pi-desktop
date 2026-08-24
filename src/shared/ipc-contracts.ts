@@ -201,6 +201,12 @@ export interface PiStatus {
   status: PiProcessStatus
   pid: number | null
   error: string | null
+  /**
+   * Engine identity of the live child, so the UI can name what is actually
+   * running. Optional because a snapshot may predate the field; consumers
+   * fall back to Pi, which is what an unlabelled process has always been.
+   */
+  engine?: AgentEngineKind
 }
 
 export type SessionRuntimeActivity = 'working' | 'needs-approval' | 'completed' | 'failed'
@@ -223,8 +229,16 @@ export interface SessionRuntimeCloseResult {
   sessionPath: string | null
   /** Active replacement chosen atomically with the close, if one exists. */
   replacementSessionPath?: string | null
-  /** Header-only sessions are disposable and are deleted when closed. */
+  /** Proven header-only. Necessary for the auto-delete, never sufficient. */
   empty: boolean
+  /**
+   * True only when this app created the session file during this run: a tab
+   * opened with no session that let the agent write a fresh JSONL. A tab that
+   * adopted an existing file — opened from the list, forked, or resumed with
+   * `--continue` — is false, because that file is the user's conversation and
+   * must survive being closed no matter how it reads on disk.
+   */
+  appCreated: boolean
   deleted: boolean
 }
 
@@ -281,6 +295,13 @@ export interface PiStartOptions {
   // Start a new session by forking this existing Pi session file. The new
   // session is created in the supplied cwd.
   forkSessionPath?: string
+  /**
+   * Engine this one start must spawn, overriding the configured default. Each
+   * engine keeps its sessions in its own store, so a session can only be
+   * resumed by the engine that wrote it. Absent means "use the configured
+   * engine", which is what a brand-new session does.
+   */
+  engine?: AgentEngineKind
   args?: string[]
   env?: Record<string, string>
 }
@@ -598,6 +619,7 @@ export interface PiStatusChangeEvent {
   status: PiProcessStatus
   pid: number | null
   error: string | null
+  engine?: AgentEngineKind
 }
 
 // Emitted by Pi when the session title changes — e.g. an auto-title extension,
@@ -744,6 +766,12 @@ export interface SessionListItem {
   sessionId: string
   /** Pi's header UUID, used to correlate workflow runs with this session. */
   piSessionId?: string
+  /**
+   * Engine that owns this session, taken from the store the file was indexed
+   * from. Optional because a row the index could not classify must stay
+   * listable; consumers show no engine tag rather than guessing one.
+   */
+  engine?: AgentEngineKind
   lastModified: number
   messageCount: number
   projectPath: string
@@ -800,6 +828,12 @@ export interface SessionDeleteResult {
   ok: boolean
   method: 'trash' | 'unlink'
   error?: string
+  /**
+   * Session promoted to active while the deleted session's runtime was closed,
+   * if one existed. The renderer opens it instead of creating a new session,
+   * which would spawn a third runtime and steal activation from this one.
+   */
+  replacementSessionPath?: string | null
 }
 
 export type ArchivedSessionsMap = Record<string, number>
@@ -1003,16 +1037,28 @@ export interface PermissionRulesWorkspaceStatus {
   hasAllowRules: boolean
 }
 
-export type AgentEngine = 'auto' | 'pi' | 'omp'
+/** A concrete engine. `auto` is a preference, never something that is running. */
+export type AgentEngineKind = 'pi' | 'omp'
+
+export type AgentEngine = 'auto' | AgentEngineKind
 
 export interface AgentInstallation {
-  kind: 'pi' | 'omp'
+  kind: AgentEngineKind
   path: string
   source: string
 }
 
 export interface AgentInstallationsResult {
   installations: AgentInstallation[]
+}
+
+/**
+ * How a detection request treats the main process's installation cache. Main
+ * caches results, so a user-initiated Rescan has to ask for a fresh disk walk
+ * or it silently returns the same list it already showed.
+ */
+export interface AgentDetectionOptions {
+  force?: boolean
 }
 
 export interface AppSettings {

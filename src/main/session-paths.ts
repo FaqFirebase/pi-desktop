@@ -36,6 +36,21 @@ export function sessionDirName(dir: string, sessionsRoot: string): string {
 }
 
 /**
+ * A session's own artifact directory, named after the session file rather than
+ * after a project path: `<ISO timestamp>_<uuid>`.
+ *
+ * OMP writes each subagent's transcript into one of these beside the session
+ * store root. They are not projects, and their contents are not user sessions.
+ * Left unguarded, the index listed `SecurityReview.jsonl` as a chat, and
+ * opening it spawned a real agent against a subagent's transcript.
+ */
+const SESSION_ARTIFACT_DIR_RE = /^\d{4}-\d{2}-\d{2}T[\d-]+Z_[0-9a-fA-F-]{36}$/
+
+export function isSessionArtifactDir(dirName: string): boolean {
+  return SESSION_ARTIFACT_DIR_RE.test(dirName)
+}
+
+/**
  * Best-effort (lossy) reversal of `sanitizePath`.
  * Returns the directory name unchanged if it isn't a Pi-sanitized name.
  *

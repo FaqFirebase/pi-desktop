@@ -5,7 +5,7 @@ import { isString, isObject } from './validation'
 import { validateStartOptions, applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
 import { loadAppSettings } from './settings'
 import type { IpcContext } from './context'
-import { detectPiInstallations } from '../pi-rpc-manager'
+import { detectPiInstallations, getConfiguredEngineKind } from '../pi-rpc-manager'
 
 export function registerPiHandlers(ctx: IpcContext): void {
   const { workspaceManager, getActivePi } = ctx
@@ -60,26 +60,40 @@ export function registerPiHandlers(ctx: IpcContext): void {
     const pi = workspaceManager.getPiManager(activeWs.id)
     if (!pi) throw new Error('No Pi manager for workspace')
 
-    pi.stop()
-    const status = await pi.start(
-      applyPermissionModeToStartOptions(
-        applyResumePreference({ cwd: activeWs.path, ...opts }, settings),
-        settings
-      )
-    )
+    // Restart the runtime, not just its process: the runtime owns the session
+    // binding, and restartSessionRuntime re-applies it. Starting the manager
+    // directly would drop it — `--continue` picks whatever file on disk is
+    // newest (possibly another live runtime's), and without the resume setting
+    // Pi opens a blank session, either way leaving the tab lying about which
+    // session it shows.
     const runtimeId = workspaceManager.runtimeIdFor(pi)
-    if (runtimeId) await workspaceManager.refreshSessionRuntime(runtimeId).catch(() => null)
-    return status
+    const runtime = runtimeId ? workspaceManager.getSessionRuntime(runtimeId) : null
+    const startOptions = applyPermissionModeToStartOptions(
+      applyResumePreference({ cwd: activeWs.path, ...opts }, settings),
+      settings
+    )
+    if (runtime) {
+      const info = await workspaceManager.restartSessionRuntime(runtime.runtimeId, startOptions)
+      return { status: info.status, pid: info.pid, error: info.error }
+    }
+
+    pi.stop()
+    return pi.start(startOptions)
   })
 
   ipcMain.handle(IPC_CHANNELS.PI_STATUS, async () => {
     const pi = workspaceManager.getActivePiManager()
-    if (!pi) return { status: 'stopped', pid: null, error: null }
+    // No manager yet is the normal state at launch. Report the engine that
+    // would start anyway, or the status bar names Pi until something runs.
+    if (!pi) return { status: 'stopped', pid: null, error: null, engine: getConfiguredEngineKind() }
     return pi.getStatus()
   })
 
-  ipcMain.handle(IPC_CHANNELS.PI_DETECT_INSTALLATIONS, async () => ({
-    installations: detectPiInstallations(),
+  // `{ force: true }` is what the Rescan button must send: without it the
+  // handler may answer from a cache up to 30 s old and an engine installed
+  // moments ago never appears.
+  ipcMain.handle(IPC_CHANNELS.PI_DETECT_INSTALLATIONS, async (_event, options?: unknown) => ({
+    installations: detectPiInstallations(isObject(options) && options.force === true),
   }))
 
   // ─── Pi Commands ────────────────────────────────────────────────────────

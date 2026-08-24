@@ -1,10 +1,11 @@
 import { ipcMain } from 'electron'
-import { WorkspaceManager } from '../workspace-manager'
-import { getSessionsRoot } from '../pi-paths'
+import { isDisposableSessionFile, WorkspaceManager } from '../workspace-manager'
+import { engineForSessionPath, getSessionRoots, isWithinSessionRoots } from '../pi-paths'
 import {
   sanitizePath,
   sessionDirName,
   desanitizeSessionDir,
+  isSessionArtifactDir,
   projectNameFromPath,
   JSONL_EXTENSION,
 } from '../session-paths'
@@ -18,9 +19,8 @@ import type { SessionDeleteResult, SessionListItem, SessionRuntimeCloseResult, S
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { readdir, stat, unlink } from 'fs/promises'
 import { basename, join, resolve } from 'path'
-import { isPathWithin } from '../path-authorization'
 import { existsSync } from 'fs'
-import { spawnSync } from 'child_process'
+import { moveToTrash } from '../session-trash'
 import { assertTrustedSender, isObject, isString } from './validation'
 import { applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
 import { loadAppSettings } from './settings'
@@ -39,7 +39,9 @@ function sessionIdFromPath(sessionPath: string): string {
 
 /**
  * Delete a session file. Mirrors Pi's own session-selector deletion path:
- * try the `trash` CLI first (recoverable), fall back to `unlink` (permanent).
+ * move it to the desktop trash (recoverable), and only destroy it with
+ * `unlink` when no trash helper is available — see session-trash.ts for why
+ * more than one helper is tried.
  *
  * Why this lives in the GUI and not in Pi: Pi's RPC mode exposes no
  * delete_session command (verified against pi.dev/docs/latest/rpc).
@@ -47,9 +49,9 @@ function sessionIdFromPath(sessionPath: string): string {
  * .jsonl files" — that's what this does.
  */
 async function deleteSessionFile(sessionPath: string): Promise<SessionDeleteResult> {
-  const trashArgs = sessionPath.startsWith('-') ? ['--', sessionPath] : [sessionPath]
-  const trashResult = spawnSync('trash', trashArgs, { encoding: 'utf-8' })
-  if (trashResult.status === 0 || !existsSync(sessionPath)) {
+  // The second test covers a helper that moved the file but still reported a
+  // non-zero status; the session is in the trash either way, not destroyed.
+  if (moveToTrash(sessionPath) || !existsSync(sessionPath)) {
     return { ok: true, method: 'trash' }
   }
 
@@ -119,7 +121,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   })
 
   const activateSession = async (sessionPath: string, cwd?: string): Promise<SessionRuntimeInfo> => {
-    if (!isPathWithin(getSessionsRoot(), sessionPath) || !existsSync(sessionPath)) {
+    if (!isWithinSessionRoots(sessionPath) || !existsSync(sessionPath)) {
       throw new Error('sessionPath must point to an existing Pi session file')
     }
     const workspace = workspaceManager.getActiveWorkspace()
@@ -136,7 +138,9 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     if (!result) return null
 
     let deleted = false
-    if (result.empty && result.sessionPath && isPathWithin(getSessionsRoot(), result.sessionPath) && existsSync(result.sessionPath)) {
+    // Closing a tab may discard the throwaway session that tab just created,
+    // and nothing else. isDisposableSessionFile carries the full rule.
+    if (isDisposableSessionFile(result)) {
       activityStatsStore.captureBeforeDelete(result.sessionPath)
       const deleteResult = await deleteSessionFile(result.sessionPath)
       deleted = deleteResult.ok
@@ -234,15 +238,18 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     }
     // Confine deletion to Pi's session store so a renderer cannot delete an
     // arbitrary .jsonl file elsewhere on disk.
-    if (!isPathWithin(getSessionsRoot(), sessionPath)) {
+    if (!isWithinSessionRoots(sessionPath)) {
       throw new Error('sessionPath must be inside the Pi sessions directory')
     }
 
     // Detach any live tab first. Otherwise deleting an active/session-tab file
     // leaves a runtime pointing at a path that SESSION_SWITCH can no longer
-    // validate, producing a stale "existing Pi session file" error.
+    // validate, producing a stale "existing Pi session file" error. Closing an
+    // active runtime promotes a sibling in the same workspace and broadcasts
+    // it as active, so the renderer needs that path back to follow the
+    // promotion instead of creating a competing session.
     const runtime = workspaceManager.getSessionRuntimeForPath(sessionPath)
-    if (runtime) await workspaceManager.closeSessionRuntime(runtime.runtimeId)
+    const closed = runtime ? await workspaceManager.closeSessionRuntime(runtime.runtimeId) : null
 
     // Roll this session into the persisted stats store *before* removing the
     // file, so its activity survives the deletion (see activity-stats.ts).
@@ -256,7 +263,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       await tagManager.setTags(sessionId, [])
       await tagManager.forgetAuto(sessionId)
     }
-    return result
+    return { ...result, replacementSessionPath: closed?.replacementSessionPath ?? null }
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_ARCHIVE, async (_event, sessionId: unknown) => {
@@ -301,21 +308,36 @@ const SESSION_NAME_READ_CONCURRENCY = 24
  * Populate each row's label fields from its session file: the latest
  * `session_info` name, plus a preview of the first user message so an unnamed
  * session is identifiable without opening it.
+ *
+ * `workspaceMatched` holds the rows `collectSessionFiles` resolved to a
+ * registered workspace; their project stays exactly as that workspace records
+ * it (see below).
  */
-async function fillSessionLabels(entries: SessionEntry[]): Promise<void> {
+async function fillSessionLabels(
+  entries: SessionEntry[],
+  workspaceMatched: ReadonlySet<SessionEntry>
+): Promise<void> {
   await mapWithConcurrency(entries, SESSION_NAME_READ_CONCURRENCY, async (entry) => {
     const { name, preview, contentState, header } = await readSessionMetadataCached(entry.path, entry.lastModified)
     entry.name = name
     entry.preview = preview
     entry.contentState = contentState
     entry.piSessionId = header?.id
-    // The session header's cwd is authoritative: session directory names are
-    // lossy decodes of real paths (hyphens vs separators collide), so the
-    // workspace-match/desanitize values from collectSessionFiles can point at
-    // a phantom path. Repair the project from the header so opening the
-    // session creates/activates the REAL workspace and never re-persists a
-    // phantom one. The filename-stem sessionId (tags/archive key) is untouched.
-    if (header?.cwd) {
+    // For an UNMATCHED row the session header's cwd is authoritative: session
+    // directory names are lossy decodes of real paths (hyphens vs separators
+    // collide, Windows drive letters do not survive), so the desanitized value
+    // can point at a phantom path. Repair the project from the header so
+    // opening the session creates/activates the REAL workspace and never
+    // re-persists a phantom one.
+    //
+    // A matched row keeps its workspace's own path. `pathsEqual` compares
+    // lexically, with no symlink resolution: a workspace registered at a
+    // symlinked path never matches the resolved cwd Pi records, so overwriting
+    // here empties the project-scoped session list and makes openSessionItem
+    // register a second workspace for the same physical project.
+    //
+    // The filename-stem sessionId (tags/archive key) is untouched either way.
+    if (header?.cwd && !workspaceMatched.has(entry)) {
       entry.projectPath = resolve(header.cwd)
       entry.projectName = projectNameFromPath(entry.projectPath)
     }
@@ -326,19 +348,25 @@ function createListSessions(wm: WorkspaceManager) {
   return async function listSessions(_cwd: string): Promise<SessionEntry[]> {
     try {
       await wm.pruneEmptySessionRuntimes()
-      const sessionsDir = getSessionsRoot()
       const entries: SessionEntry[] = []
+      // Rows whose project came from a registered workspace rather than from a
+      // desanitized directory name. fillSessionLabels must not overwrite those.
+      const workspaceMatched = new Set<SessionEntry>()
       // Precompute workspace match map once (was O(workspaces) per file).
       // Keys use pathsEqual semantics: case-fold only on win32.
       const workspaceBySanitized = new Map(
         wm.getWorkspaces().map((ws) => [workspaceMatchKey(sanitizePath(ws.path)), ws] as const)
       )
-      await collectSessionFiles(entries, sessionsDir, workspaceBySanitized)
+      // Pi and OMP each keep their sessions in their own store, so a single
+      // root would hide every session started under the other engine.
+      for (const root of getSessionRoots()) {
+        await collectSessionFiles(entries, root, workspaceBySanitized, workspaceMatched)
+      }
       entries.sort((a, b) => b.lastModified - a.lastModified)
       // Only read names for the sessions we actually return (avoids reading the
       // whole store), then surface each session's latest session_info name.
       const top = entries.slice(0, MAX_SESSION_LIST)
-      await fillSessionLabels(top)
+      await fillSessionLabels(top, workspaceMatched)
       // Pi creates the JSONL header before the first user turn. Only hide rows
       // proven to be header-only; image-only, unreadable, malformed, and
       // over-budget sessions remain openable and recoverable.
@@ -366,17 +394,29 @@ function createListAllSessions(wm: WorkspaceManager) {
  * Extensions like pi-subagents nest each run under the parent session folder.
  * Recursing into those folders flooded Recent Sessions with ephemeral child
  * runs. We only index `.jsonl` files that sit directly in a project directory.
+ *
+ * Rows resolved to a registered workspace are also recorded in
+ * `workspaceMatched`, which fillSessionLabels reads to leave their project
+ * path alone.
+ *
+ * Every row is stamped with the engine that owns this root, so the UI can
+ * label it and opening it can relaunch that engine instead of the configured
+ * default.
  */
 async function collectSessionFiles(
   entries: SessionEntry[],
   sessionsRoot: string,
-  workspaceBySanitized: Map<string, { path: string; name: string }>
+  workspaceBySanitized: Map<string, { path: string; name: string }>,
+  workspaceMatched: Set<SessionEntry>
 ): Promise<void> {
+  const engine = engineForSessionPath(sessionsRoot) ?? undefined
   try {
     const projectDirs = await readdir(sessionsRoot, { withFileTypes: true })
     await Promise.all(
       projectDirs
-        .filter((d) => d.isDirectory())
+        // A session's own artifact directory is not a project; its contents are
+        // subagent transcripts, not chats the user can open.
+        .filter((d) => d.isDirectory() && !isSessionArtifactDir(d.name))
         .map(async (projectDir) => {
           const projectFull = join(sessionsRoot, projectDir.name)
           const relativeToRoot = sessionDirName(projectFull, sessionsRoot) || projectDir.name
@@ -404,16 +444,19 @@ async function collectSessionFiles(
             const fullPath = join(projectFull, item.name)
             try {
               const fileStat = await stat(fullPath)
-              entries.push({
+              const entry: SessionEntry = {
                 path: fullPath,
                 name: null,
                 preview: null,
                 sessionId: item.name.replace(JSONL_EXTENSION, ''),
+                engine,
                 lastModified: fileStat.mtimeMs,
                 messageCount: 0,
                 projectPath,
                 projectName,
-              })
+              }
+              entries.push(entry)
+              if (matched) workspaceMatched.add(entry)
             } catch {
               // Skip unreadable files
             }

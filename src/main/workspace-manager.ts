@@ -13,7 +13,9 @@ import type {
   SessionRuntimeCloseResult,
 } from '../shared/ipc-contracts'
 import { getGuiDataPath } from './app-data-paths'
+import { engineForBoundSession, isWithinSessionRoots } from './pi-paths'
 import { pathsEqual, pathGroupKey } from './session-paths'
+import { isPathWithin } from './path-authorization'
 import { appLog } from './app-log'
 import { inspectSessionContent } from './session-metadata'
 import {
@@ -36,6 +38,23 @@ import { extractGitHubPullRequestUrl, resolvePullRequestHeadBranch } from './git
  */
 
 const WORKSPACES_FILE = 'workspaces.json'
+
+/**
+ * Directory under the GUI data path holding every worktree this app creates.
+ * It is also the only place a task may reuse a checkout from: everything
+ * outside it — the user's clone above all — belongs to the user.
+ */
+const MANAGED_WORKTREES_DIR = 'worktrees'
+
+/**
+ * How many session runtimes may own a live Pi child process at the same time.
+ * Every runtime is a full agent process, so without a bound the app leaks one
+ * process per session the user ever opens, until it quits. The active session
+ * plus a small recently-used set keeps tab switching instant while capping
+ * memory; an evicted tab stays open and spawns a fresh process when selected
+ * again, because its session lives on disk and not in the process.
+ */
+export const MAX_LIVE_SESSION_RUNTIMES = 6
 
 export interface Workspace {
   id: string
@@ -75,6 +94,49 @@ export type SessionRuntimeListener = (runtime: SessionRuntimeInfo) => void
 interface SessionRuntimeEntry {
   info: SessionRuntimeInfo
   manager: PiRpcManager
+  /**
+   * Wall clock of the last time this runtime was used (created, activated,
+   * started, commanded, or changed activity). Drives least-recently-active
+   * eviction; kept off SessionRuntimeInfo because the renderer never needs it.
+   */
+  lastActiveAt: number
+  /**
+   * True while every session file this runtime has ever pointed at was written
+   * by the child process we spawned for it. Set when the tab is opened with no
+   * session, cleared the moment a start binds it to a file that already exists
+   * on disk. It is the one thing that makes a close-time delete safe — see
+   * isDisposableSessionFile.
+   */
+  appCreated: boolean
+}
+
+/**
+ * The ONLY condition under which this app deletes a session file the user never
+ * asked it to delete. Every clause has to hold:
+ *
+ *  - `appCreated`: the file was written by an agent this app spawned during
+ *    this run, for a tab that started with no session. A file that already
+ *    existed — opened from the list, forked, or resumed with --continue — is
+ *    the user's conversation and is never auto-deleted, whatever it looks like
+ *    on disk.
+ *  - `empty`: the close-time read PROVED it header-only. `unknown` (an
+ *    unreadable or partial read) is not empty and never reaches here.
+ *  - inside a session store, and still present.
+ *
+ * Deletion is permanent when `trash` is missing, so reading as empty is on its
+ * own never a reason to remove anything: leaving a junk file behind costs
+ * nothing, losing a conversation cannot be undone.
+ */
+export function isDisposableSessionFile(
+  result: SessionRuntimeCloseResult
+): result is SessionRuntimeCloseResult & { sessionPath: string } {
+  return (
+    result.appCreated &&
+    result.empty &&
+    result.sessionPath !== null &&
+    isWithinSessionRoots(result.sessionPath) &&
+    existsSync(result.sessionPath)
+  )
 }
 
 export class WorkspaceManager {
@@ -214,8 +276,72 @@ export class WorkspaceManager {
 
   private emitRuntimeActivity(entry: SessionRuntimeEntry, activity: SessionRuntimeActivity | null): void {
     if (entry.info.activity === activity) return
+    this.touchRuntime(entry)
     entry.info = { ...entry.info, activity }
     this.emitSessionRuntime(entry)
+  }
+
+  /** Mark a runtime as recently used so eviction picks a genuinely idle one. */
+  private touchRuntime(entry: SessionRuntimeEntry): void {
+    entry.lastActiveAt = Date.now()
+  }
+
+  /** A runtime owns a Pi child process only while it is starting or running. */
+  private isRuntimeLive(entry: SessionRuntimeEntry): boolean {
+    const { status } = entry.manager.getStatus()
+    return status === 'starting' || status === 'running'
+  }
+
+  /** The open runtime that currently owns a session file, if there is one. */
+  private runtimeOwningSessionPath(sessionPath: string): SessionRuntimeEntry | null {
+    const ownerId = this.runtimeBySessionPath.get(pathGroupKey(sessionPath))
+    if (!ownerId) return null
+    return this.sessionRuntimes.get(ownerId) ?? null
+  }
+
+  /**
+   * Stop background runtimes until one more live process fits within
+   * MAX_LIVE_SESSION_RUNTIMES. Only the process is stopped: the tab stays open
+   * and its session file stays on disk, so selecting the tab again starts a
+   * fresh Pi on the same session.
+   *
+   * Never evicted: the incoming runtime, the active one, one that is still
+   * starting, and one mid-turn ('working' or 'needs-approval'). When every
+   * remaining runtime is protected the budget is deliberately exceeded —
+   * killing a turn the user is waiting on is worse than one extra process.
+   */
+  private enforceLiveRuntimeBudget(incomingRuntimeId: string | null): void {
+    const evictable = (entry: SessionRuntimeEntry): boolean =>
+      entry.info.runtimeId !== incomingRuntimeId &&
+      entry.info.runtimeId !== this.activeRuntimeId &&
+      entry.info.activity !== 'working' &&
+      entry.info.activity !== 'needs-approval' &&
+      // 'running' rules out both a stopped runtime, which frees nothing, and a
+      // starting one, whose caller is still awaiting readiness.
+      entry.manager.getStatus().status === 'running'
+
+    let live = [...this.sessionRuntimes.values()].filter(
+      (entry) => entry.info.runtimeId !== incomingRuntimeId && this.isRuntimeLive(entry)
+    ).length
+
+    while (live >= MAX_LIVE_SESSION_RUNTIMES) {
+      let victim: SessionRuntimeEntry | null = null
+      for (const entry of this.sessionRuntimes.values()) {
+        if (!evictable(entry)) continue
+        // Map iteration follows creation order, so a strict `<` breaks
+        // same-millisecond ties in favour of the longest-open tab.
+        if (!victim || entry.lastActiveAt < victim.lastActiveAt) victim = entry
+      }
+      if (!victim) return
+      appLog.info(
+        'workspaces',
+        `Stopped idle session runtime ${victim.info.runtimeId} to stay within ${MAX_LIVE_SESSION_RUNTIMES} live Pi processes`
+      )
+      // stopSessionRuntime emits the runtime snapshot, so the renderer marks
+      // the tab stopped instead of showing a process that no longer exists.
+      this.stopSessionRuntime(victim.info.runtimeId)
+      live -= 1
+    }
   }
 
   private attachSessionRuntime(entry: SessionRuntimeEntry): void {
@@ -243,16 +369,21 @@ export class WorkspaceManager {
   }
 
   private createSessionRuntime(workspaceId: string, sessionPath: string | null): SessionRuntimeEntry {
-    if (sessionPath) {
-      const existingId = this.runtimeBySessionPath.get(pathGroupKey(sessionPath))
-      if (existingId && this.sessionRuntimes.has(existingId)) {
-        throw new Error('Session file is already attached to a live runtime')
-      }
+    if (sessionPath && this.runtimeOwningSessionPath(sessionPath)) {
+      throw new Error('Session file is already attached to a live runtime')
     }
+    // A new tab is started right after it is created, so make room for its
+    // process before the tab exists.
+    this.enforceLiveRuntimeBudget(null)
     const runtimeId = `rt-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
     const manager = new PiRpcManager()
     const entry: SessionRuntimeEntry = {
       manager,
+      lastActiveAt: Date.now(),
+      // A tab opened without a session file gets one written by the agent we
+      // spawn for it. A tab opened ON a file adopts a conversation that was
+      // already there, which this app never gets to discard.
+      appCreated: sessionPath === null,
       info: {
         runtimeId,
         workspaceId,
@@ -284,7 +415,10 @@ export class WorkspaceManager {
     }
     if (this.activeRuntimeId) {
       const next = this.sessionRuntimes.get(this.activeRuntimeId)
-      if (next) this.emitSessionRuntime(next)
+      if (next) {
+        this.touchRuntime(next)
+        this.emitSessionRuntime(next)
+      }
     }
   }
 
@@ -388,13 +522,35 @@ export class WorkspaceManager {
     if (!entry) throw new Error(`Session runtime not found: ${runtimeId}`)
     const workspace = this.workspaces.find((item) => item.id === entry.info.workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${entry.info.workspaceId}`)
-    const startOptions = {
+    // A start that binds this runtime to a file it did not write hands it a
+    // conversation that predates us, so the file stops being ours to discard.
+    // Read the caller's own options, not the merged ones: the merge re-supplies
+    // the path this runtime already owns, which is still its own creation.
+    const bindsExistingFile =
+      options.sessionPath !== undefined ||
+      options.forkSessionPath !== undefined ||
+      // --continue opens "the most recent session for this cwd", which is some
+      // earlier conversation. It only reaches the engine while this runtime has
+      // no file of its own; once it has one, the merged --session outranks it
+      // (see buildPiArgs) and the runtime re-opens what it created.
+      (options.continueSession === true && entry.info.sessionPath === null)
+    if (bindsExistingFile) entry.appCreated = false
+    const startOptions: PiStartOptions = {
       cwd: workspace.path,
       ...(entry.info.sessionPath && !options.sessionPath && !options.forkSessionPath
         ? { sessionPath: entry.info.sessionPath }
         : {}),
       ...options,
     }
+    // Start the engine that owns the session file rather than the configured
+    // default: the stores are separate, so only the engine that wrote a session
+    // can resume it. An engine the caller named explicitly still wins.
+    const ownerEngine = engineForBoundSession(startOptions)
+    if (!startOptions.engine && ownerEngine) startOptions.engine = ownerEngine
+    // Re-activating an evicted tab spawns a process again, so the budget has to
+    // hold here too; an already-live runtime spawns nothing and needs no room.
+    if (!this.isRuntimeLive(entry)) this.enforceLiveRuntimeBudget(runtimeId)
+    this.touchRuntime(entry)
     await entry.manager.start(startOptions)
     // closeSessionRuntime() can win while startup is waiting for Pi. Do not
     // emit the now-detached entry after the closed marker was broadcast.
@@ -414,6 +570,22 @@ export class WorkspaceManager {
       : undefined
     const sessionPath = typeof data?.sessionFile === 'string' ? data.sessionFile : entry.info.sessionPath
     if (sessionPath && sessionPath !== entry.info.sessionPath) {
+      const owner = this.runtimeOwningSessionPath(sessionPath)
+      if (owner && owner.info.runtimeId !== entry.info.runtimeId) {
+        // The incumbent keeps the file — the same invariant createSessionRuntime
+        // enforces up front with 'Session file is already attached to a live
+        // runtime'. Leaving the mapping alone is not enough on its own: the map
+        // is only an index, and two Pi processes appending to one session JSONL
+        // corrupt it. Stopping the newcomer is what removes the second writer,
+        // and it is the safe side to stop because the incumbent may be mid-turn.
+        appLog.warn(
+          'workspaces',
+          `Session ${sessionPath} already belongs to runtime ${owner.info.runtimeId}; stopped runtime ${entry.info.runtimeId} instead of taking the session over`
+        )
+        this.stopSessionRuntime(entry.info.runtimeId)
+        this.emitRuntimeActivity(entry, 'failed')
+        return this.snapshotRuntime(entry)
+      }
       if (entry.info.sessionPath) this.runtimeBySessionPath.delete(pathGroupKey(entry.info.sessionPath))
       this.runtimeBySessionPath.set(pathGroupKey(sessionPath), entry.info.runtimeId)
     }
@@ -493,6 +665,7 @@ export class WorkspaceManager {
       sessionPath,
       replacementSessionPath: replacement?.info.sessionPath ?? null,
       empty,
+      appCreated: entry.appCreated,
       deleted: false,
     }
   }
@@ -500,6 +673,7 @@ export class WorkspaceManager {
   sendCommandToSessionRuntime(runtimeId: string, command: Record<string, unknown>): Promise<unknown> {
     const entry = this.sessionRuntimes.get(runtimeId)
     if (!entry) return Promise.reject(new Error(`Session runtime not found: ${runtimeId}`))
+    this.touchRuntime(entry)
     return entry.manager.sendCommand(command)
   }
 
@@ -776,18 +950,30 @@ export class WorkspaceManager {
     return workspace
   }
 
+  /** Whether a checkout lives inside the worktree root this app owns. */
+  private isManagedWorktreePath(path: string): boolean {
+    return isPathWithin(getGuiDataPath(MANAGED_WORKTREES_DIR), path)
+  }
+
   /**
    * Reuse an existing checkout when the task identifies it safely. Exact task
    * metadata and a GitHub PR head branch are deterministic; a branch named in
    * the task is also accepted, but ambiguous matches are ignored.
+   *
+   * Only worktrees this app created are ever reusable. The UI promises that the
+   * source project stays untouched, so the user's own clone — and any worktree
+   * they made themselves — must never be handed to an agent, no matter which
+   * branch a task names.
    */
   private async findRelatedWorktree(sourcePath: string, repoRoot: string, taskPrompt: string): Promise<Workspace | null> {
     const sourceResolved = resolve(sourcePath)
+    const repoRootResolved = resolve(repoRoot)
     const normalizedTask = taskPrompt.trim().replace(/\s+/g, ' ').toLowerCase()
     if (!normalizedTask) return null
 
     const savedMatch = this.workspaces.find((workspace) =>
       workspace.kind === 'worktree' &&
+      this.isManagedWorktreePath(workspace.path) &&
       !pathsEqual(resolve(workspace.path), sourceResolved) &&
       workspace.taskPrompt?.trim().replace(/\s+/g, ' ').toLowerCase() === normalizedTask &&
       !!workspace.repoRoot &&
@@ -804,9 +990,16 @@ export class WorkspaceManager {
 
     const entries = await listGitWorktrees(sourcePath).catch(() => [])
     const candidates = entries
-      .filter((entry) =>
+      .filter((entry, index) =>
+        // `git worktree list` prints the main working tree first. That is the
+        // user's primary checkout, so drop it by position and by path.
+        index > 0 &&
+        !pathsEqual(resolve(entry.path), repoRootResolved) &&
         !entry.bare &&
         !pathsEqual(resolve(entry.path), sourceResolved) &&
+        // Reuse is limited to the app's own worktree root; a checkout anywhere
+        // else is the user's, not ours to hand over.
+        this.isManagedWorktreePath(entry.path) &&
         existsSync(entry.path) &&
         entry.branch
       )
@@ -856,7 +1049,7 @@ export class WorkspaceManager {
     const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const label = options.name?.trim() || `${source.name}-tab`
     const branch = worktreeBranchName(label, id)
-    const targetPath = worktreeTargetPath(getGuiDataPath('worktrees'), git.repoRoot, id)
+    const targetPath = worktreeTargetPath(getGuiDataPath(MANAGED_WORKTREES_DIR), git.repoRoot, id)
     await createGitWorktree({ sourceCwd: source.path, targetPath, branch })
 
     const workspace: Workspace = {
