@@ -2,9 +2,48 @@ import { spawn } from 'child_process'
 import { mkdir } from 'fs/promises'
 import { basename, dirname, join, resolve } from 'path'
 
+/** Exit status Git uses for fatal errors, repository discovery included. */
+export const GIT_FATAL_EXIT_CODE = 128
+
+/** Git wordings that mean `cwd` is not inside a usable working tree. */
+const MISSING_REPOSITORY_PATTERN = /not a git repository|this operation must be run in a work tree/i
+
 export interface GitCommandResult {
   stdout: string
   stderr: string
+}
+
+function describeGitFailure(args: readonly string[], stdout: string, stderr: string): string {
+  const detail = (stderr || stdout).trim()
+  return `git ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`
+}
+
+/**
+ * Rejection raised when Git ran but exited non-zero. The exit code and both
+ * streams are kept so callers can classify a failure instead of matching the
+ * formatted message, which changes with the Git version and locale.
+ */
+export class GitCommandError extends Error {
+  constructor(
+    readonly args: readonly string[],
+    readonly exitCode: number | null,
+    readonly stdout: string,
+    readonly stderr: string,
+  ) {
+    super(describeGitFailure(args, stdout, stderr))
+    this.name = 'GitCommandError'
+  }
+}
+
+/**
+ * True only when Git refused a command because the directory is outside any
+ * working tree. A missing `git` binary, a missing folder, or any other fatal
+ * error stays unclassified so callers still surface it.
+ */
+export function isMissingRepositoryError(error: unknown): boolean {
+  return error instanceof GitCommandError &&
+    error.exitCode === GIT_FATAL_EXIT_CODE &&
+    MISSING_REPOSITORY_PATTERN.test(error.stderr)
 }
 
 export interface GitRepositoryInfo {
@@ -41,8 +80,7 @@ export function runGit(args: readonly string[], cwd: string): Promise<GitCommand
         resolvePromise({ stdout, stderr })
         return
       }
-      const detail = (stderr || stdout).trim()
-      reject(new Error(`git ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`))
+      reject(new GitCommandError(args, code, stdout, stderr))
     })
   })
 }

@@ -1,7 +1,7 @@
-import { access } from 'fs/promises'
+import { access, realpath } from 'fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'path'
 import { spawn } from 'child_process'
-import { inspectGitRepository, runGit } from './git-worktree'
+import { inspectGitRepository, isMissingRepositoryError, runGit } from './git-worktree'
 import type {
   GitConveyorCommitOptions,
   GitConveyorPullRequestOptions,
@@ -10,6 +10,21 @@ import type {
 } from '../shared/ipc-contracts'
 
 const COMMAND_TIMEOUT_MS = 30_000
+
+/** Status of a workspace folder that Git does not track. */
+const NOT_A_REPOSITORY_STATUS: GitConveyorStatus = Object.freeze({
+  branch: null,
+  head: '',
+  lastCommitMessage: null,
+  dirtyFiles: 0,
+  ahead: 0,
+  behind: 0,
+  hasUpstream: false,
+  pushRemote: null,
+  upstreamBranch: null,
+  baseBranch: null,
+  remoteUrl: null,
+})
 
 const GIT_OPERATION_MARKERS = [
   ['MERGE_HEAD', 'merge'],
@@ -144,15 +159,47 @@ function isPathWithin(base: string, candidate: string): boolean {
     (!isAbsolute(relativePath) && relativePath !== '..' && !relativePath.startsWith(`..${sep}`))
 }
 
+/**
+ * Absolute paths of every staged entry. `--relative` is deliberately not used:
+ * it drops the paths outside `cwd`, which is exactly the set the workspace
+ * guard has to see, so Git reports repository-root paths that are resolved
+ * against the worktree root here instead. Git prints that root with symlinks
+ * resolved, so the paths are physical and must be compared as such.
+ */
 async function stagedPaths(cwd: string): Promise<string[]> {
-  const output = await runGit(['diff', '--cached', '--name-only', '-z', '--relative'], cwd)
-    .then((result) => result.stdout)
-    .catch(() => '')
-  return output.split('\0').filter(Boolean)
+  const [worktreeRoot, output] = await Promise.all([
+    runGit(['rev-parse', '--show-toplevel'], cwd).then((result) => realpath(result.stdout.trim())),
+    runGit(['diff', '--cached', '--name-only', '-z'], cwd).then((result) => result.stdout),
+  ])
+  return output.split('\0').filter(Boolean).map((path) => resolve(worktreeRoot, path))
+}
+
+/**
+ * True when tracked files below `cwd` differ from the index. `git add --update`
+ * fails when its pathspec matches no tracked file at all, so auto-staging asks
+ * this first and can report the untracked-only case in its own words.
+ */
+async function hasUnstagedTrackedChanges(cwd: string): Promise<boolean> {
+  const result = await runGit(['diff', '--name-only', '-z', '--', '.'], cwd)
+  return result.stdout.split('\0').some((path) => path.length > 0)
+}
+
+/** Record the index as a tree object so a failed commit can restore it. */
+async function snapshotIndex(cwd: string): Promise<string> {
+  const result = await runGit(['write-tree'], cwd)
+  return result.stdout.trim()
 }
 
 export async function getGitConveyorStatus(cwd: string): Promise<GitConveyorStatus> {
-  const repository = await inspectGitRepository(cwd)
+  // A workspace does not have to be a repository. Every other probe below
+  // already degrades to a null field, so report the same empty shape instead of
+  // pushing raw Git output into a header the renderer polls every few seconds.
+  // No branch and no dirty file keeps commit, push, and pull request disabled.
+  const repository = await inspectGitRepository(cwd).catch((error: unknown) => {
+    if (isMissingRepositoryError(error)) return null
+    throw error
+  })
+  if (!repository) return NOT_A_REPOSITORY_STATUS
   const upstream = repository.branch ? await resolveUpstream(cwd, repository.branch) : null
   const configuredRemote = repository.branch ? await branchRemote(cwd, repository.branch) : null
   const pushRemote = upstream?.remote ?? configuredRemote ?? (await gitConfig(cwd, 'remote.origin.url') ? 'origin' : null)
@@ -191,12 +238,34 @@ export async function commitAll(cwd: string, options: GitConveyorCommitOptions):
   // staged content at all, and never allow staged paths outside the workspace
   // to be swept into a commit opened from a monorepo subdirectory.
   const staged = await stagedPaths(cwd)
-  const outsideWorkspace = staged.filter((path) => !isPathWithin(cwd, path))
+  // Both sides of the comparison must be physical paths: a workspace can be
+  // opened through a symlink while Git always reports the resolved worktree.
+  const workspaceRoot = await realpath(cwd)
+  const outsideWorkspace = staged.filter((path) => !isPathWithin(workspaceRoot, path))
   if (outsideWorkspace.length > 0) {
     throw new Error('The index contains staged files outside the active workspace')
   }
-  if (staged.length === 0) await runGit(['add', '-A', '--', '.'], cwd)
-  await runGit(['commit', '-m', message], cwd)
+
+  // Auto-staging covers tracked modifications only. A stray secret, key, or
+  // build artefact sitting untracked in the workspace reaches a commit only
+  // after the user staged it deliberately. The Commit button counts untracked
+  // rows too, so say plainly when that leaves nothing to commit.
+  const autoStage = staged.length === 0
+  if (autoStage && !(await hasUnstagedTrackedChanges(cwd))) {
+    throw new Error('No tracked changes to commit in this workspace. Stage untracked files first to include them.')
+  }
+  // The snapshot records the index as a tree, so a rejected commit restores
+  // exactly what was staged before. `git reset` would instead unstage the whole
+  // index: equivalent only while auto-staging is gated on an empty index, while
+  // the snapshot stays correct whatever that gate becomes.
+  const indexSnapshot = autoStage ? await snapshotIndex(cwd) : null
+  try {
+    if (autoStage) await runGit(['add', '--update', '--', '.'], cwd)
+    await runGit(['commit', '-m', message], cwd)
+  } catch (error) {
+    if (indexSnapshot) await runGit(['read-tree', indexSnapshot], cwd)
+    throw error
+  }
   return getGitConveyorStatus(cwd)
 }
 

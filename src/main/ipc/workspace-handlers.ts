@@ -4,8 +4,7 @@ import { isString, isObject, isOptionalBoolean, isOptionalString } from './valid
 import { validateStartOptions, applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
 import { loadAppSettings } from './settings'
 import type { WorkspaceTabOptions } from '../../shared/ipc-contracts'
-import { getSessionsRoot } from '../pi-paths'
-import { isPathWithin } from '../path-authorization'
+import { isWithinSessionRoots } from '../pi-paths'
 import { existsSync } from 'fs'
 import type { IpcContext } from './context'
 import { appLog } from '../app-log'
@@ -102,7 +101,7 @@ export function registerWorkspaceHandlers(ctx: IpcContext): void {
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_CREATE_TAB, async (_event, value: unknown) => {
     const options = validateWorkspaceTabOptions(value)
     if (options.forkSessionPath) {
-      if (!isPathWithin(getSessionsRoot(), options.forkSessionPath) || !existsSync(options.forkSessionPath)) {
+      if (!isWithinSessionRoots(options.forkSessionPath) || !existsSync(options.forkSessionPath)) {
         throw new Error('forkSessionPath must point to an existing Pi session file')
       }
     }
