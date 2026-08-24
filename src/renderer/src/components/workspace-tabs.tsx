@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { AlertCircle, CheckCircle2, FolderOpen, GitBranch, Loader2, MessageSquarePlus, PanelLeft, Plus, Settings, X, XCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAppStore } from '../store'
+import { useGlobalWorkflowOpen } from '../hooks'
 import { getSessionTitle } from '../utils/session-title'
 import { pathsEqual } from '../../../shared/path-compare'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
@@ -21,9 +22,7 @@ export function WorkspaceTabs(): React.JSX.Element {
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
   const workspaceActivity = useAppStore((state) => state.workspaceActivity)
   const currentView = useAppStore((state) => state.currentView)
-  const workflowPanelOpen = useAppStore((state) => state.workflowPanelOpen)
-  const workflowPanelFilter = useAppStore((state) => state.workflowPanelFilter)
-  const workflowPanelWorkspaceId = useAppStore((state) => state.workflowPanelWorkspaceId)
+  const globalWorkflowOpen = useGlobalWorkflowOpen()
   const setWorkflowPanelOpen = useAppStore((state) => state.setWorkflowPanelOpen)
   const activateWorkspace = useAppStore((state) => state.activateWorkspace)
   const switchSession = useAppStore((state) => state.switchSession)
@@ -35,8 +34,7 @@ export function WorkspaceTabs(): React.JSX.Element {
 
   const toolView = ['settings', 'packages', 'notes', 'skills', 'diagnostics'] as const
   const toolsActive =
-    toolView.includes(currentView as (typeof toolView)[number]) ||
-    (workflowPanelOpen && !workflowPanelFilter && workflowPanelWorkspaceId === null)
+    toolView.includes(currentView as (typeof toolView)[number]) || globalWorkflowOpen
 
   const tabs = useMemo(
     () => [...workspaces].sort((a, b) => a.createdAt - b.createdAt),
@@ -133,21 +131,18 @@ export function WorkspaceTabs(): React.JSX.Element {
 
       {toolsActive && (
         <div className="group flex h-9 min-w-[140px] shrink-0 items-center rounded-t-md border border-b-0 border-border bg-surface text-primary">
-          <button
-            type="button"
+          {/* The tab only exists while a tool surface is on screen, so its label
+              always names what is already showing — a static marker, never a
+              control that navigates somewhere the user did not ask for. Closing
+              is the neighbouring button's job. */}
+          <div
             aria-current="page"
-            onClick={() => {
-              if (!toolView.includes(currentView as (typeof toolView)[number])) {
-                setWorkflowPanelOpen(false)
-                setCurrentView('settings')
-              }
-            }}
             className="flex min-w-0 flex-1 items-center gap-2 px-2.5 text-left text-xs"
             title="Tools"
           >
             <Settings size={13} className="shrink-0 text-accent-fg" />
             <span className="truncate font-medium">Tools</span>
-          </button>
+          </div>
           <button
             type="button"
             onClick={() => {

@@ -19,7 +19,10 @@ export function TaskLauncher(): React.JSX.Element | null {
     setWorkspaceId(state.activeWorkspace?.id ?? state.workspaces[0]?.id ?? '')
     setPrompt('')
     setIsolated(false)
-    requestAnimationFrame(() => inputRef.current?.focus())
+    // The focus lands a frame later, once the dialog is in the DOM; drop the
+    // pending frame if the dialog closes or unmounts before it runs.
+    const focusFrame = requestAnimationFrame(() => inputRef.current?.focus())
+    return () => cancelAnimationFrame(focusFrame)
   }, [open])
 
   useEffect(() => {
