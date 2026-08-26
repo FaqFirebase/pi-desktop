@@ -49,6 +49,7 @@ src/
 │   ├── path-compare.ts           # Platform-aware path equality (win32 case-fold); main+renderer
 │   ├── folder-drop.ts            # Pure helpers for drag-drop folder → workspace
 │   ├── untrusted-data.ts         # Wrap file/agent text as a labeled untrusted-data block
+│   ├── agent-engine-label.ts     # Display names for the Pi/OMP engines (every surface reads this one map)
 │   ├── pi-command.ts             # Slash-command filtering
 │   ├── fork-point.ts             # Fork/branch message helpers
 │   └── session-lineage.ts        # Cross-session lineage tree
@@ -61,8 +62,10 @@ src/
 │   ├── notify-decision.ts        # Pure should-we-notify decision (focus/active-workspace aware)
 │   ├── diagnostics.ts            # Assembles the Diagnostics view's report
 │   ├── diagnostics-report.ts     # Pure report helpers (provider key classification etc.)
-│   ├── pi-rpc-manager.ts         # Pi subprocess management, startup readiness probe
-│   ├── pi-paths.ts               # Shared Pi session-store root path
+│   ├── pi-rpc-manager.ts         # Agent subprocess management (pi or omp), startup readiness probe, descendant-tree kill
+│   ├── pi-binary-resolution.ts   # Locate and identify installed pi/omp executables
+│   ├── pi-paths.ts               # Per-engine session-store roots; which engine owns a session file
+│   ├── session-trash.ts          # Deleted sessions go to the desktop trash (trash-cli, then gio)
 │   ├── path-authorization.ts     # Path containment checks (attachment/session IPC)
 │   ├── renderer-origin.ts        # Trusted-renderer URL check (navigation + IPC sender)
 │   ├── workspace-trust.ts        # Per-workspace trust registry (gates allow rules + preview)
@@ -155,6 +158,15 @@ src/
 ```
 
 ## Features
+
+### Engines (Pi and OMP)
+
+- The app runs either the standard `pi` CLI or the compatible `omp` binary from oh-my-pi. Settings → Agent Configuration picks one (auto-detect, detected install, or custom executable); `pi-binary-resolution.ts` locates and identifies installs.
+- The two engines keep separate session stores: Pi under `~/.pi/agent/sessions`, OMP under `~/.omp/agent/sessions`. OMP ignores `--session-dir` for new sessions, so no shared store is forced; the session index reads both roots.
+- Each session list row carries the engine that owns it (`SessionListItem.engine`, stamped from the store it was found in). Opening, forking, or resuming a session starts the engine that wrote it, not the configured default (`engineForBoundSession` in `pi-paths.ts` is the single rule).
+- Tool names differ per engine (Pi ships `find`/`ls`, OMP ships `glob`), so Plan/Read-only mode derives its tool list from the session's engine, never from the configured one.
+- Every surface that names the running agent (status bar, empty chat, permission prompts, Diagnostics, session tags) reads `shared/agent-engine-label.ts`; the permission extension gets the label via `PI_DESKTOP_AGENT_LABEL`. Session rows show the Pi/OMP tag only when both engines appear in one list.
+- OMP specifics: protocol-v2 chunked frames are decoded with the limits the engine advertises in its ready frame; OMP starts subagents in a new process group, so shutdown walks the descendant tree before signalling; OMP's plugin verbs back the package actions.
 
 ### Workspace Management
 
@@ -337,6 +349,7 @@ data-dir migration the GUI's files live under the OS app-data dir
 | `~/.pi-desktop-gui/activity-stats.json` | Persisted per-day activity stats (aggregates only, survives session deletion) |
 | `~/.pi-desktop-gui/app-log.jsonl` | Main-process app log (warnings/errors for the Diagnostics view) |
 | `~/.pi/agent/sessions/` | Pi session files (organized by cwd) |
+| `~/.omp/agent/sessions/` | OMP session files (same layout; OMP writes here regardless of flags) |
 | `~/.pi/agent/settings.json` | Pi global settings |
 | `.pi/settings.json` | Pi project settings |
 
@@ -369,11 +382,13 @@ npm run package       # Create installer
 
 ## Pi Integration
 
-Pi runs in RPC mode as a subprocess; one `PiRpcManager` is retained for each live session runtime:
+The agent runs in RPC mode as a subprocess; one `PiRpcManager` is retained for each live session runtime. The binary is `pi` or `omp` depending on the session's engine (see Engines above):
 
 ```
 pi --mode rpc [--session <session-file>] [--provider <name>] [--model <id>] [--no-session]
 ```
+
+No `--session-dir` is injected; each engine uses its own default store. A caller-supplied `--session-dir` in extra args still wins.
 
 Communication via JSONL over stdin/stdout:
 - Commands sent to stdin (one JSON object per line)
