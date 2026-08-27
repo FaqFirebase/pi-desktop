@@ -8,6 +8,7 @@ import type {
   PiRpcEvent,
   PiStartOptions,
   PiProcessStatus,
+  PiStartupPhase,
   PiStatus,
   PiResponseEvent,
   AgentInstallation,
@@ -45,7 +46,24 @@ const SESSION_FLAG = '--session'
 const FORK_FLAG = '--fork'
 const CONTINUE_FLAG = '--continue'
 const IS_WINDOWS = process.platform === 'win32'
-const SPAWN_STARTUP_TIMEOUT_MS = 15_000
+const MS_PER_SECOND = 1_000
+// The startup deadline is two-staged (issue #58). Stage 1: while Pi has
+// printed nothing at all, give up quickly — a dead spawn or a broken stdio
+// pipe stays silent forever. Stage 2: once stdout has shown life the process
+// is provably alive and piped, so the deadline stretches: the engine runs
+// every extension session_start hook BEFORE it reads stdin, and a hook that
+// calls a local model server can sit through tens of seconds of prompt
+// prefill while our readiness probe waits unread.
+const STARTUP_SILENCE_TIMEOUT_MS = 20_000
+const STARTUP_ENGINE_BUSY_TIMEOUT_MS = 120_000
+
+/** Startup deadline caps, injectable so tests do not wait out real minutes. */
+export interface PiStartupTimeouts {
+  /** Max wait for the first byte of Pi stdout. */
+  silenceMs: number
+  /** Max wait for readiness once stdout has shown life. */
+  engineBusyMs: number
+}
 // Spawn attempts per start(): the initial try plus one retry, used ONLY when Pi
 // crashes before becoming ready (spawn error / early exit) — a transient hiccup
 // (AV lock, momentary ENOENT) often clears on a second spawn. A no-response
@@ -58,7 +76,8 @@ const STARTUP_MAX_ATTEMPTS = 2
 // the first stdout byte — confirms the request→response loop works and stays
 // robust even if the probe command is renamed (Pi echoes our id on an "unknown
 // command" error too). The probe is resent on this interval in case the first
-// write raced Pi's stdin reader; SPAWN_STARTUP_TIMEOUT_MS bounds the wait.
+// write raced Pi's stdin reader; the two-stage startup deadline (see
+// PiStartupTimeouts above) bounds the wait.
 const STARTUP_PROBE_ID = '__startup_probe__'
 // get_state is the cheapest liveness command: a handful of in-memory session
 // field reads — no I/O, no model/provider calls, O(1). (get_session_stats is
@@ -652,6 +671,20 @@ export class PiRpcManager extends EventEmitter {
   // path of spawnAndAwaitReady (kill() removes the child's listeners and the
   // deadline guard is status-gated), leaving start() hung forever.
   private abortStartup: (() => void) | null = null
+  // Set on the first stdout byte of the current spawn attempt; decides which
+  // startup deadline applies and which timeout error is reported.
+  private startupSawOutput = false
+  // Non-null only while a spawn attempt is in flight (see PiStartupPhase).
+  private startupPhase: PiStartupPhase | null = null
+  private readonly startupTimeouts: PiStartupTimeouts
+
+  constructor(startupTimeouts?: Partial<PiStartupTimeouts>) {
+    super()
+    this.startupTimeouts = {
+      silenceMs: startupTimeouts?.silenceMs ?? STARTUP_SILENCE_TIMEOUT_MS,
+      engineBusyMs: startupTimeouts?.engineBusyMs ?? STARTUP_ENGINE_BUSY_TIMEOUT_MS,
+    }
+  }
 
   getStatus(): PiStatus {
     return {
@@ -663,6 +696,9 @@ export class PiRpcManager extends EventEmitter {
       // error misleads the UI into showing healthy startup logs as ERROR.
       error: this.status === 'error' ? (this.stderrBuffer || null) : null,
       engine: this.getEngineKind(),
+      // Written even when unset (as undefined) so spread-merges of successive
+      // snapshots (e.g. SessionRuntimeInfo) cannot carry a stale phase along.
+      startupPhase: this.startupPhase ?? undefined,
     }
   }
   /** Engine identity of the live child, not the currently configured future one. */
@@ -736,10 +772,7 @@ export class PiRpcManager extends EventEmitter {
       this.setStatus('error')
       this.stderrBuffer =
         outcome === 'timeout'
-          ? `Pi did not respond within ${SPAWN_STARTUP_TIMEOUT_MS / 1000}s.\n\n` +
-            (captured
-              ? `Pi stderr captured during startup:\n${captured}`
-              : 'No output captured. Likely causes: Pi launched but stdio piping is broken (common with shell:true on Windows), or Pi is waiting on input. Try running `pi --mode rpc` directly in cmd to see if RPC mode works standalone.')
+          ? this.describeStartupTimeout(captured)
           : captured || 'Pi crashed before becoming ready.'
       return this.getStatus()
     }
@@ -749,11 +782,37 @@ export class PiRpcManager extends EventEmitter {
   }
 
   /**
+   * The user-facing reason for a startup timeout. Names only what the streams
+   * proved — never guesses at causes the evidence rules out (the old fixed
+   * message misdiagnosed issue #58 for days).
+   */
+  private describeStartupTimeout(captured: string): string {
+    if (this.startupSawOutput) {
+      return (
+        `Pi started but did not become ready within ${this.startupTimeouts.engineBusyMs / MS_PER_SECOND}s.\n\n` +
+        'Pi was alive and producing output, but never answered the readiness check. ' +
+        'Extension startup hooks run before Pi reads commands, and a hook that calls a ' +
+        'local model server can wait this long while the model loads or prefills a large prompt. ' +
+        'Check the engine and model-server logs, then retry.' +
+        (captured ? `\n\nPi stderr captured during startup:\n${captured}` : '')
+      )
+    }
+    return (
+      `Pi produced no output within ${this.startupTimeouts.silenceMs / MS_PER_SECOND}s.\n\n` +
+      (captured
+        ? `Pi stderr captured during startup:\n${captured}`
+        : 'No output captured. Check the app log for the exact spawn command, and try running `pi --mode rpc` directly in a terminal.')
+    )
+  }
+
+  /**
    * Spawn one Pi process and wait for it to become RPC-ready. Resolves:
    *  - 'ready'   — the readiness probe's correlated response arrived; status is
    *                now 'running'.
    *  - 'crashed' — spawn error, or the process exited before becoming ready.
-   *  - 'timeout' — no response within SPAWN_STARTUP_TIMEOUT_MS.
+   *  - 'timeout' — no response within the applicable startup deadline:
+   *                silenceMs while stdout stayed silent, engineBusyMs once
+   *                output proved the process alive (see PiStartupTimeouts).
    * It does NOT set the terminal 'error' status — doStart owns that, so it can
    * retry a crash without flipping the UI to 'error' between attempts.
    */
@@ -793,20 +852,33 @@ export class PiRpcManager extends EventEmitter {
     }
     this.process = proc
     this.runningEngine = cli.kind ?? 'pi'
+    this.startupSawOutput = false
+    this.startupPhase = 'spawning'
     this.setupStreams()
 
     return new Promise<'ready' | 'crashed' | 'timeout' | 'aborted'>((resolve) => {
       let settled = false
       let probeTimer: NodeJS.Timeout | null = null
+      let silenceTimer: NodeJS.Timeout | null = null
+      let engineBusyTimer: NodeJS.Timeout | null = null
       const startedAt = Date.now()
       const finish = (outcome: 'ready' | 'crashed' | 'timeout' | 'aborted'): void => {
         if (settled) return
         settled = true
         this.markReady = null
         this.abortStartup = null
+        this.startupPhase = null
         if (probeTimer) {
           clearInterval(probeTimer)
           probeTimer = null
+        }
+        if (silenceTimer) {
+          clearTimeout(silenceTimer)
+          silenceTimer = null
+        }
+        if (engineBusyTimer) {
+          clearTimeout(engineBusyTimer)
+          engineBusyTimer = null
         }
         resolve(outcome)
       }
@@ -864,12 +936,30 @@ export class PiRpcManager extends EventEmitter {
       sendProbe()
       probeTimer = setInterval(sendProbe, STARTUP_PROBE_INTERVAL_MS)
 
-      // Hard deadline: give up if still 'starting' after the full timeout.
-      setTimeout(() => {
-        if (!settled && this.status === 'starting') {
+      // Hard deadline, in two stages. Silent stdout at the silence cap means a
+      // dead spawn or a broken pipe — give up. Output without readiness means
+      // the engine is alive but still binding (its extension session_start
+      // hooks run before it reads stdin, so our probe sits unread while a hook
+      // may wait on a local model server — issue #58): announce the wait and
+      // grant the rest of the engine-busy cap.
+      silenceTimer = setTimeout(() => {
+        if (settled || this.status !== 'starting') return
+        if (!this.startupSawOutput) {
           finish('timeout')
+          return
         }
-      }, SPAWN_STARTUP_TIMEOUT_MS)
+        this.startupPhase = 'waiting-on-engine'
+        console.log(
+          `[Pi] Alive but not ready after ${this.startupTimeouts.silenceMs}ms; ` +
+            `waiting up to ${this.startupTimeouts.engineBusyMs}ms for the engine`
+        )
+        this.emit('startup-phase', this.startupPhase)
+        engineBusyTimer = setTimeout(() => {
+          if (!settled && this.status === 'starting') {
+            finish('timeout')
+          }
+        }, Math.max(0, this.startupTimeouts.engineBusyMs - this.startupTimeouts.silenceMs))
+      }, this.startupTimeouts.silenceMs)
     })
   }
 
@@ -987,6 +1077,7 @@ export class PiRpcManager extends EventEmitter {
 
     // stdout: JSONL events
     this.process.stdout?.on('data', (chunk: Buffer) => {
+      this.startupSawOutput = true
       this.stdoutBuffer += this.decoder.write(chunk)
 
       while (true) {

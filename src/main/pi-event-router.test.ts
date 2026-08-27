@@ -123,7 +123,9 @@ test('active manager status changes broadcast as status_change events', () => {
   const h = createHarness([WS_A])
   h.managers.get(WS_A)!.emit('status-change', 'running')
   // The payload comes from getStatus(); a never-started manager reports 'stopped'.
-  assert.deepEqual(h.broadcasts, [{ type: 'status_change', status: 'stopped', pid: null, error: null, engine: 'pi' }])
+  assert.deepEqual(h.broadcasts, [
+    { type: 'status_change', status: 'stopped', pid: null, error: null, engine: 'pi', startupPhase: undefined },
+  ])
 })
 
 // ─── Queueing and delivery ───────────────────────────────────────────────────

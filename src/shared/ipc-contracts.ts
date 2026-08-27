@@ -197,6 +197,14 @@ export const IPC_CHANNELS = {
 
 export type PiProcessStatus = 'stopped' | 'starting' | 'running' | 'error'
 
+/**
+ * Where a 'starting' runtime is in its startup: 'spawning' until the first
+ * stdout byte proves the process is alive, 'waiting-on-engine' once the
+ * silence deadline passed with output flowing but readiness still pending —
+ * typically an extension startup hook waiting on a local model server.
+ */
+export type PiStartupPhase = 'spawning' | 'waiting-on-engine'
+
 export interface PiStatus {
   status: PiProcessStatus
   pid: number | null
@@ -207,6 +215,8 @@ export interface PiStatus {
    * fall back to Pi, which is what an unlabelled process has always been.
    */
   engine?: AgentEngineKind
+  /** Present only while status is 'starting'. */
+  startupPhase?: PiStartupPhase
 }
 
 export type SessionRuntimeActivity = 'working' | 'needs-approval' | 'completed' | 'failed'
@@ -620,6 +630,7 @@ export interface PiStatusChangeEvent {
   pid: number | null
   error: string | null
   engine?: AgentEngineKind
+  startupPhase?: PiStartupPhase
 }
 
 // Emitted by Pi when the session title changes — e.g. an auto-title extension,
