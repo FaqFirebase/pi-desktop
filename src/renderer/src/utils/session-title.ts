@@ -1,3 +1,8 @@
+import type { SessionListItem } from '../../../shared/ipc-contracts'
+import { pathsEqual } from '../../../shared/path-compare'
+
+type SessionPreviewSource = Pick<SessionListItem, 'path' | 'preview'>
+
 /**
  * Human-readable title for a session.
  *
@@ -33,4 +38,21 @@ export function getSessionTitle(
   }
 
   return sessionId.slice(0, 12)
+}
+
+/**
+ * Preview of the live session's first user message, read from the session list.
+ *
+ * `SessionState` carries no preview, so a panel that titles the active session
+ * from it alone falls back to the raw id while the same session's row in Recent
+ * — which does read the list — shows a readable title. Matching on the session
+ * file keeps the two labels in step.
+ */
+export function findSessionPreview(
+  sessions: readonly SessionPreviewSource[],
+  sessionFile: string | null | undefined
+): string | null {
+  if (!sessionFile) return null
+  const match = sessions.find((session) => pathsEqual(session.path, sessionFile))
+  return match?.preview ?? null
 }

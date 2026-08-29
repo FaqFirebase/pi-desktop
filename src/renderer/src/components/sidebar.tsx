@@ -29,7 +29,7 @@ import { StatusPopover } from './status-popover'
 import { useContextMenu, buildSessionContextMenu } from './context-menu'
 import { getSessionEngineLabel, getSessionRowLabels, hasMixedSessionEngines } from './sidebar-session-labels'
 import { ResizeHandle } from './resize-handle'
-import { getSessionTitle } from '../utils/session-title'
+import { findSessionPreview, getSessionTitle } from '../utils/session-title'
 import { formatRelativeTime } from '../utils/format-relative-time'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import { resolveRunSessionId } from '../utils/workflow-runs'
@@ -222,6 +222,14 @@ export function Sidebar(): React.JSX.Element {
       [key]: !isGroupExpanded(projectPath),
     }))
   }
+
+  // The live session state has no preview, so the Current Session panel would
+  // fall back to the raw id while the same session's Recent row shows its first
+  // message. Both read the same preview instead.
+  const currentSessionPreview = useMemo(
+    () => findSessionPreview(sessionList, sessionState?.sessionFile),
+    [sessionList, sessionState?.sessionFile]
+  )
 
   // Gated on every known session, not on one section's slice, so the same chat
   // carries the same tag in Recent, in a folder group and under Archived.
@@ -602,7 +610,7 @@ export function Sidebar(): React.JSX.Element {
             >
               <div className="text-xs font-medium text-muted uppercase tracking-wider">Current Session</div>
               <div className="mt-1.5 text-sm text-primary truncate">
-                {getSessionTitle(sessionState.sessionName, sessionState.sessionId)}
+                {getSessionTitle(sessionState.sessionName, sessionState.sessionId, currentSessionPreview)}
               </div>
               {sessionState.model && (
                 <div className="mt-1 text-xs text-dim">
