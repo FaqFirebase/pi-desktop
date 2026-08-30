@@ -4,6 +4,7 @@ import { Plus, Trash2, Save, RefreshCw, AlertTriangle } from 'lucide-react'
 import { useAppStore } from '../store'
 import { withImageInput } from '../../../shared/models-config'
 import type { ModelsConfig, ProviderConfig, CustomModel } from '../../../shared/models-config'
+import { agentEngineLabel, DEFAULT_AGENT_ENGINE_LABEL } from '../../../shared/agent-engine-label'
 
 const API_OPTIONS = [
   'openai-completions',
@@ -53,6 +54,11 @@ export function CustomModelsEditor(): React.JSX.Element {
   const loadCustomModels = useAppStore((s) => s.loadCustomModels)
   const saveCustomModels = useAppStore((s) => s.saveCustomModels)
   const restartPi = useAppStore((s) => s.restartPi)
+  const piEngine = useAppStore((s) => s.piEngine)
+  // OMP 18 reads ~/.omp/agent/models.yml (YAML); Pi reads ~/.pi/agent/models.json.
+  const engineLabel = agentEngineLabel(piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL
+  const modelsFileName = piEngine === 'omp' ? 'models.yml' : 'models.json'
+  const modelsFilePath = piEngine === 'omp' ? '~/.omp/agent/models.yml' : '~/.pi/agent/models.json'
 
   const [rows, setRows] = useState<ProviderRow[]>([])
   const [errors, setErrors] = useState<string[]>([])
@@ -115,7 +121,7 @@ export function CustomModelsEditor(): React.JSX.Element {
       <div className="flex items-start gap-2 text-sm text-warning">
         <AlertTriangle size={16} className="mt-0.5 shrink-0" />
         <div>
-          <p>Could not load models.json safely, so editing is disabled to avoid overwriting it.</p>
+          <p>Could not load {modelsFileName} safely, so editing is disabled to avoid overwriting it.</p>
           <p className="mt-1 text-xs text-dim">{customModelsError}</p>
           <button
             onClick={() => loadCustomModels()}
@@ -131,12 +137,12 @@ export function CustomModelsEditor(): React.JSX.Element {
   return (
     <div className="space-y-4">
       <p className="text-xs text-dim">
-        Custom providers and models in <code>~/.pi/agent/models.json</code>. Applied when Pi restarts.
+        Custom providers and models in <code>{modelsFilePath}</code>. Applied when {engineLabel} restarts.
       </p>
       <p className="text-xs text-faint">
         Heads-up: imported models may load without capability flags set. If a model supports
         thinking, tick <span className="text-muted">reasoning</span>; if it accepts images,
-        tick <span className="text-muted">vision</span>. Restart Pi to apply.
+        tick <span className="text-muted">vision</span>. Restart {engineLabel} to apply.
       </p>
 
       {rows.map((row, pi) => (
@@ -295,7 +301,7 @@ export function CustomModelsEditor(): React.JSX.Element {
           className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover transition-colors"
         >
           <Save size={14} />
-          Save models.json
+          Save {modelsFileName}
         </button>
         {saved && (
           <button
@@ -306,7 +312,7 @@ export function CustomModelsEditor(): React.JSX.Element {
             )}
           >
             <RefreshCw size={14} />
-            Saved — Restart Pi to apply
+            Saved — Restart {engineLabel} to apply
           </button>
         )}
       </div>

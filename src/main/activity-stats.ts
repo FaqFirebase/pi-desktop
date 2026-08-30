@@ -11,6 +11,7 @@ import {
 import { basename, dirname, join } from 'path'
 import { getSessionsRoot } from './pi-paths'
 import { getPiCli } from './pi-rpc-manager'
+import { parseModelsFile, resolveModelsFile, type ModelsFileFormat } from './models-file'
 import { getGuiDataPath } from './app-data-paths'
 import type {
   ActivityStatsResult,
@@ -167,11 +168,16 @@ export class ActivityStatsStore {
     return this.sessionsRoot ?? getSessionsRoot()
   }
 
-  private modelsPath(): string {
-    if (this.modelsConfigPathOverride) return this.modelsConfigPathOverride
+  private modelsFile(): { path: string; format: ModelsFileFormat } {
+    if (this.modelsConfigPathOverride) {
+      return {
+        path: this.modelsConfigPathOverride,
+        format: /\.ya?ml$/.test(this.modelsConfigPathOverride) ? 'yaml' : 'json',
+      }
+    }
     const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-    const root = getPiCli().kind === 'omp' ? join(homeDir, '.omp', 'agent') : join(homeDir, '.pi', 'agent')
-    return join(root, 'models.json')
+    const location = resolveModelsFile(getPiCli().kind === 'omp' ? 'omp' : 'pi', homeDir)
+    return { path: location.file, format: location.format }
   }
 
   // Resolved lazily: the production singleton is constructed at import time,
@@ -217,7 +223,8 @@ export class ActivityStatsStore {
   private updateModelNames(): boolean {
     let changed = false
     try {
-      const parsed = JSON.parse(readFileSync(this.modelsPath(), 'utf-8')) as {
+      const { path, format } = this.modelsFile()
+      const parsed = parseModelsFile(readFileSync(path, 'utf-8'), format) as {
         providers?: Record<string, { models?: { id?: unknown; name?: unknown }[] }>
       }
       const providers = parsed.providers
