@@ -1300,6 +1300,13 @@ export interface InstalledSkill {
   enabled: boolean
 }
 
+/**
+ * Path prefix marking a skill known only from the running engine's command
+ * catalog (plugin/marketplace skills without a SKILL.md file the GUI can
+ * read). The skills panel shows the description instead of file content.
+ */
+export const RPC_SKILL_PATH_PREFIX = 'rpc:'
+
 // ─── App Log Types ──────────────────────────────────────────────────────────
 
 /**
