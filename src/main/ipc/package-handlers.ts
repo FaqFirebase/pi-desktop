@@ -8,6 +8,7 @@ import { existsSync } from 'fs'
 import { assertTrustedSender, isString } from './validation'
 import { runPiCli } from './run-pi-cli'
 import { getPiCli } from '../pi-rpc-manager'
+import { parseOmpPluginList, type InstalledPackage } from '../omp-plugin-list'
 import type { IpcContext } from './context'
 
 export function registerPackageHandlers(ctx: IpcContext): void {
@@ -59,22 +60,12 @@ export function registerPackageHandlers(ctx: IpcContext): void {
 
 // ─── Package Management ──────────────────────────────────────────────────────
 
-interface InstalledPackage {
-  name: string
-  source: string
-  type: string
-  version: string | null
-  path: string
-}
-
 async function listInstalledPackages(cwd: string, engine: 'pi' | 'omp'): Promise<InstalledPackage[]> {
   try {
+    if (engine === 'omp') return listOmpPlugins(cwd)
     const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-    const agentRoot = engine === 'omp' ? join(homeDir, '.omp', 'agent') : join(homeDir, '.pi', 'agent')
-    const globalSettingsPath = join(agentRoot, 'settings.json')
-    const projectSettingsPath = engine === 'omp'
-      ? join(cwd, '.omp', 'settings.json')
-      : join(cwd, '.pi', 'settings.json')
+    const globalSettingsPath = join(homeDir, '.pi', 'agent', 'settings.json')
+    const projectSettingsPath = join(cwd, '.pi', 'settings.json')
 
     const packages: InstalledPackage[] = []
     const globalPackages = await readPackagesFromSettings(globalSettingsPath)
@@ -85,6 +76,17 @@ async function listInstalledPackages(cwd: string, engine: 'pi' | 'omp'): Promise
   } catch {
     return []
   }
+}
+
+/**
+ * OMP does not track packages in a settings.json `packages` array — its plugin
+ * store lives in `~/.omp/plugins/` — so the installed list comes from the CLI.
+ */
+async function listOmpPlugins(cwd: string): Promise<InstalledPackage[]> {
+  const result = await runPiCli(['plugin', 'list', '--json'], cwd, 30_000)
+  if (!result.success) return []
+  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
+  return parseOmpPluginList(result.output, join(homeDir, '.omp', 'plugins'))
 }
 
 async function readPackagesFromSettings(settingsPath: string): Promise<InstalledPackage[]> {
