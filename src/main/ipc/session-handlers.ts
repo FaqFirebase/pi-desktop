@@ -11,6 +11,7 @@ import {
 } from '../session-paths'
 import { pathGroupKey as workspaceMatchKey, pathsEqual } from '../../shared/path-compare'
 import { readSessionMetadataCached } from '../session-metadata'
+import { readForkPoints } from '../omp-fork-points'
 import { mapWithConcurrency } from '../map-concurrent'
 import { readSessionLineage } from '../session-lineage-reader'
 import { trimGetMessagesResponse } from '../get-messages-trim'
@@ -166,9 +167,11 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_FORK, async (_event, entryId?: unknown) => {
-    const cmd: Record<string, unknown> = { type: 'fork' }
-    if (isString(entryId)) cmd.entryId = entryId
     const pi = getActivePi()
+    // OMP renamed Pi's `fork` command to `branch`; the entry-id argument and
+    // semantics (move the session's leaf pointer to that entry) are the same.
+    const cmd: Record<string, unknown> = { type: pi.getEngineKind() === 'omp' ? 'branch' : 'fork' }
+    if (isString(entryId)) cmd.entryId = entryId
     const response = await pi.sendCommand(cmd)
     const runtimeId = workspaceManager.runtimeIdFor(pi)
     if (runtimeId) await workspaceManager.refreshSessionRuntime(runtimeId).catch(() => null)
@@ -177,6 +180,11 @@ export function registerSessionHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC_CHANNELS.SESSION_CLONE, async () => {
     const pi = getActivePi()
+    // OMP has no `clone` command; the renderer hides the action, this is the
+    // backstop for any other caller.
+    if (pi.getEngineKind() === 'omp') {
+      return { success: false, error: 'The OMP engine does not support cloning a session' }
+    }
     const response = await pi.sendCommand({ type: 'clone' })
     const runtimeId = workspaceManager.runtimeIdFor(pi)
     if (runtimeId) await workspaceManager.refreshSessionRuntime(runtimeId).catch(() => null)
@@ -227,7 +235,17 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_FORK_MESSAGES, async () => {
-    return getActivePi().sendCommand({ type: 'get_fork_messages' })
+    const pi = getActivePi()
+    // OMP removed `get_fork_messages`; its session files keep Pi's entry
+    // layout, so the candidates are read from the active session file instead.
+    if (pi.getEngineKind() === 'omp') {
+      const sessionPath = workspaceManager.sessionPathFor(pi)
+      return sessionPath ? readForkPoints(sessionPath) : []
+    }
+    const response = await pi.sendCommand({ type: 'get_fork_messages' })
+    // The renderer expects the bare candidate list, not the RPC envelope.
+    const data = (response as { data?: { messages?: unknown } } | null)?.data
+    return Array.isArray(data?.messages) ? data.messages : []
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, async (event, sessionPath: unknown): Promise<SessionDeleteResult> => {

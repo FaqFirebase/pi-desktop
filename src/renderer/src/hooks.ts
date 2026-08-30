@@ -430,18 +430,22 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
   const createNewSession = useAppStore((s) => s.createNewSession)
   const setTaskLauncherOpen = useAppStore((s) => s.setTaskLauncherOpen)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
+  const piEngine = useAppStore((s) => s.piEngine)
 
   const builtins = useMemo<BuiltinCommand[]>(
     () => [
       { name: 'compact', description: 'Compact the conversation to free up context', run: () => { void compactContext() } },
-      { name: 'clone', description: 'Clone the current branch into a new session', run: () => { void cloneBranch() } },
+      // OMP has no clone RPC command, so the action is not offered there.
+      ...(piEngine === 'omp'
+        ? []
+        : [{ name: 'clone', description: 'Clone the current branch into a new session', run: () => { void cloneBranch() } }]),
       { name: 'new', description: 'Start a new session', run: () => { void createNewSession() } },
       { name: 'task', description: 'Launch a task in a new Pi session', run: () => setTaskLauncherOpen(true) },
       { name: 'resume', description: 'Open the Sessions list', run: () => setCurrentView('sessions') },
       { name: 'fork', description: 'Open Branches to fork from a message', run: () => setCurrentView('timeline') },
       { name: 'settings', description: 'Open Settings', run: () => setCurrentView('settings') },
     ],
-    [compactContext, cloneBranch, createNewSession, setTaskLauncherOpen, setCurrentView]
+    [compactContext, cloneBranch, createNewSession, setTaskLauncherOpen, setCurrentView, piEngine]
   )
 
   const allCommands = useMemo<PiCommand[]>(
