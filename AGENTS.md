@@ -167,6 +167,10 @@ src/
 - Tool names differ per engine (Pi ships `find`/`ls`, OMP ships `glob`), so Plan/Read-only mode derives its tool list from the session's engine, never from the configured one.
 - Every surface that names the running agent (status bar, empty chat, permission prompts, Diagnostics, session tags) reads `shared/agent-engine-label.ts`; the permission extension gets the label via `PI_DESKTOP_AGENT_LABEL`. Session rows show the Pi/OMP tag only when both engines appear in one list.
 - OMP specifics: protocol-v2 chunked frames are decoded with the limits the engine advertises in its ready frame; OMP starts subagents in a new process group, so shutdown walks the descendant tree before signalling; OMP's plugin verbs back the package actions.
+- OMP RPC gaps the GUI bridges: OMP has no `fork`/`clone`/`get_fork_messages`/`get_commands`. Fork maps to OMP's `branch` (same entryId argument), fork candidates are read from the session file (`omp-fork-points.ts`), the Clone action is hidden under OMP, and the command catalog uses `get_available_commands` (`skills-mcp-handlers.ts`).
+- Per-engine config files: Pi keeps `~/.pi/agent/models.json` (JSON); OMP 18 keeps `~/.omp/agent/models.yml` (YAML) — `models-file.ts` resolves and (de)serializes both. OMP's installed-package list comes from `omp plugin list --json` (`omp-plugin-list.ts`), not from a settings.json `packages` array.
+- Session names: Pi appends `session_info` records; OMP rewrites a fixed first-line `{"type":"title"}` slot. `session-name.ts`/`session-metadata.ts` read both (session_info outranks the title slot).
+- Skills are listed per engine (`skills-discovery.ts`): Pi scans `~/.pi/agent/skills`, `~/.agents/skills` and project `.pi/skills`/`.agents/skills` recursively; OMP scans `.omp`, `.claude` and `.agents` roots one level deep. Skills only the other engine can load are never shown. When the engine is running, plugin-shipped skills from its command catalog are merged in (`rpc:`-prefixed pseudo-paths render from the description).
 
 ### Workspace Management
 
