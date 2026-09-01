@@ -3,15 +3,10 @@ import { clsx } from 'clsx'
 import { Sparkles, RefreshCw, Play } from 'lucide-react'
 import { useAppStore } from '../store'
 import { MarkdownRenderer } from './markdown-renderer'
-import { RPC_SKILL_PATH_PREFIX } from '../../../shared/ipc-contracts'
+import { isRpcSkillPath } from '../../../shared/ipc-contracts'
 import type { InstalledSkill } from '../../../shared/ipc-contracts'
 
 const SOURCE_ORDER: InstalledSkill['source'][] = ['project', 'global', 'package', 'cli']
-
-/** Skill reported by the engine's command catalog only — no readable SKILL.md. */
-function isRpcSkill(skill: InstalledSkill): boolean {
-  return skill.path.startsWith(RPC_SKILL_PATH_PREFIX)
-}
 
 export function SkillsPanel(): React.JSX.Element {
   const skills = useAppStore((s) => s.installedSkills)
@@ -48,7 +43,7 @@ export function SkillsPanel(): React.JSX.Element {
       setDetail('')
       return
     }
-    if (isRpcSkill(selected)) {
+    if (isRpcSkillPath(selected.path)) {
       // No file on disk to read — the engine ships the skill from a plugin.
       setDetail(selected.description)
       return
@@ -130,7 +125,7 @@ export function SkillsPanel(): React.JSX.Element {
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-medium text-primary">{selected.name}</h3>
                 <p className="truncate text-xs text-faint">
-                  {isRpcSkill(selected) ? 'Provided by an installed plugin' : selected.path}
+                  {isRpcSkillPath(selected.path) ? 'Provided by an installed plugin' : selected.path}
                 </p>
               </div>
               <button

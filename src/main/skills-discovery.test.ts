@@ -136,3 +136,14 @@ test('mergeRpcSkills leaves the list unchanged for an empty catalog', () => {
   mergeRpcSkills(skills, [])
   assert.deepEqual(skills, [diskSkill])
 })
+
+test('parseSkillFrontmatter accepts CRLF endings and a UTF-8 BOM', () => {
+  assert.deepEqual(parseSkillFrontmatter('---\r\nname: win\r\ndescription: crlf file\r\n---\r\n\r\nBody\r\n'), {
+    name: 'win',
+    description: 'crlf file',
+  })
+  assert.deepEqual(parseSkillFrontmatter('﻿---\nname: bom\ndescription: bom file\n---\n'), {
+    name: 'bom',
+    description: 'bom file',
+  })
+})

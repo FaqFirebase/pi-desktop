@@ -136,7 +136,9 @@ async function pushSkillFile(
 }
 
 export function parseSkillFrontmatter(content: string): { name: string; description: string } | null {
-  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/)
+  // Windows-authored files carry CRLF endings and sometimes a UTF-8 BOM; both
+  // engines still load them, so the panel must too.
+  const frontmatterMatch = content.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---/)
   if (!frontmatterMatch) return null
 
   const frontmatter = frontmatterMatch[1]
@@ -162,7 +164,7 @@ export function mergeRpcSkills(skills: InstalledSkill[], commands: unknown[]): v
     if (typeof entry !== 'object' || entry === null) continue
     const cmd = entry as { name?: unknown; description?: unknown; source?: unknown; path?: unknown }
     if (cmd.source !== 'skill' || typeof cmd.name !== 'string') continue
-    // OMP catalog names carry the invocation prefix ("skill:foo"); Pi's don't.
+    // Both engines list skills under their invocation token ("skill:foo").
     const name = cmd.name.startsWith('skill:') ? cmd.name.slice('skill:'.length) : cmd.name
     if (!name || seen.has(name)) continue
     seen.add(name)
