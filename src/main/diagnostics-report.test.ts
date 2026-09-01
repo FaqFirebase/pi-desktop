@@ -68,6 +68,16 @@ test('sanitizeProvidersError withholds JSON.parse detail that can quote file con
   )
 })
 
+test('sanitizeProvidersError withholds YAML parse detail that prints the source line', () => {
+  assert.equal(
+    sanitizeProvidersError(
+      'models.yml is not valid YAML: Nested mappings are not allowed at line 3:\n\n    apiKey: sk-live-abcdef: oops\n            ^'
+    ),
+    'models.yml is not valid YAML',
+  )
+  assert.equal(sanitizeProvidersError('models.yaml is not valid YAML: bad'), 'models.yaml is not valid YAML')
+})
+
 test('countPathEntries splits on the platform delimiter and drops blanks', () => {
   assert.equal(countPathEntries('/usr/bin:/usr/local/bin::/opt/bin', false), 3)
   assert.equal(countPathEntries('C:\\Windows;C:\\Tools;', true), 2)
