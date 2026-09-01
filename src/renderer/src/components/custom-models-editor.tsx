@@ -54,11 +54,12 @@ export function CustomModelsEditor(): React.JSX.Element {
   const loadCustomModels = useAppStore((s) => s.loadCustomModels)
   const saveCustomModels = useAppStore((s) => s.saveCustomModels)
   const restartPi = useAppStore((s) => s.restartPi)
-  const piEngine = useAppStore((s) => s.piEngine)
-  // OMP 18 reads ~/.omp/agent/models.yml (YAML); Pi reads ~/.pi/agent/models.json.
-  const engineLabel = agentEngineLabel(piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL
-  const modelsFileName = piEngine === 'omp' ? 'models.yml' : 'models.json'
-  const modelsFilePath = piEngine === 'omp' ? '~/.omp/agent/models.yml' : '~/.pi/agent/models.json'
+  // Main resolves which engine and file the editor targets; the labels show
+  // exactly that so they can never name a file the save does not touch.
+  const modelsFile = useAppStore((s) => s.customModelsFile)
+  const engineLabel = agentEngineLabel(modelsFile?.engine ?? null) ?? DEFAULT_AGENT_ENGINE_LABEL
+  const modelsFileName = modelsFile?.name ?? 'models file'
+  const modelsFilePath = modelsFile?.file ?? modelsFileName
 
   const [rows, setRows] = useState<ProviderRow[]>([])
   const [errors, setErrors] = useState<string[]>([])

@@ -487,7 +487,7 @@ export function getConfiguredEngineKind(): AgentEngineKind {
  * Each engine's resolution is cached under its own key and cleared with the
  * configured one.
  */
-function getPiCliForEngine(engine: AgentEngineKind): PiCli {
+export function getPiCliForEngine(engine: AgentEngineKind): PiCli {
   const configured = getPiCli()
   // The configured resolution already targets this engine, including any
   // executable path the user set for it.

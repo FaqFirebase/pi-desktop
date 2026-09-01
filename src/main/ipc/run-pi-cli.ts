@@ -1,19 +1,23 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { buildPiInvocation, getPiCli } from '../pi-rpc-manager'
+import type { AgentEngineKind } from '../../shared/ipc-contracts'
+import { buildPiInvocation, getPiCli, getPiCliForEngine } from '../pi-rpc-manager'
 
 const execFileAsync = promisify(execFile)
 
-// Run a `pi <subcommand>` using the same binary resolved at startup.
+// Run a `pi <subcommand>` using the same binary resolved at startup, or the
+// binary of an explicitly named engine (the active session's engine can differ
+// from the configured default when a session from the other store is open).
 // Electron's child processes don't inherit the user's shell PATH, so bare
 // `execFileAsync('pi', ...)` would fail with ENOENT on most systems.
 export async function runPiCli(
   args: string[],
   cwd: string,
-  timeout: number
+  timeout: number,
+  engine?: AgentEngineKind
 ): Promise<{ success: boolean; output: string }> {
   try {
-    const cli = getPiCli()
+    const cli = engine ? getPiCliForEngine(engine) : getPiCli()
     // OMP keeps `install` as a Pi-compatible alias but names the other plugin
     // mutations explicitly. Preserve the package panel's existing contract
     // while routing those two verbs to OMP's native commands.

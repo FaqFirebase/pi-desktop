@@ -10,7 +10,7 @@ import {
 } from 'fs'
 import { basename, dirname, join } from 'path'
 import { getSessionsRoot } from './pi-paths'
-import { getPiCli } from './pi-rpc-manager'
+import { getConfiguredEngineKind } from './pi-rpc-manager'
 import { parseModelsFile, resolveModelsFile, type ModelsFileFormat } from './models-file'
 import { getGuiDataPath } from './app-data-paths'
 import type {
@@ -176,7 +176,7 @@ export class ActivityStatsStore {
       }
     }
     const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-    const location = resolveModelsFile(getPiCli().kind === 'omp' ? 'omp' : 'pi', homeDir)
+    const location = resolveModelsFile(getConfiguredEngineKind(), homeDir)
     return { path: location.file, format: location.format }
   }
 

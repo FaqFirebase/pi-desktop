@@ -943,7 +943,22 @@ export interface CouncilProgressEvent {
 import type { ModelsConfig as ModelsConfigType } from './models-config'
 import type { CouncilConfig } from './council-config'
 /** Result of the MODELS_READ IPC call. */
-export type ModelsReadResult = { config: ModelsConfigType } | { error: string; raw: string }
+/**
+ * Where the custom-models config was read from. Main resolves the engine and
+ * file; the editor shows exactly this so its labels never name a file the save
+ * will not touch.
+ */
+export interface ModelsFileInfo {
+  engine: AgentEngineKind
+  /** Absolute path of the file read (and written on save). */
+  file: string
+  /** Basename, for labels ("Save models.yml"). */
+  name: string
+}
+
+export type ModelsReadResult =
+  | { config: ModelsConfigType; location: ModelsFileInfo }
+  | { error: string; raw: string; location: ModelsFileInfo }
 
 // ─── Agent Message Types ────────────────────────────────────────────────────
 
@@ -1306,6 +1321,11 @@ export interface InstalledSkill {
  * read). The skills panel shows the description instead of file content.
  */
 export const RPC_SKILL_PATH_PREFIX = 'rpc:'
+
+/** True when the skill has no SKILL.md on disk (catalog-only entry). */
+export function isRpcSkillPath(path: string): boolean {
+  return path.startsWith(RPC_SKILL_PATH_PREFIX)
+}
 
 // ─── App Log Types ──────────────────────────────────────────────────────────
 

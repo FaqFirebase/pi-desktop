@@ -57,7 +57,7 @@ export function registerIpcHandlers(
   registerWorkspaceHandlers(ctx)
   registerPackageHandlers(ctx)
   registerSkillsMcpHandlers(ctx)
-  registerModelsConfigHandlers()
+  registerModelsConfigHandlers(ctx)
   registerCouncilHandlers(ctx)
   registerTagHandlers(ctx)
   registerNotesHandlers(ctx)

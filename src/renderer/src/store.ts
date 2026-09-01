@@ -57,6 +57,7 @@ import type {
   SessionRuntimeInfo,
   SessionLaunchTaskOptions,
   SessionDeleteResult,
+  ModelsFileInfo,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -356,6 +357,8 @@ interface AppState {
   // Custom models config (~/.pi/agent/models.json)
   customModels: ModelsConfig | null
   customModelsError: string | null
+  /** Engine and file main resolved for the custom-models editor. */
+  customModelsFile: ModelsFileInfo | null
 
   // Council run UI state (null when no council run is active)
   councilRun: CouncilRunState | null
@@ -891,6 +894,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   customModels: null,
   customModelsError: null,
+  customModelsFile: null,
   councilRun: null,
 
   previewTarget: null,
@@ -2835,12 +2839,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       const result = await window.piDesktop.models.read()
       if ('error' in result) {
-        set({ customModels: null, customModelsError: result.error })
+        set({ customModels: null, customModelsError: result.error, customModelsFile: result.location })
       } else {
-        set({ customModels: result.config, customModelsError: null })
+        set({ customModels: result.config, customModelsError: null, customModelsFile: result.location })
       }
     } catch (err) {
-      set({ customModels: null, customModelsError: err instanceof Error ? err.message : String(err) })
+      set({ customModels: null, customModelsError: err instanceof Error ? err.message : String(err), customModelsFile: null })
     }
   },
 
