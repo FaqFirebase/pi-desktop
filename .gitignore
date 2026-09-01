@@ -35,8 +35,8 @@ $RECYCLE.BIN/
 .env.production
 
 # Signing & secrets — code-signing material and credentials, never commit.
-# The app ships signed macOS/Windows binaries (see AGENTS.md Distribution);
-# a leaked signing key or cert bundle is a security incident.
+# Release binaries are currently unsigned (see AGENTS.md Distribution), but
+# a leaked signing key or cert bundle is still a security incident.
 *.pem
 *.key
 *.p12

@@ -471,3 +471,38 @@ test('readSessionMetadataCached re-reads when the mtime changes', async () => {
     assert.equal((await readSessionMetadataCached(path, 2000)).preview, 'Second')
   })
 })
+
+// ─── OMP title slot (first-line { type: "title" } record) ────────────────────
+
+const titleLine = (title: string): string =>
+  JSON.stringify({ type: 'title', v: 1, title, updatedAt: '2026-08-24T20:05:17.256Z', pad: ' '.repeat(160) })
+
+test('readSessionMetadata falls back to the OMP title slot', async () => {
+  await withSessionFile(
+    [titleLine('Fix AppImage or run dmg'), headerLine(), userLine(textBlocks('hello'))],
+    async (path) => {
+      const metadata = await readSessionMetadata(path)
+      assert.equal(metadata.name, 'Fix AppImage or run dmg')
+      assert.equal(metadata.header?.id, SESSION_ID)
+      assert.equal(metadata.preview, 'hello')
+    }
+  )
+})
+
+test('readSessionMetadata treats an empty OMP title slot as unnamed', async () => {
+  await withSessionFile(
+    [titleLine(''), headerLine(), userLine(textBlocks('hello'))],
+    async (path) => {
+      assert.equal((await readSessionMetadata(path)).name, null)
+    }
+  )
+})
+
+test('session_info outranks the OMP title slot', async () => {
+  await withSessionFile(
+    [titleLine('Slot title'), headerLine(), userLine(textBlocks('hi')), sessionInfoLine('Real rename')],
+    async (path) => {
+      assert.equal((await readSessionMetadata(path)).name, 'Real rename')
+    }
+  )
+})

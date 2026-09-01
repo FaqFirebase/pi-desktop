@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { getSessionTitle } from '../utils/session-title'
+import { findSessionPreview, getSessionTitle } from '../utils/session-title'
 import { useAppStore } from '../store'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import type { InstalledSkill } from '../../../shared/ipc-contracts'
@@ -51,6 +51,7 @@ export function StatusPopover(): React.JSX.Element {
   const piError = useAppStore((state) => state.piError)
   const [errorCopied, setErrorCopied] = useState(false)
   const sessionState = useAppStore((state) => state.sessionState)
+  const sessionList = useAppStore((state) => state.sessionList)
   const sessionStats = useAppStore((state) => state.sessionStats)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const compactContext = useAppStore((state) => state.compactContext)
@@ -208,7 +209,7 @@ export function StatusPopover(): React.JSX.Element {
                 />
               )}
               {sessionState?.sessionId && (
-                <StatusRow label="Session" value={getSessionTitle(sessionState.sessionName, sessionState.sessionId)} />
+                <StatusRow label="Session" value={getSessionTitle(sessionState.sessionName, sessionState.sessionId, findSessionPreview(sessionList, sessionState.sessionFile))} />
               )}
             </StatusSection>
 

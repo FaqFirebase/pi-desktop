@@ -31,6 +31,7 @@ export function Timeline(): React.JSX.Element {
   const lineage = useAppStore((state) => state.lineage)
   const currentSessionFile = useAppStore((state) => state.sessionState?.sessionFile ?? null)
   const switchSession = useAppStore((state) => state.switchSession)
+  const piEngine = useAppStore((state) => state.piEngine)
 
   useEffect(() => {
     loadForkMessages()
@@ -46,14 +47,16 @@ export function Timeline(): React.JSX.Element {
             <GitFork size={15} className="text-muted" />
             <h3 className="text-sm font-medium text-primary">Branches</h3>
           </div>
-          <button
-            onClick={() => cloneBranch()}
-            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-primary transition-colors"
-            title="Clone the current branch into a new session"
-          >
-            <Copy size={12} />
-            Clone branch
-          </button>
+          {piEngine !== 'omp' && (
+            <button
+              onClick={() => cloneBranch()}
+              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-primary transition-colors"
+              title="Clone the current branch into a new session"
+            >
+              <Copy size={12} />
+              Clone branch
+            </button>
+          )}
         </div>
         {forkMessages.length === 0 ? (
           <p className="text-xs text-faint">No earlier messages to fork from.</p>

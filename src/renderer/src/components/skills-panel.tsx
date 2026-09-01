@@ -3,6 +3,7 @@ import { clsx } from 'clsx'
 import { Sparkles, RefreshCw, Play } from 'lucide-react'
 import { useAppStore } from '../store'
 import { MarkdownRenderer } from './markdown-renderer'
+import { isRpcSkillPath } from '../../../shared/ipc-contracts'
 import type { InstalledSkill } from '../../../shared/ipc-contracts'
 
 const SOURCE_ORDER: InstalledSkill['source'][] = ['project', 'global', 'package', 'cli']
@@ -12,6 +13,7 @@ export function SkillsPanel(): React.JSX.Element {
   const loadSkills = useAppStore((s) => s.loadSkills)
   const insertPrompt = useAppStore((s) => s.insertPrompt)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
+  const piEngine = useAppStore((s) => s.piEngine)
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [detail, setDetail] = useState<string>('')
@@ -39,6 +41,11 @@ export function SkillsPanel(): React.JSX.Element {
     let cancelled = false
     if (!selected) {
       setDetail('')
+      return
+    }
+    if (isRpcSkillPath(selected.path)) {
+      // No file on disk to read — the engine ships the skill from a plugin.
+      setDetail(selected.description)
       return
     }
     window.piDesktop.files
@@ -82,7 +89,9 @@ export function SkillsPanel(): React.JSX.Element {
         <div className="flex-1 overflow-y-auto py-1">
           {skills.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-faint">
-              No skills found in ~/.pi/agent/skills or project .pi/skills
+              {piEngine === 'omp'
+                ? 'No skills found in ~/.omp/agent/skills, ~/.claude/skills, or project .omp/skills'
+                : 'No skills found in ~/.pi/agent/skills or project .pi/skills'}
             </div>
           ) : (
             grouped.map((group) => (
@@ -115,7 +124,9 @@ export function SkillsPanel(): React.JSX.Element {
             <div className="flex h-12 items-center justify-between border-b border-border px-4">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-medium text-primary">{selected.name}</h3>
-                <p className="truncate text-xs text-faint">{selected.path}</p>
+                <p className="truncate text-xs text-faint">
+                  {isRpcSkillPath(selected.path) ? 'Provided by an installed plugin' : selected.path}
+                </p>
               </div>
               <button
                 onClick={() => runSkill(selected)}

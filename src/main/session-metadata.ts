@@ -2,7 +2,7 @@ import { createReadStream } from 'fs'
 import { open, type FileHandle } from 'fs/promises'
 import { createInterface } from 'readline'
 import { sessionPreview, stripInjectedPreamble } from '../shared/session-preview'
-import { sessionInfoNameFromLine } from './session-name'
+import { sessionInfoNameFromLine, titleNameFromLine } from './session-name'
 
 /**
  * Bounded reader for everything the GUI shows about a session it has not opened:
@@ -133,6 +133,11 @@ interface RangeScan {
   parseFailure: boolean
   /** `undefined` when the range held no session_info record at all. */
   name: string | null | undefined
+  /**
+   * OMP's fixed first-line `title` slot, or `undefined` when the range held no
+   * title record. Only a fallback: `session_info` records always outrank it.
+   */
+  titleName: string | null | undefined
 }
 
 interface ScanOptions {
@@ -156,6 +161,7 @@ function scanLines(lines: readonly string[], options: ScanOptions = {}): RangeSc
   let hasUserMessage = false
   let parseFailure = false
   let name: string | null | undefined = undefined
+  let titleName: string | null | undefined = undefined
 
   for (const [index, line] of lines.entries()) {
     if (index === 0 && skipPartialFirstLine) continue
@@ -167,6 +173,17 @@ function scanLines(lines: readonly string[], options: ScanOptions = {}): RangeSc
       const nameOnLine = sessionInfoNameFromLine(line)
       if (nameOnLine !== undefined) {
         name = nameOnLine
+        continue
+      }
+    }
+
+    // OMP's title slot is always the file's first line, so only a range that
+    // starts at byte 0 can hold it — message lines routinely contain the word
+    // "title" and would otherwise trigger needless JSON parses in the tail.
+    if (index === 0 && !skipPartialFirstLine) {
+      const titleOnLine = titleNameFromLine(line)
+      if (titleOnLine !== undefined) {
+        titleName = titleOnLine
         continue
       }
     }
@@ -199,7 +216,7 @@ function scanLines(lines: readonly string[], options: ScanOptions = {}): RangeSc
     if (!wantName && header !== null && hasUserMessage) break
   }
 
-  return { header, text, hasUserMessage, parseFailure, name }
+  return { header, text, hasUserMessage, parseFailure, name, titleName }
 }
 
 /**
@@ -456,8 +473,15 @@ export async function readSessionMetadata(filePath: string): Promise<SessionMeta
   let name = tailName ?? scan.name
   if (name === undefined) {
     // Neither range saw one: either the session is unnamed, or a rename sits
-    // mid-file behind large tool output.
-    name = sawWholeFile ? null : await streamLatestName(filePath)
+    // mid-file behind large tool output. A title slot on line 1 proves the
+    // file is OMP's, which never writes session_info, so the full walk that
+    // looks for one is skipped in that case.
+    name = sawWholeFile || scan.titleName !== undefined ? null : await streamLatestName(filePath)
+  }
+  // OMP sessions carry their name only in the first-line title slot — fall
+  // back to it when no session_info named (or explicitly cleared) the session.
+  if (name === null && scan.titleName !== undefined) {
+    name = scan.titleName
   }
 
   const text = scan.text ?? (headTruncated ? await streamFirstUserMessage(filePath) : null)

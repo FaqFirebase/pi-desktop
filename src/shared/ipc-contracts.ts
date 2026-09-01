@@ -197,6 +197,14 @@ export const IPC_CHANNELS = {
 
 export type PiProcessStatus = 'stopped' | 'starting' | 'running' | 'error'
 
+/**
+ * Where a 'starting' runtime is in its startup: 'spawning' until the first
+ * stdout byte proves the process is alive, 'waiting-on-engine' once the
+ * silence deadline passed with output flowing but readiness still pending —
+ * typically an extension startup hook waiting on a local model server.
+ */
+export type PiStartupPhase = 'spawning' | 'waiting-on-engine'
+
 export interface PiStatus {
   status: PiProcessStatus
   pid: number | null
@@ -207,6 +215,8 @@ export interface PiStatus {
    * fall back to Pi, which is what an unlabelled process has always been.
    */
   engine?: AgentEngineKind
+  /** Present only while status is 'starting'. */
+  startupPhase?: PiStartupPhase
 }
 
 export type SessionRuntimeActivity = 'working' | 'needs-approval' | 'completed' | 'failed'
@@ -620,6 +630,7 @@ export interface PiStatusChangeEvent {
   pid: number | null
   error: string | null
   engine?: AgentEngineKind
+  startupPhase?: PiStartupPhase
 }
 
 // Emitted by Pi when the session title changes — e.g. an auto-title extension,
@@ -932,7 +943,22 @@ export interface CouncilProgressEvent {
 import type { ModelsConfig as ModelsConfigType } from './models-config'
 import type { CouncilConfig } from './council-config'
 /** Result of the MODELS_READ IPC call. */
-export type ModelsReadResult = { config: ModelsConfigType } | { error: string; raw: string }
+/**
+ * Where the custom-models config was read from. Main resolves the engine and
+ * file; the editor shows exactly this so its labels never name a file the save
+ * will not touch.
+ */
+export interface ModelsFileInfo {
+  engine: AgentEngineKind
+  /** Absolute path of the file read (and written on save). */
+  file: string
+  /** Basename, for labels ("Save models.yml"). */
+  name: string
+}
+
+export type ModelsReadResult =
+  | { config: ModelsConfigType; location: ModelsFileInfo }
+  | { error: string; raw: string; location: ModelsFileInfo }
 
 // ─── Agent Message Types ────────────────────────────────────────────────────
 
@@ -1287,6 +1313,18 @@ export interface InstalledSkill {
   path: string
   source: 'global' | 'project' | 'package' | 'cli'
   enabled: boolean
+}
+
+/**
+ * Path prefix marking a skill known only from the running engine's command
+ * catalog (plugin/marketplace skills without a SKILL.md file the GUI can
+ * read). The skills panel shows the description instead of file content.
+ */
+export const RPC_SKILL_PATH_PREFIX = 'rpc:'
+
+/** True when the skill has no SKILL.md on disk (catalog-only entry). */
+export function isRpcSkillPath(path: string): boolean {
+  return path.startsWith(RPC_SKILL_PATH_PREFIX)
 }
 
 // ─── App Log Types ──────────────────────────────────────────────────────────

@@ -58,11 +58,14 @@ export function countPathEntries(pathEnv: string, isWindows: boolean): number {
 }
 
 /**
- * Keep models.json failure text out of the shareable report when it may embed
+ * Keep models-file failure text out of the shareable report when it may embed
  * file content: V8's JSON.parse errors quote the source around the bad token,
- * which can include literal apiKey material.
+ * and the YAML parser prints the offending line with a caret — either can
+ * include literal apiKey material.
  */
+const MODELS_PARSE_ERROR_PREFIX = /^(models\.(?:json|ya?ml)) is not valid (JSON|YAML)/
+
 export function sanitizeProvidersError(error: string): string {
-  if (error.startsWith('models.json is not valid JSON')) return 'models.json is not valid JSON'
-  return error
+  const match = error.match(MODELS_PARSE_ERROR_PREFIX)
+  return match ? `${match[1]} is not valid ${match[2]}` : error
 }

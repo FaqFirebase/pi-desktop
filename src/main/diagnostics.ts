@@ -9,9 +9,9 @@ import {
   summarizeProviders,
 } from './diagnostics-report'
 import type { WorkspaceManager } from './workspace-manager'
-import { getPiCli, getPiResolution } from './pi-rpc-manager'
+import { getConfiguredEngineKind, getPiCli, getPiResolution } from './pi-rpc-manager'
 import { workspaceTrustStore } from './workspace-trust'
-import { getSessionsRoot } from './pi-paths'
+import { getOmpSessionsRoot, getSessionsRoot } from './pi-paths'
 import { getGuiDataDir } from './app-data-paths'
 import { appLog } from './app-log'
 import { validatePermissionRulesFile } from '../../resources/permission-rules'
@@ -61,12 +61,12 @@ export async function collectDiagnostics(
     piStatus: workspaceManager.getPiManager(ws.id)?.getStatus().status ?? 'stopped',
   }))
 
-  const modelsRead = await readModelsConfigFile()
+  const modelsRead = await readModelsConfigFile(getConfiguredEngineKind())
   const providers = 'config' in modelsRead ? summarizeProviders(modelsRead.config, process.env) : null
   const providersError = 'error' in modelsRead ? sanitizeProvidersError(modelsRead.error) : null
 
   const globalRules = await readGlobalRuleCount()
-  const sessionsRoot = getSessionsRoot()
+  const sessionsRoot = getConfiguredEngineKind() === 'omp' ? getOmpSessionsRoot() : getSessionsRoot()
 
   return {
     generatedAt: Date.now(),

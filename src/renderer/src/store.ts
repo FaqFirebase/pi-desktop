@@ -21,6 +21,7 @@ import type {
   PiStatus,
   AgentEngineKind,
   PiProcessStatus,
+  PiStartupPhase,
   SessionState,
   SessionStats,
   SessionListItem,
@@ -56,6 +57,7 @@ import type {
   SessionRuntimeInfo,
   SessionLaunchTaskOptions,
   SessionDeleteResult,
+  ModelsFileInfo,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -215,6 +217,8 @@ function workspaceHasLivePi(
 interface AppState {
   // Pi process
   piStatus: PiProcessStatus
+  /** Non-null only while piStatus is 'starting'. */
+  piStartupPhase: PiStartupPhase | null
   piPid: number | null
   piError: string | null
   /** Which engine the live process actually is, so the UI names it correctly. */
@@ -353,6 +357,8 @@ interface AppState {
   // Custom models config (~/.pi/agent/models.json)
   customModels: ModelsConfig | null
   customModelsError: string | null
+  /** Engine and file main resolved for the custom-models editor. */
+  customModelsFile: ModelsFileInfo | null
 
   // Council run UI state (null when no council run is active)
   councilRun: CouncilRunState | null
@@ -709,6 +715,7 @@ function adoptMainSideActivation(
     activeSessionRuntimeId: null,
     timelineEvents: [],
     piStatus: 'stopped',
+    piStartupPhase: null,
     piPid: null,
     piError: null,
     ...idleTurnState(),
@@ -822,6 +829,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Initial State ────────────────────────────────────────────────────
 
   piStatus: 'stopped',
+  piStartupPhase: null,
   piPid: null,
   piError: null,
   piEngine: 'pi',
@@ -886,6 +894,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   customModels: null,
   customModelsError: null,
+  customModelsFile: null,
   councilRun: null,
 
   previewTarget: null,
@@ -919,7 +928,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
     try {
       const status = await window.piDesktop.pi.start(options as Record<string, unknown> | undefined)
-      set({ piStatus: status.status, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
+      set({ piStatus: status.status, piStartupPhase: status.startupPhase ?? null, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
 
       if (status.status === 'running') {
         await get().refreshSessionState()
@@ -928,23 +937,23 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         await get().maybeWarnWorkspacePermissionRules()
       }
     } catch (err) {
-      set({ piStatus: 'error', piError: err instanceof Error ? err.message : String(err) })
+      set({ piStatus: 'error', piStartupPhase: null, piError: err instanceof Error ? err.message : String(err) })
     }
   },
 
   stopPi: async () => {
     try {
       const status = await window.piDesktop.pi.stop()
-      set({ piStatus: status.status, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
+      set({ piStatus: status.status, piStartupPhase: status.startupPhase ?? null, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
     } catch (err) {
-      set({ piStatus: 'error', piError: err instanceof Error ? err.message : String(err) })
+      set({ piStatus: 'error', piStartupPhase: null, piError: err instanceof Error ? err.message : String(err) })
     }
   },
 
   restartPi: async (options) => {
     try {
       const status = await window.piDesktop.pi.restart(options as Record<string, unknown> | undefined)
-      set({ piStatus: status.status, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
+      set({ piStatus: status.status, piStartupPhase: status.startupPhase ?? null, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
 
       // Re-read session state after a restart so the status bar's model label
       // and stats reflect a changed models.json (mirrors startPi). Without this
@@ -955,7 +964,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         await get().refreshSessionList()
       }
     } catch (err) {
-      set({ piStatus: 'error', piError: err instanceof Error ? err.message : String(err) })
+      set({ piStatus: 'error', piStartupPhase: null, piError: err instanceof Error ? err.message : String(err) })
     }
   },
 
@@ -2192,6 +2201,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         const statusEvent = event as unknown as PiStatus
         set({
           piStatus: statusEvent.status,
+          piStartupPhase: statusEvent.startupPhase ?? null,
           piPid: statusEvent.pid,
           piError: statusEvent.error,
           ...(statusEvent.engine ? { piEngine: statusEvent.engine } : {}),
@@ -2616,7 +2626,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         window.piDesktop.pi.getStatus(),
         get().loadWorkspaces(),
       ])
-      set({ piStatus: status.status, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
+      set({ piStatus: status.status, piStartupPhase: status.startupPhase ?? null, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
       // Session list refresh only — navigation never spawns a process.
       scheduleSessionListRefresh(get)
       if (!skipSessionLoad && get().piStatus === 'running') {
@@ -2829,12 +2839,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       const result = await window.piDesktop.models.read()
       if ('error' in result) {
-        set({ customModels: null, customModelsError: result.error })
+        set({ customModels: null, customModelsError: result.error, customModelsFile: result.location })
       } else {
-        set({ customModels: result.config, customModelsError: null })
+        set({ customModels: result.config, customModelsError: null, customModelsFile: result.location })
       }
     } catch (err) {
-      set({ customModels: null, customModelsError: err instanceof Error ? err.message : String(err) })
+      set({ customModels: null, customModelsError: err instanceof Error ? err.message : String(err), customModelsFile: null })
     }
   },
 

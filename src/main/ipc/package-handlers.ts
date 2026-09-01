@@ -7,7 +7,9 @@ import { join } from 'path'
 import { existsSync } from 'fs'
 import { assertTrustedSender, isString } from './validation'
 import { runPiCli } from './run-pi-cli'
-import { getPiCli } from '../pi-rpc-manager'
+import { activeEngineKind } from './active-engine'
+import { parseOmpPluginList } from '../omp-plugin-list'
+import type { AgentEngineKind, InstalledPackage } from '../../shared/ipc-contracts'
 import type { IpcContext } from './context'
 
 export function registerPackageHandlers(ctx: IpcContext): void {
@@ -15,8 +17,10 @@ export function registerPackageHandlers(ctx: IpcContext): void {
 
   // ─── Package Management ─────────────────────────────────────────────────
 
-  const activeEngine = (): 'pi' | 'omp' =>
-    workspaceManager.getActivePiManager()?.getEngineKind() ?? getPiCli().kind ?? 'pi'
+  // Package actions target the engine the user is looking at, and run that
+  // engine's own CLI — a session from the other store can be active while a
+  // different engine is the configured default.
+  const activeEngine = (): AgentEngineKind => activeEngineKind(workspaceManager)
 
   ipcMain.handle(IPC_CHANNELS.PACKAGE_LIST_INSTALLED, async () => {
     const ws = workspaceManager.getActiveWorkspace()
@@ -30,7 +34,7 @@ export function registerPackageHandlers(ctx: IpcContext): void {
     if (!isValidPackageSpec(packageSpec)) throw new Error('Invalid package specification')
     const ws = workspaceManager.getActiveWorkspace()
     const cwd = ws?.path ?? process.cwd()
-    return installPackage(packageSpec, cwd)
+    return installPackage(packageSpec, cwd, activeEngine())
   })
 
   ipcMain.handle(IPC_CHANNELS.PACKAGE_REMOVE, async (event, packageSpec: unknown) => {
@@ -39,7 +43,7 @@ export function registerPackageHandlers(ctx: IpcContext): void {
     if (!isValidPackageSpec(packageSpec)) throw new Error('Invalid package specification')
     const ws = workspaceManager.getActiveWorkspace()
     const cwd = ws?.path ?? process.cwd()
-    return removePackage(packageSpec, cwd)
+    return removePackage(packageSpec, cwd, activeEngine())
   })
 
   ipcMain.handle(IPC_CHANNELS.PACKAGE_UPDATE, async (event, packageSpec?: unknown) => {
@@ -49,7 +53,7 @@ export function registerPackageHandlers(ctx: IpcContext): void {
     }
     const ws = workspaceManager.getActiveWorkspace()
     const cwd = ws?.path ?? process.cwd()
-    return updatePackage(isString(packageSpec) ? packageSpec : undefined, cwd)
+    return updatePackage(isString(packageSpec) ? packageSpec : undefined, cwd, activeEngine())
   })
 
   ipcMain.handle(IPC_CHANNELS.PACKAGE_CATALOG_FETCH, async (_event, query?: unknown) => {
@@ -59,22 +63,17 @@ export function registerPackageHandlers(ctx: IpcContext): void {
 
 // ─── Package Management ──────────────────────────────────────────────────────
 
-interface InstalledPackage {
-  name: string
-  source: string
-  type: string
-  version: string | null
-  path: string
-}
+const LIST_TIMEOUT_MS = 30_000
+const INSTALL_TIMEOUT_MS = 120_000
+const REMOVE_TIMEOUT_MS = 30_000
+const UPDATE_TIMEOUT_MS = 120_000
 
-async function listInstalledPackages(cwd: string, engine: 'pi' | 'omp'): Promise<InstalledPackage[]> {
+async function listInstalledPackages(cwd: string, engine: AgentEngineKind): Promise<InstalledPackage[]> {
   try {
+    if (engine === 'omp') return listOmpPlugins(cwd)
     const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-    const agentRoot = engine === 'omp' ? join(homeDir, '.omp', 'agent') : join(homeDir, '.pi', 'agent')
-    const globalSettingsPath = join(agentRoot, 'settings.json')
-    const projectSettingsPath = engine === 'omp'
-      ? join(cwd, '.omp', 'settings.json')
-      : join(cwd, '.pi', 'settings.json')
+    const globalSettingsPath = join(homeDir, '.pi', 'agent', 'settings.json')
+    const projectSettingsPath = join(cwd, '.pi', 'settings.json')
 
     const packages: InstalledPackage[] = []
     const globalPackages = await readPackagesFromSettings(globalSettingsPath)
@@ -85,6 +84,17 @@ async function listInstalledPackages(cwd: string, engine: 'pi' | 'omp'): Promise
   } catch {
     return []
   }
+}
+
+/**
+ * OMP does not track packages in a settings.json `packages` array — its plugin
+ * store lives in `~/.omp/plugins/` — so the installed list comes from the CLI.
+ */
+async function listOmpPlugins(cwd: string): Promise<InstalledPackage[]> {
+  const result = await runPiCli(['plugin', 'list', '--json'], cwd, LIST_TIMEOUT_MS, 'omp')
+  if (!result.success) return []
+  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
+  return parseOmpPluginList(result.output, join(homeDir, '.omp', 'plugins'))
 }
 
 async function readPackagesFromSettings(settingsPath: string): Promise<InstalledPackage[]> {
@@ -139,14 +149,14 @@ function extractVersion(source: string): string | null {
   return match ? match[1] : null
 }
 
-async function installPackage(spec: string, cwd: string): Promise<{ success: boolean; output: string }> {
-  return runPiCli(['install', spec], cwd, 120_000)
+async function installPackage(spec: string, cwd: string, engine: AgentEngineKind): Promise<{ success: boolean; output: string }> {
+  return runPiCli(['install', spec], cwd, INSTALL_TIMEOUT_MS, engine)
 }
 
-async function removePackage(spec: string, cwd: string): Promise<{ success: boolean; output: string }> {
-  return runPiCli(['remove', spec], cwd, 30_000)
+async function removePackage(spec: string, cwd: string, engine: AgentEngineKind): Promise<{ success: boolean; output: string }> {
+  return runPiCli(['remove', spec], cwd, REMOVE_TIMEOUT_MS, engine)
 }
 
-async function updatePackage(spec: string | undefined, cwd: string): Promise<{ success: boolean; output: string }> {
-  return runPiCli(spec ? ['update', spec] : ['update'], cwd, 120_000)
+async function updatePackage(spec: string | undefined, cwd: string, engine: AgentEngineKind): Promise<{ success: boolean; output: string }> {
+  return runPiCli(spec ? ['update', spec] : ['update'], cwd, UPDATE_TIMEOUT_MS, engine)
 }

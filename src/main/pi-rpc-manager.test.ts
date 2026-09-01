@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   buildPiArgs,
   buildPiInvocation,
   detectPiInstallations,
+  PiRpcManager,
   resolveStartCli,
   RpcFrameDecoder,
   setPiExecutableOverride,
@@ -271,6 +272,117 @@ test('buildPiInvocation rejects arguments cmd.exe cannot carry', () => {
   // Off the cmd path the same value is passed through as-is: spawn hands argv
   // to the OS directly, so there is nothing to truncate a command line.
   assert.deepEqual(buildPiInvocation(piCli(), ['--session', 'a\nb']).args, ['--session', 'a\nb'])
+})
+
+// ─── Startup deadline behavior (issue #58) ──────────────────────────────────
+//
+// The engine runs every extension session_start hook before it reads stdin, so
+// a hook that waits on a local model server keeps the readiness probe
+// unanswered for tens of seconds while the process is demonstrably alive.
+// The deadline is therefore two-staged: a short cap while stdout is silent
+// (dead spawn / broken pipe), a long cap once stdout has shown life.
+
+/** Fast test caps — real values are 20s / 120s. */
+const TEST_SILENCE_MS = 400
+const TEST_ENGINE_BUSY_MS = 2_000
+/** Probe id the manager correlates on; fixed by the wire protocol. */
+const PROBE_ID = '__startup_probe__'
+/** Fixture heartbeat: proves liveness well within the silence cap. */
+const HEARTBEAT_MS = 100
+/** Late-ready fixture answers between the two caps. */
+const LATE_READY_DELAY_MS = 900
+const SKIP_ON_WINDOWS = { skip: process.platform === 'win32' ? 'POSIX shebang fixture' : false }
+
+/**
+ * A stand-in engine. Modes via FAKE_PI_MODE:
+ *  - 'silent'     — stays alive, never writes stdout.
+ *  - 'late-ready' — emits frames immediately, answers the probe only after
+ *                   FAKE_PI_READY_DELAY_MS.
+ *  - 'never-ready' — emits frames forever, never answers the probe.
+ */
+const FAKE_ENGINE_SOURCE = `#!/usr/bin/env node
+const mode = process.env.FAKE_PI_MODE || 'silent'
+const readyDelayMs = Number(process.env.FAKE_PI_READY_DELAY_MS || '0')
+const emit = (obj) => process.stdout.write(JSON.stringify(obj) + '\\n')
+if (mode !== 'silent') {
+  emit({ type: 'extension_ui_request', id: 'boot', method: 'setStatus', statusKey: 'boot', statusText: 'loading' })
+  setInterval(() => emit({ type: 'extension_ui_request', id: 'hb', method: 'setStatus', statusKey: 'hb', statusText: 'busy' }), ${HEARTBEAT_MS})
+  if (mode === 'late-ready') {
+    setTimeout(() => emit({ id: '${PROBE_ID}', type: 'response', command: 'get_state', success: true }), readyDelayMs)
+  }
+}
+process.stdin.resume()
+`
+
+async function withFakeEngine(
+  run: (manager: PiRpcManager, startEnv: Record<string, string>) => Promise<void>,
+  env: Record<string, string>,
+): Promise<void> {
+  const dir = mkdtempSync(join(tmpdir(), 'pi-fake-engine-'))
+  const script = join(dir, 'fake-pi')
+  writeFileSync(script, FAKE_ENGINE_SOURCE)
+  chmodSync(script, 0o755)
+  setPiExecutableOverride(script, 'pi')
+  const manager = new PiRpcManager({ silenceMs: TEST_SILENCE_MS, engineBusyMs: TEST_ENGINE_BUSY_MS })
+  try {
+    await run(manager, env)
+  } finally {
+    manager.stop()
+    setPiExecutableOverride(null, 'auto')
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+test('startup keeps waiting past the silence cap while Pi is emitting output', SKIP_ON_WINDOWS, async () => {
+  await withFakeEngine(async (manager, env) => {
+    const phases: string[] = []
+    manager.on('startup-phase', (phase: string) => phases.push(phase))
+
+    const started = manager.start({ env })
+    // Between the caps: the silence deadline has passed, readiness has not
+    // arrived, and stdout activity must have switched the manager to waiting.
+    await delay(TEST_SILENCE_MS + 200)
+    assert.equal(manager.getStatus().status, 'starting', 'still starting between the caps')
+    assert.equal(manager.getStatus().startupPhase, 'waiting-on-engine')
+    assert.deepEqual(phases, ['waiting-on-engine'], 'the phase flip is announced once')
+
+    const status = await started
+    assert.equal(status.status, 'running', 'a late probe response still means ready')
+    assert.equal(status.startupPhase, undefined, 'phase reporting ends with startup')
+  }, { FAKE_PI_MODE: 'late-ready', FAKE_PI_READY_DELAY_MS: String(LATE_READY_DELAY_MS) })
+})
+
+test('a silent Pi still fails fast at the silence cap', SKIP_ON_WINDOWS, async () => {
+  await withFakeEngine(async (manager, env) => {
+    const startedAt = Date.now()
+    const status = await manager.start({ env })
+    assert.equal(status.status, 'error')
+    assert.match(status.error ?? '', /produced no output within 0\.4s/)
+    // The old message asserted two specific causes that misdiagnosed issue
+    // #58 for days; the error must not name them any more.
+    assert.doesNotMatch(status.error ?? '', /shell:true|waiting on input/)
+    assert.ok(
+      Date.now() - startedAt < TEST_ENGINE_BUSY_MS,
+      'silence must not inherit the long engine-busy cap',
+    )
+  }, { FAKE_PI_MODE: 'silent' })
+})
+
+test('a chatty but never-ready Pi fails at the engine-busy cap with an engine-busy error', SKIP_ON_WINDOWS, async () => {
+  await withFakeEngine(async (manager, env) => {
+    const startedAt = Date.now()
+    const status = await manager.start({ env })
+    assert.equal(status.status, 'error')
+    assert.ok(
+      Date.now() - startedAt >= TEST_ENGINE_BUSY_MS - HEARTBEAT_MS,
+      'the full engine-busy cap is granted before giving up',
+    )
+    assert.match(status.error ?? '', /did not become ready within 2s/)
+    assert.match(status.error ?? '', /model server/, 'the message points at the real cause class')
+    assert.equal(status.startupPhase, undefined, 'phase reporting ends with startup')
+  }, { FAKE_PI_MODE: 'never-ready' })
 })
 
 test('detectPiInstallations serves a cached scan until a rescan forces a fresh one', () => {

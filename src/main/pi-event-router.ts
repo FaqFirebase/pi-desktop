@@ -217,6 +217,14 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
       }
       if (status !== 'running') evictManager(manager)
     })
+    // A startup-phase flip keeps status 'starting', so it is a separate signal:
+    // routing it through 'status-change' would re-run evictManager and purge
+    // extension UI prompts the still-starting engine already sent.
+    manager.on('startup-phase', () => {
+      if (manager === deps.getActiveManager()) {
+        deps.broadcastEvent({ type: 'status_change', ...manager.getStatus() })
+      }
+    })
     manager.on('exit', () => evictManager(manager))
   }
 

@@ -68,6 +68,7 @@ export function ChatPanel(): React.JSX.Element {
   const streamingThinking = useAppStore((state) => state.streamingThinking)
   const streamingToolCalls = useAppStore((state) => state.streamingToolCalls)
   const piStatus = useAppStore((state) => state.piStatus)
+  const piStartupPhase = useAppStore((state) => state.piStartupPhase)
   const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? 'Pi')
   const terminalOpen = useAppStore((state) => state.terminalOpen)
   const reviewOpen = useAppStore((state) => state.reviewOpen)
@@ -251,7 +252,9 @@ export function ChatPanel(): React.JSX.Element {
                         {piStatus === 'running'
                           ? 'Pick a project and describe what you want done.'
                           : piStatus === 'starting'
-                            ? `Starting ${engineLabel} agent…`
+                            ? piStartupPhase === 'waiting-on-engine'
+                              ? `${engineLabel} is up — waiting for the engine to finish loading. Local models can take a while…`
+                              : `Starting ${engineLabel} agent…`
                             : piStatus === 'error'
                               ? `Failed to start ${engineLabel}. Check settings.`
                               : `Choose a project — ${engineLabel} starts when you send.`}

@@ -353,6 +353,12 @@ export class WorkspaceManager {
       }
       this.emitSessionRuntime(entry)
     })
+    // Same refresh for a startup-phase flip, which changes getStatus() output
+    // without changing the status value (so no 'status-change' fires).
+    manager.on('startup-phase', () => {
+      entry.info = { ...entry.info, ...manager.getStatus() }
+      this.emitSessionRuntime(entry)
+    })
     manager.on('agent_start', () => this.emitRuntimeActivity(entry, 'working'))
     manager.on('agent_end', () => this.emitRuntimeActivity(entry, 'completed'))
     manager.on('extension_ui_request', (event: { method?: string }) => {

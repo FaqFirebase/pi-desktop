@@ -14,7 +14,7 @@ const WS_A = 'ws-a'
 const WS_B = 'ws-b'
 const REQUEST_ID = 'req-1'
 /** Status a manager that was never started reports. */
-const STOPPED_STATUS = { status: 'stopped', pid: null, error: null, engine: 'pi' }
+const STOPPED_STATUS = { status: 'stopped', pid: null, error: null, engine: 'pi', startupPhase: undefined }
 const PENDING_COUNTS: PendingPromptCounts = { [WS_A]: 2, [WS_B]: 1 }
 
 /** The four channels that answer a blocking extension-UI dialog. */

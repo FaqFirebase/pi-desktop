@@ -1,5 +1,6 @@
 import { useAppStore } from '../store'
-import type { CatalogPackage } from '../../../shared/ipc-contracts'
+import { isRpcSkillPath } from '../../../shared/ipc-contracts'
+import type { CatalogPackage, InstalledSkill } from '../../../shared/ipc-contracts'
 import { filterCatalog } from '../../../shared/package-filter'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
@@ -440,10 +441,17 @@ const CatalogTab = memo(function CatalogTab({
 
 // ─── Skills Tab ──────────────────────────────────────────────────────────────
 
+const SKILL_SOURCE_STYLE: Record<InstalledSkill['source'], string> = {
+  global: 'bg-accent-bg text-accent-fg',
+  project: 'bg-success-bg text-success',
+  package: 'bg-special-bg text-special',
+  cli: 'bg-warning-bg text-warning',
+}
+
 const SkillsTab = memo(function SkillsTab({
   skills,
 }: {
-  skills: Array<{ name: string; description: string; path: string; source: string; enabled: boolean }>
+  skills: InstalledSkill[]
 }): React.JSX.Element {
   if (skills.length === 0) {
     return (
@@ -467,16 +475,15 @@ const SkillsTab = memo(function SkillsTab({
           <div className="flex items-center gap-2">
             <Puzzle size={14} className="text-special" />
             <span className="text-sm font-medium text-primary">{skill.name}</span>
-            <span className={clsx(
-              'rounded px-1.5 py-0.5 text-[10px]',
-              skill.source === 'global' ? 'bg-accent-bg text-accent-fg' : 'bg-success-bg text-success'
-            )}>
+            <span className={clsx('rounded px-1.5 py-0.5 text-[10px]', SKILL_SOURCE_STYLE[skill.source])}>
               {skill.source}
             </span>
           </div>
           <p className="mt-1 text-xs text-dim">{skill.description}</p>
           <div className="mt-2 flex items-center gap-2 text-xs text-faint">
-            <span className="truncate">{skill.path}</span>
+            <span className="truncate">
+              {isRpcSkillPath(skill.path) ? 'Provided by an installed plugin' : skill.path}
+            </span>
           </div>
         </div>
       ))}

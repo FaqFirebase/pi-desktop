@@ -16,7 +16,7 @@ Still in alpha, so expect rough edges.
 - Quick switcher (`Ctrl/Cmd+K`) for skills, prompt templates, built-in commands, workspaces, sessions, and files; `/` in the composer for commands
 - Skills browser, session fork/branch tree, and one-click context compaction
 - Session naming (read from Pi) with inline rename, and a themed in-app confirmation for delete
-- Custom models & providers editor in Settings, which edits `~/.pi/agent/models.json`
+- Custom models & providers editor in Settings, which edits your engine's models file (`~/.pi/agent/models.json` for Pi, `~/.omp/agent/models.yml` for OMP)
 - Multiple workspaces, with an independent agent process per live session, so a turn keeps running when you switch away from it; Mission Control and sidebar activity dots surface background work across projects, with optional desktop notifications when a session finishes, fails, or waits for approval
 - New Task launcher starts a real fresh Pi session in a selected project, optionally in an isolated Git worktree, and sends the issue immediately while work continues in the background; matching task metadata, explicit branches, and GitHub PR URLs reuse an existing local worktree when found
 - Diff Review conveyor with explicit Commit → Push → PR actions, upstream-aware GitHub CLI PR creation, and exact notification clicks back to the finished session
@@ -148,8 +148,8 @@ npm install -g @earendil-works/pi-coding-agent
 On Linux, grab the AppImage from [Releases](https://github.com/FaqFirebase/pi-desktop/releases):
 
 ```bash
-chmod +x Pi-Desktop-linux-x64.AppImage
-./Pi-Desktop-linux-x64.AppImage
+chmod +x Pi-Desktop-*.AppImage
+./Pi-Desktop-*.AppImage
 ```
 
 ### macOS
@@ -187,13 +187,13 @@ Download from [Releases](https://github.com/FaqFirebase/pi-desktop/releases): th
 | `Escape` | Stop streaming |
 | `Ctrl/Cmd+K` | Open command palette |
 | `/` (start of message) | Open command palette |
-| `Ctrl+P` | Cycle model |
+| `Ctrl+P` (composer focused) | Cycle model |
 | `Ctrl/Cmd+F` | Find in conversation |
-| `Ctrl+Shift+F` | File search |
+| `Ctrl/Cmd+Shift+F` | File search |
 | `Ctrl+Shift+P` | Insert saved note |
-| `Ctrl+N` | New session |
-| `Ctrl+Shift+N` | New workspace |
-| `Ctrl+O` | Open project |
+| `Ctrl/Cmd+N` | New session |
+| `Ctrl/Cmd+Shift+N` | New workspace |
+| `Ctrl/Cmd+O` | Open project |
 
 ## Build it yourself
 
