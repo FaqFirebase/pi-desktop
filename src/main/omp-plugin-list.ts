@@ -1,23 +1,17 @@
+import type { InstalledPackage } from '../shared/ipc-contracts'
+
 /**
  * Parsing for `omp plugin list --json`.
  *
  * OMP does not track packages in a settings.json `packages` array the way Pi
  * does — its plugin store lives in `~/.omp/plugins/` — so the GUI's installed
  * list comes from the CLI's JSON output: `{ "npm": [...], "marketplace": [...] }`.
- */
-
-export interface InstalledPackage {
-  name: string
-  source: string
-  type: string
-  version: string | null
-  path: string
-}
-
-/**
- * Entries are tolerated as bare name strings or objects carrying `name` plus
- * optional `version`/`source`/`spec` fields, so a CLI shape change degrades to
- * partial rows instead of an empty panel.
+ *
+ * Row shapes as OMP 18 emits them:
+ *  - npm:         `{ name, version, path, manifest, enabledFeatures, enabled }`
+ *  - marketplace: `{ id: "<plugin>@<marketplace>", scope, entries, shadowedBy? }`
+ * Marketplace rows carry no `name`; their `id` is also the spec
+ * `omp plugin uninstall` expects, so it doubles as the row's source.
  */
 export function parseOmpPluginList(output: string, pluginsDir: string): InstalledPackage[] {
   let parsed: unknown
@@ -37,30 +31,30 @@ export function parseOmpPluginList(output: string, pluginsDir: string): Installe
   if (typeof parsed !== 'object' || parsed === null) return []
 
   const packages: InstalledPackage[] = []
-  for (const [group, entries] of Object.entries(parsed)) {
+  for (const entries of Object.values(parsed)) {
     if (!Array.isArray(entries)) continue
     for (const entry of entries) {
-      const item = ompPluginEntry(entry, group, pluginsDir)
+      const item = ompPluginEntry(entry, pluginsDir)
       if (item) packages.push(item)
     }
   }
   return packages
 }
 
-function ompPluginEntry(entry: unknown, group: string, pluginsDir: string): InstalledPackage | null {
-  if (typeof entry === 'string' && entry.length > 0) {
-    return { name: entry, source: entry, type: group, version: null, path: pluginsDir }
-  }
+function ompPluginEntry(entry: unknown, pluginsDir: string): InstalledPackage | null {
   if (typeof entry !== 'object' || entry === null) return null
   const e = entry as Record<string, unknown>
-  const name = typeof e.name === 'string' && e.name.length > 0 ? e.name : null
+  const name = nonEmptyString(e.name) ?? nonEmptyString(e.id)
   if (!name) return null
-  const source = typeof e.source === 'string' ? e.source : typeof e.spec === 'string' ? e.spec : name
   return {
     name,
-    source,
-    type: group,
-    version: typeof e.version === 'string' ? e.version : null,
-    path: pluginsDir,
+    source: name,
+    type: 'package',
+    version: nonEmptyString(e.version) ?? null,
+    path: nonEmptyString(e.path) ?? pluginsDir,
   }
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null
 }
