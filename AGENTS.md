@@ -35,7 +35,7 @@ Project is currently in **Alpha**. APIs, IPC contracts, on-disk config formats, 
 
 ## Project Structure
 
-Modules have colocated `*.test.ts` files (run with `npx tsx --test`).
+Modules have colocated `*.test.ts` files; `resources/` has tests too. CI runs `npx tsx --test $(find src resources -name '*.test.ts')`.
 
 ```
 src/
@@ -52,7 +52,11 @@ src/
 │   ├── agent-engine-label.ts     # Display names for the Pi/OMP engines (every surface reads this one map)
 │   ├── pi-command.ts             # Slash-command filtering
 │   ├── fork-point.ts             # Fork/branch message helpers
-│   └── session-lineage.ts        # Cross-session lineage tree
+│   ├── session-lineage.ts        # Cross-session lineage tree
+│   ├── session-preview.ts        # First user message -> one-line row label
+│   ├── sidebar-width.ts          # Bounds/resolution for the user-adjustable sidebar width
+│   ├── workflow-control.ts       # Control eligibility for persisted workflow runs
+│   └── theme/                    # Theme-file format, resolver, syntax defaults, tokens
 ├── main/
 │   ├── index.ts                  # App lifecycle, window creation, hardening
 │   ├── ipc-handlers.ts           # IPC composition root (creates context, calls ipc/ modules)
@@ -85,7 +89,26 @@ src/
 │   ├── archived-sessions.ts      # Archived session persistence
 │   ├── app-data-paths.ts         # Resolve app data directories
 │   ├── attachment-reader.ts      # Read chat attachments (image base64 / text)
-│   └── fs-errors.ts              # Friendly file-system error messages
+│   ├── fs-errors.ts              # Friendly file-system error messages
+│   ├── models-file.ts            # Per-engine models file (Pi models.json / OMP models.yml) resolve + parse
+│   ├── omp-fork-points.ts        # Fork candidates read from an OMP session file (no get_fork_messages RPC)
+│   ├── omp-plugin-list.ts        # Parse `omp plugin list --json` for the installed-packages panel
+│   ├── skills-discovery.ts       # Per-engine skill roots scan + catalog merge
+│   ├── session-metadata.ts       # Bounded reader: session name, header, first-message preview
+│   ├── session-lineage-reader.ts # Parent links and labels across the session store
+│   ├── get-messages-trim.ts      # Shrink a get_messages response before IPC
+│   ├── map-concurrent.ts         # Bounded-concurrency mapper
+│   ├── extension-ui-ipc.ts       # Extension-UI half of the IPC surface
+│   ├── pi-event-router.ts        # Routes every runtime's Pi events to the renderer
+│   ├── git-worktree.ts           # Isolated Git worktrees for New Task
+│   ├── theme-store.ts            # User theme files: list, save, delete
+│   ├── workflow-monitor.ts       # ~/.pi/workflows run and project discovery
+│   ├── tray-manager.ts           # System-tray lifecycle (minimize to tray on close)
+│   ├── tray-decision.ts          # Pure tray-availability decision
+│   ├── startup-launch.ts         # Cross-platform "Run on startup"
+│   ├── autostart-linux.ts        # Linux freedesktop autostart entry helpers
+│   ├── editor-guard.ts           # Unsaved-editor guard for quit/close/reload
+│   └── cmd-escape.ts             # cmd.exe escaping for Windows shell:true spawns
 ├── preload/
 │   └── index.ts                  # contextBridge API
 └── renderer/
@@ -96,6 +119,10 @@ src/
         ├── store.ts              # Zustand state management
         ├── hooks.ts              # Event subscriptions, lifecycle
         ├── global.d.ts           # Renderer ambient types
+        ├── message-parsing.ts    # Pi messages -> display messages
+        ├── message-grouping.ts   # Tool-name labels and message grouping
+        ├── theme/engine.ts       # Apply a resolved theme to the document
+        ├── themes/               # Built-in theme JSON files
         ├── index.css             # Tailwind + theme overrides
         ├── utils/
         │   ├── planning-prompt.ts # Plan/read-only prompt wrapper
@@ -105,7 +132,12 @@ src/
         │   ├── session-title.ts  # Distinguishable fallback session titles
         │   ├── heatmap-grid.ts   # Weeks/intensity layout for the stats mini-heatmap
         │   ├── model-search.ts   # Tokenized model-picker search (treats -_./: as spaces)
-        │   └── theme.ts          # Theme application
+        │   ├── theme.ts          # Theme application
+        │   ├── debounced-buffer.ts # Debounced editor text buffer
+        │   ├── format-relative-time.ts # Relative-time labels capped at days
+        │   ├── relative-time.tsx # Shared ticking "now" for relative labels
+        │   ├── stale-guard.ts    # Last-write-wins guard for overlapping loads
+        │   └── workflow-runs.ts  # Session id used to scope workflow runs
         └── components/
             ├── sidebar.tsx        # Workspace switcher, nav, sessions grouped by folder, inline rename
             ├── sidebar-session-labels.ts # Session row label helpers
@@ -154,7 +186,21 @@ src/
             ├── terminal.tsx       # ANSI terminal
             ├── context-menu.tsx   # Right-click context menu, themed confirm dialog
             ├── error-boundary.tsx # Renderer error boundary
-            └── extension-ui-dialog.tsx # Extension UI protocol + AppConfirmDialog
+            ├── extension-ui-dialog.tsx # Extension UI protocol + AppConfirmDialog
+            ├── chat-search.tsx    # Ctrl/Cmd+F find in conversation
+            ├── chat-panel-widths.ts # Width math for the chat side panel
+            ├── command-results.tsx # Grouped command rows (palette + inline slash popup)
+            ├── composer-permission-menu.tsx # Permission-mode picker on the composer
+            ├── line-numbered-code.tsx # Line-numbered highlighted code rows
+            ├── resize-handle.tsx  # Drag handle reporting horizontal deltas
+            ├── session-runtime-indicator.tsx # Per-session engine/status indicator
+            ├── theme-editor.tsx   # Custom theme editor
+            ├── theme-editor-helpers.ts # Pure theme-editor helpers
+            ├── theme-gallery.tsx  # Theme gallery browser
+            ├── thinking-level-selector.tsx # Thinking level picker
+            ├── tool-call-icon.ts  # Icon per tool-call operation
+            ├── workflow-navigator.tsx # Workflow runs navigator
+            └── workspace-tabs.tsx # Live session runtime tabs
 ```
 
 ## Features
@@ -194,7 +240,7 @@ src/
 - **Session tags**: type `#tag-name` in chat to tag the current session
 - Tags persisted to `~/.pi-desktop-gui/session-tags.json`
 - Tags displayed in session list, filterable
-- Session names read from each session's `session_info` record; shown in the list and as fallback a distinguishable local timestamp (not a collapsing id prefix)
+- Session names read from each session's `session_info` record (Pi) or first-line `title` slot (OMP); shown in the list and as fallback a distinguishable local timestamp (not a collapsing id prefix)
 - Inline rename of the active session (double-click, or right-click → Rename…) via Pi's `set_session_name` RPC; live-updates on `session_info_changed`
 - Delete uses an in-app themed confirmation dialog (not the native OS dialog, which stole window focus)
 - Branch/fork tree, clone, and cross-session lineage in the Timeline; one-click context compaction (status bar + status popover)
@@ -216,7 +262,7 @@ src/
 
 - Model selector dropdown in status bar, with tokenized search ("sonnet 4" matches `claude-sonnet-4`)
 - `Ctrl+P` to cycle models
-- Thinking level selector (off/minimal/low/medium/high/xhigh)
+- Thinking level selector (off/minimal/low/medium/high/xhigh, plus max when the engine offers it)
 - Token usage and cost tracking in status bar
 
 ### Command Palette / Quick Switcher
@@ -224,7 +270,7 @@ src/
 - Open with `Ctrl/Cmd+K` (works with Pi stopped), or by typing `/` at the start of the composer
 - One searchable list: commands plus Workspaces, Sessions, and Files sections; a leading `/` narrows to commands only
 - Results grouped by source: Skills, Prompts, Commands (Pi built-ins), Extensions
-- Skills/prompts/extensions insert their token (`/skill:name`, `/template`, `/cmd`) for Pi to expand; built-ins (`/compact`, `/clone`, `/new`, `/resume`, `/fork`, `/settings`) run the GUI action directly
+- Skills/prompts/extensions insert their token (`/skill:name`, `/template`, `/cmd`) for Pi to expand; built-ins (`/compact`, `/clone`, `/new`, `/resume`, `/fork`, `/settings`) run the GUI action directly; `/clone` is offered under Pi only
 - Workspace/session/file picks route through the store's guarded actions, so the streaming and dirty-editor confirms still apply
 
 ### Issue-to-PR Conveyor
@@ -242,7 +288,7 @@ src/
 
 ### Diagnostics
 
-- Sidebar → Diagnostics: Pi binary resolution (path, source, node binary, PATH), `pi --version`, per-workspace path/trust/process status, provider key classification from models.json (never evaluates secrets), permission mode + rule counts, storage paths, and recent warnings/errors from the app log
+- Sidebar → Diagnostics: Pi binary resolution (path, source, node binary, PATH), `pi --version`, per-workspace path/trust/process status, provider key classification from the engine's models file (never evaluates secrets), permission mode + rule counts, storage paths, and recent warnings/errors from the app log
 - App log: `app-log.jsonl` in the GUI data dir (ring-buffered in memory, size-capped rotation) so packaged-build errors survive for the Diagnostics view
 
 ### File & Project
@@ -255,7 +301,7 @@ src/
 ### Code Editor
 
 - CodeMirror 6-backed editor for opening and editing project files
-- Theme-aware syntax highlighting via a custom `HighlightStyle` (in `code-editor-highlight.ts`) whose token colors are CSS variables. Each app theme (see Settings) defines its own `--cm-*` palette in `index.css`, so the editor restyles when the user switches themes — no editor logic needed.
+- Theme-aware syntax highlighting via a custom `HighlightStyle` (in `code-editor-highlight.ts`) whose token colors are CSS variables. The theme resolver (`shared/theme/resolve.ts`) emits each theme's `--cm-*` palette from the theme file's `syntax` block (or `syntax-defaults.ts`), so the editor restyles when the user switches themes — no editor logic needed.
 - 15+ languages: JS/TS/JSX/TSX, JSON, Markdown, HTML, CSS/SCSS/Less, Python, Rust, Go, Java, PHP, XML/SVG, SQL, YAML, C/C++/C#
 - Save/Revert/Close controls with dirty-state tracking and 2s "saved" feedback
 - Debounced onChange (150ms) and race-safe file switching
@@ -287,10 +333,10 @@ src/
 
 ### Packages & Skills
 
-- Browse installed packages from Pi settings
+- Browse installed packages: Pi from `settings.json` `packages[]`; OMP from `omp plugin list --json`
 - Package catalog from pi.dev — fetched once and filtered locally per keystroke (no per-keystroke re-crawl); concurrent paged crawl with a shared in-flight promise, prefetched at launch so the tab opens instantly
-- Install/remove packages via `pi install`/`pi remove`
-- Skills list with source (global/project)
+- Install/remove/update packages via `pi install`/`pi remove`/`pi update`; under OMP the remove and update verbs map to `omp plugin uninstall`/`omp plugin upgrade` (`run-pi-cli.ts`). Package actions run the active session's engine CLI
+- Skills list with source (project/global/package/cli); see Engines for the per-engine roots
 - Extension commands display
 
 ### System Status Popover
@@ -300,21 +346,19 @@ Click the status icon in the sidebar header to see:
 - Context usage with progress bar
 - Token count and cost
 - Workspace info
-- Extensions
-- Skills
-- MCP Servers
-- Prompt Templates
 
 ### Settings
 
-- Pi executable path
+- Agent Configuration: engine (auto-detect / Pi / OMP) and executable path
 - Theme: Dark, Light, System, Nord, Gruvbox, Breeze Dark, Breeze Light, Breeze Claudius (Breeze Dark base + deep chat surface, contributed by @sumit-m) — applies immediately. **Default is `dark`** — Breeze Claudius is opt-in only, never auto-selected for new installs
 - Independent UI / Terminal / Code Editor font size sliders
 - Show thinking blocks, auto-scroll
+- Run on startup, Minimize to tray on close (Windows/Linux), Resume last session, desktop notifications
+- Custom theme editor: create, edit, import/export, install from URL (theme files live in the GUI data dir `themes/`)
 - Every field (theme, permission mode, toggles, font sizes) live-previews before Save via a unified settings draft (`store.ts` `settingsDraft`); survives view switches; Save persists, Reset restores `DEFAULT_SETTINGS`
 - Permission rules: user-defined allow/deny rules (glob per Pi tool) that overlay the permission modes. Deny beats allow beats mode default; deny applies in every mode. Global rules live in `<GUI data dir>/permission-rules.json`. A workspace `.pi-desktop/permission-rules.json` is gated by workspace trust: when the workspace is trusted it fully replaces the global rules; when untrusted (the default) only its deny rules apply, layered on top of the global rules, and its allow rules are ignored (a repo can tighten, never grant). Opening a workspace whose rules file contains allow rules shows a trust prompt; the editor's Global tab notes the override and the This workspace tab carries a Trust/Revoke control. Settings → Behavior edits BOTH scopes via Global | This workspace tabs: create, edit, and remove workspace rules (in-app danger confirm), Copy from global (seeds an unsaved draft from the current global list), and per-scope JSON import/export. Manual editing of either file on disk remains fully supported — switching scope tabs re-reads that file when the scope has no unsaved draft, so hand-edited rules show up without a restart. Engine: `resources/permission-rules.ts`, shared by the Pi extension (jiti relative import, mtime-cached live re-read) and the main process. The permissions extension always loads alongside Pi when present on disk, regardless of mode or whether rules currently exist, so a rules file created mid-session is enforced immediately rather than after a restart.
   - Trust posture: a workspace's `.pi-desktop/permission-rules.json` is repo content, so its allow rules take effect only after the user explicitly trusts the workspace (persisted in `trusted-workspaces.json`; surfaced as a trust prompt on open and a control in Settings). Until trusted, the repo can only add deny rules — it cannot suppress ask-mode prompts. Rule globs match raw tool input strings only (no path canonicalization, no command parsing), so rules are a guardrail against accidents, not a security sandbox.
-- Custom models & providers editor — edits `~/.pi/agent/models.json` (applied on Pi restart)
+- Custom models & providers editor — edits the active engine's models file: `~/.pi/agent/models.json` (Pi) or `~/.omp/agent/models.yml` (OMP; a not-yet-migrated `models.json` is kept until OMP migrates it). Main reports the resolved file so the editor labels always match; applied on engine restart
 - All settings persisted to `~/.pi-desktop-gui/settings.json`; defaults come from the single shared `src/shared/default-settings.ts` (used to seed the file AND for the renderer's initial/Reset values)
 
 ### Context Menu
@@ -333,7 +377,7 @@ All communication between renderer and main goes through a typed preload bridge:
 Renderer → preload (contextBridge) → IPC → main handlers → Pi RPC / File system
 ```
 
-- 100 IPC channels, all validated (count drifts as features land — check `IPC_CHANNELS` in `src/shared/ipc-contracts.ts` for the current number rather than trusting this doc)
+- 139 IPC channels, all validated (count drifts as features land — check `IPC_CHANNELS` in `src/shared/ipc-contracts.ts` for the current number rather than trusting this doc)
 - Pi events forwarded from main to renderer via `webContents.send`
 - Extension UI protocol supported (select, confirm, input, editor dialogs)
 
@@ -352,10 +396,20 @@ data-dir migration the GUI's files live under the OS app-data dir
 | `~/.pi-desktop-gui/trusted-workspaces.json` | Workspaces the user has trusted (enables their allow rules + interactive HTML preview) |
 | `~/.pi-desktop-gui/activity-stats.json` | Persisted per-day activity stats (aggregates only, survives session deletion) |
 | `~/.pi-desktop-gui/app-log.jsonl` | Main-process app log (warnings/errors for the Diagnostics view) |
+| `~/.pi-desktop-gui/notes.json` | Reusable prompts/notes |
+| `~/.pi-desktop-gui/archived-sessions.json` | Archived sessions |
+| `~/.pi-desktop-gui/session-auto-tags.json` | Machine-derived session tags |
+| `~/.pi-desktop-gui/permission-rules.json` | Global permission rules |
+| `~/.pi-desktop-gui/themes/` | User theme files |
 | `~/.pi/agent/sessions/` | Pi session files (organized by cwd) |
 | `~/.omp/agent/sessions/` | OMP session files (same layout; OMP writes here regardless of flags) |
-| `~/.pi/agent/settings.json` | Pi global settings |
+| `~/.pi/agent/settings.json` | Pi global settings (installed `packages[]`) |
 | `.pi/settings.json` | Pi project settings |
+| `~/.pi/agent/models.json` | Pi custom models/providers |
+| `~/.omp/agent/models.yml` | OMP custom models/providers (OMP has no settings.json; its settings live in `config.yml`, which the GUI does not read) |
+| `~/.omp/plugins/` | OMP plugin store (listed via `omp plugin list --json`) |
+| `~/.omp/agent/mcp.json` | OMP MCP servers (read for the status popover) |
+| `~/.pi/workflows/` | Workflow runs and projects (Mission Control) |
 
 ## Distribution
 
@@ -369,7 +423,7 @@ Pi Desktop is shipped as pre-built binaries — not via npm. Agents must not att
 
 Artifacts are built with `electron-builder` and published to GitHub Releases. Artifact naming: `Pi-Desktop-{version}-{os}-{arch}.{ext}`.
 
-Cross-builds from Linux require Wine (Windows portable only). macOS builds require a Mac.
+Release artifacts are built per OS in GitHub Actions. Local cross-builds from Linux require Wine (Windows portable only); a local macOS build requires a Mac.
 
 Distribution is via pre-built binaries only — never `npm publish`. The `bin/pi-desktop.js` entry and `install.sh` are launch/install helpers, not an npm package surface.
 

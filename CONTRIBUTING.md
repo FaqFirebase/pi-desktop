@@ -132,6 +132,8 @@ docs(readme): update installation instructions
 
 ### Code style
 
+Conventions, not enforced by ESLint (the lint step checks the recommended rule sets, React hooks, unused vars, and semantic colors):
+
 - 2-space indentation
 - Single quotes for strings
 - Semicolons only when required
