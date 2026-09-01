@@ -1,4 +1,5 @@
 import { createReadStream } from 'fs'
+import { stat } from 'fs/promises'
 import { createInterface } from 'readline'
 import type { ForkPoint } from '../shared/fork-point'
 import { isUserMessageRecord, userMessageText } from './session-metadata'
@@ -13,14 +14,20 @@ import { isUserMessageRecord, userMessageText } from './session-metadata'
  * the session file instead.
  */
 
+/** Byte pattern every user-turn record carries (records are written compact). */
+const USER_ROLE_MARKER = '"role":"user"'
+
+/** Entries kept in the mtime-keyed cache; one per open session is plenty. */
+const FORK_POINTS_CACHE_MAX = 64
+
 /**
  * Fork candidate on a single session JSONL line: a user message entry that
  * carries an entry id. Returns null for every other record.
  */
 export function forkPointFromLine(line: string): ForkPoint | null {
-  // Cheap prefilter — most lines in a session are messages, but tool results
-  // outnumber user turns and fail the role check before any allocation.
-  if (!line || !line.includes('"message"')) return null
+  // Cheap prefilter: tool results and assistant turns outnumber user turns
+  // roughly twenty to one, and none of them carry the user role marker.
+  if (!line || !line.includes(USER_ROLE_MARKER)) return null
   let record: unknown
   try {
     record = JSON.parse(line)
@@ -56,4 +63,43 @@ export async function readForkPoints(sessionPath: string): Promise<ForkPoint[]> 
   } finally {
     stream?.destroy()
   }
+}
+
+interface ForkPointsCacheEntry {
+  mtimeMs: number
+  size: number
+  points: ForkPoint[]
+}
+
+const forkPointsCache = new Map<string, ForkPointsCacheEntry>()
+
+/**
+ * `readForkPoints` behind an mtime+size check, so reopening the Timeline
+ * between turns costs one `stat` instead of a full re-parse of the session.
+ */
+export async function readForkPointsCached(sessionPath: string): Promise<ForkPoint[]> {
+  let mtimeMs: number
+  let size: number
+  try {
+    ;({ mtimeMs, size } = await stat(sessionPath))
+  } catch {
+    return []
+  }
+  const hit = forkPointsCache.get(sessionPath)
+  if (hit && hit.mtimeMs === mtimeMs && hit.size === size) return hit.points
+
+  const points = await readForkPoints(sessionPath)
+  // Re-insert so eviction order tracks the most recent write, not the first.
+  forkPointsCache.delete(sessionPath)
+  forkPointsCache.set(sessionPath, { mtimeMs, size, points })
+  if (forkPointsCache.size > FORK_POINTS_CACHE_MAX) {
+    const oldest = forkPointsCache.keys().next().value
+    if (oldest !== undefined) forkPointsCache.delete(oldest)
+  }
+  return points
+}
+
+/** Test helper: clear the cache between cases. */
+export function clearForkPointsCache(): void {
+  forkPointsCache.clear()
 }

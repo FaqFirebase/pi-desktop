@@ -11,7 +11,7 @@ import {
 } from '../session-paths'
 import { pathGroupKey as workspaceMatchKey, pathsEqual } from '../../shared/path-compare'
 import { readSessionMetadataCached } from '../session-metadata'
-import { readForkPoints } from '../omp-fork-points'
+import { readForkPointsCached } from '../omp-fork-points'
 import { mapWithConcurrency } from '../map-concurrent'
 import { readSessionLineage } from '../session-lineage-reader'
 import { trimGetMessagesResponse } from '../get-messages-trim'
@@ -240,7 +240,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     // layout, so the candidates are read from the active session file instead.
     if (pi.getEngineKind() === 'omp') {
       const sessionPath = workspaceManager.sessionPathFor(pi)
-      return sessionPath ? readForkPoints(sessionPath) : []
+      return sessionPath ? readForkPointsCached(sessionPath) : []
     }
     const response = await pi.sendCommand({ type: 'get_fork_messages' })
     // The renderer expects the bare candidate list, not the RPC envelope.

@@ -177,10 +177,10 @@ function scanLines(lines: readonly string[], options: ScanOptions = {}): RangeSc
       }
     }
 
-    // OMP's title slot precedes the header on line 1, so stop probing for it
-    // once the header has been seen — message lines routinely contain the word
-    // "title" and would otherwise trigger needless JSON parses.
-    if (header === null && titleName === undefined) {
+    // OMP's title slot is always the file's first line, so only a range that
+    // starts at byte 0 can hold it — message lines routinely contain the word
+    // "title" and would otherwise trigger needless JSON parses in the tail.
+    if (index === 0 && !skipPartialFirstLine) {
       const titleOnLine = titleNameFromLine(line)
       if (titleOnLine !== undefined) {
         titleName = titleOnLine
@@ -473,12 +473,13 @@ export async function readSessionMetadata(filePath: string): Promise<SessionMeta
   let name = tailName ?? scan.name
   if (name === undefined) {
     // Neither range saw one: either the session is unnamed, or a rename sits
-    // mid-file behind large tool output.
-    name = sawWholeFile ? null : await streamLatestName(filePath)
+    // mid-file behind large tool output. A title slot on line 1 proves the
+    // file is OMP's, which never writes session_info, so the full walk that
+    // looks for one is skipped in that case.
+    name = sawWholeFile || scan.titleName !== undefined ? null : await streamLatestName(filePath)
   }
-  // OMP sessions carry their name only in the first-line title slot and never
-  // write session_info records — fall back to it when no session_info named
-  // (or explicitly cleared) the session.
+  // OMP sessions carry their name only in the first-line title slot — fall
+  // back to it when no session_info named (or explicitly cleared) the session.
   if (name === null && scan.titleName !== undefined) {
     name = scan.titleName
   }

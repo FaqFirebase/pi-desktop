@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { forkPointFromLine, readForkPoints } from './omp-fork-points'
+import { clearForkPointsCache, forkPointFromLine, readForkPoints, readForkPointsCached } from './omp-fork-points'
 
 // Mirrors the OMP v3 session record shapes.
 
@@ -83,4 +83,37 @@ test('readForkPoints returns user messages in file order', async () => {
 
 test('readForkPoints returns [] for a missing file', async () => {
   assert.deepEqual(await readForkPoints('/nonexistent/session.jsonl'), [])
+})
+
+test('readForkPointsCached re-reads only when the file changes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'omp-fork-points-cache-'))
+  try {
+    clearForkPointsCache()
+    const path = join(dir, 'session.jsonl')
+    // utimes stores whole milliseconds, so pin both writes to one instant.
+    const pinned = new Date('2026-01-01T00:00:00.000Z')
+    await writeFile(path, `${headerLine}\n${userEntry('aaaa1111', 'first')}\n`, 'utf-8')
+    await utimes(path, pinned, pinned)
+    assert.deepEqual(await readForkPointsCached(path), [{ entryId: 'aaaa1111', text: 'first' }])
+
+    // Same mtime and size: served from cache even though the bytes differ.
+    await writeFile(path, `${headerLine}\n${userEntry('bbbb2222', 'firsT')}\n`, 'utf-8')
+    await utimes(path, pinned, pinned)
+    assert.equal((await stat(path)).mtimeMs, pinned.getTime())
+    assert.deepEqual(await readForkPointsCached(path), [{ entryId: 'aaaa1111', text: 'first' }])
+
+    // A real append changes size and mtime: re-read.
+    await writeFile(path, `${headerLine}\n${userEntry('bbbb2222', 'second')}\n${userEntry('cccc3333', 'third')}\n`, 'utf-8')
+    assert.deepEqual(await readForkPointsCached(path), [
+      { entryId: 'bbbb2222', text: 'second' },
+      { entryId: 'cccc3333', text: 'third' },
+    ])
+  } finally {
+    clearForkPointsCache()
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readForkPointsCached returns [] for a missing file', async () => {
+  assert.deepEqual(await readForkPointsCached('/nonexistent/session.jsonl'), [])
 })
