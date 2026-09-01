@@ -70,3 +70,29 @@ test('isModelsConfig requires a providers object', () => {
   assert.equal(isModelsConfig(null), false)
   assert.equal(isModelsConfig('providers'), false)
 })
+
+test('resolveModelsFile keeps a not-yet-migrated OMP models.json', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'models-file-'))
+  try {
+    const agentDir = join(home, '.omp', 'agent')
+    await mkdir(agentDir, { recursive: true })
+    await writeFile(join(agentDir, 'models.json'), '{"providers":{}}\n', 'utf-8')
+    const location = resolveModelsFile('omp', home)
+    assert.equal(location.name, 'models.json')
+    assert.equal(location.format, 'json')
+    // Once OMP has migrated, the YAML file wins.
+    await writeFile(join(agentDir, 'models.yml'), 'providers: {}\n', 'utf-8')
+    assert.equal(resolveModelsFile('omp', home).name, 'models.yml')
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('parseModelsFile treats an empty YAML document as an empty config', () => {
+  assert.deepEqual(parseModelsFile('', 'yaml'), { providers: {} })
+  assert.deepEqual(parseModelsFile('# just a comment\n', 'yaml'), { providers: {} })
+  assert.deepEqual(parseModelsFile('providers:\n', 'yaml'), { providers: {} })
+  assert.equal(isModelsConfig(parseModelsFile('providers:\n', 'yaml')), true)
+  // JSON keeps strict semantics: an empty file is still malformed.
+  assert.throws(() => parseModelsFile('', 'json'))
+})
