@@ -321,7 +321,7 @@
     "addProviderButton": "添加提供方",
     "apiKeyPlaceholder": "apiKey — 字面量、$ENV_VAR 或 !shell-command",
     "baseUrlPlaceholder": "baseUrl",
-    "capabilityHint": "注意：导入的模型可能未设置能力标志。若模型支持思考，请勾选 <reasoning>reasoning</reasoning>；若支持图像，请勾选 <vision>vision</vision>。重启 {{engine}} 后生效。",
+    "capabilityHint": "注意：导入的模型可能未设置能力标志。若模型支持思考，请勾选 <reasoning>推理</reasoning>；若支持图像，请勾选 <vision>视觉</vision>。重启 {{engine}} 后生效。",
     "contextWindowLabel": "ctx",
     "defaultFileName": "models 文件",
     "description": "<code>{{path}}</code> 中的自定义提供方和模型。在 {{engine}} 重启时生效。",
@@ -337,13 +337,13 @@
     "modelIdPlaceholder": "模型 ID（必填）",
     "modelNamePlaceholder": "名称",
     "providerKeyPlaceholder": "提供方键（如 ollama）",
-    "reasoningLabel": "reasoning",
+    "reasoningLabel": "推理",
     "removeModelTitle": "移除模型",
     "removeProviderTitle": "移除提供方",
     "saveButton": "保存 {{fileName}}",
     "savedRestartButton": "已保存 — 重启 {{engine}} 以生效",
     "supportsReasoningEffortLabel": "支持推理强度",
-    "visionLabel": "vision"
+    "visionLabel": "视觉"
   },
   "diagnostics": {
     "fields": {
