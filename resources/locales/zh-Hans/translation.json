@@ -318,16 +318,16 @@
   },
   "customModels": {
     "addModelButton": "添加模型",
-    "addProviderButton": "添加提供方",
+    "addProviderButton": "添加提供商",
     "apiKeyPlaceholder": "apiKey — 字面量、$ENV_VAR 或 !shell-command",
     "baseUrlPlaceholder": "baseUrl",
     "capabilityHint": "注意：导入的模型可能未设置能力标志。若模型支持思考，请勾选 <reasoning>推理</reasoning>；若支持图像，请勾选 <vision>视觉</vision>。重启 {{engine}} 后生效。",
     "contextWindowLabel": "ctx",
     "defaultFileName": "models 文件",
-    "description": "<code>{{path}}</code> 中的自定义提供方和模型。在 {{engine}} 重启时生效。",
+    "description": "<code>{{path}}</code> 中的自定义提供商和模型。在 {{engine}} 重启时生效。",
     "errors": {
-      "duplicateKeys": "提供方键必须唯一",
-      "emptyKey": "每个提供方都需要非空的键",
+      "duplicateKeys": "提供商键必须唯一",
+      "emptyKey": "每个提供商都需要非空的键",
       "saveFailed": "保存失败"
     },
     "loadError": {
@@ -336,10 +336,10 @@
     "maxTokensLabel": "max",
     "modelIdPlaceholder": "模型 ID（必填）",
     "modelNamePlaceholder": "名称",
-    "providerKeyPlaceholder": "提供方键（如 ollama）",
+    "providerKeyPlaceholder": "提供商键（如 ollama）",
     "reasoningLabel": "推理",
     "removeModelTitle": "移除模型",
-    "removeProviderTitle": "移除提供方",
+    "removeProviderTitle": "移除提供商",
     "saveButton": "保存 {{fileName}}",
     "savedRestartButton": "已保存 — 重启 {{engine}} 以生效",
     "supportsReasoningEffortLabel": "支持推理强度",
@@ -382,7 +382,7 @@
       "shell": "shell 命令"
     },
     "loadErrorTitle": "无法生成报告",
-    "noCustomProviders": "未配置自定义提供方（models.json）。",
+    "noCustomProviders": "未配置自定义提供商（models.json）。",
     "noRecentErrors": "本次运行未记录任何警告或错误。",
     "noWorkspaces": "没有工作区。",
     "providerModelCount_other": "{{count}} 个模型",
@@ -400,7 +400,7 @@
       "application": "应用",
       "binaryTitle": "{{agent}} 可执行文件",
       "permissions": "权限",
-      "providers": "提供方",
+      "providers": "提供商",
       "recentErrors": "最近错误",
       "storage": "存储",
       "workspaces": "工作区"
@@ -495,10 +495,10 @@
       "workingTreeClean": "工作树干净"
     },
     "models": {
-      "duplicateModelId": "提供方“{{key}}”：模型 ID“{{id}}”重复",
-      "fieldNotFiniteNumber": "提供方“{{key}}”、模型“{{id}}”：{{field}} 必须是有限数字",
-      "modelMissingId": "提供方“{{key}}”：某个模型缺少 ID",
-      "providerKeyEmpty": "提供方键不能为空"
+      "duplicateModelId": "提供商“{{key}}”：模型 ID“{{id}}”重复",
+      "fieldNotFiniteNumber": "提供商“{{key}}”、模型“{{id}}”：{{field}} 必须是有限数字",
+      "modelMissingId": "提供商“{{key}}”：某个模型缺少 ID",
+      "providerKeyEmpty": "提供商键不能为空"
     },
     "notes": {
       "bodyRequired": "必须填写笔记内容",
@@ -1179,7 +1179,7 @@
     "nav": {
       "activitySection": "活动",
       "chat": "聊天",
-      "missionControl": "任务控制",
+      "missionControl": "任务控制中心",
       "missionControlTitle": "所有后台会话和工作流",
       "newTaskTitle": "在新的 Pi 会话中开始任务",
       "sessions": "会话",
@@ -1324,10 +1324,10 @@
       "model": "模型",
       "name": "名称",
       "path": "路径",
-      "provider": "提供方",
+      "provider": "提供商",
       "session": "会话",
       "status": "状态",
-      "tokens": "token",
+      "tokens": "Token",
       "usage": "用量",
       "window": "窗口"
     },
