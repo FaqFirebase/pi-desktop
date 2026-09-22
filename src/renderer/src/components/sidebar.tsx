@@ -38,6 +38,7 @@ import { resolveRunSessionId } from '../utils/workflow-runs'
 import { useGlobalWorkflowOpen } from '../hooks'
 import { clampSidebarWidth, resolveSidebarWidth } from '../../../shared/sidebar-width'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
+import { isImeComposing } from '../utils/ime-composing'
 
 /** Views reachable from the sidebar's Tools group. */
 type ToolView = 'packages' | 'notes' | 'skills' | 'diagnostics' | 'settings'
@@ -141,6 +142,7 @@ export function Sidebar(): React.JSX.Element {
       onFocus={(e) => e.target.select()}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
+        if (isImeComposing(e.nativeEvent)) return
         if (e.key === 'Enter') {
           e.preventDefault()
           e.currentTarget.blur()
@@ -868,6 +870,7 @@ function WorkspaceSwitcher({ onOpenProject }: { onOpenProject: () => void }): Re
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
+              if (isImeComposing(e.nativeEvent)) return
               if (e.key === 'Enter') {
                 e.preventDefault()
                 handleRename()

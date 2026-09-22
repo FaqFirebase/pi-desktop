@@ -13,6 +13,7 @@ import { resolveRunSessionId } from '../utils/workflow-runs'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import { getSessionEngineLabel, hasMixedSessionEngines } from './sidebar-session-labels'
 import type { Translate } from '../../../shared/i18n'
+import { isImeComposing } from '../utils/ime-composing'
 
 export function SessionPanel(): React.JSX.Element {
   const { t, i18n } = useTranslation()
@@ -680,6 +681,7 @@ function SessionEntry({
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={(e) => {
+                  if (isImeComposing(e.nativeEvent)) return
                   if (e.key === 'Enter') handleAddTag()
                   if (e.key === 'Escape') setShowTagInput(false)
                 }}

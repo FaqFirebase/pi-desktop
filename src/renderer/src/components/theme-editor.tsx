@@ -16,6 +16,7 @@ import { applyThemeVars } from '../theme/engine'
 import { applyTheme, registerThemes, setThemePreviewActive } from '../utils/theme'
 import { themeDisplayName } from '../themes'
 import { forkTheme, withOverride, withSeed, withSyntax } from './theme-editor-helpers'
+import { isImeComposing } from '../utils/ime-composing'
 
 export { forkTheme, withOverride, withSeed, withSyntax }
 
@@ -150,7 +151,7 @@ export function ThemeEditor({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !isImeComposing(event)) {
         event.preventDefault()
         cancel()
       }

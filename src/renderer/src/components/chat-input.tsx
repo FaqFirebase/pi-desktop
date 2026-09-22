@@ -27,6 +27,7 @@ import {
   isSlashCommandToken,
   type PiCommand,
 } from '../../../shared/pi-command'
+import { isImeComposing } from '../utils/ime-composing'
 
 const MAX_INPUT_HEIGHT = 160
 const MIN_INPUT_HEIGHT = 40
@@ -570,6 +571,7 @@ export function ChatInput(): React.JSX.Element {
             setSlashToken(null)
           }}
           onKeyDown={(e) => {
+            if (isImeComposing(e.nativeEvent)) return
             if (e.ctrlKey && e.key === 'p') {
               e.preventDefault()
               useAppStore.getState().cycleModel()

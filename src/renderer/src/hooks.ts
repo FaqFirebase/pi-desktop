@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS } from '../../shared/default-settings'
 import { BUILTIN_SOURCE, type PiCommand } from '../../shared/pi-command'
 import type { WorkspaceActivationIntent } from '../../shared/ipc-contracts'
 import { t } from '../../shared/i18n'
+import { isImeComposing } from './utils/ime-composing'
 
 /**
  * Subscribes to Pi events from the main process and routes them to the store.
@@ -410,6 +411,7 @@ export function useChatKeyboard(
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isImeComposing(e)) return
       if (isAbortShortcut(e, isStreaming)) {
         e.preventDefault()
         onAbort()

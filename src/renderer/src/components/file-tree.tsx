@@ -27,6 +27,7 @@ import {
   Code2,
   ShieldAlert,
 } from 'lucide-react'
+import { isImeComposing } from '../utils/ime-composing'
 
 // `<webview>` (enabled via webviewTag) isn't a typed JSX intrinsic; cast the tag
 // to a component so TS accepts the props we use. It renders the HTML preview in
@@ -341,7 +342,7 @@ export function FileSearch({ isOpen, onClose }: FileSearchProps): React.JSX.Elem
   useEffect(() => {
     if (!isOpen) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !isImeComposing(e)) {
         // A confirm dialog stacked on top (dirty-editor discard) owns Escape;
         // swallowing it here would close the palette and leave the dialog.
         if (useAppStore.getState().confirmRequest) return

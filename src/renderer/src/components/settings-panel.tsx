@@ -47,6 +47,7 @@ import {
   clampTimeoutSeconds as clampCouncilTimeout,
   councilAgentLabel,
 } from '../../../shared/council-config'
+import { isImeComposing } from '../utils/ime-composing'
 
 // Empty `match` from the input means "no pattern" and must not be persisted
 // as `""` — the main-process validator rejects unknown/empty-string quirks
@@ -1116,7 +1117,7 @@ export function SettingsPanel(): React.JSX.Element {
                     }
                   }}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                    if (e.key === 'Enter' && !isImeComposing(e.nativeEvent)) (e.target as HTMLInputElement).blur()
                   }}
                   className="w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary focus:border-focus focus:outline-none"
                 />

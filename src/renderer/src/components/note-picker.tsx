@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import { Search } from 'lucide-react'
 import { useAppStore } from '../store'
+import { isImeComposing } from '../utils/ime-composing'
 
 const GLOBAL_SCOPE = 'global'
 
@@ -67,6 +68,7 @@ export function NotePicker(): React.JSX.Element | null {
   if (!open) return null
 
   const handleKeyDown = (e: React.KeyboardEvent): void => {
+    if (isImeComposing(e.nativeEvent)) return
     if (e.key === 'Escape') {
       e.preventDefault()
       setNotePickerOpen(false)

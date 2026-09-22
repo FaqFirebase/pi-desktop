@@ -8,6 +8,7 @@ import {
   isDialogToggleKey,
   splitPromptText,
 } from './extension-ui-dialog-helpers'
+import { isImeComposing } from '../utils/ime-composing'
 
 // Stacking tiers for the two extension-UI surfaces, which can be on screen at
 // the same time. The toast MUST outrank the dialog's full-screen backdrop: at
@@ -41,6 +42,7 @@ export function ExtensionUiDialog(): React.JSX.Element | null {
   useEffect(() => {
     if (!request) return
     const onKey = (e: KeyboardEvent): void => {
+      if (isImeComposing(e)) return
       if (isDialogToggleKey(e)) {
         e.preventDefault()
         setHiddenRequestId((current) => (current === request.id ? null : request.id))
@@ -281,7 +283,7 @@ function InputDialog({
           autoFocus
           className="mb-4 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-primary placeholder:text-faint focus:border-focus focus:outline-none"
           onKeyDown={(e) => {
-            if (e.key === 'Enter') onSubmit(value)
+            if (e.key === 'Enter' && !isImeComposing(e.nativeEvent)) onSubmit(value)
           }}
         />
         <div className="flex justify-end gap-2">
@@ -360,7 +362,7 @@ export function AppConfirmDialog(): React.JSX.Element | null {
   useEffect(() => {
     if (!request) return
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !isImeComposing(e)) {
         e.preventDefault()
         resolveConfirm(false)
       }
