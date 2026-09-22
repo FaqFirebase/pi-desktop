@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { bootLanguageFrom, languagePickerOptions, loadedI18nEnvironment, loadI18nEnvironment } from './i18n'
 import { PSEUDO_LANGUAGE, SOURCE_LANGUAGE, SYSTEM_LANGUAGE } from '../../shared/i18n/languages'
+import { BUNDLED_LANGUAGES } from '../../shared/i18n/resources'
 
 const ENVIRONMENT_LOAD_FAILURE = new Error('environment load failed')
 const RETRIED_ENVIRONMENT = { systemLanguages: [], pseudoLanguageEnabled: false }
@@ -18,10 +19,15 @@ test('bootLanguageFrom falls back to English for missing or unknown values', () 
 
 test('the picker starts with System default and names the resolved system language', () => {
   const options = languagePickerOptions({ systemLanguages: ['fr-FR'], pseudoLanguageEnabled: false })
-  assert.deepEqual(options, [
-    { value: SYSTEM_LANGUAGE, label: 'System default (English)' },
-    { value: SOURCE_LANGUAGE, label: 'English' },
-  ])
+  assert.deepEqual(options[0], { value: SYSTEM_LANGUAGE, label: 'System default (English)' })
+  // Found by value: the picker sorts by label, so positions shift as languages are added.
+  assert.deepEqual(options.find((o) => o.value === SOURCE_LANGUAGE), { value: SOURCE_LANGUAGE, label: 'English' })
+  // Every bundled language is offered under its own native name (English would mean a missing fallback).
+  for (const code of BUNDLED_LANGUAGES) {
+    const option = options.find((o) => o.value === code)
+    assert.ok(option, code)
+    if (code !== SOURCE_LANGUAGE) assert.notEqual(option.label, 'English', code)
+  }
 })
 
 test('the picker offers the pseudo-language only when enabled', () => {

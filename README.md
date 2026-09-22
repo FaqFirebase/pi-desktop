@@ -29,7 +29,7 @@ Still in alpha, so expect rough edges.
 - Terminal with ANSI colors
 - Package browser connected to pi.dev/packages, with instant local search and update checks for installed packages
 - Session tags, model switching, live-preview settings, themes (7 built-ins plus System, and custom themes you can create in-app, import, export, or install from a URL)
-- [Translatable interface](#languages): pick the language in Settings (English ships today)
+- [Translatable interface](#languages): pick the language in Settings (English and Simplified Chinese ship today)
 
 ## Review rail
 
@@ -123,7 +123,7 @@ There's also a community gallery at [pi-desktop-themes](https://github.com/FaqFi
 
 Pick the interface language in **Settings → Appearance → Language**. **System default** follows your operating system's language list and falls back to English. The change applies when you click **Save Settings**, with no restart.
 
-English is the only bundled language today. Each language is one JSON file in `resources/locales/<code>/translation.json`; see [Translations](CONTRIBUTING.md#translations) to add one.
+English and Simplified Chinese are bundled today. Each language is one JSON file in `resources/locales/<code>/translation.json`; see [Translations](CONTRIBUTING.md#translations) to add one.
 
 Only the app's own text is translated. Chat replies, file contents, and names of models, packages, and sessions stay as they are. Logs and the copied Diagnostics report stay in English, so bug reports stay readable.
 
