@@ -1,0 +1,1762 @@
+{
+  "activity": {
+    "completed": "已在后台完成",
+    "completedInAnotherWorkspace": "已在另一个工作区的后台完成",
+    "failed": "因错误停止",
+    "failedInAnotherWorkspace": "在另一个工作区因错误停止",
+    "working": "Pi 正在工作",
+    "workingInAnotherWorkspace": "Pi 正在另一个工作区工作"
+  },
+  "app": {
+    "dropFolder": {
+      "description": "将该文件夹作为工作区打开（必要时会创建）",
+      "title": "拖放文件夹以作为项目打开"
+    },
+    "errorBoundary": {
+      "fallback": "内容渲染失败"
+    },
+    "quit": "退出 Pi Desktop",
+    "resizeHandle": {
+      "title": "拖动以调整大小"
+    },
+    "updateBanner": {
+      "available": "Pi Desktop <strong>v{{latestVersion}}</strong> 已发布 — 当前版本为 v{{currentVersion}}。",
+      "dismissAriaLabel": "关闭更新通知",
+      "downloadButton": "下载"
+    }
+  },
+  "chat": {
+    "attach": {
+      "allFilesFilter": "所有文件",
+      "attachFailed": "无法附加文件",
+      "imagesFilter": "图片",
+      "onlyImagesPasted": "只能向输入框粘贴图片",
+      "pasteFailed": "无法粘贴图片",
+      "readImageFailed": "无法读取图片数据",
+      "unknownMimeType": "未知",
+      "unsupportedImageType": "不支持的图片类型（{{mimeType}}）。请使用 PNG、JPEG、GIF 或 WebP。"
+    },
+    "closeFileTree": "关闭文件树",
+    "commandPopup": {
+      "selectHint": "↑↓ 选择 · Enter/Tab 确认 · Esc 关闭"
+    },
+    "composer": {
+      "placeholderIdle": "向 {{agent}} 提问 — 输入 / 使用命令",
+      "placeholderNotRunning": "{{agent}} 智能体未在运行…",
+      "placeholderSteering": "输入以引导智能体…",
+      "shiftEnterNewline": "Shift+Enter 换行",
+      "streaming": "流式传输中…"
+    },
+    "council": {
+      "planWithCouncil": "使用 Council 规划",
+      "startEngineFirst": "请先启动 Pi/OMP 再使用 Council 规划"
+    },
+    "emptyState": {
+      "chooseProject": "选择一个项目 — 发送消息后 {{agent}} 即会启动。",
+      "pickProject": "选择一个项目，并描述你想要完成的内容。",
+      "startFailed": "启动 {{agent}} 失败。请检查设置。",
+      "starting": "正在启动 {{agent}} 智能体…",
+      "title": "要让 {{agent}} 处理什么？",
+      "waitingOnEngine": "{{agent}} 已启动 — 正在等待引擎完成加载。本地模型可能需要一些时间…"
+    },
+    "extensionUi": {
+      "editFallbackTitle": "编辑",
+      "hideForNowWithShortcut": "暂时隐藏（{{shortcut}}）",
+      "inputFallbackTitle": "输入",
+      "notificationFallback": "通知",
+      "selectFallbackTitle": "选择",
+      "showWithShortcut": "显示（{{shortcut}}）",
+      "waitingForAnswer": "Pi 正在等待回答"
+    },
+    "insertNote": {
+      "ariaLabel": "插入笔记",
+      "titleWithShortcut": "插入笔记（Ctrl+Shift+P）"
+    },
+    "loadingSession": "正在加载会话…",
+    "mentionPopup": {
+      "insertHint": "↑↓ 选择 · Enter/Tab 插入路径 · Esc 关闭"
+    },
+    "message": {
+      "branchedFrom": "分支自：“{{excerpt}}”",
+      "branchFromHere": "从此处创建分支",
+      "editAndResend": "编辑并重新发送"
+    },
+    "projectPicker": {
+      "noProject": "无项目",
+      "noProjectHomeDirectory": "无项目 — 主目录",
+      "openFolder": "打开文件夹…",
+      "yourHomeDirectory": "你的主目录"
+    },
+    "reattached": {
+      "responseWillAppear": "回答完成后会立即显示在这里。",
+      "stillWorking": "{{agent}} 仍在该会话中工作。"
+    },
+    "scrollToBottom": "滚动到底部",
+    "search": {
+      "closeWithShortcut": "关闭（Esc）",
+      "nextMatch": "下一个匹配（Enter）",
+      "placeholder": "在页面中查找",
+      "previousMatch": "上一个匹配（Shift+Enter）"
+    },
+    "searchWorkspace": {
+      "ariaLabel": "搜索工作区",
+      "titleWithShortcut": "搜索工作区（Ctrl+Shift+F）"
+    },
+    "sendButton": {
+      "ariaLabel": "发送消息",
+      "titleWithShortcut": "发送（Enter）"
+    },
+    "startingAgent": "正在启动智能体…",
+    "stopButton": {
+      "ariaLabel": "停止生成",
+      "titleWithShortcut": "停止（Esc）"
+    },
+    "subagentProgress": {
+      "done_other": "{{count}} 个子智能体已完成",
+      "running_other": "{{count}} 个子智能体正在运行"
+    },
+    "svgBlock": {
+      "renderedSvgAlt": "渲染后的 SVG",
+      "renderSvg": "渲染 SVG",
+      "viewSource": "查看源码"
+    },
+    "toolbar": {
+      "diffViewer": "差异查看器",
+      "fileTree": "文件树",
+      "reviewPanel": "审阅面板",
+      "terminal": "终端"
+    },
+    "toolCall": {
+      "status": {
+        "done": "已完成",
+        "error": "错误",
+        "running": "运行中"
+      }
+    },
+    "voice": {
+      "errorTitle": "语音听写失败：{{error}}",
+      "setUpTitle": "在设置中配置语音听写",
+      "startTitle": "开始语音听写",
+      "stopTitle": "停止并插入文本",
+      "transcribing": "正在转写你的语音"
+    },
+    "waitingForResponse": "正在等待回答…"
+  },
+  "commandGroups": {
+    "commands": "命令",
+    "extensions": "扩展",
+    "other": "其他",
+    "prompts": "提示词"
+  },
+  "commands": {
+    "clone": {
+      "description": "把当前分支克隆到新会话"
+    },
+    "compact": {
+      "description": "压缩对话以释放上下文"
+    },
+    "fork": {
+      "description": "打开分支视图，从某条消息分叉"
+    },
+    "new": {
+      "description": "开始新会话"
+    },
+    "resume": {
+      "description": "打开会话列表"
+    },
+    "settings": {
+      "description": "打开设置"
+    },
+    "task": {
+      "description": "在新的 Pi 会话中启动任务"
+    }
+  },
+  "commandSources": {
+    "builtin": "内置",
+    "extension": "扩展",
+    "prompt": "提示词",
+    "skill": "技能"
+  },
+  "common": {
+    "attachFile": "附加文件",
+    "cancel": "取消",
+    "changedFilesHeading": "已更改的文件",
+    "close": "关闭",
+    "collapse": "折叠",
+    "confirm": "确认",
+    "copied": "已复制",
+    "copy": "复制",
+    "cut": "剪切",
+    "delete": "删除",
+    "dismiss": "忽略",
+    "export": "导出",
+    "global": "全局",
+    "hideSidebar": "隐藏侧边栏",
+    "import": "导入",
+    "install": "安装",
+    "installed": "已安装",
+    "loading": "加载中…",
+    "moreCount_other": "还有 {{count}} 个",
+    "newSession": "新建会话",
+    "no": "否",
+    "noWorkingTreeChanges": "工作树没有更改。",
+    "paste": "粘贴",
+    "project": "项目",
+    "refresh": "刷新",
+    "remove": "移除",
+    "retry": "重试",
+    "save": "保存",
+    "selectAll": "全选",
+    "send": "发送",
+    "settings": "设置",
+    "showSidebar": "显示侧边栏",
+    "skills": "技能",
+    "submit": "提交",
+    "thinking": "思考",
+    "workflowRuns": "工作流运行",
+    "yes": "是"
+  },
+  "composer": {
+    "permissionMenu": {
+      "title": "权限"
+    }
+  },
+  "contextMenu": {
+    "addMessageToNotes": "将消息添加到笔记",
+    "addSelectionToNotes": "将选中内容添加到笔记",
+    "archive": "归档",
+    "copyAllVisibleText": "复制所有可见文本",
+    "copyCodeBlock": "复制代码块",
+    "copyLink": "复制链接",
+    "copyMessage": "复制消息",
+    "copySelection": "复制选中内容",
+    "deleteSessionConfirmMessage": "删除会话“{{name}}”？\n\n若系统已安装 'trash' 命令则使用它（可恢复）；否则 .jsonl 会话文件将被永久删除。",
+    "deleteSessionConfirmTitle": "删除会话",
+    "deleteSessionLabel": "删除…",
+    "openLink": "打开链接",
+    "openSession": "打开会话",
+    "rename": "重命名…",
+    "searchSelection": "搜索选中内容",
+    "shortcuts": {
+      "copy": "Ctrl+C",
+      "copyCodeBlock": "Ctrl+Shift+C",
+      "cut": "Ctrl+X",
+      "paste": "Ctrl+V",
+      "selectAll": "Ctrl+A"
+    },
+    "unarchive": "取消归档",
+    "workflowRuns": "工作流运行"
+  },
+  "conveyor": {
+    "branchStatusClean": "{{branch}}",
+    "branchStatusDirty_other": "{{branch}} · {{count}} 处更改",
+    "commit": "提交",
+    "commitButtonTitle": "提交已暂存的更改或该工作区中的更改",
+    "createPrButton": "创建 PR",
+    "detachedBranch": "分离",
+    "dialog": {
+      "baseBranchLabel": "基分支",
+      "baseBranchPlaceholder": "留空则使用仓库默认值",
+      "closeAriaLabel": "关闭对话框",
+      "commitMessageLabel": "提交信息",
+      "commitTitle": "提交更改",
+      "descriptionLabel": "描述",
+      "prTitle": "创建 PR",
+      "titleLabel": "标题"
+    },
+    "errors": {
+      "branchRequired": "创建 PR 需要一个命名分支。",
+      "commitBeforePr": "创建 PR 前请先提交更改。",
+      "commitBeforePush": "推送前请先提交工作树。",
+      "commitMessageRequired": "提交信息为必填项。",
+      "prTitleRequired": "PR 标题为必填项。",
+      "pushBeforePr": "创建 PR 前请先推送该分支。"
+    },
+    "feedback": {
+      "branchPushed": "分支已推送。",
+      "committed": "已提交 {{sha}}。",
+      "prCreated": "PR 已创建。",
+      "prCreatedWithUrl": "PR 已创建：{{url}}",
+      "pushedCommits_other": "已推送 {{count}} 个提交。"
+    },
+    "prButtonLabel": "PR",
+    "prButtonTitle": "使用 GitHub CLI 创建 PR",
+    "push": "推送",
+    "pushButtonTitle": "确认后推送当前分支",
+    "pushConfirm": {
+      "branchNameFallback": "当前分支",
+      "currentBranchFallback": "当前分支",
+      "message": "将 {{branch}} 推送到 {{target}}？",
+      "remoteFallback": "远程",
+      "title": "推送分支？"
+    }
+  },
+  "council": {
+    "consensusPlan": {
+      "heading": "共识计划",
+      "implementButton": "按此实施",
+      "reviseButton": "修改",
+      "reviseInputPlaceholder": "提出对计划的修改意见…"
+    },
+    "header": "Council 规划 — {{phase}}",
+    "phase": {
+      "awaitingApproval": "等待批准",
+      "consulting": "征询意见",
+      "detecting": "检测中",
+      "merging": "合并中",
+      "refused": "已拒绝"
+    },
+    "status": {
+      "contributed": "已贡献",
+      "errored": "出错",
+      "merging": "合并中…",
+      "readyForReview": "可供审阅",
+      "streaming": "流式传输中…",
+      "timedOut": "已超时",
+      "working": "工作中…"
+    }
+  },
+  "customModels": {
+    "addModelButton": "添加模型",
+    "addProviderButton": "添加提供方",
+    "apiKeyPlaceholder": "apiKey — 字面量、$ENV_VAR 或 !shell-command",
+    "baseUrlPlaceholder": "baseUrl",
+    "capabilityHint": "注意：导入的模型可能未设置能力标志。若模型支持思考，请勾选 <reasoning>reasoning</reasoning>；若支持图像，请勾选 <vision>vision</vision>。重启 {{engine}} 后生效。",
+    "contextWindowLabel": "ctx",
+    "defaultFileName": "models 文件",
+    "description": "<code>{{path}}</code> 中的自定义提供方和模型。在 {{engine}} 重启时生效。",
+    "errors": {
+      "duplicateKeys": "提供方键必须唯一",
+      "emptyKey": "每个提供方都需要非空的键",
+      "saveFailed": "保存失败"
+    },
+    "loadError": {
+      "message": "无法安全加载 {{fileName}}，已禁用编辑以避免覆盖它。"
+    },
+    "maxTokensLabel": "max",
+    "modelIdPlaceholder": "模型 ID（必填）",
+    "modelNamePlaceholder": "名称",
+    "providerKeyPlaceholder": "提供方键（如 ollama）",
+    "reasoningLabel": "reasoning",
+    "removeModelTitle": "移除模型",
+    "removeProviderTitle": "移除提供方",
+    "saveButton": "保存 {{fileName}}",
+    "savedRestartButton": "已保存 — 重启 {{engine}} 以生效",
+    "supportsReasoningEffortLabel": "支持 reasoning effort",
+    "visionLabel": "vision"
+  },
+  "diagnostics": {
+    "fields": {
+      "appVersion": "应用版本",
+      "binaryFound": "已找到可执行文件",
+      "chromium": "Chromium",
+      "electron": "Electron",
+      "engineVersion": "{{agent}} 版本",
+      "globalRules": "全局规则",
+      "globalRulesInvalid": "文件无效：{{error}}",
+      "guiDataDir": "GUI 数据目录",
+      "mode": "模式",
+      "needsShell": "需要 shell",
+      "node": "Node",
+      "nodeBinary": "Node 二进制文件",
+      "pathEntriesSearched": "已搜索的 PATH 条目",
+      "platform": "平台",
+      "rejectedOverride": "已配置的路径被忽略（不存在）：{{path}}",
+      "resolutionSource": "解析来源",
+      "script": "脚本",
+      "sessionsRoot": "会话根目录",
+      "settingsFile": "设置文件",
+      "unknownError": "未知错误",
+      "unknownVersion": "未知",
+      "workspaceRules": "工作区规则",
+      "workspaceRulesNone": "无",
+      "workspaceRulesPresent": "存在",
+      "workspaceRulesPresentWithAllowRules": "存在，含允许规则",
+      "workspaceTrust": "工作区信任"
+    },
+    "keyState": {
+      "envMissing": "缺少环境变量",
+      "envSet": "已设置环境变量",
+      "literal": "已配置密钥",
+      "none": "无密钥",
+      "shell": "shell 命令"
+    },
+    "loadErrorTitle": "无法生成报告",
+    "noCustomProviders": "未配置自定义提供方（models.json）。",
+    "noRecentErrors": "本次运行未记录任何警告或错误。",
+    "noWorkspaces": "没有工作区。",
+    "providerModelCount_other": "{{count}} 个模型",
+    "refreshAriaLabel": "刷新诊断",
+    "resolutionSource": {
+      "commonLocation": "常见安装位置",
+      "engineInstall": "{{agent}} 安装位置",
+      "fallback": "回退（未找到）",
+      "npmPrefix": "npm 全局前缀",
+      "override": "已配置路径",
+      "path": "PATH",
+      "versionManager": "版本管理器"
+    },
+    "sections": {
+      "application": "应用",
+      "binaryTitle": "{{agent}} 可执行文件",
+      "permissions": "权限",
+      "providers": "提供方",
+      "recentErrors": "最近错误",
+      "storage": "存储",
+      "workspaces": "工作区"
+    },
+    "title": "诊断",
+    "workspaceNotTrustedBadge": "未信任",
+    "workspacePathMissing": "缺失",
+    "workspaceTrustedBadge": "已信任"
+  },
+  "dialogs": {
+    "openFolder": {
+      "title": "打开文件夹"
+    },
+    "openProject": {
+      "title": "打开项目"
+    },
+    "permissionRules": {
+      "exportTitle": "导出权限规则",
+      "fileFilterName": "权限规则",
+      "importTitle": "导入权限规则"
+    },
+    "selectWorkspaceFolder": {
+      "title": "选择工作区文件夹"
+    },
+    "theme": {
+      "exportTitle": "导出主题",
+      "fileFilterName": "主题",
+      "importTitle": "导入主题"
+    }
+  },
+  "diff": {
+    "closeAriaLabel": "关闭差异查看器",
+    "deletedFileBadge": "已删除",
+    "fileCount_other": "{{count}} 个文件",
+    "heading": "差异查看器",
+    "loadErrorTitle": "无法加载差异",
+    "newFileBadge": "新建",
+    "noChanges": "无更改",
+    "noStagedChanges": "无已暂存更改",
+    "refreshAriaLabel": "刷新差异",
+    "stagedToggle": "已暂存",
+    "workingToggle": "工作树",
+    "workingTreeClean": "工作树是干净的"
+  },
+  "editorGuard": {
+    "discard": "放弃未保存的更改？",
+    "discardButton": "放弃更改",
+    "discardFile": "放弃对 {{fileName}} 的未保存更改？",
+    "keepEditing": "继续编辑",
+    "title": "未保存的更改"
+  },
+  "errors": {
+    "attachments": {
+      "pathNotPermitted": "附件路径未被允许",
+      "tooLarge": "附件过大（最大 {{limit}} MB）"
+    },
+    "council": {
+      "arbiterFailed": "仲裁者失败",
+      "arbiterTimedOut": "仲裁者超时",
+      "notEnoughMembers": "Council 至少需要 {{min}} 个智能体。请安装或启用 Pi、Claude 或 Codex，或关闭 council。",
+      "planningDisabled": "Settings 中已禁用 Council 规划。",
+      "timeoutNotNumber": "Council 超时必须是一个有限数字",
+      "timeoutRange": "Council 超时必须介于 {{min}} 和 {{max}} 秒之间",
+      "unknownConsensusMode": "未知的共识模式：{{mode}}",
+      "unknownError": "未知错误"
+    },
+    "fileService": {
+      "refusedRead": "拒绝读取当前工作区之外的内容",
+      "refusedWrite": "拒绝写入当前工作区之外的内容"
+    },
+    "fs": {
+      "blockedWrite": "无法写入“{{path}}”（{{code}}）。在 Windows 上这通常是受控文件夹访问（勒索软件保护）阻止了更改。你可以在 Windows 安全中心 → 病毒和威胁防护 → 勒索软件保护 →“通过受控文件夹访问允许应用”中允许 Pi Desktop，或者把本项目移出“文档”/“桌面”到不受保护的文件夹（例如 C:\\dev）。"
+    },
+    "git": {
+      "commandFailed": "{{command}} 失败",
+      "commandFailedWithDetail": "{{command}} 失败：{{detail}}",
+      "commitBeforePullRequest": "创建 PR 前请先提交工作树",
+      "commitBeforePush": "推送前请先提交工作树",
+      "commitMessageRequired": "必须填写提交信息",
+      "commitMessageTooLong": "提交信息必须不超过 {{max}} 个字符",
+      "detachedHeadCommit": "无法在分离 HEAD 状态下提交",
+      "detachedHeadPush": "无法在分离 HEAD 状态下推送",
+      "namedBranchRequired": "创建 PR 需要一个具名分支",
+      "noTrackedChanges": "本工作区没有可提交的已跟踪更改。请先暂存未跟踪的文件以将其包含进来。",
+      "operationInProgressCommit": "Git {{operation}} 进行中，无法提交",
+      "operationInProgressPush": "Git {{operation}} 进行中，无法推送",
+      "pullRequestTitleRequired": "必须填写 PR 标题",
+      "pushBeforePullRequest": "创建 PR 前请先推送分支",
+      "pushUpstreamIsLocal": "无法推送上游为本地仓库的分支",
+      "stagedOutsideWorkspace": "索引中包含当前工作区之外的已暂存文件",
+      "subprocessTimedOut": "{{command}} 超时",
+      "workingTreeClean": "工作树干净"
+    },
+    "models": {
+      "duplicateModelId": "提供方“{{key}}”：模型 id“{{id}}”重复",
+      "fieldNotFiniteNumber": "提供方“{{key}}”、模型“{{id}}”：{{field}} 必须是有限数字",
+      "modelMissingId": "提供方“{{key}}”：某个模型缺少 id",
+      "providerKeyEmpty": "提供方 key 不能为空"
+    },
+    "notes": {
+      "bodyRequired": "必须填写笔记内容",
+      "notFound": "未找到笔记：{{id}}",
+      "titleRequired": "必须填写笔记标题"
+    },
+    "packages": {
+      "invalidSpec": "无效的包描述",
+      "listFailed": "无法读取 OMP 插件列表：{{detail}}",
+      "missingBun": "OMP 需要 bun 来安装或更新 npm 插件。请从 https://bun.sh 安装 bun，然后重试。",
+      "pinnedOrNotFromNpm": "{{spec}} 被固定版本或不是从 npm 安装的，因此无法在此更新。"
+    },
+    "permissionRules": {
+      "fileTooLarge": "规则文件过大（上限 {{limit}} 字节）"
+    },
+    "pi": {
+      "commandFailedFallback": "命令失败",
+      "commandTimedOut": "命令 {{commandType}} 在 {{timeoutMs}}ms 后超时",
+      "configuredPathMissing": "在 {{settingsHint}} 中设置的 Pi 可执行文件路径不存在：\n  {{path}}\n\n请将其指向 Pi 的 cli.js（或其安装目录），或清空该字段以自动检测。自动检测也没有找到结果。\n\n{{installHint}}",
+      "crashedBeforeReady": "Pi 在就绪前崩溃。",
+      "cwdMissing": "Pi 工作目录不存在或不是目录：\n  {{cwd}}",
+      "exitedBeforeReady": "Pi 在就绪前以代码 {{code}} 退出。",
+      "failedToCreateManager": "创建 Pi 管理器失败",
+      "installHint": "使用以下命令安装 Pi：\n  {{npmCommand}}\n或安装 OMP：\n  {{bunCommand}}",
+      "nodeNotFound": "在解析出的路径中未找到 Node 可执行文件：\n  {{node}}\n\nPi 的 .js 入口需要 Node。请从 https://nodejs.org 安装 Node，或把 NODE 环境变量设为你的 Node 可执行文件路径。",
+      "noManagerForWorkspace": "该工作区没有 Pi 管理器",
+      "notFound": "未找到 Pi 可执行文件。已搜索登录 shell 的 PATH、npm 全局前缀、node 版本管理器（nvm、fnm、volta、asdf、mise、nodenv、n）以及常见安装位置。\n\n{{installHint}}\n\n已经安装了？请在 {{settingsHint}} 中设置 Pi cli.js 的完整路径。",
+      "processExited": "Pi 进程已退出",
+      "processKilled": "Pi 进程已被终止",
+      "processNotRunning": "Pi 进程未在运行",
+      "settingsHint": "设置 > 智能体配置 > 智能体安装",
+      "spawnError": "启动错误：{{detail}}",
+      "startupTimeoutBusy": "Pi 已启动，但未在 {{seconds}} 秒内就绪。\n\nPi 仍在运行并持续产生输出，但一直没有回应就绪检查。扩展启动钩子会在 Pi 读取命令之前执行，如果某个钩子调用了本地模型服务器，在模型加载或为大型提示词预填充期间可能等待这么久。请检查引擎和模型服务器日志，然后重试。",
+      "startupTimeoutBusyWithStderr": "{{message}}\n\n启动期间捕获的 Pi stderr：\n{{detail}}",
+      "startupTimeoutSilentNoOutput": "Pi 在 {{seconds}} 秒内没有产生任何输出。\n\n没有捕获到输出。请在应用日志中查看确切的启动命令，并尝试在终端中直接运行 `pi --mode rpc`。",
+      "startupTimeoutSilentWithStderr": "Pi 在 {{seconds}} 秒内没有产生任何输出。\n\n启动期间捕获的 Pi stderr：\n{{detail}}"
+    },
+    "session": {
+      "alreadyAttached": "会话文件已绑定到一个运行中的运行时",
+      "attachedToDifferentWorkspace": "会话已绑定到另一个工作区的运行时",
+      "ompNoClone": "OMP 引擎不支持克隆会话",
+      "pathMustExist": "{{field}} 必须指向一个已存在的 Pi 会话文件",
+      "projectMismatch": "会话所属项目与当前工作区不匹配",
+      "runtimeNotFound": "未找到会话运行时：{{runtimeId}}"
+    },
+    "system": {
+      "externalUrlHttpOnly": "仅允许 http(s) URL"
+    },
+    "theme": {
+      "downloadFailed": "主题下载失败：{{status}}",
+      "exportWriteFailed": "无法将主题写入 {{path}}",
+      "fileTooLarge": "主题文件过大（上限 {{limit}} 字节）",
+      "galleryIndexDownloadFailed": "主题库索引下载失败：{{status}}",
+      "galleryIndexNotArray": "主题库索引不是 JSON 数组",
+      "hostBlockedIPv4": "主题 URL 主机“{{host}}”被阻止（私有/保留 IPv4 地址）",
+      "hostBlockedIPv6": "主题 URL 主机“{{host}}”被阻止（私有/保留 IPv6 地址）",
+      "hostBlockedLocal": "主题 URL 主机“{{host}}”被阻止（本地/回环主机名）",
+      "kindInvalid": "kind 必须是“dark”或“light”",
+      "missingKey": "{{label}} 缺少“{{key}}”",
+      "mustBeJsonObject": "主题必须是 JSON 对象",
+      "mustBeObject": "{{label}} 必须是对象",
+      "mustUseHttps": "主题 URL 必须使用 https，实际为 {{protocol}}",
+      "notValidColor": "{{label}}.{{key}} 不是有效颜色",
+      "redirectMissingLocation": "主题 URL 重定向（{{status}}）没有 location 头",
+      "screenshotDownloadFailed": "截图下载失败：{{status}}",
+      "screenshotPathNotAllowed": "截图 URL 不在允许的主题库路径内",
+      "screenshotTooLarge": "截图过大（上限 {{limit}} 字节）",
+      "screenshotTypeMissing": "截图不是允许的图片类型（content-type：无）",
+      "screenshotTypeNotAllowed": "截图不是允许的图片类型（content-type：{{contentType}}）",
+      "textFieldInvalid": "{{label}} 必须是长度不超过 {{max}} 个字符的非空字符串",
+      "tooManyRedirects": "主题 URL 重定向次数超过 {{max}} 次",
+      "unknownKey": "{{label}} 含有未知键“{{key}}”",
+      "unsupportedSchema": "不支持的 $schema（应为 {{expected}}）"
+    },
+    "typesafe": {
+      "skillChecksumMismatch": "{{file}} 与预期的校验和不符，因此 Pi Desktop 没有安装它。",
+      "skillDownloadFailed": "无法下载 {{file}}（HTTP {{status}}）。",
+      "skillInstalledElsewhere": "{{directory}} 处已存在一个并非由 Pi Desktop 安装的 TypeSafe 技能。Pi Desktop 没有改动它。"
+    },
+    "workflow": {
+      "runNotFound": "未找到工作流运行"
+    },
+    "workspace": {
+      "folderMissing": "文件夹不存在：{{path}}",
+      "managedWorktreeCannotChangeFolder": "受管理工作树的标签页无法更改文件夹；请关闭该标签页并新建一个",
+      "noneActive": "没有活动的工作区",
+      "noSourceForNewTab": "没有可用于新标签页的源工作区",
+      "notFound": "未找到工作区：{{workspaceId}}",
+      "notFoundPlain": "未找到工作区",
+      "pullRequestNotCheckedOut": "该任务引用了一个尚未检出到本地工作树的 GitHub PR",
+      "sourceFolderMissing": "源文件夹不存在：{{path}}"
+    }
+  },
+  "files": {
+    "preview": {
+      "closeTitle": "关闭编辑器",
+      "modifiedBadge": "已修改",
+      "previewViewTitle": "预览",
+      "readFailed": "读取文件失败",
+      "revertTitle": "还原更改",
+      "savedBadge": "已保存",
+      "saveFailed": "保存文件失败",
+      "saveTitle": "保存文件",
+      "scriptsDisabledNotice": "此不受信任工作区的预览已禁用脚本。",
+      "sourceViewTitle": "源码"
+    },
+    "search": {
+      "contentPlaceholder": "搜索文件内容…",
+      "contentToggle": "内容",
+      "escToClose": "Esc 关闭",
+      "filesToggle": "文件",
+      "lineSnippet": "第 {{line}} 行：{{snippet}}",
+      "namePlaceholder": "按名称搜索文件…",
+      "noResults": "未找到结果",
+      "resultCount_other": "{{count}} 条结果",
+      "typeToSearch": "输入以搜索…"
+    },
+    "tree": {
+      "folderMissingHint": "该文件夹可能已被移动或删除。在侧边栏中右键点击工作区并选择“更改文件夹…”，将其指向其他位置。",
+      "folderNotFound": "未找到文件夹",
+      "noWorkspaceHint": "通过侧边栏的工作区切换器切换到一个项目文件夹。",
+      "noWorkspaceOpen": "未打开工作区"
+    }
+  },
+  "home": {
+    "actions": {
+      "newSession": {
+        "inWorkspace": "在 {{project}} 中",
+        "pickFolderFirst": "请先选择文件夹"
+      },
+      "newTask": {
+        "description": "在全新的 Pi 会话中开始工作",
+        "title": "新建任务"
+      },
+      "openFolder": {
+        "description": "浏览要作为工作区打开的项目",
+        "title": "打开文件夹"
+      }
+    },
+    "changedFiles": {
+      "moreOpenDiff_other": "+{{count}} 更多 — 打开差异审查",
+      "noWorkspace": "未选择工作区。"
+    },
+    "errorBanner": {
+      "checkInstalled": "请检查 {{agent}} 是否已安装且路径正确。",
+      "couldntStart": "无法启动 {{agent}}"
+    },
+    "recentSessions": {
+      "empty": "暂无会话。",
+      "title": "最近会话"
+    },
+    "recentWorkspaces": {
+      "empty": "暂无工作区。",
+      "last": "上次",
+      "title": "最近工作区"
+    },
+    "subtitle": "打开工作区，或从上次的位置继续。"
+  },
+  "imageViewer": {
+    "closeTitle": "关闭图片",
+    "readFailed": "读取图片失败",
+    "unsupportedFile": "不是受支持的图片文件"
+  },
+  "language": {
+    "nativeName": "简体中文"
+  },
+  "menu": {
+    "actualSize": "实际大小",
+    "close": "关闭窗口",
+    "edit": "编辑",
+    "file": "文件",
+    "forceReload": "强制重新加载",
+    "minimize": "最小化",
+    "newWorkspace": "新建工作区…",
+    "openProject": "打开项目…",
+    "redo": "重做",
+    "reload": "重新加载",
+    "toggleDevTools": "切换开发者工具",
+    "toggleFullScreen": "切换全屏",
+    "undo": "撤销",
+    "view": "查看",
+    "window": "窗口",
+    "zoom": "缩放",
+    "zoomIn": "放大",
+    "zoomOut": "缩小"
+  },
+  "missionControl": {
+    "controlUnavailable": "控制不可用",
+    "idle": "{{agent}} 处于空闲状态",
+    "liveSessions": "活动会话",
+    "needsAttention_other": "{{count}} 项需要关注",
+    "newTask": "新建任务",
+    "noLiveRuntimes": "暂无活动的会话运行时。启动一个任务，让 Pi 在后台工作。",
+    "noWorkflowRuns": "暂无工作流运行。",
+    "open": "打开",
+    "openAllWorkflows": "打开所有工作流",
+    "proceed": "继续",
+    "proceedWithWorkflow": "继续执行此工作流",
+    "refreshWorkflowRuns": "刷新工作流运行",
+    "resumeFailed": "无法继续执行 {{workflow}}：{{reason}}",
+    "resumeFailedGeneric": "无法继续执行 {{workflow}}。打开该运行查看详情。",
+    "retryWithWorkflow": "重试此工作流",
+    "review": "审查",
+    "runtimeState": {
+      "completed": "已完成",
+      "failed": "失败",
+      "idle": "空闲",
+      "needsApproval": "待批准",
+      "stopped": "已停止",
+      "working": "运行中"
+    },
+    "startingSession": "正在启动会话",
+    "subtitle": "来自各个项目的后台会话与工作流运行。",
+    "title": "任务控制中心",
+    "unknownProject": "未知项目",
+    "workflowActivity": "工作流活动",
+    "workflowStatus": {
+      "aborted": "已中止",
+      "completed": "已完成",
+      "failed": "失败",
+      "paused": "已暂停",
+      "pending": "待处理",
+      "running": "运行中",
+      "unknown": "未知"
+    }
+  },
+  "models": {
+    "readFailure": {
+      "invalidJson": "{{file}} 不是有效的 JSON：{{detail}}",
+      "invalidJsonNoDetail": "{{file}} 不是有效的 JSON",
+      "invalidYaml": "{{file}} 不是有效的 YAML：{{detail}}",
+      "invalidYamlNoDetail": "{{file}} 不是有效的 YAML",
+      "missingProviders": "{{file}} 不是有效的模型配置（缺少 \"providers\"）",
+      "unreadable": "无法读取 {{file}}：{{detail}}"
+    },
+    "selector": {
+      "current": "当前",
+      "loadFailed": "无法加载模型",
+      "noModelsMatch": "没有匹配的模型",
+      "searchPlaceholder": "搜索模型…",
+      "selectModel": "选择模型",
+      "selectModelWithShortcut": "选择模型（{{agent}} 运行时按 Ctrl+P 切换）",
+      "startToListModels": "启动 Pi 以列出和更换模型。"
+    }
+  },
+  "notes": {
+    "backButton": "返回",
+    "backTitle": "返回笔记",
+    "deleteNoteTitle": "删除笔记",
+    "editNoteTitle": "编辑笔记",
+    "empty": {
+      "noMatch": "没有与搜索匹配的笔记。",
+      "noneYet": "暂无笔记。创建一条以便复用提示词。"
+    },
+    "form": {
+      "bodyLabel": "提示词 / 命令",
+      "bodyPlaceholder": "可复用的提示词或命令文本…",
+      "editHeading": "编辑笔记",
+      "saveFailed": "保存笔记失败",
+      "saving": "正在保存…",
+      "scopeLabel": "范围",
+      "tagsLabel": "标签",
+      "tagsPlaceholder": "用空格或逗号分隔",
+      "thisWorkspaceFallback": "此工作区",
+      "titleLabel": "标题",
+      "titlePlaceholder": "例如：带测试的重构"
+    },
+    "insertButton": "插入",
+    "insertIntoChatTitle": "插入到聊天输入框",
+    "newNoteButton": "新建笔记",
+    "picker": {
+      "createNote": "创建笔记",
+      "navigationHint": "↑↓ 选择 · Enter 插入 · Esc 关闭",
+      "noMatchingNotes": "没有匹配的笔记",
+      "noSavedNotes": "暂无已保存的笔记。",
+      "notComposeBox": "此选择器用于插入你已保存的笔记——它不是输入框。",
+      "searchPlaceholder": "搜索要插入的已保存笔记…"
+    },
+    "scope": {
+      "other": "其他工作区",
+      "workspaceFallback": "工作区"
+    },
+    "searchPlaceholder": "搜索标题、内容或标签…",
+    "title": "笔记",
+    "viewNoteTitle": "查看笔记"
+  },
+  "notifications": {
+    "completed": "Pi 已完成工作。",
+    "failed": "Pi 因错误而停止。",
+    "needs-approval": "Pi 正在等待你的批准。",
+    "withSession": "{{body}} 点击打开已完成的会话。"
+  },
+  "packages": {
+    "catalog": {
+      "emptyHint": "访问 <link>pi.dev/packages</link> 浏览",
+      "emptyTitle": "未找到包",
+      "resultsCap": "显示 {{shown}} / {{total}} — 请细化搜索以缩小范围。",
+      "searchPlaceholder": "搜索包…",
+      "viewRepo": "查看仓库"
+    },
+    "installBar": {
+      "placeholder": "npm:package-name 或 git:github.com/user/repo"
+    },
+    "installed": {
+      "checkingUpdates": "正在检查更新…",
+      "checkUpdatesButton": "检查更新",
+      "emptyHint": "浏览目录或使用上方的安装栏",
+      "emptyTitle": "未安装任何包",
+      "removeButton": "移除包",
+      "updateAllButton": "全部更新",
+      "updatePackageAria": "更新 {{name}}",
+      "updatesAvailable_other": "有 {{count}} 项更新可用",
+      "updateToVersion": "更新到 v{{version}}",
+      "versionUpdateArrow": "v{{from}} → v{{to}}"
+    },
+    "tabs": {
+      "catalog": "目录",
+      "installed": "已安装"
+    },
+    "title": "包与技能",
+    "type": {
+      "extension": "扩展",
+      "package": "包",
+      "prompt": "提示词",
+      "skill": "技能",
+      "theme": "主题"
+    },
+    "viewOnNpm": "在 npm 上查看"
+  },
+  "palette": {
+    "navigationHint": "↑↓ 选择 · Enter/Tab 运行 · / 仅命令 · Esc 关闭",
+    "noMatches": "无匹配项",
+    "searchPlaceholder": "搜索命令、工作区、会话、文件…",
+    "sections": {
+      "files": "文件",
+      "sessions": "会话",
+      "workspaces": "工作区"
+    }
+  },
+  "permissionMode": {
+    "ask-commands": {
+      "description": "Pi 在运行 shell 命令前会先询问。",
+      "label": "命令前询问"
+    },
+    "ask-edits": {
+      "description": "Pi 在编辑文件以及运行可能更改文件的 shell 命令前会先询问。",
+      "label": "编辑前询问"
+    },
+    "plan-readonly": {
+      "description": "仅启用读取/搜索/列表类工具。文件编辑和 shell 命令会被阻止。",
+      "label": "计划 / 只读"
+    },
+    "trusted": {
+      "description": "对你信任的工作流启用所有 Pi 工具。",
+      "label": "受信任"
+    }
+  },
+  "permissionRules": {
+    "action": {
+      "allow": "允许",
+      "deny": "拒绝"
+    },
+    "addRuleButton": "添加规则",
+    "copyFromGlobalButton": "从全局复制",
+    "copyFromGlobalTitle": "将全局规则列表复制到此工作区（保存前会替换下方列表）",
+    "exportTitle": "将下方列表导出为 JSON 文件",
+    "importTitle": "从 JSON 文件导入规则（保存前会替换下方列表）",
+    "legend": "拒绝规则始终优先，其次是允许规则，最后由上方的模式决定。使用 * 作为通配符。",
+    "loadErrorMessage": "已保存的规则文件无效，已被忽略：{{error}}",
+    "noRules": "暂无规则——全部由上方的模式决定。",
+    "patternPlaceholder": "模式，例如 npm test*（留空 = 任意输入）",
+    "removeRuleAria": "删除规则 {{index}}",
+    "removeRuleTitle": "删除规则",
+    "removeWorkspaceRulesButton": "移除工作区规则",
+    "removeWorkspaceRulesTitle": "删除此工作区的 .pi-desktop/permission-rules.json，重新应用全局规则",
+    "revokeTrustButton": "撤销信任",
+    "rowActionAria": "规则 {{index}} 操作",
+    "rowPatternAria": "规则 {{index}} 模式",
+    "rowToolAria": "规则 {{index}} 工具",
+    "toolPlaceholder": "工具（* = 任意）",
+    "toolRequiredError": "规则 {{index}}：必须填写工具（用 * 表示任意工具）",
+    "trustedMessage": "已信任——此工作区的允许规则生效，HTML 预览会运行脚本。",
+    "trustWorkspaceButton": "信任工作区",
+    "untrustedMessage": "此工作区的 HTML 预览为静态（脚本已禁用）。信任它以启用交互式预览和允许规则。",
+    "untrustedWithAllowRulesMessage": "在你信任之前，此工作区的允许规则不生效，HTML 预览也为静态。其拒绝规则仍然生效。请只信任来源可信的工作区。",
+    "workspaceOverrideNotice": "此工作区有自己的规则文件（.pi-desktop/permission-rules.json）。其拒绝规则叠加在这些全局规则之上；其允许规则仅在你信任该工作区后生效——见“此工作区”选项卡。"
+  },
+  "permissions": {
+    "prompt": {
+      "body": "{{agent}} 想要运行 {{tool}} 工具。",
+      "command": "命令：\n{{command}}",
+      "target": "目标：{{path}}",
+      "title": "允许 {{tool}}？"
+    }
+  },
+  "review": {
+    "gitStatusUnavailable": "无法获取 Git 状态",
+    "heading": "审查",
+    "openDiffButton": "打开差异审查",
+    "openDiffHint": "查看工作树更改。",
+    "pendingApprovals": {
+      "none": "没有待处理的批准请求。",
+      "queued_other": "有 {{count}} 个排队项等待活动会话处理。"
+    },
+    "pendingApprovalsHeading": "待处理批准",
+    "permissionsHeading": "权限",
+    "sessionStatus": {
+      "idle": "{{agent}} 在活动会话中处于空闲状态。",
+      "working": "{{agent}} 正在活动会话中工作。"
+    },
+    "sessionStatusHeading": "会话状态",
+    "subtitle": "在更改继续推进前控制 {{agent}} 可以执行的操作。"
+  },
+  "sessions": {
+    "activeBadge": "进行中",
+    "archivedBadge": "已归档",
+    "archivedToggle": {
+      "hideTitle": "隐藏已归档会话",
+      "hidingNone": "未隐藏任何会话",
+      "showTitle": "显示已归档会话"
+    },
+    "currentProjectBadge": "当前",
+    "currentWorkspaceLabel": "当前工作区：",
+    "deleteConfirm": {
+      "message": "删除此会话？如果可用将使用 <code>回收站</code>，否则将永久删除。"
+    },
+    "deleteEllipsis": "删除…",
+    "empty": {
+      "createFirst": "创建你的第一个会话",
+      "noMatch": "没有匹配搜索的会话",
+      "noneInProject": "此项目中还没有会话",
+      "noneYet": "还没有会话",
+      "openProjectToSee": "打开一个项目以查看其会话"
+    },
+    "engineSession": "{{engine}} 会话",
+    "header": {
+      "projectCount_other": "{{count}} 个项目",
+      "sessionCount_other": "{{count}} 个会话"
+    },
+    "runtime": {
+      "completed": "{{agent}} 已完成",
+      "failed": "{{agent}} 因错误而停止",
+      "needsApproval": "{{agent}} 正在等待批准",
+      "working": "{{agent}} 正在工作"
+    },
+    "scopeToggle": {
+      "allSessions": "全部会话",
+      "currentOnly": "仅当前",
+      "showCurrentProjectOnly": "仅显示当前项目的会话",
+      "showEveryProject": "显示所有项目的会话"
+    },
+    "searchPlaceholder": "搜索会话或项目…",
+    "sessionActions": {
+      "ariaLabel": "会话操作",
+      "title": "会话操作（或右键点击该行）"
+    },
+    "tags": {
+      "add": "添加",
+      "addPlaceholder": "添加标签…",
+      "addTag": "添加标签",
+      "autoTagHint": "根据聊天上下文自动标记 — 添加你自己的标签即可替换它",
+      "removeAutoTag": "移除自动标签 {{tag}}",
+      "removeTag": "移除标签 {{tag}}"
+    },
+    "time": {
+      "days_other": "{{count}} 天前",
+      "hours_other": "{{count}} 小时前",
+      "minutes_other": "{{count}} 分钟前"
+    },
+    "title": "会话",
+    "unknownProject": "未知"
+  },
+  "settings": {
+    "actions": {
+      "reset": "恢复默认设置",
+      "save": "保存设置",
+      "saved": "已保存！"
+    },
+    "agentInstallation": {
+      "autoDetectOption": "自动检测（先 Pi，后 OMP）",
+      "chooseExecutableTitle": "选择可执行文件或安装目录",
+      "customPathOption": "自定义路径…",
+      "description": "自动检测 Pi 和 OMP，选择已安装的引擎，或使用自定义可执行文件/路径。",
+      "detectedCount_other": "检测到 {{count}} 个已安装引擎",
+      "engineAriaLabel": "智能体引擎",
+      "engineAutoOption": "自动",
+      "installedOption": "{{engine}} — {{path}}",
+      "label": "智能体安装",
+      "noneDetected": "尚未检测到 Pi 或 OMP 安装",
+      "ompNotFoundOption": "OMP（未找到）",
+      "pathPlaceholder": "可执行文件、cli.js 或安装目录的路径",
+      "rescanTitle": "重新扫描已安装的智能体",
+      "scanningStatus": "正在扫描常见安装位置和 PATH…",
+      "selectDialogTitle": "选择智能体可执行文件或目录"
+    },
+    "autoScroll": {
+      "description": "自动滚动到新消息",
+      "label": "自动滚动"
+    },
+    "codeEditorFontSize": {
+      "description": "代码编辑器 / 文件查看器的字体大小",
+      "label": "代码编辑器字体大小"
+    },
+    "consensusMode": {
+      "arbiterOption": "仲裁合并（快速）",
+      "debateOption": "一轮辩论（较慢，约 2 倍成本）",
+      "description": "委员会成员如何达成一致",
+      "label": "共识模式"
+    },
+    "councilEnabled": {
+      "confirmButton": "启用",
+      "confirmMessage": "每次运行除 {{engine}} 外还会启动 Claude 和 Codex。这可能显著增加 token 用量以及额度/API 费用。只有在你接受额外开销时才启用。",
+      "confirmTitle": "启用委员会规划？",
+      "description": "在 Pi 之外启动 Claude/Codex 来规划任务。会增加 token 用量以及额度/API 费用。",
+      "label": "启用委员会规划"
+    },
+    "councilMembers": {
+      "description": "哪些智能体参与委员会规划",
+      "label": "成员",
+      "notDetected": "（未检测到）"
+    },
+    "councilTimeout": {
+      "description": "每个智能体的等待时长（{{min}}-{{max}}）",
+      "label": "单个成员超时（秒）"
+    },
+    "customTheme": {
+      "createButton": "创建主题",
+      "description": "分叉当前主题，或编辑你创建的主题",
+      "editButton": "编辑主题",
+      "label": "自定义主题"
+    },
+    "darkTheme": {
+      "description": "系统处于深色模式时使用",
+      "label": "深色主题"
+    },
+    "desktopNotifications": {
+      "description": "当 Pi 在你未查看的工作区中完成、失败或等待批准时通知你",
+      "label": "桌面通知"
+    },
+    "language": {
+      "description": "菜单、按钮和消息的语言",
+      "label": "语言",
+      "labelWithEnglish": "{{label}}（{{english}}）",
+      "system": "系统默认（{{language}}）"
+    },
+    "lightTheme": {
+      "description": "系统处于浅色模式时使用",
+      "label": "浅色主题"
+    },
+    "minimizeToTrayOnClose": {
+      "description": "关闭窗口时让 Pi Desktop 继续在系统托盘中运行而不是退出（Windows 和 Linux）",
+      "label": "关闭时最小化到托盘"
+    },
+    "openToHomeOnLaunch": {
+      "description": "开：完整的主页启动器（统计、最近项、打开文件夹）。关：打开聊天，显示空会话的居中提示和项目选择器。",
+      "label": "启动时打开主页"
+    },
+    "permissionMode": {
+      "description": "Pi 操作的默认安全模式",
+      "label": "权限模式"
+    },
+    "permissionRules": {
+      "description": "针对上述模式的按工具细粒度覆盖",
+      "exportFailed": "导出失败",
+      "importFailed": "导入失败",
+      "label": "权限规则",
+      "removeWorkspaceConfirmMessage": "删除此工作区的 .pi-desktop/permission-rules.json？全局权限规则将重新生效。",
+      "removeWorkspaceConfirmTitle": "移除工作区规则",
+      "saveError_global": "设置已保存，但全局权限规则未保存：{{error}}",
+      "saveError_workspace": "设置已保存，但工作区权限规则未保存：{{error}}",
+      "scopeTabListAriaLabel": "权限规则范围",
+      "workspaceScopeTab": "此工作区"
+    },
+    "resumeLastSession": {
+      "description": "打开工作区时，继续其最近的会话而不是新建会话",
+      "label": "恢复上次会话"
+    },
+    "runOnStartup": {
+      "description": "登录计算机时自动启动 Pi Desktop（在已安装的版本中生效）",
+      "label": "开机启动"
+    },
+    "sections": {
+      "agentConfiguration": "智能体配置",
+      "appearance": "外观",
+      "behavior": "行为",
+      "customModels": "自定义模型",
+      "multiAgentCouncilPlanning": "多智能体委员会规划",
+      "typesafe": "TypeSafe Jev",
+      "voiceDictation": "语音听写"
+    },
+    "showThinking": {
+      "description": "在回复中显示模型思考块",
+      "label": "显示思考过程"
+    },
+    "terminalFontSize": {
+      "description": "终端面板的字体大小",
+      "label": "终端字体大小"
+    },
+    "theme": {
+      "deleteConfirmMessage": "删除主题“{{themeName}}”？此操作无法撤销。",
+      "deleteConfirmTitle": "删除主题",
+      "description": "应用程序配色方案",
+      "editNotFoundError": "找不到要编辑的当前主题",
+      "exportNotFoundError": "找不到要导出的当前主题",
+      "label": "主题",
+      "systemOption": "系统"
+    },
+    "themeActions": {
+      "browseGalleryButton": "浏览主题库",
+      "description": "导入、导出或从 URL 安装主题",
+      "label": "主题操作"
+    },
+    "typesafe": {
+      "apiKey": {
+        "environment": "启动 Pi Desktop 的环境中已经设置了 TYPESAFE_API_KEY。Pi 和 OMP 会使用那个值。",
+        "invalid": "这不是有效的 API key。请重新粘贴，不要带空格。",
+        "label": "API key",
+        "nextSession": "新会话会获得这个 key。重启一个已打开的会话以给它这个 key。",
+        "placeholder": "粘贴你的 TypeSafe API key",
+        "remove": "移除 key",
+        "save": "保存",
+        "saved": "已保存。只有你的用户账号能读取它。"
+      },
+      "intro": "Jev 是 TypeSafe 的判断模型。在这里保存你的 API key 并安装 Jev 技能，之后 Pi 和 OMP 会直接使用这个 key，不再询问。Pi Desktop 本身不调用 TypeSafe。",
+      "links": {
+        "agentSkill": "Jev 技能指南",
+        "apiKeys": "获取 API key",
+        "introduction": "TypeSafe 文档"
+      },
+      "skill": {
+        "install": "安装",
+        "installed": "已安装（{{version}}）",
+        "installedElsewhere": "已在 Pi Desktop 之外安装。请用你当初安装它的工具来管理。",
+        "label": "Jev 技能",
+        "location": "位置：{{directory}}",
+        "notInstalled": "未安装。它教会 Pi 和 OMP 如何使用 TypeSafe。",
+        "remove": "移除技能",
+        "update": "更新到 {{version}}"
+      }
+    },
+    "uiFontSize": {
+      "description": "聊天、面板和侧边栏 — 不包括终端和代码编辑器",
+      "label": "界面字体大小"
+    },
+    "voice": {
+      "downloading": "正在下载第 {{done}}/{{total}} 个文件",
+      "englishOnly": "仅英语",
+      "install": "安装",
+      "intro": "对着麦克风说话，Pi Desktop 会把你的语音转成这台电脑上的文字。选择一个模型下载。在你选择之前不会下载任何模型。",
+      "multilingual": "多种语言",
+      "precision": {
+        "fp16": "更清晰（fp16）",
+        "int8": "更小（int8）"
+      },
+      "quality": "质量",
+      "remove": "移除",
+      "selected": "使用中",
+      "sizeMb": "约 {{mb}} MB",
+      "use": "使用"
+    }
+  },
+  "sidebar": {
+    "archived": {
+      "collapseTitle": "折叠已归档会话",
+      "expandTitle": "展开已归档会话",
+      "heading_other": "已归档（{{count}}）"
+    },
+    "currentSession": {
+      "heading": "当前会话",
+      "messageCount_other": "{{count}} 条消息",
+      "openTitle": "在聊天中打开当前会话 · 双击重命名"
+    },
+    "header": {
+      "closeSidebar": "关闭侧边栏",
+      "homeAriaLabel": "主页",
+      "homeTitle": "主页（Esc 返回启动器）"
+    },
+    "nav": {
+      "activitySection": "活动",
+      "chat": "聊天",
+      "missionControl": "任务控制",
+      "missionControlTitle": "所有后台会话和工作流",
+      "newTaskTitle": "在新的 Pi 会话中开始任务",
+      "sessions": "会话",
+      "sessionsTitle": "此项目中的会话",
+      "timeline": "时间线",
+      "timelineTitleWithProject": "{{project}} 的时间线",
+      "workflows": "工作流",
+      "workflowsTitleNoProject": "所有工作流运行（未打开项目）",
+      "workflowsTitleWithProject": "{{project}} 中的工作流运行",
+      "workspaceSection": "工作区"
+    },
+    "newSessionButton": {
+      "label": "新建会话",
+      "openProjectToBegin": "打开一个项目以开始",
+      "shortcutKbd": "Ctrl N",
+      "startsIn": "在 {{project}} 中开始",
+      "titleNoProject": "请先打开一个项目",
+      "titleWithShortcut": "在此项目中开始新会话（Ctrl/Cmd+N）"
+    },
+    "openProjectFolder": {
+      "ariaLabel": "打开项目文件夹",
+      "titleWithShortcut": "打开项目文件夹（Ctrl/Cmd+O）"
+    },
+    "promptsWaitingInOtherWorkspaces_other": "其他工作区中有 {{count}} 个 Pi 提示词在等待",
+    "recentSessions": {
+      "emptyInProject": "此项目中还没有会话。",
+      "emptyNoProject": "打开一个项目以查看其会话。",
+      "headingNoProject": "最近的会话",
+      "headingWithProject": "{{project}} 中的最近会话",
+      "startOneNow": "立即开始一个",
+      "viewAll": "查看全部"
+    },
+    "sessionNamePlaceholder": "会话名称",
+    "sessionRow": {
+      "tooltipActive": "{{title}}\n\n点击打开 · 双击重命名 · 右键查看操作",
+      "tooltipInactive": "{{title}}\n\n点击打开 · 右键查看操作"
+    },
+    "tools": {
+      "allWorkflows": "全部工作流",
+      "allWorkflowsTitle": "来自所有项目的工作流运行",
+      "diagnostics": "诊断",
+      "notes": "笔记",
+      "packages": "包",
+      "sectionLabel": "工具"
+    },
+    "workflowRunsForSession": "此会话的工作流运行",
+    "workspaceMenu": {
+      "changeFolder": "更改文件夹…",
+      "rename": "重命名"
+    },
+    "workspaceSwitcher": {
+      "namePlaceholder": "工作区名称",
+      "noWorkspace": "无工作区",
+      "openProjectEllipsis": "打开项目…",
+      "triggerTitle": "点击切换 · 双击重命名 · 右键查看选项"
+    }
+  },
+  "skills": {
+    "emptyHint": "安装技能包，或在 .pi/skills/ 中创建技能",
+    "emptyOmp": "未在 ~/.omp/agent/skills、~/.claude/skills 或项目 .omp/skills 中找到技能",
+    "emptyPi": "未在 ~/.pi/agent/skills 或项目 .pi/skills 中找到技能",
+    "emptyTitle": "未找到技能",
+    "providedByPlugin": "由已安装的插件提供",
+    "refreshAriaLabel": "刷新技能",
+    "runButton": "运行",
+    "selectPrompt": "选择一个技能以查看其 SKILL.md"
+  },
+  "stats": {
+    "heatmap": {
+      "dayTooltip_other": "{{date}} — {{count}} 条消息"
+    },
+    "modelLegend": {
+      "empty": "此范围内没有模型使用记录。",
+      "tokenBreakdown": "{{input}} 输入 · {{output}} 输出"
+    },
+    "overview": {
+      "activeDaysLabel": "活跃天数",
+      "currentStreakLabel": "当前连续活跃天数",
+      "favoriteModelLabel": "常用模型",
+      "longestStreakLabel": "最长连续活跃天数",
+      "messagesLabel": "消息",
+      "peakHourLabel": "高峰时段",
+      "sessionsLabel": "会话",
+      "streakDays_other": "{{count}} 天",
+      "totalTokensLabel": "token 总量"
+    },
+    "ranges": {
+      "oneYear": "1 年",
+      "sevenDays": "7 天",
+      "sixMonths": "6 个月",
+      "thirtyDays": "30 天",
+      "threeMonths": "3 个月"
+    },
+    "tabs": {
+      "models": "模型",
+      "overview": "概览"
+    },
+    "tokenChart": {
+      "barTooltip": "{{label}} — {{tokens}} token",
+      "empty": "此范围内没有 token 使用记录。"
+    }
+  },
+  "status": {
+    "agentSection": {
+      "title": "{{agent}} 智能体"
+    },
+    "compactButton": {
+      "compact": "压缩上下文",
+      "compacting": "压缩中…",
+      "title": "总结并压缩对话以释放上下文"
+    },
+    "contextSection": {
+      "title": "上下文使用情况"
+    },
+    "errorCopied": "已复制",
+    "errorCopy": "复制",
+    "extensionsSection": {
+      "title": "扩展"
+    },
+    "header": {
+      "title": "系统状态"
+    },
+    "mcpSection": {
+      "title": "MCP 服务器"
+    },
+    "noExtensionsOrSkills": "未加载任何扩展或技能",
+    "noMcpServers": "未配置 MCP 服务器",
+    "pidLabel": "(PID: {{pid}})",
+    "processStatus": {
+      "error": "错误",
+      "running": "运行中",
+      "starting": "启动中",
+      "stopped": "已停止"
+    },
+    "promptTemplatesSection": {
+      "title": "提示词模板"
+    },
+    "row": {
+      "cost": "费用",
+      "error": "错误",
+      "messages": "消息",
+      "model": "模型",
+      "name": "名称",
+      "path": "路径",
+      "provider": "提供方",
+      "session": "会话",
+      "status": "状态",
+      "tokens": "token",
+      "usage": "用量",
+      "window": "窗口"
+    },
+    "scope": {
+      "cli": "cli",
+      "global": "全局",
+      "package": "包",
+      "project": "项目"
+    },
+    "skillCommandsSection": {
+      "title": "技能命令"
+    },
+    "trigger": {
+      "title": "系统状态"
+    },
+    "workspaceSection": {
+      "title": "工作区"
+    }
+  },
+  "statusBar": {
+    "compact": "压缩",
+    "compactContextTitle": "压缩上下文 — 总结对话以释放空间",
+    "compacting": "压缩中…",
+    "contextUsage": "上下文：{{tokens}} / {{contextWindow}} token",
+    "followUpQueued_other": "{{count}} 条后续提示词已排队",
+    "gitBranch": "Git 分支：{{branch}}",
+    "hideTerminal": "隐藏终端",
+    "openWorkflowRuns": "打开工作流运行",
+    "piError": "{{agent}} 错误",
+    "piRunning": "{{agent}} 运行中（PID: {{pid}}）",
+    "piStarting": "{{agent}} 启动中",
+    "piStopped": "{{agent}} 已停止",
+    "showTerminal": "显示终端",
+    "steerQueued_other": "{{count}} 条引导已排队",
+    "streaming": "流式传输中",
+    "waitingOnPromptElsewhere": "{{agent}} 正在另一个工作区等待提示词；切换过去作答",
+    "workflowCount_other": "{{count}} 个工作流",
+    "workflowsFallback": "工作流"
+  },
+  "store": {
+    "confirm": {
+      "changeAnywayLabel": "仍然更改",
+      "changeFolderMessage": "Pi 在此会话中尚未完成响应。更改项目文件夹会重启 Pi，从而中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
+      "cloneAnywayLabel": "仍然克隆",
+      "cloneMessage": "Pi 在此会话中尚未完成响应。克隆此分支会中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
+      "closeManagedWorktreeMessage": "关闭“{{name}}”？干净的工作树将被移除；有未提交更改的标签页会保留在磁盘上。",
+      "closeSessionTabMessage": "Pi 仍在该会话中工作。关闭标签页会停止其运行时；已保存的消息仍可从会话列表查看。",
+      "closeSessionTabTitle": "关闭会话标签页？",
+      "closeTabLabel": "关闭标签页",
+      "closeUnmanagedWorktreeMessage": "关闭“{{name}}”？该现有工作树及其文件将保留在磁盘上。",
+      "forkAnywayLabel": "仍然分叉",
+      "forkMessage": "Pi 在此会话中尚未完成响应。分叉此会话会中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
+      "keepUntrustedLabel": "保持未信任",
+      "keepWorkingLabel": "让它继续工作",
+      "newMessage": "Pi 在此会话中尚未完成响应。启动新会话会中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
+      "okLabel": "确定",
+      "removeWorkspaceMessage": "从侧边栏移除“{{name}}”？其 Pi 进程会停止；磁盘上的文件不受影响。",
+      "removeWorkspaceTitle": "移除工作区",
+      "startAnywayLabel": "仍然启动",
+      "stillWorkingTitle": "Pi 仍在工作",
+      "switchAnywayLabel": "仍然切换",
+      "switchMessage": "Pi 在此会话中尚未完成响应。打开另一个会话会中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
+      "trustWorkspaceMessage": "此工作区定义了权限规则（.pi-desktop/permission-rules.json），其中的允许规则会让 Pi 跳过确认提示。在你信任该工作区之前，这些规则会被忽略；其拒绝规则始终生效。只信任来源可信的工作区。",
+      "trustWorkspaceTitle": "信任此工作区？",
+      "workspaceMessage": "Pi 在此会话中尚未完成响应。切换后它会继续工作：响应会保存到会话中，你回来时恢复；你离开期间 Pi 提出的任何提示词会暂存，并在你返回时显示。",
+      "workspaceRulesNoticeMessage": "此工作区定义了自己的权限规则（.pi-desktop/permission-rules.json）。你在此工作时，其拒绝规则会限制 Pi；其余情况适用你的全局规则。",
+      "workspaceRulesNoticeTitle": "工作区权限规则"
+    },
+    "messages": {
+      "arbiterFailed": "仲裁失败：{{detail}}",
+      "archiveError": "归档错误：{{detail}}",
+      "cannotActivateSession": "无法激活会话",
+      "cannotCreateSession": "无法创建会话",
+      "changeFolderError": "更改文件夹错误：{{detail}}",
+      "closeSessionError": "关闭会话错误：{{detail}}",
+      "compactingContext": "正在压缩上下文（{{reason}}）…",
+      "compactionAborted": "已中止压缩。",
+      "contextCompacted": "上下文已压缩。",
+      "councilFailed": "委员会失败：{{detail}}",
+      "councilNoQuorum": "没有顾问产出计划（全部超时或出错）。委员会已中止。",
+      "createWorkspaceError": "创建工作区错误：{{detail}}",
+      "defaultTaskLabel": "任务",
+      "deleteError": "删除错误：{{detail}}",
+      "error": "错误：{{detail}}",
+      "followUpError": "后续提示词错误：{{detail}}",
+      "imageFallbackName": "图片 {{index}}",
+      "installedPackage": "已安装 {{spec}}。重启 Pi 以加载它。",
+      "installFailed": "安装失败",
+      "modelError": "模型错误：{{detail}}",
+      "newIsolatedTabError": "新建隔离标签页错误：{{detail}}",
+      "newSessionError": "新建会话错误：{{detail}}",
+      "notAFolder": "无法作为项目打开 — 不是文件夹：{{path}}",
+      "notGitRepository": "此项目不是 Git 仓库。要另开对话请使用“新建会话”，或打开 Git 项目以使用隔离标签页。",
+      "openFolderError": "打开文件夹错误：{{detail}}",
+      "removedPackage": "已移除 {{spec}}",
+      "removePackageFailed": "移除失败",
+      "removeWorkspaceError": "移除工作区错误：{{detail}}",
+      "retrying": "正在重试（第 {{attempt}}/{{maxAttempts}} 次）：{{detail}}",
+      "reusedWorktree": "找到了相关的现有 Git 工作树，并在那里继续任务。",
+      "steerError": "引导错误：{{detail}}",
+      "switchSessionError": "切换会话错误：{{detail}}",
+      "switchWorkspaceError": "切换工作区错误：{{detail}}",
+      "tabClosedWorktreePreserved": "标签页已关闭，但其未提交的工作树保留在 {{path}}",
+      "tabFromLastCommit": "此标签页从最新一次提交开始。未提交的文件仍留在源标签页中。",
+      "taskLaunchError": "任务启动错误：{{detail}}",
+      "truncatedHistory_other": "为提升性能，仅显示最近 {{count}}/{{total}} 条消息。较早的对话仍保存在会话文件中。",
+      "unarchiveError": "取消归档错误：{{detail}}",
+      "unknownError": "未知错误",
+      "updatedAllPackages": "已更新包。重启 Pi 以加载它们。",
+      "updatedPackage": "已更新 {{spec}}。重启 Pi 以加载它。",
+      "updatePackageFailed": "更新失败",
+      "writeFailed": "写入失败"
+    },
+    "promptsWaiting_other": "{{count}} 条 Pi 提示词等待中"
+  },
+  "taskLauncher": {
+    "closeAriaLabel": "关闭任务启动器",
+    "footerNote": "任务在新会话中运行，切换走后会在后台继续。已有的匹配 PR/任务工作树会被复用。按 Ctrl/Cmd+Enter 启动。",
+    "isolatedWorktree": {
+      "description": "复用匹配的本地 PR/任务工作树；没有则新建一个。源项目保持不变。",
+      "label": "使用隔离的 Git 工作树"
+    },
+    "openProjectFirst": "请先打开一个项目",
+    "starting": "正在启动…",
+    "startTask": "启动任务",
+    "subtitle": "启动一个新的 Pi 会话并立即发送任务。",
+    "task": "任务",
+    "taskPlaceholder": "修复失败的测试，解释根本原因，并准备更改以供审查…"
+  },
+  "terminal": {
+    "clearAriaLabel": "清空终端",
+    "clearTitle": "清空",
+    "closeTitle": "关闭终端",
+    "maximizeLabel": "最大化终端",
+    "restoreLabel": "还原终端",
+    "title": "终端"
+  },
+  "themes": {
+    "builtin": {
+      "breeze-claudius": "Breeze Claudius",
+      "breeze-dark": "Breeze Dark",
+      "breeze-light": "Breeze Light",
+      "dark": "深色",
+      "gruvbox": "Gruvbox",
+      "light": "浅色",
+      "nord": "Nord"
+    },
+    "editor": {
+      "advancedSummary": "高级",
+      "authorLabel": "作者（可选）",
+      "authorPlaceholder": "显示在主题库中",
+      "copySuffix": "{{name}} 副本",
+      "createTitle": "创建主题",
+      "descriptionLabel": "描述（可选）",
+      "descriptionPlaceholder": "一两句话介绍该主题",
+      "editTitle": "编辑主题",
+      "kindLabel": "类型",
+      "nameLabel": "名称",
+      "renameCleanupWarning": "主题已保存为“{{name}}”，但旧版本无法移除，可能仍会出现在列表中。",
+      "resetToDerivedTitle": "重置为派生值",
+      "savingLabel": "正在保存…",
+      "seedLabels": {
+        "accent": "强调色",
+        "app": "应用背景",
+        "error": "错误",
+        "success": "成功",
+        "surface": "表面色",
+        "text": "文本",
+        "warning": "警告"
+      },
+      "syntaxColorsSummary": "语法颜色"
+    },
+    "gallery": {
+      "authorScreenshotLabel": "作者截图",
+      "backAriaLabel": "返回全部主题",
+      "detailSubtitle": "使用主题真实颜色的实时预览",
+      "empty": "暂无可用主题。",
+      "installingLabel": "正在安装…",
+      "loadError": "无法加载主题库：{{error}}",
+      "loading": "正在加载主题…",
+      "screenshotAlt": "{{name}} 的截图",
+      "screenshotError": "无法加载截图。",
+      "screenshotLoading": "正在加载截图…",
+      "showMore_other": "显示更多（{{count}}）",
+      "subtitle": "来自 pi-desktop-themes 主题库 — 点击主题查看详情",
+      "title": "社区主题",
+      "viewDetailsAria": "查看 {{name}} 详情"
+    },
+    "kind": {
+      "dark": "深色",
+      "light": "浅色"
+    }
+  },
+  "thinking": {
+    "effort": "强度",
+    "effortWithLevel": "思考强度：{{level}}",
+    "modelAwareDepth": "随模型自适应的思考深度"
+  },
+  "time": {
+    "justNow": "刚刚"
+  },
+  "timeline": {
+    "agentFinished": "智能体已结束",
+    "agentStarted": "智能体开始处理",
+    "assistantResponseComplete": "助手响应完成",
+    "assistantResponseFailed": "助手响应失败",
+    "branchesHeading": "分支",
+    "clearButton": "清空",
+    "cloneBranchButton": "克隆分支",
+    "cloneBranchTitle": "将当前分支克隆到新会话",
+    "compactionComplete": "压缩完成",
+    "compactionStarted": "压缩已开始",
+    "emptyHint": "智能体事件将在此实时显示",
+    "emptyTitle": "暂无活动",
+    "externalPromptReceived": "已收到外部提示词",
+    "forkButton": "分叉",
+    "forkFromTitle": "从此消息分叉出新会话",
+    "heading": "智能体时间线",
+    "noForkMessages": "没有可分叉的更早消息。",
+    "retryAttempt": "重试第 {{attempt}} 次",
+    "retryComplete": "重试完成",
+    "sessionTreeHeading": "会话树",
+    "tool": "工具：{{tool}}"
+  },
+  "tools": {
+    "edit": {
+      "done": "已编辑 {{target}}",
+      "doneWithoutTarget": "已编辑一个文件",
+      "label": "编辑文件",
+      "summaryFirst_other": "编辑了 {{count}} 个文件",
+      "summaryNext_other": "编辑了 {{count}} 个文件"
+    },
+    "fetch": {
+      "done": "已获取 {{target}}",
+      "doneWithoutTarget": "已获取一个 URL",
+      "label": "获取 URL",
+      "summaryFirst_other": "获取了 {{count}} 个 URL",
+      "summaryNext_other": "获取了 {{count}} 个 URL"
+    },
+    "list": {
+      "done": "已列出 {{target}}",
+      "doneWithoutTarget": "列出了一个位置",
+      "label": "列出文件",
+      "summaryFirst_other": "列出了 {{count}} 个位置",
+      "summaryNext_other": "列出了 {{count}} 个位置"
+    },
+    "other": {
+      "summaryFirst_other": "运行了 {{count}} 个工具",
+      "summaryNext_other": "运行了 {{count}} 个工具"
+    },
+    "read": {
+      "done": "已读取 {{target}}",
+      "doneWithoutTarget": "读取了一个文件",
+      "label": "读取文件",
+      "summaryFirst_other": "读取了 {{count}} 个文件",
+      "summaryNext_other": "读取了 {{count}} 个文件"
+    },
+    "run": {
+      "doneWithoutTarget": "运行了一个命令",
+      "label": "运行命令",
+      "summaryFirst_other": "运行了 {{count}} 个命令",
+      "summaryNext_other": "运行了 {{count}} 个命令"
+    },
+    "search": {
+      "done": "已搜索 {{target}}",
+      "doneWithoutTarget": "执行了一次搜索",
+      "label": "搜索",
+      "summaryFirst_other": "执行了 {{count}} 次搜索",
+      "summaryNext_other": "执行了 {{count}} 次搜索"
+    },
+    "summarySeparator": "，",
+    "write": {
+      "done": "已创建 {{target}}",
+      "doneWithoutTarget": "创建了一个文件",
+      "label": "写入文件",
+      "summaryFirst_other": "创建了 {{count}} 个文件",
+      "summaryNext_other": "创建了 {{count}} 个文件"
+    }
+  },
+  "tray": {
+    "show": "显示 Pi Desktop",
+    "stillRunningBody": "窗口已隐藏到系统托盘。点击托盘图标可重新打开，或选择退出以关闭。",
+    "stillRunningTitle": "Pi Desktop 仍在运行",
+    "unavailableBody": "此桌面环境没有系统托盘，Pi Desktop 将正常关闭，而不是最小化到托盘。",
+    "unavailableTitle": "系统托盘不可用"
+  },
+  "voice": {
+    "models": {
+      "moonshine-base": {
+        "name": "Moonshine Base",
+        "note": "小巧快速的英语听写模型。体积与准确度较为均衡。"
+      },
+      "moonshine-tiny": {
+        "name": "Moonshine Tiny",
+        "note": "最小的英语模型。在低配电脑上最快。"
+      },
+      "parakeet-v2": {
+        "name": "Parakeet V2",
+        "note": "英语识别非常准确。下载体积较大。"
+      },
+      "parakeet-v3": {
+        "name": "Parakeet V3",
+        "note": "最准确。支持 25 种语言并自动检测。下载体积较大。"
+      },
+      "whisper-base": {
+        "name": "Whisper Base",
+        "note": "覆盖多种语言的小型模型。"
+      },
+      "whisper-small": {
+        "name": "Whisper Small",
+        "note": "在多种语言下更准确。下载体积更大。"
+      }
+    }
+  },
+  "workflows": {
+    "agentGrid": {
+      "noTranscriptCaptured": "未捕获到记录",
+      "openTranscript": "打开记录"
+    },
+    "card": {
+      "activeCount_other": "· {{count}} 个进行中",
+      "agentsProgress": "{{done}}/{{total}} 个智能体"
+    },
+    "control": {
+      "abortAriaLabel": "中止运行",
+      "abortButtonLabel": "中止",
+      "dispatchFailed": "无法将控制命令发送到 {{agent}}。",
+      "extensionMissing": "此工作区的 {{agent}} 进程未加载工作流扩展。",
+      "notPermittedResume": "该运行在当前状态下无法恢复。",
+      "notPermittedStop": "该运行在当前状态下无法再中止。",
+      "notRunning": "{{agent}} 未在此工作区运行，因此无法从这里控制该运行。",
+      "pausedFallback": "已暂停",
+      "resumeAriaLabel": "恢复运行",
+      "resumeButtonLabel": "恢复",
+      "resumeRequested": "已请求恢复 — 正在其工作区重新启动运行…",
+      "resumeTitle": "在其工作区中恢复工作流",
+      "stopRequested": "已请求中止 — 正在其工作区停止运行…",
+      "stopTitle": "在其工作区中停止工作流",
+      "timeout": "{{agent}} 未响应。运行可能已改变状态 — 刷新以查看最新情况。",
+      "unavailable": "工作流控制当前在此工作区不可用。",
+      "unreachable": "无法访问此工作区的工作流控制通道。"
+    },
+    "detail": {
+      "backAriaLabel": "全部工作流运行",
+      "refreshAriaLabel": "刷新运行",
+      "statAgents": "智能体",
+      "statCostTime": "费用/时间",
+      "statTokens": "token",
+      "stepsHeading": "步骤"
+    },
+    "panel": {
+      "activeCount_other": "{{count}} 个进行中",
+      "closeAriaLabel": "关闭工作流运行",
+      "loading": "正在加载工作流…",
+      "maximizeAriaLabel": "最大化工作流导航器",
+      "noRunsForProject": "此项目没有运行记录",
+      "noRunsForSession": "此会话没有运行记录",
+      "noRunsProjectDetail": "{{name}} 没有记录工作流运行。其他项目的运行会显示在全局列表中。",
+      "noRunsSessionDetail": "此会话没有记录工作流运行。较早会话的运行会显示在全局列表中。",
+      "noRunsYet": "尚无运行",
+      "recordedCount_other": "{{count}} 条记录",
+      "refreshAriaLabel": "刷新工作流运行",
+      "restoreAriaLabel": "还原工作流导航器",
+      "runCommandHint": "在聊天中运行 <cmd>/workflows run …</cmd>。",
+      "stepTranscriptTitle": "步骤记录",
+      "thisProjectFallback": "此项目",
+      "workflowDetailTitle": "工作流详情"
+    },
+    "phaseStepper": {
+      "agentsProgress": "{{done}}/{{total}} 个智能体"
+    },
+    "result": {
+      "characterCount_other": "{{count}} 个字符",
+      "detailCount_other": "{{count}} 项详情",
+      "emptyObject": "工作流返回了空对象。",
+      "emptyShape": "空",
+      "emptyValue": "空",
+      "fieldCount_other": "{{count}} 个字段",
+      "itemCount_other": "{{count}} 项",
+      "itemTitle": "第 {{index}} 项",
+      "markdownReport": "Markdown 报告",
+      "moreItems_other": "+ {{count}} 项",
+      "nestedHidden": "已隐藏嵌套详情",
+      "no": "否",
+      "noAdditionalDetails": "没有更多详情。",
+      "noDetails": "无详情",
+      "noItems": "无条目",
+      "none": "无",
+      "outputLabel": "输出",
+      "outputTitle": "工作流输出",
+      "sectionCount_other": "{{count}} 个部分",
+      "yes": "是"
+    },
+    "status": {
+      "aborted": "已停止"
+    },
+    "tabs": {
+      "logs": "日志",
+      "overview": "概览",
+      "results": "结果",
+      "script": "脚本"
+    },
+    "transcript": {
+      "backAriaLabel": "返回运行",
+      "defaultPhaseLabel": "工作流步骤",
+      "enableFullTranscriptsButton": "为以后的运行启用完整记录",
+      "historyNotice": "正在显示工作流已捕获的历史。以后的运行可以保留每条原始 {{agent}} 消息和工具结果。",
+      "noTranscriptMessage": "此步骤没有持久化记录。",
+      "persistenceEnabled": "已在全局启用。请在下次工作流运行前重新加载 {{agent}}。",
+      "settingsUpdateFailed": "无法更新工作流设置。",
+      "sourceCapturedHistory": "已捕获的工作流历史",
+      "sourceFullSession": "完整会话记录",
+      "sourceNone": "无记录",
+      "stepPromptLabel": "步骤提示词",
+      "stepResultLabel": "步骤结果",
+      "subtitle": "{{phase}} · {{source}}"
+    }
+  },
+  "workspaceTabs": {
+    "closeSessionTab": "关闭会话标签页",
+    "closeTabAriaLabel": "关闭 {{name}}",
+    "closeTools": "关闭工具",
+    "newIsolatedTabAriaLabel": "新建隔离 Git 标签页",
+    "newIsolatedTabTitle": "新建隔离 Git 标签页（需要 Git 项目）",
+    "newSessionAriaLabel": "在此项目中新建会话",
+    "newSessionFallback": "新建会话",
+    "newSessionTitle": "在此项目中新建会话（Ctrl/Cmd+N）",
+    "removeWorkspaceAriaLabel": "移除 {{name}}",
+    "sessions": "会话",
+    "tools": "工具"
+  }
+}
