@@ -16,6 +16,8 @@ test('the shared instance starts in English with the bundled resources', () => {
 test('availableLanguages adds the pseudo-language only when enabled', () => {
   assert.deepEqual(availableLanguages(false), [...BUNDLED_LANGUAGES])
   assert.deepEqual(availableLanguages(true), [...BUNDLED_LANGUAGES, PSEUDO_LANGUAGE])
+  // The source language stays first, so it is the fallback for missing keys.
+  assert.equal(availableLanguages(false)[0], SOURCE_LANGUAGE)
 })
 
 test('an empty translation falls back to English', () => {

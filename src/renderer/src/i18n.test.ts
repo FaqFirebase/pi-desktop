@@ -19,15 +19,14 @@ test('bootLanguageFrom falls back to English for missing or unknown values', () 
 
 test('the picker starts with System default and names the resolved system language', () => {
   const options = languagePickerOptions({ systemLanguages: ['fr-FR'], pseudoLanguageEnabled: false })
-  assert.deepEqual(options.slice(0, 2), [
-    { value: SYSTEM_LANGUAGE, label: 'System default (English)' },
-    { value: SOURCE_LANGUAGE, label: 'English' },
-  ])
-  // Every bundled language is offered under its own native name.
+  assert.deepEqual(options[0], { value: SYSTEM_LANGUAGE, label: 'System default (English)' })
+  // Found by value: the picker sorts by label, so positions shift as languages are added.
+  assert.deepEqual(options.find((o) => o.value === SOURCE_LANGUAGE), { value: SOURCE_LANGUAGE, label: 'English' })
+  // Every bundled language is offered under its own native name (English would mean a missing fallback).
   for (const code of BUNDLED_LANGUAGES) {
     const option = options.find((o) => o.value === code)
     assert.ok(option, code)
-    assert.ok(option.label.length > 0, code)
+    if (code !== SOURCE_LANGUAGE) assert.notEqual(option.label, 'English', code)
   }
 })
 

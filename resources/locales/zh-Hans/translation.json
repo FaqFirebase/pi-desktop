@@ -45,11 +45,11 @@
       "placeholderNotRunning": "{{agent}} 智能体未在运行…",
       "placeholderSteering": "输入以引导智能体…",
       "shiftEnterNewline": "Shift+Enter 换行",
-      "streaming": "流式传输中…"
+      "streaming": "流式输出中…"
     },
     "council": {
-      "planWithCouncil": "使用 Council 规划",
-      "startEngineFirst": "请先启动 Pi/OMP 再使用 Council 规划"
+      "planWithCouncil": "使用委员会规划",
+      "startEngineFirst": "请先启动 Pi/OMP 再使用委员会规划"
     },
     "emptyState": {
       "chooseProject": "选择一个项目 — 发送消息后 {{agent}} 即会启动。",
@@ -123,7 +123,7 @@
     "toolbar": {
       "diffViewer": "差异查看器",
       "fileTree": "文件树",
-      "reviewPanel": "审阅面板",
+      "reviewPanel": "审查面板",
       "terminal": "终端"
     },
     "toolCall": {
@@ -265,7 +265,7 @@
       "titleLabel": "标题"
     },
     "errors": {
-      "branchRequired": "创建 PR 需要一个命名分支。",
+      "branchRequired": "创建 PR 需要一个具名分支。",
       "commitBeforePr": "创建 PR 前请先提交更改。",
       "commitBeforePush": "推送前请先提交工作树。",
       "commitMessageRequired": "提交信息为必填项。",
@@ -298,7 +298,7 @@
       "reviseButton": "修改",
       "reviseInputPlaceholder": "提出对计划的修改意见…"
     },
-    "header": "Council 规划 — {{phase}}",
+    "header": "委员会规划 — {{phase}}",
     "phase": {
       "awaitingApproval": "等待批准",
       "consulting": "征询意见",
@@ -310,8 +310,8 @@
       "contributed": "已贡献",
       "errored": "出错",
       "merging": "合并中…",
-      "readyForReview": "可供审阅",
-      "streaming": "流式传输中…",
+      "readyForReview": "可供审查",
+      "streaming": "流式输出中…",
       "timedOut": "已超时",
       "working": "工作中…"
     }
@@ -342,7 +342,7 @@
     "removeProviderTitle": "移除提供方",
     "saveButton": "保存 {{fileName}}",
     "savedRestartButton": "已保存 — 重启 {{engine}} 以生效",
-    "supportsReasoningEffortLabel": "支持 reasoning effort",
+    "supportsReasoningEffortLabel": "支持推理强度",
     "visionLabel": "vision"
   },
   "diagnostics": {
@@ -442,7 +442,7 @@
     "noStagedChanges": "无已暂存更改",
     "refreshAriaLabel": "刷新差异",
     "stagedToggle": "已暂存",
-    "workingToggle": "工作树",
+    "workingToggle": "未暂存",
     "workingTreeClean": "工作树是干净的"
   },
   "editorGuard": {
@@ -460,10 +460,10 @@
     "council": {
       "arbiterFailed": "仲裁者失败",
       "arbiterTimedOut": "仲裁者超时",
-      "notEnoughMembers": "Council 至少需要 {{min}} 个智能体。请安装或启用 Pi、Claude 或 Codex，或关闭 council。",
-      "planningDisabled": "Settings 中已禁用 Council 规划。",
-      "timeoutNotNumber": "Council 超时必须是一个有限数字",
-      "timeoutRange": "Council 超时必须介于 {{min}} 和 {{max}} 秒之间",
+      "notEnoughMembers": "委员会至少需要 {{min}} 个智能体。请安装或启用 Pi、Claude 或 Codex，或关闭委员会规划。",
+      "planningDisabled": "设置中已禁用委员会规划。",
+      "timeoutNotNumber": "委员会超时必须是有限数值",
+      "timeoutRange": "委员会超时必须介于 {{min}} 和 {{max}} 秒之间",
       "unknownConsensusMode": "未知的共识模式：{{mode}}",
       "unknownError": "未知错误"
     },
@@ -495,10 +495,10 @@
       "workingTreeClean": "工作树干净"
     },
     "models": {
-      "duplicateModelId": "提供方“{{key}}”：模型 id“{{id}}”重复",
+      "duplicateModelId": "提供方“{{key}}”：模型 ID“{{id}}”重复",
       "fieldNotFiniteNumber": "提供方“{{key}}”、模型“{{id}}”：{{field}} 必须是有限数字",
-      "modelMissingId": "提供方“{{key}}”：某个模型缺少 id",
-      "providerKeyEmpty": "提供方 key 不能为空"
+      "modelMissingId": "提供方“{{key}}”：某个模型缺少 ID",
+      "providerKeyEmpty": "提供方键不能为空"
     },
     "notes": {
       "bodyRequired": "必须填写笔记内容",
@@ -509,7 +509,7 @@
       "invalidSpec": "无效的包描述",
       "listFailed": "无法读取 OMP 插件列表：{{detail}}",
       "missingBun": "OMP 需要 bun 来安装或更新 npm 插件。请从 https://bun.sh 安装 bun，然后重试。",
-      "pinnedOrNotFromNpm": "{{spec}} 被固定版本或不是从 npm 安装的，因此无法在此更新。"
+      "pinnedOrNotFromNpm": "{{spec}} 已固定版本，或并非从 npm 安装，因此无法在此更新。"
     },
     "permissionRules": {
       "fileTooLarge": "规则文件过大（上限 {{limit}} 字节）"
@@ -537,7 +537,7 @@
       "startupTimeoutSilentWithStderr": "Pi 在 {{seconds}} 秒内没有产生任何输出。\n\n启动期间捕获的 Pi stderr：\n{{detail}}"
     },
     "session": {
-      "alreadyAttached": "会话文件已绑定到一个运行中的运行时",
+      "alreadyAttached": "会话文件已绑定到活动运行时",
       "attachedToDifferentWorkspace": "会话已绑定到另一个工作区的运行时",
       "ompNoClone": "OMP 引擎不支持克隆会话",
       "pathMustExist": "{{field}} 必须指向一个已存在的 Pi 会话文件",
@@ -688,7 +688,7 @@
   "missionControl": {
     "controlUnavailable": "控制不可用",
     "idle": "{{agent}} 处于空闲状态",
-    "liveSessions": "活动会话",
+    "liveSessions": "运行中的会话",
     "needsAttention_other": "{{count}} 项需要关注",
     "newTask": "新建任务",
     "noLiveRuntimes": "暂无活动的会话运行时。启动一个任务，让 Pi 在后台工作。",
@@ -708,7 +708,7 @@
       "idle": "空闲",
       "needsApproval": "待批准",
       "stopped": "已停止",
-      "working": "运行中"
+      "working": "工作中"
     },
     "startingSession": "正在启动会话",
     "subtitle": "来自各个项目的后台会话与工作流运行。",
@@ -805,7 +805,7 @@
     "installed": {
       "checkingUpdates": "正在检查更新…",
       "checkUpdatesButton": "检查更新",
-      "emptyHint": "浏览目录或使用上方的安装栏",
+      "emptyHint": "浏览软件目录或使用上方的安装栏",
       "emptyTitle": "未安装任何包",
       "removeButton": "移除包",
       "updateAllButton": "全部更新",
@@ -815,7 +815,7 @@
       "versionUpdateArrow": "v{{from}} → v{{to}}"
     },
     "tabs": {
-      "catalog": "目录",
+      "catalog": "软件目录",
       "installed": "已安装"
     },
     "title": "包与技能",
@@ -841,11 +841,11 @@
   "permissionMode": {
     "ask-commands": {
       "description": "Pi 在运行 shell 命令前会先询问。",
-      "label": "命令前询问"
+      "label": "执行命令前询问"
     },
     "ask-edits": {
       "description": "Pi 在编辑文件以及运行可能更改文件的 shell 命令前会先询问。",
-      "label": "编辑前询问"
+      "label": "编辑文件前询问"
     },
     "plan-readonly": {
       "description": "仅启用读取/搜索/列表类工具。文件编辑和 shell 命令会被阻止。",
@@ -870,8 +870,8 @@
     "loadErrorMessage": "已保存的规则文件无效，已被忽略：{{error}}",
     "noRules": "暂无规则——全部由上方的模式决定。",
     "patternPlaceholder": "模式，例如 npm test*（留空 = 任意输入）",
-    "removeRuleAria": "删除规则 {{index}}",
-    "removeRuleTitle": "删除规则",
+    "removeRuleAria": "移除规则 {{index}}",
+    "removeRuleTitle": "移除规则",
     "removeWorkspaceRulesButton": "移除工作区规则",
     "removeWorkspaceRulesTitle": "删除此工作区的 .pi-desktop/permission-rules.json，重新应用全局规则",
     "revokeTrustButton": "撤销信任",
@@ -901,16 +901,16 @@
     "openDiffHint": "查看工作树更改。",
     "pendingApprovals": {
       "none": "没有待处理的批准请求。",
-      "queued_other": "有 {{count}} 个排队项等待活动会话处理。"
+      "queued_other": "{{count}} 项待批准，正在等待当前会话处理。"
     },
     "pendingApprovalsHeading": "待处理批准",
     "permissionsHeading": "权限",
     "sessionStatus": {
-      "idle": "{{agent}} 在活动会话中处于空闲状态。",
-      "working": "{{agent}} 正在活动会话中工作。"
+      "idle": "{{agent}} 在当前会话中空闲。",
+      "working": "{{agent}} 在当前会话中工作。"
     },
     "sessionStatusHeading": "会话状态",
-    "subtitle": "在更改继续推进前控制 {{agent}} 可以执行的操作。"
+    "subtitle": "在更改推进前，控制 {{agent}} 可以执行的操作。"
   },
   "sessions": {
     "activeBadge": "进行中",
@@ -923,7 +923,7 @@
     "currentProjectBadge": "当前",
     "currentWorkspaceLabel": "当前工作区：",
     "deleteConfirm": {
-      "message": "删除此会话？如果可用将使用 <code>回收站</code>，否则将永久删除。"
+      "message": "删除此会话？装有 <code>trash</code> 命令时用它删除，否则永久删除。"
     },
     "deleteEllipsis": "删除…",
     "empty": {
@@ -1026,7 +1026,7 @@
     },
     "customTheme": {
       "createButton": "创建主题",
-      "description": "分叉当前主题，或编辑你创建的主题",
+      "description": "以当前主题为副本新建，或编辑你创建的主题",
       "editButton": "编辑主题",
       "label": "自定义主题"
     },
@@ -1061,7 +1061,7 @@
       "label": "权限模式"
     },
     "permissionRules": {
-      "description": "针对上述模式的按工具细粒度覆盖",
+      "description": "可按工具对上述模式做细粒度覆盖",
       "exportFailed": "导出失败",
       "importFailed": "导入失败",
       "label": "权限规则",
@@ -1114,18 +1114,18 @@
     "typesafe": {
       "apiKey": {
         "environment": "启动 Pi Desktop 的环境中已经设置了 TYPESAFE_API_KEY。Pi 和 OMP 会使用那个值。",
-        "invalid": "这不是有效的 API key。请重新粘贴，不要带空格。",
-        "label": "API key",
-        "nextSession": "新会话会获得这个 key。重启一个已打开的会话以给它这个 key。",
-        "placeholder": "粘贴你的 TypeSafe API key",
-        "remove": "移除 key",
+        "invalid": "这不是有效的 API 密钥。请重新粘贴，不要带空格。",
+        "label": "API 密钥",
+        "nextSession": "新会话会带上密钥；重启已打开的会话可让它也拿到密钥。",
+        "placeholder": "粘贴你的 TypeSafe API 密钥",
+        "remove": "移除密钥",
         "save": "保存",
         "saved": "已保存。只有你的用户账号能读取它。"
       },
-      "intro": "Jev 是 TypeSafe 的判断模型。在这里保存你的 API key 并安装 Jev 技能，之后 Pi 和 OMP 会直接使用这个 key，不再询问。Pi Desktop 本身不调用 TypeSafe。",
+      "intro": "Jev 是 TypeSafe 的判断模型。在这里保存你的 API 密钥并安装 Jev 技能，之后 Pi 和 OMP 会直接使用它，不再询问。Pi Desktop 本身不调用 TypeSafe。",
       "links": {
         "agentSkill": "Jev 技能指南",
-        "apiKeys": "获取 API key",
+        "apiKeys": "获取 API 密钥",
         "introduction": "TypeSafe 文档"
       },
       "skill": {
@@ -1203,7 +1203,7 @@
       "ariaLabel": "打开项目文件夹",
       "titleWithShortcut": "打开项目文件夹（Ctrl/Cmd+O）"
     },
-    "promptsWaitingInOtherWorkspaces_other": "其他工作区中有 {{count}} 个 Pi 提示词在等待",
+    "promptsWaitingInOtherWorkspaces_other": "其他工作区有 {{count}} 个 Pi 询问待回应",
     "recentSessions": {
       "emptyInProject": "此项目中还没有会话。",
       "emptyNoProject": "打开一个项目以查看其会话。",
@@ -1352,7 +1352,7 @@
     "compactContextTitle": "压缩上下文 — 总结对话以释放空间",
     "compacting": "压缩中…",
     "contextUsage": "上下文：{{tokens}} / {{contextWindow}} token",
-    "followUpQueued_other": "{{count}} 条后续提示词已排队",
+    "followUpQueued_other": "{{count}} 条追问待发送",
     "gitBranch": "Git 分支：{{branch}}",
     "hideTerminal": "隐藏终端",
     "openWorkflowRuns": "打开工作流运行",
@@ -1362,8 +1362,8 @@
     "piStopped": "{{agent}} 已停止",
     "showTerminal": "显示终端",
     "steerQueued_other": "{{count}} 条引导已排队",
-    "streaming": "流式传输中",
-    "waitingOnPromptElsewhere": "{{agent}} 正在另一个工作区等待提示词；切换过去作答",
+    "streaming": "流式输出中",
+    "waitingOnPromptElsewhere": "{{agent}} 在另一个工作区有询问等待回应；切换过去作答",
     "workflowCount_other": "{{count}} 个工作流",
     "workflowsFallback": "工作流"
   },
@@ -1392,7 +1392,7 @@
       "switchMessage": "Pi 在此会话中尚未完成响应。打开另一个会话会中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
       "trustWorkspaceMessage": "此工作区定义了权限规则（.pi-desktop/permission-rules.json），其中的允许规则会让 Pi 跳过确认提示。在你信任该工作区之前，这些规则会被忽略；其拒绝规则始终生效。只信任来源可信的工作区。",
       "trustWorkspaceTitle": "信任此工作区？",
-      "workspaceMessage": "Pi 在此会话中尚未完成响应。切换后它会继续工作：响应会保存到会话中，你回来时恢复；你离开期间 Pi 提出的任何提示词会暂存，并在你返回时显示。",
+      "workspaceMessage": "Pi 在此会话中尚未完成响应。切换后它会继续工作：响应会保存到会话中，你回来时恢复；你离开期间 Pi 提出的任何询问会暂存，并在你返回时显示。",
       "workspaceRulesNoticeMessage": "此工作区定义了自己的权限规则（.pi-desktop/permission-rules.json）。你在此工作时，其拒绝规则会限制 Pi；其余情况适用你的全局规则。",
       "workspaceRulesNoticeTitle": "工作区权限规则"
     },
@@ -1412,7 +1412,7 @@
       "defaultTaskLabel": "任务",
       "deleteError": "删除错误：{{detail}}",
       "error": "错误：{{detail}}",
-      "followUpError": "后续提示词错误：{{detail}}",
+      "followUpError": "追问发送错误：{{detail}}",
       "imageFallbackName": "图片 {{index}}",
       "installedPackage": "已安装 {{spec}}。重启 Pi 以加载它。",
       "installFailed": "安装失败",
@@ -1441,7 +1441,7 @@
       "updatePackageFailed": "更新失败",
       "writeFailed": "写入失败"
     },
-    "promptsWaiting_other": "{{count}} 条 Pi 提示词等待中"
+    "promptsWaiting_other": "{{count}} 个 Pi 询问待回应"
   },
   "taskLauncher": {
     "closeAriaLabel": "关闭任务启动器",
