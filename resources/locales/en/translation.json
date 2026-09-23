@@ -1060,6 +1060,7 @@
       "description": "Language of menus, buttons, and messages",
       "label": "Language",
       "labelWithEnglish": "{{label}} ({{english}})",
+      "optionLabel": "{{nativeName}} ({{name}})",
       "system": "System default ({{language}})"
     },
     "lightTheme": {

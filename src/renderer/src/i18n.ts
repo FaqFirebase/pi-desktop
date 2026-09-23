@@ -75,12 +75,30 @@ export async function applyLanguageSetting(setting: string): Promise<void> {
   rememberBootLanguage(language)
 }
 
-/** "System default (<resolved language>)", then each language in its own name. */
+/** A language's name in the interface language ("Simplified Chinese"), or null when Intl has none. */
+function languageNameInInterface(code: string): string | null {
+  try {
+    return new Intl.DisplayNames([i18n.language], { type: 'language', fallback: 'none' }).of(code) ?? null
+  } catch {
+    return null
+  }
+}
+
+/** A language's own name, followed by its name in the interface language when the two differ. */
+function languageOptionLabel(code: string): string {
+  const nativeName = languageNativeName(code)
+  const name = languageNameInInterface(code)
+  return name === null || name === nativeName
+    ? nativeName
+    : i18n.t('settings.language.optionLabel', { nativeName, name })
+}
+
+/** "System default (<resolved language>)", then each language in its own name and the interface language. */
 export function languagePickerOptions(loaded: I18nEnvironment): LanguageOption[] {
   const available = availableLanguages(loaded.pseudoLanguageEnabled)
   const systemLanguage = resolveLanguage(SYSTEM_LANGUAGE, loaded.systemLanguages, available)
   const languages = available
-    .map((code) => ({ value: code, label: languageNativeName(code) }))
+    .map((code) => ({ value: code, label: languageOptionLabel(code) }))
     .sort((a, b) => a.label.localeCompare(b.label, i18n.language))
   return [
     { value: SYSTEM_LANGUAGE, label: i18n.t('settings.language.system', { language: languageNativeName(systemLanguage) }) },

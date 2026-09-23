@@ -1042,6 +1042,7 @@
       "description": "菜单、按钮和消息的语言",
       "label": "语言",
       "labelWithEnglish": "{{label}}（{{english}}）",
+      "optionLabel": "{{nativeName}}（{{name}}）",
       "system": "系统默认（{{language}}）"
     },
     "lightTheme": {
