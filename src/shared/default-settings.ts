@@ -1,6 +1,7 @@
 import type { AppSettings } from './ipc-contracts'
 import { DEFAULT_COUNCIL_CONFIG } from './council-config'
 import { DEFAULT_SIDEBAR_WIDTH } from './sidebar-width'
+import { DEFAULT_CHAT_WIDTH } from './chat-width'
 import { SYSTEM_LANGUAGE } from './i18n/languages'
 
 /**
@@ -22,6 +23,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   fontSize: 16,
   terminalFontSize: 12,
   codeEditorFontSize: 14,
+  chatWidth: DEFAULT_CHAT_WIDTH,
   showThinking: true,
   autoScroll: true,
   permissionMode: 'ask-edits',

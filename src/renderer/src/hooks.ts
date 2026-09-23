@@ -5,6 +5,7 @@ import { getAppliedThemeId, subscribeAppliedTheme } from './utils/theme'
 import { DEFAULT_SETTINGS } from '../../shared/default-settings'
 import { BUILTIN_SOURCE, type PiCommand } from '../../shared/pi-command'
 import type { WorkspaceActivationIntent } from '../../shared/ipc-contracts'
+import type { ChatWidth } from '../../shared/chat-width'
 import { t } from '../../shared/i18n'
 import { isImeComposing } from './utils/ime-composing'
 
@@ -156,6 +157,13 @@ export function useChatVisible(): boolean {
   const currentView = useAppStore((state) => state.currentView)
   const globalWorkflowOpen = useGlobalWorkflowOpen()
   return currentView === 'chat' && !globalWorkflowOpen
+}
+
+/** The chat column width, with an unsaved Settings edit shown live. */
+export function useChatWidth(): ChatWidth {
+  return useAppStore(
+    (state) => state.settingsDraft.chatWidth ?? state.settings?.chatWidth ?? DEFAULT_SETTINGS.chatWidth
+  )
 }
 
 // Distance (px) from the bottom within which we consider the user "at bottom"

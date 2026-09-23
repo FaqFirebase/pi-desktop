@@ -24,6 +24,16 @@ test('normalizeStoredSettings fills missing keys from the defaults', () => {
   assert.deepEqual(settings, DEFAULT_SETTINGS)
 })
 
+test('chat width defaults to normal and keeps a known value', () => {
+  assert.equal(DEFAULT_SETTINGS.chatWidth, 'normal')
+  assert.equal(normalizeStoredSettings({ chatWidth: 'full' }, LANGUAGES).chatWidth, 'full')
+})
+
+test('normalizeStoredSettings resets an invalid chat width', () => {
+  const settings = normalizeStoredSettings({ chatWidth: 'huge' }, LANGUAGES)
+  assert.equal(settings.chatWidth, DEFAULT_SETTINGS.chatWidth)
+})
+
 test('voice model defaults to none so nothing downloads automatically', () => {
   assert.equal(DEFAULT_SETTINGS.voiceModel, null)
   assert.equal(DEFAULT_SETTINGS.voicePrecision, 'int8')

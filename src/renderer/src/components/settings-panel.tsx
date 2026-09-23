@@ -22,6 +22,7 @@ import { VoiceSettings } from './voice-settings'
 import { TypeSafeSettings } from './typesafe-settings'
 import { Settings, Save, RotateCcw, FolderOpen, RefreshCw, Check, ChevronDown } from 'lucide-react'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
+import { isChatWidth } from '../../../shared/chat-width'
 import { PermissionSelector } from './permission-selector'
 import { PermissionRulesEditor } from './permission-rules-editor'
 import { validateRuleList, shouldPersistScope } from './permission-rules-editor-helpers'
@@ -119,6 +120,7 @@ export function SettingsPanel(): React.JSX.Element {
   const [fontSize, setFontSize] = useState(draft0.fontSize ?? settings?.fontSize ?? DEFAULT_SETTINGS.fontSize)
   const [terminalFontSize, setTerminalFontSize] = useState(draft0.terminalFontSize ?? settings?.terminalFontSize ?? DEFAULT_SETTINGS.terminalFontSize)
   const [codeEditorFontSize, setCodeEditorFontSize] = useState(draft0.codeEditorFontSize ?? settings?.codeEditorFontSize ?? DEFAULT_SETTINGS.codeEditorFontSize)
+  const [chatWidth, setChatWidth] = useState(draft0.chatWidth ?? settings?.chatWidth ?? DEFAULT_SETTINGS.chatWidth)
   const [showThinking, setShowThinking] = useState(draft0.showThinking ?? settings?.showThinking ?? DEFAULT_SETTINGS.showThinking)
   const [autoScroll, setAutoScroll] = useState(draft0.autoScroll ?? settings?.autoScroll ?? DEFAULT_SETTINGS.autoScroll)
   const [desktopNotifications, setDesktopNotifications] = useState(draft0.desktopNotifications ?? settings?.desktopNotifications ?? DEFAULT_SETTINGS.desktopNotifications)
@@ -302,6 +304,7 @@ export function SettingsPanel(): React.JSX.Element {
     setFontSize(draft.fontSize ?? settings.fontSize)
     setTerminalFontSize(draft.terminalFontSize ?? settings.terminalFontSize)
     setCodeEditorFontSize(draft.codeEditorFontSize ?? settings.codeEditorFontSize)
+    setChatWidth(draft.chatWidth ?? settings.chatWidth)
     setShowThinking(draft.showThinking ?? settings.showThinking)
     setAutoScroll(draft.autoScroll ?? settings.autoScroll)
     setDesktopNotifications(draft.desktopNotifications ?? settings.desktopNotifications)
@@ -556,6 +559,7 @@ export function SettingsPanel(): React.JSX.Element {
       fontSize,
       terminalFontSize,
       codeEditorFontSize,
+      chatWidth,
       showThinking,
       autoScroll,
       desktopNotifications,
@@ -625,6 +629,7 @@ export function SettingsPanel(): React.JSX.Element {
       fontSize: DEFAULT_SETTINGS.fontSize,
       terminalFontSize: DEFAULT_SETTINGS.terminalFontSize,
       codeEditorFontSize: DEFAULT_SETTINGS.codeEditorFontSize,
+      chatWidth: DEFAULT_SETTINGS.chatWidth,
       showThinking: DEFAULT_SETTINGS.showThinking,
       autoScroll: DEFAULT_SETTINGS.autoScroll,
       desktopNotifications: DEFAULT_SETTINGS.desktopNotifications,
@@ -645,6 +650,7 @@ export function SettingsPanel(): React.JSX.Element {
     setFontSize(defaults.fontSize!)
     setTerminalFontSize(defaults.terminalFontSize!)
     setCodeEditorFontSize(defaults.codeEditorFontSize!)
+    setChatWidth(defaults.chatWidth!)
     setShowThinking(defaults.showThinking!)
     setAutoScroll(defaults.autoScroll!)
     setDesktopNotifications(defaults.desktopNotifications!)
@@ -924,6 +930,20 @@ export function SettingsPanel(): React.JSX.Element {
               />
               <span className="w-8 text-right text-sm text-muted">{codeEditorFontSize}</span>
             </div>
+          </SettingsRow>
+
+          <SettingsRow label={t('settings.chatWidth.label')} description={t('settings.chatWidth.description')}>
+            <SelectField
+              value={chatWidth}
+              onChange={(next) => {
+                if (!isChatWidth(next)) return
+                setChatWidth(next)
+                setSettingsDraft({ chatWidth: next })
+              }}
+            >
+              <option value="normal">{t('settings.chatWidth.normalOption')}</option>
+              <option value="full">{t('settings.chatWidth.fullOption')}</option>
+            </SelectField>
           </SettingsRow>
         </SettingsSection>
 

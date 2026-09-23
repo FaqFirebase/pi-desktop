@@ -1016,6 +1016,12 @@
       "description": "Automatically scroll to new messages",
       "label": "Auto Scroll"
     },
+    "chatWidth": {
+      "description": "How wide messages and the prompt box can grow",
+      "fullOption": "Full width",
+      "label": "Chat Width",
+      "normalOption": "Normal"
+    },
     "codeEditorFontSize": {
       "description": "Font size for the code editor / file viewer",
       "label": "Code Editor Font Size"

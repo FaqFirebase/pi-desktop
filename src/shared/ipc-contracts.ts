@@ -964,6 +964,7 @@ import type { ModelsConfig as ModelsConfigType } from './models-config'
 import type { CouncilConfig } from './council-config'
 import type { VoicePrecision, VoiceModel, VoiceModelManifest, VoiceDownloadProgress } from './voice-models'
 import type { VoiceDevice } from './voice-device'
+import type { ChatWidth } from './chat-width'
 /** Result of the MODELS_READ IPC call. */
 /**
  * Where the custom-models config was read from. Main resolves the engine and
@@ -1135,6 +1136,9 @@ export interface AppSettings {
   terminalFontSize: number
   // Code editor (CodeMirror) font size in px — independent of the UI font size.
   codeEditorFontSize: number
+  // Chat column width: 'normal' keeps a readable column, 'full' uses the whole
+  // chat area. Unknown values reset to 'normal' on load.
+  chatWidth: ChatWidth
   showThinking: boolean
   autoScroll: boolean
   permissionMode: PermissionMode

@@ -998,6 +998,12 @@
       "description": "自动滚动到新消息",
       "label": "自动滚动"
     },
+    "chatWidth": {
+      "description": "消息和输入框可以扩展的宽度",
+      "fullOption": "全宽",
+      "label": "聊天宽度",
+      "normalOption": "标准"
+    },
     "codeEditorFontSize": {
       "description": "代码编辑器 / 文件查看器的字体大小",
       "label": "代码编辑器字体大小"
