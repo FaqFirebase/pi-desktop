@@ -7,6 +7,7 @@ import type {
 } from '../../shared/ipc-contracts'
 import { listVoiceModels, getVoiceModel, type VoicePrecision } from '../../shared/voice-models'
 import { downloadVoiceModel } from '../voice-model-download'
+import { voiceGpuRestartRequired } from '../voice-gpu-switches'
 import { listInstalledVoiceModels, removeVoiceModel } from '../voice-model-store'
 import { loadAppSettings, saveAppSettings } from './settings'
 import { assertTrustedSender, isObject, isString } from './validation'
@@ -31,6 +32,8 @@ export function registerVoiceHandlers(ctx: IpcContext): void {
       installed: await listInstalledVoiceModels(),
       selectedModel: settings.voiceModel,
       selectedPrecision: settings.voicePrecision,
+      device: settings.voiceDevice,
+      restartRequired: voiceGpuRestartRequired(process.platform, settings.voiceDevice),
     }
   }
 

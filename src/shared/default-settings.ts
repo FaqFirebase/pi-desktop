@@ -38,4 +38,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   council: DEFAULT_COUNCIL_CONFIG,
   voiceModel: null,
   voicePrecision: 'int8',
+  voiceDevice: 'auto',
 }

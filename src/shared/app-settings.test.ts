@@ -47,3 +47,13 @@ test('normalizeStoredSettings resets an invalid voice precision', () => {
   const settings = normalizeStoredSettings({ voicePrecision: 'fp64' }, LANGUAGES)
   assert.equal(settings.voicePrecision, DEFAULT_SETTINGS.voicePrecision)
 })
+
+test('voice device defaults to auto and keeps a known value', () => {
+  assert.equal(DEFAULT_SETTINGS.voiceDevice, 'auto')
+  assert.equal(normalizeStoredSettings({ voiceDevice: 'gpu' }, LANGUAGES).voiceDevice, 'gpu')
+})
+
+test('normalizeStoredSettings resets an invalid voice device', () => {
+  const settings = normalizeStoredSettings({ voiceDevice: 'npu' }, LANGUAGES)
+  assert.equal(settings.voiceDevice, DEFAULT_SETTINGS.voiceDevice)
+})

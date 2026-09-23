@@ -18,6 +18,8 @@ import { appLog } from './app-log'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { VOICE_PROTOCOL_SCHEME, handleVoiceProtocolRequest } from './voice-protocol'
 import { getVoiceModelsDir } from './voice-model-store'
+import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
+import { getSettingsPath } from './ipc/settings'
 
 // Env var honored on startup: if set, the named directory becomes the active
 // workspace (created on first run, switched to on subsequent runs). The CLI
@@ -131,6 +133,10 @@ const userDataDir = externalUserDataDir ?? getCanonicalUserDataDir(app.getPath('
 mkdirSync(userDataDir, { recursive: true })
 app.setPath('userData', userDataDir)
 configureGuiDataDir(userDataDir)
+
+// Voice dictation on the GPU needs WebGPU, which Chromium keeps off on Linux
+// unless it starts with extra switches. Set them now, before the app is ready.
+applyVoiceGpuSwitches(app.commandLine, process.platform, readVoiceDeviceSync(getSettingsPath()))
 
 // ─── Window Creation ─────────────────────────────────────────────────────────
 

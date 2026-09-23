@@ -4,6 +4,9 @@
 
 export const TARGET_SAMPLE_RATE = 16000
 
+/** Name the microphone capture AudioWorklet registers its processor under. */
+export const CAPTURE_PROCESSOR_NAME = 'pi-voice-capture'
+
 /** Average every channel sample by sample into one mono track. */
 export function downmixToMono(channels: Float32Array[]): Float32Array {
   if (channels.length === 0) return new Float32Array(0)

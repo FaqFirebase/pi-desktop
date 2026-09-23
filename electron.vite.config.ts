@@ -78,6 +78,11 @@ export default defineConfig({
       }
     },
     plugins: [react(), tailwindcss(), voiceWasmPlugin()],
+    // The voice worker loads its speech engines with dynamic import(), which
+    // needs an ES module worker (the default IIFE format cannot code-split).
+    worker: {
+      format: 'es',
+    },
     define: {
       __APP_VERSION__: JSON.stringify(version),
     },

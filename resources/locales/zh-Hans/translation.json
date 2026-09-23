@@ -1145,17 +1145,28 @@
       "label": "界面字体大小"
     },
     "voice": {
+      "device": {
+        "auto": "自动",
+        "cpu": "CPU",
+        "gpu": "GPU"
+      },
       "downloading": "正在下载第 {{done}}/{{total}} 个文件",
       "englishOnly": "仅英语",
+      "getVersion": "获取{{version}}",
+      "gpuUnnamed": "GPU",
       "install": "安装",
       "intro": "对着麦克风说话，Pi Desktop 会把你的语音转成这台电脑上的文字。选择一个模型下载。在你选择之前不会下载任何模型。",
       "multilingual": "多种语言",
       "precision": {
-        "fp16": "更清晰（fp16）",
-        "int8": "更小（int8）"
+        "fp16": "GPU 版本（fp16）",
+        "int8": "CPU 版本（int8）"
       },
-      "quality": "质量",
       "remove": "移除",
+      "restartRequired": "重启 Pi Desktop 以应用此更改。",
+      "runOn": "运行设备",
+      "runtimeCpu": "在处理器（CPU）上运行，使用每个模型的 CPU 版本。",
+      "runtimeCpuNoGpu": "未找到可用的显卡，因此语音在处理器（CPU）上运行，使用每个模型的 CPU 版本。",
+      "runtimeGpu": "在显卡（{{name}}）上运行，使用每个模型的 GPU 版本。",
       "selected": "使用中",
       "sizeMb": "约 {{mb}} MB",
       "use": "使用"

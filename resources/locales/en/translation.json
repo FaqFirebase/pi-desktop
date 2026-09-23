@@ -1163,17 +1163,28 @@
       "label": "UI Font Size"
     },
     "voice": {
+      "device": {
+        "auto": "Auto",
+        "cpu": "CPU",
+        "gpu": "GPU"
+      },
       "downloading": "Downloading {{done}} of {{total}} files",
       "englishOnly": "English only",
+      "getVersion": "Get {{version}}",
+      "gpuUnnamed": "GPU",
       "install": "Install",
       "intro": "Speak into the microphone and Pi Desktop turns your voice into text on your computer. Pick a model to download. No model is downloaded until you choose one.",
       "multilingual": "Many languages",
       "precision": {
-        "fp16": "Sharper (fp16)",
-        "int8": "Smaller (int8)"
+        "fp16": "GPU version (fp16)",
+        "int8": "CPU version (int8)"
       },
-      "quality": "Quality",
       "remove": "Remove",
+      "restartRequired": "Restart Pi Desktop to apply this change.",
+      "runOn": "Run on",
+      "runtimeCpu": "Runs on the processor (CPU) with the CPU version of each model.",
+      "runtimeCpuNoGpu": "No usable graphics card found, so voice runs on the processor (CPU) with the CPU version of each model.",
+      "runtimeGpu": "Runs on your graphics card ({{name}}) with the GPU version of each model.",
       "selected": "In use",
       "sizeMb": "~{{mb}} MB",
       "use": "Use"
