@@ -964,6 +964,8 @@ export interface CouncilProgressEvent {
 import type { ModelsConfig as ModelsConfigType } from './models-config'
 import type { CouncilConfig } from './council-config'
 import type { VoicePrecision, VoiceModel, VoiceModelManifest, VoiceDownloadProgress } from './voice-models'
+import type { VoiceDevice } from './voice-device'
+import type { ChatWidth } from './chat-width'
 /** Result of the MODELS_READ IPC call. */
 /**
  * Where the custom-models config was read from. Main resolves the engine and
@@ -1142,6 +1144,9 @@ export interface AppSettings {
   terminalFontSize: number
   // Code editor (CodeMirror) font size in px — independent of the UI font size.
   codeEditorFontSize: number
+  // Chat column width: 'normal' keeps a readable column, 'full' uses the whole
+  // chat area. Unknown values reset to 'normal' on load.
+  chatWidth: ChatWidth
   showThinking: boolean
   autoScroll: boolean
   permissionMode: PermissionMode
@@ -1189,9 +1194,13 @@ export interface AppSettings {
   // null when the user has not chosen one. No model is downloaded automatically;
   // the mic button is inert until a model is picked and installed.
   voiceModel: string | null
-  // Precision of the voice model to install and load ('int8' smaller/faster,
-  // 'fp16' sharper, best with a GPU). Unknown values reset to 'int8' on load.
+  // Precision of the installed voice model to load: 'int8' runs on the CPU,
+  // 'fp16' on the GPU (see voice-device.ts). Unknown values reset to 'int8'.
   voicePrecision: VoicePrecision
+  // Where dictation runs: 'auto' (GPU when a hardware GPU is found), 'cpu' or
+  // 'gpu'. It picks which precision Settings downloads. Unknown values reset
+  // to 'auto' on load.
+  voiceDevice: VoiceDevice
 }
 
 // ─── Voice Dictation Types ──────────────────────────────────────────────────
@@ -1202,6 +1211,9 @@ export interface VoiceStatus {
   installed: VoiceModelManifest[]
   selectedModel: string | null
   selectedPrecision: VoicePrecision
+  device: VoiceDevice
+  /** The saved device needs a different set of startup switches than this run has. */
+  restartRequired: boolean
 }
 
 /** Request to download and install one model at one precision. */

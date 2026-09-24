@@ -1,9 +1,11 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { clsx } from 'clsx'
 import { useAppStore } from '../store'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { t } from '../../../shared/i18n'
-import { useChatKeyboard, useCommandCatalog } from '../hooks'
+import { useChatKeyboard, useChatWidth, useCommandCatalog } from '../hooks'
+import { composerColumnClass } from '../utils/chat-width'
 import { ComposerPermissionMenu } from './composer-permission-menu'
 import { CommandResults } from './command-results'
 import { SubagentProgress } from './subagent-progress'
@@ -27,6 +29,7 @@ import {
   isSlashCommandToken,
   type PiCommand,
 } from '../../../shared/pi-command'
+import { isImeComposing } from '../utils/ime-composing'
 
 const MAX_INPUT_HEIGHT = 160
 const MIN_INPUT_HEIGHT = 40
@@ -83,6 +86,7 @@ export function ChatInput(): React.JSX.Element {
   const abort = useAppStore((state) => state.abort)
   const isStreaming = useAppStore((state) => state.isStreaming)
   const piStatus = useAppStore((state) => state.piStatus)
+  const composerColumn = composerColumnClass(useChatWidth())
   const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const pendingInsert = useAppStore((state) => state.pendingInsert)
   const clearPendingInsert = useAppStore((state) => state.clearPendingInsert)
@@ -450,7 +454,7 @@ export function ChatInput(): React.JSX.Element {
   useChatKeyboard(handleSend, handleAbort, textareaRef)
 
   return (
-    <div className="pointer-events-none mx-auto w-full max-w-3xl px-4">
+    <div className={clsx('pointer-events-none mx-auto w-full px-4', composerColumn)}>
       {attachError && (
         <div className="pointer-events-auto mb-2 flex items-center gap-1.5 text-xs text-error">
           <X size={12} className="shrink-0" />
@@ -570,6 +574,7 @@ export function ChatInput(): React.JSX.Element {
             setSlashToken(null)
           }}
           onKeyDown={(e) => {
+            if (isImeComposing(e.nativeEvent)) return
             if (e.ctrlKey && e.key === 'p') {
               e.preventDefault()
               useAppStore.getState().cycleModel()

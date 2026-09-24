@@ -4,20 +4,49 @@ import type { VoiceStatus } from '../../../shared/ipc-contracts'
 import { useAppStore } from '../store'
 import { VoiceRecorder } from './voice-recorder'
 import { transcribeAudio } from './voice-transcriber'
+import {
+  allSpeechFixed,
+  joinTranscript,
+  segmentPaused,
+  type DictationState,
+} from '../../../shared/voice-speech-coverage'
 
 export type VoicePhase = 'idle' | 'recording' | 'transcribing'
 
 // Live-dictation tuning.
-const TICK_MS = 250 // how often we check level and consider an interim pass
-const INTERIM_EVERY_MS = 1400 // minimum gap between running-transcript updates
+const TICK_MS = 250 // how often we check the input level
+const PAUSE_MS = 600 // quiet this long after speech transcribes and fixes that part
 const SILENCE_LEVEL = 0.008 // RMS below this counts as silence
 const SILENCE_HOLD_MS = 8000 // stop after this much silence following speech
 const MAX_RECORDING_MS = 60000 // hard cap so a stuck mic can't run forever
 
+/** One recording: fixed text of transcribed segments plus the open segment. */
+interface DictationSession {
+  state: DictationState
+  /** Text of all transcribed segments. */
+  fixedText: string
+  /** Recorder frame where the open segment starts. */
+  fixedFrame: number
+  /** The segment pass now running, if any. */
+  pass: Promise<void> | null
+  /** A segment pass failed; the final pass alone retries, once. */
+  passFailed: boolean
+}
+
+function newSession(startedAt: number): DictationSession {
+  return {
+    state: { everSawSpeech: false, segmentHasSpeech: false, lastVoiceAt: startedAt },
+    fixedText: '',
+    fixedFrame: 0,
+    pass: null,
+    passFailed: false,
+  }
+}
+
 export interface VoiceDictationHandlers {
   /** Recording started: mark the composer insertion point. */
   onStart: () => void
-  /** Running transcript so far, replacing the previous interim text. */
+  /** Transcript so far, replacing the previous interim text. */
   onInterim: (text: string) => void
   /** Final transcript once recording stops. */
   onFinal: (text: string) => void
@@ -32,9 +61,10 @@ export interface VoiceDictation {
 }
 
 /**
- * Drives the microphone button. While recording it re-transcribes the audio so
- * far every ~1.4s and reports a running transcript; it auto-stops after a short
- * silence, and finalizes with one full-clip transcription. It never sends.
+ * Drives the microphone button. Each time the speaker pauses, the speech since
+ * the previous pause is transcribed once and added to the composer, so no audio
+ * is transcribed twice. It auto-stops after a longer silence, transcribes any
+ * speech left after the last pause, and never sends.
  */
 export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictation {
   const [status, setStatus] = useState<VoiceStatus | null>(null)
@@ -44,9 +74,8 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
 
   const recorderRef = useRef<VoiceRecorder | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const busyRef = useRef(false)
   const stoppedRef = useRef(false)
-  const lastTextRef = useRef('')
+  const sessionRef = useRef<DictationSession>(newSession(0))
   const handlersRef = useRef(handlers)
   handlersRef.current = handlers
 
@@ -90,18 +119,20 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
       setPhase('idle')
       return
     }
+    const session = sessionRef.current
     setPhase('transcribing')
     try {
-      // Let an in-flight interim pass finish so two inferences never overlap.
-      for (let i = 0; i < 40 && busyRef.current; i++) {
-        await new Promise((r) => setTimeout(r, 100))
+      // A segment pass still running fixes its text first, so its audio is not
+      // transcribed again below.
+      await session.pass
+      if (allSpeechFixed(session.state)) {
+        recorder.cancel()
+        handlersRef.current.onFinal(session.fixedText)
+        return
       }
-      const pcm = await recorder.stop()
-      const full = pcm.length > 0 ? await transcribeAudio(pcm, model, status.selectedPrecision) : ''
-      // Prefer the full-clip result; fall back to the best interim so a blank
-      // final pass never wipes text that was already recognized.
-      const text = full.trim() || lastTextRef.current
-      handlersRef.current.onFinal(text)
+      const pcm = await recorder.stop(session.fixedFrame)
+      const tail = pcm.length > 0 ? await transcribeAudio(pcm, model, status.selectedPrecision) : ''
+      handlersRef.current.onFinal(joinTranscript(session.fixedText, tail))
     } catch (err) {
       console.error('[voice] transcription failed', err)
       setError(err instanceof Error ? err.message : String(err))
@@ -114,8 +145,6 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
     if (!model || !status || !ready) return
     setError(null)
     stoppedRef.current = false
-    busyRef.current = false
-    lastTextRef.current = ''
     try {
       const recorder = new VoiceRecorder()
       await recorder.start()
@@ -124,40 +153,43 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
       setPhase('recording')
 
       const startedAt = Date.now()
-      let lastVoiceAt = startedAt
-      let lastInterimAt = 0
-      let sawSpeech = false
+      const session = newSession(startedAt)
+      sessionRef.current = session
+      const { state } = session
 
       timerRef.current = setInterval(() => {
         if (stoppedRef.current) return
         const now = Date.now()
         if (recorder.getLevel() >= SILENCE_LEVEL) {
-          lastVoiceAt = now
-          sawSpeech = true
+          state.lastVoiceAt = now
+          state.everSawSpeech = true
+          state.segmentHasSpeech = true
         }
 
-        if (!busyRef.current && now - lastInterimAt >= INTERIM_EVERY_MS) {
-          lastInterimAt = now
-          busyRef.current = true
-          const pcm = recorder.getPcm16k()
-          void transcribeAudio(pcm, model, status.selectedPrecision)
+        if (!session.pass && !session.passFailed && segmentPaused(state, now, PAUSE_MS)) {
+          const toFrame = recorder.frameCount()
+          const pcm = recorder.getPcm16k(session.fixedFrame, toFrame)
+          session.pass = transcribeAudio(pcm, model, status.selectedPrecision)
             .then((text) => {
-              // Ignore empty passes (e.g. a silent chunk) so they never wipe
-              // text already shown.
-              if (!stoppedRef.current && text.trim()) {
-                lastTextRef.current = text.trim()
-                handlersRef.current.onInterim(text.trim())
-              }
+              session.fixedText = joinTranscript(session.fixedText, text)
+              session.fixedFrame = toFrame
+              // Speech that began after this pass took its audio opens the next segment.
+              state.segmentHasSpeech = state.lastVoiceAt > now
+              if (!stoppedRef.current) handlersRef.current.onInterim(session.fixedText)
             })
-            .catch(() => {
-              /* interim errors are non-fatal; the final pass reports failures */
+            .catch((err) => {
+              // A failed load or run would fail the same way at every pause
+              // (and reload the model each time), so stop here: the segment
+              // stays open for the final pass, and the error shows now.
+              session.passFailed = true
+              setError(err instanceof Error ? err.message : String(err))
             })
             .finally(() => {
-              busyRef.current = false
+              session.pass = null
             })
         }
 
-        const silentTooLong = sawSpeech && now - lastVoiceAt >= SILENCE_HOLD_MS
+        const silentTooLong = state.everSawSpeech && now - state.lastVoiceAt >= SILENCE_HOLD_MS
         if (silentTooLong || now - startedAt >= MAX_RECORDING_MS) {
           void finalize()
         }

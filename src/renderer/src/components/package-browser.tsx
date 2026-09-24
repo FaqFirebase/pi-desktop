@@ -21,6 +21,7 @@ import {
   RefreshCw,
   CircleArrowUp,
 } from 'lucide-react'
+import { isImeComposing } from '../utils/ime-composing'
 
 export function PackageBrowser(): React.JSX.Element {
   const { t } = useTranslation()
@@ -199,7 +200,7 @@ function InstallBar(): React.JSX.Element {
           placeholder={t('packages.installBar.placeholder')}
           className="flex-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary placeholder:text-faint focus:border-focus focus:outline-none"
           onKeyDown={(e) => {
-            if (e.key === 'Enter') handleInstall()
+            if (e.key === 'Enter' && !isImeComposing(e.nativeEvent)) handleInstall()
           }}
         />
         <button

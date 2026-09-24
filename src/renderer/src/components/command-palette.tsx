@@ -23,6 +23,7 @@ import { createStaleGuard } from '../utils/stale-guard'
 import { getSessionTitle } from '../utils/session-title'
 import { isImagePath } from './chat-file-link'
 import type { FileSearchResult } from '../../../shared/ipc-contracts'
+import { isImeComposing } from '../utils/ime-composing'
 
 const FILE_SEARCH_DEBOUNCE_MS = 150
 
@@ -163,6 +164,7 @@ export function CommandPalette(): React.JSX.Element | null {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent): void => {
+    if (isImeComposing(e.nativeEvent)) return
     if (e.key === 'Escape') {
       e.preventDefault()
       close()

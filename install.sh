@@ -9,6 +9,7 @@ RELEASES_PAGE="https://github.com/$REPO/releases"
 RELEASES_API="https://api.github.com/repos/$REPO/releases"
 BINARY_NAME="pi-desktop"
 INSTALL_DIR="${HOME}/.local/bin"
+BINARY_MODE=755
 # How many recent releases the asset lookup scans. More than one, so a release
 # whose installers are still uploading mid-CI-run does not hide the newest
 # release that actually carries them.
@@ -70,16 +71,25 @@ esac
 echo "Platform: $PLATFORM-$ARCH_NAME"
 
 # Check for Pi dependency
-if ! command -v pi &> /dev/null; then
+PI_PATH="$(command -v pi || true)"
+if [ -z "$PI_PATH" ]; then
   echo ""
   echo "⚠  Pi is not installed."
   echo "   Installing Pi first..."
   echo ""
   curl -fsSL https://pi.dev/install.sh | sh
   echo ""
+  PI_PATH="$(command -v pi || true)"
 fi
 
-echo "✓ Pi found: $(which pi)"
+if [ -n "$PI_PATH" ]; then
+  echo "✓ Pi found: $PI_PATH"
+else
+  # The Pi installer can put pi in a directory that this shell's PATH does not
+  # include yet. Pi Desktop locates Pi on its own, so this is not fatal.
+  echo "⚠  Pi is not on the PATH of this shell."
+  echo "   Open a new terminal, then run: pi --version"
+fi
 
 # Download the latest release artifact for this platform.
 # Pi Desktop is distributed as a packaged binary, not via npm — see MEMORY.md.
@@ -118,9 +128,17 @@ if [ "$PLATFORM" = "linux" ]; then
   mkdir -p "$INSTALL_DIR"
   OUTPUT="$INSTALL_DIR/$BINARY_NAME"
 
+  # Download to a temporary file in the install directory, then rename it into
+  # place. A failed download cannot leave a broken binary, and the rename works
+  # while an older Pi Desktop is running.
+  DOWNLOAD_TMP="$(mktemp "$INSTALL_DIR/.$BINARY_NAME.XXXXXX")"
+  trap 'rm -f "$DOWNLOAD_TMP"' EXIT
+
   echo "Downloading: $DOWNLOAD_URL"
-  curl -fsSL "$DOWNLOAD_URL" -o "$OUTPUT"
-  chmod +x "$OUTPUT"
+  curl -fL --progress-bar "$DOWNLOAD_URL" -o "$DOWNLOAD_TMP"
+  # mktemp creates the file owner-only, so set the full mode explicitly.
+  chmod "$BINARY_MODE" "$DOWNLOAD_TMP"
+  mv -f "$DOWNLOAD_TMP" "$OUTPUT"
 
   if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     echo ""

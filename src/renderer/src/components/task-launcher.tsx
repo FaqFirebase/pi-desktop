@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { GitBranch, Layers, Play, X } from 'lucide-react'
 import { useAppStore } from '../store'
+import { isImeComposing } from '../utils/ime-composing'
 
 export function TaskLauncher(): React.JSX.Element | null {
   const { t } = useTranslation()
@@ -109,7 +110,7 @@ export function TaskLauncher(): React.JSX.Element | null {
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
               onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && !isImeComposing(event.nativeEvent)) {
                   event.preventDefault()
                   void submit()
                 }

@@ -1,4 +1,5 @@
 import en from '../../../resources/locales/en/translation.json'
+import zhHans from '../../../resources/locales/zh-Hans/translation.json'
 
 /**
  * Every bundled language. To add a language, import its
@@ -6,6 +7,7 @@ import en from '../../../resources/locales/en/translation.json'
  */
 export const LANGUAGE_RESOURCES = {
   en: { translation: en },
+  'zh-Hans': { translation: zhHans },
 } as const
 
 export const BUNDLED_LANGUAGES: string[] = Object.keys(LANGUAGE_RESOURCES)

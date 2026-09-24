@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
 import { ChevronUp, ChevronDown, X } from 'lucide-react'
+import { isImeComposing } from '../utils/ime-composing'
 
 // Named CSS custom highlights, styled via the ::highlight() rules injected by
 // ensureHighlightStyles() below.
@@ -186,6 +187,7 @@ export function ChatSearch({
   )
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (isImeComposing(e.nativeEvent)) return
     if (e.key === 'Escape') {
       e.preventDefault()
       onClose()

@@ -24,7 +24,8 @@ import { FileTree, FileSearch, FilePreview } from './file-tree'
 import { ImageViewer } from './image-viewer'
 import { DiffViewer } from './diff-viewer'
 import { TerminalPanel } from './terminal'
-import { useChatScroll, useChatVisible } from '../hooks'
+import { useChatScroll, useChatVisible, useChatWidth } from '../hooks'
+import { messageColumnClass } from '../utils/chat-width'
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
@@ -80,6 +81,7 @@ export function ChatPanel(): React.JSX.Element {
   const toggleFileSearch = useAppStore((state) => state.toggleFileSearch)
   const previewTarget = useAppStore((state) => state.previewTarget)
   const workflowPanelOpen = useAppStore((state) => state.workflowPanelOpen)
+  const messageColumn = messageColumnClass(useChatWidth())
 
   // sidePanel lives in the store so it survives view switches (e.g. Settings
   // round-trip). Widths stay local — resetting them on remount is benign.
@@ -318,7 +320,7 @@ export function ChatPanel(): React.JSX.Element {
                     ) : (
                       <NowContext.Provider value={now}>
                         <div
-                          className="mx-auto max-w-5xl px-4 pt-6"
+                          className={clsx('mx-auto px-4 pt-6', messageColumn)}
                           style={{ paddingBottom: composerPadPx }}
                         >
                           {renderItems.map((item) =>
@@ -365,11 +367,11 @@ export function ChatPanel(): React.JSX.Element {
                     ref={composerWrapRef}
                     className="pointer-events-none absolute inset-x-0 bottom-0 z-10 pb-3 pt-8 bg-gradient-to-t from-chat-column via-chat-column/80 to-transparent"
                   >
-                    <div className="pointer-events-auto mx-auto w-full max-w-5xl px-4">
+                    <div className={clsx('pointer-events-auto mx-auto w-full px-4', messageColumn)}>
                       <CouncilPanels />
                     </div>
                     {reattachedMidTurn && (
-                      <div className="pointer-events-auto mx-auto mb-2 w-full max-w-5xl px-4">
+                      <div className={clsx('pointer-events-auto mx-auto mb-2 w-full px-4', messageColumn)}>
                         <div className="flex items-center gap-2.5 rounded-md bg-accent px-4 py-2.5 text-sm text-white shadow-lg shadow-black/30">
                           <Loader2 size={16} className="shrink-0 animate-spin" />
                           <span className="shrink-0 font-medium">

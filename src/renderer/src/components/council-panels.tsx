@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore, type CouncilPhase } from '../store'
 import { councilAgentLabel, type ConsultantStatus } from '../../../shared/council-config'
+import { isImeComposing } from '../utils/ime-composing'
 
 const COUNCIL_PHASE_KEYS = {
   detecting: 'council.phase.detecting',
@@ -151,7 +152,7 @@ export function CouncilPanels(): React.JSX.Element | null {
               value={reviseText}
               onChange={(e) => setReviseText(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && reviseText.trim() && !isStreaming) {
+                if (e.key === 'Enter' && !isImeComposing(e.nativeEvent) && reviseText.trim() && !isStreaming) {
                   void revise(reviseText)
                   setReviseText('')
                 }
