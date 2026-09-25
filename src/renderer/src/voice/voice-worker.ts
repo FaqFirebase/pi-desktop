@@ -6,7 +6,12 @@ import {
 } from '../../../shared/voice-engine-config'
 import { createSerialRunner } from '../../../shared/serial-runner'
 import { runtimeForPrecision } from '../../../shared/voice-device'
-import type { TranscribeRequest, TranscribeResponse } from './voice-worker-protocol'
+import {
+  VOICE_NEEDS_GPU_ERROR,
+  voiceEngineKey,
+  type TranscribeRequest,
+  type TranscribeResponse,
+} from './voice-worker-protocol'
 import { GPU_POWER_PREFERENCE, probeGpu } from './gpu-probe'
 
 // Runs the speech models in a Web Worker, so a model run never blocks the page:
@@ -31,10 +36,6 @@ const runExclusive = createSerialRunner()
 // Hybrid runs the encoder (the heavy part) on the GPU and the decoder on WASM.
 const PARAKEET_GPU_BACKEND = 'webgpu-hybrid'
 
-const NEEDS_GPU_ERROR =
-  'This voice model version needs a graphics card (GPU), and none was found. ' +
-  'Pick CPU under Settings > Voice to download the CPU version.'
-
 /**
  * The installed precision decides where the model runs (see voice-device.ts):
  * fp16 on the GPU, int8 on the CPU. fp16 cannot run on the CPU, so it fails
@@ -42,7 +43,7 @@ const NEEDS_GPU_ERROR =
  */
 async function resolveDevice(precision: VoicePrecision): Promise<'webgpu' | 'wasm'> {
   if (runtimeForPrecision(precision) === 'cpu') return 'wasm'
-  if (!(await probeGpu()).available) throw new Error(NEEDS_GPU_ERROR)
+  if (!(await probeGpu()).available) throw new Error(VOICE_NEEDS_GPU_ERROR)
   return 'webgpu'
 }
 
@@ -100,12 +101,12 @@ async function loadEngine({ model, precision, wasmBaseUrl }: TranscribeRequest):
     model.engine === 'parakeet'
       ? await loadParakeet(model, precision, wasmBaseUrl)
       : await loadTransformers(model, precision, wasmBaseUrl)
-  return { key: `${model.id}:${precision}`, transcribe }
+  return { key: voiceEngineKey(model.id, precision), transcribe }
 }
 
 function transcribe(request: TranscribeRequest): Promise<string> {
   return runExclusive(async () => {
-    const key = `${request.model.id}:${request.precision}`
+    const key = voiceEngineKey(request.model.id, request.precision)
     if (loaded?.key !== key) loaded = await loadEngine(request)
     return loaded.transcribe(request.audio)
   })

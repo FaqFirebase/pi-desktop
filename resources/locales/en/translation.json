@@ -137,6 +137,7 @@
     },
     "voice": {
       "errorTitle": "Voice dictation failed: {{error}}",
+      "needsGpu": "This model version needs a graphics card (GPU), and none was found. Pick CPU under Settings > Voice to get the CPU version.",
       "setUpTitle": "Set up voice dictation in Settings",
       "startTitle": "Start voice dictation",
       "stopTitle": "Stop and insert text",

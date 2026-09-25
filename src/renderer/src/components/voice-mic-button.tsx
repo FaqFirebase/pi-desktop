@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Mic, Square, Loader2 } from 'lucide-react'
 import { useAppStore } from '../store'
 import { useVoiceDictation, type VoiceDictationHandlers } from '../voice/use-voice-dictation'
+import { VOICE_NEEDS_GPU_ERROR } from '../voice/voice-worker-protocol'
 
 /**
  * Microphone button for the composer. Click to record; a running transcript
@@ -65,7 +66,9 @@ export function VoiceMicButton({
       }`}
       title={
         error
-          ? t('chat.voice.errorTitle', { error })
+          ? t('chat.voice.errorTitle', {
+              error: error === VOICE_NEEDS_GPU_ERROR ? t('chat.voice.needsGpu') : error,
+            })
           : recording
             ? t('chat.voice.stopTitle')
             : t('chat.voice.startTitle')

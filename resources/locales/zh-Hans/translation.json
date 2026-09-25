@@ -135,6 +135,7 @@
     },
     "voice": {
       "errorTitle": "语音听写失败：{{error}}",
+      "needsGpu": "此模型版本需要显卡（GPU），但未找到可用的显卡。请在“设置 > 语音”中选择 CPU 以获取 CPU 版本。",
       "setUpTitle": "在设置中配置语音听写",
       "startTitle": "开始语音听写",
       "stopTitle": "停止并插入文本",
