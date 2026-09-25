@@ -11,7 +11,7 @@ import {
   FolderOpen,
   Plus,
   PanelLeftClose,
-  Clock,
+  CheckCircle2,
   Activity,
   LayoutDashboard,
   Package,
@@ -319,14 +319,14 @@ export function Sidebar(): React.JSX.Element {
     options?: { nested?: boolean }
   ): React.JSX.Element => {
     const labels = getSessionRowLabels(session)
-    // Runs are keyed by Pi's header UUID, never the filename stem (the
-    // tags/archive registry key). The stem suffix IS the UUID, so it is a
-    // safe fallback when a row's header is unreadable.
-    const workflowSessionId = resolveRunSessionId(session.piSessionId, session.sessionId) ?? session.sessionId
     const runtime = Object.values(sessionRuntimes).find((item) => item.sessionPath && pathsEqual(item.sessionPath, session.path))
     const isActive = sessionState?.sessionFile === session.path || runtime?.runtimeId === activeSessionRuntimeId
     const nested = options?.nested ?? false
     const engineLabel = showEngineTags ? getSessionEngineLabel(session) : null
+    const inactiveIcon = <CheckCircle2 size={12} className="shrink-0 text-muted" />
+    const statusIcon = runtime && runtime.status !== 'stopped'
+      ? <SessionRuntimeIndicator runtime={runtime} fallback={inactiveIcon} />
+      : inactiveIcon
 
     // Inline rename for the active row.
     if (isActive && renamingWhere === 'recent') {
@@ -338,61 +338,47 @@ export function Sidebar(): React.JSX.Element {
             nested && 'pl-2'
           )}
         >
-          <Clock size={12} className="shrink-0 text-muted" />
+          {statusIcon}
           {renderRenameInput()}
         </div>
       )
     }
 
     return (
-      <div key={session.path} className="group relative">
-        <button
-          onClick={() => openSession(session)}
-          onDoubleClick={() => { if (isActive) startSessionRename('recent') }}
-          onContextMenu={(e) => handleSessionRightClick(e, session)}
-          // The full title leads, so a preview too long for the current width is
-          // still readable on hover.
-          title={
-            isActive
-              ? t('sidebar.sessionRow.tooltipActive', { title: labels.title })
-              : t('sidebar.sessionRow.tooltipInactive', { title: labels.title })
-          }
-          className={clsx(
-            'flex w-full items-center gap-2 rounded px-2 py-1.5 pr-7 text-left text-sm transition-colors',
-            nested && 'pl-2',
-            isActive
-              ? 'bg-card text-primary'
-              : 'hover:bg-highlight text-muted hover:text-secondary'
-          )}
-        >
-          <Clock size={12} className="shrink-0" />
-          <div className="min-w-0 flex-1">
-            <div className="truncate">{labels.title}</div>
-            {/* The title is now the session's name or first message, so the time it
-                displaced moves here. Recent rows are already grouped by workspace,
-                which makes the project name the less useful of the two subtitles —
-                the home screen, which is not grouped, shows the project instead.
-                The engine leads the line only when both engines are present. */}
-            <div className="truncate text-[11px] text-faint">
-              {engineLabel && `${engineLabel} · `}
-              {formatRelativeTime(session.lastModified, Date.now())}
-            </div>
+      <button
+        key={session.path}
+        onClick={() => openSession(session)}
+        onDoubleClick={() => { if (isActive) startSessionRename('recent') }}
+        onContextMenu={(e) => handleSessionRightClick(e, session)}
+        // The full title leads, so a preview too long for the current width is
+        // still readable on hover.
+        title={
+          isActive
+            ? t('sidebar.sessionRow.tooltipActive', { title: labels.title })
+            : t('sidebar.sessionRow.tooltipInactive', { title: labels.title })
+        }
+        className={clsx(
+          'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
+          nested && 'pl-2',
+          isActive
+            ? 'bg-card text-primary'
+            : 'hover:bg-highlight text-muted hover:text-secondary'
+        )}
+      >
+        {statusIcon}
+        <div className="min-w-0 flex-1">
+          <div className="truncate">{labels.title}</div>
+          {/* The title is now the session's name or first message, so the time it
+              displaced moves here. Recent rows are already grouped by workspace,
+              which makes the project name the less useful of the two subtitles —
+              the home screen, which is not grouped, shows the project instead.
+              The engine leads the line only when both engines are present. */}
+          <div className="truncate text-[11px] text-faint">
+            {engineLabel && `${engineLabel} · `}
+            {formatRelativeTime(session.lastModified, Date.now())}
           </div>
-          {runtime && <SessionRuntimeIndicator runtime={runtime} />}
-        </button>
-        {/* Sibling (not child) of the row button, so no nested interactive
-            elements: the row's click/double-click/context-menu never fire for
-            this icon. Shows an empty filtered state when the session has no runs. */}
-        <button
-          type="button"
-          onClick={() => openWorkflowRunsForSession(workflowSessionId)}
-          className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-faint opacity-0 transition-opacity hover:bg-highlight hover:text-accent-fg focus-visible:opacity-100 group-hover:opacity-100"
-          title={t('sidebar.workflowRunsForSession')}
-          aria-label={t('sidebar.workflowRunsForSession')}
-        >
-          <WorkflowIcon size={12} />
-        </button>
-      </div>
+        </div>
+      </button>
     )
   }
 
@@ -558,9 +544,6 @@ export function Sidebar(): React.JSX.Element {
         <div>
           <div className="mb-1 flex items-center gap-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">
             <span>{t('sidebar.nav.activitySection')}</span>
-            {activeWorkspace && (
-              <span className="min-w-0 truncate normal-case">· {activeWorkspace.name}</span>
-            )}
           </div>
           <div className="space-y-0.5">
             <SidebarItem
@@ -660,9 +643,7 @@ export function Sidebar(): React.JSX.Element {
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         <div className="mb-1 flex items-center justify-between px-2">
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">
-            {activeWorkspace
-              ? t('sidebar.recentSessions.headingWithProject', { project: activeWorkspace.name })
-              : t('sidebar.recentSessions.headingNoProject')}
+            {t('sidebar.recentSessions.heading')}
           </div>
           <button
             type="button"

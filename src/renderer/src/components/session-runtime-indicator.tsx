@@ -3,7 +3,10 @@ import { useTranslation } from 'react-i18next'
 import type { SessionRuntimeInfo } from '../../../shared/ipc-contracts'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 
-export function SessionRuntimeIndicator({ runtime }: { runtime: SessionRuntimeInfo }): React.JSX.Element | null {
+export function SessionRuntimeIndicator({ runtime, fallback = null }: {
+  runtime: SessionRuntimeInfo
+  fallback?: React.JSX.Element | null
+}): React.JSX.Element | null {
   const { t } = useTranslation()
   const working = runtime.activity === 'working' || runtime.status === 'starting'
   const needsApproval = runtime.activity === 'needs-approval'
@@ -39,5 +42,5 @@ export function SessionRuntimeIndicator({ runtime }: { runtime: SessionRuntimeIn
   if (failed) {
     return <XCircle size={12} className="shrink-0 text-error" aria-label={t('sessions.runtime.failed', { agent })} />
   }
-  return null
+  return fallback
 }
