@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
@@ -14,6 +14,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { formatIpcError } from '../utils/ipc-error'
+import { createStaleGuard } from '../utils/stale-guard'
 import { GitConveyorActions } from './git-conveyor-actions'
 
 interface DiffLine {
@@ -43,26 +44,38 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
   const [stagedMode, setStagedMode] = useState(false)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
+  const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
+  const loadGuard = useMemo(() => createStaleGuard(), [])
 
   const loadDiff = useCallback(async () => {
+    const isCurrent = loadGuard.begin()
     setLoading(true)
+    setFiles([])
+    setLoadError(null)
     try {
       const diff = stagedMode
         ? await window.piDesktop.files.getStagedDiff()
         : await window.piDesktop.files.getDiff()
+      if (!isCurrent()) return
       setFiles(parseDiff(diff))
       setLoadError(null)
     } catch (err) {
+      if (!isCurrent()) return
       setFiles([])
       setLoadError(formatIpcError(err))
     } finally {
-      setLoading(false)
+      if (isCurrent()) setLoading(false)
     }
-  }, [stagedMode])
+  }, [stagedMode, loadGuard])
 
   useEffect(() => {
-    loadDiff()
-  }, [loadDiff])
+    void loadDiff()
+    return () => { loadGuard.begin() }
+  }, [loadDiff, loadGuard, workspaceId])
+
+  useEffect(() => {
+    setExpandedFiles(new Set())
+  }, [workspaceId])
 
   const toggleFile = (path: string) => {
     setExpandedFiles((prev) => {
@@ -119,7 +132,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
             </button>
           </div>
           <div className="order-3 min-w-0 basis-full border-t border-border pt-2">
-            <GitConveyorActions onChanged={loadDiff} />
+            <GitConveyorActions key={workspaceId} onChanged={loadDiff} />
           </div>
         </div>
       </div>
