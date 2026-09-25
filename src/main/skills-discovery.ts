@@ -19,6 +19,14 @@ import { skillDisplayName } from '../shared/pi-command'
  *    discover nested skill groups or bare root markdown files).
  */
 
+/**
+ * The `.agents/skills` root under a project or home folder. Both engines read
+ * it, which makes it the one place a skill can go to reach Pi and OMP alike.
+ */
+export function agentsSkillsDir(root: string): string {
+  return join(root, '.agents', 'skills')
+}
+
 interface SkillScanPlan {
   dirs: { dir: string; source: 'global' | 'project' }[]
   recursive: boolean
@@ -33,8 +41,8 @@ function skillScanPlan(cwd: string, homeDir: string, engine: 'pi' | 'omp'): Skil
         { dir: join(homeDir, '.omp', 'agent', 'skills'), source: 'global' },
         { dir: join(cwd, '.claude', 'skills'), source: 'project' },
         { dir: join(homeDir, '.claude', 'skills'), source: 'global' },
-        { dir: join(cwd, '.agents', 'skills'), source: 'project' },
-        { dir: join(homeDir, '.agents', 'skills'), source: 'global' },
+        { dir: agentsSkillsDir(cwd), source: 'project' },
+        { dir: agentsSkillsDir(homeDir), source: 'global' },
       ],
       recursive: false,
       rootMdFiles: false,
@@ -44,8 +52,8 @@ function skillScanPlan(cwd: string, homeDir: string, engine: 'pi' | 'omp'): Skil
     dirs: [
       { dir: join(cwd, '.pi', 'skills'), source: 'project' },
       { dir: join(homeDir, '.pi', 'agent', 'skills'), source: 'global' },
-      { dir: join(cwd, '.agents', 'skills'), source: 'project' },
-      { dir: join(homeDir, '.agents', 'skills'), source: 'global' },
+      { dir: agentsSkillsDir(cwd), source: 'project' },
+      { dir: agentsSkillsDir(homeDir), source: 'global' },
     ],
     recursive: true,
     rootMdFiles: true,

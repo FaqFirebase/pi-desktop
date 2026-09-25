@@ -18,7 +18,13 @@ export default defineConfig({
     primaryLanguage: SOURCE_LANGUAGE,
     removeUnusedKeys: true,
     // Read by resources/permission-prompt-text.ts (inside the Pi process), not by t().
-    preservePatterns: ['permissions.prompt.*'],
+    // Voice keys are looked up dynamically by model id and precision, so the
+    // extractor cannot see them statically.
+    preservePatterns: [
+      'permissions.prompt.*',
+      'voice.models.*',
+      'settings.voice.precision.*',
+    ],
     sort: true,
     indentation: 2,
     // New keys land empty; locales.test.ts fails until the English text is written.

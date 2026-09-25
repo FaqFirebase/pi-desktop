@@ -71,6 +71,17 @@ export function registerFileHandlers(ctx: IpcContext): void {
     return fs.getStagedDiff(isString(filePath) ? filePath : undefined)
   })
 
+  // Disk watching is demand-driven: the renderer declares whether a live
+  // files panel consumes change events, and the watcher attaches to the
+  // active workspace only while demanded. Without demand (cold start, Home)
+  // no chokidar watcher exists; the tree still loads on open and the safety
+  // poll + focus refresh cover the unwatched state.
+  ipcMain.handle(IPC_CHANNELS.FILE_WATCH_DEMAND, async (_event, demanded: unknown) => {
+    if (typeof demanded !== 'boolean') throw new Error('demanded must be a boolean')
+    workspaceManager.setFileWatchDemand(demanded)
+    return { watching: workspaceManager.getWatchedWorkspaceId() !== null }
+  })
+
   ipcMain.handle(IPC_CHANNELS.GIT_STATUS, async () => {
     const fs = workspaceManager.getActiveFileService()
     // No active workspace (e.g. the home screen before any workspace is opened)

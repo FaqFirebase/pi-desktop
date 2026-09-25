@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
+import { useChatVisible } from '../hooks'
 import { createDebouncedBuffer } from '../utils/debounced-buffer'
 import { createStaleGuard } from '../utils/stale-guard'
 import { toPreviewLoadError, type PreviewLoadError } from '../utils/preview-load-error'
@@ -26,6 +27,7 @@ import {
   Code2,
   ShieldAlert,
 } from 'lucide-react'
+import { isImeComposing } from '../utils/ime-composing'
 
 // `<webview>` (enabled via webviewTag) isn't a typed JSX intrinsic; cast the tag
 // to a component so TS accepts the props we use. It renders the HTML preview in
@@ -132,6 +134,19 @@ export function FileTree(): React.JSX.Element {
       window.removeEventListener('focus', handleFocus)
     }
   }, [loadTree, workspaceKey])
+
+  // The disk watcher only runs while this panel is visible (see ChatPanel's
+  // watch-demand effect): navigating away stops it, so coming back can land
+  // on a stale tree. Treat the return as a focus event and reload once — the
+  // 15s safety poll would otherwise be the only refresh for up to 15s.
+  // useChatVisible is the same test ChatPanel uses to declare the demand, so
+  // the reload edge and the watcher edge can never drift apart.
+  const chatVisible = useChatVisible()
+  const wasChatVisible = useRef(chatVisible)
+  useEffect(() => {
+    if (chatVisible && !wasChatVisible.current) void loadTree(false)
+    wasChatVisible.current = chatVisible
+  }, [chatVisible, loadTree])
 
   const handleFileClick = useCallback(async (path: string, relativePath: string) => {
     // Open the preview first (images route to the image viewer); a dirty
@@ -327,7 +342,7 @@ export function FileSearch({ isOpen, onClose }: FileSearchProps): React.JSX.Elem
   useEffect(() => {
     if (!isOpen) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !isImeComposing(e)) {
         // A confirm dialog stacked on top (dirty-editor discard) owns Escape;
         // swallowing it here would close the palette and leave the dialog.
         if (useAppStore.getState().confirmRequest) return

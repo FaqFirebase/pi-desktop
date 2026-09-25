@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { mkdtemp, writeFile, mkdir, readFile, symlink } from 'fs/promises'
 import { join } from 'path'
+import { execFileSync } from 'child_process'
 import { tmpdir } from 'os'
 import {
   buildNewFileDiff,
@@ -276,4 +277,29 @@ test('getFileDiff and getStagedDiff return empty for a non-repo directory', asyn
   const service = new FileService(dir)
   assert.equal(await service.getFileDiff(), '')
   assert.equal(await service.getStagedDiff(), '')
+})
+
+// Node's execFile default maxBuffer; a diff above it used to fail (#70).
+const EXEC_FILE_DEFAULT_MAX_BUFFER_BYTES = 1024 * 1024
+
+test('getFileDiff and getStagedDiff return diffs larger than the execFile default buffer', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'fs-bigdiff-'))
+  const git = (...args: string[]): void => {
+    execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', ...args], { cwd: dir })
+  }
+  git('init', '-q')
+  await writeFile(join(dir, 'big.txt'), 'original\n')
+  git('add', 'big.txt')
+  git('commit', '-q', '-m', 'init')
+
+  const bigContent = 'changed line of text\n'.repeat(EXEC_FILE_DEFAULT_MAX_BUFFER_BYTES / 10)
+  await writeFile(join(dir, 'big.txt'), bigContent)
+  const service = new FileService(dir)
+
+  const workingDiff = await service.getFileDiff()
+  assert.ok(workingDiff.length > EXEC_FILE_DEFAULT_MAX_BUFFER_BYTES)
+
+  git('add', 'big.txt')
+  const stagedDiff = await service.getStagedDiff()
+  assert.ok(stagedDiff.length > EXEC_FILE_DEFAULT_MAX_BUFFER_BYTES)
 })

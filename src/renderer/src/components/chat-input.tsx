@@ -1,13 +1,17 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { clsx } from 'clsx'
 import { useAppStore } from '../store'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { t } from '../../../shared/i18n'
-import { useChatKeyboard, useCommandCatalog } from '../hooks'
+import { useChatKeyboard, useChatWidth, useCommandCatalog } from '../hooks'
+import { composerColumnClass } from '../utils/chat-width'
 import { ComposerPermissionMenu } from './composer-permission-menu'
 import { CommandResults } from './command-results'
 import { SubagentProgress } from './subagent-progress'
 import { ModelSelector } from './model-selector'
+import { VoiceMicButton } from './voice-mic-button'
+import { applyInterim } from '../../../shared/voice-composer'
 import { ThinkingLevelSelector } from './thinking-level-selector'
 import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users, Search } from 'lucide-react'
 import {
@@ -25,6 +29,7 @@ import {
   isSlashCommandToken,
   type PiCommand,
 } from '../../../shared/pi-command'
+import { isImeComposing } from '../utils/ime-composing'
 
 const MAX_INPUT_HEIGHT = 160
 const MIN_INPUT_HEIGHT = 40
@@ -81,6 +86,7 @@ export function ChatInput(): React.JSX.Element {
   const abort = useAppStore((state) => state.abort)
   const isStreaming = useAppStore((state) => state.isStreaming)
   const piStatus = useAppStore((state) => state.piStatus)
+  const composerColumn = composerColumnClass(useChatWidth())
   const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const pendingInsert = useAppStore((state) => state.pendingInsert)
   const clearPendingInsert = useAppStore((state) => state.clearPendingInsert)
@@ -312,6 +318,44 @@ export function ChatInput(): React.JSX.Element {
     [resizeTextarea]
   )
 
+  // Live voice dictation writes a running transcript into the composer. The
+  // textarea is uncontrolled, so track the insertion point (anchor) and the
+  // length of the interim text, and rewrite that region as speech arrives.
+  const voiceAnchor = useRef(0)
+  const voiceInterimLen = useRef(0)
+  const voiceHandlers = useMemo(
+    () => ({
+      onStart: () => {
+        const ta = textareaRef.current
+        voiceAnchor.current = ta?.selectionStart ?? ta?.value.length ?? 0
+        voiceInterimLen.current = 0
+      },
+      onInterim: (text: string) => {
+        const ta = textareaRef.current
+        if (!ta) return
+        const r = applyInterim(ta.value, voiceAnchor.current, voiceInterimLen.current, text)
+        ta.value = r.value
+        voiceInterimLen.current = r.interimLength
+        ta.focus()
+        ta.setSelectionRange(r.caret, r.caret)
+        resizeTextarea(ta)
+        historyIndex.current = -1
+      },
+      onFinal: (text: string) => {
+        const ta = textareaRef.current
+        if (!ta) return
+        const r = applyInterim(ta.value, voiceAnchor.current, voiceInterimLen.current, text)
+        ta.value = r.value
+        voiceInterimLen.current = 0
+        ta.focus()
+        ta.setSelectionRange(r.caret, r.caret)
+        resizeTextarea(ta)
+        historyIndex.current = -1
+      },
+    }),
+    [resizeTextarea]
+  )
+
   const handleAttachFile = useCallback(async () => {
     setAttachError(null)
     try {
@@ -410,7 +454,7 @@ export function ChatInput(): React.JSX.Element {
   useChatKeyboard(handleSend, handleAbort, textareaRef)
 
   return (
-    <div className="pointer-events-none mx-auto w-full max-w-3xl px-4">
+    <div className={clsx('pointer-events-none mx-auto w-full px-4', composerColumn)}>
       {attachError && (
         <div className="pointer-events-auto mb-2 flex items-center gap-1.5 text-xs text-error">
           <X size={12} className="shrink-0" />
@@ -530,6 +574,7 @@ export function ChatInput(): React.JSX.Element {
             setSlashToken(null)
           }}
           onKeyDown={(e) => {
+            if (isImeComposing(e.nativeEvent)) return
             if (e.ctrlKey && e.key === 'p') {
               e.preventDefault()
               useAppStore.getState().cycleModel()
@@ -643,6 +688,7 @@ export function ChatInput(): React.JSX.Element {
           >
             <Paperclip size={15} />
           </button>
+          <VoiceMicButton handlers={voiceHandlers} disabled={isDisabled} />
           <button
             onClick={() => setNotePickerOpen(true)}
             className="hover:bg-highlight-strong flex items-center justify-center rounded-md p-1.5 text-dim hover:text-secondary transition-colors"

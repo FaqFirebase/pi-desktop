@@ -144,6 +144,7 @@ export const IPC_CHANNELS = {
   FILE_WRITE: 'file:write',
   FILE_DIFF: 'file:diff',
   FILE_STAGED_DIFF: 'file:staged-diff',
+  FILE_WATCH_DEMAND: 'file:watch-demand',
   GIT_STATUS: 'git:status',
   GIT_BRANCH: 'git:branch',
   GIT_CONVEYOR_STATUS: 'git:conveyor-status',
@@ -195,6 +196,21 @@ export const IPC_CHANNELS = {
   EVENT_TERMINAL_DATA: 'event:terminal-data',
   EVENT_TERMINAL_EXIT: 'event:terminal-exit',
   EVENT_COUNCIL_PROGRESS: 'event:council-progress',
+  EVENT_VOICE_PROGRESS: 'event:voice-progress',
+
+  // Voice dictation
+  VOICE_STATUS: 'voice:status',
+  VOICE_INSTALL: 'voice:install',
+  VOICE_CANCEL: 'voice:cancel',
+  VOICE_REMOVE: 'voice:remove',
+  VOICE_SELECT: 'voice:select',
+
+  // TypeSafe (Jev): API key storage and agent skill install
+  TYPESAFE_STATUS: 'typesafe:status',
+  TYPESAFE_SAVE_KEY: 'typesafe:save-key',
+  TYPESAFE_CLEAR_KEY: 'typesafe:clear-key',
+  TYPESAFE_INSTALL_SKILL: 'typesafe:install-skill',
+  TYPESAFE_REMOVE_SKILL: 'typesafe:remove-skill',
 } as const
 
 // ─── Pi Process Types ───────────────────────────────────────────────────────
@@ -946,6 +962,9 @@ export interface CouncilProgressEvent {
 
 import type { ModelsConfig as ModelsConfigType } from './models-config'
 import type { CouncilConfig } from './council-config'
+import type { VoicePrecision, VoiceModel, VoiceModelManifest, VoiceDownloadProgress } from './voice-models'
+import type { VoiceDevice } from './voice-device'
+import type { ChatWidth } from './chat-width'
 /** Result of the MODELS_READ IPC call. */
 /**
  * Where the custom-models config was read from. Main resolves the engine and
@@ -1117,6 +1136,9 @@ export interface AppSettings {
   terminalFontSize: number
   // Code editor (CodeMirror) font size in px — independent of the UI font size.
   codeEditorFontSize: number
+  // Chat column width: 'normal' keeps a readable column, 'full' uses the whole
+  // chat area. Unknown values reset to 'normal' on load.
+  chatWidth: ChatWidth
   showThinking: boolean
   autoScroll: boolean
   permissionMode: PermissionMode
@@ -1154,7 +1176,75 @@ export interface AppSettings {
   language: string
   // Multi-agent council planning configuration.
   council: CouncilConfig
+  // Voice dictation: the installed speech-to-text model to transcribe with, or
+  // null when the user has not chosen one. No model is downloaded automatically;
+  // the mic button is inert until a model is picked and installed.
+  voiceModel: string | null
+  // Precision of the installed voice model to load: 'int8' runs on the CPU,
+  // 'fp16' on the GPU (see voice-device.ts). Unknown values reset to 'int8'.
+  voicePrecision: VoicePrecision
+  // Where dictation runs: 'auto' (GPU when a hardware GPU is found), 'cpu' or
+  // 'gpu'. It picks which precision Settings downloads. Unknown values reset
+  // to 'auto' on load.
+  voiceDevice: VoiceDevice
 }
+
+// ─── Voice Dictation Types ──────────────────────────────────────────────────
+
+/** Snapshot of voice models: the catalog, what is installed, and the choice. */
+export interface VoiceStatus {
+  catalog: VoiceModel[]
+  installed: VoiceModelManifest[]
+  selectedModel: string | null
+  selectedPrecision: VoicePrecision
+  device: VoiceDevice
+  /** The saved device needs a different set of startup switches than this run has. */
+  restartRequired: boolean
+}
+
+/** Request to download and install one model at one precision. */
+export interface VoiceInstallRequest {
+  modelId: string
+  precision: VoicePrecision
+}
+
+/** Streamed install progress (main → renderer on EVENT_VOICE_PROGRESS). */
+export interface VoiceProgressEvent {
+  modelId: string
+  precision: VoicePrecision
+  phase: 'downloading' | 'done' | 'error'
+  progress: VoiceDownloadProgress
+  error?: string
+}
+
+// ─── TypeSafe (Jev) Types ───────────────────────────────────────────────────
+
+/**
+ * Where the TypeSafe agent skill stands in the shared `~/.agents/skills` root.
+ * `installed-elsewhere` means a copy exists that Pi Desktop did not put there
+ * (for example from `npx skills add`); Pi Desktop leaves it alone.
+ */
+export type TypeSafeSkillState = 'not-installed' | 'installed' | 'installed-elsewhere'
+
+export interface TypeSafeSkillStatus {
+  state: TypeSafeSkillState
+  /** Release tag of a copy Pi Desktop installed; null otherwise. */
+  installedVersion: string | null
+  /** The pinned release tag this build downloads and installs. */
+  pinnedVersion: string
+  directory: string
+}
+
+/** Never carries the key itself — only whether one exists and where from. */
+export interface TypeSafeStatus {
+  savedKey: boolean
+  /** TYPESAFE_API_KEY is set in the app's own environment; it wins over a saved key. */
+  environmentKey: boolean
+  skill: TypeSafeSkillStatus
+}
+
+/** `ok: false` means the value was not a valid API key and nothing was saved. */
+export type TypeSafeSaveKeyResult = { ok: true; status: TypeSafeStatus } | { ok: false }
 
 /** What the renderer needs to resolve the `language` setting like main does. */
 export interface I18nEnvironment {

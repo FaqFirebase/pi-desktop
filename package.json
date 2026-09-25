@@ -1,6 +1,6 @@
 {
   "name": "pi-desktop",
-  "version": "0.1.8-alpha",
+  "version": "0.1.9-alpha",
   "description": "Desktop GUI for the Pi and oh-my-pi coding agents",
   "main": "out/main/index.js",
   "desktopName": "pi-desktop.desktop",
@@ -64,6 +64,7 @@
     "@codemirror/legacy-modes": "^6.5.3",
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@huggingface/transformers": "^4.3.0",
     "@lezer/highlight": "^1.2.3",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0",
@@ -74,6 +75,7 @@
     "i18next": "^26.4.2",
     "lucide-react": "^0.511.0",
     "node-pty": "^1.1.0",
+    "parakeet.js": "^1.4.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-i18next": "^17.0.14",

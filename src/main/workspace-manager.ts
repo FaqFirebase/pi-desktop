@@ -169,8 +169,13 @@ export class WorkspaceManager {
   private workspaceRemovedListeners: WorkspaceRemovedListener[] = []
   // The workspace whose FileService currently has an active disk watcher.
   // Only the active workspace is watched, mirroring how Pi events are
-  // forwarded for the active workspace only.
+  // forwarded for the active workspace only — and only while the renderer
+  // has declared a live consumer for change events (the Chat files panel).
+  // Without demand there is no watcher, so cold start and the Home view pay
+  // no chokidar cost; the tree still loads on demand and the safety poll +
+  // focus refresh keep it fresh.
   private watchingWorkspaceId: string | null = null
+  private fileWatchDemanded = false
 
   constructor() {
     this.configPath = getGuiDataPath(WORKSPACES_FILE)
@@ -178,6 +183,23 @@ export class WorkspaceManager {
 
   onFileChange(listener: FileChangeListener): void {
     this.fileChangeListeners.push(listener)
+  }
+
+  /**
+   * Declare whether any live UI currently consumes file-change events. The
+   * watcher attaches to the active workspace only while demanded, so closing
+   * the files panel (or leaving Chat) stops disk watching. Idempotent:
+   * repeat calls with the same value are no-ops.
+   */
+  setFileWatchDemand(demanded: boolean): void {
+    if (this.fileWatchDemanded === demanded) return
+    this.fileWatchDemanded = demanded
+    this.updateActiveWatcher()
+  }
+
+  /** The workspace currently watched, or null when no watcher is attached. */
+  getWatchedWorkspaceId(): string | null {
+    return this.watchingWorkspaceId
   }
 
   onWorkspaceRemoved(listener: WorkspaceRemovedListener): void {
@@ -192,20 +214,22 @@ export class WorkspaceManager {
 
   /**
    * Ensure the disk watcher is attached to the active workspace's FileService
-   * (and detached from any previously-watched one). Called on startup and on
-   * every active-workspace change.
+   * (and detached from any previously-watched one) — but only while the
+   * renderer demands change events. Called on startup, on every
+   * active-workspace change, and when demand flips.
    */
   private updateActiveWatcher(): void {
-    if (this.watchingWorkspaceId === this.activeWorkspaceId) return
+    const target = this.fileWatchDemanded ? this.activeWorkspaceId : null
+    if (this.watchingWorkspaceId === target) return
 
     if (this.watchingWorkspaceId) {
       this.fileServices.get(this.watchingWorkspaceId)?.stopWatching()
     }
 
-    this.watchingWorkspaceId = this.activeWorkspaceId
-    if (this.activeWorkspaceId) {
+    this.watchingWorkspaceId = target
+    if (target) {
       this.fileServices
-        .get(this.activeWorkspaceId)
+        .get(target)
         ?.startWatching((event) => this.emitFileChange(event))
     }
   }
@@ -698,7 +722,8 @@ export class WorkspaceManager {
     // permission-protected Windows system paths).
 
     // Workspaces loaded from disk don't go through emitActiveWorkspaceChanged,
-    // so attach the watcher to the active workspace explicitly here.
+    // so reconcile the watcher against the active workspace explicitly here
+    // (a no-op until the renderer demands change events).
     this.updateActiveWatcher()
   }
 
@@ -1119,6 +1144,7 @@ export class WorkspaceManager {
     for (const [, entry] of this.sessionRuntimes) entry.manager.stop()
     for (const [, fs] of this.fileServices) fs.stopWatching()
     this.watchingWorkspaceId = null
+    this.fileWatchDemanded = false
     this.piManagers.clear()
     this.sessionRuntimes.clear()
     this.runtimeBySessionPath.clear()

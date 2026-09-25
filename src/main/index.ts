@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, session, shell } from 'electron'
 import { existsSync, mkdirSync } from 'fs'
 import { basename, join, resolve as resolvePath } from 'path'
 import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
@@ -16,6 +16,10 @@ import { shouldHideToTray } from './tray-decision'
 import { createEditorGuard } from './editor-guard'
 import { appLog } from './app-log'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
+import { VOICE_PROTOCOL_SCHEME, handleVoiceProtocolRequest } from './voice-protocol'
+import { getVoiceModelsDir } from './voice-model-store'
+import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
+import { getSettingsPath } from './ipc/settings'
 
 // Env var honored on startup: if set, the named directory becomes the active
 // workspace (created on first run, switched to on subsequent runs). The CLI
@@ -129,6 +133,10 @@ const userDataDir = externalUserDataDir ?? getCanonicalUserDataDir(app.getPath('
 mkdirSync(userDataDir, { recursive: true })
 app.setPath('userData', userDataDir)
 configureGuiDataDir(userDataDir)
+
+// Voice dictation on the GPU needs WebGPU, which Chromium keeps off on Linux
+// unless it starts with extra switches. Set them now, before the app is ready.
+applyVoiceGpuSwitches(app.commandLine, process.platform, readVoiceDeviceSync(getSettingsPath()))
 
 // ─── Window Creation ─────────────────────────────────────────────────────────
 
@@ -398,6 +406,21 @@ function createApplicationMenu(): void {
 
 // ─── App Lifecycle ───────────────────────────────────────────────────────────
 
+// Register the voice-model scheme as privileged before the app is ready, so the
+// renderer may fetch model files from it under the locked CSP.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: VOICE_PROTOCOL_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+])
+
 app.whenReady().then(async () => {
   if (!externalUserDataDir) {
     await migrateLegacyGuiData({
@@ -423,6 +446,12 @@ app.whenReady().then(async () => {
 
   // Lock the HTML preview partition to local files before any preview can load.
   hardenPreviewSession()
+
+  // Serve downloaded speech-model files to the renderer. The handler streams
+  // files only from the single speech-models directory and rejects traversal.
+  protocol.handle(VOICE_PROTOCOL_SCHEME, (request) =>
+    handleVoiceProtocolRequest(request.url, getVoiceModelsDir()),
+  )
 
   // Resolve the configured engine before exposing IPC or creating the renderer;
   // otherwise the renderer can win the startup race and launch the default Pi

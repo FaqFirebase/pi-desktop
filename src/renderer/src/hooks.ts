@@ -5,7 +5,9 @@ import { getAppliedThemeId, subscribeAppliedTheme } from './utils/theme'
 import { DEFAULT_SETTINGS } from '../../shared/default-settings'
 import { BUILTIN_SOURCE, type PiCommand } from '../../shared/pi-command'
 import type { WorkspaceActivationIntent } from '../../shared/ipc-contracts'
+import type { ChatWidth } from '../../shared/chat-width'
 import { t } from '../../shared/i18n'
+import { isImeComposing } from './utils/ime-composing'
 
 /**
  * Subscribes to Pi events from the main process and routes them to the store.
@@ -142,6 +144,26 @@ export function isGlobalWorkflowOpen(scope: WorkflowPanelScope): boolean {
 /** Component-side subscription to {@link isGlobalWorkflowOpen}. */
 export function useGlobalWorkflowOpen(): boolean {
   return useAppStore(isGlobalWorkflowOpen)
+}
+
+/**
+ * Whether the chat pane is actually on screen. ChatPanel stays mounted behind
+ * `display: none` when another view or the global workflow panel takes over,
+ * so both checks are needed. Shared by everything that must react to the
+ * hidden -> shown edge (scroll re-anchoring, the disk-watch demand, and the
+ * file tree's catch-up reload), which must all agree on one definition.
+ */
+export function useChatVisible(): boolean {
+  const currentView = useAppStore((state) => state.currentView)
+  const globalWorkflowOpen = useGlobalWorkflowOpen()
+  return currentView === 'chat' && !globalWorkflowOpen
+}
+
+/** The chat column width, with an unsaved Settings edit shown live. */
+export function useChatWidth(): ChatWidth {
+  return useAppStore(
+    (state) => state.settingsDraft.chatWidth ?? state.settings?.chatWidth ?? DEFAULT_SETTINGS.chatWidth
+  )
 }
 
 // Distance (px) from the bottom within which we consider the user "at bottom"
@@ -397,6 +419,7 @@ export function useChatKeyboard(
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isImeComposing(e)) return
       if (isAbortShortcut(e, isStreaming)) {
         e.preventDefault()
         onAbort()

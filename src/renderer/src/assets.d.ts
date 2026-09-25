@@ -5,3 +5,9 @@ declare module '*.svg' {
   const src: string
   export default src
 }
+
+// `?worker&url` bundles the file as a standalone script and resolves to its URL.
+declare module '*?worker&url' {
+  const src: string
+  export default src
+}

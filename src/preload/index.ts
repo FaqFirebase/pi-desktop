@@ -36,6 +36,11 @@ import type {
   CouncilArbiterRequest,
   CouncilArbiterResult,
   CouncilProgressEvent,
+  VoiceStatus,
+  TypeSafeStatus,
+  TypeSafeSaveKeyResult,
+  VoiceInstallRequest,
+  VoiceProgressEvent,
   AttachmentReadResult,
   OpenDialogOptions,
   PathKindResult,
@@ -216,6 +221,26 @@ interface PiDesktopAPI {
     onProgress(callback: (event: CouncilProgressEvent) => void): () => void
   }
 
+  // Voice dictation: on-device speech-to-text models
+  voice: {
+    status(): Promise<VoiceStatus>
+    install(request: VoiceInstallRequest): Promise<VoiceStatus>
+    cancel(): Promise<void>
+    remove(modelId: string): Promise<VoiceStatus>
+    select(request: { modelId: string | null; precision: VoiceInstallRequest['precision'] }): Promise<VoiceStatus>
+    onProgress(callback: (event: VoiceProgressEvent) => void): () => void
+  }
+
+  // TypeSafe (Jev): saved API key and the agent skill. The key goes in once
+  // and never comes back out.
+  typesafe: {
+    status(): Promise<TypeSafeStatus>
+    saveKey(key: string): Promise<TypeSafeSaveKeyResult>
+    clearKey(): Promise<TypeSafeStatus>
+    installSkill(): Promise<TypeSafeStatus>
+    removeSkill(): Promise<TypeSafeStatus>
+  }
+
   // Skills, Commands, MCP, Tags
   skills: {
     list(): Promise<InstalledSkill[]>
@@ -264,6 +289,11 @@ interface PiDesktopAPI {
     write(path: string, content: string): Promise<{ ok: boolean }>
     getDiff(filePath?: string): Promise<string>
     getStagedDiff(filePath?: string): Promise<string>
+    /**
+     * Declare whether a live files panel consumes file-change events. The
+     * main process attaches the workspace watcher only while demanded.
+     */
+    setWatchDemand(demanded: boolean): Promise<{ watching: boolean }>
     getGitStatus(): Promise<Record<string, GitFileStatus>>
     getGitBranch(): Promise<string | null>
   }
@@ -479,6 +509,27 @@ const api: PiDesktopAPI = {
     },
   },
 
+  voice: {
+    status: () => ipcRenderer.invoke(IPC_CHANNELS.VOICE_STATUS),
+    install: (request) => ipcRenderer.invoke(IPC_CHANNELS.VOICE_INSTALL, request),
+    cancel: () => ipcRenderer.invoke(IPC_CHANNELS.VOICE_CANCEL),
+    remove: (modelId) => ipcRenderer.invoke(IPC_CHANNELS.VOICE_REMOVE, modelId),
+    select: (request) => ipcRenderer.invoke(IPC_CHANNELS.VOICE_SELECT, request),
+    onProgress: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: VoiceProgressEvent) => callback(data)
+      ipcRenderer.on(IPC_CHANNELS.EVENT_VOICE_PROGRESS, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.EVENT_VOICE_PROGRESS, handler)
+    },
+  },
+
+  typesafe: {
+    status: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_STATUS),
+    saveKey: (key) => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_SAVE_KEY, key),
+    clearKey: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_CLEAR_KEY),
+    installSkill: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_INSTALL_SKILL),
+    removeSkill: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_REMOVE_SKILL),
+  },
+
   skills: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.SKILLS_LIST),
   },
@@ -523,6 +574,7 @@ const api: PiDesktopAPI = {
     write: (path, content) => ipcRenderer.invoke(IPC_CHANNELS.FILE_WRITE, path, content),
     getDiff: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE_DIFF, filePath),
     getStagedDiff: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE_STAGED_DIFF, filePath),
+    setWatchDemand: (demanded) => ipcRenderer.invoke(IPC_CHANNELS.FILE_WATCH_DEMAND, demanded),
     getGitStatus: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_STATUS),
     getGitBranch: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_BRANCH),
   },

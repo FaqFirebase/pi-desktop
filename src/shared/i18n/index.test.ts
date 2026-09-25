@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { availableLanguages, i18n, languageNativeName, t } from './index'
 import { PSEUDO_LANGUAGE, SOURCE_LANGUAGE } from './languages'
+import { BUNDLED_LANGUAGES } from './resources'
 
 const EMPTY_TEST_LANGUAGE = 'xx'
 const NAMESPACE = 'translation'
@@ -13,8 +14,10 @@ test('the shared instance starts in English with the bundled resources', () => {
 })
 
 test('availableLanguages adds the pseudo-language only when enabled', () => {
-  assert.deepEqual(availableLanguages(false), [SOURCE_LANGUAGE])
-  assert.deepEqual(availableLanguages(true), [SOURCE_LANGUAGE, PSEUDO_LANGUAGE])
+  assert.deepEqual(availableLanguages(false), [...BUNDLED_LANGUAGES])
+  assert.deepEqual(availableLanguages(true), [...BUNDLED_LANGUAGES, PSEUDO_LANGUAGE])
+  // The source language stays first, so it is the fallback for missing keys.
+  assert.equal(availableLanguages(false)[0], SOURCE_LANGUAGE)
 })
 
 test('an empty translation falls back to English', () => {

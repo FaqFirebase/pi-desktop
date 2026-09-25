@@ -135,6 +135,14 @@
         "running": "running"
       }
     },
+    "voice": {
+      "errorTitle": "Voice dictation failed: {{error}}",
+      "needsGpu": "This model version needs a graphics card (GPU), and none was found. Pick CPU under Settings > Voice to get the CPU version.",
+      "setUpTitle": "Set up voice dictation in Settings",
+      "startTitle": "Start voice dictation",
+      "stopTitle": "Stop and insert text",
+      "transcribing": "Transcribing your voice"
+    },
     "waitingForResponse": "Waiting for response..."
   },
   "commandGroups": {
@@ -573,6 +581,11 @@
       "unknownKey": "{{label}} has unknown key \"{{key}}\"",
       "unsupportedSchema": "unsupported $schema (expected {{expected}})"
     },
+    "typesafe": {
+      "skillChecksumMismatch": "{{file}} did not match its expected checksum, so Pi Desktop did not install it.",
+      "skillDownloadFailed": "Could not download {{file}} (HTTP {{status}}).",
+      "skillInstalledElsewhere": "A TypeSafe skill that Pi Desktop did not install is already at {{directory}}. Pi Desktop did not change it."
+    },
     "workflow": {
       "runNotFound": "Workflow run not found"
     },
@@ -1004,6 +1017,12 @@
       "description": "Automatically scroll to new messages",
       "label": "Auto Scroll"
     },
+    "chatWidth": {
+      "description": "How wide messages and the prompt box can grow",
+      "fullOption": "Full width",
+      "label": "Chat Width",
+      "normalOption": "Normal"
+    },
     "codeEditorFontSize": {
       "description": "Font size for the code editor / file viewer",
       "label": "Code Editor Font Size"
@@ -1048,6 +1067,7 @@
       "description": "Language of menus, buttons, and messages",
       "label": "Language",
       "labelWithEnglish": "{{label}} ({{english}})",
+      "optionLabel": "{{nativeName}} ({{name}})",
       "system": "System default ({{language}})"
     },
     "lightTheme": {
@@ -1091,7 +1111,9 @@
       "appearance": "Appearance",
       "behavior": "Behavior",
       "customModels": "Custom Models",
-      "multiAgentCouncilPlanning": "Multi-Agent Council Planning"
+      "multiAgentCouncilPlanning": "Multi-Agent Council Planning",
+      "typesafe": "TypeSafe Jev",
+      "voiceDictation": "Voice dictation"
     },
     "showThinking": {
       "description": "Display model thinking blocks in responses",
@@ -1115,9 +1137,64 @@
       "description": "Import, export, or install a theme from a URL",
       "label": "Theme Actions"
     },
+    "typesafe": {
+      "apiKey": {
+        "environment": "TYPESAFE_API_KEY is already set in the environment Pi Desktop started with. Pi and OMP use that value.",
+        "invalid": "That is not a valid API key. Paste it again with no spaces.",
+        "label": "API key",
+        "nextSession": "New sessions get the key. Restart an open session to give it the key.",
+        "placeholder": "Paste your TypeSafe API key",
+        "remove": "Remove key",
+        "save": "Save",
+        "saved": "Saved. Only your user account can read it."
+      },
+      "intro": "Jev is TypeSafe's judgment model. Save your API key and install the Jev skill here. Pi and OMP then use the key without asking for it. Pi Desktop does not call TypeSafe itself.",
+      "links": {
+        "agentSkill": "Jev skill guide",
+        "apiKeys": "Get an API key",
+        "introduction": "TypeSafe docs"
+      },
+      "skill": {
+        "install": "Install",
+        "installed": "Installed ({{version}})",
+        "installedElsewhere": "Installed outside Pi Desktop. Manage it with the tool you installed it with.",
+        "label": "Jev skill",
+        "location": "Location: {{directory}}",
+        "notInstalled": "Not installed. It teaches Pi and OMP how to use TypeSafe.",
+        "remove": "Remove skill",
+        "update": "Update to {{version}}"
+      }
+    },
     "uiFontSize": {
       "description": "Chat, panels, and sidebar — not the terminal or code editor",
       "label": "UI Font Size"
+    },
+    "voice": {
+      "device": {
+        "auto": "Auto",
+        "cpu": "CPU",
+        "gpu": "GPU"
+      },
+      "downloading": "Downloading {{done}} of {{total}} files",
+      "englishOnly": "English only",
+      "getVersion": "Get {{version}}",
+      "gpuUnnamed": "GPU",
+      "install": "Install",
+      "intro": "Speak into the microphone and Pi Desktop turns your voice into text on your computer. Pick a model to download. No model is downloaded until you choose one.",
+      "multilingual": "Many languages",
+      "precision": {
+        "fp16": "GPU version (fp16)",
+        "int8": "CPU version (int8)"
+      },
+      "remove": "Remove",
+      "restartRequired": "Restart Pi Desktop to apply this change.",
+      "runOn": "Run on",
+      "runtimeCpu": "Runs on the processor (CPU) with the CPU version of each model.",
+      "runtimeCpuNoGpu": "No usable graphics card found, so voice runs on the processor (CPU) with the CPU version of each model.",
+      "runtimeGpu": "Runs on your graphics card ({{name}}) with the GPU version of each model.",
+      "selected": "In use",
+      "sizeMb": "~{{mb}} MB",
+      "use": "Use"
     }
   },
   "sidebar": {
@@ -1600,6 +1677,34 @@
     "stillRunningTitle": "Pi Desktop is still running",
     "unavailableBody": "This desktop has no system tray, so Pi Desktop will close normally instead of minimizing to the tray.",
     "unavailableTitle": "System tray unavailable"
+  },
+  "voice": {
+    "models": {
+      "moonshine-base": {
+        "name": "Moonshine Base",
+        "note": "Small, fast English dictation. Good balance of size and accuracy."
+      },
+      "moonshine-tiny": {
+        "name": "Moonshine Tiny",
+        "note": "The smallest English model. Fastest on weak computers."
+      },
+      "parakeet-v2": {
+        "name": "Parakeet V2",
+        "note": "Very accurate English. Large download."
+      },
+      "parakeet-v3": {
+        "name": "Parakeet V3",
+        "note": "Most accurate. 25 languages with automatic detection. Large download."
+      },
+      "whisper-base": {
+        "name": "Whisper Base",
+        "note": "Small model that covers many languages."
+      },
+      "whisper-small": {
+        "name": "Whisper Small",
+        "note": "More accurate in many languages. Larger download."
+      }
+    }
   },
   "workflows": {
     "agentGrid": {

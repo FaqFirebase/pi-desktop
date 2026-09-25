@@ -11,6 +11,10 @@ import { i18n, t, tEnglish, type Translate } from '../shared/i18n'
 
 const execFileAsync = promisify(execFile)
 
+// execFile kills the child past 1 MiB of stdout by default, which a
+// whole-worktree status or diff on a repo with many changes easily exceeds.
+const GIT_OUTPUT_MAX_BUFFER_BYTES = 64 * 1024 * 1024
+
 const PARENT_ESCAPE = '..'
 
 const WORKSPACE_ESCAPE_KEYS = {
@@ -319,6 +323,7 @@ export class FileService {
       const { stdout } = await execFileAsync('git', ['status', '--porcelain=v1', '-u'], {
         cwd: this.workspacePath,
         timeout: 10_000,
+        maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
       })
 
       for (const line of stdout.split('\n')) {
@@ -403,6 +408,7 @@ export class FileService {
       const { stdout } = await execFileAsync('git', args, {
         cwd: this.workspacePath,
         timeout: 10_000,
+        maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
       })
       const untrackedDiff = await this.getUntrackedFileDiff(filePath)
       return [stdout, untrackedDiff].filter((part) => part.trim()).join('\n')
@@ -443,6 +449,7 @@ export class FileService {
       const { stdout } = await execFileAsync('git', args, {
         cwd: this.workspacePath,
         timeout: 10_000,
+        maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
       })
       return stdout
     } catch (err) {

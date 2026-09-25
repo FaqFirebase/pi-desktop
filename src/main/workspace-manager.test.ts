@@ -678,3 +678,133 @@ test('load recovers from .bak when the live workspaces file is corrupted', async
     assert.ok(names.includes('Alpha'), 'should fall back to the .bak instead of losing everything')
   })
 })
+
+test('no disk watcher is attached until the renderer demands change events', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const workspace = await mgr.createWorkspace('Alpha', await project())
+    assert.equal(mgr.getActiveWorkspace()?.id, workspace.id)
+    assert.equal(
+      mgr.getWatchedWorkspaceId(),
+      null,
+      'cold start with an active workspace must not pay the chokidar cost'
+    )
+  })
+})
+
+test('file watch demand attaches to and detaches from the active workspace', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const workspace = await mgr.createWorkspace('Alpha', await project())
+
+    mgr.setFileWatchDemand(true)
+    assert.equal(mgr.getWatchedWorkspaceId(), workspace.id)
+
+    mgr.setFileWatchDemand(true)
+    assert.equal(mgr.getWatchedWorkspaceId(), workspace.id, 'repeat demand must be a no-op')
+
+    mgr.setFileWatchDemand(false)
+    assert.equal(mgr.getWatchedWorkspaceId(), null)
+  })
+})
+
+test('file watch demand follows the active workspace across switches', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const alpha = await mgr.createWorkspace('Alpha', await project())
+    const beta = await mgr.createWorkspace('Beta', await project())
+
+    mgr.setFileWatchDemand(true)
+    assert.equal(mgr.getWatchedWorkspaceId(), alpha.id)
+
+    await mgr.setActiveWorkspace(beta.id)
+    assert.equal(
+      mgr.getWatchedWorkspaceId(),
+      beta.id,
+      'switching workspaces with the files panel open must move the watcher'
+    )
+
+    mgr.setFileWatchDemand(false)
+    assert.equal(mgr.getWatchedWorkspaceId(), null)
+  })
+})
+
+test('file watch demand re-arms on the new path after changeWorkspacePath', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const workspace = await mgr.createWorkspace('Alpha', await project())
+
+    mgr.setFileWatchDemand(true)
+    assert.equal(mgr.getWatchedWorkspaceId(), workspace.id)
+
+    await mgr.changeWorkspacePath(workspace.id, await project())
+    assert.equal(
+      mgr.getWatchedWorkspaceId(),
+      workspace.id,
+      'repointing the folder must re-arm the watcher on the new FileService'
+    )
+  })
+})
+
+test('workspace switches stay watcher-free while nothing is demanded', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    await mgr.createWorkspace('Alpha', await project())
+    const beta = await mgr.createWorkspace('Beta', await project())
+
+    await mgr.setActiveWorkspace(beta.id)
+    assert.equal(mgr.getWatchedWorkspaceId(), null)
+  })
+})
+
+test('demand set before any workspace attaches on first activation', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    mgr.setFileWatchDemand(true)
+    assert.equal(mgr.getWatchedWorkspaceId(), null, 'no workspace, nothing to watch')
+
+    const workspace = await mgr.createWorkspace('Alpha', await project())
+    assert.equal(
+      mgr.getWatchedWorkspaceId(),
+      workspace.id,
+      'the first activation must honor pre-existing demand'
+    )
+  })
+})
+
+test('removing the watched workspace migrates the watcher while demanded', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const alpha = await mgr.createWorkspace('Alpha', await project())
+    await mgr.createWorkspace('Beta', await project())
+    mgr.setFileWatchDemand(true)
+    assert.equal(mgr.getWatchedWorkspaceId(), alpha.id)
+
+    await mgr.removeWorkspace(alpha.id)
+    assert.equal(
+      mgr.getWatchedWorkspaceId(),
+      mgr.getActiveWorkspace()?.id,
+      'removal must move the watcher to the promoted workspace'
+    )
+  })
+})
+
+test('stopAll stops the watcher', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const workspace = await mgr.createWorkspace('Alpha', await project())
+    mgr.setFileWatchDemand(true)
+    assert.equal(mgr.getWatchedWorkspaceId(), workspace.id)
+
+    mgr.stopAll()
+    assert.equal(mgr.getWatchedWorkspaceId(), null, 'quit must leave no watcher attached')
+  })
+})

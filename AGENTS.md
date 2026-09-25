@@ -69,6 +69,7 @@ src/
 │   ├── session-lineage.ts        # Cross-session lineage tree
 │   ├── session-preview.ts        # First user message -> one-line row label
 │   ├── sidebar-width.ts          # Bounds/resolution for the user-adjustable sidebar width
+│   ├── chat-width.ts             # Chat column width setting values (normal / full)
 │   ├── workflow-control.ts       # Control eligibility for persisted workflow runs
 │   └── theme/                    # Theme-file format, resolver, syntax defaults, tokens
 ├── main/
@@ -155,6 +156,7 @@ src/
         │   ├── relative-time.tsx # Shared ticking "now" for relative labels
         │   ├── stale-guard.ts    # Last-write-wins guard for overlapping loads
         │   ├── preview-load-error.ts # Preview load/save failure kept as data, translated at render
+        │   ├── chat-width.ts     # Chat column width setting -> message/composer max-width classes
         │   ├── process-status-label.ts # Translated agent process status (status popover, Diagnostics)
         │   └── workflow-runs.ts  # Session id used to scope workflow runs
         └── components/
@@ -371,6 +373,7 @@ Click the status icon in the sidebar header to see:
 - Agent Configuration: engine (auto-detect / Pi / OMP) and executable path
 - Theme: Dark, Light, System, Nord, Gruvbox, Breeze Dark, Breeze Light, Breeze Claudius (Breeze Dark base + deep chat surface, contributed by @sumit-m) — applies immediately. **Default is `dark`** — Breeze Claudius is opt-in only, never auto-selected for new installs
 - Independent UI / Terminal / Code Editor font size sliders
+- Chat width: Normal (readable middle column) or Full width (messages and composer fill the chat area, for large monitors)
 - Show thinking blocks, auto-scroll
 - Run on startup, Minimize to tray on close (Windows/Linux), Resume last session, desktop notifications
 - Custom theme editor: create, edit, import/export, install from URL (theme files live in the GUI data dir `themes/`)

@@ -10,6 +10,7 @@ import { getPiCli } from '../pi-rpc-manager'
 import { engineForBoundSession } from '../pi-paths'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../shared/agent-engine-label'
 import { i18n } from '../../shared/i18n'
+import { typeSafeKeyEnv, typeSafeKeyStore } from '../typesafe-key-store'
 
 const READ_ONLY_TOOLS = 'read,grep,find,ls'
 const OMP_READ_ONLY_TOOLS = 'read,grep,glob'
@@ -111,6 +112,9 @@ export function applyPermissionModeToStartOptions(
       // trust explicitly (see workspace-trust.ts).
       PI_DESKTOP_WORKSPACE_TRUSTED:
         options.cwd && workspaceTrustStore.isTrusted(options.cwd) ? '1' : '0',
+      // The API key saved in Settings, so the TypeSafe agent skill never has to
+      // ask for it. A key already in the app's own environment wins.
+      ...typeSafeKeyEnv(typeSafeKeyStore.getSavedKey(), process.env),
     },
   }
 }
