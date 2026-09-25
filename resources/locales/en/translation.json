@@ -448,6 +448,7 @@
     "newFileBadge": "NEW",
     "noChanges": "No changes",
     "noStagedChanges": "No staged changes",
+    "openFile": "Open file",
     "refreshAriaLabel": "Refresh diff",
     "stagedToggle": "Staged",
     "workingToggle": "Working",
