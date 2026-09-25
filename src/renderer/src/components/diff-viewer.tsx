@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
@@ -6,6 +6,7 @@ import { clsx } from 'clsx'
 import {
   AlertTriangle,
   GitCompare,
+  FilePenLine,
   File,
   RefreshCw,
   ChevronDown,
@@ -14,7 +15,9 @@ import {
   Loader2,
 } from 'lucide-react'
 import { formatIpcError } from '../utils/ipc-error'
+import { createStaleGuard } from '../utils/stale-guard'
 import { GitConveyorActions } from './git-conveyor-actions'
+import { isImagePath } from './chat-file-link'
 
 interface DiffLine {
   type: 'add' | 'remove' | 'context' | 'header' | 'hunk'
@@ -43,26 +46,38 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
   const [stagedMode, setStagedMode] = useState(false)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
+  const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
+  const loadGuard = useMemo(() => createStaleGuard(), [])
 
   const loadDiff = useCallback(async () => {
+    const isCurrent = loadGuard.begin()
     setLoading(true)
+    setFiles([])
+    setLoadError(null)
     try {
       const diff = stagedMode
         ? await window.piDesktop.files.getStagedDiff()
         : await window.piDesktop.files.getDiff()
+      if (!isCurrent()) return
       setFiles(parseDiff(diff))
       setLoadError(null)
     } catch (err) {
+      if (!isCurrent()) return
       setFiles([])
       setLoadError(formatIpcError(err))
     } finally {
-      setLoading(false)
+      if (isCurrent()) setLoading(false)
     }
-  }, [stagedMode])
+  }, [stagedMode, loadGuard])
 
   useEffect(() => {
-    loadDiff()
-  }, [loadDiff])
+    void loadDiff()
+    return () => { loadGuard.begin() }
+  }, [loadDiff, loadGuard, workspaceId])
+
+  useEffect(() => {
+    setExpandedFiles(new Set())
+  }, [workspaceId])
 
   const toggleFile = (path: string) => {
     setExpandedFiles((prev) => {
@@ -167,6 +182,26 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   )
 }
 
+export async function openDiffFile(file: Pick<DiffFileBlock, 'newPath' | 'isDeleted'>): Promise<void> {
+  const store = useAppStore.getState()
+  const workspace = store.activeWorkspace
+  if (!workspace || file.isDeleted) return
+
+  const name = file.newPath.split('/').pop() ?? file.newPath
+  const separator = workspace.path.includes('\\') ? '\\' : '/'
+  const path = workspace.path.replace(/[\\/]$/, '') + separator + file.newPath.replace(/\//g, separator)
+  const opened = await store.setPreviewTarget({
+    kind: isImagePath(name) ? 'image' : 'code',
+    name,
+    path,
+    relativePath: file.newPath,
+  })
+  if (!opened) return
+  const current = useAppStore.getState()
+  if (current.chatSidePanel === 'diff') await current.setChatSidePanel(null)
+  current.setCurrentView('chat')
+}
+
 function DiffFileEntry({
   file,
   expanded,
@@ -187,28 +222,40 @@ function DiffFileEntry({
   return (
     <div className="rounded-lg border border-border overflow-hidden">
       {/* File header */}
-      <button
-        onClick={onToggle}
-        className="flex w-full items-center gap-2 px-3 py-2 bg-surface/50 hover:bg-surface-hover/50 transition-colors"
-      >
-        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <File size={14} className="shrink-0 text-dim" />
-        <span className="text-xs text-primary truncate">{file.newPath}</span>
-        <div className="ml-auto flex items-center gap-2 text-xs">
-          {file.isNew && (
-            <span className="rounded bg-success-bg px-1.5 py-0.5 text-success">{t('diff.newFileBadge')}</span>
-          )}
-          {file.isDeleted && (
-            <span className="rounded bg-error-bg px-1.5 py-0.5 text-error">{t('diff.deletedFileBadge')}</span>
-          )}
-          {additions > 0 && (
-            <span className="text-success">+{additions}</span>
-          )}
-          {deletions > 0 && (
-            <span className="text-error">-{deletions}</span>
-          )}
-        </div>
-      </button>
+      <div className="flex items-center bg-surface/50">
+        <button
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 hover:bg-surface-hover/50 transition-colors"
+        >
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <File size={14} className="shrink-0 text-dim" />
+          <span className="text-xs text-primary truncate">{file.newPath}</span>
+          <div className="ml-auto flex items-center gap-2 text-xs">
+            {file.isNew && (
+              <span className="rounded bg-success-bg px-1.5 py-0.5 text-success">{t('diff.newFileBadge')}</span>
+            )}
+            {file.isDeleted && (
+              <span className="rounded bg-error-bg px-1.5 py-0.5 text-error">{t('diff.deletedFileBadge')}</span>
+            )}
+            {additions > 0 && (
+              <span className="text-success">+{additions}</span>
+            )}
+            {deletions > 0 && (
+              <span className="text-error">-{deletions}</span>
+            )}
+          </div>
+        </button>
+        {!file.isDeleted && (
+          <button
+            onClick={() => void openDiffFile(file)}
+            className="mr-2 flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
+            title={t('diff.openFile')}
+            aria-label={t('diff.openFile')}
+          >
+            <FilePenLine size={14} />
+          </button>
+        )}
+      </div>
 
       {/* Diff content */}
       {expanded && (

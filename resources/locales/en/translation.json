@@ -29,11 +29,14 @@
     "attach": {
       "allFilesFilter": "All Files",
       "attachFailed": "Could not attach file",
+      "dropHint": "Drop files to attach",
       "imagesFilter": "Images",
       "onlyImagesPasted": "Only images can be pasted into the composer",
       "pasteFailed": "Could not paste image",
       "readImageFailed": "Could not read image data",
+      "reading": "Adding attachments…",
       "unknownMimeType": "unknown",
+      "unsupportedFile": "Unsupported file format. Attach UTF-8 text, code, PNG, JPEG, GIF, or WebP files.",
       "unsupportedImageType": "Unsupported image type ({{mimeType}}). Use PNG, JPEG, GIF, or WebP."
     },
     "closeFileTree": "Close file tree",
@@ -194,7 +197,6 @@
     "dismiss": "Dismiss",
     "export": "Export",
     "global": "Global",
-    "hideSidebar": "Hide sidebar",
     "import": "Import",
     "install": "Install",
     "installed": "Installed",
@@ -448,6 +450,7 @@
     "newFileBadge": "NEW",
     "noChanges": "No changes",
     "noStagedChanges": "No staged changes",
+    "openFile": "Open file",
     "refreshAriaLabel": "Refresh diff",
     "stagedToggle": "Staged",
     "workingToggle": "Working",
@@ -751,8 +754,7 @@
       "noModelsMatch": "No models match",
       "searchPlaceholder": "Search models…",
       "selectModel": "Select model",
-      "selectModelWithShortcut": "Select model (Ctrl+P to cycle when {{agent}} is running)",
-      "startToListModels": "Start Pi to list and change models."
+      "selectModelWithShortcut": "Select model (Ctrl+P to cycle when {{agent}} is running)"
     }
   },
   "notes": {
@@ -1204,12 +1206,6 @@
       "heading_one": "Archived ({{count}})",
       "heading_other": "Archived ({{count}})"
     },
-    "currentSession": {
-      "heading": "Current Session",
-      "messageCount_one": "{{count}} messages",
-      "messageCount_other": "{{count}} messages",
-      "openTitle": "Open current session in chat · double-click to rename"
-    },
     "header": {
       "closeSidebar": "Close sidebar",
       "homeAriaLabel": "Home",
@@ -1234,7 +1230,6 @@
       "label": "New session",
       "openProjectToBegin": "Open a project to begin",
       "shortcutKbd": "Ctrl N",
-      "startsIn": "Starts in {{project}}",
       "titleNoProject": "Open a project first",
       "titleWithShortcut": "Start a new session in this project (Ctrl/Cmd+N)"
     },
@@ -1247,8 +1242,7 @@
     "recentSessions": {
       "emptyInProject": "No sessions in this project yet.",
       "emptyNoProject": "Open a project to see its sessions.",
-      "headingNoProject": "Recent sessions",
-      "headingWithProject": "Recent in {{project}}",
+      "heading": "Recent",
       "startOneNow": "Start one now",
       "viewAll": "View all"
     },
@@ -1265,7 +1259,6 @@
       "packages": "Packages",
       "sectionLabel": "Tools"
     },
-    "workflowRunsForSession": "Workflow runs for this session",
     "workspaceMenu": {
       "changeFolder": "Change folder…",
       "rename": "Rename"

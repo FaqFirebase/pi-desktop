@@ -633,7 +633,7 @@ export function FilePreview(): React.JSX.Element | null {
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-[var(--color-app)]">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+      <div className="flex h-8 shrink-0 items-center justify-between border-b border-border px-3">
         <div className="flex items-center gap-2 min-w-0">
           <FileText size={14} className="shrink-0 text-dim" />
           <span className="text-xs text-secondary truncate">{displayPath}</span>
@@ -726,7 +726,7 @@ export function FilePreview(): React.JSX.Element | null {
                 ? t('files.preview.readFailed')
                 : t('files.preview.saveFailed')}
           </div>
-        ) : content === null ? null : viewMode === 'preview' && isMarkdown ? (
+        ) : content === null || savedContent === null ? null : viewMode === 'preview' && isMarkdown ? (
           <div className="markdown-body text-sm p-4">
             <MarkdownRenderer content={content} />
           </div>
@@ -759,6 +759,7 @@ export function FilePreview(): React.JSX.Element | null {
           <CodeEditor
             filePath={displayPath}
             value={content}
+            savedValue={savedContent}
             readOnly={false}
             onChange={handleChange}
           />
