@@ -691,7 +691,7 @@ const api: PiDesktopAPI = {
 
   onMenuAction: (callback) => {
     const handlers: Array<() => void> = []
-    const actions = ['menu:new-session', 'menu:new-workspace', 'menu:open-project']
+    const actions = ['menu:new-session', 'menu:close-session', 'menu:new-workspace', 'menu:open-project']
 
     for (const action of actions) {
       const handler = () => callback(action)
