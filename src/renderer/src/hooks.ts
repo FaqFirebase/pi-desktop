@@ -102,6 +102,11 @@ export function useMenuActions(): void {
         case 'menu:new-session':
           createNewSession()
           break
+        case 'menu:close-session': {
+          const { activeSessionRuntimeId, closeSessionTab } = useAppStore.getState()
+          if (activeSessionRuntimeId) void closeSessionTab(activeSessionRuntimeId)
+          break
+        }
         case 'menu:new-workspace':
           setCurrentView('settings') // Open settings where workspace creation lives
           break
