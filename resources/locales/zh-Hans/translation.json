@@ -29,11 +29,14 @@
     "attach": {
       "allFilesFilter": "所有文件",
       "attachFailed": "无法附加文件",
+      "dropHint": "拖放文件以添加附件",
       "imagesFilter": "图片",
       "onlyImagesPasted": "只能向输入框粘贴图片",
       "pasteFailed": "无法粘贴图片",
       "readImageFailed": "无法读取图片数据",
+      "reading": "正在添加附件…",
       "unknownMimeType": "未知",
+      "unsupportedFile": "不支持的文件格式。请附加 UTF-8 文本、代码、PNG、JPEG、GIF 或 WebP 文件。",
       "unsupportedImageType": "不支持的图片类型（{{mimeType}}）。请使用 PNG、JPEG、GIF 或 WebP。"
     },
     "closeFileTree": "关闭文件树",
