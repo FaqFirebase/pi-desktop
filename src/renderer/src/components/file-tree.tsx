@@ -726,7 +726,7 @@ export function FilePreview(): React.JSX.Element | null {
                 ? t('files.preview.readFailed')
                 : t('files.preview.saveFailed')}
           </div>
-        ) : content === null ? null : viewMode === 'preview' && isMarkdown ? (
+        ) : content === null || savedContent === null ? null : viewMode === 'preview' && isMarkdown ? (
           <div className="markdown-body text-sm p-4">
             <MarkdownRenderer content={content} />
           </div>
@@ -759,6 +759,7 @@ export function FilePreview(): React.JSX.Element | null {
           <CodeEditor
             filePath={displayPath}
             value={content}
+            savedValue={savedContent}
             readOnly={false}
             onChange={handleChange}
           />
