@@ -1185,11 +1185,6 @@
       "expandTitle": "展开已归档会话",
       "heading_other": "已归档（{{count}}）"
     },
-    "currentSession": {
-      "heading": "当前会话",
-      "messageCount_other": "{{count}} 条消息",
-      "openTitle": "在聊天中打开当前会话 · 双击重命名"
-    },
     "header": {
       "closeSidebar": "关闭侧边栏",
       "homeAriaLabel": "主页",
