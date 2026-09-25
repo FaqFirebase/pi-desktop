@@ -400,6 +400,7 @@ interface AppState {
   // A prompt queued for insertion into the chat input. The nonce lets the
   // chat input re-apply the same text on repeated inserts.
   pendingInsert: { text: string; nonce: number; replace?: boolean } | null
+  composerFocusRequested: boolean
   // Body text captured (e.g. from a message) to seed a new note in the Notes
   // panel. Non-null opens the panel's New Note form pre-filled.
   noteDraft: string | null
@@ -956,6 +957,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   commandPaletteOpen: false,
   taskLauncherOpen: false,
   pendingInsert: null,
+  composerFocusRequested: false,
   noteDraft: null,
   updateInfo: null,
   updateDismissed: false,
@@ -1304,6 +1306,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         currentView: 'chat',
         sessionState: null,
         sessionStats: null,
+        composerFocusRequested: true,
         // A new session has no history to wait for. Show the empty chat
         // immediately; the runtime event hydrates its generated session path
         // when Pi is ready, while piStatus still communicates startup.
@@ -1463,6 +1466,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       !get().sessionLoading &&
       get().messages.length > 0
     ) {
+      set({ composerFocusRequested: true })
       return
     }
 
@@ -1520,6 +1524,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         if (get().activeWorkspace?.id) void window.piDesktop.ui.flushPendingPrompts(get().activeWorkspace!.id)
         set({
           currentView: 'chat',
+          composerFocusRequested: true,
           sessionLoading: runtime?.status !== 'running',
           ...(runtime ? {
             activeSessionRuntimeId: runtime.runtimeId,

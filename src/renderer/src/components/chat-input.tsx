@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState, useEffect, useMemo } from 'react'
+import { useRef, useCallback, useState, useEffect, useLayoutEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import { useAppStore } from '../store'
@@ -82,6 +82,9 @@ type Attachment =
 export function ChatInput(): React.JSX.Element {
   const { t } = useTranslation()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const composerFocusRequested = useAppStore((state) => state.composerFocusRequested)
+  const sessionLoading = useAppStore((state) => state.sessionLoading)
+  const currentView = useAppStore((state) => state.currentView)
   const sendPrompt = useAppStore((state) => state.sendPrompt)
   const abort = useAppStore((state) => state.abort)
   const isStreaming = useAppStore((state) => state.isStreaming)
@@ -420,6 +423,32 @@ export function ChatInput(): React.JSX.Element {
   // A stopped agent stays typable: the first send lazy-starts Pi/OMP.
   // Only transient/error states block input.
   const isDisabled = piStatus === 'starting' || piStatus === 'error'
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current
+    return () => {
+      // Late history hydration can replace an already-focused composer.
+      // Hand focus to its replacement, but never reclaim it after the user left.
+      if (textarea && document.activeElement === textarea) {
+        useAppStore.setState({ composerFocusRequested: true })
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!composerFocusRequested || isDisabled || sessionLoading || currentView !== 'chat') return
+    // History hydration swaps the loading composer for the empty-chat composer.
+    // Keep the request pending until the mounted, enabled input actually takes focus.
+    const frame = requestAnimationFrame(() => {
+      const textarea = textareaRef.current
+      if (!textarea) return
+      textarea.focus()
+      if (document.activeElement === textarea) {
+        useAppStore.setState({ composerFocusRequested: false })
+      }
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [composerFocusRequested, isDisabled, sessionLoading, currentView])
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
