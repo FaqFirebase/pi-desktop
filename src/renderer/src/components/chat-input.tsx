@@ -30,6 +30,8 @@ import {
   type PiCommand,
 } from '../../../shared/pi-command'
 import { isImeComposing } from '../utils/ime-composing'
+import { isFileDrag } from '../../../shared/folder-drop'
+import { droppedAttachmentFiles, readDroppedAttachment } from '../utils/dropped-attachments'
 
 const MAX_INPUT_HEIGHT = 160
 const MIN_INPUT_HEIGHT = 40
@@ -148,6 +150,10 @@ export function ChatInput(): React.JSX.Element {
 
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
+  const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
+  const attachmentDragDepth = useRef(0)
+  const pendingDrops = useRef(0)
+  const [isReadingDrop, setIsReadingDrop] = useState(false)
 
   // Clear the composer and collapse it back to the idle height. The textarea is
   // uncontrolled and auto-grows in onInput, so clearing the value alone leaves it
@@ -265,6 +271,7 @@ export function ChatInput(): React.JSX.Element {
 
   const handleSend = useCallback(
     async (message: string) => {
+      if (pendingDrops.current > 0) return
       // Record the raw prompt (pre-attachment-inlining) for ↑/↓ recall, and
       // reset any in-progress history navigation.
       recordPrompt(message)
@@ -447,6 +454,44 @@ export function ChatInput(): React.JSX.Element {
     [attachImageFile, isDisabled]
   )
 
+  const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    attachmentDragDepth.current = 0
+    setIsDraggingAttachment(false)
+    if (!isFileDrag(event.dataTransfer)) return
+    const files = droppedAttachmentFiles(event.dataTransfer)
+    // A folder-only drop still bubbles to the workspace opener.
+    if (files.length === 0) return
+    event.preventDefault()
+    if (isDisabled) return
+
+    const candidates = files.map((file) => ({
+      file,
+      path: window.piDesktop.system.getPathForFile(file) || `drop://${file.name}-${file.size}-${file.lastModified}`,
+    }))
+    pendingDrops.current += 1
+    setIsReadingDrop(true)
+    setAttachError(null)
+    void (async () => {
+      const errors: string[] = []
+      try {
+        for (const { file, path } of candidates) {
+          try {
+            const result = await readDroppedAttachment(file)
+            const next: Attachment = { ...result, path }
+            setAttachments((prev) => prev.some((a) => a.path === path) ? prev : [...prev, next])
+          } catch (error) {
+            errors.push(`${file.name}: ${error instanceof Error ? error.message : t('chat.attach.attachFailed')}`)
+          }
+        }
+        if (errors.length) setAttachError(errors.join('\n'))
+      } finally {
+        pendingDrops.current -= 1
+        setIsReadingDrop(pendingDrops.current > 0)
+        textareaRef.current?.focus()
+      }
+    })()
+  }, [isDisabled, t])
+
   const removeAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index))
   }, [])
@@ -462,7 +507,35 @@ export function ChatInput(): React.JSX.Element {
         </div>
       )}
 
-      <div className="pointer-events-auto relative flex flex-col rounded-2xl border border-border-strong bg-surface/95 shadow-lg shadow-black/25 backdrop-blur-sm focus-within:border-border-strong-hover transition-colors">
+      <div
+        className={clsx(
+          'pointer-events-auto relative flex flex-col rounded-2xl border bg-surface/95 shadow-lg shadow-black/25 backdrop-blur-sm transition-colors',
+          isDraggingAttachment ? 'border-accent' : 'border-border-strong focus-within:border-border-strong-hover'
+        )}
+        onDragEnter={(event) => {
+          if (!isFileDrag(event.dataTransfer)) return
+          event.preventDefault()
+          attachmentDragDepth.current += 1
+          if (!isDisabled) setIsDraggingAttachment(true)
+        }}
+        onDragOver={(event) => {
+          if (!isFileDrag(event.dataTransfer)) return
+          event.preventDefault()
+          event.dataTransfer.dropEffect = isDisabled ? 'none' : 'copy'
+        }}
+        onDragLeave={() => {
+          attachmentDragDepth.current = Math.max(0, attachmentDragDepth.current - 1)
+          if (attachmentDragDepth.current === 0) setIsDraggingAttachment(false)
+        }}
+        onDrop={handleDrop}
+      >
+        {isDraggingAttachment && (
+          <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-accent bg-surface/95 text-sm text-primary" role="status">
+            <Paperclip size={18} />
+            {t('chat.attach.dropHint')}
+          </div>
+        )}
+        {isReadingDrop && <div className="px-3 pt-2 text-xs text-muted" role="status">{t('chat.attach.reading')}</div>}
         {/* Subagent strip sits on the top edge, inset ~5% each side so the pill
             width doesn't look like it grew with the fleet UI. */}
         <div className="pointer-events-auto absolute bottom-full left-[5%] right-[5%] z-20 mb-0">
@@ -575,6 +648,11 @@ export function ChatInput(): React.JSX.Element {
           }}
           onKeyDown={(e) => {
             if (isImeComposing(e.nativeEvent)) return
+            if (e.key === 'Enter' && !e.shiftKey && pendingDrops.current > 0) {
+              e.preventDefault()
+              e.stopPropagation()
+              return
+            }
             if (e.ctrlKey && e.key === 'p') {
               e.preventDefault()
               useAppStore.getState().cycleModel()
@@ -760,7 +838,7 @@ export function ChatInput(): React.JSX.Element {
                   handleSend(value)
                 }
               }}
-              disabled={isDisabled}
+              disabled={isDisabled || isReadingDrop}
               className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title={t('chat.sendButton.titleWithShortcut')}
               aria-label={t('chat.sendButton.ariaLabel')}
