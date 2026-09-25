@@ -429,7 +429,7 @@ export function Sidebar(): React.JSX.Element {
       style={{ width: sidebarWidth }}
     >
       {/* Header */}
-      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
+      <div className="flex h-12 items-center justify-between border-b border-border px-3">
         <div className="flex items-center gap-2">
           <StatusPopover />
           {/* Compact Home replaces the duplicate Pi-activity popover: workspace
@@ -582,54 +582,6 @@ export function Sidebar(): React.JSX.Element {
           </div>
         </div>
       </nav>
-
-      {/* Current session info */}
-      {sessionState && (
-        renamingWhere === 'current' ? (
-          <div className="mx-3 mt-2 rounded-md bg-surface p-3">
-            <div className="text-xs font-medium text-muted uppercase tracking-wider">{t('sidebar.currentSession.heading')}</div>
-            <div className="mt-1.5 flex">{renderRenameInput()}</div>
-            {sessionState.model && (
-              <div className="mt-1 text-xs text-dim">{sessionState.model.name}</div>
-            )}
-            <div className="mt-1 text-xs text-dim">{t('sidebar.currentSession.messageCount', { count: sessionState.messageCount })}</div>
-          </div>
-        ) : (
-          <div className="group relative mx-3 mt-2">
-            <button
-              type="button"
-              onClick={() => setCurrentView('chat')}
-              onDoubleClick={() => startSessionRename('current')}
-              onContextMenu={handleCurrentSessionRightClick}
-              className="w-full rounded-md bg-surface p-3 pr-9 text-left transition-colors hover:bg-surface-hover focus:outline-none focus:ring-1 focus:ring-border-strong"
-              title={t('sidebar.currentSession.openTitle')}
-            >
-              <div className="text-xs font-medium text-muted uppercase tracking-wider">{t('sidebar.currentSession.heading')}</div>
-              <div className="mt-1.5 text-sm text-primary truncate">
-                {getSessionTitle(sessionState.sessionName, sessionState.sessionId, currentSessionPreview)}
-              </div>
-              {sessionState.model && (
-                <div className="mt-1 text-xs text-dim">
-                  {sessionState.model.name}
-                </div>
-              )}
-              <div className="mt-1 text-xs text-dim">
-                {t('sidebar.currentSession.messageCount', { count: sessionState.messageCount })}
-              </div>
-            </button>
-            {/* Sibling overlay — the panel above stays a single non-nested button. */}
-            <button
-              type="button"
-              onClick={() => openWorkflowRunsForSession(sessionState.sessionId)}
-              className="absolute right-2 top-3 rounded p-1.5 text-faint opacity-0 transition-opacity hover:bg-highlight hover:text-accent-fg focus-visible:opacity-100 group-hover:opacity-100"
-              title={t('sidebar.workflowRunsForSession')}
-              aria-label={t('sidebar.workflowRunsForSession')}
-            >
-              <WorkflowIcon size={13} />
-            </button>
-          </div>
-        )
-      )}
 
       {/* Recent sessions for the active project. Cross-project history stays in Sessions. */}
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
