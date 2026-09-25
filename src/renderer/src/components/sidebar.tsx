@@ -31,7 +31,6 @@ import { StatusPopover } from './status-popover'
 import { useContextMenu, buildSessionContextMenu } from './context-menu'
 import { getSessionEngineLabel, getSessionRowLabels, hasMixedSessionEngines } from './sidebar-session-labels'
 import { ResizeHandle } from './resize-handle'
-import { findSessionPreview, getSessionTitle } from '../utils/session-title'
 import { formatRelativeTime } from '../utils/format-relative-time'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import { resolveRunSessionId } from '../utils/workflow-runs'
@@ -109,14 +108,12 @@ export function Sidebar(): React.JSX.Element {
     })
   }
 
-  // Inline session rename. Only the active session can be renamed (Pi's rename
-  // targets it), and it's reachable from two spots — the Current Session panel
-  // (`'current'`) and its highlighted row in Recent Sessions (`'recent'`).
-  const [renamingWhere, setRenamingWhere] = useState<'current' | 'recent' | null>(null)
+  // Pi's rename targets the active session, exposed through its Recent row.
+  const [renamingWhere, setRenamingWhere] = useState<'recent' | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameCancelRef = useRef(false)
 
-  const startSessionRename = (where: 'current' | 'recent'): void => {
+  const startSessionRename = (where: 'recent'): void => {
     renameCancelRef.current = false
     // Prefill with the explicit name only; a timestamp/guid is not a name.
     setRenameValue(sessionState?.sessionName ?? '')
@@ -228,14 +225,6 @@ export function Sidebar(): React.JSX.Element {
     }))
   }
 
-  // The live session state has no preview, so the Current Session panel would
-  // fall back to the raw id while the same session's Recent row shows its first
-  // message. Both read the same preview instead.
-  const currentSessionPreview = useMemo(
-    () => findSessionPreview(sessionList, sessionState?.sessionFile),
-    [sessionList, sessionState?.sessionFile]
-  )
-
   // Gated on every known session, not on one section's slice, so the same chat
   // carries the same tag in Recent, in a folder group and under Archived.
   const showEngineTags = useMemo(() => hasMixedSessionEngines(sessionList), [sessionList])
@@ -298,20 +287,6 @@ export function Sidebar(): React.JSX.Element {
         onRuns: (s) => openWorkflowRunsForSession(resolveRunSessionId(s.piSessionId, s.sessionId) ?? s.sessionId),
       })
     )
-  }
-
-  // Right-click menu for the Current Session panel — same active session, so
-  // just the rename affordance.
-  const handleCurrentSessionRightClick = (e: React.MouseEvent): void => {
-    e.nativeEvent.stopPropagation()
-    showMenu(e, [
-      {
-        id: 'current-session-rename',
-        label: t('contextMenu.rename'),
-        icon: <Pencil size={14} />,
-        action: () => startSessionRename('current'),
-      },
-    ])
   }
 
   const renderSessionRow = (
@@ -454,7 +429,7 @@ export function Sidebar(): React.JSX.Element {
       style={{ width: sidebarWidth }}
     >
       {/* Header */}
-      <div className="flex h-12 items-center justify-between border-b border-border px-3">
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
         <div className="flex items-center gap-2">
           <StatusPopover />
           {/* Compact Home replaces the duplicate Pi-activity popover: workspace
