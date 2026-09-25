@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState, useEffect, useMemo } from 'react'
+import { useRef, useCallback, useState, useEffect, useLayoutEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import { useAppStore } from '../store'
@@ -82,6 +82,7 @@ type Attachment =
 export function ChatInput(): React.JSX.Element {
   const { t } = useTranslation()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const workspaceId = useAppStore((state) => state.activeWorkspace?.id ?? '')
   const sendPrompt = useAppStore((state) => state.sendPrompt)
   const abort = useAppStore((state) => state.abort)
   const isStreaming = useAppStore((state) => state.isStreaming)
@@ -168,6 +169,23 @@ export function ChatInput(): React.JSX.Element {
   const [mention, setMention] = useState<MentionState | null>(null)
   const [mentionResults, setMentionResults] = useState<FileSearchResult[]>([])
   const [mentionIndex, setMentionIndex] = useState(0)
+
+  useLayoutEffect(() => {
+    const ta = textareaRef.current
+    if (!ta) return
+    ta.value = useAppStore.getState().composerDrafts[workspaceId] ?? ''
+    resizeTextarea(ta)
+    historyIndex.current = -1
+    draft.current = ''
+    setSlashToken(null)
+    setMention(null)
+    setMentionResults([])
+
+    // Capture the element and owner before a workspace switch or unmount.
+    return () => {
+      useAppStore.getState().saveComposerDraft(workspaceId, ta.value)
+    }
+  }, [workspaceId, resizeTextarea])
 
   // Search the workspace for the active mention query (debounced). An empty
   // query yields no results, so the popup stays hidden until the user types.

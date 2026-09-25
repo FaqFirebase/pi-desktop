@@ -400,6 +400,8 @@ interface AppState {
   taskLauncherOpen: boolean
   // A prompt queued for insertion into the chat input. The nonce lets the
   // chat input re-apply the same text on repeated inserts.
+  composerDrafts: Record<string, string>
+  saveComposerDraft: (workspaceId: string, text: string) => void
   pendingInsert: { text: string; nonce: number; replace?: boolean } | null
   // Body text captured (e.g. from a message) to seed a new note in the Notes
   // panel. Non-null opens the panel's New Note form pre-filled.
@@ -957,6 +959,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   notePickerOpen: false,
   commandPaletteOpen: false,
   taskLauncherOpen: false,
+  composerDrafts: {},
+  saveComposerDraft: (workspaceId, text) => set((state) => {
+    const composerDrafts = { ...state.composerDrafts }
+    if (text) composerDrafts[workspaceId] = text
+    else delete composerDrafts[workspaceId]
+    return { composerDrafts }
+  }),
   pendingInsert: null,
   noteDraft: null,
   updateInfo: null,
