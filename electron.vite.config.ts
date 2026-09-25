@@ -2,7 +2,7 @@ import { resolve, basename } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { readFileSync, readdirSync, copyFileSync, mkdirSync, existsSync } from 'fs'
+import { readFileSync, copyFileSync, mkdirSync, existsSync } from 'fs'
 import type { Plugin } from 'vite'
 
 const { version } = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'))
@@ -14,11 +14,42 @@ const { version } = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 
 const ORT_DIST = resolve(__dirname, 'node_modules/onnxruntime-web/dist')
 const VOICE_WASM_DIR = 'voice-wasm'
 
+// Only the runtime builds the engines load. parakeet.js uses the shared
+// onnxruntime-web bundle, which loads the JSEP build (WebGPU + WASM);
+// transformers.js carries its own copy of the same version, which loads the
+// asyncify build. The other builds in the package (about 100 MB) are unused.
+const ORT_RUNTIME_FILES = [
+  'ort-wasm-simd-threaded.jsep.mjs',
+  'ort-wasm-simd-threaded.jsep.wasm',
+  'ort-wasm-simd-threaded.asyncify.mjs',
+  'ort-wasm-simd-threaded.asyncify.wasm',
+]
+
+// Both engine bundles also point at their .wasm next to themselves, so the
+// bundler emits a second copy (about 55 MB). The engines load from
+// `voice-wasm/` instead (their wasmPaths), so those copies are dropped.
+const BUNDLED_ORT_WASM = /(^|\/)ort-wasm-[\w.-]+\.wasm$/
+
 function ortWasmAssets(): { name: string; path: string }[] {
-  if (!existsSync(ORT_DIST)) return []
-  return readdirSync(ORT_DIST)
-    .filter((file) => file.endsWith('.wasm') || file.endsWith('.mjs'))
-    .map((file) => ({ name: file, path: resolve(ORT_DIST, file) }))
+  return ORT_RUNTIME_FILES.map((file) => {
+    const path = resolve(ORT_DIST, file)
+    // Fail the build rather than ship voice dictation that cannot start.
+    if (!existsSync(path)) throw new Error(`onnxruntime-web runtime file missing: ${path}`)
+    return { name: file, path }
+  })
+}
+
+/** Drop the bundler's unused copies of the onnxruntime .wasm files. */
+function dropBundledOrtWasmPlugin(): Plugin {
+  return {
+    name: 'pi-drop-bundled-ort-wasm',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      for (const fileName of Object.keys(bundle)) {
+        if (BUNDLED_ORT_WASM.test(fileName)) delete bundle[fileName]
+      }
+    },
+  }
 }
 
 function voiceWasmPlugin(): Plugin {
@@ -77,11 +108,12 @@ export default defineConfig({
         }
       }
     },
-    plugins: [react(), tailwindcss(), voiceWasmPlugin()],
+    plugins: [react(), tailwindcss(), voiceWasmPlugin(), dropBundledOrtWasmPlugin()],
     // The voice worker loads its speech engines with dynamic import(), which
     // needs an ES module worker (the default IIFE format cannot code-split).
     worker: {
       format: 'es',
+      plugins: () => [dropBundledOrtWasmPlugin()],
     },
     define: {
       __APP_VERSION__: JSON.stringify(version),
