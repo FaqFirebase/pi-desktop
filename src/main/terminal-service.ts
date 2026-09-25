@@ -67,7 +67,6 @@ export class TerminalService {
   }
 
   stop(): void {
-    if (!this.terminal) return
     // Detach handlers before killing so the resulting exit event neither
     // broadcasts a spurious "process exited" into a freshly-created terminal
     // nor nulls it out. See the identity guard in start().
@@ -75,7 +74,7 @@ export class TerminalService {
     this.disposables = []
     const terminal = this.terminal
     this.terminal = null
-    terminal.kill()
+    terminal?.kill()
   }
 
   getCwd(): string {
