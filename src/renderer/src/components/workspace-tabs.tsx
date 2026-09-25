@@ -52,7 +52,7 @@ export function WorkspaceTabs(): React.JSX.Element {
 
   return (
     <div className="flex shrink-0 flex-col bg-app">
-    <div className="flex h-10 items-end gap-1 overflow-x-auto border-b border-border px-2 pt-1">
+    <div className="flex h-12 shrink-0 items-end gap-1 overflow-x-auto border-b border-border px-2 pt-1">
       {!sidebarOpen && (
         <button
           type="button"

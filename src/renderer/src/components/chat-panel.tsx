@@ -185,7 +185,7 @@ export function ChatPanel(): React.JSX.Element {
         {/* Main chat area */}
         <div className="chat-center flex flex-1 flex-col overflow-hidden">
           {/* Toolbar */}
-          <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+          <div className="flex h-8 shrink-0 items-center justify-between border-b border-border px-3">
             <div className="flex items-center gap-0.5">
               {/* Workspace path — always visible */}
               {activeWorkspace && (

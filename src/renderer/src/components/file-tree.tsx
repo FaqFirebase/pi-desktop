@@ -200,7 +200,7 @@ export function FileTree(): React.JSX.Element {
     <div className="flex flex-col h-full">
       {/* Branch indicator */}
       {gitBranch && (
-        <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-dim border-b border-border">
+        <div className="flex h-8 shrink-0 items-center gap-1.5 px-3 text-xs text-dim border-b border-border">
           <GitBranch size={12} />
           <span>{gitBranch}</span>
         </div>

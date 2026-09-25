@@ -42,10 +42,12 @@ export function ResizeHandle({
   return (
     <div
       onMouseDown={handleMouseDown}
-      className="group flex w-2 shrink-0 cursor-col-resize items-stretch justify-center bg-app transition-colors hover:bg-surface-hover"
+      className="relative z-20 w-0 shrink-0"
       title={t('app.resizeHandle.title')}
     >
-      <div className="w-px bg-transparent transition-colors group-hover:bg-accent" />
+      <div className="group absolute inset-y-0 -left-1 flex w-2 cursor-col-resize justify-center">
+        <div className="w-px bg-transparent transition-colors group-hover:bg-accent" />
+      </div>
     </div>
   )
 }
