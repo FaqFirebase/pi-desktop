@@ -441,6 +441,7 @@
     "newFileBadge": "新建",
     "noChanges": "无更改",
     "noStagedChanges": "无已暂存更改",
+    "openFile": "打开文件",
     "refreshAriaLabel": "刷新差异",
     "stagedToggle": "已暂存",
     "workingToggle": "未暂存",
