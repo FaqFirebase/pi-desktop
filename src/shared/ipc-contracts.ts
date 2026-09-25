@@ -350,7 +350,13 @@ export interface TerminalStartResult {
   cwd: string
 }
 
+export interface TerminalDataEvent {
+  workspaceId: string
+  data: string
+}
+
 export interface TerminalExitEvent {
+  workspaceId: string
   exitCode: number
   signal?: number
 }

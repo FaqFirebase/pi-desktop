@@ -21,6 +21,7 @@ import type {
   FileChangeEvent,
   GitFileStatus,
   TerminalExitEvent,
+  TerminalDataEvent,
   TerminalStartOptions,
   TerminalStartResult,
   Note,
@@ -344,11 +345,11 @@ interface PiDesktopAPI {
   }
 
   terminal: {
-    start(options?: TerminalStartOptions): Promise<TerminalStartResult>
-    input(data: string): Promise<void>
-    resize(cols: number, rows: number): Promise<void>
-    stop(): Promise<void>
-    onData(callback: (data: string) => void): () => void
+    start(workspaceId: string, options?: TerminalStartOptions): Promise<TerminalStartResult>
+    input(workspaceId: string, data: string): Promise<void>
+    resize(workspaceId: string, cols: number, rows: number): Promise<void>
+    stop(workspaceId: string): Promise<void>
+    onData(callback: (event: TerminalDataEvent) => void): () => void
     onExit(callback: (event: TerminalExitEvent) => void): () => void
   }
 
@@ -610,12 +611,12 @@ const api: PiDesktopAPI = {
   },
 
   terminal: {
-    start: (options) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_START, options),
-    input: (data) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_INPUT, data),
-    resize: (cols, rows) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESIZE, { cols, rows }),
-    stop: () => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_STOP),
+    start: (workspaceId, options) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_START, workspaceId, options),
+    input: (workspaceId, data) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_INPUT, workspaceId, data),
+    resize: (workspaceId, cols, rows) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESIZE, workspaceId, { cols, rows }),
+    stop: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_STOP, workspaceId),
     onData: (callback) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: string) => callback(data)
+      const handler = (_event: Electron.IpcRendererEvent, data: TerminalDataEvent) => callback(data)
       ipcRenderer.on(IPC_CHANNELS.EVENT_TERMINAL_DATA, handler)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.EVENT_TERMINAL_DATA, handler)
     },
