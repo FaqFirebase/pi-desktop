@@ -396,7 +396,15 @@ function createApplicationMenu(): void {
       submenu: [
         { role: 'minimize', label: t('menu.minimize') },
         { role: 'zoom', label: t('menu.zoom') },
-        { role: 'close', label: t('menu.close') },
+        process.platform === 'darwin'
+          ? {
+              label: t('workspaceTabs.closeSessionTab'),
+              accelerator: 'Command+W',
+              click: () => {
+                BrowserWindow.getFocusedWindow()?.webContents.send('menu:close-session')
+              },
+            }
+          : { role: 'close', label: t('menu.close') },
       ],
     },
   ]
