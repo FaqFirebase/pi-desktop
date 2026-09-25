@@ -5,7 +5,6 @@ import { agentEngineLabel } from '../../../shared/agent-engine-label'
 import { clsx } from 'clsx'
 import {
   PanelLeft,
-  PanelLeftClose,
   Terminal,
   DollarSign,
   Layers,
@@ -213,15 +212,16 @@ export function StatusBar(): React.JSX.Element {
           </div>
         )}
 
-        {/* Toggle sidebar */}
-        <button
-          onClick={toggleSidebar}
-          className="rounded p-0.5 text-dim hover:text-secondary transition-colors"
-          title={sidebarOpen ? t('common.hideSidebar') : t('common.showSidebar')}
-          aria-label={sidebarOpen ? t('common.hideSidebar') : t('common.showSidebar')}
-        >
-          {sidebarOpen ? <PanelLeftClose size={12} /> : <PanelLeft size={12} />}
-        </button>
+        {!sidebarOpen && (
+          <button
+            onClick={toggleSidebar}
+            className="rounded p-0.5 text-dim hover:text-secondary transition-colors"
+            title={t('common.showSidebar')}
+            aria-label={t('common.showSidebar')}
+          >
+            <PanelLeft size={12} />
+          </button>
+        )}
 
         {/* Toggle terminal */}
         <button
