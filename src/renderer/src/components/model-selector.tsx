@@ -126,9 +126,9 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
         type="button"
         onClick={() => void open()}
         className={clsx(
-          'flex h-6 max-w-52 items-center gap-1 rounded-md px-2 text-[11px] transition-colors active:scale-[0.98]',
+          'flex items-center gap-1 px-2 text-[11px] transition-colors active:scale-[0.98]',
           isOpen ? 'bg-surface-hover text-primary' : 'text-dim hover:bg-surface-hover hover:text-secondary',
-          compact && 'max-w-36',
+          compact ? 'h-7 max-w-36 rounded-l-[7px] rounded-r-none' : 'h-6 max-w-52 rounded-md',
         )}
         title={t('models.selector.selectModelWithShortcut', { agent: engineLabel })}
         aria-label={t('models.selector.selectModel')}

@@ -1226,8 +1226,7 @@
     "recentSessions": {
       "emptyInProject": "此项目中还没有会话。",
       "emptyNoProject": "打开一个项目以查看其会话。",
-      "headingNoProject": "最近的会话",
-      "headingWithProject": "{{project}} 中的最近会话",
+      "heading": "最近",
       "startOneNow": "立即开始一个",
       "viewAll": "查看全部"
     },

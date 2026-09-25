@@ -1247,8 +1247,7 @@
     "recentSessions": {
       "emptyInProject": "No sessions in this project yet.",
       "emptyNoProject": "Open a project to see its sessions.",
-      "headingNoProject": "Recent sessions",
-      "headingWithProject": "Recent in {{project}}",
+      "heading": "Recent",
       "startOneNow": "Start one now",
       "viewAll": "View all"
     },
