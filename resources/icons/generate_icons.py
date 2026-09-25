@@ -88,10 +88,17 @@ def generate_macos_icons():
 
 
 def svg_to_png(svg_path: Path, size: int, out_path: Path):
-    """Convert SVG to PNG using ImageMagick."""
+    """Convert SVG to PNG using ImageMagick.
+
+    ImageMagick rasterizes the SVG at 16 bits per channel, and macOS ImageIO
+    cannot render 16-bit reps inside an .icns: the Dock then falls back to its
+    generic white tile with the icon shrunk inside it. Force 8-bit output so the
+    generated icons (PNG pack, ICO, and ICNS) stay in the format the OS expects.
+    """
     subprocess.run(
         ["convert", "-background", "none", "-density", "300",
-         f"{svg_path}", "-resize", f"{size}x{size}", str(out_path)],
+         f"{svg_path}", "-resize", f"{size}x{size}",
+         "-strip", "-depth", "8", str(out_path)],
         check=True, capture_output=True,
     )
 

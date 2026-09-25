@@ -47,7 +47,6 @@
       "placeholderIdle": "Ask {{agent}} anything — / for commands",
       "placeholderNotRunning": "{{agent}} agent is not running...",
       "placeholderSteering": "Type to steer the agent...",
-      "shiftEnterNewline": "Shift+Enter newline",
       "streaming": "Streaming…"
     },
     "council": {
@@ -443,6 +442,20 @@
   "diff": {
     "closeAriaLabel": "Close diff viewer",
     "deletedFileBadge": "DELETED",
+    "discard": {
+      "agentWorking": "Wait for all agents in this project to finish before discarding changes.",
+      "all": "Discard changes in shown files",
+      "busy": "A discard operation is already running.",
+      "confirm": "Discard changes",
+      "failed": "Git could not discard the selected changes. Refresh the diff and review it again.",
+      "file": "Discard changes in {{path}}",
+      "message": "Discard the shown unstaged changes in these files? This includes changes from other sessions in the same files. New files will be deleted. Staged changes and commits are not affected. This cannot be undone.\n\n{{files}}",
+      "saveEditor": "Save or close the unsaved editor before discarding changes.",
+      "stale": "The selected changes are no longer current. Refresh the diff and review it again.",
+      "title": "Discard shown changes?",
+      "unsupported": "This diff cannot be discarded here. Binary files, symlinks, submodules and escaped paths are not supported.",
+      "workingOnly": "Switch to Working to discard unstaged changes."
+    },
     "fileCount_one": "{{count}} file",
     "fileCount_other": "{{count}} files",
     "heading": "Diff Viewer",
@@ -452,6 +465,11 @@
     "noStagedChanges": "No staged changes",
     "openFile": "Open file",
     "refreshAriaLabel": "Refresh diff",
+    "sessionFilter": {
+      "description": "Filter to files touched by edit/write calls in this chat. Whole-file diffs may include other sessions. Shell and subagent changes may be missing. Turn off to see the whole project and Git actions.",
+      "label": "Files touched in this session",
+      "noMatches": "No matching changes for this session"
+    },
     "stagedToggle": "Staged",
     "workingToggle": "Working",
     "workingTreeClean": "Working tree is clean"
@@ -1166,6 +1184,11 @@
         "remove": "Remove skill",
         "update": "Update to {{version}}"
       }
+    },
+    "uiFontFamily": {
+      "description": "Choose a suggestion or enter an installed font name. Unavailable fonts use the system font. Clear to restore defaults. Terminal and code editor are unchanged.",
+      "label": "UI Font",
+      "placeholder": "Default fonts"
     },
     "uiFontSize": {
       "description": "Chat, panels, and sidebar — not the terminal or code editor",

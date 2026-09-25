@@ -38,6 +38,7 @@ import { useGlobalWorkflowOpen } from '../hooks'
 import { clampSidebarWidth, resolveSidebarWidth } from '../../../shared/sidebar-width'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { isImeComposing } from '../utils/ime-composing'
+import { readSidebarSectionOpen, saveSidebarSectionOpen } from '../utils/sidebar-sections'
 
 /** Views reachable from the sidebar's Tools group. */
 type ToolView = 'packages' | 'notes' | 'skills' | 'diagnostics' | 'settings'
@@ -86,7 +87,9 @@ export function Sidebar(): React.JSX.Element {
   const { show: showMenu, ContextMenuComponent: SessionMenu } = useContextMenu()
 
   const [archivedOpen, setArchivedOpen] = useState(false)
-  const [toolsOpen, setToolsOpen] = useState(true)
+  const [toolsOpen, setToolsOpen] = useState(() => readSidebarSectionOpen('tools'))
+  const [workspaceOpen, setWorkspaceOpen] = useState(() => readSidebarSectionOpen('workspace'))
+  const [activityOpen, setActivityOpen] = useState(() => readSidebarSectionOpen('activity'))
 
   // The live width during a drag. Kept local so dragging never writes
   // settings.json; the draft outlives the drag so the row does not jump while the
@@ -490,8 +493,20 @@ export function Sidebar(): React.JSX.Element {
       {/* Navigation */}
       <nav className="space-y-3 border-b border-border px-2 py-3">
         <div>
-          <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">{t('sidebar.nav.workspaceSection')}</div>
-          <div className="space-y-0.5">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between rounded px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint hover:bg-surface-hover hover:text-muted"
+            aria-expanded={workspaceOpen}
+            aria-controls="sidebar-workspace"
+            onClick={() => {
+              saveSidebarSectionOpen('workspace', !workspaceOpen)
+              setWorkspaceOpen(!workspaceOpen)
+            }}
+          >
+            {t('sidebar.nav.workspaceSection')}
+            <ChevronDown size={12} aria-hidden="true" className={clsx('transition-transform', !workspaceOpen && '-rotate-90')} />
+          </button>
+          <div id="sidebar-workspace" className={clsx('space-y-0.5', workspaceOpen ? 'mt-1' : 'hidden')}>
             <SidebarItem
               icon={<MessageSquare size={14} />}
               label={t('sidebar.nav.chat')}
@@ -518,10 +533,20 @@ export function Sidebar(): React.JSX.Element {
           </div>
         </div>
         <div>
-          <div className="mb-1 flex items-center gap-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">
-            <span>{t('sidebar.nav.activitySection')}</span>
-          </div>
-          <div className="space-y-0.5">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between rounded px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint hover:bg-surface-hover hover:text-muted"
+            aria-expanded={activityOpen}
+            aria-controls="sidebar-activity"
+            onClick={() => {
+              saveSidebarSectionOpen('activity', !activityOpen)
+              setActivityOpen(!activityOpen)
+            }}
+          >
+            {t('sidebar.nav.activitySection')}
+            <ChevronDown size={12} aria-hidden="true" className={clsx('transition-transform', !activityOpen && '-rotate-90')} />
+          </button>
+          <div id="sidebar-activity" className={clsx('space-y-0.5', activityOpen ? 'mt-1' : 'hidden')}>
             <SidebarItem
               icon={<LayoutDashboard size={14} />}
               label={t('sidebar.nav.missionControl')}
@@ -640,7 +665,10 @@ export function Sidebar(): React.JSX.Element {
           className="flex w-full items-center justify-between rounded px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint hover:bg-surface-hover hover:text-muted"
           aria-expanded={toolsOpen}
           aria-controls="sidebar-tools"
-          onClick={() => setToolsOpen((open) => !open)}
+          onClick={() => {
+            saveSidebarSectionOpen('tools', !toolsOpen)
+            setToolsOpen(!toolsOpen)
+          }}
         >
           {t('sidebar.tools.sectionLabel')}
           <ChevronDown size={12} aria-hidden="true" className={clsx('transition-transform', !toolsOpen && '-rotate-90')} />

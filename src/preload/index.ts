@@ -290,6 +290,7 @@ interface PiDesktopAPI {
     write(path: string, content: string): Promise<{ ok: boolean }>
     getDiff(filePath?: string): Promise<string>
     getStagedDiff(filePath?: string): Promise<string>
+    discardDiff(workspaceId: string, patches: string[]): Promise<void>
     /**
      * Declare whether a live files panel consumes file-change events. The
      * main process attaches the workspace watcher only while demanded.
@@ -575,6 +576,7 @@ const api: PiDesktopAPI = {
     write: (path, content) => ipcRenderer.invoke(IPC_CHANNELS.FILE_WRITE, path, content),
     getDiff: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE_DIFF, filePath),
     getStagedDiff: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE_STAGED_DIFF, filePath),
+    discardDiff: (workspaceId, patches) => ipcRenderer.invoke(IPC_CHANNELS.FILE_DISCARD_DIFF, workspaceId, patches),
     setWatchDemand: (demanded) => ipcRenderer.invoke(IPC_CHANNELS.FILE_WATCH_DEMAND, demanded),
     getGitStatus: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_STATUS),
     getGitBranch: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_BRANCH),

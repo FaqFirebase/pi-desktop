@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
+import { t } from '../../../shared/i18n'
+import { canDiscardGitPatch, gitDiffPaths, splitGitDiff } from '../../../shared/git-diff'
 import { clsx } from 'clsx'
 import {
   AlertTriangle,
   GitCompare,
+  MessageSquare,
+  Undo2,
   FilePenLine,
   File,
   RefreshCw,
@@ -16,6 +20,7 @@ import {
 } from 'lucide-react'
 import { formatIpcError } from '../utils/ipc-error'
 import { createStaleGuard } from '../utils/stale-guard'
+import { filterSessionDiffFiles } from '../utils/session-diff'
 import { GitConveyorActions } from './git-conveyor-actions'
 import { isImagePath } from './chat-file-link'
 
@@ -27,6 +32,7 @@ interface DiffLine {
 }
 
 interface DiffFileBlock {
+  patch: string
   oldPath: string
   newPath: string
   isNew: boolean
@@ -45,9 +51,18 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   const [loadError, setLoadError] = useState<string | null>(null)
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
   const [stagedMode, setStagedMode] = useState(false)
+  const [sessionOnly, setSessionOnly] = useState(false)
+  const [discarding, setDiscarding] = useState(false)
+  const discardBusy = useRef(false)
+  const [discardError, setDiscardError] = useState<string | null>(null)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
   const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
+  const workspacePath = useAppStore((state) => state.activeWorkspace?.path)
+  const messages = useAppStore((state) => state.messages)
   const loadGuard = useMemo(() => createStaleGuard(), [])
+  const visibleFiles = useMemo(() => sessionOnly
+    ? workspacePath ? filterSessionDiffFiles(files, messages, workspacePath) : []
+    : files, [files, messages, sessionOnly, workspacePath])
 
   const loadDiff = useCallback(async () => {
     const isCurrent = loadGuard.begin()
@@ -79,6 +94,21 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
     setExpandedFiles(new Set())
   }, [workspaceId])
 
+  const discard = async (selected: DiffFileBlock[]): Promise<void> => {
+    if (!workspaceId || stagedMode || discardBusy.current) return
+    discardBusy.current = true
+    setDiscarding(true)
+    setDiscardError(null)
+    try {
+      if (await discardDiffFiles(workspaceId, selected)) await loadDiff()
+    } catch (error) {
+      setDiscardError(formatIpcError(error))
+    } finally {
+      discardBusy.current = false
+      setDiscarding(false)
+    }
+  }
+
   const toggleFile = (path: string) => {
     setExpandedFiles((prev) => {
       const next = new Set(prev)
@@ -92,15 +122,40 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
       <div className="shrink-0 border-b border-border">
-        <div className="flex min-h-8 flex-wrap items-center gap-2 border-b border-border px-4 py-0.5">
+        <div className="flex min-h-8 flex-wrap items-center gap-2 px-4 py-0.5">
           <div className="order-1 flex min-w-0 flex-1 items-center gap-2">
             <GitCompare size={16} className="shrink-0 text-muted" />
             <h2 className="truncate text-sm font-medium text-primary">{t('diff.heading')}</h2>
             <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-xs text-dim">
-              {t('diff.fileCount', { count: files.length })}
+              {t('diff.fileCount', { count: visibleFiles.length })}
             </span>
           </div>
           <div className="order-2 flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void discard(visibleFiles)}
+              disabled={loading || discarding || stagedMode || visibleFiles.length === 0 || visibleFiles.some((file) => !canDiscardGitPatch(file.patch))}
+              title={stagedMode ? t('diff.discard.workingOnly') : t('diff.discard.all')}
+              aria-label={t('diff.discard.all')}
+              className="rounded p-1.5 text-dim transition-colors hover:bg-error-bg hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {discarding ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSessionOnly((value) => !value)}
+              aria-pressed={sessionOnly}
+              aria-label={t('diff.sessionFilter.label')}
+              title={t('diff.sessionFilter.description')}
+              className={clsx(
+                'rounded p-1.5 transition-colors',
+                sessionOnly
+                  ? 'bg-accent-bg text-accent-fg'
+                  : 'text-dim hover:bg-surface-hover hover:text-secondary'
+              )}
+            >
+              <MessageSquare size={14} aria-hidden="true" />
+            </button>
             <button
               onClick={() => setStagedMode(!stagedMode)}
               className={clsx(
@@ -134,10 +189,14 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
             </button>
           </div>
         </div>
-        <div className="min-w-0 px-4 py-2">
-          <GitConveyorActions key={workspaceId} onChanged={loadDiff} />
-        </div>
+        {!sessionOnly && (
+          <div className="min-w-0 border-t border-border px-4 py-2">
+            <GitConveyorActions key={workspaceId} onChanged={loadDiff} />
+          </div>
+        )}
       </div>
+
+      {discardError && <p role="alert" className="shrink-0 px-4 py-2 text-xs text-error">{discardError}</p>}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
@@ -157,22 +216,29 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
               {t('common.retry')}
             </button>
           </div>
-        ) : files.length === 0 ? (
+        ) : visibleFiles.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-dim">
             <GitCompare size={32} className="mb-3 text-faint" />
-            <p className="text-sm">{t('diff.noChanges')}</p>
-            <p className="mt-1 text-xs text-faint">
-              {stagedMode ? t('diff.noStagedChanges') : t('diff.workingTreeClean')}
+            <p className="text-sm">{sessionOnly ? t('diff.sessionFilter.noMatches') : t('diff.noChanges')}</p>
+            <p className="mt-1 max-w-md px-4 text-center text-xs text-faint">
+              {sessionOnly
+                ? t('diff.sessionFilter.description')
+                : stagedMode ? t('diff.noStagedChanges') : t('diff.workingTreeClean')}
             </p>
           </div>
         ) : (
           <div className="p-4 space-y-2">
-            {files.map((file) => (
+            {visibleFiles.map((file) => (
               <DiffFileEntry
                 key={file.newPath}
                 file={file}
                 expanded={expandedFiles.has(file.newPath)}
                 onToggle={() => toggleFile(file.newPath)}
+                onDiscard={() => void discard([file])}
+                discardDisabled={discarding || stagedMode || !canDiscardGitPatch(file.patch)}
+                discardTitle={stagedMode ? t('diff.discard.workingOnly')
+                  : !canDiscardGitPatch(file.patch) ? t('diff.discard.unsupported')
+                    : t('diff.discard.file', { path: file.newPath })}
               />
             ))}
           </div>
@@ -180,6 +246,31 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
       </div>
     </div>
   )
+}
+
+export async function discardDiffFiles(
+  workspaceId: string,
+  files: Pick<DiffFileBlock, 'oldPath' | 'newPath' | 'patch'>[],
+): Promise<boolean> {
+  const store = useAppStore.getState()
+  if (!files.length || store.activeWorkspace?.id !== workspaceId) return false
+  if (store.editorDirty) throw new Error(t('diff.discard.saveEditor'))
+  const confirmed = await store.requestConfirm({
+    title: t('diff.discard.title'),
+    message: t('diff.discard.message', { files: files.map((file) => file.newPath).join('\n') }),
+    confirmLabel: t('diff.discard.confirm'),
+    cancelLabel: t('common.cancel'),
+    danger: true,
+  })
+  if (!confirmed || useAppStore.getState().activeWorkspace?.id !== workspaceId) return false
+  if (useAppStore.getState().editorDirty) throw new Error(t('diff.discard.saveEditor'))
+  await window.piDesktop.files.discardDiff(workspaceId, files.map((file) => file.patch))
+  const current = useAppStore.getState()
+  if (current.activeWorkspace?.id === workspaceId && !current.editorDirty && current.previewTarget
+    && files.some((file) => file.newPath === current.previewTarget!.relativePath || file.oldPath === current.previewTarget!.relativePath)) {
+    await current.setPreviewTarget(null)
+  }
+  return true
 }
 
 export async function openDiffFile(file: Pick<DiffFileBlock, 'newPath' | 'isDeleted'>): Promise<void> {
@@ -206,10 +297,16 @@ function DiffFileEntry({
   file,
   expanded,
   onToggle,
+  onDiscard,
+  discardDisabled,
+  discardTitle,
 }: {
   file: DiffFileBlock
   expanded: boolean
   onToggle: () => void
+  onDiscard: () => void
+  discardDisabled: boolean
+  discardTitle: string
 }): React.JSX.Element {
   const { t } = useTranslation()
   const additions = file.hunks.flat().filter((l) => l.type === 'add').length
@@ -244,6 +341,16 @@ function DiffFileEntry({
               <span className="text-error">-{deletions}</span>
             )}
           </div>
+        </button>
+        <button
+          type="button"
+          onClick={onDiscard}
+          disabled={discardDisabled}
+          title={discardTitle}
+          aria-label={t('diff.discard.file', { path: file.newPath })}
+          className="mr-2 shrink-0 rounded p-1.5 text-dim transition-colors hover:bg-error-bg hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Undo2 size={14} />
         </button>
         {!file.isDeleted && (
           <button
@@ -312,16 +419,13 @@ function parseDiff(diffText: string): DiffFileBlock[] {
   if (!diffText.trim()) return []
 
   const files: DiffFileBlock[] = []
-  const fileBlocks = diffText.split(/^diff --git /m).filter(Boolean)
+  const fileBlocks = splitGitDiff(diffText)
 
   for (const block of fileBlocks) {
     const lines = block.split('\n')
-
-    // Parse file paths from "a/path b/path"
-    const pathLine = lines[0] ?? ''
-    const pathMatch = pathLine.match(/^a\/(.+?) b\/(.+)$/)
-    const oldPath = pathMatch?.[1] ?? 'unknown'
-    const newPath = pathMatch?.[2] ?? oldPath
+    const paths = gitDiffPaths(block)
+    const oldPath = paths?.oldPath ?? 'unknown'
+    const newPath = paths?.newPath ?? oldPath
 
     const isNew = lines.some((l) => l.startsWith('new file mode'))
     const isDeleted = lines.some((l) => l.startsWith('deleted file mode'))
@@ -358,7 +462,7 @@ function parseDiff(diffText: string): DiffFileBlock[] {
 
     if (currentHunk.length > 0) hunks.push(currentHunk)
 
-    files.push({ oldPath, newPath, isNew, isDeleted, hunks })
+    files.push({ patch: block, oldPath, newPath, isNew, isDeleted, hunks })
   }
 
   return files

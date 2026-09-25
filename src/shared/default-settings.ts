@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultProvider: null,
   defaultCwd: null,
   fontSize: 16,
+  uiFontFamily: '',
   terminalFontSize: 12,
   codeEditorFontSize: 14,
   chatWidth: DEFAULT_CHAT_WIDTH,

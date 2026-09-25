@@ -47,7 +47,6 @@
       "placeholderIdle": "向 {{agent}} 提问 — 输入 / 使用命令",
       "placeholderNotRunning": "{{agent}} 智能体未在运行…",
       "placeholderSteering": "输入以引导智能体…",
-      "shiftEnterNewline": "Shift+Enter 换行",
       "streaming": "流式输出中…"
     },
     "council": {
@@ -437,6 +436,20 @@
   "diff": {
     "closeAriaLabel": "关闭差异查看器",
     "deletedFileBadge": "已删除",
+    "discard": {
+      "agentWorking": "请等待此项目中的所有代理完成后再放弃更改。",
+      "all": "放弃所显示文件的更改",
+      "busy": "正在执行放弃更改操作。",
+      "confirm": "放弃更改",
+      "failed": "Git 无法放弃所选更改。请刷新差异并重新检查。",
+      "file": "放弃 {{path}} 的更改",
+      "message": "放弃这些文件中显示的未暂存更改？这也包括其他会话对此文件的更改。新文件将被删除。已暂存的更改和提交不受影响。此操作无法撤销。\n\n{{files}}",
+      "saveEditor": "请先保存或关闭有未保存更改的编辑器。",
+      "stale": "所选更改已发生变化。请刷新差异并重新检查。",
+      "title": "放弃所显示的更改？",
+      "unsupported": "无法在此放弃该差异。不支持二进制文件、符号链接、子模块和转义路径。",
+      "workingOnly": "切换到未暂存视图以放弃未暂存更改。"
+    },
     "fileCount_other": "{{count}} 个文件",
     "heading": "差异查看器",
     "loadErrorTitle": "无法加载差异",
@@ -445,6 +458,11 @@
     "noStagedChanges": "无已暂存更改",
     "openFile": "打开文件",
     "refreshAriaLabel": "刷新差异",
+    "sessionFilter": {
+      "description": "仅显示此聊天中 edit/write 调用涉及的文件。完整文件差异可能包含其他会话的更改，也可能遗漏 Shell 和子代理的更改。关闭筛选可查看整个项目并使用 Git 操作。",
+      "label": "此会话涉及的文件",
+      "noMatches": "没有与此会话匹配的更改"
+    },
     "stagedToggle": "已暂存",
     "workingToggle": "未暂存",
     "workingTreeClean": "工作树是干净的"
@@ -1148,6 +1166,11 @@
         "remove": "移除技能",
         "update": "更新到 {{version}}"
       }
+    },
+    "uiFontFamily": {
+      "description": "选择建议字体或输入已安装的字体名称。不可用的字体将使用系统字体。清空可恢复默认字体。终端和代码编辑器不受影响。",
+      "label": "界面字体",
+      "placeholder": "默认字体"
     },
     "uiFontSize": {
       "description": "聊天、面板和侧边栏 — 不包括终端和代码编辑器",

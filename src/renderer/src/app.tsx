@@ -23,6 +23,7 @@ import { useContextMenu, buildDefaultContextMenu } from './components/context-me
 import { usePiEvents, useMenuActions, useInitialize, useNotePickerShortcut } from './hooks'
 import { useFolderDrop } from './hooks/use-folder-drop'
 import { useAppStore } from './store'
+import { isSettingsShortcut } from './utils/settings-shortcut'
 import { useEffect } from 'react'
 import { ArrowUpCircle, FolderOpen, PanelLeft, X } from 'lucide-react'
 
@@ -76,6 +77,11 @@ export function App(): React.JSX.Element {
   // ChatInput's inline popup instead.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isSettingsShortcut(e, window.piDesktop.system.platform)) {
+        e.preventDefault()
+        useAppStore.getState().setCurrentView('settings')
+        return
+      }
       if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault()
         useAppStore.getState().setCommandPalette(true)

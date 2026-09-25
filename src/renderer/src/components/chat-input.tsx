@@ -858,47 +858,47 @@ export function ChatInput(): React.JSX.Element {
             </button>
           )}
 
-          <span className="ml-auto mr-1 hidden text-[11px] text-faint sm:inline">
-            {isStreaming ? (
-              <span className="text-warning animate-pulse">{t('chat.composer.streaming')}</span>
-            ) : (
-              t('chat.composer.shiftEnterNewline')
+          <div className="ml-auto flex min-w-0 items-center gap-1">
+            {isStreaming && (
+              <span className="hidden animate-pulse whitespace-nowrap text-[11px] text-warning sm:inline">
+                {t('chat.composer.streaming')}
+              </span>
             )}
-          </span>
 
-          {!isDisabled && (
-            <div className="flex shrink-0 items-center rounded-lg border border-border-strong bg-card">
-              <ModelSelector compact />
-              <div className="h-3.5 w-px bg-border" aria-hidden="true" />
-              <ThinkingLevelSelector />
-            </div>
-          )}
+            {!isDisabled && (
+              <div className="flex shrink-0 items-center rounded-lg border border-border-strong bg-card">
+                <ModelSelector compact />
+                <div className="h-3.5 w-px bg-border" aria-hidden="true" />
+                <ThinkingLevelSelector />
+              </div>
+            )}
 
-          {isStreaming ? (
-            <button
-              onClick={handleAbort}
-              className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors"
-              title={t('chat.stopButton.titleWithShortcut')}
-              aria-label={t('chat.stopButton.ariaLabel')}
-            >
-              <Square size={16} />
-            </button>
-          ) : (
-            <button
-              onClick={() => {
-                const value = textareaRef.current?.value.trim()
-                if (value) {
-                  handleSend(value)
-                }
-              }}
-              disabled={isDisabled || isReadingDrop}
-              className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title={t('chat.sendButton.titleWithShortcut')}
-              aria-label={t('chat.sendButton.ariaLabel')}
-            >
-              <CornerDownLeft size={16} />
-            </button>
-          )}
+            {isStreaming ? (
+              <button
+                onClick={handleAbort}
+                className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors"
+                title={t('chat.stopButton.titleWithShortcut')}
+                aria-label={t('chat.stopButton.ariaLabel')}
+              >
+                <Square size={16} />
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  const value = textareaRef.current?.value.trim()
+                  if (value) {
+                    handleSend(value)
+                  }
+                }}
+                disabled={isDisabled || isReadingDrop}
+                className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={t('chat.sendButton.titleWithShortcut')}
+                aria-label={t('chat.sendButton.ariaLabel')}
+              >
+                <CornerDownLeft size={16} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

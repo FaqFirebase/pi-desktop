@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { applyThemeSettings, rememberBootTheme, setUserThemes, watchSystemTheme } from './utils/theme'
 import { applyLanguageSetting } from './i18n'
+import { applyUiFont } from './utils/ui-font'
 import { t } from '../../shared/i18n'
 import { buildPlanningPrompt } from './utils/planning-prompt'
 import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
@@ -1948,6 +1949,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
       // Apply font size
       document.documentElement.style.fontSize = `${settings.fontSize}px`
+      applyUiFont(settings.uiFontFamily)
 
       // Settings reload after each save, so this also applies a changed language.
       await applyLanguageSetting(settings.language)
