@@ -36,7 +36,6 @@ import {
   Terminal,
   ShieldCheck,
   PanelLeft,
-  PanelLeftClose,
   X,
   ChevronDown,
   Loader2,
@@ -196,12 +195,14 @@ export function ChatPanel(): React.JSX.Element {
                   </span>
                 </div>
               )}
-              <ToolbarButton
-                icon={sidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeft size={14} />}
-                active={false}
-                onClick={() => useAppStore.getState().toggleSidebar()}
-                title={sidebarOpen ? t('common.hideSidebar') : t('common.showSidebar')}
-              />
+              {!sidebarOpen && (
+                <ToolbarButton
+                  icon={<PanelLeft size={14} />}
+                  active={false}
+                  onClick={() => useAppStore.getState().toggleSidebar()}
+                  title={t('common.showSidebar')}
+                />
+              )}
               <ToolbarButton
                 icon={<ShieldCheck size={14} />}
                 active={reviewOpen}
