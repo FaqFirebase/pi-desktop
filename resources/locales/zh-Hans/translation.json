@@ -741,8 +741,7 @@
       "noModelsMatch": "没有匹配的模型",
       "searchPlaceholder": "搜索模型…",
       "selectModel": "选择模型",
-      "selectModelWithShortcut": "选择模型（{{agent}} 运行时按 Ctrl+P 切换）",
-      "startToListModels": "启动 Pi 以列出和更换模型。"
+      "selectModelWithShortcut": "选择模型（{{agent}} 运行时按 Ctrl+P 切换）"
     }
   },
   "notes": {
