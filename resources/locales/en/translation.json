@@ -29,11 +29,14 @@
     "attach": {
       "allFilesFilter": "All Files",
       "attachFailed": "Could not attach file",
+      "dropHint": "Drop files to attach",
       "imagesFilter": "Images",
       "onlyImagesPasted": "Only images can be pasted into the composer",
       "pasteFailed": "Could not paste image",
       "readImageFailed": "Could not read image data",
+      "reading": "Adding attachments…",
       "unknownMimeType": "unknown",
+      "unsupportedFile": "Unsupported file format. Attach UTF-8 text, code, PNG, JPEG, GIF, or WebP files.",
       "unsupportedImageType": "Unsupported image type ({{mimeType}}). Use PNG, JPEG, GIF, or WebP."
     },
     "closeFileTree": "Close file tree",
