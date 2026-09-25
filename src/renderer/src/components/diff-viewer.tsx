@@ -6,6 +6,7 @@ import { clsx } from 'clsx'
 import {
   AlertTriangle,
   GitCompare,
+  FilePenLine,
   File,
   RefreshCw,
   ChevronDown,
@@ -16,6 +17,7 @@ import {
 import { formatIpcError } from '../utils/ipc-error'
 import { createStaleGuard } from '../utils/stale-guard'
 import { GitConveyorActions } from './git-conveyor-actions'
+import { isImagePath } from './chat-file-link'
 
 interface DiffLine {
   type: 'add' | 'remove' | 'context' | 'header' | 'hunk'
@@ -180,6 +182,26 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   )
 }
 
+export async function openDiffFile(file: Pick<DiffFileBlock, 'newPath' | 'isDeleted'>): Promise<void> {
+  const store = useAppStore.getState()
+  const workspace = store.activeWorkspace
+  if (!workspace || file.isDeleted) return
+
+  const name = file.newPath.split('/').pop() ?? file.newPath
+  const separator = workspace.path.includes('\\') ? '\\' : '/'
+  const path = workspace.path.replace(/[\\/]$/, '') + separator + file.newPath.replace(/\//g, separator)
+  const opened = await store.setPreviewTarget({
+    kind: isImagePath(name) ? 'image' : 'code',
+    name,
+    path,
+    relativePath: file.newPath,
+  })
+  if (!opened) return
+  const current = useAppStore.getState()
+  if (current.chatSidePanel === 'diff') await current.setChatSidePanel(null)
+  current.setCurrentView('chat')
+}
+
 function DiffFileEntry({
   file,
   expanded,
@@ -200,10 +222,11 @@ function DiffFileEntry({
   return (
     <div className="rounded-lg border border-border overflow-hidden">
       {/* File header */}
-      <button
-        onClick={onToggle}
-        className="flex w-full items-center gap-2 px-3 py-2 bg-surface/50 hover:bg-surface-hover/50 transition-colors"
-      >
+      <div className="flex items-center bg-surface/50">
+        <button
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 hover:bg-surface-hover/50 transition-colors"
+        >
         {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <File size={14} className="shrink-0 text-dim" />
         <span className="text-xs text-primary truncate">{file.newPath}</span>
@@ -221,7 +244,18 @@ function DiffFileEntry({
             <span className="text-error">-{deletions}</span>
           )}
         </div>
-      </button>
+        </button>
+        {!file.isDeleted && (
+          <button
+            onClick={() => void openDiffFile(file)}
+            className="mr-2 flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
+            title={t('diff.openFile')}
+            aria-label={t('diff.openFile')}
+          >
+            <FilePenLine size={14} />
+          </button>
+        )}
+      </div>
 
       {/* Diff content */}
       {expanded && (
