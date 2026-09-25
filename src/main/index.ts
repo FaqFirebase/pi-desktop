@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, session, shell } from 'electron'
 import { existsSync, mkdirSync } from 'fs'
-import { basename, join, resolve as resolvePath } from 'path'
+import { basename, dirname, join, resolve as resolvePath } from 'path'
 import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
 import { workspaceTrustStore } from './workspace-trust'
 import { WorkspaceManager } from './workspace-manager'
@@ -433,8 +433,9 @@ app.whenReady().then(async () => {
   // dock icon from the bundled .icns (correct macOS geometry with padding). The
   // raw icon.png is full-bleed, so calling setIcon in a packaged build overrode
   // the .icns with a wrongly sized icon once the app started (issue #66).
+  // icon-macos.png carries the same padded geometry as the .icns.
   if (process.platform === 'darwin' && app.dock && !app.isPackaged) {
-    app.dock.setIcon(nativeImage.createFromPath(getAppIconPath()))
+    app.dock.setIcon(nativeImage.createFromPath(join(dirname(getAppIconPath()), 'icon-macos.png')))
   }
 
   // Initialize workspace manager
