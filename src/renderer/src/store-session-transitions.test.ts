@@ -184,6 +184,9 @@ const piDesktopStub = {
       calls.push(`editorDirtyMirror:${dirty}:${fileName ?? ''}`)
     },
   },
+  model: {
+    set: async (_provider: string, _modelId: string) => {},
+  },
   commands: {
     abort: async () => {
       calls.push('abort')
@@ -487,6 +490,24 @@ test('switching sessions clears the local streaming state', async () => {
   assert.equal(state.isStreaming, false, 'the abandoned turn must not leave a stuck spinner')
   assert.equal(state.streamingContent, '')
   assert.deepEqual(state.pendingSteering, [], 'the old queue counters must not carry over')
+})
+
+test('selecting a model requests composer focus after the model is applied', async () => {
+  useAppStore.setState({ composerFocusRequested: false })
+  await useAppStore.getState().setModel('provider', 'model')
+  assert.equal(useAppStore.getState().composerFocusRequested, true)
+})
+
+test('a failed model selection does not request composer focus', async () => {
+  const original = piDesktopStub.model.set
+  piDesktopStub.model.set = async () => { throw new Error('Model unavailable') }
+  useAppStore.setState({ composerFocusRequested: false })
+  try {
+    await useAppStore.getState().setModel('provider', 'model')
+    assert.equal(useAppStore.getState().composerFocusRequested, false)
+  } finally {
+    piDesktopStub.model.set = original
+  }
 })
 
 test('switchSession requests composer focus without warning when Pi is idle', async () => {

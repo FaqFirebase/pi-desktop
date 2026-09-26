@@ -1798,6 +1798,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       } catch {
         // Non-fatal — model still applied for this session.
       }
+      set({ composerFocusRequested: true })
       get().refreshSessionState()
     } catch (err) {
       get().addMessage({
