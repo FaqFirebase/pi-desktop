@@ -46,8 +46,7 @@
     "composer": {
       "placeholderIdle": "向 {{agent}} 提问 — 输入 / 使用命令",
       "placeholderNotRunning": "{{agent}} 智能体未在运行…",
-      "placeholderSteering": "输入以引导智能体…",
-      "streaming": "流式输出中…"
+      "placeholderSteering": "输入以引导智能体…"
     },
     "council": {
       "planWithCouncil": "使用委员会规划",

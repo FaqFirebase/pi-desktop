@@ -859,12 +859,6 @@ export function ChatInput(): React.JSX.Element {
           )}
 
           <div className="ml-auto flex min-w-0 items-center gap-1">
-            {isStreaming && (
-              <span className="hidden animate-pulse whitespace-nowrap text-[11px] text-warning sm:inline">
-                {t('chat.composer.streaming')}
-              </span>
-            )}
-
             {!isDisabled && (
               <div className="flex shrink-0 items-center rounded-lg border border-border-strong bg-card">
                 <ModelSelector compact />

@@ -46,8 +46,7 @@
     "composer": {
       "placeholderIdle": "Ask {{agent}} anything — / for commands",
       "placeholderNotRunning": "{{agent}} agent is not running...",
-      "placeholderSteering": "Type to steer the agent...",
-      "streaming": "Streaming…"
+      "placeholderSteering": "Type to steer the agent..."
     },
     "council": {
       "planWithCouncil": "Plan with Council",
