@@ -259,7 +259,20 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
               <X size={14} aria-hidden="true" />
             </button>
           </div>
-        ) : feedback && <span className="basis-full truncate text-[10px] text-success" role="status" title={feedback}>{feedback}</span>}
+        ) : feedback && (
+          <div className="flex min-w-0 basis-full items-center gap-2 text-success">
+            <span className="min-w-0 flex-1 truncate text-[10px]" role="status" title={feedback}>{feedback}</span>
+            <button
+              type="button"
+              onClick={() => setFeedback(null)}
+              aria-label={t('common.dismiss')}
+              title={t('common.dismiss')}
+              className="flex size-6 shrink-0 items-center justify-center rounded text-success/70 transition-colors hover:bg-success/10 hover:text-success focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            >
+              <X size={14} aria-hidden="true" />
+            </button>
+          </div>
+        )}
       </div>
       {dialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4" role="presentation">
