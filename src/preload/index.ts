@@ -236,8 +236,8 @@ interface PiDesktopAPI {
   // and never comes back out.
   typesafe: {
     status(): Promise<TypeSafeStatus>
-    saveKey(key: string): Promise<TypeSafeSaveKeyResult>
-    clearKey(): Promise<TypeSafeStatus>
+    saveKey(key: string, provider: import('../shared/typesafe').JevKeyProvider): Promise<TypeSafeSaveKeyResult>
+    clearKey(provider: import('../shared/typesafe').JevKeyProvider): Promise<TypeSafeStatus>
     installSkill(): Promise<TypeSafeStatus>
     removeSkill(): Promise<TypeSafeStatus>
   }
@@ -526,8 +526,8 @@ const api: PiDesktopAPI = {
 
   typesafe: {
     status: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_STATUS),
-    saveKey: (key) => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_SAVE_KEY, key),
-    clearKey: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_CLEAR_KEY),
+    saveKey: (key, provider) => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_SAVE_KEY, key, provider),
+    clearKey: (provider) => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_CLEAR_KEY, provider),
     installSkill: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_INSTALL_SKILL),
     removeSkill: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_REMOVE_SKILL),
   },

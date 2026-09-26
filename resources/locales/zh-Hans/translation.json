@@ -1155,6 +1155,10 @@
         "apiKeys": "获取 API 密钥",
         "introduction": "TypeSafe 文档"
       },
+      "openrouter": {
+        "environment": "启动 Pi Desktop 的环境中已设置 OPENROUTER_API_KEY。Pi 和 OMP 会使用该值。",
+        "placeholder": "粘贴你的 API 密钥"
+      },
       "skill": {
         "install": "安装",
         "installed": "已安装（{{version}}）",

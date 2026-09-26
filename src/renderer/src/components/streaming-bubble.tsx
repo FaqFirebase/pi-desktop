@@ -80,15 +80,13 @@ export function StreamingBubble({ content: rawContent, thinking, toolCalls }: St
                     key={id}
                     className={clsx(
                       'flex min-w-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm',
-                      tc.isExecuting
-                        ? 'border-warning-bg bg-warning-bg text-warning'
-                        : tc.isError
-                          ? 'border-error-bg bg-surface/50 text-muted'
-                          : 'border-border bg-surface/50 text-muted'
+                      !tc.isExecuting && tc.isError
+                        ? 'border-error-bg bg-surface/50 text-muted'
+                        : 'border-border bg-surface/50 text-muted'
                     )}
                   >
                     {tc.isExecuting ? (
-                      <Loader2 size={12} className="shrink-0 animate-spin" />
+                      <Loader2 size={12} className="shrink-0 animate-spin text-accent-fg" />
                     ) : (
                       <Icon size={12} className="shrink-0" />
                     )}
@@ -96,7 +94,7 @@ export function StreamingBubble({ content: rawContent, thinking, toolCalls }: St
                     <span
                       className={clsx(
                         'ml-auto shrink-0 text-xs capitalize',
-                        tc.isExecuting && 'text-warning animate-pulse',
+                        tc.isExecuting && 'text-accent-fg animate-pulse',
                         !tc.isExecuting && tc.isError && 'text-error',
                         !tc.isExecuting && !tc.isError && 'text-success'
                       )}

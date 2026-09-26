@@ -1249,6 +1249,7 @@ export interface TypeSafeStatus {
   savedKey: boolean
   /** TYPESAFE_API_KEY is set in the app's own environment; it wins over a saved key. */
   environmentKey: boolean
+  openrouter: { savedKey: boolean; environmentKey: boolean }
   skill: TypeSafeSkillStatus
 }
 

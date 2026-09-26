@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { basename, dirname, join } from 'path'
 import { tmpdir } from 'os'
-import { TypeSafeKeyStore, typeSafeKeyEnv } from './typesafe-key-store'
+import { TypeSafeKeyStore, openRouterKeyEnv, typeSafeKeyEnv } from './typesafe-key-store'
 
 const OWNER_ONLY_MODE = 0o600
 const PERMISSION_BITS = 0o777
@@ -94,4 +94,30 @@ test('a key already in the environment wins over the saved key', () => {
 
 test('nothing is added when no key is saved', () => {
   assert.deepEqual(typeSafeKeyEnv(null, {}), {})
+})
+
+test('OpenRouter keys are passed independently and respect the inherited environment', () => {
+  assert.deepEqual(openRouterKeyEnv('test-openrouter-key', {}), { OPENROUTER_API_KEY: 'test-openrouter-key' })
+  assert.deepEqual(openRouterKeyEnv('test-openrouter-key', { OPENROUTER_API_KEY: '' }), { OPENROUTER_API_KEY: 'test-openrouter-key' })
+  assert.deepEqual(openRouterKeyEnv('test-openrouter-key', { OPENROUTER_API_KEY: 'from_shell' }), {})
+  assert.deepEqual(openRouterKeyEnv(null, {}), {})
+  assert.deepEqual({
+    ...typeSafeKeyEnv('test-typesafe-key', {}),
+    ...openRouterKeyEnv('test-openrouter-key', {}),
+  }, { TYPESAFE_API_KEY: 'test-typesafe-key', OPENROUTER_API_KEY: 'test-openrouter-key' })
+})
+
+test('saving and clearing an OpenRouter key leaves the TypeSafe key unchanged', async () => {
+  const path = await tempKeyPath()
+  const typesafe = new TypeSafeKeyStore(() => path)
+  const openrouterPath = join(dirname(path), 'openrouter-api-key')
+  const openrouter = new TypeSafeKeyStore(() => openrouterPath)
+  await typesafe.save('test-typesafe-key')
+  assert.equal(await openrouter.save('  test-openrouter-key  '), true)
+  assert.equal(new TypeSafeKeyStore(() => openrouterPath).getSavedKey(), 'test-openrouter-key')
+  assert.equal(await openrouter.save('invalid key'), false)
+  assert.equal(openrouter.getSavedKey(), 'test-openrouter-key')
+  await openrouter.clear()
+  assert.equal(new TypeSafeKeyStore(() => openrouterPath).getSavedKey(), null)
+  assert.equal(new TypeSafeKeyStore(() => path).getSavedKey(), 'test-typesafe-key')
 })

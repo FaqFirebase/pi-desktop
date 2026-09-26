@@ -8,6 +8,9 @@
 
 /** The variable the TypeSafe SDKs and the agent skill read the key from. */
 export const TYPESAFE_API_KEY_ENV = 'TYPESAFE_API_KEY'
+export const OPENROUTER_API_KEY_ENV = 'OPENROUTER_API_KEY'
+export const OPENROUTER_LABEL = 'OpenRouter'
+export type JevKeyProvider = 'typesafe' | 'openrouter'
 
 export const TYPESAFE_LINKS = {
   apiKeys: 'https://console.typesafe.ai/keys',

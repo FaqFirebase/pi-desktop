@@ -1173,6 +1173,10 @@
         "apiKeys": "Get an API key",
         "introduction": "TypeSafe docs"
       },
+      "openrouter": {
+        "environment": "OPENROUTER_API_KEY is already set in the environment Pi Desktop started with. Pi and OMP use that value.",
+        "placeholder": "Paste your API key"
+      },
       "skill": {
         "install": "Install",
         "installed": "Installed ({{version}})",
