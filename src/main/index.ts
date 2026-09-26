@@ -211,6 +211,7 @@ function createMainWindow(): BrowserWindow {
 
   // Graceful show (avoid white flash)
   window.once('ready-to-show', () => {
+    window.maximize()
     window.show()
     window.focus()
   })

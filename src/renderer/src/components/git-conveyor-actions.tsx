@@ -3,7 +3,7 @@ import { AlertCircle, ExternalLink, GitCommitHorizontal, GitPullRequest, Loader2
 import { clsx } from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
-import type { GitConveyorStatus } from '../../../shared/ipc-contracts'
+import type { GitConveyorStatus, GitFileStatus } from '../../../shared/ipc-contracts'
 import { t } from '../../../shared/i18n'
 import { formatIpcError } from '../utils/ipc-error'
 
@@ -68,6 +68,13 @@ export async function commitConveyorChanges(
   }
 }
 
+export function gitPublishAction(files: Record<string, GitFileStatus>): 'commitPush' | 'push' {
+  const hasCommitChanges = Object.values(files).some((file) =>
+    file.isStaged || (file.worktree !== ' ' && file.worktree !== '?' && file.worktree !== '!')
+  )
+  return hasCommitChanges ? 'commitPush' : 'push'
+}
+
 export function GitConveyorActions({ children, onChanged }: { children?: ReactNode; onChanged?: () => void }): React.JSX.Element {
   const { t } = useTranslation()
   const [status, setStatus] = useState<GitConveyorStatus | null>(null)
@@ -78,13 +85,20 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
   const [feedback, setFeedback] = useState<string | null>(null)
   const [statusError, dispatchStatusError] = useReducer(gitStatusErrorReducer, null)
   const visibleError = error ?? (statusError?.dismissed ? null : statusError?.message)
+  const [publishAction, setPublishAction] = useState<ReturnType<typeof gitPublishAction>>('push')
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
-      setStatus(await window.piDesktop.git.status())
+      const [nextStatus, files] = await Promise.all([
+        window.piDesktop.git.status(),
+        window.piDesktop.files.getGitStatus(),
+      ])
+      setStatus(nextStatus)
+      setPublishAction(gitPublishAction(files))
       dispatchStatusError({ type: 'recovered' })
     } catch (err) {
       setStatus(null)
+      setPublishAction('push')
       dispatchStatusError({ type: 'failed', message: formatIpcError(err) })
     }
   }, [])
@@ -218,19 +232,18 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
           </span>
         )}
         {children}
-        {!!status?.dirtyFiles && (
-          <>
-            <button type="button" onClick={() => openCommitDialog(false)} disabled={busy !== null || !status.branch} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title={t('conveyor.commitButtonTitle')}>
-              {busy === 'commit' ? <Loader2 size={11} className="animate-spin" /> : <GitCommitHorizontal size={11} />}
-              {t('conveyor.commit')}
-            </button>
-            <button type="button" onClick={() => openCommitDialog(true)} disabled={busy !== null || !status.branch} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title={t('conveyor.commitAndPushTitle')}>
-              {busy === 'commitPush' ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
-              {t('conveyor.commitAndPush')}
-            </button>
-          </>
+        {publishAction === 'commitPush' && (
+          <button type="button" onClick={() => openCommitDialog(false)} disabled={busy !== null || !status?.branch} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title={t('conveyor.commitButtonTitle')}>
+            {busy === 'commit' ? <Loader2 size={11} className="animate-spin" /> : <GitCommitHorizontal size={11} />}
+            {t('conveyor.commit')}
+          </button>
         )}
-        {(!status?.dirtyFiles || status.ahead > 0 || (!status.hasUpstream && !!status.head)) && (
+        {publishAction === 'commitPush' ? (
+          <button type="button" onClick={() => openCommitDialog(true)} disabled={busy !== null || !status?.branch} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title={t('conveyor.commitAndPushTitle')}>
+            {busy === 'commitPush' ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+            {t('conveyor.commitAndPush')}
+          </button>
+        ) : (
           <button type="button" onClick={() => void push()} disabled={busy !== null || !status?.branch} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title={t('conveyor.pushButtonTitle')}>
             {busy === 'push' || busy === 'commitPush' ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
             {t('conveyor.push')}
