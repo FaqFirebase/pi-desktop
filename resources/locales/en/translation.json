@@ -772,7 +772,7 @@
       "noModelsMatch": "No models match",
       "searchPlaceholder": "Search models…",
       "selectModel": "Select model",
-      "selectModelWithShortcut": "Select model (Ctrl+P to cycle when {{agent}} is running)"
+      "selectModelWithShortcut": "Select model (Ctrl+Shift+M, or Ctrl+P to cycle when {{agent}} is running)"
     }
   },
   "notes": {

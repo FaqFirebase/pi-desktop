@@ -86,6 +86,10 @@ export function App(): React.JSX.Element {
         e.preventDefault()
         useAppStore.getState().setCommandPalette(true)
       }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'm' || e.key === 'M')) {
+        e.preventDefault()
+        useAppStore.getState().requestModelSelectorOpen()
+      }
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)

@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MarkdownRenderer } from './markdown-renderer'
-import { toolLabel, toolCallStatusLabel } from '../message-grouping'
+import { toolLabel, toolCallLabel, toolCallStatusLabel } from '../message-grouping'
+import { splitClaudeCliMarkers } from '../claude-cli-markers'
 import { toolCallIconFor } from './tool-call-icon'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
@@ -25,8 +26,9 @@ interface StreamingBubbleProps {
   >
 }
 
-export function StreamingBubble({ content, thinking, toolCalls }: StreamingBubbleProps): React.JSX.Element {
+export function StreamingBubble({ content: rawContent, thinking, toolCalls }: StreamingBubbleProps): React.JSX.Element {
   const { t } = useTranslation()
+  const { content, toolCalls: markerCalls } = useMemo(() => splitClaudeCliMarkers(rawContent), [rawContent])
   const thinkingEnabled = useAppStore(
     (state) => state.settingsDraft.showThinking ?? state.settings?.showThinking ?? DEFAULT_SETTINGS.showThinking
   )
@@ -107,6 +109,34 @@ export function StreamingBubble({ content, thinking, toolCalls }: StreamingBubbl
             </div>
           )}
 
+          {markerCalls.length > 0 && (
+            <div className="mb-2 space-y-1">
+              {markerCalls.map((tc) => {
+                const Icon = toolCallIconFor(tc.name)
+                const status = tc.result === undefined ? null : tc.isError ? 'error' : 'done'
+                return (
+                  <div
+                    key={tc.id}
+                    className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface/50 px-3 py-2 text-sm text-muted"
+                  >
+                    <Icon size={12} className="shrink-0" />
+                    <span className="min-w-0 truncate font-jetbrains">{toolCallLabel(tc.name, tc.arguments, t)}</span>
+                    {status && (
+                      <span
+                        className={clsx(
+                          'ml-auto shrink-0 text-xs capitalize',
+                          status === 'error' ? 'text-error' : 'text-success'
+                        )}
+                      >
+                        {toolCallStatusLabel(status, t)}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           {content && (
             // streaming-md places the caret ::after the last markdown block so it
             // sits at the end of the current chunk (not on a line below it).
@@ -115,7 +145,7 @@ export function StreamingBubble({ content, thinking, toolCalls }: StreamingBubbl
             </div>
           )}
 
-          {!content && !thinking && toolCalls.size === 0 && (
+          {!content && !thinking && toolCalls.size === 0 && markerCalls.length === 0 && (
             <div className="flex h-7 items-center gap-2 text-sm text-dim">
               <Loader2 size={12} className="animate-spin" />
               {t('chat.waitingForResponse')}

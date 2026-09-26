@@ -5,6 +5,7 @@ import { applyUiFont } from './utils/ui-font'
 import { t } from '../../shared/i18n'
 import { buildPlanningPrompt } from './utils/planning-prompt'
 import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
+import { splitClaudeCliMarkers } from './claude-cli-markers'
 import type { PiCommand } from '../../shared/pi-command'
 import { normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
@@ -399,6 +400,9 @@ interface AppState {
   notePickerOpen: boolean
   commandPaletteOpen: boolean
   taskLauncherOpen: boolean
+  // Bumped by the Ctrl/Cmd+Shift+M shortcut. The model picker watches the nonce
+  // so a repeat press reopens it instead of being swallowed by an unchanged open flag.
+  modelSelectorOpenRequest: number
   // A prompt queued for insertion into the chat input. The nonce lets the
   // chat input re-apply the same text on repeated inserts.
   composerFocusRequested: boolean
@@ -603,6 +607,7 @@ interface AppActions {
   setNotePickerOpen: (open: boolean) => void
   setCommandPalette: (open: boolean) => void
   setTaskLauncherOpen: (open: boolean) => void
+  requestModelSelectorOpen: () => void
   startNoteFromText: (text: string) => void
   clearNoteDraft: () => void
 
@@ -960,6 +965,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   notePickerOpen: false,
   commandPaletteOpen: false,
   taskLauncherOpen: false,
+  modelSelectorOpenRequest: 0,
   composerFocusRequested: false,
   composerDrafts: {},
   saveComposerDraft: (workspaceId, text) => set((state) => {
@@ -3199,6 +3205,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   setCommandPalette: (open) => set({ commandPaletteOpen: open }),
   setTaskLauncherOpen: (open) => set({ taskLauncherOpen: open }),
 
+  requestModelSelectorOpen: () =>
+    set((state) => ({ modelSelectorOpenRequest: state.modelSelectorOpenRequest + 1 })),
+
   startNoteFromText: (text) =>
     set({ noteDraft: text, notePickerOpen: false, currentView: 'notes' }),
 
@@ -3363,15 +3372,19 @@ function handleTurnComplete(
     // Commit streaming content as assistant message
     if (state.streamingContent || state.streamingThinking || state.streamingToolCalls.size > 0) {
       const entries = Array.from(state.streamingToolCalls.entries())
-      const toolCalls = entries.map(([id, tc]) => ({
-        id,
-        name: tc.name,
-        arguments: tc.args,
-        result: tc.result,
-        isError: tc.isError,
-        isExecuting: false,
-        durationMs: tc.durationMs,
-      }))
+      const text = splitClaudeCliMarkers(state.streamingContent)
+      const toolCalls = [
+        ...entries.map(([id, tc]) => ({
+          id,
+          name: tc.name,
+          arguments: tc.args,
+          result: tc.result,
+          isError: tc.isError,
+          isExecuting: false,
+          durationMs: tc.durationMs,
+        })),
+        ...text.toolCalls,
+      ]
 
       // Prefer the model/provider Pi records on this specific message (the
       // authoritative source, robust to mid-turn model switches); fall back to
@@ -3382,7 +3395,7 @@ function handleTurnComplete(
       newMessages.push({
         id: generateId(),
         role: 'assistant',
-        content: state.streamingContent,
+        content: text.content,
         timestamp: Date.now(),
         thinking: state.streamingThinking || undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,

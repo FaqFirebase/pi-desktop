@@ -762,7 +762,7 @@
       "noModelsMatch": "没有匹配的模型",
       "searchPlaceholder": "搜索模型…",
       "selectModel": "选择模型",
-      "selectModelWithShortcut": "选择模型（{{agent}} 运行时按 Ctrl+P 切换）"
+      "selectModelWithShortcut": "选择模型（Ctrl+Shift+M，{{agent}} 运行时按 Ctrl+P 切换）"
     }
   },
   "notes": {

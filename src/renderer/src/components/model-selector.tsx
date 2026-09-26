@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import type { ModelInfo } from '../../../shared/ipc-contracts'
-import { filterModels } from '../utils/model-search'
+import { filterModels, sortModelsByRecency } from '../utils/model-search'
+import { readModelRecency, recordModelUse } from '../utils/model-recency'
 import { clsx } from 'clsx'
 import { Cpu, ChevronUp, Check, Loader2, Search } from 'lucide-react'
 
@@ -28,13 +29,17 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
   const settings = useAppStore((state) => state.settings)
 
   const [isOpen, setIsOpen] = useState(false)
+  const modelSelectorOpenRequest = useAppStore((state) => state.modelSelectorOpenRequest)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
+  const [highlighted, setHighlighted] = useState(0)
+  const [recency, setRecency] = useState(readModelRecency)
   // Keep errors as data: switching language must not restart the load.
   const [loadError, setLoadError] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const currentModel = sessionState?.model
   const fallbackLabel =
@@ -87,6 +92,16 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
     return () => cancelAnimationFrame(id)
   }, [isOpen])
 
+  // Ctrl/Cmd+Shift+M opens the picker. The nonce makes a repeat press reopen it
+  // after it was closed, without depending on the toggle used by the button.
+  useEffect(() => {
+    if (modelSelectorOpenRequest === 0) return
+    setModels([])
+    setLoading(true)
+    setLoadError(false)
+    setIsOpen(true)
+  }, [modelSelectorOpenRequest])
+
   useEffect(() => {
     if (!isOpen) return
     const handleClick = (e: MouseEvent): void => {
@@ -98,12 +113,41 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
     return () => document.removeEventListener('mousedown', handleClick)
   }, [isOpen])
 
-  const filteredModels = useMemo(() => filterModels(models, query), [models, query])
+  const filteredModels = useMemo(
+    () => filterModels(sortModelsByRecency(models, recency), query),
+    [models, recency, query],
+  )
+
+  // The first match is preselected, so Enter picks it right after typing.
+  useEffect(() => setHighlighted(0), [query, models])
+
+  useEffect(() => {
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-model-index="${highlighted}"]`)
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [highlighted])
 
   const handleSelect = async (model: ModelInfo): Promise<void> => {
     if (useAppStore.getState().piStatus !== 'running') return
     await setModel(model.provider, model.id)
+    setRecency(recordModelUse(model))
     close()
+  }
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (filteredModels.length === 0) return
+      const step = e.key === 'ArrowDown' ? 1 : -1
+      setHighlighted((i) => (i + step + filteredModels.length) % filteredModels.length)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const model = filteredModels[highlighted]
+      if (model && !loading) void handleSelect(model)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      close()
+    }
   }
 
   return (
@@ -147,11 +191,12 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
               placeholder={t('models.selector.searchPlaceholder')}
               className="min-w-0 flex-1 bg-transparent text-sm text-primary outline-none placeholder:text-faint"
             />
           </div>
-          <div className="max-h-56 overflow-y-auto py-1">
+          <div ref={listRef} className="max-h-56 overflow-y-auto py-1">
             {loading && (
               <div className="flex items-center gap-2 px-3 py-2 text-xs text-dim">
                 <Loader2 size={12} className="animate-spin" />
@@ -164,18 +209,20 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
             {!loading && !loadError && filteredModels.length === 0 && (
               <div className="px-3 py-2 text-xs text-dim">{t('models.selector.noModelsMatch')}</div>
             )}
-            {filteredModels.map((model) => {
+            {filteredModels.map((model, index) => {
               const selected =
                 currentModel?.id === model.id && currentModel?.provider === model.provider
               return (
                 <button
                   key={`${model.provider}/${model.id}`}
                   type="button"
+                  data-model-index={index}
+                  onMouseEnter={() => setHighlighted(index)}
                   onClick={() => void handleSelect(model)}
                   disabled={loading || piStatus !== 'running'}
                   className={clsx(
                     'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-surface-hover transition-colors',
-                    selected && 'bg-card'
+                    index === highlighted ? 'bg-surface-hover' : selected && 'bg-card'
                   )}
                 >
                   <div className="min-w-0 flex-1">
