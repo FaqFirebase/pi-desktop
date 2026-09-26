@@ -27,7 +27,6 @@ import {
   Workflow as WorkflowIcon,
 } from 'lucide-react'
 import { useMemo, useState, useRef } from 'react'
-import { StatusPopover } from './status-popover'
 import { useContextMenu, buildSessionContextMenu } from './context-menu'
 import { getSessionEngineLabel, getSessionRowLabels, hasMixedSessionEngines } from './sidebar-session-labels'
 import { ResizeHandle } from './resize-handle'
@@ -421,10 +420,6 @@ export function Sidebar(): React.JSX.Element {
       {/* Header */}
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
         <div className="flex items-center gap-2">
-          <StatusPopover />
-          {/* Compact Home replaces the duplicate Pi-activity popover: workspace
-              activity already lives in the switcher row, tab icons, and switcher
-              dropdown, so the header keeps only system status + Home. */}
           <button
             type="button"
             onClick={() => setCurrentView('home')}

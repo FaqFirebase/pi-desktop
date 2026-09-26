@@ -149,7 +149,7 @@ export function StatusPopover(): React.JSX.Element {
 
       {/* Popover */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 w-80 rounded-xl border border-border-strong bg-surface shadow-2xl shadow-black/50 overflow-hidden animate-fade-in z-50">
+        <div className="absolute top-full right-0 mt-1 w-80 rounded-xl border border-border-strong bg-surface shadow-2xl shadow-black/50 overflow-hidden animate-fade-in z-50">
           {/* Header */}
           <div className="px-4 py-3 border-b border-border bg-surface/50">
             <div className="flex items-center gap-2">

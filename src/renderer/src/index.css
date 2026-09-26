@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+.window-drag-region {
+  -webkit-app-region: drag;
+}
+
+.window-no-drag {
+  -webkit-app-region: no-drag;
+}
+
 /* Vendored OpenMoji COLRv1 color emoji font — sharp vector emoji that read well
    on dark backgrounds. Used as the emoji fallback across chat, code, and diff. */
 @font-face {

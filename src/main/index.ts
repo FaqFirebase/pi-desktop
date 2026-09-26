@@ -183,6 +183,8 @@ function createMainWindow(): BrowserWindow {
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
     title: 'Pi Desktop',
+    titleBarStyle: 'hiddenInset',
+    titleBarOverlay: true,
     backgroundColor: '#0a0a0a',
     icon: appIcon,
     show: false,
