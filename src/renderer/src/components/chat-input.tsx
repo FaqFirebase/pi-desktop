@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState, useEffect, useMemo } from 'react'
+import { useRef, useCallback, useState, useEffect, useLayoutEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import { useAppStore } from '../store'
@@ -13,7 +13,7 @@ import { ModelSelector } from './model-selector'
 import { VoiceMicButton } from './voice-mic-button'
 import { applyInterim } from '../../../shared/voice-composer'
 import { ThinkingLevelSelector } from './thinking-level-selector'
-import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users, Search } from 'lucide-react'
+import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users, Search, AlertCircle } from 'lucide-react'
 import {
   SUPPORTED_IMAGE_EXTENSIONS,
   type PromptImage,
@@ -30,6 +30,8 @@ import {
   type PiCommand,
 } from '../../../shared/pi-command'
 import { isImeComposing } from '../utils/ime-composing'
+import { isFileDrag } from '../../../shared/folder-drop'
+import { droppedAttachmentFiles, readDroppedAttachment } from '../utils/dropped-attachments'
 
 const MAX_INPUT_HEIGHT = 160
 const MIN_INPUT_HEIGHT = 40
@@ -82,6 +84,10 @@ type Attachment =
 export function ChatInput(): React.JSX.Element {
   const { t } = useTranslation()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const composerFocusRequested = useAppStore((state) => state.composerFocusRequested)
+  const sessionLoading = useAppStore((state) => state.sessionLoading)
+  const currentView = useAppStore((state) => state.currentView)
+  const workspaceId = useAppStore((state) => state.activeWorkspace?.id ?? '')
   const sendPrompt = useAppStore((state) => state.sendPrompt)
   const abort = useAppStore((state) => state.abort)
   const isStreaming = useAppStore((state) => state.isStreaming)
@@ -148,6 +154,10 @@ export function ChatInput(): React.JSX.Element {
 
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
+  const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
+  const attachmentDragDepth = useRef(0)
+  const pendingDrops = useRef(0)
+  const [isReadingDrop, setIsReadingDrop] = useState(false)
 
   // Clear the composer and collapse it back to the idle height. The textarea is
   // uncontrolled and auto-grows in onInput, so clearing the value alone leaves it
@@ -168,6 +178,28 @@ export function ChatInput(): React.JSX.Element {
   const [mention, setMention] = useState<MentionState | null>(null)
   const [mentionResults, setMentionResults] = useState<FileSearchResult[]>([])
   const [mentionIndex, setMentionIndex] = useState(0)
+
+  useLayoutEffect(() => {
+    const ta = textareaRef.current
+    if (!ta) return
+    ta.value = useAppStore.getState().composerDrafts[workspaceId] ?? ''
+    resizeTextarea(ta)
+    historyIndex.current = -1
+    draft.current = ''
+    setSlashToken(null)
+    setMention(null)
+    setMentionResults([])
+
+    // Capture the element and owner before a workspace switch or unmount.
+    return () => {
+      useAppStore.getState().saveComposerDraft(workspaceId, ta.value)
+      // Late history hydration can replace an already-focused composer.
+      // Hand focus to its replacement, but never reclaim it after the user left.
+      if (document.activeElement === ta) {
+        useAppStore.setState({ composerFocusRequested: true })
+      }
+    }
+  }, [workspaceId, resizeTextarea])
 
   // Search the workspace for the active mention query (debounced). An empty
   // query yields no results, so the popup stays hidden until the user types.
@@ -265,6 +297,7 @@ export function ChatInput(): React.JSX.Element {
 
   const handleSend = useCallback(
     async (message: string) => {
+      if (pendingDrops.current > 0) return
       // Record the raw prompt (pre-attachment-inlining) for ↑/↓ recall, and
       // reset any in-progress history navigation.
       recordPrompt(message)
@@ -421,6 +454,21 @@ export function ChatInput(): React.JSX.Element {
   // Only transient/error states block input.
   const isDisabled = piStatus === 'starting' || piStatus === 'error'
 
+  useEffect(() => {
+    if (!composerFocusRequested || isDisabled || sessionLoading || currentView !== 'chat') return
+    // History hydration swaps the loading composer for the empty-chat composer.
+    // Keep the request pending until the mounted, enabled input actually takes focus.
+    const frame = requestAnimationFrame(() => {
+      const textarea = textareaRef.current
+      if (!textarea) return
+      textarea.focus()
+      if (document.activeElement === textarea) {
+        useAppStore.setState({ composerFocusRequested: false })
+      }
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [composerFocusRequested, isDisabled, sessionLoading, currentView])
+
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       if (isDisabled) return
@@ -447,6 +495,44 @@ export function ChatInput(): React.JSX.Element {
     [attachImageFile, isDisabled]
   )
 
+  const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    attachmentDragDepth.current = 0
+    setIsDraggingAttachment(false)
+    if (!isFileDrag(event.dataTransfer)) return
+    const files = droppedAttachmentFiles(event.dataTransfer)
+    // A folder-only drop still bubbles to the workspace opener.
+    if (files.length === 0) return
+    event.preventDefault()
+    if (isDisabled) return
+
+    const candidates = files.map((file) => ({
+      file,
+      path: window.piDesktop.system.getPathForFile(file) || `drop://${file.name}-${file.size}-${file.lastModified}`,
+    }))
+    pendingDrops.current += 1
+    setIsReadingDrop(true)
+    setAttachError(null)
+    void (async () => {
+      const errors: string[] = []
+      try {
+        for (const { file, path } of candidates) {
+          try {
+            const result = await readDroppedAttachment(file)
+            const next: Attachment = { ...result, path }
+            setAttachments((prev) => prev.some((a) => a.path === path) ? prev : [...prev, next])
+          } catch (error) {
+            errors.push(`${file.name}: ${error instanceof Error ? error.message : t('chat.attach.attachFailed')}`)
+          }
+        }
+        if (errors.length) setAttachError(errors.join('\n'))
+      } finally {
+        pendingDrops.current -= 1
+        setIsReadingDrop(pendingDrops.current > 0)
+        textareaRef.current?.focus()
+      }
+    })()
+  }, [isDisabled, t])
+
   const removeAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index))
   }, [])
@@ -455,14 +541,49 @@ export function ChatInput(): React.JSX.Element {
 
   return (
     <div className={clsx('pointer-events-none mx-auto w-full px-4', composerColumn)}>
-      {attachError && (
-        <div className="pointer-events-auto mb-2 flex items-center gap-1.5 text-xs text-error">
-          <X size={12} className="shrink-0" />
-          <span>{attachError}</span>
-        </div>
-      )}
-
-      <div className="pointer-events-auto relative flex flex-col rounded-2xl border border-border-strong bg-surface/95 shadow-lg shadow-black/25 backdrop-blur-sm focus-within:border-border-strong-hover transition-colors">
+      <div
+        className={clsx(
+          'pointer-events-auto relative flex flex-col rounded-2xl border bg-surface/95 shadow-lg shadow-black/25 backdrop-blur-sm transition-colors',
+          isDraggingAttachment ? 'border-accent' : 'border-border-strong focus-within:border-border-strong-hover'
+        )}
+        onDragEnter={(event) => {
+          if (!isFileDrag(event.dataTransfer)) return
+          event.preventDefault()
+          attachmentDragDepth.current += 1
+          if (!isDisabled) setIsDraggingAttachment(true)
+        }}
+        onDragOver={(event) => {
+          if (!isFileDrag(event.dataTransfer)) return
+          event.preventDefault()
+          event.dataTransfer.dropEffect = isDisabled ? 'none' : 'copy'
+        }}
+        onDragLeave={() => {
+          attachmentDragDepth.current = Math.max(0, attachmentDragDepth.current - 1)
+          if (attachmentDragDepth.current === 0) setIsDraggingAttachment(false)
+        }}
+        onDrop={handleDrop}
+      >
+        {isDraggingAttachment && (
+          <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-accent bg-surface/95 text-sm text-primary" role="status">
+            <Paperclip size={18} />
+            {t('chat.attach.dropHint')}
+          </div>
+        )}
+        {attachError && (
+          <div role="alert" className="m-2 flex items-start gap-2 rounded-lg border border-error/30 bg-error/10 p-2 text-xs text-error">
+            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+            <span className="max-h-32 min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words leading-relaxed">{attachError}</span>
+            <button
+              type="button"
+              onClick={() => setAttachError(null)}
+              aria-label={t('common.close')}
+              className="shrink-0 rounded p-0.5 text-error transition-colors hover:bg-error/15"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+        {isReadingDrop && <div className="px-3 pt-2 text-xs text-muted" role="status">{t('chat.attach.reading')}</div>}
         {/* Subagent strip sits on the top edge, inset ~5% each side so the pill
             width doesn't look like it grew with the fleet UI. */}
         <div className="pointer-events-auto absolute bottom-full left-[5%] right-[5%] z-20 mb-0">
@@ -516,25 +637,30 @@ export function ChatInput(): React.JSX.Element {
         )}
 
         {attachments.length > 0 && (
-          <div className="flex flex-wrap gap-1 border-b border-border/60 px-3 pt-2.5 pb-2">
+          <div className="flex flex-wrap gap-2 p-2">
             {attachments.map((att, i) => (
               <div
                 key={att.path}
-                className="flex items-center gap-1.5 rounded-md border border-border-strong bg-card px-2 py-1 text-xs text-secondary"
+                className={clsx(
+                  'relative flex h-16 min-w-0 max-w-full shrink-0 items-center overflow-hidden rounded-lg border border-border-strong bg-card text-xs text-secondary',
+                  att.kind === 'image' ? 'w-16' : 'w-28 flex-col justify-center gap-1 p-2'
+                )}
               >
                 {att.kind === 'image' ? (
                   <img
                     src={`data:${att.image.mimeType};base64,${att.image.data}`}
                     alt={att.name}
-                    className="h-5 w-5 shrink-0 rounded object-cover"
+                    className="h-full w-full object-cover"
                   />
                 ) : (
-                  <FileText size={12} className="text-dim" />
+                  <FileText size={22} className="shrink-0 text-dim" />
                 )}
-                <span className="max-w-[120px] truncate">{att.name}</span>
+                {att.kind !== 'image' && <span className="w-full truncate text-center" title={att.name}>{att.name}</span>}
                 <button
+                  type="button"
                   onClick={() => removeAttachment(i)}
-                  className="rounded p-0.5 text-dim hover:text-secondary"
+                  aria-label={`${t('common.remove')}: ${att.name}`}
+                  className="absolute right-1 top-1 rounded bg-surface p-0.5 text-secondary shadow-sm hover:bg-surface-hover hover:text-primary"
                 >
                   <X size={10} />
                 </button>
@@ -575,6 +701,11 @@ export function ChatInput(): React.JSX.Element {
           }}
           onKeyDown={(e) => {
             if (isImeComposing(e.nativeEvent)) return
+            if (e.key === 'Enter' && !e.shiftKey && pendingDrops.current > 0) {
+              e.preventDefault()
+              e.stopPropagation()
+              return
+            }
             if (e.ctrlKey && e.key === 'p') {
               e.preventDefault()
               useAppStore.getState().cycleModel()
@@ -677,7 +808,7 @@ export function ChatInput(): React.JSX.Element {
           }}
         />
 
-        <div className="font-chat flex items-center gap-0.5 px-1.5 pb-1.5 pt-0">
+        <div className="font-chat flex items-center gap-1 px-2 pb-2 pt-0">
           <ComposerPermissionMenu value={permissionMode} onChange={setPermissionMode} />
           <button
             onClick={handleAttachFile}
@@ -727,47 +858,47 @@ export function ChatInput(): React.JSX.Element {
             </button>
           )}
 
-          <span className="ml-auto mr-1 hidden text-[11px] text-faint sm:inline">
-            {isStreaming ? (
-              <span className="text-warning animate-pulse">{t('chat.composer.streaming')}</span>
-            ) : (
-              t('chat.composer.shiftEnterNewline')
+          <div className="ml-auto flex min-w-0 items-center gap-1">
+            {isStreaming && (
+              <span className="hidden animate-pulse whitespace-nowrap text-[11px] text-warning sm:inline">
+                {t('chat.composer.streaming')}
+              </span>
             )}
-          </span>
 
-          {!isDisabled && (
-            <div className="flex h-6 shrink-0 items-center gap-0 rounded-md bg-card/60 ring-1 ring-inset ring-border-strong/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              <ModelSelector compact />
-              <div className="h-3.5 w-px bg-border" aria-hidden="true" />
-              <ThinkingLevelSelector />
-            </div>
-          )}
+            {!isDisabled && (
+              <div className="flex shrink-0 items-center rounded-lg border border-border-strong bg-card">
+                <ModelSelector compact />
+                <div className="h-3.5 w-px bg-border" aria-hidden="true" />
+                <ThinkingLevelSelector />
+              </div>
+            )}
 
-          {isStreaming ? (
-            <button
-              onClick={handleAbort}
-              className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors"
-              title={t('chat.stopButton.titleWithShortcut')}
-              aria-label={t('chat.stopButton.ariaLabel')}
-            >
-              <Square size={16} />
-            </button>
-          ) : (
-            <button
-              onClick={() => {
-                const value = textareaRef.current?.value.trim()
-                if (value) {
-                  handleSend(value)
-                }
-              }}
-              disabled={isDisabled}
-              className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title={t('chat.sendButton.titleWithShortcut')}
-              aria-label={t('chat.sendButton.ariaLabel')}
-            >
-              <CornerDownLeft size={16} />
-            </button>
-          )}
+            {isStreaming ? (
+              <button
+                onClick={handleAbort}
+                className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors"
+                title={t('chat.stopButton.titleWithShortcut')}
+                aria-label={t('chat.stopButton.ariaLabel')}
+              >
+                <Square size={16} />
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  const value = textareaRef.current?.value.trim()
+                  if (value) {
+                    handleSend(value)
+                  }
+                }}
+                disabled={isDisabled || isReadingDrop}
+                className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={t('chat.sendButton.titleWithShortcut')}
+                aria-label={t('chat.sendButton.ariaLabel')}
+              >
+                <CornerDownLeft size={16} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

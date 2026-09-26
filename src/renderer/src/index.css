@@ -62,6 +62,10 @@
 /* Structural rules only; colors come from the token vars the engine writes. */
 
 @layer base {
+  body {
+    font-family: var(--ui-font-family, var(--font-sans));
+  }
+
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--color-scrollbar) transparent;
@@ -89,11 +93,11 @@
 /* ─── Markdown Rendering ─────────────────────────────────────────────────── */
 
 @layer components {
-  /* Bundled Inter for chat text (prompts + model responses). Sizes stay in rem
+  /* Chat text defaults to bundled Inter. Sizes stay in rem
      so they keep scaling with the UI font-size setting. Monospace code/pre
      inside markdown is re-overridden below. */
   .font-chat {
-    font-family: 'Inter Variable', 'OpenMoji Color', system-ui, sans-serif;
+    font-family: var(--ui-font-family, 'Inter Variable', 'OpenMoji Color', system-ui, sans-serif);
   }
 
   /* Bundled JetBrains Mono for command bodies and tool results. */
@@ -135,7 +139,7 @@
   }
 
   .markdown-body {
-    font-family: 'Inter Variable', 'OpenMoji Color', system-ui, sans-serif;
+    font-family: var(--ui-font-family, 'Inter Variable', 'OpenMoji Color', system-ui, sans-serif);
     font-size: 0.9375rem;
     line-height: 1.6;
     color: var(--color-primary);
@@ -177,7 +181,7 @@
   }
 
   .markdown-body code {
-    font-family: 'Inter Variable', system-ui, sans-serif;
+    font-family: var(--ui-font-family, 'Inter Variable', system-ui, sans-serif);
     font-size: 1em;
     color: var(--color-md-code);
   }

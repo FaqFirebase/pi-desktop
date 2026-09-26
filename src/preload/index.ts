@@ -21,6 +21,7 @@ import type {
   FileChangeEvent,
   GitFileStatus,
   TerminalExitEvent,
+  TerminalDataEvent,
   TerminalStartOptions,
   TerminalStartResult,
   Note,
@@ -289,6 +290,7 @@ interface PiDesktopAPI {
     write(path: string, content: string): Promise<{ ok: boolean }>
     getDiff(filePath?: string): Promise<string>
     getStagedDiff(filePath?: string): Promise<string>
+    discardDiff(workspaceId: string, patches: string[]): Promise<void>
     /**
      * Declare whether a live files panel consumes file-change events. The
      * main process attaches the workspace watcher only while demanded.
@@ -344,11 +346,11 @@ interface PiDesktopAPI {
   }
 
   terminal: {
-    start(options?: TerminalStartOptions): Promise<TerminalStartResult>
-    input(data: string): Promise<void>
-    resize(cols: number, rows: number): Promise<void>
-    stop(): Promise<void>
-    onData(callback: (data: string) => void): () => void
+    start(workspaceId: string, options?: TerminalStartOptions): Promise<TerminalStartResult>
+    input(workspaceId: string, data: string): Promise<void>
+    resize(workspaceId: string, cols: number, rows: number): Promise<void>
+    stop(workspaceId: string): Promise<void>
+    onData(callback: (event: TerminalDataEvent) => void): () => void
     onExit(callback: (event: TerminalExitEvent) => void): () => void
   }
 
@@ -574,6 +576,7 @@ const api: PiDesktopAPI = {
     write: (path, content) => ipcRenderer.invoke(IPC_CHANNELS.FILE_WRITE, path, content),
     getDiff: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE_DIFF, filePath),
     getStagedDiff: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE_STAGED_DIFF, filePath),
+    discardDiff: (workspaceId, patches) => ipcRenderer.invoke(IPC_CHANNELS.FILE_DISCARD_DIFF, workspaceId, patches),
     setWatchDemand: (demanded) => ipcRenderer.invoke(IPC_CHANNELS.FILE_WATCH_DEMAND, demanded),
     getGitStatus: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_STATUS),
     getGitBranch: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_BRANCH),
@@ -610,12 +613,12 @@ const api: PiDesktopAPI = {
   },
 
   terminal: {
-    start: (options) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_START, options),
-    input: (data) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_INPUT, data),
-    resize: (cols, rows) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESIZE, { cols, rows }),
-    stop: () => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_STOP),
+    start: (workspaceId, options) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_START, workspaceId, options),
+    input: (workspaceId, data) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_INPUT, workspaceId, data),
+    resize: (workspaceId, cols, rows) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESIZE, workspaceId, { cols, rows }),
+    stop: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_STOP, workspaceId),
     onData: (callback) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: string) => callback(data)
+      const handler = (_event: Electron.IpcRendererEvent, data: TerminalDataEvent) => callback(data)
       ipcRenderer.on(IPC_CHANNELS.EVENT_TERMINAL_DATA, handler)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.EVENT_TERMINAL_DATA, handler)
     },
@@ -691,7 +694,7 @@ const api: PiDesktopAPI = {
 
   onMenuAction: (callback) => {
     const handlers: Array<() => void> = []
-    const actions = ['menu:new-session', 'menu:new-workspace', 'menu:open-project']
+    const actions = ['menu:new-session', 'menu:close-session', 'menu:new-workspace', 'menu:open-project']
 
     for (const action of actions) {
       const handler = () => callback(action)

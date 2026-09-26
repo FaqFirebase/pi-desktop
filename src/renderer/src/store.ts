@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { applyThemeSettings, rememberBootTheme, setUserThemes, watchSystemTheme } from './utils/theme'
 import { applyLanguageSetting } from './i18n'
+import { applyUiFont } from './utils/ui-font'
 import { t } from '../../shared/i18n'
 import { buildPlanningPrompt } from './utils/planning-prompt'
 import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
@@ -61,6 +62,7 @@ import type {
   SessionLaunchTaskOptions,
   SessionDeleteResult,
   ModelsFileInfo,
+  ModelInfo,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -399,6 +401,9 @@ interface AppState {
   taskLauncherOpen: boolean
   // A prompt queued for insertion into the chat input. The nonce lets the
   // chat input re-apply the same text on repeated inserts.
+  composerFocusRequested: boolean
+  composerDrafts: Record<string, string>
+  saveComposerDraft: (workspaceId: string, text: string) => void
   pendingInsert: { text: string; nonce: number; replace?: boolean } | null
   // Body text captured (e.g. from a message) to seed a new note in the Notes
   // panel. Non-null opens the panel's New Note form pre-filled.
@@ -459,7 +464,7 @@ interface AppActions {
   // Model
   setModel: (provider: string, modelId: string) => Promise<void>
   cycleModel: () => Promise<void>
-  listModels: () => Promise<void>
+  listModels: () => Promise<ModelInfo[]>
 
   // Thinking
   setThinkingLevel: (level: string) => Promise<void>
@@ -955,6 +960,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   notePickerOpen: false,
   commandPaletteOpen: false,
   taskLauncherOpen: false,
+  composerFocusRequested: false,
+  composerDrafts: {},
+  saveComposerDraft: (workspaceId, text) => set((state) => {
+    const composerDrafts = { ...state.composerDrafts }
+    if (text) composerDrafts[workspaceId] = text
+    else delete composerDrafts[workspaceId]
+    return { composerDrafts }
+  }),
   pendingInsert: null,
   noteDraft: null,
   updateInfo: null,
@@ -967,18 +980,26 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   startPi: async (options) => {
     // Don't start if already running
     if (get().piStatus === 'running') return
+    const gen = sessionLoadGeneration
+    const workspaceId = get().activeWorkspace?.id
+    const isCurrent = (): boolean => gen === sessionLoadGeneration && workspaceId === get().activeWorkspace?.id
 
     try {
       const status = await window.piDesktop.pi.start(options as Record<string, unknown> | undefined)
+      if (!isCurrent()) return
       set({ piStatus: status.status, piStartupPhase: status.startupPhase ?? null, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
 
       if (status.status === 'running') {
         await get().refreshSessionState()
+        if (!isCurrent()) return
         await get().refreshSessionStats()
+        if (!isCurrent()) return
         await get().refreshSessionList()
+        if (!isCurrent()) return
         await get().maybeWarnWorkspacePermissionRules()
       }
     } catch (err) {
+      if (!isCurrent()) return
       set({ piStatus: 'error', piStartupPhase: null, piError: err instanceof Error ? err.message : String(err) })
     }
   },
@@ -1050,9 +1071,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
     if (trimmed.startsWith('/workflows run ')) get().setWorkflowPanelOpen(true)
 
-    // Navigation never spawns Pi; the first prompt does. startPi applies the
-    // resume preference, so a previously-used project continues its last
-    // conversation; a fresh one gets a new session.
+    // Navigation never spawns Pi; the first prompt or model-picker open does.
+    // startPi applies the resume preference: a previously-used project
+    // continues its last conversation; a fresh one gets a new session.
     if (get().piStatus !== 'running') {
       await get().startPi()
       if (get().piStatus !== 'running') return
@@ -1304,6 +1325,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         currentView: 'chat',
         sessionState: null,
         sessionStats: null,
+        composerFocusRequested: true,
         // A new session has no history to wait for. Show the empty chat
         // immediately; the runtime event hydrates its generated session path
         // when Pi is ready, while piStatus still communicates startup.
@@ -1463,6 +1485,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       !get().sessionLoading &&
       get().messages.length > 0
     ) {
+      set({ composerFocusRequested: true })
       return
     }
 
@@ -1520,6 +1543,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         if (get().activeWorkspace?.id) void window.piDesktop.ui.flushPendingPrompts(get().activeWorkspace!.id)
         set({
           currentView: 'chat',
+          composerFocusRequested: true,
           sessionLoading: runtime?.status !== 'running',
           ...(runtime ? {
             activeSessionRuntimeId: runtime.runtimeId,
@@ -1789,11 +1813,23 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   listModels: async () => {
-    try {
-      await window.piDesktop.model.listAvailable()
-    } catch {
-      // Silent failure
+    const gen = sessionLoadGeneration
+    const workspaceId = get().activeWorkspace?.id
+    const isCurrent = (): boolean => gen === sessionLoadGeneration && workspaceId === get().activeWorkspace?.id
+    // The picker is also usable on a fresh composer. Starting the runtime
+    // discovers the engine's real catalog without sending a prompt.
+    if (get().piStatus !== 'running') await get().startPi()
+    if (!isCurrent() || get().piStatus !== 'running') {
+      throw new Error(t('models.selector.loadFailed'))
     }
+    const response = (await window.piDesktop.model.listAvailable()) as {
+      success?: boolean
+      data?: { models?: ModelInfo[] }
+    } | null
+    if (!isCurrent() || !response?.success || !Array.isArray(response.data?.models)) {
+      throw new Error(t('models.selector.loadFailed'))
+    }
+    return response.data.models
   },
 
   // ─── Thinking ─────────────────────────────────────────────────────────
@@ -1913,6 +1949,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
       // Apply font size
       document.documentElement.style.fontSize = `${settings.fontSize}px`
+      applyUiFont(settings.uiFontFamily)
 
       // Settings reload after each save, so this also applies a changed language.
       await applyLanguageSetting(settings.language)

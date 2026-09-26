@@ -144,6 +144,7 @@ export const IPC_CHANNELS = {
   FILE_WRITE: 'file:write',
   FILE_DIFF: 'file:diff',
   FILE_STAGED_DIFF: 'file:staged-diff',
+  FILE_DISCARD_DIFF: 'file:discard-diff',
   FILE_WATCH_DEMAND: 'file:watch-demand',
   GIT_STATUS: 'git:status',
   GIT_BRANCH: 'git:branch',
@@ -350,7 +351,13 @@ export interface TerminalStartResult {
   cwd: string
 }
 
+export interface TerminalDataEvent {
+  workspaceId: string
+  data: string
+}
+
 export interface TerminalExitEvent {
+  workspaceId: string
   exitCode: number
   signal?: number
 }
@@ -1132,6 +1139,8 @@ export interface AppSettings {
   defaultCwd: string | null
   // UI font size in px (chat, panels, sidebar). Applied to the document root.
   fontSize: number
+  // Installed font family for UI and chat; empty keeps the built-in fonts.
+  uiFontFamily: string
   // Terminal (xterm) font size in px — independent of the UI font size.
   terminalFontSize: number
   // Code editor (CodeMirror) font size in px — independent of the UI font size.

@@ -51,7 +51,7 @@ export function ComposerPermissionMenu({ value, onChange }: ComposerPermissionMe
         type="button"
         onClick={() => setIsOpen((open) => !open)}
         className={clsx(
-          'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
+          'flex h-7 items-center gap-1 rounded-lg px-2 text-xs transition-colors',
           isTrusted
             ? 'bg-warning/15 text-warning hover:bg-warning/35'
             : 'hover:bg-highlight-strong text-secondary hover:text-primary'

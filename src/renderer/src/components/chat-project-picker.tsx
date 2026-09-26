@@ -6,6 +6,7 @@ import { useAppStore } from '../store'
 import type { Workspace } from '../../../shared/ipc-contracts'
 import { workspaceNameFromFolderPath } from '../../../shared/folder-drop'
 import { pathsEqual } from '../../../shared/path-compare'
+import { chatProjectSelection } from './chat-project-selection'
 
 /**
  * Compact project picker for the empty-chat center prompt.
@@ -24,10 +25,6 @@ export function ChatProjectPicker(): React.JSX.Element {
     [workspaces]
   )
 
-  // null = no project (home dir); string = workspace id
-  const [selectedId, setSelectedId] = useState<string | null>(
-    () => activeWorkspace?.id ?? sorted[0]?.id ?? null
-  )
   const [pickerOpen, setPickerOpen] = useState(false)
   const [homePath, setHomePath] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -44,12 +41,6 @@ export function ChatProjectPicker(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
-    if (selectedId === null) return
-    if (workspaces.some((w) => w.id === selectedId)) return
-    setSelectedId(activeWorkspace?.id ?? sorted[0]?.id ?? null)
-  }, [activeWorkspace?.id, selectedId, sorted, workspaces])
-
-  useEffect(() => {
     if (!pickerOpen) return
     const onDoc = (e: MouseEvent): void => {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
@@ -60,8 +51,9 @@ export function ChatProjectPicker(): React.JSX.Element {
     return () => document.removeEventListener('mousedown', onDoc)
   }, [pickerOpen])
 
-  const selected: Workspace | null =
-    selectedId === null ? null : (workspaces.find((w) => w.id === selectedId) ?? null)
+  // Display the committed destination, including switches made outside this picker.
+  const selected = chatProjectSelection(activeWorkspace, homePath)
+  const selectedId = selected?.id ?? null
 
   const ensureHomeWorkspace = async (): Promise<Workspace | null> => {
     const home = homePath ?? (await window.piDesktop.system.getPath('home'))
@@ -73,27 +65,21 @@ export function ChatProjectPicker(): React.JSX.Element {
   }
 
   const applySelection = async (id: string | null): Promise<void> => {
-    const previousId = selectedId
-    setSelectedId(id)
     setPickerOpen(false)
     setBusy(true)
     try {
       if (id) {
-        if (!(await activateWorkspace(id))) {
-          setSelectedId(previousId)
-        }
+        await activateWorkspace(id)
       } else {
         const homeWs = await ensureHomeWorkspace()
         if (homeWs) {
-          if (!(await activateWorkspace(homeWs.id))) {
-            setSelectedId(previousId)
-          }
+          await activateWorkspace(homeWs.id)
         } else {
           await startPi()
         }
       }
     } catch {
-      setSelectedId(previousId)
+      // A failed switch leaves the displayed destination at the active workspace.
     } finally {
       setBusy(false)
     }
