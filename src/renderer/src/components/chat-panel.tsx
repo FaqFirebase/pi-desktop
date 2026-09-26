@@ -188,7 +188,7 @@ export function ChatPanel(): React.JSX.Element {
             <div className="flex items-center gap-0.5">
               {/* Workspace path — always visible */}
               {activeWorkspace && (
-                <div className="flex items-center gap-1.5 mr-2 px-2 py-0.5 rounded bg-card/60" title={activeWorkspace.path}>
+                <div className="flex h-6 items-center gap-1.5 mr-2 px-2 rounded bg-card/60" title={activeWorkspace.path}>
                   <FolderTree size={12} className="text-dim shrink-0" />
                   <span className="text-xs text-muted max-w-[300px] truncate">
                     {activeWorkspace.name}: {activeWorkspace.path}

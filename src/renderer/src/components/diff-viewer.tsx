@@ -122,7 +122,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
       <div className="shrink-0 border-b border-border">
-        <div className="flex min-h-8 flex-wrap items-center gap-2 px-4 py-0.5">
+        <div className="flex min-h-[calc(var(--spacing)*8-1px)] flex-wrap items-center gap-2 px-4 py-0.5">
           <div className="order-1 flex min-w-0 flex-1 items-center gap-2">
             <GitCompare size={16} className="shrink-0 text-muted" />
             <h2 className="truncate text-sm font-medium text-primary">{t('diff.heading')}</h2>

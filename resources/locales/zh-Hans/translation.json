@@ -1792,7 +1792,6 @@
     "newSessionFallback": "新建会话",
     "newSessionTitle": "在此项目中新建会话（Ctrl/Cmd+N）",
     "removeWorkspaceAriaLabel": "移除 {{name}}",
-    "sessions": "会话",
     "tools": "工具"
   }
 }

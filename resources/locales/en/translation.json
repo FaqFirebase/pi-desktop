@@ -1845,7 +1845,6 @@
     "newSessionFallback": "New session",
     "newSessionTitle": "New session in this project (Ctrl/Cmd+N)",
     "removeWorkspaceAriaLabel": "Remove {{name}}",
-    "sessions": "Sessions",
     "tools": "Tools"
   }
 }
