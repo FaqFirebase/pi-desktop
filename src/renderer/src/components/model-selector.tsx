@@ -30,6 +30,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
 
   const [isOpen, setIsOpen] = useState(false)
   const modelSelectorOpenRequest = useAppStore((state) => state.modelSelectorOpenRequest)
+  const lastOpenRequest = useRef(modelSelectorOpenRequest)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
@@ -95,7 +96,9 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
   // Ctrl/Cmd+Shift+M opens the picker. The nonce makes a repeat press reopen it
   // after it was closed, without depending on the toggle used by the button.
   useEffect(() => {
-    if (modelSelectorOpenRequest === 0) return
+    // A remount must not replay a shortcut request from a previous session.
+    if (modelSelectorOpenRequest === lastOpenRequest.current) return
+    lastOpenRequest.current = modelSelectorOpenRequest
     setModels([])
     setLoading(true)
     setLoadError(false)
