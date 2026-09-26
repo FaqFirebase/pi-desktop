@@ -252,6 +252,8 @@
     "branchStatusClean": "{{branch}}",
     "branchStatusDirty_other": "{{branch}} · {{count}} 处更改",
     "commit": "提交",
+    "commitAndPush": "提交 + 推送",
+    "commitAndPushTitle": "确认后提交更改并推送分支",
     "commitButtonTitle": "提交已暂存的更改或该工作区中的更改",
     "createPrButton": "创建 PR",
     "detachedBranch": "分离",
@@ -270,12 +272,15 @@
       "commitBeforePr": "创建 PR 前请先提交更改。",
       "commitBeforePush": "推送前请先提交工作树。",
       "commitMessageRequired": "提交信息为必填项。",
+      "committedPushFailed": "提交 {{sha}} 已保存在本地，但推送未完成：{{detail}}",
       "prTitleRequired": "PR 标题为必填项。",
-      "pushBeforePr": "创建 PR 前请先推送该分支。"
+      "pushBeforePr": "创建 PR 前请先推送该分支。",
+      "workspaceChanged": "当前工作区已更改，Git 操作已停止。"
     },
     "feedback": {
       "branchPushed": "分支已推送。",
       "committed": "已提交 {{sha}}。",
+      "committedAndPushed": "已提交 {{sha}} 并推送分支。",
       "prCreated": "PR 已创建。",
       "prCreatedWithUrl": "PR 已创建：{{url}}",
       "pushedCommits_other": "已推送 {{count}} 个提交。"
@@ -458,7 +463,7 @@
     "openFile": "打开文件",
     "refreshAriaLabel": "刷新差异",
     "sessionFilter": {
-      "description": "仅显示此聊天中 edit/write 调用涉及的文件。完整文件差异可能包含其他会话的更改，也可能遗漏 Shell 和子代理的更改。关闭筛选可查看整个项目并使用 Git 操作。",
+      "description": "仅显示此聊天中 edit/write 调用涉及的文件。完整文件差异可能包含其他会话的更改，也可能遗漏 Shell 和子代理的更改。关闭筛选可查看整个项目。提交、推送和 PR 操作始终针对整个仓库。",
       "label": "此会话涉及的文件",
       "noMatches": "没有与此会话匹配的更改"
     },

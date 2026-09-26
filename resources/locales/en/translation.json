@@ -256,6 +256,8 @@
     "branchStatusDirty_one": "{{branch}} · {{count}} changed",
     "branchStatusDirty_other": "{{branch}} · {{count}} changed",
     "commit": "Commit",
+    "commitAndPush": "Commit + Push",
+    "commitAndPushTitle": "Commit changes, then push the branch after confirmation",
     "commitButtonTitle": "Commit staged changes or changes in this workspace",
     "createPrButton": "Create PR",
     "detachedBranch": "detached",
@@ -274,12 +276,15 @@
       "commitBeforePr": "Commit changes before creating a pull request.",
       "commitBeforePush": "Commit the working tree before pushing.",
       "commitMessageRequired": "Commit message is required.",
+      "committedPushFailed": "Commit {{sha}} was saved locally, but Push did not complete: {{detail}}",
       "prTitleRequired": "Pull request title is required.",
-      "pushBeforePr": "Push the branch before creating a pull request."
+      "pushBeforePr": "Push the branch before creating a pull request.",
+      "workspaceChanged": "The active workspace changed. The Git operation was stopped."
     },
     "feedback": {
       "branchPushed": "Branch pushed.",
       "committed": "Committed {{sha}}.",
+      "committedAndPushed": "Committed {{sha}} and pushed the branch.",
       "prCreated": "Pull request created.",
       "prCreatedWithUrl": "Pull request created: {{url}}",
       "pushedCommits_one": "Pushed {{count}} commit.",
@@ -465,7 +470,7 @@
     "openFile": "Open file",
     "refreshAriaLabel": "Refresh diff",
     "sessionFilter": {
-      "description": "Filter to files touched by edit/write calls in this chat. Whole-file diffs may include other sessions. Shell and subagent changes may be missing. Turn off to see the whole project and Git actions.",
+      "description": "Filter to files touched by edit/write calls in this chat. Whole-file diffs may include other sessions. Shell and subagent changes may be missing. Turn off to see the whole project. Commit, Push and PR always apply to the whole repository.",
       "label": "Files touched in this session",
       "noMatches": "No matching changes for this session"
     },

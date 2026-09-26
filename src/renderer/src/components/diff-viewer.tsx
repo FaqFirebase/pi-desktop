@@ -133,16 +133,6 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
           <div className="order-2 flex shrink-0 items-center gap-2">
             <button
               type="button"
-              onClick={() => void discard(visibleFiles)}
-              disabled={loading || discarding || stagedMode || visibleFiles.length === 0 || visibleFiles.some((file) => !canDiscardGitPatch(file.patch))}
-              title={stagedMode ? t('diff.discard.workingOnly') : t('diff.discard.all')}
-              aria-label={t('diff.discard.all')}
-              className="rounded p-1.5 text-dim transition-colors hover:bg-error-bg hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {discarding ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
-            </button>
-            <button
-              type="button"
               onClick={() => setSessionOnly((value) => !value)}
               aria-pressed={sessionOnly}
               aria-label={t('diff.sessionFilter.label')}
@@ -189,11 +179,21 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
             </button>
           </div>
         </div>
-        {!sessionOnly && (
-          <div className="min-w-0 border-t border-border px-4 py-2">
-            <GitConveyorActions key={workspaceId} onChanged={loadDiff} />
-          </div>
-        )}
+        <div className="min-w-0 border-t border-border px-4 py-2">
+          <GitConveyorActions key={workspaceId} onChanged={loadDiff}>
+            <button
+              type="button"
+              onClick={() => void discard(visibleFiles)}
+              disabled={loading || discarding || stagedMode || visibleFiles.length === 0 || visibleFiles.some((file) => !canDiscardGitPatch(file.patch))}
+              title={stagedMode ? t('diff.discard.workingOnly') : t('diff.discard.all')}
+              aria-label={t('diff.discard.all')}
+              className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-error-bg hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {discarding ? <Loader2 size={11} className="animate-spin" /> : <Undo2 size={11} />}
+              {t('diff.discard.confirm')}
+            </button>
+          </GitConveyorActions>
+        </div>
       </div>
 
       {discardError && <p role="alert" className="shrink-0 px-4 py-2 text-xs text-error">{discardError}</p>}
