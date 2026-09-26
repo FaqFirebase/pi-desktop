@@ -4,6 +4,11 @@ import { DEFAULT_SIDEBAR_WIDTH } from './sidebar-width'
 import { DEFAULT_CHAT_WIDTH } from './chat-width'
 import { SYSTEM_LANGUAGE } from './i18n/languages'
 
+export const GIT_CONVEYOR_NOTICE_TIMEOUT_MS = {
+  success: 5_000,
+  error: 10_000,
+} as const
+
 /**
  * The single source of truth for default app settings. Used by the main process
  * to seed settings.json on first run, and by the renderer's Settings panel for

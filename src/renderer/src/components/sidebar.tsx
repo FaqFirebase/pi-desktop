@@ -490,7 +490,7 @@ export function Sidebar(): React.JSX.Element {
         <div>
           <button
             type="button"
-            className="flex w-full items-center justify-between rounded px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint hover:bg-surface-hover hover:text-muted"
+            className="flex w-full items-center justify-between px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-current"
             aria-expanded={workspaceOpen}
             aria-controls="sidebar-workspace"
             onClick={() => {
@@ -530,7 +530,7 @@ export function Sidebar(): React.JSX.Element {
         <div>
           <button
             type="button"
-            className="flex w-full items-center justify-between rounded px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint hover:bg-surface-hover hover:text-muted"
+            className="flex w-full items-center justify-between px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-current"
             aria-expanded={activityOpen}
             aria-controls="sidebar-activity"
             onClick={() => {
@@ -657,7 +657,7 @@ export function Sidebar(): React.JSX.Element {
       <div className="shrink-0 border-t border-border px-2 py-2">
         <button
           type="button"
-          className="flex w-full items-center justify-between rounded px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint hover:bg-surface-hover hover:text-muted"
+          className="flex w-full items-center justify-between px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-current"
           aria-expanded={toolsOpen}
           aria-controls="sidebar-tools"
           onClick={() => {

@@ -287,7 +287,9 @@
       "prCreated": "Pull request created.",
       "prCreatedWithUrl": "Pull request created: {{url}}",
       "pushedCommits_one": "Pushed {{count}} commit.",
-      "pushedCommits_other": "Pushed {{count}} commits."
+      "pushedCommits_other": "Pushed {{count}} commits.",
+      "pushedWithLocalChanges_one": "Branch pushed. {{count}} local file still has uncommitted changes; Push does not include or remove them.",
+      "pushedWithLocalChanges_other": "Branch pushed. {{count}} local files still have uncommitted changes; Push does not include or remove them."
     },
     "prButtonLabel": "PR",
     "prButtonTitle": "Create a pull request with GitHub CLI",

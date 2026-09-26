@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
 import type { GitConveyorStatus, GitFileStatus } from '../../../shared/ipc-contracts'
 import { t } from '../../../shared/i18n'
+import { GIT_CONVEYOR_NOTICE_TIMEOUT_MS } from '../../../shared/default-settings'
 import { formatIpcError } from '../utils/ipc-error'
 
 type ConveyorDialog =
@@ -75,6 +76,11 @@ export function gitPublishAction(files: Record<string, GitFileStatus>): 'commitP
   return hasCommitChanges ? 'commitPush' : 'push'
 }
 
+export function scheduleGitNoticeDismissal(kind: keyof typeof GIT_CONVEYOR_NOTICE_TIMEOUT_MS, dismiss: () => void): () => void {
+  const timer = setTimeout(dismiss, GIT_CONVEYOR_NOTICE_TIMEOUT_MS[kind])
+  return () => clearTimeout(timer)
+}
+
 export function GitConveyorActions({ children, onChanged }: { children?: ReactNode; onChanged?: () => void }): React.JSX.Element {
   const { t } = useTranslation()
   const [status, setStatus] = useState<GitConveyorStatus | null>(null)
@@ -86,6 +92,21 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
   const [statusError, dispatchStatusError] = useReducer(gitStatusErrorReducer, null)
   const visibleError = error ?? (statusError?.dismissed ? null : statusError?.message)
   const [publishAction, setPublishAction] = useState<ReturnType<typeof gitPublishAction>>('push')
+  const dismissError = useCallback(() => {
+    setError(null)
+    setFeedback(null)
+    dispatchStatusError({ type: 'dismiss' })
+  }, [])
+
+  useEffect(() => {
+    if (!visibleError) return
+    return scheduleGitNoticeDismissal('error', dismissError)
+  }, [visibleError, dismissError])
+
+  useEffect(() => {
+    if (!feedback) return
+    return scheduleGitNoticeDismissal('success', () => setFeedback(null))
+  }, [feedback])
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
@@ -179,7 +200,9 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
         dialog.pushAfter ? 'commitPush' : 'commit',
         () => commitConveyorChanges(message, dialog.pushAfter),
         (next) => dialog.pushAfter
-          ? t('conveyor.feedback.committedAndPushed', { sha: next.head.slice(0, 8) })
+          ? next.dirtyFiles > 0
+            ? t('conveyor.feedback.pushedWithLocalChanges', { count: next.dirtyFiles })
+            : t('conveyor.feedback.committedAndPushed', { sha: next.head.slice(0, 8) })
           : t('conveyor.feedback.committed', { sha: next.head.slice(0, 8) }),
       )
       return
@@ -217,7 +240,9 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
         assertWorkspace(workspaceId)
         return window.piDesktop.git.push()
       },
-      (next) => !next ? '' : next.ahead > 0 ? t('conveyor.feedback.pushedCommits', { count: next.ahead }) : t('conveyor.feedback.branchPushed'),
+      (next) => !next ? '' : next.dirtyFiles > 0
+        ? t('conveyor.feedback.pushedWithLocalChanges', { count: next.dirtyFiles })
+        : next.ahead > 0 ? t('conveyor.feedback.pushedCommits', { count: next.ahead }) : t('conveyor.feedback.branchPushed'),
     )
   }
 
@@ -260,11 +285,7 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
             <span className="max-h-32 min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words leading-relaxed">{visibleError}</span>
             <button
               type="button"
-              onClick={() => {
-                setError(null)
-                setFeedback(null)
-                dispatchStatusError({ type: 'dismiss' })
-              }}
+              onClick={dismissError}
               aria-label={t('common.dismiss')}
               title={t('common.dismiss')}
               className="flex size-6 shrink-0 items-center justify-center rounded text-error/70 transition-colors hover:bg-error/10 hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
@@ -274,7 +295,7 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
           </div>
         ) : feedback && (
           <div className="flex min-w-0 basis-full items-center gap-2 text-success">
-            <span className="min-w-0 flex-1 truncate text-[10px]" role="status" title={feedback}>{feedback}</span>
+            <span className="min-w-0 flex-1 break-words text-xs leading-relaxed" role="status">{feedback}</span>
             <button
               type="button"
               onClick={() => setFeedback(null)}

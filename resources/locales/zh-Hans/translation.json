@@ -282,7 +282,8 @@
       "committedAndPushed": "已提交 {{sha}} 并推送分支。",
       "prCreated": "PR 已创建。",
       "prCreatedWithUrl": "PR 已创建：{{url}}",
-      "pushedCommits_other": "已推送 {{count}} 个提交。"
+      "pushedCommits_other": "已推送 {{count}} 个提交。",
+      "pushedWithLocalChanges_other": "分支已推送。{{count}} 个本地文件仍有未提交的更改；推送不会包含或删除这些更改。"
     },
     "prButtonLabel": "PR",
     "prButtonTitle": "使用 GitHub CLI 创建 PR",
