@@ -11,7 +11,7 @@ import {
   FolderOpen,
   Plus,
   PanelLeftClose,
-  Clock,
+  CheckCircle2,
   Activity,
   LayoutDashboard,
   Package,
@@ -27,11 +27,9 @@ import {
   Workflow as WorkflowIcon,
 } from 'lucide-react'
 import { useMemo, useState, useRef } from 'react'
-import { StatusPopover } from './status-popover'
 import { useContextMenu, buildSessionContextMenu } from './context-menu'
 import { getSessionEngineLabel, getSessionRowLabels, hasMixedSessionEngines } from './sidebar-session-labels'
 import { ResizeHandle } from './resize-handle'
-import { findSessionPreview, getSessionTitle } from '../utils/session-title'
 import { formatRelativeTime } from '../utils/format-relative-time'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import { resolveRunSessionId } from '../utils/workflow-runs'
@@ -39,6 +37,7 @@ import { useGlobalWorkflowOpen } from '../hooks'
 import { clampSidebarWidth, resolveSidebarWidth } from '../../../shared/sidebar-width'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { isImeComposing } from '../utils/ime-composing'
+import { readSidebarSectionOpen, saveSidebarSectionOpen } from '../utils/sidebar-sections'
 
 /** Views reachable from the sidebar's Tools group. */
 type ToolView = 'packages' | 'notes' | 'skills' | 'diagnostics' | 'settings'
@@ -87,6 +86,9 @@ export function Sidebar(): React.JSX.Element {
   const { show: showMenu, ContextMenuComponent: SessionMenu } = useContextMenu()
 
   const [archivedOpen, setArchivedOpen] = useState(false)
+  const [toolsOpen, setToolsOpen] = useState(() => readSidebarSectionOpen('tools'))
+  const [workspaceOpen, setWorkspaceOpen] = useState(() => readSidebarSectionOpen('workspace'))
+  const [activityOpen, setActivityOpen] = useState(() => readSidebarSectionOpen('activity'))
 
   // The live width during a drag. Kept local so dragging never writes
   // settings.json; the draft outlives the drag so the row does not jump while the
@@ -109,14 +111,12 @@ export function Sidebar(): React.JSX.Element {
     })
   }
 
-  // Inline session rename. Only the active session can be renamed (Pi's rename
-  // targets it), and it's reachable from two spots — the Current Session panel
-  // (`'current'`) and its highlighted row in Recent Sessions (`'recent'`).
-  const [renamingWhere, setRenamingWhere] = useState<'current' | 'recent' | null>(null)
+  // Pi's rename targets the active session, exposed through its Recent row.
+  const [renamingWhere, setRenamingWhere] = useState<'recent' | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameCancelRef = useRef(false)
 
-  const startSessionRename = (where: 'current' | 'recent'): void => {
+  const startSessionRename = (where: 'recent'): void => {
     renameCancelRef.current = false
     // Prefill with the explicit name only; a timestamp/guid is not a name.
     setRenameValue(sessionState?.sessionName ?? '')
@@ -228,14 +228,6 @@ export function Sidebar(): React.JSX.Element {
     }))
   }
 
-  // The live session state has no preview, so the Current Session panel would
-  // fall back to the raw id while the same session's Recent row shows its first
-  // message. Both read the same preview instead.
-  const currentSessionPreview = useMemo(
-    () => findSessionPreview(sessionList, sessionState?.sessionFile),
-    [sessionList, sessionState?.sessionFile]
-  )
-
   // Gated on every known session, not on one section's slice, so the same chat
   // carries the same tag in Recent, in a folder group and under Archived.
   const showEngineTags = useMemo(() => hasMixedSessionEngines(sessionList), [sessionList])
@@ -300,33 +292,19 @@ export function Sidebar(): React.JSX.Element {
     )
   }
 
-  // Right-click menu for the Current Session panel — same active session, so
-  // just the rename affordance.
-  const handleCurrentSessionRightClick = (e: React.MouseEvent): void => {
-    e.nativeEvent.stopPropagation()
-    showMenu(e, [
-      {
-        id: 'current-session-rename',
-        label: t('contextMenu.rename'),
-        icon: <Pencil size={14} />,
-        action: () => startSessionRename('current'),
-      },
-    ])
-  }
-
   const renderSessionRow = (
     session: SessionListItem,
     options?: { nested?: boolean }
   ): React.JSX.Element => {
     const labels = getSessionRowLabels(session)
-    // Runs are keyed by Pi's header UUID, never the filename stem (the
-    // tags/archive registry key). The stem suffix IS the UUID, so it is a
-    // safe fallback when a row's header is unreadable.
-    const workflowSessionId = resolveRunSessionId(session.piSessionId, session.sessionId) ?? session.sessionId
     const runtime = Object.values(sessionRuntimes).find((item) => item.sessionPath && pathsEqual(item.sessionPath, session.path))
     const isActive = sessionState?.sessionFile === session.path || runtime?.runtimeId === activeSessionRuntimeId
     const nested = options?.nested ?? false
     const engineLabel = showEngineTags ? getSessionEngineLabel(session) : null
+    const inactiveIcon = <CheckCircle2 size={12} className="shrink-0 text-muted" />
+    const statusIcon = runtime && runtime.status !== 'stopped'
+      ? <SessionRuntimeIndicator runtime={runtime} fallback={inactiveIcon} />
+      : inactiveIcon
 
     // Inline rename for the active row.
     if (isActive && renamingWhere === 'recent') {
@@ -338,61 +316,47 @@ export function Sidebar(): React.JSX.Element {
             nested && 'pl-2'
           )}
         >
-          <Clock size={12} className="shrink-0 text-muted" />
+          {statusIcon}
           {renderRenameInput()}
         </div>
       )
     }
 
     return (
-      <div key={session.path} className="group relative">
-        <button
-          onClick={() => openSession(session)}
-          onDoubleClick={() => { if (isActive) startSessionRename('recent') }}
-          onContextMenu={(e) => handleSessionRightClick(e, session)}
-          // The full title leads, so a preview too long for the current width is
-          // still readable on hover.
-          title={
-            isActive
-              ? t('sidebar.sessionRow.tooltipActive', { title: labels.title })
-              : t('sidebar.sessionRow.tooltipInactive', { title: labels.title })
-          }
-          className={clsx(
-            'flex w-full items-center gap-2 rounded px-2 py-1.5 pr-7 text-left text-sm transition-colors',
-            nested && 'pl-2',
-            isActive
-              ? 'bg-card text-primary'
-              : 'hover:bg-highlight text-muted hover:text-secondary'
-          )}
-        >
-          <Clock size={12} className="shrink-0" />
-          <div className="min-w-0 flex-1">
-            <div className="truncate">{labels.title}</div>
-            {/* The title is now the session's name or first message, so the time it
-                displaced moves here. Recent rows are already grouped by workspace,
-                which makes the project name the less useful of the two subtitles —
-                the home screen, which is not grouped, shows the project instead.
-                The engine leads the line only when both engines are present. */}
-            <div className="truncate text-[11px] text-faint">
-              {engineLabel && `${engineLabel} · `}
-              {formatRelativeTime(session.lastModified, Date.now())}
-            </div>
+      <button
+        key={session.path}
+        onClick={() => openSession(session)}
+        onDoubleClick={() => { if (isActive) startSessionRename('recent') }}
+        onContextMenu={(e) => handleSessionRightClick(e, session)}
+        // The full title leads, so a preview too long for the current width is
+        // still readable on hover.
+        title={
+          isActive
+            ? t('sidebar.sessionRow.tooltipActive', { title: labels.title })
+            : t('sidebar.sessionRow.tooltipInactive', { title: labels.title })
+        }
+        className={clsx(
+          'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
+          nested && 'pl-2',
+          isActive
+            ? 'bg-card text-primary'
+            : 'hover:bg-highlight text-muted hover:text-secondary'
+        )}
+      >
+        {statusIcon}
+        <div className="min-w-0 flex-1">
+          <div className="truncate">{labels.title}</div>
+          {/* The title is now the session's name or first message, so the time it
+              displaced moves here. Recent rows are already grouped by workspace,
+              which makes the project name the less useful of the two subtitles —
+              the home screen, which is not grouped, shows the project instead.
+              The engine leads the line only when both engines are present. */}
+          <div className="truncate text-[11px] text-faint">
+            {engineLabel && `${engineLabel} · `}
+            {formatRelativeTime(session.lastModified, Date.now())}
           </div>
-          {runtime && <SessionRuntimeIndicator runtime={runtime} />}
-        </button>
-        {/* Sibling (not child) of the row button, so no nested interactive
-            elements: the row's click/double-click/context-menu never fire for
-            this icon. Shows an empty filtered state when the session has no runs. */}
-        <button
-          type="button"
-          onClick={() => openWorkflowRunsForSession(workflowSessionId)}
-          className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-faint opacity-0 transition-opacity hover:bg-highlight hover:text-accent-fg focus-visible:opacity-100 group-hover:opacity-100"
-          title={t('sidebar.workflowRunsForSession')}
-          aria-label={t('sidebar.workflowRunsForSession')}
-        >
-          <WorkflowIcon size={12} />
-        </button>
-      </div>
+        </div>
+      </button>
     )
   }
 
@@ -454,12 +418,8 @@ export function Sidebar(): React.JSX.Element {
       style={{ width: sidebarWidth }}
     >
       {/* Header */}
-      <div className="flex h-12 items-center justify-between border-b border-border px-3">
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
         <div className="flex items-center gap-2">
-          <StatusPopover />
-          {/* Compact Home replaces the duplicate Pi-activity popover: workspace
-              activity already lives in the switcher row, tab icons, and switcher
-              dropdown, so the header keeps only system status + Home. */}
           <button
             type="button"
             onClick={() => setCurrentView('home')}
@@ -506,7 +466,7 @@ export function Sidebar(): React.JSX.Element {
             type="button"
             onClick={() => void startNewSession()}
             disabled={!activeWorkspace}
-            className="group flex w-full items-center gap-2 rounded-lg bg-accent px-3 py-2.5 text-sm font-medium text-white shadow-sm shadow-accent/20 transition-colors hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+            className="group flex w-full items-center gap-2 rounded-lg border border-accent px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-highlight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
             title={
               activeWorkspace
                 ? t('sidebar.newSessionButton.titleWithShortcut')
@@ -515,21 +475,33 @@ export function Sidebar(): React.JSX.Element {
           >
             <Plus size={15} className="shrink-0 transition-transform group-hover:rotate-90" />
             <span className="flex-1 text-left">{t('sidebar.newSessionButton.label')}</span>
-            <kbd className="rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-white/75">{t('sidebar.newSessionButton.shortcutKbd')}</kbd>
+            <kbd className="rounded border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted">{t('sidebar.newSessionButton.shortcutKbd')}</kbd>
           </button>
-          <div className="mt-1.5 px-1 text-[11px] text-faint">
-            {activeWorkspace
-              ? t('sidebar.newSessionButton.startsIn', { project: activeWorkspace.name })
-              : t('sidebar.newSessionButton.openProjectToBegin')}
-          </div>
+          {!activeWorkspace && (
+            <div className="mt-1.5 px-1 text-[11px] text-faint">
+              {t('sidebar.newSessionButton.openProjectToBegin')}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Navigation */}
       <nav className="space-y-3 border-b border-border px-2 py-3">
         <div>
-          <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">{t('sidebar.nav.workspaceSection')}</div>
-          <div className="space-y-0.5">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-current"
+            aria-expanded={workspaceOpen}
+            aria-controls="sidebar-workspace"
+            onClick={() => {
+              saveSidebarSectionOpen('workspace', !workspaceOpen)
+              setWorkspaceOpen(!workspaceOpen)
+            }}
+          >
+            {t('sidebar.nav.workspaceSection')}
+            <ChevronDown size={12} aria-hidden="true" className={clsx('transition-transform', !workspaceOpen && '-rotate-90')} />
+          </button>
+          <div id="sidebar-workspace" className={clsx('space-y-0.5', workspaceOpen ? 'mt-1' : 'hidden')}>
             <SidebarItem
               icon={<MessageSquare size={14} />}
               label={t('sidebar.nav.chat')}
@@ -556,13 +528,20 @@ export function Sidebar(): React.JSX.Element {
           </div>
         </div>
         <div>
-          <div className="mb-1 flex items-center gap-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">
-            <span>{t('sidebar.nav.activitySection')}</span>
-            {activeWorkspace && (
-              <span className="min-w-0 truncate normal-case">· {activeWorkspace.name}</span>
-            )}
-          </div>
-          <div className="space-y-0.5">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-current"
+            aria-expanded={activityOpen}
+            aria-controls="sidebar-activity"
+            onClick={() => {
+              saveSidebarSectionOpen('activity', !activityOpen)
+              setActivityOpen(!activityOpen)
+            }}
+          >
+            {t('sidebar.nav.activitySection')}
+            <ChevronDown size={12} aria-hidden="true" className={clsx('transition-transform', !activityOpen && '-rotate-90')} />
+          </button>
+          <div id="sidebar-activity" className={clsx('space-y-0.5', activityOpen ? 'mt-1' : 'hidden')}>
             <SidebarItem
               icon={<LayoutDashboard size={14} />}
               label={t('sidebar.nav.missionControl')}
@@ -608,61 +587,11 @@ export function Sidebar(): React.JSX.Element {
         </div>
       </nav>
 
-      {/* Current session info */}
-      {sessionState && (
-        renamingWhere === 'current' ? (
-          <div className="mx-3 mt-2 rounded-md bg-surface p-3">
-            <div className="text-xs font-medium text-muted uppercase tracking-wider">{t('sidebar.currentSession.heading')}</div>
-            <div className="mt-1.5 flex">{renderRenameInput()}</div>
-            {sessionState.model && (
-              <div className="mt-1 text-xs text-dim">{sessionState.model.name}</div>
-            )}
-            <div className="mt-1 text-xs text-dim">{t('sidebar.currentSession.messageCount', { count: sessionState.messageCount })}</div>
-          </div>
-        ) : (
-          <div className="group relative mx-3 mt-2">
-            <button
-              type="button"
-              onClick={() => setCurrentView('chat')}
-              onDoubleClick={() => startSessionRename('current')}
-              onContextMenu={handleCurrentSessionRightClick}
-              className="w-full rounded-md bg-surface p-3 pr-9 text-left transition-colors hover:bg-surface-hover focus:outline-none focus:ring-1 focus:ring-border-strong"
-              title={t('sidebar.currentSession.openTitle')}
-            >
-              <div className="text-xs font-medium text-muted uppercase tracking-wider">{t('sidebar.currentSession.heading')}</div>
-              <div className="mt-1.5 text-sm text-primary truncate">
-                {getSessionTitle(sessionState.sessionName, sessionState.sessionId, currentSessionPreview)}
-              </div>
-              {sessionState.model && (
-                <div className="mt-1 text-xs text-dim">
-                  {sessionState.model.name}
-                </div>
-              )}
-              <div className="mt-1 text-xs text-dim">
-                {t('sidebar.currentSession.messageCount', { count: sessionState.messageCount })}
-              </div>
-            </button>
-            {/* Sibling overlay — the panel above stays a single non-nested button. */}
-            <button
-              type="button"
-              onClick={() => openWorkflowRunsForSession(sessionState.sessionId)}
-              className="absolute right-2 top-3 rounded p-1.5 text-faint opacity-0 transition-opacity hover:bg-highlight hover:text-accent-fg focus-visible:opacity-100 group-hover:opacity-100"
-              title={t('sidebar.workflowRunsForSession')}
-              aria-label={t('sidebar.workflowRunsForSession')}
-            >
-              <WorkflowIcon size={13} />
-            </button>
-          </div>
-        )
-      )}
-
       {/* Recent sessions for the active project. Cross-project history stays in Sessions. */}
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         <div className="mb-1 flex items-center justify-between px-2">
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">
-            {activeWorkspace
-              ? t('sidebar.recentSessions.headingWithProject', { project: activeWorkspace.name })
-              : t('sidebar.recentSessions.headingNoProject')}
+            {t('sidebar.recentSessions.heading')}
           </div>
           <button
             type="button"
@@ -726,8 +655,20 @@ export function Sidebar(): React.JSX.Element {
 
       {/* Secondary tools stay available without competing with project/session work. */}
       <div className="shrink-0 border-t border-border px-2 py-2">
-        <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">{t('sidebar.tools.sectionLabel')}</div>
-        <div className="grid grid-cols-2 gap-0.5">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-current"
+          aria-expanded={toolsOpen}
+          aria-controls="sidebar-tools"
+          onClick={() => {
+            saveSidebarSectionOpen('tools', !toolsOpen)
+            setToolsOpen(!toolsOpen)
+          }}
+        >
+          {t('sidebar.tools.sectionLabel')}
+          <ChevronDown size={12} aria-hidden="true" className={clsx('transition-transform', !toolsOpen && '-rotate-90')} />
+        </button>
+        <div id="sidebar-tools" className={clsx('grid-cols-2 gap-0.5', toolsOpen ? 'mt-1 grid' : 'hidden')}>
           <SidebarItem
             compact
             icon={<Package size={13} />}

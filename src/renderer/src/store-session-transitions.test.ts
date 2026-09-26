@@ -184,6 +184,9 @@ const piDesktopStub = {
       calls.push(`editorDirtyMirror:${dirty}:${fileName ?? ''}`)
     },
   },
+  model: {
+    set: async (_provider: string, _modelId: string) => {},
+  },
   commands: {
     abort: async () => {
       calls.push('abort')
@@ -489,9 +492,29 @@ test('switching sessions clears the local streaming state', async () => {
   assert.deepEqual(state.pendingSteering, [], 'the old queue counters must not carry over')
 })
 
-test('switchSession does not warn when Pi is idle', async () => {
+test('selecting a model requests composer focus after the model is applied', async () => {
+  useAppStore.setState({ composerFocusRequested: false })
+  await useAppStore.getState().setModel('provider', 'model')
+  assert.equal(useAppStore.getState().composerFocusRequested, true)
+})
+
+test('a failed model selection does not request composer focus', async () => {
+  const original = piDesktopStub.model.set
+  piDesktopStub.model.set = async () => { throw new Error('Model unavailable') }
+  useAppStore.setState({ composerFocusRequested: false })
+  try {
+    await useAppStore.getState().setModel('provider', 'model')
+    assert.equal(useAppStore.getState().composerFocusRequested, false)
+  } finally {
+    piDesktopStub.model.set = original
+  }
+})
+
+test('switchSession requests composer focus without warning when Pi is idle', async () => {
+  useAppStore.setState({ composerFocusRequested: false })
   await useAppStore.getState().switchSession(SESSION_PATH)
 
+  assert.equal(useAppStore.getState().composerFocusRequested, true)
   assert.equal(useAppStore.getState().confirmRequest, null)
   assert.equal(calls[0], `switch:${SESSION_PATH}`)
 })
@@ -500,10 +523,12 @@ test('switchSession clears streaming state even when Pi refuses the switch', asy
   enterStreamingState()
   answerConfirm(true)
   switchResult = { success: false, error: 'Pi not running. Start Pi first.' }
+  useAppStore.setState({ composerFocusRequested: false })
 
   await useAppStore.getState().switchSession(SESSION_PATH)
 
   const state = useAppStore.getState()
+  assert.equal(state.composerFocusRequested, false, 'a refused switch must not request focus')
   assert.equal(state.isStreaming, false, 'a refused switch must still leave the composer usable')
   assert.equal(calls.includes('getMessages'), false, 'a refused switch must not reload history')
   assert.equal(
@@ -522,13 +547,14 @@ test('createNewSession starts an independent runtime without warning', async () 
   assert.equal(useAppStore.getState().isStreaming, false)
 })
 
-test('createNewSession opens the new conversation in Chat', async () => {
+test('createNewSession opens the new conversation in Chat and requests composer focus', async () => {
   activeWorkspaceResult = WORKSPACE_ONE
   workspaceListResult = [WORKSPACE_ONE]
   useAppStore.setState({
     activeWorkspace: WORKSPACE_ONE,
     workspaces: [WORKSPACE_ONE],
     currentView: 'sessions',
+    composerFocusRequested: false,
   })
 
   await useAppStore.getState().createNewSession()
@@ -537,6 +563,7 @@ test('createNewSession opens the new conversation in Chat', async () => {
   assert.equal(calls.includes('createNew'), true)
   assert.equal(state.currentView, 'chat')
   assert.equal(state.sessionLoading, false, 'an empty new session should render immediately')
+  assert.equal(state.composerFocusRequested, true)
 })
 
 test('forkFrom is gated by the same warning', async () => {
@@ -1523,8 +1550,9 @@ test('switchSession loads history even when sessionState already names the targe
   )
 })
 
-test('switchSession still skips a reload when the session is already on screen', async () => {
+test('switchSession refocuses without reloading when the session is already on screen', async () => {
   useAppStore.setState({
+    composerFocusRequested: false,
     sessionState: sessionStateWith(SESSION_PATH),
     messages: [{ id: 'm1', role: 'user', content: 'hi', timestamp: 0 }],
     sessionLoading: false,
@@ -1533,6 +1561,7 @@ test('switchSession still skips a reload when the session is already on screen',
   await useAppStore.getState().switchSession(SESSION_PATH)
 
   assert.equal(calls.includes(`switch:${SESSION_PATH}`), false)
+  assert.equal(useAppStore.getState().composerFocusRequested, true)
 })
 
 test('the cross-workspace open flow loads the clicked session end to end', async () => {

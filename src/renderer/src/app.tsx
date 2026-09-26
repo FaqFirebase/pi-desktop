@@ -2,6 +2,7 @@ import { useTranslation, Trans } from 'react-i18next'
 import { Sidebar } from './components/sidebar'
 import { ChatPanel } from './components/chat-panel'
 import { StatusBar } from './components/status-bar'
+import { StatusPopover } from './components/status-popover'
 import { SettingsPanel } from './components/settings-panel'
 import { SessionPanel } from './components/session-panel'
 import { Timeline } from './components/timeline'
@@ -23,6 +24,7 @@ import { useContextMenu, buildDefaultContextMenu } from './components/context-me
 import { usePiEvents, useMenuActions, useInitialize, useNotePickerShortcut } from './hooks'
 import { useFolderDrop } from './hooks/use-folder-drop'
 import { useAppStore } from './store'
+import { isSettingsShortcut } from './utils/settings-shortcut'
 import { useEffect } from 'react'
 import { ArrowUpCircle, FolderOpen, PanelLeft, X } from 'lucide-react'
 
@@ -76,9 +78,18 @@ export function App(): React.JSX.Element {
   // ChatInput's inline popup instead.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isSettingsShortcut(e, window.piDesktop.system.platform)) {
+        e.preventDefault()
+        useAppStore.getState().setCurrentView('settings')
+        return
+      }
       if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault()
         useAppStore.getState().setCommandPalette(true)
+      }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'm' || e.key === 'M')) {
+        e.preventDefault()
+        useAppStore.getState().requestModelSelectorOpen()
       }
     }
     document.addEventListener('keydown', handleKeyDown)
@@ -95,6 +106,11 @@ export function App(): React.JSX.Element {
 
   return (
     <div className="relative flex h-screen flex-col bg-app text-primary">
+      <div className="window-drag-region flex h-10 shrink-0 items-center justify-end px-3" style={{ paddingRight: 'max(0.75rem, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 0.75rem))' }}>
+        <div className="window-no-drag relative z-50">
+          <StatusPopover />
+        </div>
+      </div>
       {isDraggingFolder && (
         <div
           className="pointer-events-none absolute inset-0 z-[100] flex items-center justify-center bg-app/80 backdrop-blur-sm"
@@ -143,7 +159,7 @@ export function App(): React.JSX.Element {
         <button
           type="button"
           onClick={toggleSidebar}
-          className="absolute left-3 top-3 z-30 animate-fade-in rounded-md border border-border-strong bg-surface/95 p-1.5 text-muted shadow-sm backdrop-blur-sm transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
+          className="absolute left-3 top-12 z-30 animate-fade-in rounded-md border border-border-strong bg-surface/95 p-1.5 text-muted shadow-sm backdrop-blur-sm transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
           title={t('common.showSidebar')}
           aria-label={t('common.showSidebar')}
         >

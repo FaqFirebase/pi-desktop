@@ -29,11 +29,14 @@
     "attach": {
       "allFilesFilter": "所有文件",
       "attachFailed": "无法附加文件",
+      "dropHint": "拖放文件以添加附件",
       "imagesFilter": "图片",
       "onlyImagesPasted": "只能向输入框粘贴图片",
       "pasteFailed": "无法粘贴图片",
       "readImageFailed": "无法读取图片数据",
+      "reading": "正在添加附件…",
       "unknownMimeType": "未知",
+      "unsupportedFile": "不支持的文件格式。请附加 UTF-8 文本、代码、PNG、JPEG、GIF 或 WebP 文件。",
       "unsupportedImageType": "不支持的图片类型（{{mimeType}}）。请使用 PNG、JPEG、GIF 或 WebP。"
     },
     "closeFileTree": "关闭文件树",
@@ -43,9 +46,7 @@
     "composer": {
       "placeholderIdle": "向 {{agent}} 提问 — 输入 / 使用命令",
       "placeholderNotRunning": "{{agent}} 智能体未在运行…",
-      "placeholderSteering": "输入以引导智能体…",
-      "shiftEnterNewline": "Shift+Enter 换行",
-      "streaming": "流式输出中…"
+      "placeholderSteering": "输入以引导智能体…"
     },
     "council": {
       "planWithCouncil": "使用委员会规划",
@@ -192,7 +193,6 @@
     "dismiss": "忽略",
     "export": "导出",
     "global": "全局",
-    "hideSidebar": "隐藏侧边栏",
     "import": "导入",
     "install": "安装",
     "installed": "已安装",
@@ -252,6 +252,8 @@
     "branchStatusClean": "{{branch}}",
     "branchStatusDirty_other": "{{branch}} · {{count}} 处更改",
     "commit": "提交",
+    "commitAndPush": "提交 + 推送",
+    "commitAndPushTitle": "一步完成提交更改并推送分支",
     "commitButtonTitle": "提交已暂存的更改或该工作区中的更改",
     "createPrButton": "创建 PR",
     "detachedBranch": "分离",
@@ -268,17 +270,20 @@
     "errors": {
       "branchRequired": "创建 PR 需要一个具名分支。",
       "commitBeforePr": "创建 PR 前请先提交更改。",
-      "commitBeforePush": "推送前请先提交工作树。",
       "commitMessageRequired": "提交信息为必填项。",
+      "committedPushFailed": "提交 {{sha}} 已保存在本地，但推送未完成：{{detail}}",
       "prTitleRequired": "PR 标题为必填项。",
-      "pushBeforePr": "创建 PR 前请先推送该分支。"
+      "pushBeforePr": "创建 PR 前请先推送该分支。",
+      "workspaceChanged": "当前工作区已更改，Git 操作已停止。"
     },
     "feedback": {
       "branchPushed": "分支已推送。",
       "committed": "已提交 {{sha}}。",
+      "committedAndPushed": "已提交 {{sha}} 并推送分支。",
       "prCreated": "PR 已创建。",
       "prCreatedWithUrl": "PR 已创建：{{url}}",
-      "pushedCommits_other": "已推送 {{count}} 个提交。"
+      "pushedCommits_other": "已推送 {{count}} 个提交。",
+      "pushedWithLocalChanges_other": "分支已推送。{{count}} 个本地文件仍有未提交的更改；推送不会包含或删除这些更改。"
     },
     "prButtonLabel": "PR",
     "prButtonTitle": "使用 GitHub CLI 创建 PR",
@@ -435,13 +440,33 @@
   "diff": {
     "closeAriaLabel": "关闭差异查看器",
     "deletedFileBadge": "已删除",
+    "discard": {
+      "agentWorking": "请等待此项目中的所有代理完成后再放弃更改。",
+      "all": "放弃所显示文件的更改",
+      "busy": "正在执行放弃更改操作。",
+      "confirm": "拒绝",
+      "failed": "Git 无法放弃所选更改。请刷新差异并重新检查。",
+      "file": "放弃 {{path}} 的更改",
+      "message": "放弃这些文件中显示的未暂存更改？这也包括其他会话对此文件的更改。新文件将被删除。已暂存的更改和提交不受影响。此操作无法撤销。\n\n{{files}}",
+      "saveEditor": "请先保存或关闭有未保存更改的编辑器。",
+      "stale": "所选更改已发生变化。请刷新差异并重新检查。",
+      "title": "放弃所显示的更改？",
+      "unsupported": "无法在此放弃该差异。不支持二进制文件、符号链接、子模块和转义路径。",
+      "workingOnly": "切换到未暂存视图以放弃未暂存更改。"
+    },
     "fileCount_other": "{{count}} 个文件",
     "heading": "差异查看器",
     "loadErrorTitle": "无法加载差异",
     "newFileBadge": "新建",
     "noChanges": "无更改",
     "noStagedChanges": "无已暂存更改",
+    "openFile": "打开文件",
     "refreshAriaLabel": "刷新差异",
+    "sessionFilter": {
+      "description": "仅显示此聊天中 edit/write 调用涉及的文件。完整文件差异可能包含其他会话的更改，也可能遗漏 Shell 和子代理的更改。关闭筛选可查看整个项目。提交、推送和 PR 操作始终针对整个仓库。",
+      "label": "此会话涉及的文件",
+      "noMatches": "没有与此会话匹配的更改"
+    },
     "stagedToggle": "已暂存",
     "workingToggle": "未暂存",
     "workingTreeClean": "工作树是干净的"
@@ -479,7 +504,6 @@
       "commandFailed": "{{command}} 失败",
       "commandFailedWithDetail": "{{command}} 失败：{{detail}}",
       "commitBeforePullRequest": "创建 PR 前请先提交工作树",
-      "commitBeforePush": "推送前请先提交工作树",
       "commitMessageRequired": "必须填写提交信息",
       "commitMessageTooLong": "提交信息必须不超过 {{max}} 个字符",
       "detachedHeadCommit": "无法在分离 HEAD 状态下提交",
@@ -741,8 +765,7 @@
       "noModelsMatch": "没有匹配的模型",
       "searchPlaceholder": "搜索模型…",
       "selectModel": "选择模型",
-      "selectModelWithShortcut": "选择模型（{{agent}} 运行时按 Ctrl+P 切换）",
-      "startToListModels": "启动 Pi 以列出和更换模型。"
+      "selectModelWithShortcut": "选择模型（Ctrl+Shift+M，{{agent}} 运行时按 Ctrl+P 切换）"
     }
   },
   "notes": {
@@ -1136,6 +1159,10 @@
         "apiKeys": "获取 API 密钥",
         "introduction": "TypeSafe 文档"
       },
+      "openrouter": {
+        "environment": "启动 Pi Desktop 的环境中已设置 OPENROUTER_API_KEY。Pi 和 OMP 会使用该值。",
+        "placeholder": "粘贴你的 API 密钥"
+      },
       "skill": {
         "install": "安装",
         "installed": "已安装（{{version}}）",
@@ -1146,6 +1173,11 @@
         "remove": "移除技能",
         "update": "更新到 {{version}}"
       }
+    },
+    "uiFontFamily": {
+      "description": "选择建议字体或输入已安装的字体名称。不可用的字体将使用系统字体。清空可恢复默认字体。终端和代码编辑器不受影响。",
+      "label": "界面字体",
+      "placeholder": "默认字体"
     },
     "uiFontSize": {
       "description": "聊天、面板和侧边栏 — 不包括终端和代码编辑器",
@@ -1185,11 +1217,6 @@
       "expandTitle": "展开已归档会话",
       "heading_other": "已归档（{{count}}）"
     },
-    "currentSession": {
-      "heading": "当前会话",
-      "messageCount_other": "{{count}} 条消息",
-      "openTitle": "在聊天中打开当前会话 · 双击重命名"
-    },
     "header": {
       "closeSidebar": "关闭侧边栏",
       "homeAriaLabel": "主页",
@@ -1214,7 +1241,6 @@
       "label": "新建会话",
       "openProjectToBegin": "打开一个项目以开始",
       "shortcutKbd": "Ctrl N",
-      "startsIn": "在 {{project}} 中开始",
       "titleNoProject": "请先打开一个项目",
       "titleWithShortcut": "在此项目中开始新会话（Ctrl/Cmd+N）"
     },
@@ -1226,8 +1252,7 @@
     "recentSessions": {
       "emptyInProject": "此项目中还没有会话。",
       "emptyNoProject": "打开一个项目以查看其会话。",
-      "headingNoProject": "最近的会话",
-      "headingWithProject": "{{project}} 中的最近会话",
+      "heading": "最近",
       "startOneNow": "立即开始一个",
       "viewAll": "查看全部"
     },
@@ -1244,7 +1269,6 @@
       "packages": "包",
       "sectionLabel": "工具"
     },
-    "workflowRunsForSession": "此会话的工作流运行",
     "workspaceMenu": {
       "changeFolder": "更改文件夹…",
       "rename": "重命名"
@@ -1775,7 +1799,6 @@
     "newSessionFallback": "新建会话",
     "newSessionTitle": "在此项目中新建会话（Ctrl/Cmd+N）",
     "removeWorkspaceAriaLabel": "移除 {{name}}",
-    "sessions": "会话",
     "tools": "工具"
   }
 }

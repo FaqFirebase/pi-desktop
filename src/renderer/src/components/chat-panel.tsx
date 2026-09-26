@@ -36,7 +36,6 @@ import {
   Terminal,
   ShieldCheck,
   PanelLeft,
-  PanelLeftClose,
   X,
   ChevronDown,
   Loader2,
@@ -185,23 +184,25 @@ export function ChatPanel(): React.JSX.Element {
         {/* Main chat area */}
         <div className="chat-center flex flex-1 flex-col overflow-hidden">
           {/* Toolbar */}
-          <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+          <div className="flex h-8 shrink-0 items-center justify-between border-b border-border px-3">
             <div className="flex items-center gap-0.5">
               {/* Workspace path — always visible */}
               {activeWorkspace && (
-                <div className="flex items-center gap-1.5 mr-2 px-2 py-0.5 rounded bg-card/60" title={activeWorkspace.path}>
+                <div className="flex h-6 items-center gap-1.5 mr-2 px-2 rounded bg-card/60" title={activeWorkspace.path}>
                   <FolderTree size={12} className="text-dim shrink-0" />
                   <span className="text-xs text-muted max-w-[300px] truncate">
                     {activeWorkspace.name}: {activeWorkspace.path}
                   </span>
                 </div>
               )}
-              <ToolbarButton
-                icon={sidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeft size={14} />}
-                active={false}
-                onClick={() => useAppStore.getState().toggleSidebar()}
-                title={sidebarOpen ? t('common.hideSidebar') : t('common.showSidebar')}
-              />
+              {!sidebarOpen && (
+                <ToolbarButton
+                  icon={<PanelLeft size={14} />}
+                  active={false}
+                  onClick={() => useAppStore.getState().toggleSidebar()}
+                  title={t('common.showSidebar')}
+                />
+              )}
               <ToolbarButton
                 icon={<ShieldCheck size={14} />}
                 active={reviewOpen}
@@ -409,7 +410,7 @@ export function ChatPanel(): React.JSX.Element {
                 )
               }}
             />
-            <div className="flex min-w-0 flex-1 overflow-hidden">
+            <div className="flex min-w-0 flex-1 flex-row-reverse overflow-hidden">
               {showFileTree && (
                 <>
                   <div className="flex min-w-0 shrink-0 flex-col overflow-hidden" style={{ width: effectiveFilePaneWidth }}>
@@ -419,7 +420,7 @@ export function ChatPanel(): React.JSX.Element {
                     <ResizeHandle
                       onResize={(delta) =>
                         setFilePaneWidth((width) =>
-                          clamp(width + delta, MIN_FILE_PANE_WIDTH, maxFilePaneWidth)
+                          clamp(width - delta, MIN_FILE_PANE_WIDTH, maxFilePaneWidth)
                         )
                       }
                     />
@@ -435,9 +436,8 @@ export function ChatPanel(): React.JSX.Element {
                 <div
                   className={clsx(
                     'flex flex-1 flex-col overflow-hidden',
-                    // Divider only when the file tree is beside it; alone, the
-                    // outer panel's border-l is the left edge (avoids doubling).
-                    showFileTree && 'border-l border-border'
+                    // Separate the preview from the file tree on its right.
+                    showFileTree && 'border-r border-border'
                   )}
                   // The same constant the file pane's ceiling reserves for.
                   style={{ minWidth: MIN_EDITOR_PANE_WIDTH }}
@@ -457,7 +457,7 @@ export function ChatPanel(): React.JSX.Element {
             {showFileTreeOnly && (
               <button
                 onClick={() => setSidePanel(null)}
-                className="absolute top-1 right-1 z-10 rounded p-1 text-faint hover:text-muted"
+                className="absolute top-1 right-1 z-10 flex h-6 w-6 items-center justify-center rounded text-faint hover:text-muted"
                 title={t('chat.closeFileTree')}
               >
                 <X size={12} />

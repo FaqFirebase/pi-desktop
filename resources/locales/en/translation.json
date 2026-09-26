@@ -29,11 +29,14 @@
     "attach": {
       "allFilesFilter": "All Files",
       "attachFailed": "Could not attach file",
+      "dropHint": "Drop files to attach",
       "imagesFilter": "Images",
       "onlyImagesPasted": "Only images can be pasted into the composer",
       "pasteFailed": "Could not paste image",
       "readImageFailed": "Could not read image data",
+      "reading": "Adding attachments…",
       "unknownMimeType": "unknown",
+      "unsupportedFile": "Unsupported file format. Attach UTF-8 text, code, PNG, JPEG, GIF, or WebP files.",
       "unsupportedImageType": "Unsupported image type ({{mimeType}}). Use PNG, JPEG, GIF, or WebP."
     },
     "closeFileTree": "Close file tree",
@@ -43,9 +46,7 @@
     "composer": {
       "placeholderIdle": "Ask {{agent}} anything — / for commands",
       "placeholderNotRunning": "{{agent}} agent is not running...",
-      "placeholderSteering": "Type to steer the agent...",
-      "shiftEnterNewline": "Shift+Enter newline",
-      "streaming": "Streaming…"
+      "placeholderSteering": "Type to steer the agent..."
     },
     "council": {
       "planWithCouncil": "Plan with Council",
@@ -194,7 +195,6 @@
     "dismiss": "Dismiss",
     "export": "Export",
     "global": "Global",
-    "hideSidebar": "Hide sidebar",
     "import": "Import",
     "install": "Install",
     "installed": "Installed",
@@ -256,6 +256,8 @@
     "branchStatusDirty_one": "{{branch}} · {{count}} changed",
     "branchStatusDirty_other": "{{branch}} · {{count}} changed",
     "commit": "Commit",
+    "commitAndPush": "Commit + Push",
+    "commitAndPushTitle": "Commit changes and push the branch in one step",
     "commitButtonTitle": "Commit staged changes or changes in this workspace",
     "createPrButton": "Create PR",
     "detachedBranch": "detached",
@@ -272,18 +274,22 @@
     "errors": {
       "branchRequired": "A named branch is required to create a pull request.",
       "commitBeforePr": "Commit changes before creating a pull request.",
-      "commitBeforePush": "Commit the working tree before pushing.",
       "commitMessageRequired": "Commit message is required.",
+      "committedPushFailed": "Commit {{sha}} was saved locally, but Push did not complete: {{detail}}",
       "prTitleRequired": "Pull request title is required.",
-      "pushBeforePr": "Push the branch before creating a pull request."
+      "pushBeforePr": "Push the branch before creating a pull request.",
+      "workspaceChanged": "The active workspace changed. The Git operation was stopped."
     },
     "feedback": {
       "branchPushed": "Branch pushed.",
       "committed": "Committed {{sha}}.",
+      "committedAndPushed": "Committed {{sha}} and pushed the branch.",
       "prCreated": "Pull request created.",
       "prCreatedWithUrl": "Pull request created: {{url}}",
       "pushedCommits_one": "Pushed {{count}} commit.",
-      "pushedCommits_other": "Pushed {{count}} commits."
+      "pushedCommits_other": "Pushed {{count}} commits.",
+      "pushedWithLocalChanges_one": "Branch pushed. {{count}} local file still has uncommitted changes; Push does not include or remove them.",
+      "pushedWithLocalChanges_other": "Branch pushed. {{count}} local files still have uncommitted changes; Push does not include or remove them."
     },
     "prButtonLabel": "PR",
     "prButtonTitle": "Create a pull request with GitHub CLI",
@@ -441,6 +447,20 @@
   "diff": {
     "closeAriaLabel": "Close diff viewer",
     "deletedFileBadge": "DELETED",
+    "discard": {
+      "agentWorking": "Wait for all agents in this project to finish before discarding changes.",
+      "all": "Discard changes in shown files",
+      "busy": "A discard operation is already running.",
+      "confirm": "Reject",
+      "failed": "Git could not discard the selected changes. Refresh the diff and review it again.",
+      "file": "Discard changes in {{path}}",
+      "message": "Discard the shown unstaged changes in these files? This includes changes from other sessions in the same files. New files will be deleted. Staged changes and commits are not affected. This cannot be undone.\n\n{{files}}",
+      "saveEditor": "Save or close the unsaved editor before discarding changes.",
+      "stale": "The selected changes are no longer current. Refresh the diff and review it again.",
+      "title": "Discard shown changes?",
+      "unsupported": "This diff cannot be discarded here. Binary files, symlinks, submodules and escaped paths are not supported.",
+      "workingOnly": "Switch to Working to discard unstaged changes."
+    },
     "fileCount_one": "{{count}} file",
     "fileCount_other": "{{count}} files",
     "heading": "Diff Viewer",
@@ -448,7 +468,13 @@
     "newFileBadge": "NEW",
     "noChanges": "No changes",
     "noStagedChanges": "No staged changes",
+    "openFile": "Open file",
     "refreshAriaLabel": "Refresh diff",
+    "sessionFilter": {
+      "description": "Filter to files touched by edit/write calls in this chat. Whole-file diffs may include other sessions. Shell and subagent changes may be missing. Turn off to see the whole project. Commit, Push and PR always apply to the whole repository.",
+      "label": "Files touched in this session",
+      "noMatches": "No matching changes for this session"
+    },
     "stagedToggle": "Staged",
     "workingToggle": "Working",
     "workingTreeClean": "Working tree is clean"
@@ -486,7 +512,6 @@
       "commandFailed": "{{command}} failed",
       "commandFailedWithDetail": "{{command}} failed: {{detail}}",
       "commitBeforePullRequest": "Commit the working tree before creating a pull request",
-      "commitBeforePush": "Commit the working tree before pushing",
       "commitMessageRequired": "Commit message is required",
       "commitMessageTooLong": "Commit message must be {{max}} characters or fewer",
       "detachedHeadCommit": "Cannot commit from a detached HEAD",
@@ -751,8 +776,7 @@
       "noModelsMatch": "No models match",
       "searchPlaceholder": "Search models…",
       "selectModel": "Select model",
-      "selectModelWithShortcut": "Select model (Ctrl+P to cycle when {{agent}} is running)",
-      "startToListModels": "Start Pi to list and change models."
+      "selectModelWithShortcut": "Select model (Ctrl+Shift+M, or Ctrl+P to cycle when {{agent}} is running)"
     }
   },
   "notes": {
@@ -1154,6 +1178,10 @@
         "apiKeys": "Get an API key",
         "introduction": "TypeSafe docs"
       },
+      "openrouter": {
+        "environment": "OPENROUTER_API_KEY is already set in the environment Pi Desktop started with. Pi and OMP use that value.",
+        "placeholder": "Paste your API key"
+      },
       "skill": {
         "install": "Install",
         "installed": "Installed ({{version}})",
@@ -1164,6 +1192,11 @@
         "remove": "Remove skill",
         "update": "Update to {{version}}"
       }
+    },
+    "uiFontFamily": {
+      "description": "Choose a suggestion or enter an installed font name. Unavailable fonts use the system font. Clear to restore defaults. Terminal and code editor are unchanged.",
+      "label": "UI Font",
+      "placeholder": "Default fonts"
     },
     "uiFontSize": {
       "description": "Chat, panels, and sidebar — not the terminal or code editor",
@@ -1204,12 +1237,6 @@
       "heading_one": "Archived ({{count}})",
       "heading_other": "Archived ({{count}})"
     },
-    "currentSession": {
-      "heading": "Current Session",
-      "messageCount_one": "{{count}} messages",
-      "messageCount_other": "{{count}} messages",
-      "openTitle": "Open current session in chat · double-click to rename"
-    },
     "header": {
       "closeSidebar": "Close sidebar",
       "homeAriaLabel": "Home",
@@ -1234,7 +1261,6 @@
       "label": "New session",
       "openProjectToBegin": "Open a project to begin",
       "shortcutKbd": "Ctrl N",
-      "startsIn": "Starts in {{project}}",
       "titleNoProject": "Open a project first",
       "titleWithShortcut": "Start a new session in this project (Ctrl/Cmd+N)"
     },
@@ -1247,8 +1273,7 @@
     "recentSessions": {
       "emptyInProject": "No sessions in this project yet.",
       "emptyNoProject": "Open a project to see its sessions.",
-      "headingNoProject": "Recent sessions",
-      "headingWithProject": "Recent in {{project}}",
+      "heading": "Recent",
       "startOneNow": "Start one now",
       "viewAll": "View all"
     },
@@ -1265,7 +1290,6 @@
       "packages": "Packages",
       "sectionLabel": "Tools"
     },
-    "workflowRunsForSession": "Workflow runs for this session",
     "workspaceMenu": {
       "changeFolder": "Change folder…",
       "rename": "Rename"
@@ -1829,7 +1853,6 @@
     "newSessionFallback": "New session",
     "newSessionTitle": "New session in this project (Ctrl/Cmd+N)",
     "removeWorkspaceAriaLabel": "Remove {{name}}",
-    "sessions": "Sessions",
     "tools": "Tools"
   }
 }

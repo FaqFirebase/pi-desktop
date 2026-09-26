@@ -1,7 +1,7 @@
 import { mkdir, rename, rm, writeFile } from 'fs/promises'
 import { readFileSync } from 'fs'
 import { dirname } from 'path'
-import { TYPESAFE_API_KEY_ENV, normalizeTypeSafeApiKey } from '../shared/typesafe'
+import { OPENROUTER_API_KEY_ENV, TYPESAFE_API_KEY_ENV, normalizeTypeSafeApiKey } from '../shared/typesafe'
 import { getGuiDataPath } from './app-data-paths'
 
 const TYPESAFE_KEY_FILE = 'typesafe-api-key'
@@ -69,6 +69,7 @@ export class TypeSafeKeyStore {
 
 /** The app's one key store. The path resolves on use: the data directory is configured during startup. */
 export const typeSafeKeyStore = new TypeSafeKeyStore(() => getGuiDataPath(TYPESAFE_KEY_FILE))
+export const openRouterKeyStore = new TypeSafeKeyStore(() => getGuiDataPath('openrouter-api-key'))
 
 /**
  * The environment additions that give an agent process the saved key. A key
@@ -81,4 +82,12 @@ export function typeSafeKeyEnv(
 ): Record<string, string> {
   if (!savedKey || inherited[TYPESAFE_API_KEY_ENV]) return {}
   return { [TYPESAFE_API_KEY_ENV]: savedKey }
+}
+
+export function openRouterKeyEnv(
+  savedKey: string | null,
+  inherited: NodeJS.ProcessEnv,
+): Record<string, string> {
+  if (!savedKey || inherited[OPENROUTER_API_KEY_ENV]) return {}
+  return { [OPENROUTER_API_KEY_ENV]: savedKey }
 }

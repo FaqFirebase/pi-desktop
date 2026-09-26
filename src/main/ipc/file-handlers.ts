@@ -71,6 +71,19 @@ export function registerFileHandlers(ctx: IpcContext): void {
     return fs.getStagedDiff(isString(filePath) ? filePath : undefined)
   })
 
+  ipcMain.handle(IPC_CHANNELS.FILE_DISCARD_DIFF, async (event, workspaceId: unknown, patches: unknown) => {
+    assertTrustedSender(event)
+    if (!isString(workspaceId) || !Array.isArray(patches) || !patches.length || !patches.every(isString)) {
+      throw new Error('workspaceId and non-empty string patches are required')
+    }
+    const fs = workspaceManager.getFileService(workspaceId)
+    if (!fs) throw new Error(t('errors.workspace.noneActive'))
+    const active = workspaceManager.getSessionRuntimes(workspaceId)
+      .some((runtime) => runtime.activity === 'working' || runtime.activity === 'needs-approval')
+    if (active) throw new Error(t('diff.discard.agentWorking'))
+    await fs.discardFileDiff(patches)
+  })
+
   // Disk watching is demand-driven: the renderer declares whether a live
   // files panel consumes change events, and the watcher attaches to the
   // active workspace only while demanded. Without demand (cold start, Home)

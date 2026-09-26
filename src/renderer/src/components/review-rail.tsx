@@ -67,12 +67,12 @@ export function ReviewRail(): React.JSX.Element | null {
 
   return (
     <aside className="flex w-80 shrink-0 flex-col border-l border-border bg-app">
-      <div className="border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
+      <div className="shrink-0 border-b border-border">
+        <div className="flex h-8 items-center gap-2 border-b border-border px-4">
           <ShieldCheck size={16} className="text-success" />
           <h2 className="text-sm font-semibold text-primary">{t('review.heading')}</h2>
         </div>
-        <p className="mt-1 text-xs leading-5 text-dim">
+        <p className="px-4 py-2 text-xs leading-5 text-dim">
           {t('review.subtitle', { agent: engineLabel })}
         </p>
       </div>

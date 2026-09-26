@@ -123,14 +123,20 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   })
 
   const activateSession = async (sessionPath: string, cwd?: string): Promise<SessionRuntimeInfo> => {
-    if (!isWithinSessionRoots(sessionPath) || !existsSync(sessionPath)) {
+    // Pi may report a new session's path before persisting its first turn.
+    // A live runtime can be reactivated without reopening that file.
+    const existing = workspaceManager.getSessionRuntimeForPath(sessionPath)
+    const isLive = existing?.status === 'running' || existing?.status === 'starting'
+    if (!isWithinSessionRoots(sessionPath) || (!isLive && !existsSync(sessionPath))) {
       throw new Error(t('errors.session.pathMustExist', { field: 'sessionPath' }))
     }
     const workspace = workspaceManager.getActiveWorkspace()
     if (!workspace) throw new Error(t('errors.workspace.noneActive'))
     if (cwd && !pathsEqual(workspace.path, cwd)) throw new Error(t('errors.session.projectMismatch'))
     const runtime = await workspaceManager.activateSession(workspace.id, sessionPath)
-    if (runtime.status !== 'running') void startRuntime(runtime, sessionPath).catch(() => undefined)
+    if (runtime.status !== 'running' && runtime.status !== 'starting') {
+      void startRuntime(runtime, sessionPath).catch(() => undefined)
+    }
     return runtime
   }
 

@@ -1,4 +1,5 @@
 import { t } from '../../shared/i18n'
+import { splitClaudeCliMarkers } from './claude-cli-markers'
 
 export interface DisplayAttachment {
   kind: 'image'
@@ -132,13 +133,16 @@ export function parseAgentMessage(msg: unknown): DisplayMessage | null {
         }
       })
 
+    const text = splitClaudeCliMarkers(textParts.join(''))
+    const allToolCalls = [...toolCalls, ...text.toolCalls]
+
     return {
       id: String(m.id ?? generateFallbackId()),
       role: 'assistant',
-      content: textParts.join(''),
+      content: text.content,
       timestamp: parseTimestamp(m.timestamp),
       thinking: thinkingParts.length > 0 ? thinkingParts.join('') : undefined,
-      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
       model: typeof m.model === 'string' ? m.model : undefined,
       provider: typeof m.provider === 'string' ? m.provider : undefined,
     }

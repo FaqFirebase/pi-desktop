@@ -10,7 +10,7 @@ import { getPiCli } from '../pi-rpc-manager'
 import { engineForBoundSession } from '../pi-paths'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../shared/agent-engine-label'
 import { i18n } from '../../shared/i18n'
-import { typeSafeKeyEnv, typeSafeKeyStore } from '../typesafe-key-store'
+import { openRouterKeyEnv, openRouterKeyStore, typeSafeKeyEnv, typeSafeKeyStore } from '../typesafe-key-store'
 
 const READ_ONLY_TOOLS = 'read,grep,find,ls'
 const OMP_READ_ONLY_TOOLS = 'read,grep,glob'
@@ -115,6 +115,7 @@ export function applyPermissionModeToStartOptions(
       // The API key saved in Settings, so the TypeSafe agent skill never has to
       // ask for it. A key already in the app's own environment wins.
       ...typeSafeKeyEnv(typeSafeKeyStore.getSavedKey(), process.env),
+      ...openRouterKeyEnv(openRouterKeyStore.getSavedKey(), process.env),
     },
   }
 }

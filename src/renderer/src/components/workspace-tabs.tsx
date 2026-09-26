@@ -52,7 +52,7 @@ export function WorkspaceTabs(): React.JSX.Element {
 
   return (
     <div className="flex shrink-0 flex-col bg-app">
-    <div className="flex h-10 items-end gap-1 overflow-x-auto border-b border-border px-2 pt-1">
+    <div className="flex h-12 shrink-0 items-end gap-1 overflow-x-auto border-b border-border px-2 pt-1">
       {!sidebarOpen && (
         <button
           type="button"
@@ -84,7 +84,7 @@ export function WorkspaceTabs(): React.JSX.Element {
               void removeWorkspace(workspace.id)
             }}
             className={clsx(
-              'group flex h-9 min-w-[150px] max-w-[240px] shrink-0 items-center gap-2 rounded-t-md border border-b-0 px-2.5 text-xs transition-colors',
+              'group flex h-9 min-w-[150px] max-w-[240px] shrink-0 items-center gap-2 rounded-t-md border border-b-0 px-[11px] text-xs transition-colors',
               active
                 ? 'border-border bg-surface text-primary'
                 : 'border-transparent text-muted hover:bg-surface/60 hover:text-secondary'
@@ -188,8 +188,7 @@ export function WorkspaceTabs(): React.JSX.Element {
       </button>
     </div>
     {sessionTabs.length > 0 && (
-      <div className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border/70 px-2">
-        <span className="mr-1 shrink-0 text-[10px] uppercase tracking-wide text-faint">{t('workspaceTabs.sessions')}</span>
+      <div className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border/70 px-3">
         {sessionTabs.map((runtime) => {
           const session = sessionList.find((item) => runtime.sessionPath && pathsEqual(item.path, runtime.sessionPath))
           const active = runtime.runtimeId === activeSessionRuntimeId || runtime.active
@@ -202,7 +201,7 @@ export function WorkspaceTabs(): React.JSX.Element {
                 void closeSessionTab(runtime.runtimeId)
               }}
               className={clsx(
-                'group flex min-w-0 max-w-[240px] shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[11px] transition-colors',
+                'group flex h-6 min-w-0 max-w-[240px] shrink-0 items-center gap-0.5 rounded px-2 text-[11px] transition-colors',
                 active ? 'bg-card text-primary' : 'text-muted hover:bg-highlight hover:text-secondary'
               )}
             >
@@ -213,7 +212,7 @@ export function WorkspaceTabs(): React.JSX.Element {
                   setCurrentView('chat')
                   void switchSession(runtime.sessionPath, activeWorkspace?.path)
                 }}
-                className="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-0.5 text-left"
+                className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
                 title={runtime.sessionPath ?? undefined}
                 aria-current={active ? 'page' : undefined}
               >
