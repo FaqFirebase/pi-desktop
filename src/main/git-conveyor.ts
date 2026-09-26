@@ -281,7 +281,6 @@ export async function commitAll(cwd: string, options: GitConveyorCommitOptions):
 export async function pushBranch(cwd: string): Promise<GitConveyorStatus> {
   const repository = await inspectGitRepository(cwd)
   if (!repository.branch) throw new Error(t('errors.git.detachedHeadPush'))
-  if (repository.status.trim()) throw new Error(t('errors.git.commitBeforePush'))
   const operation = await activeGitOperation(cwd)
   if (operation) throw new Error(t('errors.git.operationInProgressPush', { operation }))
   const upstream = await resolveUpstream(cwd, repository.branch)

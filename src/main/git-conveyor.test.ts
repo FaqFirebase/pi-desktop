@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
@@ -12,6 +12,7 @@ import {
   getGitConveyorStatus,
   githubRepoFromRemote,
   parseAheadBehind,
+  pushBranch,
 } from './git-conveyor'
 
 type GitRunner = (args: string[], cwd?: string) => string
@@ -109,6 +110,62 @@ test('commitAll keeps untracked files out of an auto-staged commit', async () =>
 
     assert.equal(git(['show', '--format=', '--name-only', 'HEAD']), 'app.ts')
     assert.match(git(['status', '--porcelain']), /^\?\? \.env$/m)
+  })
+})
+
+test('commit then push succeeds with untracked files and leaves them local', async () => {
+  await withGitRepo(async (repo, git) => {
+    await withPlainFolder(async (remote) => {
+      git(['init', '--bare'], remote)
+      git(['remote', 'add', 'origin', remote])
+      await writeFile(join(repo, 'app.ts'), 'v0\n', 'utf8')
+      git(['add', 'app.ts'])
+      git(['commit', '-m', 'initial'])
+      await writeFile(join(repo, 'app.ts'), 'v1\n', 'utf8')
+      await writeFile(join(repo, 'local.txt'), 'keep local\n', 'utf8')
+
+      const committed = await commitAll(repo, { message: 'tracked change' })
+      assert.equal(committed.dirtyFiles, 1)
+      const pushed = await pushBranch(repo)
+
+      assert.equal(git(['rev-parse', `refs/heads/${committed.branch}`], remote), committed.head)
+      assert.equal(git(['ls-tree', '--name-only', committed.head], remote), 'app.ts')
+      assert.equal(pushed.ahead, 0)
+      assert.equal(pushed.hasUpstream, true)
+      assert.equal(git(['status', '--porcelain']), '?? local.txt')
+      assert.equal(await readFile(join(repo, 'local.txt'), 'utf8'), 'keep local\n')
+    })
+  })
+})
+
+test('push preserves staged and unstaged changes and honors the configured upstream', async () => {
+  await withGitRepo(async (repo, git) => {
+    await withPlainFolder(async (remote) => {
+      git(['init', '--bare'], remote)
+      git(['remote', 'add', 'fork', remote])
+      await writeFile(join(repo, 'a.txt'), 'a0\n', 'utf8')
+      await writeFile(join(repo, 'b.txt'), 'b0\n', 'utf8')
+      git(['add', '.'])
+      git(['commit', '-m', 'initial'])
+      git(['push', '--set-upstream', 'fork', 'HEAD:published'])
+      await writeFile(join(repo, 'a.txt'), 'a1\n', 'utf8')
+      await writeFile(join(repo, 'b.txt'), 'b1\n', 'utf8')
+      git(['add', 'a.txt'])
+      const committed = await commitAll(repo, { message: 'staged only' })
+      git(['add', 'b.txt'])
+      await writeFile(join(repo, 'b.txt'), 'b2\n', 'utf8')
+      const staged = git(['diff', '--cached'])
+      const unstaged = git(['diff'])
+
+      await pushBranch(repo)
+
+      assert.equal(git(['rev-parse', 'refs/heads/published'], remote), committed.head)
+      assert.equal(git(['show', 'published:a.txt'], remote), 'a1')
+      assert.equal(git(['show', 'published:b.txt'], remote), 'b0')
+      assert.equal(git(['diff', '--cached']), staged)
+      assert.equal(git(['diff']), unstaged)
+      assert.equal(await readFile(join(repo, 'b.txt'), 'utf8'), 'b2\n')
+    })
   })
 })
 

@@ -355,7 +355,7 @@ function DiffFileEntry({
         {!file.isDeleted && (
           <button
             onClick={() => void openDiffFile(file)}
-            className="mr-2 flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
+            className="mr-2 flex shrink-0 items-center justify-center rounded p-1.5 text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
             title={t('diff.openFile')}
             aria-label={t('diff.openFile')}
           >
