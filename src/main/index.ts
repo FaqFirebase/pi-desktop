@@ -445,11 +445,9 @@ app.whenReady().then(async () => {
     })
   }
 
-  // Set the macOS dock icon in development only. A packaged app already gets its
-  // dock icon from the bundled .icns (correct macOS geometry with padding). The
-  // raw icon.png is full-bleed, so calling setIcon in a packaged build overrode
-  // the .icns with a wrongly sized icon once the app started (issue #66).
-  // icon-macos.png carries the same padded geometry as the .icns.
+  // Packaged macOS apps use the Icon Composer asset catalog for native rendering.
+  // Setting a Dock image would replace its layered appearance with a flat bitmap.
+  // Development uses the padded PNG because it runs inside Electron's app bundle.
   if (process.platform === 'darwin' && app.dock && !app.isPackaged) {
     app.dock.setIcon(
       nativeImage.createFromPath(join(dirname(getAppIconPath()), 'icon-macos.png')),
