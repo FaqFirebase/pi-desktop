@@ -860,10 +860,10 @@ export function ChatInput(): React.JSX.Element {
 
           <div className="ml-auto flex min-w-0 items-center gap-1">
             {!isDisabled && (
-              <div className="flex shrink-0 items-center rounded-lg border border-border-strong bg-card">
-                <ModelSelector compact />
+              <div className="flex min-w-0 items-center rounded-lg border border-border-strong bg-card">
+                <ModelSelector compact className="min-w-0" />
                 <div className="h-3.5 w-px bg-border" aria-hidden="true" />
-                <ThinkingLevelSelector />
+                <ThinkingLevelSelector className="shrink-0" />
               </div>
             )}
 

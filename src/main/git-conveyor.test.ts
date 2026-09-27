@@ -131,6 +131,16 @@ test('non-repository folders have no commit snapshot', async () => {
   await withPlainFolder(async (folder) => assert.equal(await readCommitDiff(folder), null))
 })
 
+test('commitAll preserves a multiline subject and body longer than a single subject', async () => {
+  await withGitRepo(async (repo, git) => {
+    await writeFile(join(repo, 'app.ts'), 'new implementation\n')
+    git(['add', 'app.ts'])
+    const message = 'fix: preserve pending changes\n\n' + 'Explain the reviewed behavior and its verification. '.repeat(8)
+    await commitAll(repo, { message })
+    assert.equal(git(['log', '-1', '--pretty=%B']), message.trim())
+  })
+})
+
 test('countPorcelainFiles counts changed porcelain rows, not changed lines', () => {
   assert.equal(countPorcelainFiles(' M src/a.ts\n?? src/new.ts\n'), 2)
   assert.equal(countPorcelainFiles(''), 0)

@@ -37,6 +37,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
   const [highlighted, setHighlighted] = useState(0)
+  const [effortDraft, setEffortDraft] = useState<{ model: ModelInfo; level: string } | null>(null)
   const [recency, setRecency] = useState(readModelRecency)
   // Keep errors as data: switching language must not restart the load.
   const [loadError, setLoadError] = useState(false)
@@ -56,6 +57,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
   const close = (): void => {
     setIsOpen(false)
     setQuery('')
+    setEffortDraft(null)
     setLoadError(false)
   }
 
@@ -72,6 +74,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
   useEffect(() => {
     if (!isOpen) return
     let cancelled = false
+    setEffortDraft(null)
     setModels([])
     setLoading(true)
     setLoadError(false)
@@ -132,9 +135,18 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
       ?.scrollIntoView({ block: 'nearest' })
   }, [highlighted])
 
+  const highlightedModel = filteredModels[highlighted]
+  const draftFor = (model: ModelInfo | undefined): string | undefined =>
+    model && effortDraft?.model.id === model.id && effortDraft.model.provider === model.provider
+      ? effortDraft.level
+      : undefined
+  const displayedEffort = draftFor(highlightedModel) ?? sessionState?.thinkingLevel ?? 'medium'
+
   const handleSelect = async (model: ModelInfo): Promise<void> => {
     if (useAppStore.getState().piStatus !== 'running') return
+    const effort = draftFor(model)
     await setModel(model.provider, model.id)
+    if (effort !== undefined) await setThinkingLevel(effort)
     setRecency(recordModelUse(model))
     close()
   }
@@ -149,13 +161,11 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.nativeEvent.isComposing) return
       e.preventDefault()
       e.stopPropagation()
-      const state = useAppStore.getState()
-      if (state.piStatus !== 'running' || !state.sessionState?.model) return
-      const current = state.sessionState.thinkingLevel ?? 'medium'
+      if (loading || piStatus !== 'running' || !highlightedModel) return
       const next = stepThinkingLevel(
-        thinkingLevels(state.sessionState.model), current, e.key === 'ArrowRight' ? 1 : -1,
+        thinkingLevels(highlightedModel), displayedEffort, e.key === 'ArrowRight' ? 1 : -1,
       )
-      if (next !== current) void setThinkingLevel(next)
+      setEffortDraft({ model: highlightedModel, level: next })
     } else if (e.key === 'Enter') {
       e.preventDefault()
       const model = filteredModels[highlighted]
@@ -167,7 +177,9 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
   }
 
   return (
-    <div ref={ref} className={clsx('relative', className)}>
+    // flex: lets the trigger shrink with its wrapper (truncating the label)
+    // instead of overflowing onto the thinking selector beside it.
+    <div ref={ref} className={clsx('relative flex', className)}>
       <button
         type="button"
         onClick={() => void open()}
@@ -197,11 +209,6 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
               <div className="mt-0.5 text-xs text-dim">
                 {currentModel.provider} · {currentModel.id}
               </div>
-              <div className="mt-1 flex items-center gap-1 text-xs text-muted" aria-live="polite">
-                {t('thinking.effortWithLevel', { level: sessionState?.thinkingLevel ?? 'medium' })}
-                <ArrowLeft size={12} aria-hidden="true" />
-                <ArrowRight size={12} aria-hidden="true" />
-              </div>
             </div>
           )}
 
@@ -217,6 +224,15 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
               className="min-w-0 flex-1 bg-transparent text-sm text-primary outline-none placeholder:text-faint"
             />
           </div>
+          {highlightedModel && (
+            <div className="flex items-center gap-1 border-b border-border px-3 py-2 text-xs text-muted" aria-live="polite">
+              <span className="min-w-0 flex-1 truncate">
+                {t('thinking.effortWithLevel', { level: displayedEffort })}
+              </span>
+              <ArrowLeft size={12} aria-hidden="true" />
+              <ArrowRight size={12} aria-hidden="true" />
+            </div>
+          )}
           <div ref={listRef} className="max-h-56 overflow-y-auto py-1">
             {loading && (
               <div className="flex items-center gap-2 px-3 py-2 text-xs text-dim">

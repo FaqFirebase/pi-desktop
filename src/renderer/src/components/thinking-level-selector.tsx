@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, ChevronUp, Zap } from 'lucide-react'
+import { Check, Zap } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAppStore } from '../store'
 import { thinkingLevels } from '../utils/thinking-levels'
@@ -38,21 +38,15 @@ export function ThinkingLevelSelector({ className }: ThinkingLevelSelectorProps)
         type="button"
         onClick={() => setIsOpen((open) => !open)}
         className={clsx(
-          'flex h-7 items-center gap-1 rounded-l-none rounded-r-[7px] px-2 text-[11px] transition-colors active:scale-[0.98]',
+          'flex h-7 w-7 items-center justify-center rounded-l-none rounded-r-[7px] text-[11px] transition-colors active:scale-[0.98]',
           isOpen ? 'bg-surface-hover text-primary' : 'text-dim hover:bg-surface-hover hover:text-secondary',
         )}
         title={t('thinking.effortWithLevel', { level: currentLevel })}
         aria-label={t('thinking.effortWithLevel', { level: currentLevel })}
         aria-expanded={isOpen}
       >
-        <Zap size={11} className="shrink-0 text-accent-fg" />
-        <span className="inline-grid text-left">
-          {levels.map((level) => (
-            <span key={level} className="invisible col-start-1 row-start-1" aria-hidden="true">{level}</span>
-          ))}
-          <span className="col-start-1 row-start-1">{currentLevel}</span>
-        </span>
-        <ChevronUp size={10} className={clsx('shrink-0 transition-transform', isOpen && 'rotate-180')} />
+        {/* Icon only: the level lives in the tooltip and the open menu. */}
+        <Zap size={12} className="shrink-0 text-accent-fg" />
       </button>
 
       {isOpen && (

@@ -268,11 +268,11 @@
       "titleLabel": "标题"
     },
     "draft": {
-      "empty": "每轮对话结束后，若待提交的差异发生变化，将自动准备英文提交信息。你也可以自行填写。",
-      "failed": "无法生成建议，请手动输入提交信息。",
-      "generating": "正在准备英文建议…你可以直接填写提交信息，无需等待。",
-      "stale": "准备此信息后，待提交的内容已发生变化。请在提交前检查信息。",
-      "tooLarge": "差异过大，无法自动生成提交信息。请手动输入。"
+      "engineUnavailable": "代理可执行文件不可用。请检查代理配置，或手动填写提交信息。",
+      "failed": "无法生成提交信息。请重新生成，或手动填写。",
+      "generating": "正在生成英文提交信息…",
+      "regenerate": "重新生成提交信息",
+      "timedOut": "提交信息生成超时。请重新生成，或手动填写。"
     },
     "errors": {
       "branchRequired": "创建 PR 需要一个具名分支。",
@@ -1732,7 +1732,6 @@
       "activeCount_other": "{{count}} 个进行中",
       "closeAriaLabel": "关闭工作流运行",
       "loading": "正在加载工作流…",
-      "maximizeAriaLabel": "最大化工作流导航器",
       "noRunsForProject": "此项目没有运行记录",
       "noRunsForSession": "此会话没有运行记录",
       "noRunsProjectDetail": "{{name}} 没有记录工作流运行。其他项目的运行会显示在全局列表中。",
@@ -1740,7 +1739,6 @@
       "noRunsYet": "尚无运行",
       "recordedCount_other": "{{count}} 条记录",
       "refreshAriaLabel": "刷新工作流运行",
-      "restoreAriaLabel": "还原工作流导航器",
       "runCommandHint": "在聊天中运行 <cmd>/workflows run …</cmd>。",
       "stepTranscriptTitle": "步骤记录",
       "thisProjectFallback": "此项目",

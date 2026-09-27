@@ -1078,8 +1078,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (trimmed.startsWith('/workflows run ')) get().setWorkflowPanelOpen(true)
 
     // Navigation never spawns Pi; the first prompt or model-picker open does.
-    // startPi applies the resume preference: a previously-used project
-    // continues its last conversation; a fresh one gets a new session.
+    // For a prompt, startPi applies the resume preference: a previously-used
+    // project continues its last conversation; a fresh one gets a new session.
     if (get().piStatus !== 'running') {
       await get().startPi()
       if (get().piStatus !== 'running') return
@@ -1824,8 +1824,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const workspaceId = get().activeWorkspace?.id
     const isCurrent = (): boolean => gen === sessionLoadGeneration && workspaceId === get().activeWorkspace?.id
     // The picker is also usable on a fresh composer. Starting the runtime
-    // discovers the engine's real catalog without sending a prompt.
-    if (get().piStatus !== 'running') await get().startPi()
+    // discovers the engine's real catalog without sending a prompt. Opening a
+    // menu must not swap the empty chat for an earlier conversation, so this
+    // start skips the resume preference; a runtime already bound to a session
+    // still reopens that session.
+    if (get().piStatus !== 'running') await get().startPi({ continueSession: false })
     if (!isCurrent() || get().piStatus !== 'running') {
       throw new Error(t('models.selector.loadFailed'))
     }

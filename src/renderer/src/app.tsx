@@ -18,6 +18,7 @@ import { NotePicker } from './components/note-picker'
 import { CommandPalette } from './components/command-palette'
 import { ExtensionUiDialog, AppConfirmDialog } from './components/extension-ui-dialog'
 import { ReviewRail } from './components/review-rail'
+import { ChatToolRail } from './components/chat-tool-rail'
 import { WorkspaceTabs } from './components/workspace-tabs'
 import { WorkflowNavigator } from './components/workflow-navigator'
 import { useContextMenu, buildDefaultContextMenu } from './components/context-menu'
@@ -25,12 +26,15 @@ import { usePiEvents, useMenuActions, useInitialize, useNotePickerShortcut } fro
 import { useFolderDrop } from './hooks/use-folder-drop'
 import { useAppStore } from './store'
 import { isSettingsShortcut } from './utils/settings-shortcut'
+import { isTerminalShortcut } from './utils/terminal-shortcut'
 import { useEffect, useState } from 'react'
 import { ArrowUpCircle, FolderOpen, Home, PanelLeft, X } from 'lucide-react'
 
 export function App(): React.JSX.Element {
   const { t } = useTranslation()
   const [projectBar, setProjectBar] = useState<HTMLDivElement | null>(null)
+  const [fullScreen, setFullScreen] = useState(false)
+  useEffect(() => window.piDesktop.system.onFullScreenChange(setFullScreen), [])
   usePiEvents()
   useMenuActions()
   useInitialize()
@@ -72,6 +76,24 @@ export function App(): React.JSX.Element {
     return () => document.removeEventListener('contextmenu', handleContextMenu)
   }, [show])
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isTerminalShortcut(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.repeat) return
+      const state = useAppStore.getState()
+      if (state.currentView !== 'chat') {
+        state.setCurrentView('chat')
+        if (!state.terminalOpen) state.toggleTerminal()
+      } else {
+        state.toggleTerminal()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
+  }, [])
+
   // Global quick-switcher launcher (Ctrl/Cmd+K): commands, workspaces,
   // sessions, and files. No Pi-running gate — workspace/session/file
   // navigation works with Pi stopped, and command actions soft-fail the same
@@ -110,7 +132,7 @@ export function App(): React.JSX.Element {
       <div
         className="window-drag-region flex h-12 shrink-0 items-center gap-2 border-b border-border bg-sidebar px-3"
         style={{
-          paddingLeft: window.piDesktop.system.platform === 'darwin' ? 84 : undefined,
+          paddingLeft: window.piDesktop.system.platform === 'darwin' && !fullScreen ? 84 : undefined,
           paddingRight: 'max(0.75rem, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 0.75rem))'
         }}
       >
@@ -222,15 +244,15 @@ export function App(): React.JSX.Element {
                 {currentView === 'skills' && <SkillsPanel />}
                 {currentView === 'diagnostics' && <DiagnosticsPanel />}
               </div>
-              {globalWorkflowOpen && <WorkflowNavigator embedded />}
+              {globalWorkflowOpen && <WorkflowNavigator placement="main" />}
             </main>
             {currentView === 'chat' && !globalWorkflowOpen && <ReviewRail />}
+            {currentView === 'chat' && !globalWorkflowOpen && <ChatToolRail />}
           </div>
         </div>
       </div>
 
       {showChrome && <StatusBar />}
-      {showChrome && !globalWorkflowOpen && <WorkflowNavigator />}
       <ExtensionUiDialog />
       <AppConfirmDialog />
       <NotePicker />

@@ -31,6 +31,7 @@ import { formatRelativeTime } from '../utils/format-relative-time'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import { resolveRunSessionId } from '../utils/workflow-runs'
 import { useGlobalWorkflowOpen } from '../hooks'
+import { WorkflowNavigator } from './workflow-navigator'
 import { clampSidebarWidth, resolveSidebarWidth } from '../../../shared/sidebar-width'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { isImeComposing } from '../utils/ime-composing'
@@ -554,8 +555,15 @@ export function Sidebar(): React.JSX.Element {
         </div>
       </nav>
 
+      {/* Project/session-scoped workflow runs dock here, in place of the recent
+          sessions; the global list takes over the main pane instead. */}
+      {workflowPanelOpen && !globalWorkflowOpen && (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <WorkflowNavigator placement="sidebar" />
+        </div>
+      )}
       {/* Recent sessions for the active project. Cross-project history stays in Sessions. */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+      <div className={clsx('min-h-0 flex-1 overflow-y-auto px-2 py-3', workflowPanelOpen && !globalWorkflowOpen && 'hidden')}>
         <div className="mb-1 flex items-center justify-between px-2">
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">
             {t('sidebar.recentSessions.heading')}

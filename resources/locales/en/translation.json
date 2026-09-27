@@ -272,11 +272,11 @@
       "titleLabel": "Title"
     },
     "draft": {
-      "empty": "An English suggestion is prepared after turns that change the commit diff. You can also write your own message.",
-      "failed": "Couldn't generate a suggestion. Enter a commit message manually.",
-      "generating": "Preparing an English suggestion… You can write your own message without waiting.",
-      "stale": "The changes have changed since this message was prepared. Review the message before committing.",
-      "tooLarge": "The diff is too large for automatic message generation. Enter a commit message manually."
+      "engineUnavailable": "The agent executable is unavailable. Check Agent Configuration or write your message manually.",
+      "failed": "Couldn't generate a message. Regenerate or write your own.",
+      "generating": "Generating an English commit message…",
+      "regenerate": "Regenerate commit message",
+      "timedOut": "Message generation timed out. Regenerate or write your own."
     },
     "errors": {
       "branchRequired": "A named branch is required to create a pull request.",
@@ -1779,7 +1779,6 @@
       "activeCount_other": "{{count}} active",
       "closeAriaLabel": "Close workflow runs",
       "loading": "Loading workflow…",
-      "maximizeAriaLabel": "Maximize workflow navigator",
       "noRunsForProject": "No runs for this project",
       "noRunsForSession": "No runs for this session",
       "noRunsProjectDetail": "No workflow runs recorded for {{name}}. Runs from other projects appear in the global list.",
@@ -1788,7 +1787,6 @@
       "recordedCount_one": "{{count}} recorded",
       "recordedCount_other": "{{count}} recorded",
       "refreshAriaLabel": "Refresh workflow runs",
-      "restoreAriaLabel": "Restore workflow navigator",
       "runCommandHint": "Run <cmd>/workflows run …</cmd> in chat.",
       "stepTranscriptTitle": "Step transcript",
       "thisProjectFallback": "this project",

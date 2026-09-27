@@ -149,8 +149,7 @@ export const IPC_CHANNELS = {
   GIT_STATUS: 'git:status',
   GIT_BRANCH: 'git:branch',
   GIT_CONVEYOR_STATUS: 'git:conveyor-status',
-  GIT_COMMIT_MESSAGE: 'git:commit-message',
-  EVENT_GIT_COMMIT_MESSAGE: 'event:git-commit-message',
+  GIT_COMMIT_MESSAGE_GENERATE: 'git:commit-message-generate',
   GIT_CONVEYOR_COMMIT: 'git:conveyor-commit',
   GIT_CONVEYOR_PUSH: 'git:conveyor-push',
   GIT_CONVEYOR_CREATE_PR: 'git:conveyor-create-pr',
@@ -199,6 +198,7 @@ export const IPC_CHANNELS = {
   EVENT_TERMINAL_DATA: 'event:terminal-data',
   EVENT_TERMINAL_EXIT: 'event:terminal-exit',
   EVENT_COUNCIL_PROGRESS: 'event:council-progress',
+  EVENT_WINDOW_FULL_SCREEN: 'event:window-full-screen',
   EVENT_VOICE_PROGRESS: 'event:voice-progress',
 
   // Voice dictation
@@ -298,12 +298,17 @@ export interface GitConveyorStatus {
   remoteUrl: string | null
 }
 
-export interface GitCommitMessageDraft {
-  /** Fingerprint of the current commit selection, not of the conversation. */
-  fingerprint: string | null
-  suggestion: { fingerprint: string; message: string } | null
-  generating: boolean
-  error: 'generation-failed' | 'diff-too-large' | null
+/** Both fields null: the commit selection has nothing to describe. */
+export interface GitCommitMessageSuggestion {
+  message: string | null
+  error: GitCommitMessageError | null
+}
+
+export type GitCommitMessageError = 'generation-failed' | 'timed-out' | 'engine-unavailable'
+
+export interface GitCommitMessageRequest {
+  /** Generate again even when this diff already has a suggestion. */
+  force: boolean
 }
 
 export interface GitConveyorCommitOptions {
@@ -331,7 +336,8 @@ export interface PiStartOptions {
   noSession?: boolean
   // When true (and neither sessionPath, forkSessionPath nor noSession is set),
   // Pi is launched with --continue so it resumes the most recent session for
-  // the cwd instead of creating a fresh one.
+  // the cwd instead of creating a fresh one. Left unset, the Resume Last
+  // Session setting decides; an explicit false always starts a fresh session.
   continueSession?: boolean
   // Start a new session by forking this existing Pi session file. The new
   // session is created in the supplied cwd.

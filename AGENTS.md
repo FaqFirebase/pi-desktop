@@ -195,6 +195,7 @@ src/
             ├── session-menu-position.ts # Session menu placement
             ├── timeline.tsx       # Agent activity timeline
             ├── review-rail.tsx    # Permissions, approvals, changed files (toggleable)
+            ├── chat-tool-rail.tsx # Right-edge icon rail: review, files, diff, terminal, workflow toggles
             ├── package-browser.tsx # Package/skill browser, fetch-once + local filter, update check
             ├── skills-panel.tsx   # Skills browser
             ├── notes-panel.tsx    # Reusable prompts/notes
@@ -350,7 +351,7 @@ src/
 ### File Preview Panes
 
 - Click a workspace file link (chat or file tree) to open it in a side pane: code (CodeMirror), image, or HTML (via a sandboxed `<webview>` — no Node access, isolated partition, `file://` source only). HTML preview runs scripts and network only when the workspace is trusted; an untrusted workspace gets a static preview with a "Trust workspace" banner
-- Independent from the review rail; chat toolbar toggles for sidebar, review panel, and file tree
+- Independent from the review rail; the right-edge tool rail toggles the review panel, file tree, diff, terminal, and workflow runs
 
 ### Packages & Skills
 

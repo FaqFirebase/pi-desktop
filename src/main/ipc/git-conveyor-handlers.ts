@@ -8,7 +8,9 @@ import type {
 import { assertTrustedSender, isObject, isOptionalBoolean, isOptionalString, isString } from './validation'
 import { commitAll, createPullRequest, getGitConveyorStatus, pushBranch, readCommitDiff } from '../git-conveyor'
 import { CommitMessageService } from '../commit-message-service'
-import { wireCommitMessageTurns } from '../commit-message-wiring'
+import { generateCommitMessage, sessionCommitMessageModel, type CommitMessageModel } from '../commit-message-generator'
+import { activeEngineKind } from './active-engine'
+import { loadAppSettings } from './settings'
 import type { IpcContext } from './context'
 import { t } from '../../shared/i18n'
 
@@ -18,18 +20,28 @@ function activeCwd(ctx: IpcContext): string {
   return cwd
 }
 
+/** The active session's model when it is running, else the configured default. */
+async function commitMessageModel(ctx: IpcContext): Promise<CommitMessageModel> {
+  const manager = ctx.workspaceManager.getActivePiManager()
+  const session = manager?.getStatus().status === 'running' ? await sessionCommitMessageModel(manager) : null
+  if (session) return session
+  const settings = await loadAppSettings(ctx.workspaceManager)
+  return {
+    engine: activeEngineKind(ctx.workspaceManager),
+    selection: settings.defaultProvider && settings.defaultModel
+      ? { provider: settings.defaultProvider, model: settings.defaultModel } : null,
+  }
+}
+
 export function registerGitConveyorHandlers(ctx: IpcContext): void {
-  const messages = new CommitMessageService({
-    resolvePath: realpath,
-    readDiff: readCommitDiff,
-    changed: () => ctx.broadcast(IPC_CHANNELS.EVENT_GIT_COMMIT_MESSAGE, null),
-  })
-  wireCommitMessageTurns(ctx.workspaceManager, messages)
+  const messages = new CommitMessageService({ resolvePath: realpath, readDiff: readCommitDiff })
   app.on('will-quit', () => messages.dispose())
 
-  ipcMain.handle(IPC_CHANNELS.GIT_COMMIT_MESSAGE, async (event) => {
+  ipcMain.handle(IPC_CHANNELS.GIT_COMMIT_MESSAGE_GENERATE, async (event, input: unknown) => {
     assertTrustedSender(event)
-    return messages.get(activeCwd(ctx))
+    if (!isObject(input) || typeof input.force !== 'boolean') throw new Error('force must be a boolean')
+    return messages.suggest(activeCwd(ctx), async (diff, signal) =>
+      generateCommitMessage(diff, await commitMessageModel(ctx), signal), input.force)
   })
 
   ipcMain.handle(IPC_CHANNELS.GIT_CONVEYOR_STATUS, async (event) => {

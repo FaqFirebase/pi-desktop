@@ -35,6 +35,7 @@ import {
   RotateCcw,
   Download,
   Send,
+  ImageOff,
 } from 'lucide-react'
 
 function MessageBubbleImpl({
@@ -265,11 +266,18 @@ function UserMessage({
                   className="overflow-hidden rounded-md border border-white/20 bg-black/10"
                   title={attachment.name}
                 >
-                  <img
-                    src={`data:${attachment.mimeType};base64,${attachment.data}`}
-                    alt={attachment.name}
-                    className="h-16 w-16 object-cover"
-                  />
+                  {attachment.data ? (
+                    <img
+                      src={`data:${attachment.mimeType};base64,${attachment.data}`}
+                      alt={attachment.name}
+                      className="h-16 w-16 object-cover"
+                    />
+                  ) : (
+                    // History reload omits large image payloads (get-messages-trim.ts).
+                    <div className="flex h-16 w-16 items-center justify-center text-muted" aria-label={attachment.name}>
+                      <ImageOff size={20} />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

@@ -72,7 +72,8 @@ import type {
   SessionLaunchTaskOptions,
   WorkspaceActivationIntent,
   GitConveyorStatus,
-  GitCommitMessageDraft,
+  GitCommitMessageRequest,
+  GitCommitMessageSuggestion,
   GitConveyorCommitOptions,
   GitConveyorPullRequestOptions,
   GitConveyorPullRequestResult,
@@ -268,8 +269,8 @@ interface PiDesktopAPI {
   // Git issue-to-PR conveyor. All mutating actions require explicit renderer clicks.
   git: {
     status(): Promise<GitConveyorStatus>
-    getCommitMessage(): Promise<GitCommitMessageDraft>
-    onCommitMessageChanged(callback: () => void): () => void
+    /** Suggest an English subject for the pending commit diff; never throws for model failures. */
+    generateCommitMessage(request: GitCommitMessageRequest): Promise<GitCommitMessageSuggestion>
     commit(options: GitConveyorCommitOptions): Promise<GitConveyorStatus>
     push(): Promise<GitConveyorStatus>
     createPullRequest(options: GitConveyorPullRequestOptions): Promise<GitConveyorPullRequestResult>
@@ -319,6 +320,8 @@ interface PiDesktopAPI {
      * win32 case-folding.
      */
     platform: NodeJS.Platform
+    /** Fires when the window enters (true) or leaves (false) full screen. */
+    onFullScreenChange(callback: (fullScreen: boolean) => void): () => void
   }
 
   // Activity stats
@@ -558,12 +561,7 @@ const api: PiDesktopAPI = {
 
   git: {
     status: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_STATUS),
-    getCommitMessage: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_COMMIT_MESSAGE),
-    onCommitMessageChanged: (callback) => {
-      const handler = (): void => callback()
-      ipcRenderer.on(IPC_CHANNELS.EVENT_GIT_COMMIT_MESSAGE, handler)
-      return () => ipcRenderer.removeListener(IPC_CHANNELS.EVENT_GIT_COMMIT_MESSAGE, handler)
-    },
+    generateCommitMessage: (request) => ipcRenderer.invoke(IPC_CHANNELS.GIT_COMMIT_MESSAGE_GENERATE, request),
     commit: (options) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_COMMIT, options),
     push: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_PUSH),
     createPullRequest: (options) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_CREATE_PR, options),
@@ -600,6 +598,11 @@ const api: PiDesktopAPI = {
     platform: process.platform,
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, url),
     getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_VERSION),
+    onFullScreenChange: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, fullScreen: boolean) => callback(fullScreen)
+      ipcRenderer.on(IPC_CHANNELS.EVENT_WINDOW_FULL_SCREEN, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.EVENT_WINDOW_FULL_SCREEN, handler)
+    },
   },
 
   activity: {

@@ -30,17 +30,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import piLogo from '../assets/pi-logo.svg'
-import {
-  FolderTree,
-  GitCompare,
-  Terminal,
-  ShieldCheck,
-  PanelLeft,
-  X,
-  ChevronDown,
-  Loader2,
-  Workflow as WorkflowIcon,
-} from 'lucide-react'
+import { X, ChevronDown, Loader2 } from 'lucide-react'
 
 // Fallback padding when the composer has not measured yet (~idle pill + gradient).
 const DEFAULT_COMPOSER_PAD_PX = 144
@@ -73,13 +63,9 @@ export function ChatPanel(): React.JSX.Element {
   const piStatus = useAppStore((state) => state.piStatus)
   const piStartupPhase = useAppStore((state) => state.piStartupPhase)
   const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? 'Pi')
-  const terminalOpen = useAppStore((state) => state.terminalOpen)
-  const reviewOpen = useAppStore((state) => state.reviewOpen)
-  const sidebarOpen = useAppStore((state) => state.sidebarOpen)
   const fileSearchOpen = useAppStore((state) => state.fileSearchOpen)
   const toggleFileSearch = useAppStore((state) => state.toggleFileSearch)
   const previewTarget = useAppStore((state) => state.previewTarget)
-  const workflowPanelOpen = useAppStore((state) => state.workflowPanelOpen)
   const messageColumn = messageColumnClass(useChatWidth())
 
   // sidePanel lives in the store so it survives view switches (e.g. Settings
@@ -150,7 +136,6 @@ export function ChatPanel(): React.JSX.Element {
     }
   }, [])
 
-  const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const showSidePanel = sidePanel !== null || previewTarget !== null
   const showFileTree = sidePanel === 'files'
   const showImage = previewTarget?.kind === 'image' && sidePanel !== 'diff'
@@ -183,69 +168,6 @@ export function ChatPanel(): React.JSX.Element {
       <div className="flex flex-1 overflow-hidden">
         {/* Main chat area */}
         <div className="chat-center flex flex-1 flex-col overflow-hidden">
-          {/* Toolbar */}
-          <div className="flex h-8 shrink-0 items-center justify-between border-b border-border px-3">
-            <div className="flex items-center gap-0.5">
-              {/* Workspace path — always visible */}
-              {activeWorkspace && (
-                <div className="flex h-6 items-center gap-1.5 mr-2 px-2 rounded bg-card/60" title={activeWorkspace.path}>
-                  <FolderTree size={12} className="text-dim shrink-0" />
-                  <span className="text-xs text-muted max-w-[300px] truncate">
-                    {activeWorkspace.name}: {activeWorkspace.path}
-                  </span>
-                </div>
-              )}
-              {!sidebarOpen && (
-                <ToolbarButton
-                  icon={<PanelLeft size={14} />}
-                  active={false}
-                  onClick={() => useAppStore.getState().toggleSidebar()}
-                  title={t('common.showSidebar')}
-                />
-              )}
-              <ToolbarButton
-                icon={<ShieldCheck size={14} />}
-                active={reviewOpen}
-                onClick={() => useAppStore.getState().toggleReview()}
-                title={t('chat.toolbar.reviewPanel')}
-              />
-              <ToolbarButton
-                icon={<FolderTree size={14} />}
-                active={sidePanel === 'files'}
-                onClick={() => void setSidePanel(sidePanel === 'files' ? null : 'files')}
-                title={t('chat.toolbar.fileTree')}
-              />
-              <ToolbarButton
-                icon={<GitCompare size={14} />}
-                active={sidePanel === 'diff'}
-                onClick={() => void setSidePanel(sidePanel === 'diff' ? null : 'diff')}
-                title={t('chat.toolbar.diffViewer')}
-              />
-              <ToolbarButton
-                icon={<Terminal size={14} />}
-                active={terminalOpen}
-                onClick={() => useAppStore.getState().toggleTerminal()}
-                title={t('chat.toolbar.terminal')}
-              />
-              <ToolbarButton
-                icon={<WorkflowIcon size={14} />}
-                active={workflowPanelOpen}
-                workflowToggle
-                onClick={() => {
-                  // Session-surface button: while a session is active this opens
-                  // THAT session's runs (scoped by Pi's header UUID, the exact
-                  // identifier persisted runs carry). The global list is only a
-                  // fallback for the no-session state; closing preserves scope.
-                  const state = useAppStore.getState()
-                  if (state.workflowPanelOpen) state.setWorkflowPanelOpen(false)
-                  else if (state.sessionState?.sessionId) state.openWorkflowRunsForSession(state.sessionState.sessionId)
-                  else state.setWorkflowPanelOpen(true)
-                }}
-                title={t('common.workflowRuns')}
-              />
-            </div>
-          </div>
-
           <div className="relative flex min-h-0 flex-1 flex-col">
             {searchOpen && (
               <ChatSearch
@@ -478,36 +400,6 @@ export function ChatPanel(): React.JSX.Element {
       {/* File search modal */}
       <FileSearch isOpen={fileSearchOpen} onClose={toggleFileSearch} />
     </div>
-  )
-}
-
-function ToolbarButton({
-  icon,
-  active,
-  onClick,
-  title,
-  workflowToggle = false,
-}: {
-  icon: React.ReactNode
-  active: boolean
-  onClick: () => void
-  title: string
-  workflowToggle?: boolean
-}): React.JSX.Element {
-  return (
-    <button
-      onClick={onClick}
-      data-workflow-toggle={workflowToggle ? 'true' : undefined}
-      className={clsx(
-        'rounded p-1 transition-colors',
-        active
-          ? 'bg-card text-primary'
-          : 'hover:bg-highlight text-dim hover:text-secondary'
-      )}
-      title={title}
-    >
-      {icon}
-    </button>
   )
 }
 

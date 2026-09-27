@@ -11,6 +11,7 @@ const WORKSPACE: Workspace = {
   id: 'one', name: 'One', path: '/tmp/one', color: '#000', createdAt: 0, lastActiveAt: 0,
 }
 const calls: string[] = []
+let startOptions: unknown
 let startHook: (() => Promise<void>) | null = null
 let listHook: (() => Promise<void>) | null = null
 let listResponse: unknown
@@ -22,8 +23,9 @@ before(async () => {
     window: {
       piDesktop: {
         pi: {
-          start: async () => {
+          start: async (options?: unknown) => {
             calls.push('start')
+            startOptions = options
             await startHook?.()
             if (startFailure) throw startFailure
             return { status: 'running', pid: 123, engine: 'pi', error: null }
@@ -61,6 +63,7 @@ before(async () => {
 
 beforeEach(() => {
   calls.length = 0
+  startOptions = undefined
   startHook = null
   listHook = null
   startFailure = null
@@ -81,6 +84,8 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 test('a fresh composer can list and select models before sending its first prompt', async () => {
   assert.deepEqual(await useAppStore.getState().listModels(), [MODEL])
   assert.deepEqual(calls, ['start', 'list'])
+  // Opening the picker must never resume an earlier conversation into the empty chat.
+  assert.deepEqual(startOptions, { continueSession: false })
   assert.equal(useAppStore.getState().sessionState?.model?.id, MODEL.id)
 
   await useAppStore.getState().setModel(MODEL.provider, MODEL.id)

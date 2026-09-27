@@ -13,8 +13,6 @@ import {
   FileText,
   GitBranch,
   Loader2,
-  Maximize2,
-  Minimize2,
   Play,
   RefreshCw,
   ScrollText,
@@ -725,7 +723,12 @@ function RunDetail({ run, onBack, onRefresh, onSelectAgent }: {
   )
 }
 
-export function WorkflowNavigator({ embedded = false }: { embedded?: boolean }): React.JSX.Element | null {
+/**
+ * `main` replaces the main pane (global list); `sidebar` docks the scoped
+ * (project/session) list into the sidebar, where it stays open while the
+ * user keeps working elsewhere.
+ */
+export function WorkflowNavigator({ placement }: { placement: 'main' | 'sidebar' }): React.JSX.Element | null {
   const { t } = useTranslation()
   const open = useAppStore((state) => state.workflowPanelOpen)
   const setOpen = useAppStore((state) => state.setWorkflowPanelOpen)
@@ -739,7 +742,6 @@ export function WorkflowNavigator({ embedded = false }: { embedded?: boolean }):
   const detailRef = useRef<WorkflowRunDetail | null>(null)
   const selectedAgentRef = useRef<WorkflowAgentDetail | null>(null)
   const [loading, setLoading] = useState(false)
-  const [maximized, setMaximized] = useState(false)
   const panelRef = useRef<HTMLElement>(null)
 
   // A workspace scope pointing at a workspace that was removed would leave a
@@ -790,22 +792,17 @@ export function WorkflowNavigator({ embedded = false }: { embedded?: boolean }):
   }, [])
 
   useEffect(() => {
-    if (!open) {
-      setDetail(null)
-      setSelectedAgent(null)
-      return
-    }
+    if (!open || placement === 'sidebar') return
     const handleOutsidePointer = (event: PointerEvent): void => {
       const target = event.target
       if (target instanceof Element && target.closest('[data-workflow-toggle]')) return
       if (target instanceof Node && !panelRef.current?.contains(target)) {
-        setMaximized(false)
         setOpen(false)
       }
     }
     document.addEventListener('pointerdown', handleOutsidePointer)
     return () => document.removeEventListener('pointerdown', handleOutsidePointer)
-  }, [open, setOpen])
+  }, [open, placement, setOpen])
 
   useEffect(() => {
     if (!open) {
@@ -833,6 +830,7 @@ export function WorkflowNavigator({ embedded = false }: { embedded?: boolean }):
   const activeCount = useMemo(() => visibleRuns.filter((run) => run.status === 'running' || run.status === 'paused').length, [visibleRuns])
 
   if (!open) return null
+  const docked = placement === 'sidebar'
 
   const panelTitle = selectedAgent
     ? t('workflows.panel.stepTranscriptTitle')
@@ -857,29 +855,39 @@ export function WorkflowNavigator({ embedded = false }: { embedded?: boolean }):
     <section
       ref={panelRef}
       className={clsx(
-        'flex min-h-0 flex-col overflow-hidden border border-border-strong bg-surface/95',
-        embedded
-          ? 'relative h-full w-full rounded-none border-0 bg-surface shadow-none backdrop-blur-none'
-          : 'absolute z-40 shadow-2xl shadow-black/30 backdrop-blur-md',
-        !embedded && (maximized
-          ? 'inset-4 rounded-xl'
-          : 'right-4 top-14 max-h-[calc(100vh-7rem)] w-[30rem] max-w-[calc(100vw-2rem)] rounded-xl')
+        'relative flex h-full min-h-0 w-full flex-col overflow-hidden',
+        placement === 'main' ? 'bg-surface' : 'bg-sidebar'
       )}
       aria-label={t('common.workflowRuns')}
     >
-      <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
-        <WorkflowIcon size={16} className="text-accent-fg" />
-        <div className="min-w-0 flex-1"><div className="text-sm font-medium text-primary">{panelTitle}</div><div className="text-[11px] text-dim">{panelSubtitle}</div></div>
-        {!detail && <button type="button" onClick={() => void refresh()} className="rounded p-1.5 text-muted hover:bg-highlight hover:text-primary" title={t('workflows.panel.refreshAriaLabel')} aria-label={t('workflows.panel.refreshAriaLabel')}><RefreshCw size={14} /></button>}
-        {!embedded && <button type="button" onClick={() => setMaximized((value) => !value)} className="rounded p-1.5 text-muted hover:bg-highlight hover:text-primary" title={maximized ? t('workflows.panel.restoreAriaLabel') : t('workflows.panel.maximizeAriaLabel')} aria-label={maximized ? t('workflows.panel.restoreAriaLabel') : t('workflows.panel.maximizeAriaLabel')} aria-pressed={maximized}>{maximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>}
-        <button type="button" onClick={() => { setMaximized(false); setOpen(false) }} className="rounded p-1.5 text-muted hover:bg-highlight hover:text-primary" title={t('workflows.panel.closeAriaLabel')} aria-label={t('workflows.panel.closeAriaLabel')}><X size={16} /></button>
-      </header>
+      {docked && !detail ? (
+        // In the sidebar the list reads as one more sidebar section: the nav
+        // entry above already names it, so no icon, subtitle, or divider.
+        <header className="mb-1 flex shrink-0 items-center gap-1 px-4 pt-3">
+          <div className="min-w-0 flex-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">{panelTitle}</div>
+          <button type="button" onClick={() => void refresh()} className="rounded p-1 text-faint hover:bg-highlight hover:text-primary" title={t('workflows.panel.refreshAriaLabel')} aria-label={t('workflows.panel.refreshAriaLabel')}><RefreshCw size={12} /></button>
+          <button type="button" onClick={() => setOpen(false)} className="rounded p-1 text-faint hover:bg-highlight hover:text-primary" title={t('workflows.panel.closeAriaLabel')} aria-label={t('workflows.panel.closeAriaLabel')}><X size={13} /></button>
+        </header>
+      ) : (
+        <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
+          <WorkflowIcon size={16} className="text-accent-fg" />
+          <div className="min-w-0 flex-1"><div className="text-sm font-medium text-primary">{panelTitle}</div><div className="truncate text-[11px] text-dim">{panelSubtitle}</div></div>
+          {!detail && <button type="button" onClick={() => void refresh()} className="rounded p-1.5 text-muted hover:bg-highlight hover:text-primary" title={t('workflows.panel.refreshAriaLabel')} aria-label={t('workflows.panel.refreshAriaLabel')}><RefreshCw size={14} /></button>}
+          <button type="button" onClick={() => setOpen(false)} className="rounded p-1.5 text-muted hover:bg-highlight hover:text-primary" title={t('workflows.panel.closeAriaLabel')} aria-label={t('workflows.panel.closeAriaLabel')}><X size={16} /></button>
+        </header>
+      )}
       {selectedAgent && <AgentTranscript agent={selectedAgent} onBack={() => setSelectedAgent(null)} />}
       {!selectedAgent && detail && <RunDetail run={detail} onBack={() => setDetail(null)} onRefresh={() => void refreshDetail()} onSelectAgent={setSelectedAgent} />}
       {!selectedAgent && !detail && (
         <div className="min-h-0 flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center gap-2 px-5 py-10 text-xs text-dim"><Loader2 size={14} className="animate-spin" />{t('workflows.panel.loading')}</div>
+          ) : visibleRuns.length === 0 && docked ? (
+            <div className="mx-4 mt-2 rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-faint">
+              {filterSessionId
+                ? t('workflows.panel.noRunsSessionDetail')
+                : t('workflows.panel.noRunsProjectDetail', { name: scopeWorkspace?.name ?? t('workflows.panel.thisProjectFallback') })}
+            </div>
           ) : visibleRuns.length === 0 ? (
             <div className="px-5 py-10 text-center text-sm text-dim">
               {filterSessionId ? (

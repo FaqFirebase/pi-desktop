@@ -210,6 +210,10 @@ function createMainWindow(): BrowserWindow {
   // reveal it.
   window.setMenuBarVisibility(false)
 
+  // macOS hides the traffic lights in full screen; the title bar drops their inset.
+  window.on('enter-full-screen', () => window.webContents.send(IPC_CHANNELS.EVENT_WINDOW_FULL_SCREEN, true))
+  window.on('leave-full-screen', () => window.webContents.send(IPC_CHANNELS.EVENT_WINDOW_FULL_SCREEN, false))
+
   // Graceful show (avoid white flash)
   window.once('ready-to-show', () => {
     window.maximize()

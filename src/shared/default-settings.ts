@@ -5,7 +5,8 @@ import { DEFAULT_CHAT_WIDTH } from './chat-width'
 import { SYSTEM_LANGUAGE } from './i18n/languages'
 
 export const GIT_COMMIT_MESSAGE_CONFIG = {
-  maxMessageLength: 200,
+  maxMessageLength: 10_000,
+  maxSuggestionLength: 120,
   maxDiffBytes: 120_000,
   maxOutputBytes: 1_000_000,
   timeoutMs: 60_000,
