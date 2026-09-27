@@ -7,6 +7,7 @@ import type { GitCommitMessageError, GitConveyorStatus, GitFileStatus } from '..
 import { t } from '../../../shared/i18n'
 import { GIT_COMMIT_MESSAGE_CONFIG, GIT_CONVEYOR_NOTICE_TIMEOUT_MS } from '../../../shared/default-settings'
 import { formatIpcError } from '../utils/ipc-error'
+import { isImeComposing } from '../utils/ime-composing'
 import { createStaleGuard } from '../utils/stale-guard'
 import {
   applyCommitMessageSuggestion, commitMessageScope, openCommitMessageInput,
@@ -306,7 +307,7 @@ export function GitConveyorActions({ children, onChanged, selection, modalOnly =
 
   return (
     <>
-      <div className={modalOnly ? 'fixed bottom-12 right-4 z-50 max-w-lg' : 'flex min-w-0 flex-wrap items-center justify-start gap-1.5 lg:justify-end'}>
+      <div className={modalOnly ? 'fixed top-12 right-4 z-50 max-w-lg rounded-lg border border-border bg-surface px-3 py-2 shadow-lg empty:hidden' : 'flex min-w-0 flex-wrap items-center justify-start gap-1.5 lg:justify-end'}>
         {!modalOnly && <>
         {status && (
           <span className="basis-full mr-1 max-w-60 truncate text-[10px] text-faint sm:basis-auto" title={status.branch ?? undefined}>
@@ -401,6 +402,13 @@ export function GitConveyorActions({ children, onChanged, selection, modalOnly =
                   value={dialog.message}
                   placeholder={suggestion === 'generating' ? t('conveyor.draft.generating') : undefined}
                   onChange={(event) => setDialog({ ...dialog, message: event.target.value, edited: true })}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !isImeComposing(event.nativeEvent)) {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      event.currentTarget.form?.requestSubmit()
+                    }
+                  }}
                   className="mt-1 w-full resize-y whitespace-pre-wrap [overflow-wrap:anywhere] rounded border border-border-strong bg-app px-2 py-1.5 text-sm text-primary outline-none placeholder:text-faint focus:border-focus"
                 />
                 {suggestion !== 'idle' && suggestion !== 'generating' && (
