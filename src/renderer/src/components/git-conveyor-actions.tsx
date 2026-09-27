@@ -13,7 +13,7 @@ import {
   type CommitMessageInput, type LastCommitMessageSuggestion,
 } from '../utils/commit-message-input'
 
-/** The files a filtered Diff Viewer shows; a commit then records exactly these paths. */
+/** Files a commit records exactly, untracked ones included. */
 export interface GitCommitSelection {
   files: number
   /** Repository-root-relative paths, both sides of a rename included. */
@@ -68,6 +68,21 @@ async function confirmPush(status: GitConveyorStatus): Promise<boolean> {
   })
 }
 
+function commitMessageErrorText(error: GitCommitMessageError): string {
+  switch (error) {
+    case 'timed-out': return t('conveyor.draft.timedOut')
+    case 'engine-unavailable': return t('conveyor.draft.engineUnavailable')
+    case 'generation-failed': return t('conveyor.draft.failed')
+  }
+}
+
+async function generateCommitMessage(paths: string[] | undefined): Promise<string> {
+  const result = await window.piDesktop.git.generateCommitMessage({ force: false, ...(paths ? { paths } : {}) })
+  if (result.message) return result.message
+  throw new Error(result.error ? commitMessageErrorText(result.error) : t('conveyor.errors.commitMessageRequired'))
+}
+
+/** An empty message commits with the generated one, reusing a suggestion already in flight. */
 export async function commitConveyorChanges(
   message: string,
   pushAfter: boolean,
@@ -75,7 +90,9 @@ export async function commitConveyorChanges(
 ): Promise<GitConveyorStatus> {
   const workspaceId = useAppStore.getState().activeWorkspace?.id
   assertWorkspace(workspaceId)
-  const committed = await window.piDesktop.git.commit({ message, ...(paths ? { paths } : {}) })
+  const commitMessage = message || await generateCommitMessage(paths)
+  assertWorkspace(workspaceId)
+  const committed = await window.piDesktop.git.commit({ message: commitMessage, ...(paths ? { paths } : {}) })
   if (!pushAfter) return committed
   try {
     assertWorkspace(workspaceId)
@@ -88,16 +105,21 @@ export async function commitConveyorChanges(
 }
 
 /**
- * A selection commits its listed paths, untracked ones included; the commit
- * dialog can still widen it to all changes. Without a selection, untracked
- * files never count: auto-staging leaves them out of the commit. Push is
- * offered only while the branch has commits the remote lacks.
+ * A selection commits its listed paths, untracked ones included; a filtered
+ * view can still widen it to `allSelection`. Committing the index instead (no
+ * selection, or a `null` wider one) never counts untracked files: auto-staging
+ * leaves them out of the commit. Push is offered only while the branch has
+ * commits the remote lacks.
  */
 export function gitPublishAction(
-  files: Record<string, GitFileStatus>, status: GitConveyorStatus | null, selection?: GitCommitSelection,
+  files: Record<string, GitFileStatus>,
+  status: GitConveyorStatus | null,
+  selection?: GitCommitSelection,
+  allSelection?: GitCommitSelection | null,
 ): 'commitPush' | 'push' | null {
-  if (selection && selection.paths.length > 0) return 'commitPush'
-  const hasCommitChanges = Object.values(files).some((file) =>
+  if (selection?.paths.length || allSelection?.paths.length) return 'commitPush'
+  const commitsIndex = !selection || allSelection === null
+  const hasCommitChanges = commitsIndex && Object.values(files).some((file) =>
     file.isStaged || (file.worktree !== ' ' && file.worktree !== '?' && file.worktree !== '!')
   )
   if (hasCommitChanges) return 'commitPush'
@@ -109,10 +131,13 @@ export function scheduleGitNoticeDismissal(kind: keyof typeof GIT_CONVEYOR_NOTIC
   return () => clearTimeout(timer)
 }
 
-export function GitConveyorActions({ children, onChanged, selection }: {
+export function GitConveyorActions({ children, onChanged, selection, allSelection }: {
   children?: ReactNode
   onChanged?: () => void
+  /** What Commit records; absent commits the index (or the tracked changes when nothing is staged). */
   selection?: GitCommitSelection
+  /** Present only while the view is filtered: the dialog's "All changes" option, where `null` commits the index. */
+  allSelection?: GitCommitSelection | null
 }): React.JSX.Element {
   const { t } = useTranslation()
   const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
@@ -130,7 +155,7 @@ export function GitConveyorActions({ children, onChanged, selection }: {
   const [statusError, dispatchStatusError] = useReducer(gitStatusErrorReducer, null)
   const visibleError = error ?? (statusError?.dismissed ? null : statusError?.message)
   const [gitFiles, setGitFiles] = useState<Record<string, GitFileStatus>>({})
-  const publishAction = gitPublishAction(gitFiles, status, selection)
+  const publishAction = gitPublishAction(gitFiles, status, selection, allSelection)
   const dismissError = useCallback(() => {
     setError(null)
     setFeedback(null)
@@ -228,28 +253,26 @@ export function GitConveyorActions({ children, onChanged, selection }: {
 
   const openCommitDialog = (pushAfter: boolean): void => {
     setError(null)
-    const paths = selection?.paths.length ? [...selection.paths] : undefined
+    const paths = selection?.paths.length ? [...selection.paths] : allSelection ? [...allSelection.paths] : undefined
     const scope = commitMessageScope(workspaceId, paths)
     setDialog({ kind: 'commit', ...openCommitMessageInput(lastSuggestion.current, scope), workspaceId, pushAfter, paths, scope })
     void requestSuggestion(false, paths, scope)
   }
 
   const setCommitSelectionOnly = (selectionOnly: boolean): void => {
-    if (dialog?.kind !== 'commit' || !selection) return
-    const paths = selectionOnly ? [...selection.paths] : undefined
+    if (!dialog || !selection || allSelection === undefined) return
+    const paths = selectionOnly ? [...selection.paths] : allSelection ? [...allSelection.paths] : undefined
     const scope = commitMessageScope(dialog.workspaceId, paths)
     if (scope === dialog.scope) return
     setDialog({ ...dialog, ...switchCommitMessageInput(dialog, lastSuggestion.current, scope), paths, scope })
     void requestSuggestion(false, paths, scope)
   }
 
+  const selectionScope = selection && commitMessageScope(dialog?.workspaceId, selection.paths)
+
   const submitDialog = (): void => {
     if (!dialog || !status) return
     const message = dialog.message.trim()
-    if (!message) {
-      setError(t('conveyor.errors.commitMessageRequired'))
-      return
-    }
     lastSuggestion.current = null
     setDialog(null)
     void run(
@@ -355,7 +378,7 @@ export function GitConveyorActions({ children, onChanged, selection }: {
               </button>
             </div>
             <div>
-                {selection && (
+                {selection && allSelection !== undefined && (
                   <div role="group" aria-label={t('conveyor.dialog.scopeLabel')} className="mb-3 flex gap-1 rounded border border-border p-0.5">
                     {[true, false].map((selectionOnly) => (
                       <button
@@ -363,10 +386,10 @@ export function GitConveyorActions({ children, onChanged, selection }: {
                         type="button"
                         onClick={() => setCommitSelectionOnly(selectionOnly)}
                         disabled={selectionOnly && selection.paths.length === 0}
-                        aria-pressed={(dialog.paths !== undefined) === selectionOnly}
+                        aria-pressed={(dialog.scope === selectionScope) === selectionOnly}
                         className={clsx(
                           'flex-1 rounded px-2 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40',
-                          (dialog.paths !== undefined) === selectionOnly
+                          (dialog.scope === selectionScope) === selectionOnly
                             ? 'bg-accent-bg text-accent-fg'
                             : 'text-muted hover:bg-surface-hover hover:text-primary',
                         )}
@@ -402,11 +425,7 @@ export function GitConveyorActions({ children, onChanged, selection }: {
                 />
                 {suggestion !== 'idle' && suggestion !== 'generating' && (
                   <p className="mt-1 text-[11px] text-faint" role="status">
-                    {suggestion === 'timed-out'
-                      ? t('conveyor.draft.timedOut')
-                      : suggestion === 'engine-unavailable'
-                        ? t('conveyor.draft.engineUnavailable')
-                        : t('conveyor.draft.failed')}
+                    {commitMessageErrorText(suggestion)}
                   </p>
                 )}
             </div>

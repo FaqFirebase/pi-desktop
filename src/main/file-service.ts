@@ -405,13 +405,14 @@ export class FileService {
   }
 
   /**
-   * Get a diff for a specific file. Empty for non-repos and machines without
-   * git; throws on real git failures so callers can surface them.
+   * Get a diff for a specific file, or for the whole workspace (never the rest
+   * of a monorepo). Empty for non-repos and machines without git; throws on
+   * real git failures so callers can surface them.
    */
   async getFileDiff(filePath?: string): Promise<string> {
     try {
       const args = ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--src-prefix=a/', '--dst-prefix=b/']
-      if (filePath) args.push('--', filePath)
+      args.push('--', filePath ?? '.')
       const { stdout } = await execFileAsync('git', args, {
         cwd: this.workspacePath,
         timeout: 10_000,
@@ -514,13 +515,12 @@ export class FileService {
   }
 
   /**
-   * Get the staged diff. Empty for non-repos and machines without git;
+   * Get the staged diff of a file or of the workspace. Empty for non-repos and machines without git;
    * throws on real git failures so callers can surface them.
    */
   async getStagedDiff(filePath?: string): Promise<string> {
     try {
-      const args = ['diff', '--cached']
-      if (filePath) args.push(filePath)
+      const args = ['diff', '--cached', '--', filePath ?? '.']
       const { stdout } = await execFileAsync('git', args, {
         cwd: this.workspacePath,
         timeout: 10_000,

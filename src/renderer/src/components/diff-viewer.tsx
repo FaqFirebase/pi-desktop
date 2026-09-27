@@ -67,12 +67,12 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   const visibleFiles = useMemo(() => sessionOnly
     ? workspacePath ? filterSessionDiffFiles(files, messages, workspacePath, gitPrefix) : []
     : files, [files, gitPrefix, messages, sessionOnly, workspacePath])
-  const commitSelection = useMemo<GitCommitSelection | undefined>(() => sessionOnly
-    ? {
-      files: visibleFiles.length,
-      paths: [...new Set(visibleFiles.flatMap((file) => [file.oldPath, file.newPath]))],
-    }
-    : undefined, [sessionOnly, visibleFiles])
+  // Commit records the files on screen. The staged view without a filter
+  // commits the index it shows; a filtered view can widen to every file.
+  const commitSelection = useMemo(() => stagedMode && !sessionOnly ? undefined : diffCommitSelection(visibleFiles),
+    [sessionOnly, stagedMode, visibleFiles])
+  const allCommitSelection = useMemo(() => !sessionOnly ? undefined : stagedMode ? null : diffCommitSelection(files),
+    [files, sessionOnly, stagedMode])
 
   const loadDiff = useCallback(async () => {
     const isCurrent = loadGuard.begin()
@@ -193,7 +193,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
           </div>
         </div>
         <div className="min-w-0 border-t border-border px-4 py-2">
-          <GitConveyorActions key={workspaceId} onChanged={loadDiff} selection={commitSelection}>
+          <GitConveyorActions key={workspaceId} onChanged={loadDiff} selection={commitSelection} allSelection={allCommitSelection}>
             <button
               type="button"
               onClick={() => void discard(visibleFiles)}
@@ -260,6 +260,10 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
       </div>
     </div>
   )
+}
+
+function diffCommitSelection(files: readonly Pick<DiffFileBlock, 'oldPath' | 'newPath'>[]): GitCommitSelection {
+  return { files: files.length, paths: [...new Set(files.flatMap((file) => [file.oldPath, file.newPath]))] }
 }
 
 export async function discardDiffFiles(

@@ -304,19 +304,29 @@ test('getFileDiff and getStagedDiff return diffs larger than the execFile defaul
   assert.ok(stagedDiff.length > EXEC_FILE_DEFAULT_MAX_BUFFER_BYTES)
 })
 
-test('a monorepo subfolder workspace reports its Git prefix and only its own untracked files', async () => {
+test('a monorepo subfolder workspace reports its Git prefix and diffs only its own files', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'fs-monorepo-'))
-  execFileSync('git', ['init', '-q'], { cwd: dir })
+  const git = (...args: string[]): void => {
+    execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', ...args], { cwd: dir })
+  }
+  git('init', '-q')
+  await writeFile(join(dir, 'tracked.ts'), 'original\n')
+  git('add', 'tracked.ts')
+  git('commit', '-q', '-m', 'init')
   const workspace = join(dir, 'pkg', 'app')
   await mkdir(join(workspace, 'src'), { recursive: true })
   await writeFile(join(workspace, 'src', 'new.ts'), 'inside\n')
   await writeFile(join(dir, 'root.ts'), 'outside\n')
+  await writeFile(join(dir, 'tracked.ts'), 'changed outside\n')
+  git('add', 'tracked.ts')
+  await writeFile(join(dir, 'tracked.ts'), 'changed again outside\n')
   const service = new FileService(workspace)
 
   assert.equal(await service.getGitPrefix(), 'pkg/app/')
   const diff = await service.getFileDiff()
   assert.match(diff, /^diff --git a\/pkg\/app\/src\/new\.ts b\/pkg\/app\/src\/new\.ts$/m)
   assert.match(diff, /^\+inside$/m)
-  assert.doesNotMatch(diff, /root\.ts/)
+  assert.doesNotMatch(diff, /root\.ts|tracked\.ts/)
+  assert.equal(await service.getStagedDiff(), '')
   assert.match(await service.getFileDiff('src/new.ts'), /pkg\/app\/src\/new\.ts/)
 })
