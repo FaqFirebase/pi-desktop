@@ -443,3 +443,84 @@ test('commitAll preserves a curated index inside the workspace', async () => {
     assert.match(git(['status', '--porcelain']), /M app\/b\.txt$/m)
   })
 })
+
+test('a filtered commit records only the selected paths, untracked and deleted ones included', async () => {
+  await withGitRepo(async (repo, git) => {
+    for (const name of ['kept.ts', 'other.ts', 'gone.ts']) await writeFile(join(repo, name), 'v0\n', 'utf8')
+    git(['add', '.'])
+    git(['commit', '-m', 'initial'])
+    await writeFile(join(repo, 'kept.ts'), 'v1\n', 'utf8')
+    await writeFile(join(repo, 'other.ts'), 'v1\n', 'utf8')
+    await writeFile(join(repo, 'new.ts'), 'created\n', 'utf8')
+    await writeFile(join(repo, 'stray.ts'), 'not selected\n', 'utf8')
+    await rm(join(repo, 'gone.ts'))
+    git(['add', 'other.ts'])
+
+    const paths = ['kept.ts', 'new.ts', 'gone.ts']
+    const snapshot = await readCommitDiff(repo, paths)
+    assert.match(snapshot!.diff, /\+v1/)
+    assert.match(snapshot!.diff, /\+created/)
+    assert.match(snapshot!.diff, /deleted file mode/)
+    assert.doesNotMatch(snapshot!.diff, /other\.ts|stray\.ts/)
+    assert.equal(git(['diff', '--cached', '--name-only']), 'other.ts')
+
+    await commitAll(repo, { message: 'selected files', paths })
+
+    assert.deepEqual(git(['show', '--format=', '--name-status', 'HEAD']).split(/\r?\n/), ['D\tgone.ts', 'M\tkept.ts', 'A\tnew.ts'])
+    assert.equal(git(['diff', '--cached', '--name-only']), 'other.ts')
+    assert.match(git(['status', '--porcelain']), /^\?\? stray\.ts$/m)
+    assert.equal(await readCommitDiff(repo, ['kept.ts', 'new.ts']), null)
+  })
+})
+
+test('a filtered commit rejects paths outside the workspace before touching the index', async () => {
+  await withGitRepo(async (repo, git) => {
+    const app = join(repo, 'app')
+    await mkdir(app)
+    await writeFile(join(app, 'a.ts'), 'v0\n', 'utf8')
+    await writeFile(join(repo, '.env'), 'SECRET=v0\n', 'utf8')
+    git(['add', '.'])
+    git(['commit', '-m', 'initial'])
+    await writeFile(join(app, 'a.ts'), 'v1\n', 'utf8')
+    await writeFile(join(repo, '.env'), 'SECRET=v1\n', 'utf8')
+
+    for (const paths of [['app/a.ts', '.env'], ['app/../.env'], [join(repo, '.env')], []]) {
+      await assert.rejects(() => commitAll(app, { message: 'must not commit', paths }), /selected to commit|No files are selected/)
+    }
+    await commitAll(app, { message: 'inside only', paths: ['app/a.ts'] })
+    assert.equal(git(['show', '--format=', '--name-only', 'HEAD']), 'app/a.ts')
+    assert.equal(git(['diff', '--cached', '--name-only']), '')
+  })
+})
+
+test('a rejected filtered commit restores the index and leaves untracked files untracked', async () => {
+  await withGitRepo(async (repo, git) => {
+    await writeFile(join(repo, 'a.ts'), 'v0\n', 'utf8')
+    await writeFile(join(repo, 'b.ts'), 'v0\n', 'utf8')
+    git(['add', '.'])
+    git(['commit', '-m', 'initial'])
+    await writeFile(join(repo, 'b.ts'), 'v1\n', 'utf8')
+    git(['add', 'b.ts'])
+    await writeFile(join(repo, 'new.ts'), 'created\n', 'utf8')
+    await rejectCommits(repo, git)
+
+    await assert.rejects(
+      () => commitAll(repo, { message: 'blocked by the hook', paths: ['new.ts'] }),
+      /pre-commit hook rejected the commit/
+    )
+    assert.equal(git(['diff', '--cached', '--name-only']), 'b.ts')
+    assert.match(git(['status', '--porcelain']), /^\?\? new\.ts$/m)
+    assert.equal(git(['rev-list', '--count', 'HEAD']), '1')
+  })
+})
+
+test('a filtered commit can create the first commit of an unborn repository', async () => {
+  await withGitRepo(async (repo, git) => {
+    await writeFile(join(repo, 'first.ts'), 'hello\n', 'utf8')
+    await writeFile(join(repo, 'later.ts'), 'later\n', 'utf8')
+    assert.match((await readCommitDiff(repo, ['first.ts']))!.diff, /\+hello/)
+    await commitAll(repo, { message: 'first', paths: ['first.ts'] })
+    assert.equal(git(['show', '--format=', '--name-only', 'HEAD']), 'first.ts')
+    assert.match(git(['status', '--porcelain']), /^\?\? later\.ts$/m)
+  })
+})

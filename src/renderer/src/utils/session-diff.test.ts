@@ -23,7 +23,7 @@ test('filters edit/write files while retaining their full diff and order', () =>
     call('read', { path: 'src/other.ts' }),
     call('bash', { command: 'echo changed > src/other.ts' }),
   ]
-  const filtered = filterSessionDiffFiles(files, messages, '/project')
+  const filtered = filterSessionDiffFiles(files, messages, '/project', '')
   assert.deepEqual(filtered, files.slice(0, 2))
   assert.equal(filtered[0], files[0])
   assert.equal(files.length, 3)
@@ -34,7 +34,7 @@ test('matches full paths, dot segments and supported tool argument aliases', () 
   assert.deepEqual(filterSessionDiffFiles(files, [
     call('functions.edit', { file_path: '/project/src/../src/a.ts' }),
     call('write', { filename: './new file.ts' }),
-  ], '/project/'), files)
+  ], '/project/', ''), files)
 })
 
 test('does not conflate basenames or outside-workspace paths', () => {
@@ -43,7 +43,7 @@ test('does not conflate basenames or outside-workspace paths', () => {
     call('edit', { path: '/other/src/a.ts' }),
     call('write', { path: '../project-other/src/a.ts' }),
     call('edit', { path: 'a.ts' }),
-  ], '/project'), [])
+  ], '/project', ''), [])
 })
 
 test('handles deleted and renamed files using either Git path', () => {
@@ -56,7 +56,7 @@ test('handles deleted and renamed files using either Git path', () => {
     call('edit', { path: 'old.ts' }),
     call('edit', { path: 'deleted.ts' }),
     call('write', { path: 'new.ts' }),
-  ], '/project'), files)
+  ], '/project', ''), files)
 })
 
 test('ignores malformed calls, failed results and in-progress writes', () => {
@@ -73,14 +73,24 @@ test('ignores malformed calls, failed results and in-progress writes', () => {
     call('write', { path: 'a.ts' }, { isError: true }),
     call('functions.write', { path: 'a.ts' }, { isExecuting: true }),
     call('write', { path: 42 }),
-  ], '/project'), [])
+  ], '/project', ''), [])
 })
 
 test('changing session messages changes the filter without retaining previous paths', () => {
   const files = [diff('a.ts'), diff('b.ts')]
-  assert.deepEqual(filterSessionDiffFiles(files, [call('write', { path: 'a.ts' })], '/project'), [files[0]])
-  assert.deepEqual(filterSessionDiffFiles(files, [call('write', { path: 'b.ts' })], '/project'), [files[1]])
-  assert.deepEqual(filterSessionDiffFiles(files, [], '/project'), [])
+  assert.deepEqual(filterSessionDiffFiles(files, [call('write', { path: 'a.ts' })], '/project', ''), [files[0]])
+  assert.deepEqual(filterSessionDiffFiles(files, [call('write', { path: 'b.ts' })], '/project', ''), [files[1]])
+  assert.deepEqual(filterSessionDiffFiles(files, [], '/project', ''), [])
+})
+
+test('matches repository-root Git paths when the workspace is a monorepo subfolder', () => {
+  const files = [diff('pkg/app/src/a.ts'), diff('pkg/app/b.ts'), diff('root.ts'), diff('pkg/other/a.ts')]
+  assert.deepEqual(filterSessionDiffFiles(files, [
+    call('edit', { path: 'src/a.ts' }),
+    call('write', { path: '/repo/pkg/app/b.ts' }),
+    call('edit', { path: '../../root.ts' }),
+  ], '/repo/pkg/app', 'pkg/app/'), files.slice(0, 3))
+  assert.deepEqual(filterSessionDiffFiles(files, [call('edit', { path: 'a.ts' })], '/repo/pkg/app', 'pkg/app/'), [])
 })
 
 test('normalizes Windows separators and folds case only on Windows', (t) => {
@@ -94,9 +104,9 @@ test('normalizes Windows separators and folds case only on Windows', (t) => {
   const files = [diff('src/App.ts')]
   assert.deepEqual(filterSessionDiffFiles(files, [
     call('edit', { path: 'c:\\PROJECT\\src\\app.ts' }),
-  ], 'C:\\Project'), files)
+  ], 'C:\\Project', ''), files)
   bridge.system.platform = 'linux'
   assert.deepEqual(filterSessionDiffFiles(files, [
     call('edit', { path: 'src/app.ts' }),
-  ], '/project'), [])
+  ], '/project', ''), [])
 })
