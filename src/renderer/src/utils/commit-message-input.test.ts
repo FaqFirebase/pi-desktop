@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  applyCommitMessageSuggestion, commitMessageScope, openCommitMessageInput, switchCommitMessageInput,
+  applyCommitMessageSuggestion, commitMessageScope, openCommitMessageInput,
 } from './commit-message-input'
 
 const untouched = { message: '', edited: false }
@@ -45,15 +45,4 @@ test('a missing suggestion leaves the input alone', () => {
   const edited = { message: 'mine', edited: true }
   assert.equal(applyCommitMessageSuggestion(edited, null, true), edited)
   assert.equal(applyCommitMessageSuggestion(untouched, null, false), untouched)
-})
-
-test('switching between session files and all changes keeps typed text and otherwise follows the new scope', () => {
-  const all = commitMessageScope('project', undefined)
-  const session = commitMessageScope('project', ['a.ts'])
-  const last = { scope: all, message: 'Update everything' }
-  assert.deepEqual(switchCommitMessageInput({ message: 'Session draft', edited: false }, last, all),
-    { message: 'Update everything', edited: false })
-  assert.deepEqual(switchCommitMessageInput({ message: 'Update everything', edited: false }, last, session),
-    { message: '', edited: false })
-  assert.deepEqual(switchCommitMessageInput({ message: 'Mine', edited: true }, last, all), { message: 'Mine', edited: true })
 })

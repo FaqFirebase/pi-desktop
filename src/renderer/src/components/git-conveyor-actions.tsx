@@ -9,7 +9,7 @@ import { GIT_COMMIT_MESSAGE_CONFIG, GIT_CONVEYOR_NOTICE_TIMEOUT_MS } from '../..
 import { formatIpcError } from '../utils/ipc-error'
 import { createStaleGuard } from '../utils/stale-guard'
 import {
-  applyCommitMessageSuggestion, commitMessageScope, openCommitMessageInput, switchCommitMessageInput,
+  applyCommitMessageSuggestion, commitMessageScope, openCommitMessageInput,
   type CommitMessageInput, type LastCommitMessageSuggestion,
 } from '../utils/commit-message-input'
 
@@ -105,9 +105,8 @@ export async function commitConveyorChanges(
 }
 
 /**
- * A selection commits its listed paths, untracked ones included; a filtered
- * view can still widen it to `allSelection`. Committing the index instead (no
- * selection, or a `null` wider one) never counts untracked files: auto-staging
+ * A selection commits only its listed paths, untracked ones included.
+ * Committing the index instead (no selection) never counts untracked files: auto-staging
  * leaves them out of the commit. Push is offered only while the branch has
  * commits the remote lacks.
  */
@@ -115,10 +114,9 @@ export function gitPublishAction(
   files: Record<string, GitFileStatus>,
   status: GitConveyorStatus | null,
   selection?: GitCommitSelection,
-  allSelection?: GitCommitSelection | null,
 ): 'commitPush' | 'push' | null {
-  if (selection?.paths.length || allSelection?.paths.length) return 'commitPush'
-  const commitsIndex = !selection || allSelection === null
+  if (selection?.paths.length) return 'commitPush'
+  const commitsIndex = !selection
   const hasCommitChanges = commitsIndex && Object.values(files).some((file) =>
     file.isStaged || (file.worktree !== ' ' && file.worktree !== '?' && file.worktree !== '!')
   )
@@ -131,13 +129,12 @@ export function scheduleGitNoticeDismissal(kind: keyof typeof GIT_CONVEYOR_NOTIC
   return () => clearTimeout(timer)
 }
 
-export function GitConveyorActions({ children, onChanged, selection, allSelection }: {
+export function GitConveyorActions({ children, onChanged, selection, modalOnly = false }: {
+  modalOnly?: boolean
   children?: ReactNode
   onChanged?: () => void
   /** What Commit records; absent commits the index (or the tracked changes when nothing is staged). */
   selection?: GitCommitSelection
-  /** Present only while the view is filtered: the dialog's "All changes" option, where `null` commits the index. */
-  allSelection?: GitCommitSelection | null
 }): React.JSX.Element {
   const { t } = useTranslation()
   const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
@@ -156,7 +153,7 @@ export function GitConveyorActions({ children, onChanged, selection, allSelectio
   const [statusError, dispatchStatusError] = useReducer(gitStatusErrorReducer, null)
   const visibleError = error ?? (statusError?.dismissed ? null : statusError?.message)
   const [gitFiles, setGitFiles] = useState<Record<string, GitFileStatus>>({})
-  const publishAction = gitPublishAction(gitFiles, status, selection, allSelection)
+  const publishAction = gitPublishAction(gitFiles, status, selection)
   const dismissError = useCallback(() => {
     setError(null)
     setFeedback(null)
@@ -173,7 +170,7 @@ export function GitConveyorActions({ children, onChanged, selection, allSelectio
     return scheduleGitNoticeDismissal('success', () => setFeedback(null))
   }, [feedback])
 
-  const refresh = useCallback(async (): Promise<void> => {
+  const refresh = useCallback(async (): Promise<GitConveyorStatus | null> => {
     const isCurrent = refreshGuard.current.begin()
     const sameWorkspace = (): boolean => isCurrent() && useAppStore.getState().activeWorkspace?.id === workspaceId
     try {
@@ -181,15 +178,17 @@ export function GitConveyorActions({ children, onChanged, selection, allSelectio
         window.piDesktop.git.status(),
         window.piDesktop.files.getGitStatus(),
       ])
-      if (!sameWorkspace()) return
+      if (!sameWorkspace()) return null
       setStatus(nextStatus)
       setGitFiles(files)
       dispatchStatusError({ type: 'recovered' })
+      return nextStatus
     } catch (err) {
-      if (!sameWorkspace()) return
+      if (!sameWorkspace()) return null
       setStatus(null)
       setGitFiles({})
       dispatchStatusError({ type: 'failed', message: formatIpcError(err) })
+      return null
     }
   }, [workspaceId])
 
@@ -197,8 +196,8 @@ export function GitConveyorActions({ children, onChanged, selection, allSelectio
     setStatus(null)
     setDialog(null)
     setSuggestion('idle')
-    void refresh()
-    const timer = window.setInterval(() => {
+    if (!modalOnly) void refresh()
+    const timer = modalOnly ? undefined : window.setInterval(() => {
       if (document.visibilityState === 'visible') void refresh()
     }, 5000)
     const guard = refreshGuard.current
@@ -208,7 +207,7 @@ export function GitConveyorActions({ children, onChanged, selection, allSelectio
       requests.begin()
       window.clearInterval(timer)
     }
-  }, [refresh])
+  }, [refresh, modalOnly])
 
   const run = async <T,>(
     kind: 'commit' | 'commitPush' | 'push',
@@ -254,29 +253,21 @@ export function GitConveyorActions({ children, onChanged, selection, allSelectio
 
   const openCommitDialog = useCallback((pushAfter: boolean): void => {
     setError(null)
-    const paths = selection?.paths.length ? [...selection.paths] : allSelection ? [...allSelection.paths] : undefined
+    if (selection && selection.paths.length === 0) return
+    const paths = selection ? [...selection.paths] : undefined
     const scope = commitMessageScope(workspaceId, paths)
     setDialog({ kind: 'commit', ...openCommitMessageInput(lastSuggestion.current, scope), workspaceId, pushAfter, paths, scope })
     void requestSuggestion(false, paths, scope)
-  }, [selection, allSelection, workspaceId, requestSuggestion])
+  }, [selection, workspaceId, requestSuggestion])
 
   useEffect(() => {
-    if (!commitPushRequested) return
-    if (!status && !statusError) return
+    if (!modalOnly || !commitPushRequested) return
     useAppStore.setState({ commitPushRequested: false })
-    if (!dialog && !busyRef.current && status?.branch) openCommitDialog(true)
-  }, [commitPushRequested, status, statusError, dialog, openCommitDialog])
-
-  const setCommitSelectionOnly = (selectionOnly: boolean): void => {
-    if (!dialog || !selection || allSelection === undefined) return
-    const paths = selectionOnly ? [...selection.paths] : allSelection ? [...allSelection.paths] : undefined
-    const scope = commitMessageScope(dialog.workspaceId, paths)
-    if (scope === dialog.scope) return
-    setDialog({ ...dialog, ...switchCommitMessageInput(dialog, lastSuggestion.current, scope), paths, scope })
-    void requestSuggestion(false, paths, scope)
-  }
-
-  const selectionScope = selection && commitMessageScope(dialog?.workspaceId, selection.paths)
+    if (dialog || busyRef.current) return
+    void refresh().then((nextStatus) => {
+      if (nextStatus?.branch) openCommitDialog(true)
+    })
+  }, [modalOnly, commitPushRequested, dialog, refresh, openCommitDialog])
 
   const submitDialog = (): void => {
     if (!dialog || !status) return
@@ -315,7 +306,8 @@ export function GitConveyorActions({ children, onChanged, selection, allSelectio
 
   return (
     <>
-      <div className="flex min-w-0 flex-wrap items-center justify-start gap-1.5 lg:justify-end">
+      <div className={modalOnly ? 'fixed bottom-12 right-4 z-50 max-w-lg' : 'flex min-w-0 flex-wrap items-center justify-start gap-1.5 lg:justify-end'}>
+        {!modalOnly && <>
         {status && (
           <span className="basis-full mr-1 max-w-60 truncate text-[10px] text-faint sm:basis-auto" title={status.branch ?? undefined}>
             {(selection?.files ?? status.dirtyFiles) > 0
@@ -341,6 +333,7 @@ export function GitConveyorActions({ children, onChanged, selection, allSelectio
             {t('conveyor.push')}
           </button>
         )}
+        </>}
         {visibleError ? (
           <div role="alert" className="flex min-w-0 basis-full items-start gap-2 rounded-lg border border-error/20 bg-error-bg px-3 py-2 text-xs text-error">
             <AlertCircle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
@@ -386,27 +379,6 @@ export function GitConveyorActions({ children, onChanged, selection, allSelectio
               </button>
             </div>
             <div>
-                {selection && allSelection !== undefined && (
-                  <div role="group" aria-label={t('conveyor.dialog.scopeLabel')} className="mb-3 flex gap-1 rounded border border-border p-0.5">
-                    {[true, false].map((selectionOnly) => (
-                      <button
-                        key={String(selectionOnly)}
-                        type="button"
-                        onClick={() => setCommitSelectionOnly(selectionOnly)}
-                        disabled={selectionOnly && selection.paths.length === 0}
-                        aria-pressed={(dialog.scope === selectionScope) === selectionOnly}
-                        className={clsx(
-                          'flex-1 rounded px-2 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40',
-                          (dialog.scope === selectionScope) === selectionOnly
-                            ? 'bg-accent-bg text-accent-fg'
-                            : 'text-muted hover:bg-surface-hover hover:text-primary',
-                        )}
-                      >
-                        {selectionOnly ? t('conveyor.dialog.scopeSession', { count: selection.files }) : t('conveyor.dialog.scopeAll')}
-                      </button>
-                    ))}
-                  </div>
-                )}
                 <div className="flex items-center justify-between">
                   <label htmlFor={commitMessageId} className="text-xs text-muted">{t('conveyor.dialog.commitMessageLabel')}</label>
                   <button

@@ -21,13 +21,6 @@ export function openCommitMessageInput(last: LastCommitMessageSuggestion | null,
   return { message: last && last.scope === scope ? last.message : '', edited: false }
 }
 
-/** Switching what the commit records keeps typed text; an untouched field follows the new scope. */
-export function switchCommitMessageInput(
-  input: CommitMessageInput, last: LastCommitMessageSuggestion | null, scope: string,
-): CommitMessageInput {
-  return input.edited ? { message: input.message, edited: true } : openCommitMessageInput(last, scope)
-}
-
 /**
  * The suggestion requested when the dialog opens fills only an untouched field;
  * an explicit regenerate is the user asking for new text, so it replaces edits.

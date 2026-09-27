@@ -54,6 +54,7 @@ function scanMarker(text: string, start: number): ScannedMarker | 'incomplete' |
   const name = nameMatch[0]
   i += name.length
 
+  if (text.slice(i) === ' #') return 'incomplete'
   let id: string | undefined
   const idMatch = /^ #([^\s\]]+)/.exec(text.slice(i))
   if (idMatch) {
@@ -61,6 +62,7 @@ function scanMarker(text: string, start: number): ScannedMarker | 'incomplete' |
     i += idMatch[0].length
   }
 
+  if (text.slice(i) === ' ') return 'incomplete'
   let payload: Record<string, unknown> | undefined
   if (text.startsWith(' {', i)) {
     const end = jsonObjectEnd(text, i + 1)
@@ -91,7 +93,17 @@ function resultText(payload: Record<string, unknown> | undefined): string | unde
  * returned as prose. A marker cut off at the end of the text (mid-stream) is
  * dropped from the prose so it never flashes as raw text.
  */
-export function splitClaudeCliMarkers(text: string): { content: string; toolCalls: ToolCall[] } {
+export function splitClaudeCliMarkers(text: string, streaming = false): { content: string; toolCalls: ToolCall[] } {
+  // Even the marker prefix can span chunks. Hold that ambiguous suffix until
+  // the next chunk disambiguates it, rather than briefly painting raw markup.
+  if (streaming) {
+    for (let length = Math.min(text.length, PREFIX.length - 1); length > 0; length--) {
+      if (text.endsWith(PREFIX.slice(0, length))) {
+        text = text.slice(0, -length)
+        break
+      }
+    }
+  }
   if (!text.includes(PREFIX)) return { content: text, toolCalls: [] }
 
   const toolCalls: ToolCall[] = []

@@ -51,7 +51,7 @@ function MessageBubbleImpl({
 }): React.JSX.Element {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
-  const [showThinking, setShowThinking] = useState(false)
+  const [showThinking, setShowThinking] = useState(message.initiallyShowThinking ?? false)
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(message.content)
 
@@ -391,7 +391,7 @@ function AssistantMessage({
       </div>
     ) : null
     return (
-      <div className="group mb-4 animate-fade-in">
+      <div className="group mb-4">
         {/* Attributed (standalone) turn: Bot avatar + provider·model header, with
             the thinking block tucked under it. */}
         {showModelHeader && (
@@ -400,10 +400,10 @@ function AssistantMessage({
               <Bot size={14} className="text-muted" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="flex h-7 items-center gap-2 text-sm text-dim">
-                <span>{message.provider}</span>
+              <div className="flex min-h-7 flex-wrap items-center gap-x-2 whitespace-nowrap text-sm text-dim">
+                <span className="max-w-full truncate">{message.provider}</span>
                 <span className="text-ghost">·</span>
-                <span>{modelDisplayName(message.model!, customModels)}</span>
+                <span className="max-w-full truncate">{modelDisplayName(message.model!, customModels)}</span>
                 {message.cost !== undefined && (
                   <>
                     <span className="text-ghost">·</span>
@@ -453,7 +453,7 @@ function AssistantMessage({
   }
 
   return (
-    <div className={clsx('group animate-fade-in', isGroupedPureThinking ? '-mt-2 mb-2' : 'mb-4')}>
+    <div className={clsx('group', isGroupedPureThinking ? '-mt-2 mb-2' : 'mb-4')}>
       <div className="flex items-start gap-3">
         {/* Avatar — the Bot avatar for a prose turn, except inside a tool group
             (the group shows one shared header above) where it keeps an empty
@@ -471,10 +471,10 @@ function AssistantMessage({
         <div className="min-w-0 flex-1">
           {/* Model info */}
           {showModelHeader && (
-            <div className="flex h-7 items-center gap-2 text-sm text-dim">
-              <span>{message.provider}</span>
+            <div className="flex min-h-7 flex-wrap items-center gap-x-2 whitespace-nowrap text-sm text-dim">
+              <span className="max-w-full truncate">{message.provider}</span>
               <span className="text-ghost">·</span>
-              <span>{modelDisplayName(message.model!, customModels)}</span>
+              <span className="max-w-full truncate">{modelDisplayName(message.model!, customModels)}</span>
               {message.cost !== undefined && (
                 <>
                   <span className="text-ghost">·</span>
@@ -879,10 +879,10 @@ function ToolGroupBubbleImpl({
         </div>
         <div className="min-w-0 flex-1">
           {showSharedHeader && (
-            <div className="flex h-7 items-center gap-2 text-sm text-dim">
-              <span>{sharedProvider}</span>
+            <div className="flex min-h-7 flex-wrap items-center gap-x-2 whitespace-nowrap text-sm text-dim">
+              <span className="max-w-full truncate">{sharedProvider}</span>
               <span className="text-ghost">·</span>
-              <span>{modelDisplayName(sharedModel as string, customModels)}</span>
+              <span className="max-w-full truncate">{modelDisplayName(sharedModel as string, customModels)}</span>
               {groupTimestamp !== undefined && (
                 <>
                   <span className="text-ghost">·</span>

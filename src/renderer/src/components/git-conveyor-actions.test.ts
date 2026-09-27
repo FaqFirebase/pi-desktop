@@ -76,13 +76,12 @@ test('a selection offers Commit for the files on screen, untracked ones included
   assert.equal(gitPublishAction(staged, unpushed, { files: 0, paths: [] }), 'push')
 })
 
-test('an empty filtered selection still offers Commit for everything behind the filter', () => {
+test('an empty filter never offers Commit for hidden changes; removing it enables Commit', () => {
   const tracked: Record<string, GitFileStatus> = { 'app.ts': { index: ' ', worktree: 'M', isStaged: false } }
   const empty = { files: 0, paths: [] }
-  assert.equal(gitPublishAction({}, unpushed, empty, { files: 1, paths: ['app.ts'] }), 'commitPush')
-  assert.equal(gitPublishAction({}, unpushed, empty, { files: 0, paths: [] }), 'push')
-  assert.equal(gitPublishAction(tracked, unpushed, empty, null), 'commitPush')
-  assert.equal(gitPublishAction(tracked, unpushed, empty, undefined), 'push')
+  assert.equal(gitPublishAction(tracked, dirtyStatus, empty), null)
+  assert.equal(gitPublishAction(tracked, unpushed, empty), 'push')
+  assert.equal(gitPublishAction(tracked, dirtyStatus), 'commitPush')
 })
 
 test('Push is offered only while the branch has commits the remote lacks', () => {

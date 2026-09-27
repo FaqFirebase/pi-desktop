@@ -43,6 +43,12 @@ interface DiffFileBlock {
 // Same shape as the Commit/Push/PR buttons in GitConveyorActions so both header rows line up.
 const TOOLBAR_BUTTON = 'flex shrink-0 items-center justify-center gap-1 rounded border px-1.5 py-1 text-[10px] transition-colors'
 
+export function subscribeDiffRefresh(refresh: () => Promise<void>): () => void {
+  return window.piDesktop.onEvent((event) => {
+    if (event.type === 'agent_end') void refresh()
+  })
+}
+
 interface DiffViewerProps {
   onClose?: () => void
 }
@@ -55,7 +61,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   const [loadError, setLoadError] = useState<string | null>(null)
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
   const [stagedMode, setStagedMode] = useState(false)
-  const [sessionOnly, setSessionOnly] = useState(false)
+  const [sessionOnly, setSessionOnly] = useState(true)
   const [discarding, setDiscarding] = useState(false)
   const discardBusy = useRef(false)
   const [discardError, setDiscardError] = useState<string | null>(null)
@@ -68,11 +74,9 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
     ? workspacePath ? filterSessionDiffFiles(files, messages, workspacePath, gitPrefix) : []
     : files, [files, gitPrefix, messages, sessionOnly, workspacePath])
   // Commit records the files on screen. The staged view without a filter
-  // commits the index it shows; a filtered view can widen to every file.
+  // commits the index it shows.
   const commitSelection = useMemo(() => stagedMode && !sessionOnly ? undefined : diffCommitSelection(visibleFiles),
     [sessionOnly, stagedMode, visibleFiles])
-  const allCommitSelection = useMemo(() => !sessionOnly ? undefined : stagedMode ? null : diffCommitSelection(files),
-    [files, sessionOnly, stagedMode])
 
   const loadDiff = useCallback(async () => {
     const isCurrent = loadGuard.begin()
@@ -101,6 +105,8 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
     void loadDiff()
     return () => { loadGuard.begin() }
   }, [loadDiff, loadGuard, workspaceId])
+
+  useEffect(() => subscribeDiffRefresh(loadDiff), [loadDiff])
 
   useEffect(() => {
     setExpandedFiles(new Set())
@@ -193,7 +199,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
           </div>
         </div>
         <div className="min-w-0 border-t border-border px-4 py-2">
-          <GitConveyorActions key={workspaceId} onChanged={loadDiff} selection={commitSelection} allSelection={allCommitSelection}>
+          <GitConveyorActions key={workspaceId} onChanged={loadDiff} selection={commitSelection}>
             <button
               type="button"
               onClick={() => void discard(visibleFiles)}

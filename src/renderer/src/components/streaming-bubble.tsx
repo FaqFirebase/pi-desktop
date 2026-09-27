@@ -28,7 +28,7 @@ interface StreamingBubbleProps {
 
 export function StreamingBubble({ content: rawContent, thinking, toolCalls }: StreamingBubbleProps): React.JSX.Element {
   const { t } = useTranslation()
-  const { content, toolCalls: markerCalls } = useMemo(() => splitClaudeCliMarkers(rawContent), [rawContent])
+  const { content, toolCalls: markerCalls } = useMemo(() => splitClaudeCliMarkers(rawContent, true), [rawContent])
   const thinkingEnabled = useAppStore(
     (state) => state.settingsDraft.showThinking ?? state.settings?.showThinking ?? DEFAULT_SETTINGS.showThinking
   )
@@ -46,7 +46,7 @@ export function StreamingBubble({ content: rawContent, thinking, toolCalls }: St
   }, [thinking])
 
   return (
-    <div className="mb-4 animate-fade-in">
+    <div className="mb-4">
       <div className="flex items-start gap-3">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-bg">
           <Bot size={14} className="text-accent-fg animate-pulse" />
@@ -64,8 +64,8 @@ export function StreamingBubble({ content: rawContent, thinking, toolCalls }: St
                 ref={thinkingScrollRef}
                 className="max-h-36 min-w-0 overflow-x-hidden overflow-y-auto"
               >
-                <div className="markdown-body font-sans italic text-sm text-muted break-words [overflow-wrap:anywhere] whitespace-pre-wrap">
-                  {thinking}
+                <div className="markdown-body min-w-0 font-sans italic text-sm text-muted break-words [overflow-wrap:anywhere]">
+                  <MarkdownRenderer content={thinking} />
                 </div>
               </div>
             </div>
@@ -143,10 +143,10 @@ export function StreamingBubble({ content: rawContent, thinking, toolCalls }: St
             </div>
           )}
 
-          {!content && !thinking && toolCalls.size === 0 && markerCalls.length === 0 && (
+          {!content && (!thinking || !thinkingEnabled) && toolCalls.size === 0 && markerCalls.length === 0 && (
             <div className="flex h-7 items-center gap-2 text-sm text-dim">
               <Loader2 size={12} className="animate-spin" />
-              {t('chat.waitingForResponse')}
+              {thinking ? t('common.thinking') : t('chat.waitingForResponse')}
             </div>
           )}
         </div>

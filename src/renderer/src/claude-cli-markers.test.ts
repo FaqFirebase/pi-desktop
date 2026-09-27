@@ -46,6 +46,21 @@ test('a marker cut off mid-stream is hidden, not shown as prose', () => {
   assert.equal(toolCalls.length, 0)
 })
 
+test('a marker arriving character by character never flashes its raw prefix', () => {
+  const marker = '[Claude Code · Read #call-1 {"file_path":"test.ts"}]'
+  for (let length = 1; length <= marker.length; length++) {
+    const parsed = splitClaudeCliMarkers(`Checking.${marker.slice(0, length)}`, true)
+    assert.equal(parsed.content, 'Checking.', `chunk ending at ${length}`)
+  }
+  assert.equal(splitClaudeCliMarkers(`Checking.${marker}`, true).toolCalls[0]?.name, 'Read')
+})
+
+test('an ambiguous prefix is released as prose when disambiguated or finalized', () => {
+  assert.equal(splitClaudeCliMarkers('Text [C', true).content, 'Text ')
+  assert.equal(splitClaudeCliMarkers('Text [Custom]', true).content, 'Text [Custom]')
+  assert.equal(splitClaudeCliMarkers('Text [C').content, 'Text [C')
+})
+
 test('malformed markers stay prose', () => {
   const text = '[Claude Code · Bash {not json}] y [Claude Code · Read extra]'
   assert.deepEqual(splitClaudeCliMarkers(text), { content: text, toolCalls: [] })

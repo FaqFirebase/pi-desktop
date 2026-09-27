@@ -5,6 +5,7 @@ import { getGuiDataPath } from '../app-data-paths'
 import type { AppSettings } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { DEFAULT_SETTINGS } from '../../shared/default-settings'
+import { shortcutProblem } from '../../shared/keyboard-shortcuts'
 import { availableLanguages } from '../../shared/i18n'
 import { normalizeStoredSettings } from '../../shared/app-settings'
 import { applyLanguageSetting, getI18nEnvironment, isPseudoLanguageEnabled } from '../i18n'
@@ -63,6 +64,13 @@ export async function saveAppSettings(settings: Partial<AppSettings>): Promise<v
   }
 
   const merged = { ...existing, ...settings }
+  if ('shortcuts' in settings) {
+    if (!settings.shortcuts || typeof settings.shortcuts !== 'object' || Array.isArray(settings.shortcuts)) {
+      throw new Error('Invalid keyboard shortcuts')
+    }
+    const problem = shortcutProblem(settings.shortcuts, process.platform)
+    if (problem) throw new Error(`Invalid keyboard shortcut: ${problem.action} (${problem.kind})`)
+  }
   try {
     await writeFile(settingsPath, JSON.stringify(merged, null, 2), 'utf-8')
   } catch (err) {

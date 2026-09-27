@@ -1,7 +1,7 @@
 import { beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { useAppStore } from '../store'
-import { discardDiffFiles, openDiffFile } from './diff-viewer'
+import { discardDiffFiles, openDiffFile, subscribeDiffRefresh } from './diff-viewer'
 import { filterSessionDiffFiles } from '../utils/session-diff'
 
 beforeEach(() => {
@@ -20,6 +20,25 @@ beforeEach(() => {
     editorDirty: false,
     confirmRequest: null,
   })
+})
+
+test('refreshes an open diff only at agent end and unsubscribes when closed', () => {
+  let listener: Parameters<typeof window.piDesktop.onEvent>[0] | undefined
+  window.piDesktop.onEvent = (callback) => {
+    listener = callback
+    return () => { listener = undefined }
+  }
+  let refreshes = 0
+  const close = subscribeDiffRefresh(async () => { refreshes++ })
+  listener?.({ type: 'agent_start' })
+  listener?.({ type: 'turn_start' })
+  assert.equal(refreshes, 0)
+  listener?.({ type: 'agent_end', messages: [] })
+  assert.equal(refreshes, 1)
+  listener?.({ type: 'agent_end', messages: [] })
+  assert.equal(refreshes, 2)
+  close()
+  assert.equal(listener, undefined)
 })
 
 test('opens the exact diff path and reveals the editor from either diff surface', async () => {

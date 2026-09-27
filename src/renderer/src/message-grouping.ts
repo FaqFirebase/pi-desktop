@@ -180,14 +180,18 @@ function groupTitle(run: DisplayMessage[], t: Translate): string {
  * Prose turns (assistant text, user, system) always render on their own and act
  * as run boundaries.
  */
-export function groupToolMessages(messages: DisplayMessage[], t: Translate = sharedT): ChatRenderItem[] {
+export function groupToolMessages(messages: DisplayMessage[], t: Translate = sharedT, isStreaming = false): ChatRenderItem[] {
   const items: ChatRenderItem[] = []
   let run: DisplayMessage[] = []
+  const liveFrom = isStreaming
+    ? messages.reduce((last, message, index) => message.role === 'user' ? index : last, -1)
+    : messages.length
+  let runStart = 0
 
   const flush = (): void => {
     if (run.length === 0) return
     const toolCallCount = run.reduce((n, m) => n + (m.toolCalls?.length ?? 0), 0)
-    if (toolCallCount >= MIN_GROUP_TOOL_CALLS) {
+    if (toolCallCount >= MIN_GROUP_TOOL_CALLS && runStart < liveFrom) {
       items.push({
         kind: 'toolGroup',
         id: `group-${run[0].id}`,
@@ -200,8 +204,9 @@ export function groupToolMessages(messages: DisplayMessage[], t: Translate = sha
     run = []
   }
 
-  for (const m of messages) {
+  for (const [index, m] of messages.entries()) {
     if (isToolActivity(m)) {
+      if (run.length === 0) runStart = index
       run.push(m)
     } else {
       flush()

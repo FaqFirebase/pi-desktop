@@ -73,8 +73,9 @@ function builtinFile(id: string) {
   return theme.file
 }
 
-test('System is the default theme', () => {
-  assert.equal(DEFAULT_SETTINGS.theme, 'system')
+test('the default theme stays dark when the OS prefers light', () => {
+  prefersDark = false
+  assert.equal(resolveThemeId(DEFAULT_SETTINGS.theme), 'dark')
 })
 
 test('the default System themes are built-in themes of the matching kind', () => {

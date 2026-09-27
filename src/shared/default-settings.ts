@@ -3,6 +3,7 @@ import { DEFAULT_COUNCIL_CONFIG } from './council-config'
 import { DEFAULT_SIDEBAR_WIDTH } from './sidebar-width'
 import { DEFAULT_CHAT_WIDTH } from './chat-width'
 import { SYSTEM_LANGUAGE } from './i18n/languages'
+import { DEFAULT_KEYBOARD_SHORTCUTS } from './keyboard-shortcuts'
 
 export const GIT_COMMIT_MESSAGE_CONFIG = {
   maxMessageLength: 10_000,
@@ -27,11 +28,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   piExecutablePath: 'pi',
   piEngine: 'auto',
   defaultArgs: [],
-  theme: 'system',
+  theme: 'dark',
   systemLightTheme: 'light',
   systemDarkTheme: 'dark',
   defaultModel: null,
   defaultProvider: null,
+  defaultThinkingLevel: null,
   defaultCwd: null,
   fontSize: 16,
   uiFontFamily: '',
@@ -51,6 +53,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   hasSeenTrayHint: false,
   desktopNotifications: true,
   language: SYSTEM_LANGUAGE,
+  shortcuts: DEFAULT_KEYBOARD_SHORTCUTS,
   council: DEFAULT_COUNCIL_CONFIG,
   voiceModel: null,
   voicePrecision: 'int8',

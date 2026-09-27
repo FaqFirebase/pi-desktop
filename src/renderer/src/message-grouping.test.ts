@@ -57,6 +57,18 @@ test('folds a run of same-tool turns into one titled group', () => {
   assert.equal((items[1] as { messages: DisplayMessage[] }).messages.length, 6)
 })
 
+test('a live turn keeps completed tools visible instead of replacing them with a collapsed group', () => {
+  const history = [user(), toolTurn('read'), result(), toolTurn('bash'), result()]
+  const oldGroup = groupToolMessages(history)[1]
+  const live = [user(), toolTurn('read'), result(), toolTurn('write'), result()]
+  const items = groupToolMessages([...history, ...live], t, true)
+
+  assert.deepEqual(items[1], oldGroup, 'previous turns retain their grouping')
+  assert.ok(items.slice(2).every((item) => item.kind === 'message'))
+  assert.equal(items.at(-1)?.kind, 'message', 'the latest result remains visible')
+  assert.equal(groupToolMessages([...history, ...live], t, false).at(-1)?.kind, 'toolGroup')
+})
+
 test('a single tool call is not grouped', () => {
   const items = groupToolMessages([toolTurn('read_file'), result()])
   assert.equal(items.length, 2)

@@ -8,6 +8,7 @@ import { SessionPanel } from './components/session-panel'
 import { Timeline } from './components/timeline'
 import { PackageBrowser } from './components/package-browser'
 import { DiffViewer } from './components/diff-viewer'
+import { GitConveyorActions } from './components/git-conveyor-actions'
 import { HomeScreen } from './components/home-screen'
 import { NotesPanel } from './components/notes-panel'
 import { SkillsPanel } from './components/skills-panel'
@@ -25,7 +26,7 @@ import { useContextMenu, buildDefaultContextMenu } from './components/context-me
 import { usePiEvents, useMenuActions, useInitialize, useNotePickerShortcut } from './hooks'
 import { useFolderDrop } from './hooks/use-folder-drop'
 import { useAppStore } from './store'
-import { isCommitPushShortcut } from './utils/commit-push-shortcut'
+import { isCommitPushShortcut, requestCommitPushDialog } from './utils/commit-push-shortcut'
 import { isSettingsShortcut } from './utils/settings-shortcut'
 import { isTerminalShortcut } from './utils/terminal-shortcut'
 import { useEffect, useState } from 'react'
@@ -82,9 +83,7 @@ export function App(): React.JSX.Element {
       if (isCommitPushShortcut(e)) {
         e.preventDefault()
         e.stopPropagation()
-        if (e.repeat || !useAppStore.getState().activeWorkspace) return
-        useAppStore.getState().setCurrentView('diff')
-        useAppStore.setState({ commitPushRequested: true })
+        if (!e.repeat) requestCommitPushDialog()
         return
       }
       if (!isTerminalShortcut(e)) return
@@ -264,6 +263,7 @@ export function App(): React.JSX.Element {
       {showChrome && <StatusBar />}
       <ExtensionUiDialog />
       <AppConfirmDialog />
+      <GitConveyorActions modalOnly />
       <NotePicker />
       <TaskLauncher />
       <CommandPalette />

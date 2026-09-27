@@ -1,3 +1,10 @@
+import { useAppStore } from '../store'
+
+export function requestCommitPushDialog(): void {
+  if (!useAppStore.getState().activeWorkspace) return
+  useAppStore.setState({ commitPushRequested: true })
+}
+
 export function isCommitPushShortcut(
   event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'isComposing'>,
 ): boolean {
