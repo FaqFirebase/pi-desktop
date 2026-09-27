@@ -3,7 +3,7 @@ export type ShortcutAction = typeof SHORTCUT_ACTIONS[number]
 export type KeyboardShortcuts = Record<ShortcutAction, string | null>
 
 export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
-  diff: 'Mod+Shift+D',
+  diff: 'Mod+G',
   terminal: 'Ctrl+Backquote',
   settings: 'Mod+Comma',
   commandPalette: 'Mod+K',
