@@ -259,21 +259,15 @@
     "commitAndPush": "Commit + Push",
     "commitAndPushTitle": "Commit changes and push the branch in one step",
     "commitButtonTitle": "Commit staged changes or changes in this workspace",
-    "createPrButton": "Create PR",
     "detachedBranch": "detached",
     "dialog": {
-      "baseBranchLabel": "Base branch",
-      "baseBranchPlaceholder": "Leave blank for repository default",
       "closeAriaLabel": "Close dialog",
       "commitMessageLabel": "Commit message",
       "commitTitle": "Commit changes",
-      "descriptionLabel": "Description",
-      "prTitle": "Create pull request",
       "scopeAll": "All changes",
       "scopeLabel": "Files to commit",
       "scopeSession_one": "Session file ({{count}})",
-      "scopeSession_other": "Session files ({{count}})",
-      "titleLabel": "Title"
+      "scopeSession_other": "Session files ({{count}})"
     },
     "draft": {
       "engineUnavailable": "The agent executable is unavailable. Check Agent Configuration or write your message manually.",
@@ -283,27 +277,19 @@
       "timedOut": "Message generation timed out. Regenerate or write your own."
     },
     "errors": {
-      "branchRequired": "A named branch is required to create a pull request.",
-      "commitBeforePr": "Commit changes before creating a pull request.",
       "commitMessageRequired": "Commit message is required.",
       "committedPushFailed": "Commit {{sha}} was saved locally, but Push did not complete: {{detail}}",
-      "prTitleRequired": "Pull request title is required.",
-      "pushBeforePr": "Push the branch before creating a pull request.",
       "workspaceChanged": "The active workspace changed. The Git operation was stopped."
     },
     "feedback": {
       "branchPushed": "Branch pushed.",
       "committed": "Committed {{sha}}.",
       "committedAndPushed": "Committed {{sha}} and pushed the branch.",
-      "prCreated": "Pull request created.",
-      "prCreatedWithUrl": "Pull request created: {{url}}",
       "pushedCommits_one": "Pushed {{count}} commit.",
       "pushedCommits_other": "Pushed {{count}} commits.",
       "pushedWithLocalChanges_one": "Push complete. {{count}} file with uncommitted changes.",
       "pushedWithLocalChanges_other": "Push complete. {{count}} files with uncommitted changes."
     },
-    "prButtonLabel": "PR",
-    "prButtonTitle": "Create a pull request with GitHub CLI",
     "push": "Push",
     "pushButtonTitle": "Push the current branch after confirmation",
     "pushConfirm": {
@@ -482,7 +468,7 @@
     "openFile": "Open file",
     "refreshAriaLabel": "Refresh diff",
     "sessionFilter": {
-      "description": "Filter to files touched by edit/write calls in this chat. Whole-file diffs may include other sessions. Shell and subagent changes may be missing. Turn off to see the whole project. Commit, Push and PR always apply to the whole repository.",
+      "description": "Filter to files touched by edit/write calls in this chat. Whole-file diffs may include other sessions. Shell and subagent changes may be missing. Turn off to see the whole project. Push always applies to the whole branch.",
       "label": "Files touched in this session",
       "noMatches": "No matching changes for this session"
     },

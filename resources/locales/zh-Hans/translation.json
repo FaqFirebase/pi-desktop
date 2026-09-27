@@ -255,20 +255,14 @@
     "commitAndPush": "提交 + 推送",
     "commitAndPushTitle": "一步完成提交更改并推送分支",
     "commitButtonTitle": "提交已暂存的更改或该工作区中的更改",
-    "createPrButton": "创建 PR",
     "detachedBranch": "分离",
     "dialog": {
-      "baseBranchLabel": "基分支",
-      "baseBranchPlaceholder": "留空则使用仓库默认值",
       "closeAriaLabel": "关闭对话框",
       "commitMessageLabel": "提交信息",
       "commitTitle": "提交更改",
-      "descriptionLabel": "描述",
-      "prTitle": "创建 PR",
       "scopeAll": "所有更改",
       "scopeLabel": "要提交的文件",
-      "scopeSession_other": "会话文件（{{count}}）",
-      "titleLabel": "标题"
+      "scopeSession_other": "会话文件（{{count}}）"
     },
     "draft": {
       "engineUnavailable": "代理可执行文件不可用。请检查代理配置，或手动填写提交信息。",
@@ -278,25 +272,17 @@
       "timedOut": "提交信息生成超时。请重新生成，或手动填写。"
     },
     "errors": {
-      "branchRequired": "创建 PR 需要一个具名分支。",
-      "commitBeforePr": "创建 PR 前请先提交更改。",
       "commitMessageRequired": "提交信息为必填项。",
       "committedPushFailed": "提交 {{sha}} 已保存在本地，但推送未完成：{{detail}}",
-      "prTitleRequired": "PR 标题为必填项。",
-      "pushBeforePr": "创建 PR 前请先推送该分支。",
       "workspaceChanged": "当前工作区已更改，Git 操作已停止。"
     },
     "feedback": {
       "branchPushed": "分支已推送。",
       "committed": "已提交 {{sha}}。",
       "committedAndPushed": "已提交 {{sha}} 并推送分支。",
-      "prCreated": "PR 已创建。",
-      "prCreatedWithUrl": "PR 已创建：{{url}}",
       "pushedCommits_other": "已推送 {{count}} 个提交。",
       "pushedWithLocalChanges_other": "推送完成。{{count}} 个文件有未提交的更改。"
     },
-    "prButtonLabel": "PR",
-    "prButtonTitle": "使用 GitHub CLI 创建 PR",
     "push": "推送",
     "pushButtonTitle": "确认后推送当前分支",
     "pushConfirm": {
