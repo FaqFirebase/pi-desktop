@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { t } from '../../../shared/i18n'
-import { canDiscardGitPatch, gitDiffPaths, splitGitDiff } from '../../../shared/git-diff'
+import { canDiscardGitPatch, gitDiffPaths, splitGitDiff, workspaceRelativeGitPath } from '../../../shared/git-diff'
 import { clsx } from 'clsx'
 import {
   AlertTriangle,
@@ -21,7 +21,7 @@ import {
 import { formatIpcError } from '../utils/ipc-error'
 import { createStaleGuard } from '../utils/stale-guard'
 import { filterSessionDiffFiles } from '../utils/session-diff'
-import { GitConveyorActions } from './git-conveyor-actions'
+import { GitConveyorActions, type GitCommitSelection } from './git-conveyor-actions'
 import { isImagePath } from './chat-file-link'
 
 interface DiffLine {
@@ -40,6 +40,9 @@ interface DiffFileBlock {
   hunks: DiffLine[][]
 }
 
+// Same shape as the Commit/Push/PR buttons in GitConveyorActions so both header rows line up.
+const TOOLBAR_BUTTON = 'flex shrink-0 items-center justify-center gap-1 rounded border px-1.5 py-1 text-[10px] transition-colors'
+
 interface DiffViewerProps {
   onClose?: () => void
 }
@@ -47,6 +50,7 @@ interface DiffViewerProps {
 export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element {
   const { t } = useTranslation()
   const [files, setFiles] = useState<DiffFileBlock[]>([])
+  const [gitPrefix, setGitPrefix] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
@@ -61,8 +65,14 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   const messages = useAppStore((state) => state.messages)
   const loadGuard = useMemo(() => createStaleGuard(), [])
   const visibleFiles = useMemo(() => sessionOnly
-    ? workspacePath ? filterSessionDiffFiles(files, messages, workspacePath) : []
-    : files, [files, messages, sessionOnly, workspacePath])
+    ? workspacePath ? filterSessionDiffFiles(files, messages, workspacePath, gitPrefix) : []
+    : files, [files, gitPrefix, messages, sessionOnly, workspacePath])
+  const commitSelection = useMemo<GitCommitSelection | undefined>(() => sessionOnly
+    ? {
+      files: visibleFiles.length,
+      paths: [...new Set(visibleFiles.flatMap((file) => [file.oldPath, file.newPath]))],
+    }
+    : undefined, [sessionOnly, visibleFiles])
 
   const loadDiff = useCallback(async () => {
     const isCurrent = loadGuard.begin()
@@ -70,10 +80,12 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
     setFiles([])
     setLoadError(null)
     try {
-      const diff = stagedMode
-        ? await window.piDesktop.files.getStagedDiff()
-        : await window.piDesktop.files.getDiff()
+      const [diff, prefix] = await Promise.all([
+        stagedMode ? window.piDesktop.files.getStagedDiff() : window.piDesktop.files.getDiff(),
+        window.piDesktop.files.getGitPrefix(),
+      ])
       if (!isCurrent()) return
+      setGitPrefix(prefix)
       setFiles(parseDiff(diff))
       setLoadError(null)
     } catch (err) {
@@ -100,7 +112,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
     setDiscarding(true)
     setDiscardError(null)
     try {
-      if (await discardDiffFiles(workspaceId, selected)) await loadDiff()
+      if (await discardDiffFiles(workspaceId, selected, gitPrefix)) await loadDiff()
     } catch (error) {
       setDiscardError(formatIpcError(error))
     } finally {
@@ -130,7 +142,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
               {t('diff.fileCount', { count: visibleFiles.length })}
             </span>
           </div>
-          <div className="order-2 flex shrink-0 items-center gap-2">
+          <div className="order-2 flex shrink-0 items-stretch gap-1.5">
             <button
               type="button"
               onClick={() => setSessionOnly((value) => !value)}
@@ -138,31 +150,32 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
               aria-label={t('diff.sessionFilter.label')}
               title={t('diff.sessionFilter.description')}
               className={clsx(
-                'rounded p-1.5 transition-colors',
+                TOOLBAR_BUTTON,
                 sessionOnly
-                  ? 'bg-accent-bg text-accent-fg'
-                  : 'text-dim hover:bg-surface-hover hover:text-secondary'
+                  ? 'border-accent/50 bg-accent-bg/20 text-accent-fg'
+                  : 'border-border text-muted hover:bg-surface-hover hover:text-primary'
               )}
             >
-              <MessageSquare size={14} aria-hidden="true" />
+              <MessageSquare size={11} aria-hidden="true" />
             </button>
             <button
               onClick={() => setStagedMode(!stagedMode)}
               className={clsx(
-                'rounded px-2 py-1 text-xs transition-colors',
+                TOOLBAR_BUTTON,
+                'px-2',
                 stagedMode
-                  ? 'bg-success-bg text-success'
-                  : 'bg-card text-muted hover:text-secondary'
+                  ? 'border-success/50 bg-success-bg text-success'
+                  : 'border-border text-muted hover:bg-surface-hover hover:text-primary'
               )}
             >
               {stagedMode ? t('diff.stagedToggle') : t('diff.workingToggle')}
             </button>
             <button
               onClick={loadDiff}
-              className="rounded p-1.5 text-dim transition-colors hover:bg-surface-hover hover:text-secondary"
+              className={clsx(TOOLBAR_BUTTON, 'border-border text-muted hover:bg-surface-hover hover:text-primary')}
               aria-label={t('diff.refreshAriaLabel')}
             >
-              <RefreshCw size={14} />
+              <RefreshCw size={11} />
             </button>
             <button
               onClick={() => {
@@ -172,15 +185,15 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
                   setCurrentView('chat')
                 }
               }}
-              className="rounded p-1.5 text-dim transition-colors hover:bg-surface-hover hover:text-secondary"
+              className={clsx(TOOLBAR_BUTTON, 'border-border text-muted hover:bg-surface-hover hover:text-primary')}
               aria-label={t('diff.closeAriaLabel')}
             >
-              <X size={14} />
+              <X size={11} />
             </button>
           </div>
         </div>
         <div className="min-w-0 border-t border-border px-4 py-2">
-          <GitConveyorActions key={workspaceId} onChanged={loadDiff}>
+          <GitConveyorActions key={workspaceId} onChanged={loadDiff} selection={commitSelection}>
             <button
               type="button"
               onClick={() => void discard(visibleFiles)}
@@ -232,6 +245,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
               <DiffFileEntry
                 key={file.newPath}
                 file={file}
+                gitPrefix={gitPrefix}
                 expanded={expandedFiles.has(file.newPath)}
                 onToggle={() => toggleFile(file.newPath)}
                 onDiscard={() => void discard([file])}
@@ -251,6 +265,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
 export async function discardDiffFiles(
   workspaceId: string,
   files: Pick<DiffFileBlock, 'oldPath' | 'newPath' | 'patch'>[],
+  gitPrefix: string,
 ): Promise<boolean> {
   const store = useAppStore.getState()
   if (!files.length || store.activeWorkspace?.id !== workspaceId) return false
@@ -266,26 +281,33 @@ export async function discardDiffFiles(
   if (useAppStore.getState().editorDirty) throw new Error(t('diff.discard.saveEditor'))
   await window.piDesktop.files.discardDiff(workspaceId, files.map((file) => file.patch))
   const current = useAppStore.getState()
-  if (current.activeWorkspace?.id === workspaceId && !current.editorDirty && current.previewTarget
-    && files.some((file) => file.newPath === current.previewTarget!.relativePath || file.oldPath === current.previewTarget!.relativePath)) {
+  const opened = current.previewTarget?.relativePath
+  if (current.activeWorkspace?.id === workspaceId && !current.editorDirty && opened !== undefined
+    && files.some((file) => [file.newPath, file.oldPath].some((path) => workspaceRelativeGitPath(path, gitPrefix) === opened))) {
     await current.setPreviewTarget(null)
   }
   return true
 }
 
-export async function openDiffFile(file: Pick<DiffFileBlock, 'newPath' | 'isDeleted'>): Promise<void> {
+/** Whether the diff file can open in the workspace's preview pane. */
+function canOpenDiffFile(file: Pick<DiffFileBlock, 'newPath' | 'isDeleted'>, gitPrefix: string): boolean {
+  return !file.isDeleted && !workspaceRelativeGitPath(file.newPath, gitPrefix).startsWith('../')
+}
+
+export async function openDiffFile(file: Pick<DiffFileBlock, 'newPath' | 'isDeleted'>, gitPrefix: string): Promise<void> {
   const store = useAppStore.getState()
   const workspace = store.activeWorkspace
-  if (!workspace || file.isDeleted) return
+  if (!workspace || !canOpenDiffFile(file, gitPrefix)) return
 
-  const name = file.newPath.split('/').pop() ?? file.newPath
+  const relativePath = workspaceRelativeGitPath(file.newPath, gitPrefix)
+  const name = relativePath.split('/').pop() ?? relativePath
   const separator = workspace.path.includes('\\') ? '\\' : '/'
-  const path = workspace.path.replace(/[\\/]$/, '') + separator + file.newPath.replace(/\//g, separator)
+  const path = workspace.path.replace(/[\\/]$/, '') + separator + relativePath.replace(/\//g, separator)
   const opened = await store.setPreviewTarget({
     kind: isImagePath(name) ? 'image' : 'code',
     name,
     path,
-    relativePath: file.newPath,
+    relativePath,
   })
   if (!opened) return
   const current = useAppStore.getState()
@@ -295,6 +317,7 @@ export async function openDiffFile(file: Pick<DiffFileBlock, 'newPath' | 'isDele
 
 function DiffFileEntry({
   file,
+  gitPrefix,
   expanded,
   onToggle,
   onDiscard,
@@ -302,6 +325,7 @@ function DiffFileEntry({
   discardTitle,
 }: {
   file: DiffFileBlock
+  gitPrefix: string
   expanded: boolean
   onToggle: () => void
   onDiscard: () => void
@@ -352,9 +376,9 @@ function DiffFileEntry({
         >
           <Undo2 size={14} />
         </button>
-        {!file.isDeleted && (
+        {canOpenDiffFile(file, gitPrefix) && (
           <button
-            onClick={() => void openDiffFile(file)}
+            onClick={() => void openDiffFile(file, gitPrefix)}
             className="mr-2 flex shrink-0 items-center justify-center rounded p-1.5 text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
             title={t('diff.openFile')}
             aria-label={t('diff.openFile')}
