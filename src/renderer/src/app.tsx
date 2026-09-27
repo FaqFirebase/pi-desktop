@@ -22,12 +22,10 @@ import { ChatToolRail } from './components/chat-tool-rail'
 import { WorkspaceTabs } from './components/workspace-tabs'
 import { WorkflowNavigator } from './components/workflow-navigator'
 import { useContextMenu, buildDefaultContextMenu } from './components/context-menu'
-import { usePiEvents, useMenuActions, useInitialize, useNotePickerShortcut } from './hooks'
+import { usePiEvents, useMenuActions, useInitialize } from './hooks'
 import { useFolderDrop } from './hooks/use-folder-drop'
 import { useAppStore } from './store'
-import { isCommitPushShortcut, requestCommitPushDialog } from './utils/commit-push-shortcut'
-import { isSettingsShortcut } from './utils/settings-shortcut'
-import { isTerminalShortcut } from './utils/terminal-shortcut'
+import { handleAppShortcut } from './utils/app-shortcuts'
 import { useEffect, useState } from 'react'
 import { ArrowUpCircle, FolderOpen, Home, PanelLeft, X } from 'lucide-react'
 
@@ -39,7 +37,6 @@ export function App(): React.JSX.Element {
   usePiEvents()
   useMenuActions()
   useInitialize()
-  useNotePickerShortcut()
   const { isDraggingFolder } = useFolderDrop()
 
   const currentView = useAppStore((state) => state.currentView)
@@ -78,52 +75,8 @@ export function App(): React.JSX.Element {
   }, [show])
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (isCommitPushShortcut(e)) {
-        e.preventDefault()
-        e.stopPropagation()
-        if (!e.repeat) void requestCommitPushDialog()
-        return
-      }
-      if (!isTerminalShortcut(e)) return
-      e.preventDefault()
-      e.stopPropagation()
-      if (e.repeat) return
-      const state = useAppStore.getState()
-      if (state.currentView !== 'chat') {
-        state.setCurrentView('chat')
-        if (!state.terminalOpen) state.toggleTerminal()
-      } else {
-        state.toggleTerminal()
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown, true)
-    return () => document.removeEventListener('keydown', handleKeyDown, true)
-  }, [])
-
-  // Global quick-switcher launcher (Ctrl/Cmd+K): commands, workspaces,
-  // sessions, and files. No Pi-running gate — workspace/session/file
-  // navigation works with Pi stopped, and command actions soft-fail the same
-  // way their buttons do. Slash-typing in the composer is handled by
-  // ChatInput's inline popup instead.
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (isSettingsShortcut(e, window.piDesktop.system.platform)) {
-        e.preventDefault()
-        useAppStore.getState().setCurrentView('settings')
-        return
-      }
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
-        e.preventDefault()
-        useAppStore.getState().setCommandPalette(true)
-      }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'm' || e.key === 'M')) {
-        e.preventDefault()
-        useAppStore.getState().requestModelSelectorOpen()
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
+    document.addEventListener('keydown', handleAppShortcut, true)
+    return () => document.removeEventListener('keydown', handleAppShortcut, true)
   }, [])
 
   // Home is a full-screen splash (no sidebar/status). Chat keeps chrome; the

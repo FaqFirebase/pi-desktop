@@ -19,6 +19,8 @@ import type {
 } from '../../../shared/ipc-contracts'
 import type { ThemeFile } from '../../../shared/theme/theme-file'
 import { VoiceSettings } from './voice-settings'
+import { ShortcutSettings } from './shortcut-settings'
+import { shortcutProblem } from '../../../shared/keyboard-shortcuts'
 import { TypeSafeSettings } from './typesafe-settings'
 import { Settings, Save, RotateCcw, FolderOpen, RefreshCw, Check, ChevronDown } from 'lucide-react'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
@@ -81,6 +83,8 @@ export function SettingsPanel(): React.JSX.Element {
         english: t('settings.language.label', { lng: SOURCE_LANGUAGE }),
       })
   const settings = useAppStore((state) => state.settings)
+  const shortcuts = useAppStore((state) => state.settingsDraft.shortcuts ?? state.settings?.shortcuts ?? DEFAULT_SETTINGS.shortcuts)
+  const shortcutsInvalid = shortcutProblem(shortcuts, window.piDesktop.system.platform) !== null
   const loadSettings = useAppStore((state) => state.loadSettings)
   const setSettingsDraft = useAppStore((state) => state.setSettingsDraft)
   const clearSettingsDraft = useAppStore((state) => state.clearSettingsDraft)
@@ -536,6 +540,7 @@ export function SettingsPanel(): React.JSX.Element {
   }
 
   const handleSave = async () => {
+    if (shortcutsInvalid) return
     // Validate rules before anything persists, so invalid rules abort the
     // whole save cleanly. Only scopes shouldPersistScope would actually
     // write are validated — never validate an empty list caused by a failed
@@ -573,6 +578,7 @@ export function SettingsPanel(): React.JSX.Element {
       minimizeToTrayOnClose,
       permissionMode,
       language,
+      shortcuts,
     }
 
     const result = await window.piDesktop.settings.save(updated)
@@ -644,6 +650,7 @@ export function SettingsPanel(): React.JSX.Element {
       minimizeToTrayOnClose: DEFAULT_SETTINGS.minimizeToTrayOnClose,
       permissionMode: DEFAULT_SETTINGS.permissionMode,
       language: DEFAULT_SETTINGS.language,
+      shortcuts: DEFAULT_SETTINGS.shortcuts,
     }
 
     setPiPath(defaults.piExecutablePath!)
@@ -1094,6 +1101,10 @@ export function SettingsPanel(): React.JSX.Element {
           </SettingsRow>
         </SettingsSection>
 
+        <SettingsSection title={t('settings.shortcuts.heading')}>
+          <ShortcutSettings value={shortcuts} onChange={(shortcuts) => setSettingsDraft({ shortcuts })} />
+        </SettingsSection>
+
         <SettingsSection title={t('settings.sections.voiceDictation')}>
           <VoiceSettings />
         </SettingsSection>
@@ -1206,6 +1217,7 @@ export function SettingsPanel(): React.JSX.Element {
         <div className="mt-8 flex gap-3">
           <button
             onClick={handleSave}
+            disabled={shortcutsInvalid}
             className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover transition-colors"
           >
             {saved ? <Check size={14} /> : <Save size={14} />}

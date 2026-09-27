@@ -1130,6 +1130,23 @@
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "Voice dictation"
     },
+    "shortcuts": {
+      "actionWithShortcut": "{{action}} ({{shortcut}})",
+      "commandPalette": "Command palette",
+      "commitPush": "Review / Commit and push",
+      "description": "Click a shortcut and press a new combination including Cmd or Ctrl. Changes apply immediately; Save keeps them after restart. Native menu and editor shortcuts stay unchanged. Escape cancels recording.",
+      "disable": "Disable",
+      "disableAction": "Disable shortcut for {{action}}",
+      "disabled": "Disabled",
+      "duplicate": "{{action}} and {{other}} use the same shortcut. Choose another combination.",
+      "heading": "Keyboard shortcuts",
+      "invalid": "Use Cmd or Ctrl with a letter, number, punctuation key, or F1–F12.",
+      "modelSelector": "Model selector",
+      "notes": "Note picker",
+      "pressKeys": "Press a combination…",
+      "reserved": "This combination is reserved for a native menu or editor action.",
+      "reset": "Reset shortcuts"
+    },
     "showThinking": {
       "description": "Display model thinking blocks in responses",
       "label": "Show Thinking"

@@ -7,9 +7,18 @@ export async function runAppShortcut(action: ShortcutAction): Promise<void> {
   const state = useAppStore.getState()
   switch (action) {
     case 'diff': {
+      const workflowVisible = state.workflowPanelOpen && !state.workflowPanelFilter && state.workflowPanelWorkspaceId === null
+      const diffVisible = !workflowVisible && (state.currentView === 'diff' ||
+        (state.currentView === 'chat' && state.chatSidePanel === 'diff'))
+      if (diffVisible) {
+        await state.setChatSidePanel(null)
+        state.setCurrentView('chat')
+        return
+      }
       if (!state.activeWorkspace) return
       const opened = await state.setChatSidePanel('diff')
       if (opened && useAppStore.getState().activeWorkspace?.id === state.activeWorkspace.id) {
+        useAppStore.getState().setWorkflowPanelOpen(false)
         useAppStore.getState().setCurrentView('chat')
       }
       return

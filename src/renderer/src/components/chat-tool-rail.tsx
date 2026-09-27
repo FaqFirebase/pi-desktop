@@ -1,4 +1,6 @@
 import { useAppStore } from '../store'
+import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
+import { formatShortcut } from '../../../shared/keyboard-shortcuts'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import { FolderTree, GitCompare, Terminal, ShieldCheck } from 'lucide-react'
@@ -8,6 +10,7 @@ export function ChatToolRail(): React.JSX.Element {
   const reviewOpen = useAppStore((state) => state.reviewOpen)
   const terminalOpen = useAppStore((state) => state.terminalOpen)
   const sidePanel = useAppStore((state) => state.chatSidePanel)
+  const diffShortcut = useAppStore((state) => (state.settingsDraft.shortcuts ?? state.settings?.shortcuts ?? DEFAULT_SETTINGS.shortcuts).diff)
   const setSidePanel = useAppStore((state) => state.setChatSidePanel)
 
   return (
@@ -28,7 +31,9 @@ export function ChatToolRail(): React.JSX.Element {
         icon={<GitCompare size={16} />}
         active={sidePanel === 'diff'}
         onClick={() => void setSidePanel(sidePanel === 'diff' ? null : 'diff')}
-        title={t('chat.toolbar.diffViewer')}
+        title={diffShortcut
+          ? t('settings.shortcuts.actionWithShortcut', { action: t('chat.toolbar.diffViewer'), shortcut: formatShortcut(diffShortcut, window.piDesktop.system.platform) })
+          : t('chat.toolbar.diffViewer')}
       />
       <RailButton
         icon={<Terminal size={16} />}
