@@ -265,6 +265,9 @@
       "commitTitle": "提交更改",
       "descriptionLabel": "描述",
       "prTitle": "创建 PR",
+      "scopeAll": "所有更改",
+      "scopeLabel": "要提交的文件",
+      "scopeSession_other": "会话文件（{{count}}）",
       "titleLabel": "标题"
     },
     "draft": {
@@ -513,6 +516,8 @@
       "commitBeforePullRequest": "创建 PR 前请先提交工作树",
       "commitMessageRequired": "必须填写提交信息",
       "commitMessageTooLong": "提交信息必须不超过 {{max}} 个字符",
+      "commitSelectionEmpty": "没有选择要提交的文件",
+      "commitSelectionOutsideWorkspace": "要提交的文件必须位于当前工作区内",
       "detachedHeadCommit": "无法在分离 HEAD 状态下提交",
       "detachedHeadPush": "无法在分离 HEAD 状态下推送",
       "namedBranchRequired": "创建 PR 需要一个具名分支",

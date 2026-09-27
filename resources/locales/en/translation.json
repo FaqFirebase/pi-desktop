@@ -269,6 +269,10 @@
       "commitTitle": "Commit changes",
       "descriptionLabel": "Description",
       "prTitle": "Create pull request",
+      "scopeAll": "All changes",
+      "scopeLabel": "Files to commit",
+      "scopeSession_one": "Session file ({{count}})",
+      "scopeSession_other": "Session files ({{count}})",
       "titleLabel": "Title"
     },
     "draft": {
@@ -521,6 +525,8 @@
       "commitBeforePullRequest": "Commit the working tree before creating a pull request",
       "commitMessageRequired": "Commit message is required",
       "commitMessageTooLong": "Commit message must be {{max}} characters or fewer",
+      "commitSelectionEmpty": "No files are selected to commit",
+      "commitSelectionOutsideWorkspace": "The files selected to commit must be inside the active workspace",
       "detachedHeadCommit": "Cannot commit from a detached HEAD",
       "detachedHeadPush": "Cannot push from a detached HEAD",
       "namedBranchRequired": "A named branch is required to create a pull request",

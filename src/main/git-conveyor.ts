@@ -1,6 +1,7 @@
-import { access, realpath } from 'fs/promises'
+import { access, mkdtemp, realpath, rm } from 'fs/promises'
 import { createHash } from 'crypto'
-import { isAbsolute, relative, resolve, sep } from 'path'
+import { tmpdir } from 'os'
+import { isAbsolute, join, relative, resolve, sep } from 'path'
 import { spawn } from 'child_process'
 import { inspectGitRepository, isMissingRepositoryError, runGit } from './git-worktree'
 import type {
@@ -176,10 +177,57 @@ function isPathWithin(base: string, candidate: string): boolean {
  */
 async function stagedPaths(cwd: string): Promise<string[]> {
   const [worktreeRoot, output] = await Promise.all([
-    runGit(['rev-parse', '--show-toplevel'], cwd).then((result) => realpath(result.stdout.trim())),
+    physicalWorktreeRoot(cwd),
     runGit(['diff', '--cached', '--name-only', '-z'], cwd).then((result) => result.stdout),
   ])
   return output.split('\0').filter(Boolean).map((path) => resolve(worktreeRoot, path))
+}
+
+async function physicalWorktreeRoot(cwd: string): Promise<string> {
+  return realpath((await runGit(['rev-parse', '--show-toplevel'], cwd)).stdout.trim())
+}
+
+interface SelectedPaths {
+  worktreeRoot: string
+  paths: string[]
+}
+
+/**
+ * Validate the repository-root-relative paths the Diff Viewer listed. Every
+ * path must stay inside the workspace, so a filtered commit opened from a
+ * monorepo subdirectory can never reach a sibling project.
+ */
+async function resolveSelectedPaths(cwd: string, paths: readonly string[]): Promise<SelectedPaths> {
+  if (paths.length === 0) throw new Error(t('errors.git.commitSelectionEmpty'))
+  const [worktreeRoot, workspaceRoot] = await Promise.all([physicalWorktreeRoot(cwd), realpath(cwd)])
+  for (const path of paths) {
+    if (!path || isAbsolute(path) || !isPathWithin(workspaceRoot, resolve(worktreeRoot, path))) {
+      throw new Error(t('errors.git.commitSelectionOutsideWorkspace'))
+    }
+  }
+  return { worktreeRoot, paths: [...new Set(paths)] }
+}
+
+/**
+ * Diff of the selected paths' working-tree content against HEAD, untracked
+ * files included: the exact tree a filtered commit records. A throwaway index
+ * keeps the user's index untouched.
+ */
+async function readSelectedPathsDiff({ worktreeRoot, paths }: SelectedPaths, head: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'pi-desktop-commit-'))
+  const env = { ...process.env, GIT_INDEX_FILE: join(dir, 'index') }
+  try {
+    await runGit(head ? ['read-tree', head] : ['read-tree', '--empty'], worktreeRoot, env)
+    await runGit(['--literal-pathspecs', 'add', '--all', '--', ...paths], worktreeRoot, env)
+    const { stdout } = await runGit([
+      '--literal-pathspecs', 'diff', '--cached',
+      '--binary', '--full-index', '--no-ext-diff', '--no-textconv', '--no-renames',
+      '--', ...paths,
+    ], worktreeRoot, env)
+    return stdout
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 }
 
 async function commitSelection(cwd: string): Promise<{ autoStage: boolean; workspaceRoot: string }> {
@@ -196,22 +244,35 @@ export interface CommitDiffSnapshot {
   diff: string
 }
 
-/** Read exactly the selection commitAll would commit, without touching the index. */
-export async function readCommitDiff(cwd: string): Promise<CommitDiffSnapshot | null> {
+/**
+ * Read exactly the selection commitAll would commit, without touching the index.
+ * `paths` is the Diff Viewer's filtered selection; without it the commit
+ * follows the index (or auto-stages tracked changes).
+ */
+export async function readCommitDiff(cwd: string, paths?: readonly string[]): Promise<CommitDiffSnapshot | null> {
   const repository = await inspectGitRepository(cwd).catch((error: unknown) => {
     if (isMissingRepositoryError(error)) return null
     throw error
   })
   if (!repository?.branch) return null
-  const { autoStage, workspaceRoot } = await commitSelection(cwd)
-  const { stdout: diff } = await runGit([
-    'diff', ...(autoStage ? [] : ['--cached']),
-    '--binary', '--full-index', '--no-ext-diff', '--no-textconv', '--no-renames',
-    '--', '.',
-  ], workspaceRoot)
+  let diff: string
+  let scope: string
+  if (paths) {
+    const selection = await resolveSelectedPaths(cwd, paths)
+    diff = await readSelectedPathsDiff(selection, repository.head)
+    scope = selection.worktreeRoot
+  } else {
+    const { autoStage, workspaceRoot } = await commitSelection(cwd)
+    diff = (await runGit([
+      'diff', ...(autoStage ? [] : ['--cached']),
+      '--binary', '--full-index', '--no-ext-diff', '--no-textconv', '--no-renames',
+      '--', '.',
+    ], workspaceRoot)).stdout
+    scope = workspaceRoot
+  }
   if (!diff) return null
   const fingerprint = createHash('sha256')
-    .update(JSON.stringify([workspaceRoot, repository.head, repository.branch, diff]))
+    .update(JSON.stringify([scope, repository.head, repository.branch, diff]))
     .digest('hex')
   return { fingerprint, diff }
 }
@@ -277,6 +338,7 @@ export async function commitAll(cwd: string, options: GitConveyorCommitOptions):
   const operation = await activeGitOperation(cwd)
   if (operation) throw new Error(t('errors.git.operationInProgressCommit', { operation }))
   if (!repository.status.trim()) throw new Error(t('errors.git.workingTreeClean'))
+  if (options.paths) return commitSelectedPaths(cwd, message, options.paths)
 
   // Preserve an intentionally curated index. Only auto-stage when there is no
   // staged content at all, and never allow staged paths outside the workspace
@@ -300,6 +362,24 @@ export async function commitAll(cwd: string, options: GitConveyorCommitOptions):
     await runGit(['commit', '-m', message], cwd)
   } catch (error) {
     if (indexSnapshot) await runGit(['read-tree', indexSnapshot], cwd)
+    throw error
+  }
+  return getGitConveyorStatus(cwd)
+}
+
+/**
+ * Commit only the paths the user reviewed in the filtered Diff Viewer, with
+ * their working-tree content. Untracked files are included because each one
+ * was listed by name; anything else staged stays staged and out of the commit.
+ */
+async function commitSelectedPaths(cwd: string, message: string, paths: readonly string[]): Promise<GitConveyorStatus> {
+  const selection = await resolveSelectedPaths(cwd, paths)
+  const indexSnapshot = await snapshotIndex(selection.worktreeRoot)
+  try {
+    await runGit(['--literal-pathspecs', 'add', '--all', '--', ...selection.paths], selection.worktreeRoot)
+    await runGit(['--literal-pathspecs', 'commit', '-m', message, '--only', '--', ...selection.paths], selection.worktreeRoot)
+  } catch (error) {
+    await runGit(['read-tree', indexSnapshot], selection.worktreeRoot)
     throw error
   }
   return getGitConveyorStatus(cwd)

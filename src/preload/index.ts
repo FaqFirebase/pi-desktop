@@ -302,6 +302,8 @@ interface PiDesktopAPI {
     setWatchDemand(demanded: boolean): Promise<{ watching: boolean }>
     getGitStatus(): Promise<Record<string, GitFileStatus>>
     getGitBranch(): Promise<string | null>
+    /** The workspace's directory inside its repository ('' at the root); diff paths start from the root. */
+    getGitPrefix(): Promise<string>
   }
 
   // System
@@ -587,6 +589,7 @@ const api: PiDesktopAPI = {
     setWatchDemand: (demanded) => ipcRenderer.invoke(IPC_CHANNELS.FILE_WATCH_DEMAND, demanded),
     getGitStatus: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_STATUS),
     getGitBranch: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_BRANCH),
+    getGitPrefix: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_PREFIX),
   },
 
   system: {

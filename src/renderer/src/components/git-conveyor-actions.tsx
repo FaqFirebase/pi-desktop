@@ -9,11 +9,25 @@ import { GIT_COMMIT_MESSAGE_CONFIG, GIT_CONVEYOR_NOTICE_TIMEOUT_MS } from '../..
 import { formatIpcError } from '../utils/ipc-error'
 import { createStaleGuard } from '../utils/stale-guard'
 import {
-  applyCommitMessageSuggestion, openCommitMessageInput, type CommitMessageInput, type LastCommitMessageSuggestion,
+  applyCommitMessageSuggestion, commitMessageScope, openCommitMessageInput, switchCommitMessageInput,
+  type CommitMessageInput, type LastCommitMessageSuggestion,
 } from '../utils/commit-message-input'
 
+/** The files a filtered Diff Viewer shows; a commit then records exactly these paths. */
+export interface GitCommitSelection {
+  files: number
+  /** Repository-root-relative paths, both sides of a rename included. */
+  paths: string[]
+}
+
 type ConveyorDialog =
-  | ({ kind: 'commit'; workspaceId: string | undefined; pushAfter: boolean } & CommitMessageInput)
+  | ({
+    kind: 'commit'
+    workspaceId: string | undefined
+    pushAfter: boolean
+    paths: string[] | undefined
+    scope: string
+  } & CommitMessageInput)
   | { kind: 'pr'; title: string; body: string; base: string }
 
 type GitStatusError = { message: string; dismissed: boolean } | null
@@ -58,10 +72,11 @@ async function confirmPush(status: GitConveyorStatus): Promise<boolean> {
 export async function commitConveyorChanges(
   message: string,
   pushAfter: boolean,
+  paths?: string[],
 ): Promise<GitConveyorStatus> {
   const workspaceId = useAppStore.getState().activeWorkspace?.id
   assertWorkspace(workspaceId)
-  const committed = await window.piDesktop.git.commit({ message })
+  const committed = await window.piDesktop.git.commit({ message, ...(paths ? { paths } : {}) })
   if (!pushAfter) return committed
   try {
     assertWorkspace(workspaceId)
@@ -73,7 +88,15 @@ export async function commitConveyorChanges(
   }
 }
 
-export function gitPublishAction(files: Record<string, GitFileStatus>): 'commitPush' | 'push' {
+/**
+ * A selection commits its listed paths, untracked ones included; the commit
+ * dialog can still widen it to all changes. Without a selection, untracked
+ * files never count: auto-staging leaves them out of the commit.
+ */
+export function gitPublishAction(
+  files: Record<string, GitFileStatus>, selection?: GitCommitSelection,
+): 'commitPush' | 'push' {
+  if (selection && selection.paths.length > 0) return 'commitPush'
   const hasCommitChanges = Object.values(files).some((file) =>
     file.isStaged || (file.worktree !== ' ' && file.worktree !== '?' && file.worktree !== '!')
   )
@@ -85,7 +108,11 @@ export function scheduleGitNoticeDismissal(kind: keyof typeof GIT_CONVEYOR_NOTIC
   return () => clearTimeout(timer)
 }
 
-export function GitConveyorActions({ children, onChanged }: { children?: ReactNode; onChanged?: () => void }): React.JSX.Element {
+export function GitConveyorActions({ children, onChanged, selection }: {
+  children?: ReactNode
+  onChanged?: () => void
+  selection?: GitCommitSelection
+}): React.JSX.Element {
   const { t } = useTranslation()
   const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
   const [status, setStatus] = useState<GitConveyorStatus | null>(null)
@@ -101,7 +128,8 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
   const [feedback, setFeedback] = useState<string | null>(null)
   const [statusError, dispatchStatusError] = useReducer(gitStatusErrorReducer, null)
   const visibleError = error ?? (statusError?.dismissed ? null : statusError?.message)
-  const [publishAction, setPublishAction] = useState<ReturnType<typeof gitPublishAction>>('push')
+  const [gitFiles, setGitFiles] = useState<Record<string, GitFileStatus>>({})
+  const publishAction = gitPublishAction(gitFiles, selection)
   const dismissError = useCallback(() => {
     setError(null)
     setFeedback(null)
@@ -128,12 +156,12 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
       ])
       if (!sameWorkspace()) return
       setStatus(nextStatus)
-      setPublishAction(gitPublishAction(files))
+      setGitFiles(files)
       dispatchStatusError({ type: 'recovered' })
     } catch (err) {
       if (!sameWorkspace()) return
       setStatus(null)
-      setPublishAction('push')
+      setGitFiles({})
       dispatchStatusError({ type: 'failed', message: formatIpcError(err) })
     }
   }, [workspaceId])
@@ -180,17 +208,17 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
   }
 
   /** Runs beside the dialog: a slow or failed suggestion never blocks a manual commit. */
-  const requestSuggestion = async (regenerated: boolean): Promise<void> => {
+  const requestSuggestion = async (regenerated: boolean, paths: string[] | undefined, scope: string): Promise<void> => {
     const isCurrent = requestGuard.current.begin()
     const stillCurrent = (): boolean => isCurrent() && useAppStore.getState().activeWorkspace?.id === workspaceId
     setSuggestion('generating')
     try {
-      const result = await window.piDesktop.git.generateCommitMessage({ force: regenerated })
+      const result = await window.piDesktop.git.generateCommitMessage({ force: regenerated, ...(paths ? { paths } : {}) })
       if (!stillCurrent()) return
-      if (result.message) lastSuggestion.current = { workspaceId, message: result.message }
+      if (result.message) lastSuggestion.current = { scope, message: result.message }
       else if (!result.error) lastSuggestion.current = null
       setSuggestion(result.error ?? 'idle')
-      setDialog((current) => current?.kind === 'commit' && current.workspaceId === workspaceId
+      setDialog((current) => current?.kind === 'commit' && current.scope === scope
         ? applyCommitMessageSuggestion(current, result.message, regenerated) : current)
     } catch {
       if (stillCurrent()) setSuggestion('generation-failed')
@@ -199,8 +227,19 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
 
   const openCommitDialog = (pushAfter: boolean): void => {
     setError(null)
-    setDialog({ kind: 'commit', ...openCommitMessageInput(lastSuggestion.current, workspaceId), workspaceId, pushAfter })
-    void requestSuggestion(false)
+    const paths = selection?.paths.length ? [...selection.paths] : undefined
+    const scope = commitMessageScope(workspaceId, paths)
+    setDialog({ kind: 'commit', ...openCommitMessageInput(lastSuggestion.current, scope), workspaceId, pushAfter, paths, scope })
+    void requestSuggestion(false, paths, scope)
+  }
+
+  const setCommitSelectionOnly = (selectionOnly: boolean): void => {
+    if (dialog?.kind !== 'commit' || !selection) return
+    const paths = selectionOnly ? [...selection.paths] : undefined
+    const scope = commitMessageScope(dialog.workspaceId, paths)
+    if (scope === dialog.scope) return
+    setDialog({ ...dialog, ...switchCommitMessageInput(dialog, lastSuggestion.current, scope), paths, scope })
+    void requestSuggestion(false, paths, scope)
   }
 
   const openPrDialog = (): void => {
@@ -239,7 +278,7 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
         dialog.pushAfter ? 'commitPush' : 'commit',
         () => {
           assertWorkspace(dialog.workspaceId)
-          return commitConveyorChanges(message, dialog.pushAfter)
+          return commitConveyorChanges(message, dialog.pushAfter, dialog.paths)
         },
         (next) => dialog.pushAfter
           ? next.dirtyFiles > 0
@@ -293,8 +332,8 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
       <div className="flex min-w-0 flex-wrap items-center justify-start gap-1.5 lg:justify-end">
         {status && (
           <span className="basis-full mr-1 max-w-60 truncate text-[10px] text-faint sm:basis-auto" title={status.branch ?? undefined}>
-            {status.dirtyFiles > 0
-              ? t('conveyor.branchStatusDirty', { branch: status.branch ?? t('conveyor.detachedBranch'), count: status.dirtyFiles })
+            {(selection?.files ?? status.dirtyFiles) > 0
+              ? t('conveyor.branchStatusDirty', { branch: status.branch ?? t('conveyor.detachedBranch'), count: selection?.files ?? status.dirtyFiles })
               : t('conveyor.branchStatusClean', { branch: status.branch ?? t('conveyor.detachedBranch') })}
           </span>
         )}
@@ -367,11 +406,32 @@ export function GitConveyorActions({ children, onChanged }: { children?: ReactNo
             </div>
             {dialog.kind === 'commit' ? (
               <div>
+                {selection && (
+                  <div role="group" aria-label={t('conveyor.dialog.scopeLabel')} className="mb-3 flex gap-1 rounded border border-border p-0.5">
+                    {[true, false].map((selectionOnly) => (
+                      <button
+                        key={String(selectionOnly)}
+                        type="button"
+                        onClick={() => setCommitSelectionOnly(selectionOnly)}
+                        disabled={selectionOnly && selection.paths.length === 0}
+                        aria-pressed={(dialog.paths !== undefined) === selectionOnly}
+                        className={clsx(
+                          'flex-1 rounded px-2 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+                          (dialog.paths !== undefined) === selectionOnly
+                            ? 'bg-accent-bg text-accent-fg'
+                            : 'text-muted hover:bg-surface-hover hover:text-primary',
+                        )}
+                      >
+                        {selectionOnly ? t('conveyor.dialog.scopeSession', { count: selection.files }) : t('conveyor.dialog.scopeAll')}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <label htmlFor={commitMessageId} className="text-xs text-muted">{t('conveyor.dialog.commitMessageLabel')}</label>
                   <button
                     type="button"
-                    onClick={() => void requestSuggestion(true)}
+                    onClick={() => void requestSuggestion(true, dialog.paths, dialog.scope)}
                     disabled={suggestion === 'generating'}
                     aria-label={t('conveyor.draft.regenerate')}
                     title={t('conveyor.draft.regenerate')}

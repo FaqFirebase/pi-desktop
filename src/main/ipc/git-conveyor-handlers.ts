@@ -5,7 +5,7 @@ import type {
   GitConveyorCommitOptions,
   GitConveyorPullRequestOptions,
 } from '../../shared/ipc-contracts'
-import { assertTrustedSender, isObject, isOptionalBoolean, isOptionalString, isString } from './validation'
+import { assertTrustedSender, isObject, isOptionalBoolean, isOptionalString, isOptionalStringArray, isString } from './validation'
 import { commitAll, createPullRequest, getGitConveyorStatus, pushBranch, readCommitDiff } from '../git-conveyor'
 import { CommitMessageService } from '../commit-message-service'
 import { generateCommitMessage, sessionCommitMessageModel, type CommitMessageModel } from '../commit-message-generator'
@@ -39,9 +39,11 @@ export function registerGitConveyorHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC_CHANNELS.GIT_COMMIT_MESSAGE_GENERATE, async (event, input: unknown) => {
     assertTrustedSender(event)
-    if (!isObject(input) || typeof input.force !== 'boolean') throw new Error('force must be a boolean')
+    if (!isObject(input) || typeof input.force !== 'boolean' || !isOptionalStringArray(input.paths)) {
+      throw new Error('force must be a boolean and paths an optional string array')
+    }
     return messages.suggest(activeCwd(ctx), async (diff, signal) =>
-      generateCommitMessage(diff, await commitMessageModel(ctx), signal), input.force)
+      generateCommitMessage(diff, await commitMessageModel(ctx), signal), input.force, input.paths)
   })
 
   ipcMain.handle(IPC_CHANNELS.GIT_CONVEYOR_STATUS, async (event) => {
@@ -51,8 +53,13 @@ export function registerGitConveyorHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC_CHANNELS.GIT_CONVEYOR_COMMIT, async (event, input: unknown) => {
     assertTrustedSender(event)
-    if (!isObject(input) || !isString(input.message)) throw new Error('Commit message must be a string')
-    const options: GitConveyorCommitOptions = { message: input.message }
+    if (!isObject(input) || !isString(input.message) || !isOptionalStringArray(input.paths)) {
+      throw new Error('Commit message must be a string and paths an optional string array')
+    }
+    const options: GitConveyorCommitOptions = {
+      message: input.message,
+      ...(input.paths ? { paths: input.paths } : {}),
+    }
     return commitAll(activeCwd(ctx), options)
   })
 

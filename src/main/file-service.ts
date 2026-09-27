@@ -7,7 +7,7 @@ import { homedir } from 'os'
 import { describeWriteError } from './fs-errors'
 import { appLog } from './app-log'
 import type { FileChangeEvent } from '../shared/ipc-contracts'
-import { canDiscardGitPatch, gitDiffPaths, splitGitDiff } from '../shared/git-diff'
+import { canDiscardGitPatch, gitDiffPaths, splitGitDiff, workspaceRelativeGitPath } from '../shared/git-diff'
 import { i18n, t, tEnglish, type Translate } from '../shared/i18n'
 
 const execFileAsync = promisify(execFile)
@@ -474,17 +474,36 @@ export class FileService {
     })
   }
 
+  /**
+   * The workspace's directory inside its repository (`pkg/app/`, '' at the
+   * root or outside a repository). Git diff and status paths start from the
+   * repository root, so this maps them onto workspace paths.
+   */
+  async getGitPrefix(): Promise<string> {
+    try {
+      const { stdout } = await execFileAsync('git', ['rev-parse', '--show-prefix'], {
+        cwd: this.workspacePath,
+        timeout: 5_000,
+      })
+      return stdout.trim()
+    } catch (err) {
+      if (isBenignGitError(err) || (await this.probeGitRepo()) === 'outside') return ''
+      throw this.describeAndLogGitError('rev-parse', err)
+    }
+  }
+
+  /** Untracked files inside the workspace, as new-file patches with repository-root paths. */
   private async getUntrackedFileDiff(filePath?: string): Promise<string> {
-    const statusMap = await this.getGitStatus()
+    const [statusMap, prefix] = await Promise.all([this.getGitStatus(), this.getGitPrefix()])
     const untrackedPaths = [...statusMap.entries()]
       .filter(([, status]) => status.index === '?' && status.worktree === '?')
-      .map(([path]) => path)
-      .filter((path) => !filePath || path === filePath)
+      .map(([path]) => ({ path, relativePath: workspaceRelativeGitPath(path, prefix) }))
+      .filter(({ relativePath }) => !relativePath.startsWith('../') && (!filePath || relativePath === filePath))
 
     const diffs: string[] = []
-    for (const path of untrackedPaths) {
+    for (const { path, relativePath } of untrackedPaths) {
       try {
-        const content = await readFile(join(this.workspacePath, path), 'utf-8')
+        const content = await readFile(join(this.workspacePath, relativePath), 'utf-8')
         diffs.push(buildNewFileDiff(path, content))
       } catch {
         // Skip unreadable or binary-like untracked files.

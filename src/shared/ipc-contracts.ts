@@ -148,6 +148,7 @@ export const IPC_CHANNELS = {
   FILE_WATCH_DEMAND: 'file:watch-demand',
   GIT_STATUS: 'git:status',
   GIT_BRANCH: 'git:branch',
+  GIT_PREFIX: 'git:prefix',
   GIT_CONVEYOR_STATUS: 'git:conveyor-status',
   GIT_COMMIT_MESSAGE_GENERATE: 'git:commit-message-generate',
   GIT_CONVEYOR_COMMIT: 'git:conveyor-commit',
@@ -309,10 +310,17 @@ export type GitCommitMessageError = 'generation-failed' | 'timed-out' | 'engine-
 export interface GitCommitMessageRequest {
   /** Generate again even when this diff already has a suggestion. */
   force: boolean
+  /** Describe only these repository-root-relative paths (the filtered Diff Viewer). */
+  paths?: string[]
 }
 
 export interface GitConveyorCommitOptions {
   message: string
+  /**
+   * Commit only these repository-root-relative paths, untracked ones included.
+   * Omitted: commit the staged index, or auto-stage tracked changes.
+   */
+  paths?: string[]
 }
 
 export interface GitConveyorPullRequestOptions {

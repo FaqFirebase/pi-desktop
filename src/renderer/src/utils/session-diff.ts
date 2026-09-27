@@ -1,3 +1,4 @@
+import { workspaceRelativeGitPath } from '../../../shared/git-diff'
 import { pathGroupKey } from '../../../shared/path-compare'
 import type { DisplayMessage } from '../message-parsing'
 import { toolCallFile, toolKind } from '../message-grouping'
@@ -19,11 +20,16 @@ function fileKey(path: string, workspacePath: string): string {
   return pathGroupKey(parts.join('/'))
 }
 
-/** Filters whole-file Git diffs, not individual edits owned by the session. */
+/**
+ * Filters whole-file Git diffs, not individual edits owned by the session.
+ * Diff paths start from the repository root; `gitPrefix` places the workspace
+ * inside it, while tool paths are workspace-relative or absolute.
+ */
 export function filterSessionDiffFiles<T extends DiffPaths>(
   files: readonly T[],
   messages: readonly DisplayMessage[],
   workspacePath: string,
+  gitPrefix: string,
 ): T[] {
   const failedCalls = new Set(messages
     .filter((message) => message.role === 'toolResult' && message.isError)
@@ -38,6 +44,6 @@ export function filterSessionDiffFiles<T extends DiffPaths>(
       if (path) touched.add(fileKey(path, workspacePath))
     }
   }
-  return files.filter((file) => touched.has(fileKey(file.newPath, workspacePath))
-    || touched.has(fileKey(file.oldPath, workspacePath)))
+  const diffKey = (path: string): string => fileKey(workspaceRelativeGitPath(path, gitPrefix), workspacePath)
+  return files.filter((file) => touched.has(diffKey(file.newPath)) || touched.has(diffKey(file.oldPath)))
 }

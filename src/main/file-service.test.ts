@@ -303,3 +303,20 @@ test('getFileDiff and getStagedDiff return diffs larger than the execFile defaul
   const stagedDiff = await service.getStagedDiff()
   assert.ok(stagedDiff.length > EXEC_FILE_DEFAULT_MAX_BUFFER_BYTES)
 })
+
+test('a monorepo subfolder workspace reports its Git prefix and only its own untracked files', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'fs-monorepo-'))
+  execFileSync('git', ['init', '-q'], { cwd: dir })
+  const workspace = join(dir, 'pkg', 'app')
+  await mkdir(join(workspace, 'src'), { recursive: true })
+  await writeFile(join(workspace, 'src', 'new.ts'), 'inside\n')
+  await writeFile(join(dir, 'root.ts'), 'outside\n')
+  const service = new FileService(workspace)
+
+  assert.equal(await service.getGitPrefix(), 'pkg/app/')
+  const diff = await service.getFileDiff()
+  assert.match(diff, /^diff --git a\/pkg\/app\/src\/new\.ts b\/pkg\/app\/src\/new\.ts$/m)
+  assert.match(diff, /^\+inside$/m)
+  assert.doesNotMatch(diff, /root\.ts/)
+  assert.match(await service.getFileDiff('src/new.ts'), /pkg\/app\/src\/new\.ts/)
+})
