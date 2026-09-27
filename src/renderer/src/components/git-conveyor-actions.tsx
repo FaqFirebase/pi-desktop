@@ -130,8 +130,8 @@ export function scheduleGitNoticeDismissal(kind: keyof typeof GIT_CONVEYOR_NOTIC
   return () => clearTimeout(timer)
 }
 
-export function GitConveyorActions({ children, onChanged, selection, modalOnly = false }: {
-  modalOnly?: boolean
+export function GitConveyorActions({ children, onChanged, selection, shortcutActive = false }: {
+  shortcutActive?: boolean
   children?: ReactNode
   onChanged?: () => void
   /** What Commit records; absent commits the index (or the tracked changes when nothing is staged). */
@@ -139,7 +139,7 @@ export function GitConveyorActions({ children, onChanged, selection, modalOnly =
 }): React.JSX.Element {
   const { t } = useTranslation()
   const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
-  const commitPushRequested = useAppStore((state) => state.commitPushRequested)
+  const shortcutRequest = useAppStore((state) => state.diffShortcutRequest)
   const [status, setStatus] = useState<GitConveyorStatus | null>(null)
   const [suggestion, setSuggestion] = useState<'idle' | 'generating' | GitCommitMessageError>('idle')
   const lastSuggestion = useRef<LastCommitMessageSuggestion | null>(null)
@@ -197,8 +197,8 @@ export function GitConveyorActions({ children, onChanged, selection, modalOnly =
     setStatus(null)
     setDialog(null)
     setSuggestion('idle')
-    if (!modalOnly) void refresh()
-    const timer = modalOnly ? undefined : window.setInterval(() => {
+    void refresh()
+    const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refresh()
     }, 5000)
     const guard = refreshGuard.current
@@ -208,7 +208,7 @@ export function GitConveyorActions({ children, onChanged, selection, modalOnly =
       requests.begin()
       window.clearInterval(timer)
     }
-  }, [refresh, modalOnly])
+  }, [refresh])
 
   const run = async <T,>(
     kind: 'commit' | 'commitPush' | 'push',
@@ -262,13 +262,10 @@ export function GitConveyorActions({ children, onChanged, selection, modalOnly =
   }, [selection, workspaceId, requestSuggestion])
 
   useEffect(() => {
-    if (!modalOnly || !commitPushRequested) return
-    useAppStore.setState({ commitPushRequested: false })
-    if (dialog || busyRef.current) return
-    void refresh().then((nextStatus) => {
-      if (nextStatus?.branch) openCommitDialog(true)
-    })
-  }, [modalOnly, commitPushRequested, dialog, refresh, openCommitDialog])
+    if (!shortcutActive || shortcutRequest !== 'commitPush') return
+    useAppStore.setState({ diffShortcutRequest: null })
+    if (!dialog && !busyRef.current && status?.branch && publishAction === 'commitPush') openCommitDialog(true)
+  }, [shortcutActive, shortcutRequest, dialog, status, publishAction, openCommitDialog])
 
   const submitDialog = (): void => {
     if (!dialog || !status) return
@@ -307,8 +304,7 @@ export function GitConveyorActions({ children, onChanged, selection, modalOnly =
 
   return (
     <>
-      <div className={modalOnly ? 'fixed top-12 right-4 z-50 max-w-lg rounded-lg border border-border bg-surface px-3 py-2 shadow-lg empty:hidden' : 'flex min-w-0 flex-wrap items-center justify-start gap-1.5 lg:justify-end'}>
-        {!modalOnly && <>
+      <div className="flex min-w-0 flex-wrap items-center justify-start gap-1.5 lg:justify-end">
         {status && (
           <span className="basis-full mr-1 max-w-60 truncate text-[10px] text-faint sm:basis-auto" title={status.branch ?? undefined}>
             {(selection?.files ?? status.dirtyFiles) > 0
@@ -334,7 +330,6 @@ export function GitConveyorActions({ children, onChanged, selection, modalOnly =
             {t('conveyor.push')}
           </button>
         )}
-        </>}
         {visibleError ? (
           <div role="alert" className="flex min-w-0 basis-full items-start gap-2 rounded-lg border border-error/20 bg-error-bg px-3 py-2 text-xs text-error">
             <AlertCircle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />

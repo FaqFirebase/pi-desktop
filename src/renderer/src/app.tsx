@@ -8,7 +8,6 @@ import { SessionPanel } from './components/session-panel'
 import { Timeline } from './components/timeline'
 import { PackageBrowser } from './components/package-browser'
 import { DiffViewer } from './components/diff-viewer'
-import { GitConveyorActions } from './components/git-conveyor-actions'
 import { HomeScreen } from './components/home-screen'
 import { NotesPanel } from './components/notes-panel'
 import { SkillsPanel } from './components/skills-panel'
@@ -83,7 +82,7 @@ export function App(): React.JSX.Element {
       if (isCommitPushShortcut(e)) {
         e.preventDefault()
         e.stopPropagation()
-        if (!e.repeat) requestCommitPushDialog()
+        if (!e.repeat) void requestCommitPushDialog()
         return
       }
       if (!isTerminalShortcut(e)) return
@@ -263,7 +262,6 @@ export function App(): React.JSX.Element {
       {showChrome && <StatusBar />}
       <ExtensionUiDialog />
       <AppConfirmDialog />
-      <GitConveyorActions modalOnly />
       <NotePicker />
       <TaskLauncher />
       <CommandPalette />

@@ -66,6 +66,16 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   const discardBusy = useRef(false)
   const [discardError, setDiscardError] = useState<string | null>(null)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
+  const shortcutActive = useAppStore((state) =>
+    state.currentView === (onClose ? 'chat' : 'diff') &&
+    !(state.workflowPanelOpen && !state.workflowPanelFilter && state.workflowPanelWorkspaceId === null))
+  const shortcutRequest = useAppStore((state) => state.diffShortcutRequest)
+  useEffect(() => {
+    if (!shortcutActive || shortcutRequest !== 'review') return
+    setSessionOnly(true)
+    setStagedMode(false)
+    useAppStore.setState({ diffShortcutRequest: null })
+  }, [shortcutActive, shortcutRequest])
   const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
   const workspacePath = useAppStore((state) => state.activeWorkspace?.path)
   const messages = useAppStore((state) => state.messages)
@@ -199,7 +209,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
           </div>
         </div>
         <div className="min-w-0 border-t border-border px-4 py-2">
-          <GitConveyorActions key={workspaceId} onChanged={loadDiff} selection={commitSelection}>
+          <GitConveyorActions key={workspaceId} onChanged={loadDiff} selection={commitSelection} shortcutActive={shortcutActive && !loading && !loadError}>
             <button
               type="button"
               onClick={() => void discard(visibleFiles)}

@@ -406,7 +406,7 @@ interface AppState {
   taskLauncherOpen: boolean
   // Bumped by the Ctrl/Cmd+Shift+M shortcut. The model picker watches the nonce
   // so a repeat press reopens it instead of being swallowed by an unchanged open flag.
-  commitPushRequested: boolean
+  diffShortcutRequest: 'review' | 'commitPush' | null
   modelSelectorOpenRequest: number
   // A prompt queued for insertion into the chat input. The nonce lets the
   // chat input re-apply the same text on repeated inserts.
@@ -985,7 +985,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   notePickerOpen: false,
   commandPaletteOpen: false,
   taskLauncherOpen: false,
-  commitPushRequested: false,
+  diffShortcutRequest: null,
   modelSelectorOpenRequest: 0,
   composerFocusRequested: false,
   composerDrafts: {},

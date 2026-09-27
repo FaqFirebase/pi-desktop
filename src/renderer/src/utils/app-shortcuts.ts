@@ -35,7 +35,7 @@ export async function runAppShortcut(action: ShortcutAction): Promise<void> {
       state.setNotePickerOpen(!state.notePickerOpen)
       return
     case 'commitPush':
-      requestCommitPushDialog()
+      await requestCommitPushDialog()
   }
 }
 
