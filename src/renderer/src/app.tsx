@@ -25,6 +25,7 @@ import { useContextMenu, buildDefaultContextMenu } from './components/context-me
 import { usePiEvents, useMenuActions, useInitialize, useNotePickerShortcut } from './hooks'
 import { useFolderDrop } from './hooks/use-folder-drop'
 import { useAppStore } from './store'
+import { isCommitPushShortcut } from './utils/commit-push-shortcut'
 import { isSettingsShortcut } from './utils/settings-shortcut'
 import { isTerminalShortcut } from './utils/terminal-shortcut'
 import { useEffect, useState } from 'react'
@@ -78,6 +79,14 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isCommitPushShortcut(e)) {
+        e.preventDefault()
+        e.stopPropagation()
+        if (e.repeat || !useAppStore.getState().activeWorkspace) return
+        useAppStore.getState().setCurrentView('diff')
+        useAppStore.setState({ commitPushRequested: true })
+        return
+      }
       if (!isTerminalShortcut(e)) return
       e.preventDefault()
       e.stopPropagation()

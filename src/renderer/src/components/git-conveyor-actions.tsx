@@ -141,6 +141,7 @@ export function GitConveyorActions({ children, onChanged, selection, allSelectio
 }): React.JSX.Element {
   const { t } = useTranslation()
   const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
+  const commitPushRequested = useAppStore((state) => state.commitPushRequested)
   const [status, setStatus] = useState<GitConveyorStatus | null>(null)
   const [suggestion, setSuggestion] = useState<'idle' | 'generating' | GitCommitMessageError>('idle')
   const lastSuggestion = useRef<LastCommitMessageSuggestion | null>(null)
@@ -234,7 +235,7 @@ export function GitConveyorActions({ children, onChanged, selection, allSelectio
   }
 
   /** Runs beside the dialog: a slow or failed suggestion never blocks a manual commit. */
-  const requestSuggestion = async (regenerated: boolean, paths: string[] | undefined, scope: string): Promise<void> => {
+  const requestSuggestion = useCallback(async (regenerated: boolean, paths: string[] | undefined, scope: string): Promise<void> => {
     const isCurrent = requestGuard.current.begin()
     const stillCurrent = (): boolean => isCurrent() && useAppStore.getState().activeWorkspace?.id === workspaceId
     setSuggestion('generating')
@@ -249,15 +250,22 @@ export function GitConveyorActions({ children, onChanged, selection, allSelectio
     } catch {
       if (stillCurrent()) setSuggestion('generation-failed')
     }
-  }
+  }, [workspaceId])
 
-  const openCommitDialog = (pushAfter: boolean): void => {
+  const openCommitDialog = useCallback((pushAfter: boolean): void => {
     setError(null)
     const paths = selection?.paths.length ? [...selection.paths] : allSelection ? [...allSelection.paths] : undefined
     const scope = commitMessageScope(workspaceId, paths)
     setDialog({ kind: 'commit', ...openCommitMessageInput(lastSuggestion.current, scope), workspaceId, pushAfter, paths, scope })
     void requestSuggestion(false, paths, scope)
-  }
+  }, [selection, allSelection, workspaceId, requestSuggestion])
+
+  useEffect(() => {
+    if (!commitPushRequested) return
+    if (!status && !statusError) return
+    useAppStore.setState({ commitPushRequested: false })
+    if (!dialog && !busyRef.current && status?.branch) openCommitDialog(true)
+  }, [commitPushRequested, status, statusError, dialog, openCommitDialog])
 
   const setCommitSelectionOnly = (selectionOnly: boolean): void => {
     if (!dialog || !selection || allSelection === undefined) return
