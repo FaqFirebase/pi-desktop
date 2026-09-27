@@ -75,6 +75,11 @@ export type { DisplayAttachment, DisplayMessage } from './message-parsing'
  * (with a Source/Preview toggle for markdown & HTML); `image` opens the image
  * viewer. `path` is absolute; `relativePath` (code only) drives the editor.
  */
+// A staged composer attachment: either inlined as text or sent to Pi as an image block.
+export type ComposerAttachment =
+  | { kind: 'text'; name: string; path: string; content: string }
+  | { kind: 'image'; name: string; path: string; image: PromptImage }
+
 export interface PreviewTarget {
   kind: 'code' | 'image'
   name: string
@@ -408,6 +413,8 @@ interface AppState {
   composerFocusRequested: boolean
   composerDrafts: Record<string, string>
   saveComposerDraft: (workspaceId: string, text: string) => void
+  composerAttachmentDrafts: Record<string, ComposerAttachment[]>
+  saveComposerAttachments: (workspaceId: string, attachments: ComposerAttachment[]) => void
   pendingInsert: { text: string; nonce: number; replace?: boolean } | null
   // Body text captured (e.g. from a message) to seed a new note in the Notes
   // panel. Non-null opens the panel's New Note form pre-filled.
@@ -973,6 +980,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (text) composerDrafts[workspaceId] = text
     else delete composerDrafts[workspaceId]
     return { composerDrafts }
+  }),
+  composerAttachmentDrafts: {},
+  saveComposerAttachments: (workspaceId, attachments) => set((state) => {
+    const composerAttachmentDrafts = { ...state.composerAttachmentDrafts }
+    if (attachments.length > 0) composerAttachmentDrafts[workspaceId] = attachments
+    else delete composerAttachmentDrafts[workspaceId]
+    return { composerAttachmentDrafts }
   }),
   pendingInsert: null,
   noteDraft: null,

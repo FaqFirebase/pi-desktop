@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect, useLayoutEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
-import { useAppStore } from '../store'
+import { useAppStore, type ComposerAttachment } from '../store'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { t } from '../../../shared/i18n'
 import { useChatKeyboard, useChatWidth, useCommandCatalog } from '../hooks'
@@ -16,7 +16,6 @@ import { ThinkingLevelSelector } from './thinking-level-selector'
 import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users, Search, AlertCircle } from 'lucide-react'
 import {
   SUPPORTED_IMAGE_EXTENSIONS,
-  type PromptImage,
   type FileSearchResult,
 } from '../../../shared/ipc-contracts'
 import { formatUntrustedBlock } from '../../../shared/untrusted-data'
@@ -76,10 +75,7 @@ function detectMention(ta: HTMLTextAreaElement): MentionState | null {
   return { start: pos - query.length - 1, query }
 }
 
-// A staged attachment: either inlined as text or sent to Pi as an image block.
-type Attachment =
-  | { kind: 'text'; name: string; path: string; content: string }
-  | { kind: 'image'; name: string; path: string; image: PromptImage }
+type Attachment = ComposerAttachment
 
 export function ChatInput(): React.JSX.Element {
   const { t } = useTranslation()
@@ -153,6 +149,9 @@ export function ChatInput(): React.JSX.Element {
   }, [pendingInsert, clearPendingInsert, resizeTextarea])
 
   const [attachments, setAttachments] = useState<Attachment[]>([])
+  // Latest attachments for the draft-save cleanup below, which outlives the render.
+  const attachmentsRef = useRef(attachments)
+  attachmentsRef.current = attachments
   const [attachError, setAttachError] = useState<string | null>(null)
   const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
   const attachmentDragDepth = useRef(0)
@@ -182,7 +181,9 @@ export function ChatInput(): React.JSX.Element {
   useLayoutEffect(() => {
     const ta = textareaRef.current
     if (!ta) return
-    ta.value = useAppStore.getState().composerDrafts[workspaceId] ?? ''
+    const { composerDrafts, composerAttachmentDrafts } = useAppStore.getState()
+    ta.value = composerDrafts[workspaceId] ?? ''
+    setAttachments(composerAttachmentDrafts[workspaceId] ?? [])
     resizeTextarea(ta)
     historyIndex.current = -1
     draft.current = ''
@@ -193,6 +194,7 @@ export function ChatInput(): React.JSX.Element {
     // Capture the element and owner before a workspace switch or unmount.
     return () => {
       useAppStore.getState().saveComposerDraft(workspaceId, ta.value)
+      useAppStore.getState().saveComposerAttachments(workspaceId, attachmentsRef.current)
       // Late history hydration can replace an already-focused composer.
       // Hand focus to its replacement, but never reclaim it after the user left.
       if (document.activeElement === ta) {
