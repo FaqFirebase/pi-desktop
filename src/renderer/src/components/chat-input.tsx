@@ -327,14 +327,19 @@ export function ChatInput(): React.JSX.Element {
           .join('')
       }
 
+      // Sending can replace this composer before React renders the cleared state.
+      // Clear the cleanup snapshot first so an already-sent image cannot be saved again.
+      attachmentsRef.current = []
+      setAttachments([])
+      resetComposer()
+      useAppStore.getState().saveComposerDraft(workspaceId, '')
+      useAppStore.getState().saveComposerAttachments(workspaceId, [])
       sendPrompt(
         fullMessage,
         images.length > 0 ? { images, attachments: displayAttachments } : undefined
       )
-      setAttachments([])
-      resetComposer()
     },
-    [sendPrompt, attachments, recordPrompt, resetComposer]
+    [sendPrompt, attachments, recordPrompt, resetComposer, workspaceId]
   )
 
   const handleAbort = useCallback(() => {
@@ -810,7 +815,7 @@ export function ChatInput(): React.JSX.Element {
           }}
         />
 
-        <div className="font-chat flex items-center gap-1 px-2 pb-2 pt-0">
+        <div className="@container/composer font-chat flex items-center gap-1 px-2 pb-2 pt-0">
           <ComposerPermissionMenu value={permissionMode} onChange={setPermissionMode} />
           <button
             onClick={handleAttachFile}
