@@ -185,10 +185,10 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
                   setCurrentView('chat')
                 }
               }}
-              className={clsx(TOOLBAR_BUTTON, 'border-border text-muted hover:bg-surface-hover hover:text-primary')}
+              className="ml-1 rounded p-1 text-dim hover:text-secondary"
               aria-label={t('diff.closeAriaLabel')}
             >
-              <X size={11} />
+              <X size={14} />
             </button>
           </div>
         </div>
