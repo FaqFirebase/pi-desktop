@@ -459,7 +459,7 @@
     "openFile": "打开文件",
     "refreshAriaLabel": "刷新差异",
     "sessionFilter": {
-      "description": "仅显示此聊天中 edit/write 调用涉及的文件。完整文件差异可能包含其他会话的更改，也可能遗漏 Shell 和子代理的更改。关闭筛选可查看整个项目。提交、推送和 PR 操作始终针对整个仓库。",
+      "description": "仅显示此聊天中 edit/write 调用涉及的文件。完整文件差异可能包含其他会话的更改，也可能遗漏 Shell 和子代理的更改。关闭筛选可查看整个项目。推送操作始终针对整个分支。",
       "label": "此会话涉及的文件",
       "noMatches": "没有与此会话匹配的更改"
     },
