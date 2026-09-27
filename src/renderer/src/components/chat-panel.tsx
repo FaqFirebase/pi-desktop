@@ -30,7 +30,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import piLogo from '../assets/pi-logo.svg'
-import { X, ChevronDown, Loader2 } from 'lucide-react'
+import { X, ChevronDown } from 'lucide-react'
 
 // Fallback padding when the composer has not measured yet (~idle pill + gradient).
 const DEFAULT_COMPOSER_PAD_PX = 144
@@ -40,7 +40,6 @@ export function ChatPanel(): React.JSX.Element {
   const messages = useAppStore((state) => state.messages)
   const sessionLoading = useAppStore((state) => state.sessionLoading)
   const isStreaming = useAppStore((state) => state.isStreaming)
-  const reattachedMidTurn = useAppStore((state) => state.reattachedMidTurn)
   const composerWrapRef = useRef<HTMLDivElement>(null)
   const [composerPadPx, setComposerPadPx] = useState(DEFAULT_COMPOSER_PAD_PX)
 
@@ -122,8 +121,8 @@ export function ChatPanel(): React.JSX.Element {
   // the grouping only recomputes when the message list changes, and so lone
   // MessageBubbles keep their stable refs (no markdown re-parse on re-render).
   const renderItems = useMemo(
-    () => groupToolMessages(prepareChatMessages(messages), t),
-    [messages, t]
+    () => groupToolMessages(prepareChatMessages(messages), t, isStreaming),
+    [messages, t, isStreaming]
   )
 
   const handleRetry = useCallback(async (messageId: string) => {
@@ -165,9 +164,9 @@ export function ChatPanel(): React.JSX.Element {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex flex-1 overflow-hidden">
-        {/* Main chat area */}
-        <div className="chat-center flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
+        {/* Keep messages and composer readable; scroll rather than squeeze below this width. */}
+        <div className="chat-center flex min-w-[30rem] flex-1 flex-col overflow-hidden">
           <div className="relative flex min-h-0 flex-1 flex-col">
             {searchOpen && (
               <ChatSearch
@@ -235,7 +234,7 @@ export function ChatPanel(): React.JSX.Element {
               return (
                 <>
                   <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-                    {sessionLoading && messages.length === 0 ? (
+                    {sessionLoading && messages.length === 0 && !isStreaming ? (
                       <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-dim">
                         <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
                         {piStatus === 'running' ? t('chat.loadingSession') : t('chat.startingAgent')}
@@ -293,24 +292,6 @@ export function ChatPanel(): React.JSX.Element {
                     <div className={clsx('pointer-events-auto mx-auto w-full px-4', messageColumn)}>
                       <CouncilPanels />
                     </div>
-                    {/* Once the attached stream shows live output, the turn is visibly
-                        in progress and "appears when it finishes" would be wrong. */}
-                    {reattachedMidTurn &&
-                      !streamingContent &&
-                      !streamingThinking &&
-                      streamingToolCalls.size === 0 && (
-                      <div className={clsx('pointer-events-auto mx-auto mb-2 w-full px-4', messageColumn)}>
-                        <div className="flex items-center gap-2.5 rounded-md bg-accent px-4 py-2.5 text-sm text-white shadow-lg shadow-black/30">
-                          <Loader2 size={16} className="shrink-0 animate-spin" />
-                          <span className="shrink-0 font-medium">
-                            {t('chat.reattached.stillWorking', { agent: engineLabel })}
-                          </span>
-                          <span className="min-w-0 flex-1 truncate text-white/80">
-                            {t('chat.reattached.responseWillAppear')}
-                          </span>
-                        </div>
-                      </div>
-                    )}
                     <ChatInput />
                   </div>
                 </>
@@ -321,7 +302,7 @@ export function ChatPanel(): React.JSX.Element {
 
         {/* Side panel */}
         {showSidePanel && (
-          <div className="relative flex border-l border-border bg-app" style={{ width: sidePanelContentWidth }}>
+          <div className="relative flex shrink-0 border-l border-border bg-app" style={{ width: sidePanelContentWidth }}>
             <ResizeHandle
               onResize={(delta) => {
                 if (showFileTreeOnly) {

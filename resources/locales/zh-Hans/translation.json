@@ -88,10 +88,6 @@
       "openFolder": "打开文件夹…",
       "yourHomeDirectory": "你的主目录"
     },
-    "reattached": {
-      "responseWillAppear": "回答完成后会立即显示在这里。",
-      "stillWorking": "{{agent}} 仍在该会话中工作。"
-    },
     "scrollToBottom": "滚动到底部",
     "search": {
       "closeWithShortcut": "关闭（Esc）",
@@ -259,10 +255,7 @@
     "dialog": {
       "closeAriaLabel": "关闭对话框",
       "commitMessageLabel": "提交信息",
-      "commitTitle": "提交更改",
-      "scopeAll": "所有更改",
-      "scopeLabel": "要提交的文件",
-      "scopeSession_other": "会话文件（{{count}}）"
+      "commitTitle": "提交更改"
     },
     "draft": {
       "engineUnavailable": "代理可执行文件不可用。请检查代理配置，或手动填写提交信息。",

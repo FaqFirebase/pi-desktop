@@ -88,10 +88,6 @@
       "openFolder": "Open folder…",
       "yourHomeDirectory": "Your home directory"
     },
-    "reattached": {
-      "responseWillAppear": "The response appears here the moment it finishes.",
-      "stillWorking": "{{agent}} is still working in this session."
-    },
     "scrollToBottom": "Scroll to bottom",
     "search": {
       "closeWithShortcut": "Close (Esc)",
@@ -263,11 +259,7 @@
     "dialog": {
       "closeAriaLabel": "Close dialog",
       "commitMessageLabel": "Commit message",
-      "commitTitle": "Commit changes",
-      "scopeAll": "All changes",
-      "scopeLabel": "Files to commit",
-      "scopeSession_one": "Session file ({{count}})",
-      "scopeSession_other": "Session files ({{count}})"
+      "commitTitle": "Commit changes"
     },
     "draft": {
       "engineUnavailable": "The agent executable is unavailable. Check Agent Configuration or write your message manually.",
