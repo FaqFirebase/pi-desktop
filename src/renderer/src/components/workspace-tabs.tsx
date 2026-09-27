@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { AlertCircle, CheckCircle2, FolderOpen, GitBranch, Loader2, MessageSquarePlus, Plus, Settings, X, XCircle } from 'lucide-react'
@@ -6,8 +6,9 @@ import { clsx } from 'clsx'
 import { useAppStore } from '../store'
 import { useGlobalWorkflowOpen } from '../hooks'
 import { getSessionTitle } from '../utils/session-title'
-import { projectTabShortcutIndex } from '../utils/project-tab-shortcut'
-import { sessionTabShortcutIndex } from '../utils/session-tab-shortcut'
+import { projectTabs as getProjectTabs, sessionTabs as getSessionTabs } from '../utils/tab-navigation'
+import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
+import { formatShortcut } from '../../../shared/keyboard-shortcuts'
 import { pathsEqual } from '../../../shared/path-compare'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import type { Workspace } from '../../../shared/ipc-contracts'
@@ -33,6 +34,7 @@ export function WorkspaceTabs({ projectBar }: { projectBar: HTMLDivElement }): R
   const removeWorkspace = useAppStore((state) => state.removeWorkspace)
   const createWorktreeTab = useAppStore((state) => state.createWorktreeTab)
   const createNewSession = useAppStore((state) => state.createNewSession)
+  const newSessionShortcut = useAppStore((state) => (state.settingsDraft.shortcuts ?? state.settings?.shortcuts ?? DEFAULT_SETTINGS.shortcuts).newSession)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
 
   const toolView = ['settings', 'packages', 'notes', 'skills', 'diagnostics'] as const
@@ -40,14 +42,11 @@ export function WorkspaceTabs({ projectBar }: { projectBar: HTMLDivElement }): R
     toolView.includes(currentView as (typeof toolView)[number]) || globalWorkflowOpen
 
   const tabs = useMemo(
-    () => [...workspaces].sort((a, b) => a.createdAt - b.createdAt),
+    () => getProjectTabs(workspaces),
     [workspaces]
   )
   const sessionTabs = useMemo(
-    () => Object.values(sessionRuntimes)
-      .filter((runtime) => runtime.workspaceId === activeWorkspace?.id && runtime.sessionPath)
-      // Newest runtime first; selecting a tab never changes its position.
-      .reverse(),
+    () => getSessionTabs(sessionRuntimes, activeWorkspace?.id),
     [activeWorkspace?.id, sessionRuntimes]
   )
 
@@ -66,34 +65,6 @@ export function WorkspaceTabs({ projectBar }: { projectBar: HTMLDivElement }): R
     setCurrentView('chat')
     void switchSession(sessionPath, activeWorkspace?.path)
   }, [activeWorkspace?.path, setCurrentView, switchSession])
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.defaultPrevented) return
-      const index = projectTabShortcutIndex(
-        event,
-        tabs.findIndex((workspace) => workspace.id === activeWorkspace?.id),
-        tabs.length
-      )
-      if (index !== null) {
-        event.preventDefault()
-        selectProjectTab(tabs[index].id)
-        return
-      }
-      const sessionIndex = sessionTabShortcutIndex(
-        event,
-        sessionTabs.findIndex((runtime) => runtime.runtimeId === activeSessionRuntimeId || runtime.active),
-        sessionTabs.length
-      )
-      if (sessionIndex === null) return
-      const sessionPath = sessionTabs[sessionIndex].sessionPath
-      if (!sessionPath) return
-      event.preventDefault()
-      selectSessionTab(sessionPath)
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [activeWorkspace?.id, activeSessionRuntimeId, tabs, sessionTabs, selectProjectTab, selectSessionTab])
 
   return (
     <div className="flex shrink-0 flex-col bg-app">
@@ -198,7 +169,9 @@ export function WorkspaceTabs({ projectBar }: { projectBar: HTMLDivElement }): R
           void createNewSession()
         }}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary transition-colors"
-        title={t('workspaceTabs.newSessionTitle')}
+        title={newSessionShortcut
+          ? t('settings.shortcuts.actionWithShortcut', { action: t('workspaceTabs.newSessionAriaLabel'), shortcut: formatShortcut(newSessionShortcut, window.piDesktop.system.platform) })
+          : t('workspaceTabs.newSessionAriaLabel')}
         aria-label={t('workspaceTabs.newSessionAriaLabel')}
       >
         <MessageSquarePlus size={15} />

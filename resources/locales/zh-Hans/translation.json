@@ -1115,7 +1115,7 @@
       "actionWithShortcut": "{{action}}（{{shortcut}}）",
       "commandPalette": "命令面板",
       "commitPush": "审查 / 提交并推送",
-      "description": "点击快捷键并按下包含 Cmd 或 Ctrl 的新组合。更改立即生效；保存后重启仍有效。原生菜单和编辑器快捷键保持不变。按 Escape 取消录制。",
+      "description": "点击快捷键并按下包含 Cmd 或 Ctrl 的新组合。更改立即生效；保存后重启仍有效。会话导航在当前项目的已打开会话之间循环。其他原生菜单和编辑器快捷键保持不变。按 Escape 取消录制。",
       "disable": "禁用",
       "disableAction": "禁用{{action}}的快捷键",
       "disabled": "已禁用",
@@ -1123,10 +1123,15 @@
       "heading": "键盘快捷键",
       "invalid": "请使用 Cmd 或 Ctrl 加字母、数字、标点键或 F1–F12。",
       "modelSelector": "模型选择器",
+      "nextProject": "下一个项目",
+      "nextSession": "下一个已打开会话",
       "notes": "笔记选择器",
       "pressKeys": "请按下组合键…",
+      "previousProject": "上一个项目",
+      "previousSession": "上一个已打开会话",
       "reserved": "此组合键已被原生菜单或编辑器操作占用。",
-      "reset": "重置快捷键"
+      "reset": "重置快捷键",
+      "sidebar": "侧边栏"
     },
     "showThinking": {
       "description": "在回复中显示模型思考块",
@@ -1803,7 +1808,6 @@
     "newIsolatedTabTitle": "新建隔离 Git 标签页（需要 Git 项目）",
     "newSessionAriaLabel": "在此项目中新建会话",
     "newSessionFallback": "新建会话",
-    "newSessionTitle": "在此项目中新建会话（Ctrl/Cmd+N）",
     "removeWorkspaceAriaLabel": "移除 {{name}}",
     "tools": "工具"
   }

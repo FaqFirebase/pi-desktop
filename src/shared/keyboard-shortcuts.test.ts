@@ -45,11 +45,18 @@ test('conflicts account for primary-modifier aliases and reserved native/editor 
 })
 
 test('saved remappings and disabled actions survive normalization; missing actions acquire defaults', () => {
-  const stored = JSON.parse(JSON.stringify({ shortcuts: { diff: 'Mod+Shift+D', terminal: null } }))
+  const stored = JSON.parse(JSON.stringify({ shortcuts: { diff: 'Mod+Shift+D', terminal: null, nextSession: 'Mod+J', newSession: null } }))
   const settings = normalizeStoredSettings(stored, ['en'])
   assert.equal(matchesShortcut(commandG, settings.shortcuts.diff, 'darwin'), false)
   assert.equal(matchesShortcut({ ...commandG, code: 'KeyD', key: 'D', shiftKey: true }, settings.shortcuts.diff, 'darwin'), true)
   assert.equal(matchesShortcut(commandG, settings.shortcuts.terminal, 'darwin'), false)
+  assert.equal(settings.shortcuts.newSession, null)
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    const event = { ...commandG, key: 'j', code: 'KeyJ', metaKey: platform === 'darwin', ctrlKey: platform !== 'darwin' }
+    assert.equal(matchesShortcut(event, settings.shortcuts.nextSession, platform), true)
+    assert.equal(matchesShortcut({ ...event, key: ']', code: 'BracketRight' }, settings.shortcuts.nextSession, platform), false)
+    assert.equal(shortcutProblem(settings.shortcuts, platform), null)
+  }
   assert.equal(settings.shortcuts.commandPalette, DEFAULT_SETTINGS.shortcuts.commandPalette)
   assert.equal(normalizeStoredSettings({ shortcuts: { diff: 42 } }, ['en']).shortcuts.diff, DEFAULT_SETTINGS.shortcuts.diff)
 })

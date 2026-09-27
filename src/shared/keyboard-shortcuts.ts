@@ -1,4 +1,8 @@
-export const SHORTCUT_ACTIONS = ['diff', 'terminal', 'settings', 'commandPalette', 'modelSelector', 'notes', 'commitPush'] as const
+export const SHORTCUT_ACTIONS = [
+  'modelSelector', 'sidebar', 'files', 'diff', 'terminal', 'review',
+  'newSession', 'previousProject', 'nextProject', 'previousSession', 'nextSession',
+  'commitPush', 'settings', 'commandPalette', 'notes',
+] as const
 export type ShortcutAction = typeof SHORTCUT_ACTIONS[number]
 export type KeyboardShortcuts = Record<ShortcutAction, string | null>
 
@@ -10,6 +14,14 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   modelSelector: 'Mod+Shift+M',
   notes: 'Ctrl+Shift+P',
   commitPush: 'Meta+P',
+  sidebar: 'Mod+B',
+  files: 'Mod+Shift+E',
+  review: 'Mod+Shift+U',
+  newSession: 'Mod+N',
+  previousProject: 'Mod+Shift+BracketLeft',
+  nextProject: 'Mod+Shift+BracketRight',
+  previousSession: 'Mod+BracketLeft',
+  nextSession: 'Mod+BracketRight',
 }
 
 export interface ShortcutKeyEvent {
@@ -76,13 +88,12 @@ export function captureShortcut(event: ShortcutKeyEvent, platform: string): stri
   return [...parts, key].join('+')
 }
 
-// Native menu, editing, chat search/model cycling, and tab navigation stay fixed.
+// Native menu, editing, and chat search/model cycling stay fixed.
 const RESERVED_SHORTCUTS = [
-  'Mod+N', 'Mod+Shift+N', 'Mod+O', 'Mod+Q', 'Mod+W', 'Mod+M',
+  'Mod+Shift+N', 'Mod+O', 'Mod+Q', 'Mod+W', 'Mod+M',
   'Mod+R', 'Mod+Shift+R', 'Mod+Alt+I', 'Ctrl+Shift+I',
   'Mod+Z', 'Mod+Shift+Z', 'Mod+Y', 'Mod+X', 'Mod+C', 'Mod+V', 'Mod+Shift+V', 'Mod+A',
   'Mod+S', 'Mod+F', 'Ctrl+P', 'Mod+Equal', 'Mod+Shift+Equal', 'Mod+Minus', 'Mod+0',
-  'Meta+BracketLeft', 'Meta+BracketRight', 'Meta+Shift+BracketLeft', 'Meta+Shift+BracketRight',
 ]
 
 export type ShortcutProblem = { kind: 'invalid' | 'reserved'; action: ShortcutAction }

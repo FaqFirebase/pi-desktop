@@ -205,7 +205,7 @@ function createMainWindow(): BrowserWindow {
   })
 
   // Hide the top menu bar (File/Edit/View/Window). The application menu stays
-  // set so its accelerators (Ctrl+N, Ctrl+O, copy/paste, etc.) keep working;
+  // set so its accelerators (Ctrl+O, copy/paste, etc.) keep working;
   // only the visible bar is hidden. autoHideMenuBar is left off so Alt won't
   // reveal it.
   window.setMenuBarVisibility(false)
@@ -335,7 +335,6 @@ function createApplicationMenu(): void {
       submenu: [
         {
           label: t('common.newSession'),
-          accelerator: 'CmdOrCtrl+N',
           click: () => {
             const focusedWindow = BrowserWindow.getFocusedWindow()
             focusedWindow?.webContents.send('menu:new-session')

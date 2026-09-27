@@ -16,6 +16,14 @@ function actionLabel(action: ShortcutAction, t: TFunction): string {
     case 'modelSelector': return t('settings.shortcuts.modelSelector')
     case 'notes': return t('settings.shortcuts.notes')
     case 'commitPush': return t('settings.shortcuts.commitPush')
+    case 'sidebar': return t('settings.shortcuts.sidebar')
+    case 'files': return t('chat.toolbar.fileTree')
+    case 'review': return t('chat.toolbar.reviewPanel')
+    case 'newSession': return t('common.newSession')
+    case 'previousProject': return t('settings.shortcuts.previousProject')
+    case 'nextProject': return t('settings.shortcuts.nextProject')
+    case 'previousSession': return t('settings.shortcuts.previousSession')
+    case 'nextSession': return t('settings.shortcuts.nextSession')
   }
 }
 

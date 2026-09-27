@@ -2,35 +2,74 @@ import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { matchesShortcut, SHORTCUT_ACTIONS, shortcutProblem, type ShortcutAction } from '../../../shared/keyboard-shortcuts'
 import { useAppStore } from '../store'
 import { requestCommitPushDialog } from './commit-push-shortcut'
+import { adjacentTabIndex, projectTabs, sessionTabs } from './tab-navigation'
 
 export async function runAppShortcut(action: ShortcutAction): Promise<void> {
   const state = useAppStore.getState()
   switch (action) {
+    case 'files':
     case 'diff': {
       const workflowVisible = state.workflowPanelOpen && !state.workflowPanelFilter && state.workflowPanelWorkspaceId === null
-      const diffVisible = !workflowVisible && (state.currentView === 'diff' ||
-        (state.currentView === 'chat' && state.chatSidePanel === 'diff'))
-      if (diffVisible) {
+      const panelVisible = !workflowVisible && ((action === 'diff' && state.currentView === 'diff') ||
+        (state.currentView === 'chat' && state.chatSidePanel === action))
+      if (panelVisible) {
         await state.setChatSidePanel(null)
         state.setCurrentView('chat')
         return
       }
       if (!state.activeWorkspace) return
-      const opened = await state.setChatSidePanel('diff')
+      const opened = await state.setChatSidePanel(action)
       if (opened && useAppStore.getState().activeWorkspace?.id === state.activeWorkspace.id) {
         useAppStore.getState().setWorkflowPanelOpen(false)
         useAppStore.getState().setCurrentView('chat')
       }
       return
     }
+    case 'sidebar':
+      state.toggleSidebar()
+      return
     case 'terminal':
-      if (state.currentView !== 'chat') {
+    case 'review': {
+      const toggle = action === 'terminal' ? state.toggleTerminal : state.toggleReview
+      const open = action === 'terminal' ? state.terminalOpen : state.reviewOpen
+      const workflowVisible = state.workflowPanelOpen && !state.workflowPanelFilter && state.workflowPanelWorkspaceId === null
+      if (state.currentView !== 'chat' || workflowVisible) {
+        state.setWorkflowPanelOpen(false)
         state.setCurrentView('chat')
-        if (!state.terminalOpen) state.toggleTerminal()
+        if (!open) toggle()
       } else {
-        state.toggleTerminal()
+        toggle()
       }
       return
+    }
+    case 'newSession':
+      state.setWorkflowPanelOpen(false)
+      state.setCurrentView('chat')
+      await state.createNewSession()
+      return
+    case 'previousProject':
+    case 'nextProject': {
+      const tabs = projectTabs(state.workspaces)
+      const index = adjacentTabIndex(tabs.findIndex((tab) => tab.id === state.activeWorkspace?.id), tabs.length,
+        action === 'nextProject' ? 'next' : 'previous')
+      if (index === null) return
+      if (await state.activateWorkspace(tabs[index].id)) {
+        useAppStore.getState().setWorkflowPanelOpen(false)
+        useAppStore.getState().setCurrentView('chat')
+      }
+      return
+    }
+    case 'previousSession':
+    case 'nextSession': {
+      const tabs = sessionTabs(state.sessionRuntimes, state.activeWorkspace?.id)
+      const index = adjacentTabIndex(tabs.findIndex((tab) => tab.runtimeId === state.activeSessionRuntimeId || tab.active), tabs.length,
+        action === 'nextSession' ? 'next' : 'previous')
+      if (index === null) return
+      state.setWorkflowPanelOpen(false)
+      state.setCurrentView('chat')
+      await state.switchSession(tabs[index].sessionPath!, state.activeWorkspace?.path)
+      return
+    }
     case 'settings':
       state.setCurrentView('settings')
       return
