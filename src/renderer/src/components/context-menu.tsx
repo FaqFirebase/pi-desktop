@@ -15,6 +15,7 @@ import {
   Pencil,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
+import type { Terminal as XTerm } from '@xterm/xterm'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { useAppStore } from '../store'
 import { getSessionTitle } from '../utils/session-title'
@@ -430,6 +431,62 @@ export function buildSessionContextMenu(
   })
 
   return items
+}
+
+/**
+ * Right-click menu for the terminal panel. xterm keeps its own selection and
+ * reads input from a hidden textarea, so the default menu (DOM selection,
+ * textarea value edits) cannot copy from or paste into it.
+ */
+export function buildTerminalContextMenu(terminal: XTerm, showShortcuts: boolean): ContextMenuItem[] {
+  const selectedText = terminal.getSelection()
+  const hasSelection = selectedText.length > 0
+
+  return [
+    {
+      id: 'terminal-copy',
+      label: t('common.copy'),
+      icon: <Copy size={14} />,
+      shortcut: showShortcuts ? t('contextMenu.shortcuts.copy') : undefined,
+      disabled: !hasSelection,
+      action: () => {
+        if (hasSelection) {
+          navigator.clipboard.writeText(selectedText)
+        }
+      },
+    },
+    {
+      id: 'terminal-paste',
+      label: t('common.paste'),
+      icon: <ClipboardPaste size={14} />,
+      shortcut: showShortcuts ? t('contextMenu.shortcuts.paste') : undefined,
+      action: async () => {
+        try {
+          terminal.paste(await navigator.clipboard.readText())
+        } catch {
+          // Clipboard API may be blocked
+        }
+      },
+    },
+    {
+      id: 'divider-terminal-1',
+      label: '',
+      divider: true,
+      action: () => {},
+    },
+    {
+      id: 'terminal-select-all',
+      label: t('common.selectAll'),
+      icon: <TextSelect size={14} />,
+      action: () => terminal.selectAll(),
+    },
+    {
+      id: 'terminal-clear',
+      label: t('terminal.clearAriaLabel'),
+      icon: <Trash2 size={14} />,
+      action: () => terminal.clear(),
+    },
+  ]
 }
 
 export function buildLinkContextMenu(url: string): ContextMenuItem[] {

@@ -8,6 +8,8 @@ import { useAppStore } from '../store'
 import { useAppliedThemeId } from '../hooks'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { clsx } from 'clsx'
+import { useContextMenu, buildTerminalContextMenu } from './context-menu'
+import { isNativeClipboardShortcut, usesCtrlClipboardShortcuts } from './terminal-clipboard'
 import {
   Terminal as TerminalIcon,
   X,
@@ -65,6 +67,7 @@ export function TerminalPanel(): React.JSX.Element | null {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<XTerm | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
+  const { show: showContextMenu, ContextMenuComponent: TerminalContextMenu } = useContextMenu()
 
   useEffect(() => {
     if (!terminalOpen || !containerRef.current) return
@@ -87,6 +90,10 @@ export function TerminalPanel(): React.JSX.Element | null {
     terminal.loadAddon(fit)
     terminal.loadAddon(new WebLinksAddon())
     terminal.open(containerRef.current)
+    const platform = window.piDesktop.system.platform
+    terminal.attachCustomKeyEventHandler(
+      (event) => !isNativeClipboardShortcut(event, platform, terminal.hasSelection())
+    )
 
     terminalRef.current = terminal
     fitRef.current = fit
@@ -197,7 +204,20 @@ export function TerminalPanel(): React.JSX.Element | null {
         </div>
       </div>
 
-      <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden p-2" />
+      <div
+        ref={containerRef}
+        className="min-h-0 flex-1 overflow-hidden p-2"
+        onContextMenu={(e) => {
+          const terminal = terminalRef.current
+          if (terminal) {
+            showContextMenu(
+              e,
+              buildTerminalContextMenu(terminal, usesCtrlClipboardShortcuts(window.piDesktop.system.platform))
+            )
+          }
+        }}
+      />
+      {TerminalContextMenu}
     </div>
   )
 }
