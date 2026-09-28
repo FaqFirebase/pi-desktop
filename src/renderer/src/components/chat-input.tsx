@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect, useLayoutEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
-import { useAppStore } from '../store'
+import { EMPTY_COMPOSER_DRAFT, useAppStore, type ComposerAttachment } from '../store'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { t } from '../../../shared/i18n'
 import { useChatKeyboard, useChatWidth, useCommandCatalog } from '../hooks'
@@ -16,7 +16,6 @@ import { ThinkingLevelSelector } from './thinking-level-selector'
 import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users, Search } from 'lucide-react'
 import {
   SUPPORTED_IMAGE_EXTENSIONS,
-  type PromptImage,
   type FileSearchResult,
 } from '../../../shared/ipc-contracts'
 import { formatUntrustedBlock } from '../../../shared/untrusted-data'
@@ -30,6 +29,7 @@ import {
   type PiCommand,
 } from '../../../shared/pi-command'
 import { isImeComposing } from '../utils/ime-composing'
+import { NO_RECALLED_PROMPT, composerDraftText } from './composer-draft'
 
 const MAX_INPUT_HEIGHT = 160
 const MIN_INPUT_HEIGHT = 40
@@ -74,11 +74,6 @@ function detectMention(ta: HTMLTextAreaElement): MentionState | null {
   return { start: pos - query.length - 1, query }
 }
 
-// A staged attachment: either inlined as text or sent to Pi as an image block.
-type Attachment =
-  | { kind: 'text'; name: string; path: string; content: string }
-  | { kind: 'image'; name: string; path: string; image: PromptImage }
-
 export function ChatInput(): React.JSX.Element {
   const { t } = useTranslation()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -99,11 +94,11 @@ export function ChatInput(): React.JSX.Element {
   const setPermissionMode = useAppStore((s) => s.setPermissionMode)
   const toggleFileSearch = useAppStore((s) => s.toggleFileSearch)
 
-  // Prompt-history recall (shell-style ↑/↓). `historyIndex` is -1 when editing a
-  // fresh draft; while navigating it points into store.promptHistory and `draft`
-  // holds the text that was in the box before recall started (restored on ↓ past
-  // the newest entry).
-  const historyIndex = useRef(-1)
+  // Prompt-history recall (shell-style ↑/↓). `historyIndex` is NO_RECALLED_PROMPT
+  // while editing a fresh draft; while navigating it points into
+  // store.promptHistory and `draft` holds the text that was in the box before
+  // recall started (restored on ↓ past the newest entry).
+  const historyIndex = useRef(NO_RECALLED_PROMPT)
   const draft = useRef('')
 
   // Inline slash-command popup: suggestions overlay the composer while the
@@ -147,7 +142,12 @@ export function ChatInput(): React.JSX.Element {
     clearPendingInsert()
   }, [pendingInsert, clearPendingInsert, resizeTextarea])
 
-  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
+  // The staged files as of the last commit, for the draft save on workspace switch.
+  const attachmentsRef = useRef(attachments)
+  useLayoutEffect(() => {
+    attachmentsRef.current = attachments
+  }, [attachments])
   const [attachError, setAttachError] = useState<string | null>(null)
 
   // Clear the composer and collapse it back to the idle height. The textarea is
@@ -173,9 +173,12 @@ export function ChatInput(): React.JSX.Element {
   useLayoutEffect(() => {
     const ta = textareaRef.current
     if (!ta) return
-    ta.value = useAppStore.getState().composerDrafts[workspaceId] ?? ''
+    const saved = useAppStore.getState().composerDrafts[workspaceId] ?? EMPTY_COMPOSER_DRAFT
+    ta.value = saved.text
     resizeTextarea(ta)
-    historyIndex.current = -1
+    setAttachments(saved.attachments)
+    setAttachError(null)
+    historyIndex.current = NO_RECALLED_PROMPT
     draft.current = ''
     setSlashToken(null)
     setMention(null)
@@ -183,7 +186,10 @@ export function ChatInput(): React.JSX.Element {
 
     // Capture the element and owner before a workspace switch or unmount.
     return () => {
-      useAppStore.getState().saveComposerDraft(workspaceId, ta.value)
+      useAppStore.getState().saveComposerDraft(workspaceId, {
+        text: composerDraftText(ta.value, historyIndex.current, draft.current),
+        attachments: attachmentsRef.current,
+      })
     }
   }, [workspaceId, resizeTextarea])
 
@@ -286,14 +292,14 @@ export function ChatInput(): React.JSX.Element {
       // Record the raw prompt (pre-attachment-inlining) for ↑/↓ recall, and
       // reset any in-progress history navigation.
       recordPrompt(message)
-      historyIndex.current = -1
+      historyIndex.current = NO_RECALLED_PROMPT
       draft.current = ''
 
       // Text attachments are inlined into the prompt; image attachments are
       // sent as Pi image blocks so the model actually sees them.
       const textAttachments = attachments.filter((a) => a.kind === 'text')
       const imageAttachments = attachments.filter(
-        (a): a is Extract<Attachment, { kind: 'image' }> => a.kind === 'image'
+        (a): a is Extract<ComposerAttachment, { kind: 'image' }> => a.kind === 'image'
       )
       const images = imageAttachments.map((a) => a.image)
       const displayAttachments = imageAttachments.map((a) => ({
@@ -357,7 +363,7 @@ export function ChatInput(): React.JSX.Element {
         ta.focus()
         ta.setSelectionRange(r.caret, r.caret)
         resizeTextarea(ta)
-        historyIndex.current = -1
+        historyIndex.current = NO_RECALLED_PROMPT
       },
       onFinal: (text: string) => {
         const ta = textareaRef.current
@@ -368,7 +374,7 @@ export function ChatInput(): React.JSX.Element {
         ta.focus()
         ta.setSelectionRange(r.caret, r.caret)
         resizeTextarea(ta)
-        historyIndex.current = -1
+        historyIndex.current = NO_RECALLED_PROMPT
       },
     }),
     [resizeTextarea]
@@ -387,7 +393,7 @@ export function ChatInput(): React.JSX.Element {
       })
       if (!path) return
       const result = await window.piDesktop.files.readAttachment(path)
-      const next: Attachment =
+      const next: ComposerAttachment =
         result.kind === 'image'
           ? { kind: 'image', name: result.name, path, image: result.image }
           : { kind: 'text', name: result.name, path, content: result.content }
@@ -419,7 +425,7 @@ export function ChatInput(): React.JSX.Element {
       const ext = subtype === 'jpeg' ? 'jpg' : subtype
       const name = file.name && file.name !== 'image.png' ? file.name : `pasted-image.${ext}`
       const path = `clipboard://${name}-${file.size}-${file.lastModified}`
-      const next: Attachment = {
+      const next: ComposerAttachment = {
         kind: 'image',
         name,
         path,
@@ -579,7 +585,7 @@ export function ChatInput(): React.JSX.Element {
             const target = e.currentTarget
             resizeTextarea(target)
             // Any real edit ends history navigation; the box is a fresh draft again.
-            historyIndex.current = -1
+            historyIndex.current = NO_RECALLED_PROMPT
             // Offer command suggestions only while the draft is a bare
             // `/token` — once whitespace appears the user is typing arguments
             // after a chosen command, not searching for one (issue #50).
@@ -672,7 +678,7 @@ export function ChatInput(): React.JSX.Element {
                 const onFirstLine = ta.value.slice(0, ta.selectionStart).indexOf('\n') === -1
                 if (!onFirstLine || history.length === 0) return
                 e.preventDefault()
-                if (historyIndex.current === -1) {
+                if (historyIndex.current === NO_RECALLED_PROMPT) {
                   draft.current = ta.value
                   historyIndex.current = history.length - 1
                 } else if (historyIndex.current > 0) {
@@ -681,13 +687,13 @@ export function ChatInput(): React.JSX.Element {
                 applyHistory(history[historyIndex.current])
               } else {
                 const onLastLine = ta.value.slice(ta.selectionEnd).indexOf('\n') === -1
-                if (!onLastLine || historyIndex.current === -1) return
+                if (!onLastLine || historyIndex.current === NO_RECALLED_PROMPT) return
                 e.preventDefault()
                 if (historyIndex.current < history.length - 1) {
                   historyIndex.current += 1
                   applyHistory(history[historyIndex.current])
                 } else {
-                  historyIndex.current = -1
+                  historyIndex.current = NO_RECALLED_PROMPT
                   applyHistory(draft.current)
                 }
               }
@@ -730,7 +736,7 @@ export function ChatInput(): React.JSX.Element {
                 const value = textareaRef.current?.value.trim()
                 if (value) {
                   recordPrompt(value)
-                  historyIndex.current = -1
+                  historyIndex.current = NO_RECALLED_PROMPT
                   draft.current = ''
                   void runCouncil(value)
                   resetComposer()

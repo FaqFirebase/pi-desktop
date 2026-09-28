@@ -80,6 +80,21 @@ export interface PreviewTarget {
   relativePath?: string
 }
 
+// ─── Composer Draft ──────────────────────────────────────────────────────────
+
+// A staged attachment: either inlined as text or sent to Pi as an image block.
+export type ComposerAttachment =
+  | { kind: 'text'; name: string; path: string; content: string }
+  | { kind: 'image'; name: string; path: string; image: PromptImage }
+
+/** Unsent composer content for one workspace: its text and staged files. */
+export interface ComposerDraft {
+  text: string
+  attachments: ComposerAttachment[]
+}
+
+export const EMPTY_COMPOSER_DRAFT: ComposerDraft = { text: '', attachments: [] }
+
 // ─── Council Run State ───────────────────────────────────────────────────────
 
 export type CouncilPhase = 'detecting' | 'consulting' | 'merging' | 'awaiting-approval' | 'refused'
@@ -398,10 +413,13 @@ interface AppState {
   notePickerOpen: boolean
   commandPaletteOpen: boolean
   taskLauncherOpen: boolean
+  // Unsent composer text and attachments per workspace id ('' when no
+  // workspace is open), so switching projects never carries one project's
+  // draft into another.
+  composerDrafts: Record<string, ComposerDraft>
+  saveComposerDraft: (workspaceId: string, draft: ComposerDraft) => void
   // A prompt queued for insertion into the chat input. The nonce lets the
   // chat input re-apply the same text on repeated inserts.
-  composerDrafts: Record<string, string>
-  saveComposerDraft: (workspaceId: string, text: string) => void
   pendingInsert: { text: string; nonce: number; replace?: boolean } | null
   // Body text captured (e.g. from a message) to seed a new note in the Notes
   // panel. Non-null opens the panel's New Note form pre-filled.
@@ -960,9 +978,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   commandPaletteOpen: false,
   taskLauncherOpen: false,
   composerDrafts: {},
-  saveComposerDraft: (workspaceId, text) => set((state) => {
+  saveComposerDraft: (workspaceId, draft) => set((state) => {
+    // The composer saves on unmount and on workspace change, which also fires
+    // after its workspace was removed; a removed workspace keeps no draft.
+    const isRemovedWorkspace = workspaceId !== '' && !state.workspaces.some((w) => w.id === workspaceId)
     const composerDrafts = { ...state.composerDrafts }
-    if (text) composerDrafts[workspaceId] = text
+    const hasContent = draft.text !== '' || draft.attachments.length > 0
+    if (hasContent && !isRemovedWorkspace) composerDrafts[workspaceId] = draft
     else delete composerDrafts[workspaceId]
     return { composerDrafts }
   }),
@@ -2788,6 +2810,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       const result = await window.piDesktop.workspace.remove(workspaceId)
       await get().loadWorkspaces()
+      get().saveComposerDraft(workspaceId, EMPTY_COMPOSER_DRAFT)
       adoptMainSideActivation(get, set, previousActiveId)
       if (result.preservedWorktreePath) {
         get().addMessage({

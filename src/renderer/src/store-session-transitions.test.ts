@@ -1289,6 +1289,41 @@ test('removing an inactive workspace never asks about the editor', async () => {
   assert.equal(useAppStore.getState().editorDirty, true)
 })
 
+const DRAFT_ONE = { text: 'draft one', attachments: [] }
+const DRAFT_TWO = {
+  text: 'draft two',
+  attachments: [{ kind: 'text' as const, name: 'notes.md', path: '/tmp/notes.md', content: '# Notes' }],
+}
+
+test('removing a workspace drops its composer draft and keeps the others', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE]
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    composerDrafts: { [WORKSPACE_ONE.id]: DRAFT_ONE, [WORKSPACE_TWO.id]: DRAFT_TWO },
+  })
+  answerConfirm(true)
+
+  await useAppStore.getState().removeWorkspace(WORKSPACE_TWO.id)
+
+  assert.deepEqual(useAppStore.getState().composerDrafts, { [WORKSPACE_ONE.id]: DRAFT_ONE })
+})
+
+test('a declined removal keeps the workspace draft', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    composerDrafts: { [WORKSPACE_TWO.id]: DRAFT_TWO },
+  })
+  answerConfirm(false)
+
+  await useAppStore.getState().removeWorkspace(WORKSPACE_TWO.id)
+
+  assert.deepEqual(useAppStore.getState().composerDrafts, { [WORKSPACE_TWO.id]: DRAFT_TWO })
+})
+
 test('creating a duplicate-path workspace asks before activating over a dirty editor', async () => {
   activeWorkspaceResult = WORKSPACE_ONE
   workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
