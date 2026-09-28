@@ -1593,6 +1593,18 @@ test('leaving chat drops a pending composer focus request', () => {
   )
 })
 
+test('the model picker stays open in chat and closes when the user leaves chat', () => {
+  useAppStore.setState({ currentView: 'chat', modelPickerOpen: true })
+  // Starting the runtime from the picker remounts the composer; the open
+  // state lives in the store so the remounted picker is still open.
+  useAppStore.setState({ piStatus: 'running' })
+  assert.equal(useAppStore.getState().modelPickerOpen, true)
+
+  useAppStore.getState().setCurrentView('settings')
+
+  assert.equal(useAppStore.getState().modelPickerOpen, false)
+})
+
 test('a composer focus request raised outside chat is dropped at once', () => {
   // The unmounting composer hands focus on after the view already changed.
   useAppStore.setState({ currentView: 'notes' })

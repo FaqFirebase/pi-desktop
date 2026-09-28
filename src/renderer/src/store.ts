@@ -424,6 +424,9 @@ interface AppState {
   // Set when a session opens; the chat input takes focus once it can, unless
   // the user leaves chat or focuses something else first.
   composerFocusRequested: boolean
+  // Whether the model picker is open. Kept here, not in the picker, because
+  // opening it can start the runtime, which remounts the composer.
+  modelPickerOpen: boolean
   // Body text captured (e.g. from a message) to seed a new note in the Notes
   // panel. Non-null opens the panel's New Note form pre-filled.
   noteDraft: string | null
@@ -993,6 +996,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   }),
   pendingInsert: null,
   composerFocusRequested: false,
+  modelPickerOpen: false,
   noteDraft: null,
   updateInfo: null,
   updateDismissed: false,
@@ -3280,13 +3284,14 @@ useAppStore.subscribe((state, prev) => {
   )
 })
 
-// A composer focus request is only for the chat the user is looking at. Once
-// they leave chat, drop it, so a later return to chat never pulls focus from
-// whatever they opened meanwhile. Several actions change the view with a
-// direct set(), so a subscription catches every path.
+// A composer focus request and an open model picker are only for the chat the
+// user is looking at. Once they leave chat, drop both, so a later return to
+// chat never pulls focus from whatever they opened meanwhile or shows a stale
+// picker. Several actions change the view with a direct set(), so a
+// subscription catches every path.
 useAppStore.subscribe((state) => {
-  if (state.composerFocusRequested && state.currentView !== 'chat') {
-    useAppStore.setState({ composerFocusRequested: false })
+  if ((state.composerFocusRequested || state.modelPickerOpen) && state.currentView !== 'chat') {
+    useAppStore.setState({ composerFocusRequested: false, modelPickerOpen: false })
   }
 })
 

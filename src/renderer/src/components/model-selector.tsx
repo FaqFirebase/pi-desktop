@@ -7,6 +7,8 @@ import { filterModels } from '../utils/model-search'
 import { clsx } from 'clsx'
 import { Cpu, ChevronUp, Check, Loader2, Search } from 'lucide-react'
 
+const setIsOpen = (modelPickerOpen: boolean): void => useAppStore.setState({ modelPickerOpen })
+
 interface ModelSelectorProps {
   className?: string
   compact?: boolean
@@ -26,7 +28,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
   const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const settings = useAppStore((state) => state.settings)
 
-  const [isOpen, setIsOpen] = useState(false)
+  const isOpen = useAppStore((state) => state.modelPickerOpen)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
