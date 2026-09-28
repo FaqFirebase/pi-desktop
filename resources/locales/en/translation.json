@@ -1573,9 +1573,8 @@
     }
   },
   "thinking": {
-    "effort": "Effort",
-    "effortWithLevel": "Thinking effort: {{level}}",
-    "modelAwareDepth": "Model-aware thinking depth"
+    "effort": "Thinking effort",
+    "effortWithLevel": "Thinking effort: {{level}}"
   },
   "time": {
     "justNow": "just now"
