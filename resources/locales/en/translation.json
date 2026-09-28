@@ -1249,10 +1249,7 @@
     "recentSessions": {
       "emptyInProject": "No sessions in this project yet.",
       "emptyNoProject": "Open a project to see its sessions.",
-      "headingNoProject": "Recent sessions",
-      "headingWithProject": "Recent in {{project}}",
-      "startOneNow": "Start one now",
-      "viewAll": "View all"
+      "startOneNow": "Start one now"
     },
     "sessionNamePlaceholder": "Session name",
     "sessionRow": {
