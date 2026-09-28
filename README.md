@@ -234,9 +234,11 @@ Download from [Releases](https://github.com/FaqFirebase/pi-desktop/releases): th
 ```bash
 git clone https://github.com/FaqFirebase/pi-desktop.git
 cd pi-desktop
-npm install
+npm install --ignore-scripts=false
 npm run dev
 ```
+
+`--ignore-scripts=false` enables the install scripts needed to prepare Electron and native modules, even if your npm configuration disables scripts by default.
 
 ### Windows
 
@@ -265,10 +267,10 @@ Settings → Privacy & Security → Windows Security → Virus & threat protecti
 ```powershell
 git clone https://github.com/FaqFirebase/pi-desktop.git
 cd pi-desktop
-npm install
+npm install --ignore-scripts=false
 ```
 
-The postinstall script rebuilds `node-pty` against Electron's ABI and downloads the Electron binary. First install may take a few minutes.
+`--ignore-scripts=false` enables install scripts even if your npm configuration disables them by default. The postinstall script rebuilds `node-pty` against Electron's ABI and downloads the Electron binary if needed. First install may take a few minutes.
 
 If the Electron binary is missing after install, use the [manual Electron binary download](#manual-electron-binary-download) steps below. This is the confirmed fallback on Windows when Electron's postinstall extraction leaves a partial `dist` folder.
 
