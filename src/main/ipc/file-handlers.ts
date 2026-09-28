@@ -104,4 +104,10 @@ export function registerFileHandlers(ctx: IpcContext): void {
     if (!fs) return null
     return fs.getGitBranch()
   })
+
+  ipcMain.handle(IPC_CHANNELS.GIT_PREFIX, async () => {
+    const fs = workspaceManager.getActiveFileService()
+    if (!fs) throw new Error(t('errors.workspace.noneActive'))
+    return fs.getGitPrefix()
+  })
 }

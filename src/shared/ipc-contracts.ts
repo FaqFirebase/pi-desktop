@@ -147,6 +147,7 @@ export const IPC_CHANNELS = {
   FILE_WATCH_DEMAND: 'file:watch-demand',
   GIT_STATUS: 'git:status',
   GIT_BRANCH: 'git:branch',
+  GIT_PREFIX: 'git:prefix',
   GIT_CONVEYOR_STATUS: 'git:conveyor-status',
   GIT_CONVEYOR_COMMIT: 'git:conveyor-commit',
   GIT_CONVEYOR_PUSH: 'git:conveyor-push',

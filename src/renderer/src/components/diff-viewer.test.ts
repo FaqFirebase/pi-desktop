@@ -21,7 +21,7 @@ beforeEach(() => {
 })
 
 test('opens the diff path in the editor and reveals the chat preview', async () => {
-  await openDiffFile({ newPath: 'src/new name.ts', isDeleted: false })
+  await openDiffFile({ newPath: 'src/new name.ts', isDeleted: false }, '')
   const state = useAppStore.getState()
   assert.deepEqual(state.previewTarget, {
     kind: 'code', name: 'new name.ts', path: '/project/src/new name.ts', relativePath: 'src/new name.ts',
@@ -30,17 +30,28 @@ test('opens the diff path in the editor and reveals the chat preview', async () 
   assert.equal(state.chatSidePanel, null)
 })
 
+test('opens monorepo diff paths relative to the workspace and skips files outside it', async () => {
+  const workspace = useAppStore.getState().activeWorkspace!
+  useAppStore.setState({ activeWorkspace: { ...workspace, path: '/repo/pkg/app' } })
+  await openDiffFile({ newPath: 'pkg/app2/a.ts', isDeleted: false }, 'pkg/app/')
+  assert.equal(useAppStore.getState().previewTarget, null)
+  await openDiffFile({ newPath: 'pkg/app/src/a.ts', isDeleted: false }, 'pkg/app/')
+  assert.deepEqual(useAppStore.getState().previewTarget, {
+    kind: 'code', name: 'a.ts', path: '/repo/pkg/app/src/a.ts', relativePath: 'src/a.ts',
+  })
+})
+
 test('routes images to the image viewer and preserves Windows paths', async () => {
   const workspace = useAppStore.getState().activeWorkspace!
   useAppStore.setState({ activeWorkspace: { ...workspace, path: 'C:\\project\\' } })
-  await openDiffFile({ newPath: 'assets/image.png', isDeleted: false })
+  await openDiffFile({ newPath: 'assets/image.png', isDeleted: false }, '')
   assert.equal(useAppStore.getState().previewTarget?.kind, 'image')
   assert.equal(useAppStore.getState().previewTarget?.path, 'C:\\project\\assets\\image.png')
 })
 
 test('canceling the unsaved-editor confirmation keeps the diff open', async () => {
   useAppStore.setState({ editorDirty: true })
-  const opening = openDiffFile({ newPath: 'other.ts', isDeleted: false })
+  const opening = openDiffFile({ newPath: 'other.ts', isDeleted: false }, '')
   assert.ok(useAppStore.getState().confirmRequest)
   useAppStore.getState().resolveConfirm(false)
   await opening
@@ -51,10 +62,10 @@ test('canceling the unsaved-editor confirmation keeps the diff open', async () =
 })
 
 test('does not open deleted files or files without an active workspace', async () => {
-  await openDiffFile({ newPath: 'deleted.ts', isDeleted: true })
+  await openDiffFile({ newPath: 'deleted.ts', isDeleted: true }, '')
   assert.equal(useAppStore.getState().previewTarget, null)
   useAppStore.setState({ activeWorkspace: null })
-  await openDiffFile({ newPath: 'file.ts', isDeleted: false })
+  await openDiffFile({ newPath: 'file.ts', isDeleted: false }, '')
   assert.equal(useAppStore.getState().previewTarget, null)
   assert.equal(useAppStore.getState().currentView, 'diff')
 })

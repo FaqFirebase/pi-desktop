@@ -398,6 +398,24 @@ export class FileService {
   }
 
   /**
+   * The workspace's directory inside its repository (`pkg/app/`, '' at the
+   * repository root and for non-repos). Git diff paths start at the
+   * repository root; this maps them onto workspace paths.
+   */
+  async getGitPrefix(): Promise<string> {
+    try {
+      const { stdout } = await execFileAsync('git', ['rev-parse', '--show-prefix'], {
+        cwd: this.workspacePath,
+        timeout: 5_000,
+      })
+      return stdout.trim()
+    } catch (err) {
+      if (isBenignGitError(err) || (await this.probeGitRepo()) === 'outside') return ''
+      throw this.describeAndLogGitError('rev-parse', err)
+    }
+  }
+
+  /**
    * Get a diff for a specific file. Empty for non-repos and machines without
    * git; throws on real git failures so callers can surface them.
    */

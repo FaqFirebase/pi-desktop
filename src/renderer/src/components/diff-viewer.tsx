@@ -17,7 +17,8 @@ import {
 import { formatIpcError } from '../utils/ipc-error'
 import { createStaleGuard } from '../utils/stale-guard'
 import { GitConveyorActions } from './git-conveyor-actions'
-import { isImagePath } from './chat-file-link'
+import { openFilePreview } from './chat-file-link'
+import { joinWorkspacePath, workspaceRelativeGitPath } from '../utils/workspace-path'
 
 interface DiffLine {
   type: 'add' | 'remove' | 'context' | 'header' | 'hunk'
@@ -41,6 +42,7 @@ interface DiffViewerProps {
 export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element {
   const { t } = useTranslation()
   const [files, setFiles] = useState<DiffFileBlock[]>([])
+  const [gitPrefix, setGitPrefix] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
@@ -55,10 +57,12 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
     setFiles([])
     setLoadError(null)
     try {
-      const diff = stagedMode
-        ? await window.piDesktop.files.getStagedDiff()
-        : await window.piDesktop.files.getDiff()
+      const [diff, prefix] = await Promise.all([
+        stagedMode ? window.piDesktop.files.getStagedDiff() : window.piDesktop.files.getDiff(),
+        window.piDesktop.files.getGitPrefix(),
+      ])
       if (!isCurrent()) return
+      setGitPrefix(prefix)
       setFiles(parseDiff(diff))
       setLoadError(null)
     } catch (err) {
@@ -171,6 +175,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
               <DiffFileEntry
                 key={file.newPath}
                 file={file}
+                gitPrefix={gitPrefix}
                 expanded={expandedFiles.has(file.newPath)}
                 onToggle={() => toggleFile(file.newPath)}
               />
@@ -182,32 +187,33 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   )
 }
 
-export async function openDiffFile(file: Pick<DiffFileBlock, 'newPath' | 'isDeleted'>): Promise<void> {
-  const store = useAppStore.getState()
-  const workspace = store.activeWorkspace
-  if (!workspace || file.isDeleted) return
+type OpenableDiffFile = Pick<DiffFileBlock, 'newPath' | 'isDeleted'>
 
-  const name = file.newPath.split('/').pop() ?? file.newPath
-  const separator = workspace.path.includes('\\') ? '\\' : '/'
-  const path = workspace.path.replace(/[\\/]$/, '') + separator + file.newPath.replace(/\//g, separator)
-  const opened = await store.setPreviewTarget({
-    kind: isImagePath(name) ? 'image' : 'code',
-    name,
-    path,
-    relativePath: file.newPath,
+/** The file's workspace-relative path, or null when it is deleted or outside the workspace. */
+function openableDiffPath(file: OpenableDiffFile, gitPrefix: string): string | null {
+  return file.isDeleted ? null : workspaceRelativeGitPath(file.newPath, gitPrefix)
+}
+
+/** Open a diff file in the chat preview; `gitPrefix` maps its repository-root path onto the workspace. */
+export async function openDiffFile(file: OpenableDiffFile, gitPrefix: string): Promise<void> {
+  const workspace = useAppStore.getState().activeWorkspace
+  const relativePath = openableDiffPath(file, gitPrefix)
+  if (!workspace || relativePath === null) return
+  await openFilePreview({
+    name: relativePath.split('/').pop() ?? relativePath,
+    path: joinWorkspacePath(workspace.path, relativePath),
+    relativePath,
   })
-  if (!opened) return
-  const current = useAppStore.getState()
-  if (current.chatSidePanel === 'diff') await current.setChatSidePanel(null)
-  current.setCurrentView('chat')
 }
 
 function DiffFileEntry({
   file,
+  gitPrefix,
   expanded,
   onToggle,
 }: {
   file: DiffFileBlock
+  gitPrefix: string
   expanded: boolean
   onToggle: () => void
 }): React.JSX.Element {
@@ -227,27 +233,27 @@ function DiffFileEntry({
           onClick={onToggle}
           className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 hover:bg-surface-hover/50 transition-colors"
         >
-        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <File size={14} className="shrink-0 text-dim" />
-        <span className="text-xs text-primary truncate">{file.newPath}</span>
-        <div className="ml-auto flex items-center gap-2 text-xs">
-          {file.isNew && (
-            <span className="rounded bg-success-bg px-1.5 py-0.5 text-success">{t('diff.newFileBadge')}</span>
-          )}
-          {file.isDeleted && (
-            <span className="rounded bg-error-bg px-1.5 py-0.5 text-error">{t('diff.deletedFileBadge')}</span>
-          )}
-          {additions > 0 && (
-            <span className="text-success">+{additions}</span>
-          )}
-          {deletions > 0 && (
-            <span className="text-error">-{deletions}</span>
-          )}
-        </div>
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <File size={14} className="shrink-0 text-dim" />
+          <span className="text-xs text-primary truncate">{file.newPath}</span>
+          <div className="ml-auto flex items-center gap-2 text-xs">
+            {file.isNew && (
+              <span className="rounded bg-success-bg px-1.5 py-0.5 text-success">{t('diff.newFileBadge')}</span>
+            )}
+            {file.isDeleted && (
+              <span className="rounded bg-error-bg px-1.5 py-0.5 text-error">{t('diff.deletedFileBadge')}</span>
+            )}
+            {additions > 0 && (
+              <span className="text-success">+{additions}</span>
+            )}
+            {deletions > 0 && (
+              <span className="text-error">-{deletions}</span>
+            )}
+          </div>
         </button>
-        {!file.isDeleted && (
+        {openableDiffPath(file, gitPrefix) !== null && (
           <button
-            onClick={() => void openDiffFile(file)}
+            onClick={() => void openDiffFile(file, gitPrefix)}
             className="mr-2 flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
             title={t('diff.openFile')}
             aria-label={t('diff.openFile')}

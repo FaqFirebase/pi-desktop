@@ -279,6 +279,16 @@ test('getFileDiff and getStagedDiff return empty for a non-repo directory', asyn
   assert.equal(await service.getStagedDiff(), '')
 })
 
+test('getGitPrefix reports the workspace directory inside its repository', async () => {
+  const repo = await mkdtemp(join(tmpdir(), 'fs-prefix-'))
+  execFileSync('git', ['init', '-q'], { cwd: repo })
+  const subfolder = join(repo, 'pkg', 'app')
+  await mkdir(subfolder, { recursive: true })
+  assert.equal(await new FileService(repo).getGitPrefix(), '')
+  assert.equal(await new FileService(subfolder).getGitPrefix(), 'pkg/app/')
+  assert.equal(await new FileService(await mkdtemp(join(tmpdir(), 'fs-nonrepo-'))).getGitPrefix(), '')
+})
+
 // Node's execFile default maxBuffer; a diff above it used to fail (#70).
 const EXEC_FILE_DEFAULT_MAX_BUFFER_BYTES = 1024 * 1024
 
