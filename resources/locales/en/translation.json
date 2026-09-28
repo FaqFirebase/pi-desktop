@@ -1506,8 +1506,9 @@
   "terminal": {
     "clearAriaLabel": "Clear terminal",
     "clearTitle": "Clear",
-    "closeTitle": "Close terminal",
+    "hideTitle": "Hide terminal (the shell keeps running)",
     "maximizeLabel": "Maximize terminal",
+    "restartHint": "Press any key to start a new shell",
     "restoreLabel": "Restore terminal",
     "title": "Terminal"
   },

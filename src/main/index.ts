@@ -4,6 +4,7 @@ import { basename, join, resolve as resolvePath } from 'path'
 import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
 import { workspaceTrustStore } from './workspace-trust'
 import { WorkspaceManager } from './workspace-manager'
+import type { WorkspaceTerminals } from './workspace-terminals'
 import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
 import { setPiExecutableOverride, cleanupPiChildTempDir } from './pi-rpc-manager'
 import { applyLanguageSetting } from './i18n'
@@ -72,6 +73,7 @@ function getAppIconPath(): string {
 // ─── Workspace Manager (singleton) ───────────────────────────────────────────
 
 let workspaceManager: WorkspaceManager | null = null
+let workspaceTerminals: WorkspaceTerminals | null = null
 
 // The single main window, tracked so the tray, single-instance relaunch, and
 // macOS dock-activate can all bring it back. `isQuitting` distinguishes a real
@@ -466,7 +468,7 @@ app.whenReady().then(async () => {
   // lazy closure — mainWindow is created later and the notification wiring
   // only dereferences it at event time. showMainWindow recreates the window
   // when a notification is clicked after a full close (macOS).
-  registerIpcHandlers(workspaceManager, {
+  workspaceTerminals = registerIpcHandlers(workspaceManager, {
     getWindow: () => mainWindow,
     showWindow: showMainWindow,
   }, getAppIconPath())
@@ -546,6 +548,7 @@ app.on('before-quit', (event) => {
   activityStatsStore.flushSync()
   appLog.flushSync()
   workspaceManager?.stopAll()
+  workspaceTerminals?.stopAll()
   // Windows: GUI-owned Pi TEMP does not get OS cleanup — wipe on quit.
   cleanupPiChildTempDir()
 })

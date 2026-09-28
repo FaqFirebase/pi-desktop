@@ -9,11 +9,16 @@ export class WorkspaceTerminals {
 
   constructor(private readonly create: () => Terminal) {}
 
-  start(workspaceId: string, ...args: Parameters<TerminalService['start']>): TerminalStartResult {
+  start(workspaceId: string, ...[options, onData, onExit]: Parameters<TerminalService['start']>): TerminalStartResult {
     const existing = this.entries.get(workspaceId)
     if (existing) return existing.result
     const service = this.create()
-    const result = service.start(...args)
+    // Drop a shell that exited on its own (e.g. `exit`), so the next start
+    // spawns a fresh one instead of returning the dead entry.
+    const result = service.start(options, onData, (event) => {
+      if (this.entries.get(workspaceId)?.service === service) this.entries.delete(workspaceId)
+      onExit(event)
+    })
     this.entries.set(workspaceId, { service, result })
     return result
   }

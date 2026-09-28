@@ -2,6 +2,10 @@ import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { assertTrustedSender, isString, isObject } from './validation'
 import type { IpcContext } from './context'
+import { DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS } from '../terminal-service'
+
+// Upper bound on a renderer-reported column or row count.
+const MAX_TERMINAL_DIMENSION = 10000
 
 export function registerTerminalHandlers(ctx: IpcContext): void {
   const { workspaceManager, terminalService, broadcast } = ctx
@@ -15,7 +19,7 @@ export function registerTerminalHandlers(ctx: IpcContext): void {
 
   function dimension(value: unknown, fallback: number): number {
     if (value === undefined) return fallback
-    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0 || value > 10000) {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0 || value > MAX_TERMINAL_DIMENSION) {
       throw new Error('Invalid terminal size')
     }
     return value
@@ -29,8 +33,8 @@ export function registerTerminalHandlers(ctx: IpcContext): void {
       project.id,
       {
         cwd: project.path,
-        cols: dimension(opts.cols, 80),
-        rows: dimension(opts.rows, 24),
+        cols: dimension(opts.cols, DEFAULT_TERMINAL_COLS),
+        rows: dimension(opts.rows, DEFAULT_TERMINAL_ROWS),
       },
       (data) => broadcast(IPC_CHANNELS.EVENT_TERMINAL_DATA, { workspaceId: project.id, data }),
       (event) => broadcast(IPC_CHANNELS.EVENT_TERMINAL_EXIT, { ...event, workspaceId: project.id })
@@ -48,7 +52,7 @@ export function registerTerminalHandlers(ctx: IpcContext): void {
     assertTrustedSender(event)
     const project = workspace(id)
     if (!isObject(size)) throw new Error('terminal size must be an object')
-    terminalService.resize(project.id, dimension(size.cols, 80), dimension(size.rows, 24))
+    terminalService.resize(project.id, dimension(size.cols, DEFAULT_TERMINAL_COLS), dimension(size.rows, DEFAULT_TERMINAL_ROWS))
   })
 
   ipcMain.handle(IPC_CHANNELS.TERMINAL_STOP, async (event, id: unknown) => {

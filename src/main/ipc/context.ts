@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { BrowserWindow } from 'electron'
 import { PiRpcManager } from '../pi-rpc-manager'
 import { WorkspaceManager } from '../workspace-manager'
 import { SessionTagManager } from '../session-tags'
@@ -22,7 +22,6 @@ export function createIpcContext(workspaceManager: WorkspaceManager): IpcContext
   const tagManager = new SessionTagManager()
   const archivedSessions = new ArchivedSessionsManager()
   const terminalService = new WorkspaceTerminals(() => new TerminalService())
-  app.on('will-quit', () => terminalService.stopAll())
   workspaceManager.onWorkspaceRemoved((workspaceId) => terminalService.stop(workspaceId))
   const notesManager = new NotesManager()
 

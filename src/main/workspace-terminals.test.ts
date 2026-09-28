@@ -4,14 +4,16 @@ import { WorkspaceTerminals } from './workspace-terminals'
 import type { TerminalService } from './terminal-service'
 
 function setup() {
-  const terminals: { inputs: string[]; sizes: number[][]; stops: number; starts: number; emit: (data: string) => void }[] = []
+  type ExitHandler = Parameters<TerminalService['start']>[2]
+  const terminals: { inputs: string[]; sizes: number[][]; stops: number; starts: number; emit: (data: string) => void; exit: ExitHandler }[] = []
   const pool = new WorkspaceTerminals(() => {
-    const state = { inputs: [] as string[], sizes: [] as number[][], stops: 0, starts: 0, emit: (_data: string) => {} }
+    const state = { inputs: [] as string[], sizes: [] as number[][], stops: 0, starts: 0, emit: (_data: string) => {}, exit: ((_event) => {}) as ExitHandler }
     terminals.push(state)
     return {
-      start: (...[options, onData]: Parameters<TerminalService['start']>) => {
+      start: (...[options, onData, onExit]: Parameters<TerminalService['start']>) => {
         state.starts++
         state.emit = onData
+        state.exit = onExit
         return { pid: terminals.length, shell: '/bin/sh', cwd: options.cwd ?? '/' }
       },
       write: (data) => { state.inputs.push(data) },
@@ -63,6 +65,32 @@ test('closing a project stops only its PTY; reopening starts a fresh session', (
   pool.stopAll()
   pool.stopAll()
   assert.deepEqual(terminals.map((t) => t.stops), [1, 1, 1])
+})
+
+test('a shell that exits on its own is evicted so the next start respawns it', () => {
+  const { pool, terminals } = setup()
+  const exits: number[] = []
+  pool.start('a', {}, noop, (event) => exits.push(event.exitCode))
+  pool.start('b', {}, noop, noop)
+  terminals[0].exit({ exitCode: 0 })
+  assert.deepEqual(exits, [0])
+  pool.write('a', 'ignored')
+  assert.deepEqual(terminals[0].inputs, [])
+  pool.start('a', {}, noop, noop)
+  assert.equal(terminals.length, 3)
+  assert.equal(terminals[1].starts, 1)
+  pool.write('a', 'ls\n')
+  assert.deepEqual(terminals[2].inputs, ['ls\n'])
+})
+
+test('a late exit from a replaced shell keeps the new entry', () => {
+  const { pool, terminals } = setup()
+  pool.start('a', {}, noop, noop)
+  pool.stop('a')
+  const fresh = pool.start('a', {}, noop, noop)
+  terminals[0].exit({ exitCode: 1 })
+  assert.equal(pool.start('a', {}, noop, noop), fresh)
+  assert.equal(terminals.length, 2)
 })
 
 test('a failed spawn is not cached', () => {

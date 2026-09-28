@@ -1478,8 +1478,9 @@
   "terminal": {
     "clearAriaLabel": "清空终端",
     "clearTitle": "清空",
-    "closeTitle": "关闭终端",
+    "hideTitle": "隐藏终端（Shell 仍在运行）",
     "maximizeLabel": "最大化终端",
+    "restartHint": "按任意键启动新的 Shell",
     "restoreLabel": "还原终端",
     "title": "终端"
   },
