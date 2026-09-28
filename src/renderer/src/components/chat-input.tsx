@@ -474,6 +474,19 @@ export function ChatInput(): React.JSX.Element {
     return () => cancelAnimationFrame(frame)
   }, [composerFocusRequested, isDisabled, sessionLoading, currentView])
 
+  useEffect(() => {
+    if (!composerFocusRequested) return
+    // The user focused something else (the code editor, a dialog) while the
+    // request waited: they chose where to type, so the composer must not steal it.
+    const dropRequestOnOtherFocus = (event: FocusEvent): void => {
+      if (event.target !== textareaRef.current) {
+        useAppStore.setState({ composerFocusRequested: false })
+      }
+    }
+    document.addEventListener('focusin', dropRequestOnOtherFocus)
+    return () => document.removeEventListener('focusin', dropRequestOnOtherFocus)
+  }, [composerFocusRequested])
+
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       if (isDisabled) return

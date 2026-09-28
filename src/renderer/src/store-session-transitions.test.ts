@@ -1575,7 +1575,30 @@ test('switchSession refocuses without reloading when the session is already on s
   await useAppStore.getState().switchSession(SESSION_PATH)
 
   assert.equal(calls.includes(`switch:${SESSION_PATH}`), false)
+  assert.equal(useAppStore.getState().currentView, 'chat')
   assert.equal(useAppStore.getState().composerFocusRequested, true)
+})
+
+test('leaving chat drops a pending composer focus request', () => {
+  useAppStore.setState({ currentView: 'chat', composerFocusRequested: true })
+
+  useAppStore.getState().setCurrentView('settings')
+
+  assert.equal(useAppStore.getState().composerFocusRequested, false)
+  useAppStore.getState().setCurrentView('chat')
+  assert.equal(
+    useAppStore.getState().composerFocusRequested,
+    false,
+    'returning to chat later must not steal focus from what the user opened'
+  )
+})
+
+test('a composer focus request raised outside chat is dropped at once', () => {
+  // The unmounting composer hands focus on after the view already changed.
+  useAppStore.setState({ currentView: 'notes' })
+  useAppStore.setState({ composerFocusRequested: true })
+
+  assert.equal(useAppStore.getState().composerFocusRequested, false)
 })
 
 test('the cross-workspace open flow loads the clicked session end to end', async () => {

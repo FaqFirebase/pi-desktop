@@ -421,6 +421,8 @@ interface AppState {
   // A prompt queued for insertion into the chat input. The nonce lets the
   // chat input re-apply the same text on repeated inserts.
   pendingInsert: { text: string; nonce: number; replace?: boolean } | null
+  // Set when a session opens; the chat input takes focus once it can, unless
+  // the user leaves chat or focuses something else first.
   composerFocusRequested: boolean
   // Body text captured (e.g. from a message) to seed a new note in the Notes
   // panel. Non-null opens the panel's New Note form pre-filled.
@@ -1507,7 +1509,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       !get().sessionLoading &&
       get().messages.length > 0
     ) {
-      set({ composerFocusRequested: true })
+      // A focus request outside chat is dropped, so open chat with it.
+      set({ currentView: 'chat', composerFocusRequested: true })
       return
     }
 
@@ -3275,6 +3278,16 @@ useAppStore.subscribe((state, prev) => {
     state.editorDirty,
     state.editorDirty ? (state.previewTarget?.name ?? null) : null
   )
+})
+
+// A composer focus request is only for the chat the user is looking at. Once
+// they leave chat, drop it, so a later return to chat never pulls focus from
+// whatever they opened meanwhile. Several actions change the view with a
+// direct set(), so a subscription catches every path.
+useAppStore.subscribe((state) => {
+  if (state.composerFocusRequested && state.currentView !== 'chat') {
+    useAppStore.setState({ composerFocusRequested: false })
+  }
 })
 
 // ─── Event Handlers ──────────────────────────────────────────────────────────
