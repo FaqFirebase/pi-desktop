@@ -105,7 +105,7 @@ export function ProjectBranchSelector({ workspaceId }: { workspaceId: string }):
             value={repository.branch ?? ''}
             onChange={(event) => void switchBranch(event.target.value)}
             disabled={loading || busy || !!loadError || repository.branches.length === 0}
-            className="max-w-48 rounded bg-app py-0.5 text-xs text-dim outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+            className="field-sizing-content max-w-48 rounded bg-app py-0.5 text-xs text-dim outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
           >
             {!repository.branch && <option value="" disabled>{t('conveyor.detachedBranch')}</option>}
             {repository.branch && !repository.branches.includes(repository.branch) && <option value={repository.branch}>{repository.branch}</option>}
