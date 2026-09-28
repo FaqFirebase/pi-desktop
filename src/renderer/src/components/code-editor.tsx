@@ -11,6 +11,9 @@ import { gitGutter, parseGitLineMarkers, setGitLineMarkers } from './code-editor
 import { createStaleGuard } from '../utils/stale-guard'
 import { formatIpcError } from '../utils/ipc-error'
 
+// Coalesces bursts of file-change and focus events into one Git marker reload.
+const GIT_MARKER_RELOAD_DEBOUNCE_MS = 300
+
 interface GitDiffSnapshot {
   filePath: string
   workspaceKey: string | null
@@ -54,6 +57,8 @@ export function CodeEditor({
     const load = async () => {
       const isCurrent = guard.begin()
       try {
+        // `git diff` compares the worktree with the index, so staged lines
+        // (after `git add`) show no marker until they change again.
         const diff = await window.piDesktop.files.getDiff(filePath)
         if (disposed || !isCurrent()) return
         const diskValue = await window.piDesktop.files.read(filePath)
@@ -66,13 +71,18 @@ export function CodeEditor({
       }
     }
     void load()
-    const unsubscribe = window.piDesktop.onFileChange(() => { void load() })
-    const onFocus = () => { void load() }
-    window.addEventListener('focus', onFocus)
+    let reloadTimer: number | undefined
+    const scheduleLoad = () => {
+      window.clearTimeout(reloadTimer)
+      reloadTimer = window.setTimeout(() => { void load() }, GIT_MARKER_RELOAD_DEBOUNCE_MS)
+    }
+    const unsubscribe = window.piDesktop.onFileChange(scheduleLoad)
+    window.addEventListener('focus', scheduleLoad)
     return () => {
       disposed = true
+      window.clearTimeout(reloadTimer)
       unsubscribe()
-      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('focus', scheduleLoad)
     }
   }, [filePath, savedValue, workspaceKey])
 
