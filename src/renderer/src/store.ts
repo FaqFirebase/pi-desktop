@@ -459,6 +459,7 @@ interface AppActions {
 
   // Model
   setModel: (provider: string, modelId: string) => Promise<void>
+  saveDefaultModel: (provider: string, modelId: string) => Promise<void>
   cycleModel: () => Promise<void>
   listModels: () => Promise<ModelInfo[]>
 
@@ -1060,7 +1061,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (trimmed.startsWith('/workflows run ')) get().setWorkflowPanelOpen(true)
 
     // Navigation never spawns Pi; the first prompt or model-picker open does.
-    // startPi applies the resume preference: a previously-used project
+    // A prompt start applies the resume preference: a previously-used project
     // continues its last conversation; a fresh one gets a new session.
     if (get().piStatus !== 'running') {
       await get().startPi()
@@ -1766,14 +1767,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   setModel: async (provider, modelId) => {
     try {
+      // The runtime stopped after the picker listed: keep the choice for the next start.
+      if (get().piStatus !== 'running') {
+        await get().saveDefaultModel(provider, modelId)
+        return
+      }
       await window.piDesktop.model.set(provider, modelId)
-      // Remember for next Pi start / home composer (settings defaults).
       try {
-        const updated = await window.piDesktop.settings.save({
-          defaultProvider: provider,
-          defaultModel: modelId,
-        })
-        set({ settings: updated })
+        await get().saveDefaultModel(provider, modelId)
       } catch {
         // Non-fatal — model still applied for this session.
       }
@@ -1786,6 +1787,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         timestamp: Date.now(),
       })
     }
+  },
+
+  // Remember for next Pi start / home composer (settings defaults).
+  saveDefaultModel: async (provider, modelId) => {
+    const updated = await window.piDesktop.settings.save({
+      defaultProvider: provider,
+      defaultModel: modelId,
+    })
+    set({ settings: updated })
   },
 
   cycleModel: async () => {
@@ -1802,8 +1812,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const workspaceId = get().activeWorkspace?.id
     const isCurrent = (): boolean => gen === sessionLoadGeneration && workspaceId === get().activeWorkspace?.id
     // The picker is also usable on a fresh composer. Starting the runtime
-    // discovers the engine's real catalog without sending a prompt.
-    if (get().piStatus !== 'running') await get().startPi()
+    // discovers the engine's real catalog without sending a prompt. Opening a
+    // menu must not swap the empty chat for an earlier conversation, so this
+    // start skips the resume preference; a runtime already bound to a session
+    // still reopens that session.
+    if (get().piStatus !== 'running') await get().startPi({ continueSession: false })
     if (!isCurrent() || get().piStatus !== 'running') {
       throw new Error(t('models.selector.loadFailed'))
     }

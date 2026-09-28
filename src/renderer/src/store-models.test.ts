@@ -11,10 +11,12 @@ const WORKSPACE: Workspace = {
   id: 'one', name: 'One', path: '/tmp/one', color: '#000', createdAt: 0, lastActiveAt: 0,
 }
 const calls: string[] = []
+const startOptions: unknown[] = []
 let startHook: (() => Promise<void>) | null = null
 let listHook: (() => Promise<void>) | null = null
 let listResponse: unknown
 let startFailure: Error | null = null
+let saveFailure: Error | null = null
 let useAppStore: typeof import('./store')['useAppStore']
 
 before(async () => {
@@ -22,8 +24,9 @@ before(async () => {
     window: {
       piDesktop: {
         pi: {
-          start: async () => {
+          start: async (options?: unknown) => {
             calls.push('start')
+            startOptions.push(options)
             await startHook?.()
             if (startFailure) throw startFailure
             return { status: 'running', pid: 123, engine: 'pi', error: null }
@@ -43,6 +46,7 @@ before(async () => {
         settings: {
           save: async (settings: unknown) => {
             calls.push('save')
+            if (saveFailure) throw saveFailure
             return settings
           },
         },
@@ -61,9 +65,11 @@ before(async () => {
 
 beforeEach(() => {
   calls.length = 0
+  startOptions.length = 0
   startHook = null
   listHook = null
   startFailure = null
+  saveFailure = null
   listResponse = { success: true, data: { models: [MODEL] } }
   useAppStore.setState({
     activeWorkspace: WORKSPACE, activeSessionRuntimeId: null,
@@ -87,6 +93,27 @@ test('a fresh composer can list and select models before sending its first promp
   assert.deepEqual(calls, ['start', 'list', 'set:test/test-model', 'save'])
   assert.equal(useAppStore.getState().settings?.defaultModel, MODEL.id)
   assert.deepEqual(useAppStore.getState().messages, [])
+})
+
+test('the picker start opens a fresh session instead of resuming the last one', async () => {
+  await useAppStore.getState().listModels()
+  assert.deepEqual(startOptions, [{ continueSession: false }])
+})
+
+test('a model chosen while the runtime is stopped becomes the default', async () => {
+  await useAppStore.getState().setModel(MODEL.provider, MODEL.id)
+  assert.deepEqual(calls, ['save'])
+  assert.equal(useAppStore.getState().settings?.defaultProvider, MODEL.provider)
+  assert.equal(useAppStore.getState().settings?.defaultModel, MODEL.id)
+})
+
+test('a failed default save while stopped is reported in the chat, not thrown', async () => {
+  saveFailure = new Error('settings write failed')
+  await useAppStore.getState().setModel(MODEL.provider, MODEL.id)
+  assert.deepEqual(calls, ['save'])
+  const [message] = useAppStore.getState().messages
+  assert.equal(message?.role, 'system')
+  assert.match(message?.content ?? '', /settings write failed/)
 })
 
 test('listing models reuses an already running runtime', async () => {

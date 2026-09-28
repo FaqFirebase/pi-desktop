@@ -23,7 +23,6 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
   const listModels = useAppStore((state) => state.listModels)
   const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
   const runtimeId = useAppStore((state) => state.activeSessionRuntimeId)
-  const piStatus = useAppStore((state) => state.piStatus)
   const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const settings = useAppStore((state) => state.settings)
 
@@ -56,8 +55,6 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
       close()
       return
     }
-    setModels([])
-    setLoading(true)
     setIsOpen(true)
   }
 
@@ -100,8 +97,8 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
 
   const filteredModels = useMemo(() => filterModels(models, query), [models, query])
 
+  // setModel reports its own failures in the chat, so the picker always closes.
   const handleSelect = async (model: ModelInfo): Promise<void> => {
-    if (useAppStore.getState().piStatus !== 'running') return
     await setModel(model.provider, model.id)
     close()
   }
@@ -110,7 +107,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
     <div ref={ref} className={clsx('relative', className)}>
       <button
         type="button"
-        onClick={() => void open()}
+        onClick={open}
         className={clsx(
           'flex h-6 max-w-52 items-center gap-1 rounded-md px-2 text-[11px] transition-colors active:scale-[0.98]',
           isOpen ? 'bg-surface-hover text-primary' : 'text-dim hover:bg-surface-hover hover:text-secondary',
@@ -172,7 +169,6 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
                   key={`${model.provider}/${model.id}`}
                   type="button"
                   onClick={() => void handleSelect(model)}
-                  disabled={loading || piStatus !== 'running'}
                   className={clsx(
                     'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-surface-hover transition-colors',
                     selected && 'bg-card'
