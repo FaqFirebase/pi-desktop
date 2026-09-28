@@ -1,7 +1,7 @@
 import { beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { useAppStore } from '../store'
-import { openDiffFile } from './diff-viewer'
+import { openDiffFile, subscribeDiffRefresh } from './diff-viewer'
 
 beforeEach(() => {
   Object.defineProperty(globalThis, 'window', {
@@ -18,6 +18,22 @@ beforeEach(() => {
     previewTarget: null,
     editorDirty: false,
   })
+})
+
+test('a branch switch refreshes the diff and unsubscribes when closed', () => {
+  let listener: Parameters<typeof window.piDesktop.onFileChange>[0] | undefined
+  window.piDesktop.onFileChange = (callback) => {
+    listener = callback
+    return () => { listener = undefined }
+  }
+  let refreshes = 0
+  const close = subscribeDiffRefresh(async () => { refreshes++ })
+  listener?.({ changeType: 'change', relativePath: 'app.ts' })
+  assert.equal(refreshes, 0)
+  listener?.({ changeType: 'change', relativePath: '.' })
+  assert.equal(refreshes, 1)
+  close()
+  assert.equal(listener, undefined)
 })
 
 test('opens the diff path in the editor and reveals the chat preview', async () => {

@@ -231,6 +231,27 @@ export async function getGitConveyorStatus(cwd: string): Promise<GitConveyorStat
   }
 }
 
+export async function listLocalBranches(cwd: string): Promise<string[]> {
+  try {
+    const { stdout } = await runGit(['for-each-ref', '--sort=refname', '--format=%(refname:lstrip=2)', 'refs/heads/'], cwd)
+    return stdout.split(/\r?\n/).filter(Boolean)
+  } catch (error) {
+    if (isMissingRepositoryError(error)) return []
+    throw error
+  }
+}
+
+/** Switch the worktree without forcing, merging, stashing, or guessing a remote branch. */
+export async function switchLocalBranch(cwd: string, branch: string): Promise<GitConveyorStatus> {
+  if (branch.startsWith('-') || !(await listLocalBranches(cwd)).includes(branch)) {
+    throw new Error(t('errors.git.localBranchRequired'))
+  }
+  const operation = await activeGitOperation(cwd)
+  if (operation) throw new Error(t('errors.git.operationInProgressSwitch', { operation }))
+  await runGit(['switch', '--no-guess', '--', branch], cwd)
+  return getGitConveyorStatus(cwd)
+}
+
 export async function commitAll(cwd: string, options: GitConveyorCommitOptions): Promise<GitConveyorStatus> {
   const message = options.message.trim()
   if (!message) throw new Error(t('errors.git.commitMessageRequired'))

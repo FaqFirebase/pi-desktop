@@ -253,6 +253,12 @@
     "workflowRuns": "Workflow Runs"
   },
   "conveyor": {
+    "branches": {
+      "agentWorking": "Wait for all agents in this workspace to finish before switching branches.",
+      "description": "Switch the project's local branch without forcing or stashing changes",
+      "label": "Project branch",
+      "saveEditor": "Save or revert your editor changes before switching branches."
+    },
     "branchStatusClean": "{{branch}}",
     "branchStatusDirty_one": "{{branch}} · {{count}} changed",
     "branchStatusDirty_other": "{{branch}} · {{count}} changed",
@@ -275,8 +281,10 @@
       "commitBeforePr": "Commit changes before creating a pull request.",
       "commitBeforePush": "Commit the working tree before pushing.",
       "commitMessageRequired": "Commit message is required.",
+      "operationInProgress": "Another Git operation is in progress. Wait for it to finish.",
       "prTitleRequired": "Pull request title is required.",
-      "pushBeforePr": "Push the branch before creating a pull request."
+      "pushBeforePr": "Push the branch before creating a pull request.",
+      "workspaceChanged": "The active workspace changed. The Git operation was stopped."
     },
     "feedback": {
       "branchPushed": "Branch pushed.",
@@ -494,10 +502,12 @@
       "commitMessageTooLong": "Commit message must be {{max}} characters or fewer",
       "detachedHeadCommit": "Cannot commit from a detached HEAD",
       "detachedHeadPush": "Cannot push from a detached HEAD",
+      "localBranchRequired": "Choose an existing local branch",
       "namedBranchRequired": "A named branch is required to create a pull request",
       "noTrackedChanges": "No tracked changes to commit in this workspace. Stage untracked files first to include them.",
       "operationInProgressCommit": "Cannot commit while a Git {{operation}} is in progress",
       "operationInProgressPush": "Cannot push while a Git {{operation}} is in progress",
+      "operationInProgressSwitch": "Cannot switch branches while a Git {{operation}} is in progress",
       "pullRequestTitleRequired": "Pull request title is required",
       "pushBeforePullRequest": "Push the branch before creating a pull request",
       "pushUpstreamIsLocal": "Cannot push a branch whose upstream is the local repository",

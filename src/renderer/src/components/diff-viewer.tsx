@@ -35,6 +35,12 @@ interface DiffFileBlock {
   hunks: DiffLine[][]
 }
 
+export function subscribeDiffRefresh(refresh: () => Promise<void>): () => void {
+  return window.piDesktop.onFileChange((event) => {
+    if (event.relativePath === '.') void refresh()
+  })
+}
+
 interface DiffViewerProps {
   onClose?: () => void
 }
@@ -78,6 +84,8 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
     void loadDiff()
     return () => { loadGuard.begin() }
   }, [loadDiff, loadGuard, workspaceId])
+
+  useEffect(() => subscribeDiffRefresh(loadDiff), [loadDiff])
 
   useEffect(() => {
     setExpandedFiles(new Set())
