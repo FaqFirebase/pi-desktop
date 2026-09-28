@@ -103,8 +103,9 @@ export function useMenuActions(): void {
           createNewSession()
           break
         case 'menu:close-session': {
-          const { activeSessionRuntimeId, closeSessionTab } = useAppStore.getState()
-          if (activeSessionRuntimeId) void closeSessionTab(activeSessionRuntimeId)
+          const state = useAppStore.getState()
+          const runtimeId = sessionTabToClose(state)
+          if (runtimeId) void state.closeSessionTab(runtimeId)
           break
         }
         case 'menu:new-workspace':
@@ -151,6 +152,11 @@ export function useGlobalWorkflowOpen(): boolean {
   return useAppStore(isGlobalWorkflowOpen)
 }
 
+/** The view state that decides whether the chat pane is on screen. */
+interface ChatVisibilityScope extends WorkflowPanelScope {
+  currentView: string
+}
+
 /**
  * Whether the chat pane is actually on screen. ChatPanel stays mounted behind
  * `display: none` when another view or the global workflow panel takes over,
@@ -158,10 +164,24 @@ export function useGlobalWorkflowOpen(): boolean {
  * hidden -> shown edge (scroll re-anchoring, the disk-watch demand, and the
  * file tree's catch-up reload), which must all agree on one definition.
  */
+export function isChatVisible(scope: ChatVisibilityScope): boolean {
+  return scope.currentView === 'chat' && !isGlobalWorkflowOpen(scope)
+}
+
+/** Component-side subscription to {@link isChatVisible}. */
 export function useChatVisible(): boolean {
-  const currentView = useAppStore((state) => state.currentView)
-  const globalWorkflowOpen = useGlobalWorkflowOpen()
-  return currentView === 'chat' && !globalWorkflowOpen
+  return useAppStore(isChatVisible)
+}
+
+/**
+ * The session tab the macOS Close shortcut acts on: the active one, and only
+ * while the chat is on screen, so a tab hidden behind another view is never
+ * closed without the user seeing it.
+ */
+export function sessionTabToClose(
+  state: ChatVisibilityScope & { activeSessionRuntimeId: string | null }
+): string | null {
+  return isChatVisible(state) ? state.activeSessionRuntimeId : null
 }
 
 /** The chat column width, with an unsaved Settings edit shown live. */

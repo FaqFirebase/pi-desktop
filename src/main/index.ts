@@ -398,15 +398,20 @@ function createApplicationMenu(): void {
       submenu: [
         { role: 'minimize', label: t('menu.minimize') },
         { role: 'zoom', label: t('menu.zoom') },
-        process.platform === 'darwin'
-          ? {
-              label: t('workspaceTabs.closeSessionTab'),
-              accelerator: 'Command+W',
-              click: () => {
-                BrowserWindow.getFocusedWindow()?.webContents.send('menu:close-session')
+        // macOS: Command+W closes the session tab, as in a browser, and the
+        // window keeps its Close item on Shift+Command+W.
+        ...(process.platform === 'darwin'
+          ? [
+              {
+                label: t('workspaceTabs.closeSessionTab'),
+                accelerator: 'Command+W',
+                click: () => {
+                  BrowserWindow.getFocusedWindow()?.webContents.send('menu:close-session')
+                },
               },
-            }
-          : { role: 'close', label: t('menu.close') },
+              { role: 'close', label: t('menu.close'), accelerator: 'Shift+Command+W' },
+            ] satisfies Electron.MenuItemConstructorOptions[]
+          : [{ role: 'close', label: t('menu.close') } satisfies Electron.MenuItemConstructorOptions]),
       ],
     },
   ]

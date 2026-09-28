@@ -13,12 +13,22 @@ const WORKSPACE_ID = 'ws-1'
 
 let isGlobalWorkflowOpen: (scope: WorkflowPanelScope) => boolean
 let isAbortShortcut: (event: { key: string; defaultPrevented: boolean }, isStreaming: boolean) => boolean
+let sessionTabToClose: (
+  state: WorkflowPanelScope & { currentView: string; activeSessionRuntimeId: string | null }
+) => string | null
+
+const RUNTIME_ID = 'runtime-1'
+const NO_WORKFLOW_PANEL: WorkflowPanelScope = {
+  workflowPanelOpen: false,
+  workflowPanelFilter: null,
+  workflowPanelWorkspaceId: null,
+}
 
 // hooks.ts pulls in the store, which reaches for the preload bridge inside its
 // actions. A bare stub is enough to import the module under test.
 before(async () => {
   ;(globalThis as unknown as { window: unknown }).window = { piDesktop: {} }
-  ;({ isGlobalWorkflowOpen, isAbortShortcut } = await import('./hooks'))
+  ;({ isGlobalWorkflowOpen, isAbortShortcut, sessionTabToClose } = await import('./hooks'))
 })
 
 test('an unscoped open panel is the global workflow view', () => {
@@ -85,4 +95,33 @@ test('Escape aborts a streaming turn', () => {
 
 test('Escape already consumed by another surface does not abort the turn', () => {
   assert.equal(isAbortShortcut({ key: 'Escape', defaultPrevented: true }, true), false)
+})
+
+test('the close shortcut targets the active session tab while chat is on screen', () => {
+  assert.equal(
+    sessionTabToClose({ ...NO_WORKFLOW_PANEL, currentView: 'chat', activeSessionRuntimeId: RUNTIME_ID }),
+    RUNTIME_ID
+  )
+  assert.equal(
+    sessionTabToClose({ ...NO_WORKFLOW_PANEL, currentView: 'chat', activeSessionRuntimeId: null }),
+    null
+  )
+})
+
+test('the close shortcut never closes a tab hidden behind another view', () => {
+  assert.equal(
+    sessionTabToClose({ ...NO_WORKFLOW_PANEL, currentView: 'settings', activeSessionRuntimeId: RUNTIME_ID }),
+    null
+  )
+  assert.equal(
+    sessionTabToClose({
+      workflowPanelOpen: true,
+      workflowPanelFilter: null,
+      workflowPanelWorkspaceId: null,
+      currentView: 'chat',
+      activeSessionRuntimeId: RUNTIME_ID,
+    }),
+    null,
+    'the global workflow view covers the chat'
+  )
 })
