@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import { EMPTY_COMPOSER_DRAFT, useAppStore, type ComposerAttachment } from '../store'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
-import { t } from '../../../shared/i18n'
 import { useChatKeyboard, useChatWidth, useCommandCatalog } from '../hooks'
 import { composerColumnClass } from '../utils/chat-width'
 import { ComposerPermissionMenu } from './composer-permission-menu'
@@ -31,7 +30,8 @@ import {
 import { isImeComposing } from '../utils/ime-composing'
 import { NO_RECALLED_PROMPT, composerDraftText } from './composer-draft'
 import { isFileDrag } from '../../../shared/folder-drop'
-import { droppedAttachmentFiles, readDroppedAttachment } from '../utils/dropped-attachments'
+import { droppedAttachmentFiles, readDroppedAttachments } from '../utils/dropped-attachments'
+import { readFileAsBase64 } from '../utils/file-base64'
 
 const MAX_INPUT_HEIGHT = 160
 const MIN_INPUT_HEIGHT = 40
@@ -43,18 +43,6 @@ const ATTACHMENT_DATA_NOTE =
 
 // Max @-mention file suggestions shown at once.
 const MAX_MENTION_RESULTS = 10
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') resolve(reader.result)
-      else reject(new Error(t('chat.attach.readImageFailed')))
-    }
-    reader.onerror = () => reject(reader.error ?? new Error(t('chat.attach.readImageFailed')))
-    reader.readAsDataURL(file)
-  })
-}
 
 // An in-progress @-file mention: the caret sits just after `@<query>` and no
 // whitespace separates them. `start` is the index of the `@`.
@@ -158,6 +146,11 @@ export function ChatInput(): React.JSX.Element {
   const attachmentDragDepth = useRef(0)
   const pendingDrops = useRef(0)
   const [isReadingDrop, setIsReadingDrop] = useState(false)
+
+  // Stage an attachment once; re-attaching the same path is a no-op.
+  const addAttachment = useCallback((next: ComposerAttachment) => {
+    setAttachments((prev) => (prev.some((a) => a.path === next.path) ? prev : [...prev, next]))
+  }, [])
 
   // Clear the composer and collapse it back to the idle height. The textarea is
   // uncontrolled and auto-grows in onInput, so clearing the value alone leaves it
@@ -407,11 +400,11 @@ export function ChatInput(): React.JSX.Element {
         result.kind === 'image'
           ? { kind: 'image', name: result.name, path, image: result.image }
           : { kind: 'text', name: result.name, path, content: result.content }
-      setAttachments((prev) => (prev.some((a) => a.path === path) ? prev : [...prev, next]))
+      addAttachment(next)
     } catch (err) {
       setAttachError(err instanceof Error ? err.message : t('chat.attach.attachFailed'))
     }
-  }, [t])
+  }, [addAttachment, t])
 
   const attachImageFile = useCallback(async (file: File): Promise<void> => {
     const mime = file.type.toLowerCase()
@@ -429,9 +422,7 @@ export function ChatInput(): React.JSX.Element {
 
     setAttachError(null)
     try {
-      const dataUrl = await readFileAsDataUrl(file)
-      const comma = dataUrl.indexOf(',')
-      const data = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl
+      const data = await readFileAsBase64(file)
       const ext = subtype === 'jpeg' ? 'jpg' : subtype
       const name = file.name && file.name !== 'image.png' ? file.name : `pasted-image.${ext}`
       const path = `clipboard://${name}-${file.size}-${file.lastModified}`
@@ -445,11 +436,11 @@ export function ChatInput(): React.JSX.Element {
           data,
         },
       }
-      setAttachments((prev) => (prev.some((a) => a.path === path) ? prev : [...prev, next]))
+      addAttachment(next)
     } catch (err) {
       setAttachError(err instanceof Error ? err.message : t('chat.attach.pasteFailed'))
     }
-  }, [t])
+  }, [addAttachment, t])
 
   // A stopped agent stays typable: the first send lazy-starts Pi/OMP.
   // Only transient/error states block input.
@@ -530,33 +521,30 @@ export function ChatInput(): React.JSX.Element {
     event.preventDefault()
     if (isDisabled) return
 
-    const candidates = files.map((file) => ({
-      file,
-      path: window.piDesktop.system.getPathForFile(file) || `drop://${file.name}-${file.size}-${file.lastModified}`,
-    }))
+    // The composer is shared across workspaces: a drop whose workspace was
+    // switched away mid-read is discarded, not attached to the new one.
+    const dropWorkspaceId = workspaceId
+    const isDropCurrent = (): boolean =>
+      (useAppStore.getState().activeWorkspace?.id ?? '') === dropWorkspaceId
     pendingDrops.current += 1
     setIsReadingDrop(true)
     setAttachError(null)
     void (async () => {
-      const errors: string[] = []
       try {
-        for (const { file, path } of candidates) {
-          try {
-            const result = await readDroppedAttachment(file)
-            const next: Attachment = { ...result, path }
-            setAttachments((prev) => prev.some((a) => a.path === path) ? prev : [...prev, next])
-          } catch (error) {
-            errors.push(`${file.name}: ${error instanceof Error ? error.message : t('chat.attach.attachFailed')}`)
-          }
+        const reads = await readDroppedAttachments(files, isDropCurrent)
+        if (!reads) return
+        for (const { file, result } of reads.attachments) {
+          const path = window.piDesktop.system.getPathForFile(file) || `drop://${file.name}-${file.size}-${file.lastModified}`
+          addAttachment({ ...result, path })
         }
-        if (errors.length) setAttachError(errors.join('\n'))
+        if (reads.errors.length) setAttachError(reads.errors.join('\n'))
+        textareaRef.current?.focus()
       } finally {
         pendingDrops.current -= 1
         setIsReadingDrop(pendingDrops.current > 0)
-        textareaRef.current?.focus()
       }
     })()
-  }, [isDisabled, t])
+  }, [addAttachment, isDisabled, workspaceId])
 
   const removeAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index))

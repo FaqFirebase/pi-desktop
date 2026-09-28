@@ -1,28 +1,56 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
-import { droppedAttachmentFiles, readDroppedAttachment } from './dropped-attachments'
+import { before, test } from 'node:test'
+import { MAX_ATTACHMENT_BYTES } from '../../../shared/attachment-rules'
+import { droppedAttachmentFiles, readDroppedAttachment, readDroppedAttachments } from './dropped-attachments'
+
+// Node has no FileReader; this stand-in yields the data URL the renderer's reads.
+class DataUrlFileReader {
+  result: string | null = null
+  error: Error | null = null
+  onload: (() => void) | null = null
+  onerror: (() => void) | null = null
+
+  readAsDataURL(blob: File): void {
+    void blob.arrayBuffer().then((buffer) => {
+      this.result = `data:${blob.type};base64,${Buffer.from(buffer).toString('base64')}`
+      this.onload?.()
+    })
+  }
+}
+
+before(() => {
+  ;(globalThis as unknown as { FileReader: unknown }).FileReader = DataUrlFileReader
+})
 
 const file = new File(['hello'], 'notes.txt', { type: 'text/plain' })
+const FILE_ENTRY = { isDirectory: false, isFile: true }
+const FOLDER_ENTRY = { isDirectory: true, isFile: false }
 
-test('drop snapshots multiple files in order, excluding directories and string items', () => {
+test('drop snapshots multiple files in order, excluding folders and string items', () => {
   const image = new File(['image'], 'photo.png')
   assert.deepEqual(droppedAttachmentFiles({
     types: ['Files'],
     items: [
-      { kind: 'file', getAsFile: () => file, webkitGetAsEntry: () => ({ isDirectory: false, isFile: true }) },
-      { kind: 'file', getAsFile: () => new File([], 'folder'), webkitGetAsEntry: () => ({ isDirectory: true, isFile: false }) },
+      { kind: 'file', getAsFile: () => file, webkitGetAsEntry: () => FILE_ENTRY },
+      { kind: 'file', getAsFile: () => new File([], 'folder'), webkitGetAsEntry: () => FOLDER_ENTRY },
       { kind: 'string', getAsFile: () => null },
-      { kind: 'file', getAsFile: () => image, webkitGetAsEntry: () => null },
+      { kind: 'file', getAsFile: () => image, webkitGetAsEntry: () => FILE_ENTRY },
     ],
   }), [file, image])
 })
 
-test('files-only drag sources are supported', () => {
-  assert.deepEqual(droppedAttachmentFiles({ types: ['Files'], files: [file] }), [file])
+test('items of unknown kind stay with the folder-drop handler', () => {
+  assert.deepEqual(droppedAttachmentFiles({
+    types: ['Files'],
+    items: [
+      { kind: 'file', getAsFile: () => new File([], 'maybe-folder'), webkitGetAsEntry: () => null },
+      { kind: 'file', getAsFile: () => new File([], 'no-entry-api') },
+    ],
+  }), [])
   assert.deepEqual(droppedAttachmentFiles({ types: ['Files'] }), [])
 })
 
-test('UTF-8 documents and code are read directly from the granted File', async () => {
+test('documents and code are read directly from the granted File', async () => {
   assert.deepEqual(await readDroppedAttachment(file), { kind: 'text', name: 'notes.txt', content: 'hello' })
   assert.deepEqual(await readDroppedAttachment(new File(['¡Hola! 日本語'], 'code.ts')), {
     kind: 'text', name: 'code.ts', content: '¡Hola! 日本語',
@@ -31,33 +59,66 @@ test('UTF-8 documents and code are read directly from the granted File', async (
   assert.equal((await readDroppedAttachment(new File(['<svg/>'], 'drawing.svg', { type: 'image/svg+xml' }))).kind, 'text')
 })
 
-test('supported images become base64 blocks, even when the OS omits MIME type', async () => {
+test('binary files are rejected instead of inlined as garbage text, as in the dialog path', async () => {
+  const INVALID_UTF8_BYTES = new Uint8Array([255, 254])
+  for (const binary of [
+    new File([INVALID_UTF8_BYTES], 'binary.dat'),
+    new File(['%PDF-1.7\n'], 'document.pdf'),
+    new File(['PK\x03\x04\0'], 'document.docx'),
+  ]) {
+    await assert.rejects(readDroppedAttachment(binary), /not a text file/i)
+  }
+})
+
+test('image extensions become base64 blocks by name, as in the dialog path', async () => {
   const bytes = new Uint8Array([137, 80, 78, 71, 0, 255])
   assert.deepEqual(await readDroppedAttachment(new File([bytes], 'PHOTO.PNG')), {
     kind: 'image', name: 'PHOTO.PNG',
     image: { type: 'image', mimeType: 'image/png', data: Buffer.from(bytes).toString('base64') },
   })
-  assert.equal((await readDroppedAttachment(new File([bytes], 'photo', { type: 'image/jpeg' }))).kind, 'image')
-})
-
-test('binary documents and unsupported images fail instead of inlining corrupt text', async () => {
-  for (const unsupported of [
-    new File(['%PDF-1.7\n'], 'document.pdf'),
-    new File(['PK\x03\x04\0'], 'document.docx'),
-    new File([new Uint8Array([255, 254])], 'binary.dat'),
-    new File(['BM\0'], 'image.bmp', { type: 'image/bmp' }),
-  ]) {
-    await assert.rejects(readDroppedAttachment(unsupported), /Unsupported file format/)
-  }
 })
 
 test('oversized attachments are rejected before reading', async () => {
   await assert.rejects(readDroppedAttachment({
-    size: 25 * 1024 * 1024 + 1,
+    name: 'huge.txt',
+    size: MAX_ATTACHMENT_BYTES + 1,
     arrayBuffer: () => { throw new Error('must not read') },
   } as unknown as File), /too large/i)
 })
 
-test('unusual filenames cannot match inherited image MIME map properties', async () => {
-  assert.equal((await readDroppedAttachment(new File(['text'], 'file.constructor'))).kind, 'text')
+test('a batch keeps its order and reports each failed file by name', async () => {
+  const huge = { name: 'huge.txt', size: MAX_ATTACHMENT_BYTES + 1 } as unknown as File
+  const reads = await readDroppedAttachments([file, huge], () => true)
+
+  assert.deepEqual(reads?.attachments.map(({ result }) => result.name), ['notes.txt'])
+  assert.equal(reads?.errors.length, 1)
+  assert.match(reads?.errors[0] ?? '', /^huge\.txt: .*too large/i)
+})
+
+test('a drop that goes stale mid-read is discarded, not attached elsewhere', async () => {
+  const DROP_WORKSPACE_ID = 'ws-a'
+  let activeWorkspaceId = DROP_WORKSPACE_ID
+  let secondFileRead = false
+  // The user switches workspace while the first file is read.
+  const switching = {
+    name: 'first.txt',
+    size: 0,
+    arrayBuffer: async () => {
+      activeWorkspaceId = 'ws-b'
+      return new TextEncoder().encode('first').buffer
+    },
+  } as unknown as File
+  const second = {
+    name: 'second.txt',
+    size: 0,
+    arrayBuffer: async () => {
+      secondFileRead = true
+      return new TextEncoder().encode('second').buffer
+    },
+  } as unknown as File
+
+  const reads = await readDroppedAttachments([switching, second], () => activeWorkspaceId === DROP_WORKSPACE_ID)
+
+  assert.equal(reads, null)
+  assert.equal(secondFileRead, false, 'no further files are read once the drop is stale')
 })

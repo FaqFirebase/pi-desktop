@@ -36,7 +36,6 @@
       "readImageFailed": "Could not read image data",
       "reading": "Adding attachments…",
       "unknownMimeType": "unknown",
-      "unsupportedFile": "Unsupported file format. Attach UTF-8 text, code, PNG, JPEG, GIF, or WebP files.",
       "unsupportedImageType": "Unsupported image type ({{mimeType}}). Use PNG, JPEG, GIF, or WebP."
     },
     "closeFileTree": "Close file tree",
@@ -465,6 +464,7 @@
   },
   "errors": {
     "attachments": {
+      "notText": "Attachment is not a text file or a supported image",
       "pathNotPermitted": "Attachment path is not permitted",
       "tooLarge": "Attachment is too large (max {{limit}} MB)"
     },

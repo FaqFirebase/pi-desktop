@@ -1,54 +1,58 @@
 import { t } from '../../../shared/i18n'
+import { assertAttachmentSize, decodeTextAttachment, imageMimeTypeForFileName } from '../../../shared/attachment-rules'
 import type { AttachmentReadResult } from '../../../shared/ipc-contracts'
 import type { FileDragTransfer } from '../../../shared/folder-drop'
+import { readFileAsBase64 } from './file-base64'
 
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
-const IMAGE_TYPES: Record<string, string> = {
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+/**
+ * Snapshot during drop: DataTransfer is no longer readable after an await.
+ * Only confirmed files are claimed. A folder, or an item whose kind the drag
+ * source leaves unknown, stays with the workspace folder-drop handler.
+ */
+export function droppedAttachmentFiles(transfer: FileDragTransfer): File[] {
+  return Array.from(transfer.items ?? []).flatMap((item) => {
+    if (item.kind !== 'file' || !item.webkitGetAsEntry?.()?.isFile) return []
+    const file = item.getAsFile()
+    return file ? [file] : []
+  })
 }
 
-/** Snapshot during drop: DataTransfer is no longer readable after an await. */
-export function droppedAttachmentFiles(
-  transfer: FileDragTransfer & { files?: ArrayLike<File> }
-): File[] {
-  if (transfer.items?.length) {
-    return Array.from(transfer.items).flatMap((item) => {
-      if (item.kind !== 'file' || item.webkitGetAsEntry?.()?.isDirectory) return []
-      const file = item.getAsFile()
-      return file ? [file] : []
-    })
-  }
-  return Array.from(transfer.files ?? [])
-}
-
-/** Read only the browser-granted File, never authorize an arbitrary disk path. */
+/**
+ * Read only the browser-granted File, never authorize an arbitrary disk path.
+ * Same rules as the dialog path (main's readAttachment): images become base64
+ * blocks, other files must be UTF-8 text.
+ */
 export async function readDroppedAttachment(file: File): Promise<AttachmentReadResult> {
-  if (file.size > MAX_ATTACHMENT_BYTES) {
-    throw new Error(t('errors.attachments.tooLarge', { limit: MAX_ATTACHMENT_BYTES / (1024 * 1024) }))
-  }
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
-  const mimeType = (Object.hasOwn(IMAGE_TYPES, extension) ? IMAGE_TYPES[extension] : undefined)
-    ?? Object.values(IMAGE_TYPES).find((mime) => mime === file.type)
+  assertAttachmentSize(file.size)
+  const mimeType = imageMimeTypeForFileName(file.name)
   if (mimeType) {
-    let binary = ''
-    for (let offset = 0; offset < bytes.length; offset += 32768) {
-      binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768))
-    }
-    return { kind: 'image', name: file.name, image: { type: 'image', mimeType, data: btoa(binary) } }
+    return { kind: 'image', name: file.name, image: { type: 'image', mimeType, data: await readFileAsBase64(file) } }
   }
+  return { kind: 'text', name: file.name, content: decodeTextAttachment(new Uint8Array(await file.arrayBuffer())) }
+}
 
-  // PDFs/Office files and other binary formats cannot be sent as UTF-8 text.
-  // Fail visibly instead of attaching corrupted content that the model cannot read.
-  let content: string
-  try {
-    content = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-    if (content.includes('\0') || content.startsWith('%PDF-') ||
-        (file.type.startsWith('image/') && file.type !== 'image/svg+xml')) {
-      throw new Error('Not a text attachment')
+export interface DroppedAttachmentReads {
+  attachments: Array<{ file: File; result: AttachmentReadResult }>
+  errors: string[]
+}
+
+/**
+ * Read dropped files in order. Returns null once `isDropCurrent` reports the
+ * drop went stale during a read (the user switched workspace), so files dropped
+ * in one workspace never land in another workspace's composer.
+ */
+export async function readDroppedAttachments(
+  files: readonly File[],
+  isDropCurrent: () => boolean
+): Promise<DroppedAttachmentReads | null> {
+  const reads: DroppedAttachmentReads = { attachments: [], errors: [] }
+  for (const file of files) {
+    try {
+      reads.attachments.push({ file, result: await readDroppedAttachment(file) })
+    } catch (error) {
+      reads.errors.push(`${file.name}: ${error instanceof Error ? error.message : t('chat.attach.attachFailed')}`)
     }
-  } catch {
-    throw new Error(t('chat.attach.unsupportedFile'))
+    if (!isDropCurrent()) return null
   }
-  return { kind: 'text', name: file.name, content }
+  return reads
 }
