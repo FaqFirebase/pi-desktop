@@ -13,15 +13,19 @@ import tempfile
 
 ICON_DIR = Path(__file__).resolve().parent
 OUTPUT_SIZES = [16, 32, 48, 64, 128, 256, 512]
+# ICO entries this size and larger are stored as PNG instead of a bitmap.
+ICO_PNG_ENTRY_SIZE = 256
 
-SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
-  <!-- Charcoal rounded background -->
-  <rect width="512" height="512" rx="77" fill="#36454F"/>
+BACKGROUND_COLOR = "#36454F"
+FOREGROUND_COLOR = "#e67e22"
+SVG_SIZE = 512
+SVG_CORNER_RADIUS = 77
 
-  <!-- Pi letterforms: official brand marks, scaled from 800 -> 512 -->
+# Shared by SVG and MAC_SVG so the letterform path data exists once.
+PI_LETTERFORMS = f'''  <!-- Pi letterforms: official brand marks, scaled from 800 -> 512 -->
   <g transform="translate(5.5, 5.5) scale(0.62625)">
     <!-- P shape: outer boundary clockwise, inner hole counter-clockwise -->
-    <path fill="#e67e22" fill-rule="evenodd" d="
+    <path fill="{FOREGROUND_COLOR}" fill-rule="evenodd" d="
       M165.29 165.29
       H517.36
       V400
@@ -38,20 +42,29 @@ SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="non
       Z
     "/>
     <!-- i dot -->
-    <path fill="#e67e22" d="M517.36 400 H634.72 V634.72 H517.36 Z"/>
-  </g>
+    <path fill="{FOREGROUND_COLOR}" d="M517.36 400 H634.72 V634.72 H517.36 Z"/>
+  </g>'''
+
+SVG = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SVG_SIZE} {SVG_SIZE}" fill="none">
+  <!-- Charcoal rounded background -->
+  <rect width="{SVG_SIZE}" height="{SVG_SIZE}" rx="{SVG_CORNER_RADIUS}" fill="{BACKGROUND_COLOR}"/>
+
+{PI_LETTERFORMS}
 </svg>'''
 
 # macOS app icon grid: an 824x824 tile centered on a 1024x1024 canvas.
 # A full-bleed icon renders larger than every other icon in the Dock.
-MAC_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
-  <rect x="100" y="100" width="824" height="824" rx="185" fill="#36454F"/>
-  <g transform="translate(100, 100) scale(1.609375) translate(5.5, 5.5) scale(0.62625)">
-    <path fill="#e67e22" fill-rule="evenodd" d="
-      M165.29 165.29 H517.36 V400 H400 V517.36 H282.65 V634.72 H165.29 Z
-      M282.65 282.65 V400 H400 V282.65 Z
-    "/>
-    <path fill="#e67e22" d="M517.36 400 H634.72 V634.72 H517.36 Z"/>
+MAC_CANVAS_SIZE = 1024
+MAC_TILE_SIZE = 824
+# Corner radius of the tile on the macOS icon grid (not the scaled SVG radius).
+MAC_TILE_RADIUS = 185
+MAC_TILE_INSET = (MAC_CANVAS_SIZE - MAC_TILE_SIZE) // 2
+MAC_TILE_SCALE = MAC_TILE_SIZE / SVG_SIZE
+
+MAC_SVG = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {MAC_CANVAS_SIZE} {MAC_CANVAS_SIZE}" fill="none">
+  <rect x="{MAC_TILE_INSET}" y="{MAC_TILE_INSET}" width="{MAC_TILE_SIZE}" height="{MAC_TILE_SIZE}" rx="{MAC_TILE_RADIUS}" fill="{BACKGROUND_COLOR}"/>
+  <g transform="translate({MAC_TILE_INSET}, {MAC_TILE_INSET}) scale({MAC_TILE_SCALE})">
+{PI_LETTERFORMS}
   </g>
 </svg>'''
 
@@ -70,8 +83,8 @@ def generate_macos_icons():
     with tempfile.TemporaryDirectory() as tmp:
         svg_path = Path(tmp) / "icon-macos.svg"
         svg_path.write_text(MAC_SVG)
-        svg_to_png(svg_path, 1024, ICON_DIR / "icon-macos.png")
-        print("  ✓ icon-macos.png (1024×1024)")
+        svg_to_png(svg_path, MAC_CANVAS_SIZE, ICON_DIR / "icon-macos.png")
+        print(f"  ✓ icon-macos.png ({MAC_CANVAS_SIZE}×{MAC_CANVAS_SIZE})")
 
         if sys.platform != "darwin":
             print("  - icon.icns skipped (iconutil requires macOS)")
@@ -88,10 +101,18 @@ def generate_macos_icons():
 
 
 def svg_to_png(svg_path: Path, size: int, out_path: Path):
-    """Convert SVG to PNG using ImageMagick."""
+    """Convert SVG to PNG using ImageMagick.
+
+    ImageMagick rasterizes the SVG at 16 bits per channel, and macOS ImageIO
+    cannot render 16-bit reps inside an .icns: the Dock then falls back to its
+    generic white tile with the icon shrunk inside it. Force 8-bit RGBA output
+    (PNG32) so the generated icons (PNG pack, ICO, and ICNS) stay in the format
+    the OS expects; a palette PNG would also cut the ICO's alpha to 1 bit.
+    """
     subprocess.run(
         ["convert", "-background", "none", "-density", "300",
-         f"{svg_path}", "-resize", f"{size}x{size}", str(out_path)],
+         f"{svg_path}", "-resize", f"{size}x{size}",
+         "-strip", f"PNG32:{out_path}"],
         check=True, capture_output=True,
     )
 
@@ -118,8 +139,9 @@ def main():
     # Multi-resolution ICO
     print("  Generating icon.ico ...")
     ico_sizes = [16, 32, 48, 64, 128, 256]
-    # Build ICO using ImageMagick: append all sizes into one file
-    args = ["convert"]
+    # Build ICO using ImageMagick: append all sizes into one file. Store the
+    # 256px entry PNG-compressed, as Windows allows, instead of a 256 KB bitmap.
+    args = ["convert", "-define", f"icon:png-compression-size={ICO_PNG_ENTRY_SIZE}"]
     for size in ico_sizes:
         args.extend([str(ICON_DIR / f"icon-{size}.png")])
     args.append(str(ICON_DIR / "icon.ico"))
