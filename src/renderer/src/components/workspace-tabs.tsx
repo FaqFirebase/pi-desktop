@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { AlertCircle, CheckCircle2, FolderOpen, GitBranch, Loader2, MessageSquarePlus, Plus, Settings, X, XCircle } from 'lucide-react'
@@ -13,6 +13,8 @@ import { pathsEqual } from '../../../shared/path-compare'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import type { Workspace } from '../../../shared/ipc-contracts'
 
+const PROJECT_TAB_DRAG_TYPE = 'application/x-pi-desktop-project-tab'
+
 function tabLabel(workspace: Workspace): string {
   return workspace.name || workspace.path.split(/[\\/]/).filter(Boolean).pop() || workspace.path
 }
@@ -20,6 +22,10 @@ function tabLabel(workspace: Workspace): string {
 export function WorkspaceTabs({ projectBar }: { projectBar: HTMLDivElement }): React.JSX.Element {
   const { t } = useTranslation()
   const workspaces = useAppStore((state) => state.workspaces)
+  const projectTabOrder = useAppStore((state) => state.projectTabOrder)
+  const reorderProjectTab = useAppStore((state) => state.reorderProjectTab)
+  const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ id: string; placement: 'before' | 'after' } | null>(null)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const sessionList = useAppStore((state) => state.sessionList)
   const sessionRuntimes = useAppStore((state) => state.sessionRuntimes)
@@ -42,8 +48,8 @@ export function WorkspaceTabs({ projectBar }: { projectBar: HTMLDivElement }): R
     toolView.includes(currentView as (typeof toolView)[number]) || globalWorkflowOpen
 
   const tabs = useMemo(
-    () => getProjectTabs(workspaces),
-    [workspaces]
+    () => getProjectTabs(workspaces, projectTabOrder),
+    [workspaces, projectTabOrder]
   )
   const sessionTabs = useMemo(
     () => getSessionTabs(sessionRuntimes, activeWorkspace?.id),
@@ -81,6 +87,35 @@ export function WorkspaceTabs({ projectBar }: { projectBar: HTMLDivElement }): R
         return (
           <div
             key={workspace.id}
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.setData(PROJECT_TAB_DRAG_TYPE, workspace.id)
+              event.dataTransfer.effectAllowed = 'move'
+              setDraggedProjectId(workspace.id)
+            }}
+            onDragEnd={() => {
+              setDraggedProjectId(null)
+              setDropTarget(null)
+            }}
+            onDragOver={(event) => {
+              if (!draggedProjectId || !event.dataTransfer.types.includes(PROJECT_TAB_DRAG_TYPE)) return
+              event.preventDefault()
+              event.dataTransfer.dropEffect = 'move'
+              const bounds = event.currentTarget.getBoundingClientRect()
+              setDropTarget({ id: workspace.id, placement: event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after' })
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null)
+            }}
+            onDrop={(event) => {
+              if (!draggedProjectId || event.dataTransfer.getData(PROJECT_TAB_DRAG_TYPE) !== draggedProjectId) return
+              event.preventDefault()
+              event.stopPropagation()
+              const bounds = event.currentTarget.getBoundingClientRect()
+              reorderProjectTab(draggedProjectId, workspace.id, event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after')
+              setDraggedProjectId(null)
+              setDropTarget(null)
+            }}
             onAuxClick={(event) => {
               // DOM button 1 is the middle mouse button. Keep right-click for
               // the normal context menu and use the middle button as tab-close.
@@ -89,12 +124,19 @@ export function WorkspaceTabs({ projectBar }: { projectBar: HTMLDivElement }): R
               void removeWorkspace(workspace.id)
             }}
             className={clsx(
-              'window-no-drag group flex h-8 min-w-[100px] max-w-[200px] shrink-0 items-center gap-2 rounded-md border px-2.5 text-xs transition-colors',
+              'window-no-drag group relative flex h-8 min-w-[100px] max-w-[200px] shrink-0 select-none items-center gap-2 rounded-md border px-2.5 text-xs transition-colors',
+              draggedProjectId === workspace.id && 'opacity-50',
               active
                 ? 'border-border bg-surface text-primary'
                 : 'border-transparent text-muted hover:bg-surface/60 hover:text-secondary'
             )}
           >
+            {dropTarget?.id === workspace.id && draggedProjectId !== workspace.id && (
+              <span aria-hidden="true" className={clsx(
+                'pointer-events-none absolute inset-y-0 w-0.5 rounded bg-accent-fg',
+                dropTarget.placement === 'before' ? 'left-0' : 'right-0'
+              )} />
+            )}
             <button
               type="button"
               onClick={() => selectProjectTab(workspace.id)}
@@ -117,6 +159,11 @@ export function WorkspaceTabs({ projectBar }: { projectBar: HTMLDivElement }): R
               <button
                 type="button"
                 onClick={() => void removeWorkspace(workspace.id)}
+                draggable
+                onDragStart={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                }}
                 className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-all hover:bg-highlight hover:text-primary group-hover:opacity-100"
                 title={isWorktree ? t('store.confirm.closeTabLabel') : t('store.confirm.removeWorkspaceTitle')}
                 aria-label={

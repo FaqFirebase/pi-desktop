@@ -4,6 +4,7 @@ import { applyLanguageSetting } from './i18n'
 import { applyUiFont } from './utils/ui-font'
 import { t } from '../../shared/i18n'
 import { buildPlanningPrompt } from './utils/planning-prompt'
+import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
 import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
 import { splitClaudeCliMarkers } from './claude-cli-markers'
 import type { PiCommand } from '../../shared/pi-command'
@@ -349,6 +350,7 @@ interface AppState {
 
   // Workspaces
   workspaces: Workspace[]
+  projectTabOrder: string[]
   activeWorkspace: Workspace | null
 
   // Timeline
@@ -533,6 +535,7 @@ interface AppActions {
 
   // Workspaces
   loadWorkspaces: () => Promise<void>
+  reorderProjectTab: (sourceId: string, targetId: string, placement: 'before' | 'after') => void
   createWorkspace: (name: string, path: string) => Promise<void>
   /** Create a clean Git worktree and start it as a new independent tab. */
   createWorktreeTab: () => Promise<void>
@@ -950,6 +953,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   confirmRequest: null,
 
   workspaces: [],
+  projectTabOrder: readProjectTabOrder(),
   activeWorkspace: null,
 
   timelineEvents: [],
@@ -2560,6 +2564,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   // ─── Workspaces ──────────────────────────────────────────────────────
+
+  reorderProjectTab: (sourceId, targetId, placement) => {
+    const state = get()
+    const order = projectTabs(state.workspaces, state.projectTabOrder).map((workspace) => workspace.id)
+    const next = moveProjectTab(order, sourceId, targetId, placement)
+    if (next.every((id, index) => id === order[index])) return
+    set({ projectTabOrder: next })
+    rememberProjectTabOrder(next)
+  },
 
   loadWorkspaces: async () => {
     try {
