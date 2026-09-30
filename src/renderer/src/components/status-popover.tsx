@@ -473,9 +473,14 @@ function StatusRow({
   value: React.ReactNode
 }): React.JSX.Element {
   return (
-    <div className="flex items-center justify-between py-0.5">
-      <span className="text-[11px] text-dim">{label}</span>
-      <span className="text-[11px] text-secondary">{value}</span>
+    <div className="flex items-start justify-between gap-3 py-0.5">
+      <span className="shrink-0 text-[11px] text-dim">{label}</span>
+      <span
+        className="min-w-0 text-right text-[11px] text-secondary line-clamp-2 break-words"
+        title={typeof value === 'string' ? value : undefined}
+      >
+        {value}
+      </span>
     </div>
   )
 }

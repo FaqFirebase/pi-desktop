@@ -201,7 +201,7 @@ export function FileTree(): React.JSX.Element {
     <div className="flex flex-col h-full">
       {/* Branch indicator */}
       {gitBranch && (
-        <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-dim border-b border-border">
+        <div className="flex h-8 shrink-0 items-center gap-1.5 px-3 text-xs text-dim border-b border-border">
           <GitBranch size={12} />
           <span>{gitBranch}</span>
         </div>
@@ -634,7 +634,7 @@ export function FilePreview(): React.JSX.Element | null {
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-[var(--color-app)]">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+      <div className="flex h-8 shrink-0 items-center justify-between border-b border-border px-3">
         <div className="flex items-center gap-2 min-w-0">
           <FileText size={14} className="shrink-0 text-dim" />
           <span className="text-xs text-secondary truncate">{displayPath}</span>

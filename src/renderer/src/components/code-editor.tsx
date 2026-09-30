@@ -138,6 +138,38 @@ export function CodeEditor({
             color: 'var(--color-muted)',
             borderRight: '1px solid var(--color-border)',
           },
+          '.cm-lineNumbers .cm-gutterElement': {
+            color: 'color-mix(in srgb, var(--color-muted) 55%, var(--color-app))',
+          },
+          '.cm-lineNumbers .cm-activeLineGutter': {
+            color: 'var(--color-muted)',
+          },
+          // The default text glyphs (⌄ / ›) sit on the font baseline, below the
+          // line number; draw a chevron centered on the first visual line instead.
+          // The glyph stays (invisible) so the marker keeps the line's height.
+          '.cm-foldGutter span': {
+            display: 'block',
+            position: 'relative',
+            padding: '0 3px',
+            WebkitTextFillColor: 'transparent',
+            color: 'color-mix(in srgb, var(--color-muted) 55%, var(--color-app))',
+          },
+          '.cm-foldGutter span::before': {
+            content: '""',
+            position: 'absolute',
+            inset: '0',
+            margin: 'auto',
+            width: '10px',
+            height: '10px',
+            backgroundColor: 'currentColor',
+            mask: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 6l4.5 4.5L12.5 6' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat`,
+          },
+          '.cm-foldGutter span[title="Unfold line"]::before': {
+            transform: 'rotate(-90deg)',
+          },
+          '.cm-foldGutter span:hover': {
+            color: 'var(--color-primary)',
+          },
           '.cm-activeLine': {
             backgroundColor: 'var(--cm-active-line-bg)',
           },
