@@ -80,6 +80,8 @@ let workspaceTerminals: WorkspaceTerminals | null = null
 // quit (menu/tray Quit, Cmd-Ctrl+Q) from a window close that should hide to tray.
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
+let shutdownPending: Promise<void> | null = null
+let shutdownComplete = false
 
 // Guards the renderer's unsaved editor buffer against teardown. The renderer
 // mirrors its dirty flag here (ui:editor-dirty-set); quit, non-tray window
@@ -311,6 +313,7 @@ function createMainWindow(): BrowserWindow {
 // Bring the main window to the foreground, re-creating it if it was fully
 // closed. Used by the tray, single-instance relaunch, and macOS dock activate.
 function showMainWindow(): void {
+  if (isQuitting) return
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
@@ -536,7 +539,6 @@ app.on('window-all-closed', () => {
   }
 })
 
-// Cleanup on quit
 app.on('before-quit', (event) => {
   // Gate BEFORE isQuitting is set: quitting destroys the renderer and its
   // unsaved editor buffer, and a cancelled dialog must leave the tray-hide
@@ -555,13 +557,30 @@ app.on('before-quit', (event) => {
   // the window actually close. This is the single choke point every quit path
   // flows through (menu/tray Quit, Cmd-Ctrl+Q).
   isQuitting = true
+})
+
+// Close the renderer before tearing down the services it can still query.
+app.on('will-quit', (event) => {
+  if (!shutdownComplete) {
+    event.preventDefault()
+    // The executor turns a synchronous stopAll() throw into a rejection, so a
+    // failed teardown is logged and the quit still resumes instead of hanging.
+    shutdownPending ??= new Promise<void>((resolve) => resolve(workspaceManager?.stopAll()))
+      .catch((error) => appLog.warn('app', 'Failed to stop workspaces on quit', error))
+      .then(() => {
+        shutdownComplete = true
+        // Native macOS terminate: is still unwinding during promise microtasks.
+        // Resume on the next turn so it cannot swallow the renewed quit request.
+        setImmediate(() => app.quit())
+      })
+    return
+  }
   // Release the tray icon so it doesn't linger in the notification area.
   destroyTray()
   // Synchronous incremental scan + write: captures every session touched this
   // run before we exit (async I/O isn't guaranteed to finish during shutdown).
   activityStatsStore.flushSync()
   appLog.flushSync()
-  workspaceManager?.stopAll()
   workspaceTerminals?.stopAll()
   // Windows: GUI-owned Pi TEMP does not get OS cleanup — wipe on quit.
   cleanupPiChildTempDir()
