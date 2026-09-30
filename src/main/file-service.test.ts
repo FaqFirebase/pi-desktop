@@ -208,6 +208,19 @@ test('a home workspace hides tooling stores only at its root', async () => {
   assert.deepEqual(found.map((hit) => hit.relativePath), ['Projects/app/.cargo/config.toml'])
 })
 
+test('Git config files show in the tree and in search, the .git folder does not', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pi-fs-git-files-'))
+  execFileSync('git', ['init', '-q'], { cwd: dir })
+  await writeFile(join(dir, '.gitignore'), 'out\n')
+  await mkdir(join(dir, '.github', 'workflows'), { recursive: true })
+  await writeFile(join(dir, '.github', 'workflows', 'ci.yml'), 'on: push\n')
+  const service = new FileService(dir, join(dir, 'not-home'))
+  const tree = await service.getFileTree()
+  assert.deepEqual(childNames(tree).sort(), ['.github', '.gitignore'])
+  const found = await service.searchFiles('i')
+  assert.deepEqual(found.map((hit) => hit.relativePath).sort(), ['.github/workflows/ci.yml', '.gitignore'])
+})
+
 async function testHomeWatcherIgnoresRootToolingOnly(): Promise<void> {
   const dir = await makeToolingWorkspace()
   const service = new FileService(dir, dir)

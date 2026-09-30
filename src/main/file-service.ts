@@ -704,7 +704,7 @@ export class FileService {
 
           // Sort: directories first, then files, both alphabetical
           const sorted = items
-            .filter((item) => !this.isIgnoredEntry(item.name, depth) && !item.name.startsWith('.git'))
+            .filter((item) => !this.isIgnoredEntry(item.name, depth))
             .sort((a, b) => {
               if (a.isDirectory() && !b.isDirectory()) return -1
               if (!a.isDirectory() && b.isDirectory()) return 1
@@ -738,7 +738,7 @@ export class FileService {
       const depth = relBase ? relBase.split('/').length : WORKSPACE_ROOT_DEPTH
 
       for (const item of items) {
-        if (this.isIgnoredEntry(item.name, depth) || item.name.startsWith('.git')) continue
+        if (this.isIgnoredEntry(item.name, depth)) continue
 
         const fullPath = join(dir, item.name)
         const relPath = relBase ? `${relBase}/${item.name}` : item.name
