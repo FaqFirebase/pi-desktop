@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pi Desktop — Desktop GUI for the Pi and oh-my-pi coding agents</title>
+  <title>Pi Desktop: desktop GUI for the Pi and oh-my-pi coding agents</title>
   <meta name="description" content="Pi Desktop is a free, open-source Electron app that puts a full GUI around the Pi and oh-my-pi coding agents. Chat, manage files, run commands, and review changes in one window." />
   <link rel="canonical" href="https://pi-desktop.com/" />
   <meta property="og:type" content="website" />
@@ -11,10 +11,10 @@
   <meta property="og:title" content="Pi Desktop" />
   <meta property="og:description" content="A desktop GUI for the Pi and oh-my-pi coding agents. Open source. Alpha." />
   <meta property="og:image" content="https://pi-desktop.com/screenshots/home.png" />
-  <meta property="og:image:alt" content="Pi Desktop — Home launcher screen with recent workspaces and sessions" />
+  <meta property="og:image:alt" content="Pi Desktop Home launcher with recent workspaces and sessions" />
   <meta property="og:url" content="https://pi-desktop.com/" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Pi Desktop — Desktop GUI for the Pi and oh-my-pi coding agents" />
+  <meta name="twitter:title" content="Pi Desktop: desktop GUI for the Pi and oh-my-pi coding agents" />
   <meta name="twitter:description" content="A free, open-source Electron app that puts a full GUI around the Pi and oh-my-pi coding agents. Linux, macOS, and Windows." />
   <meta name="twitter:image" content="https://pi-desktop.com/screenshots/home.png" />
   <meta name="theme-color" content="#0d0d0d" />
@@ -315,92 +315,92 @@
   <!-- SCREENSHOTS -->
   <section class="screenshots">
     <div class="screenshot-grid">
-      <img src="screenshots/home.png" alt="Pi Desktop — Home launcher with activity stats and recent work" />
-      <img src="screenshots/chat.png" alt="Pi Desktop — chat view with the composer and sidebar" loading="lazy" />
-      <img src="screenshots/chat-file-tree.png" alt="Pi Desktop — chat with the file tree open" loading="lazy" />
-      <img src="screenshots/review-panel.png" alt="Pi Desktop — Review panel with permissions and changed files" loading="lazy" />
-      <img src="screenshots/diff-terminal.png" alt="Pi Desktop — diff viewer with Commit, Commit + Push, and PR actions above the terminal" loading="lazy" />
-      <img src="screenshots/packages.png" alt="Pi Desktop — packages and skills browser" loading="lazy" />
-      <img src="screenshots/new-task.png" alt="Pi Desktop — New Task launcher with the isolated worktree option" loading="lazy" />
-      <img src="screenshots/notes.png" alt="Pi Desktop — notes" loading="lazy" />
-      <img src="screenshots/settings.png" alt="Pi Desktop — settings with the agent installation picker" loading="lazy" />
+      <img src="screenshots/home.png" alt="Pi Desktop Home launcher with activity stats and recent work" />
+      <img src="screenshots/chat.png" alt="Pi Desktop chat view with the composer and sidebar" loading="lazy" />
+      <img src="screenshots/chat-file-tree.png" alt="Pi Desktop chat with the file tree open" loading="lazy" />
+      <img src="screenshots/review-panel.png" alt="Pi Desktop Review panel with permissions and changed files" loading="lazy" />
+      <img src="screenshots/diff-terminal.png" alt="Pi Desktop diff viewer with Commit, Commit + Push, and PR buttons above the terminal" loading="lazy" />
+      <img src="screenshots/packages.png" alt="Pi Desktop packages and skills browser" loading="lazy" />
+      <img src="screenshots/new-task.png" alt="Pi Desktop New Task launcher with the isolated worktree option" loading="lazy" />
+      <img src="screenshots/notes.png" alt="Pi Desktop notes" loading="lazy" />
+      <img src="screenshots/settings.png" alt="Pi Desktop settings with the agent installation picker" loading="lazy" />
     </div>
   </section>
 
   <!-- FEATURES -->
   <section class="features" id="features">
     <p class="section-label">What's inside</p>
-    <h2 class="section-title">Everything you need in one window</h2>
+    <h2 class="section-title">One window for your coding agent</h2>
     <div class="feature-grid">
       <div class="feature-card">
         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
         <h3>Streaming chat</h3>
-        <p>Real-time streaming with thinking blocks and tool-use visibility. Rich rendering: inline SVG preview, clickable file links, color emoji. Consecutive tool calls fold into collapsible groups; file reads show as line-numbered, highlighted code and edits as diffs. Find within a conversation with Ctrl/Cmd+F, mention workspace files with @, and recall earlier prompts with the arrow keys.</p>
+        <p>Streaming replies with thinking blocks and tool calls. Consecutive tool calls fold into groups, file reads show as line-numbered code, and edits show as diffs. File names in replies open a preview. Mention files with @, attach or drop files and images, recall earlier prompts with the arrow keys, and find text with Ctrl/Cmd+F.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></div>
         <h3>Multiple workspaces</h3>
-        <p>Every live session runs its own agent process, so a turn keeps going after you switch away from it. Mission Control shows what is running across every project, and New Task launches work into a fresh background session, optionally in its own Git worktree.</p>
+        <p>Every live session runs its own agent process, so a turn keeps going after you switch away. Mission Control shows what is running in every project, and New Task starts work in a fresh background session, optionally in its own Git worktree. Drag project tabs to reorder them.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
-        <h3>Review rail</h3>
-        <p>See changed files, permissions, and session status at a glance. Approve or deny tool calls without leaving the chat, and define custom allow/deny rules per tool, globally or per workspace.</p>
+        <h3>Review and permissions</h3>
+        <p>The Review panel shows changed files, the permission mode, and session status. Approve or deny tool calls without leaving the chat, and set allow/deny rules per tool, globally or per workspace.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg></div>
         <h3>Pi or OMP</h3>
-        <p>Run the standard Pi CLI or the compatible omp binary from <a href="https://github.com/can1357/oh-my-pi">oh-my-pi</a>. Each keeps its own sessions and the app reads both, so switching engines never hides your history. Rows are tagged when both appear, and opening one starts the engine that wrote it.</p>
+        <p>Run the standard Pi CLI or the compatible omp binary from <a href="https://github.com/can1357/oh-my-pi">oh-my-pi</a>. Each keeps its own sessions and the app reads both, so switching engines never hides your history. Opening a session starts the engine that wrote it.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
-        <h3>File tree &amp; diff viewer</h3>
-        <p>Browse your project and review diffs inline. Preview code, images, PDFs, and HTML in a side pane. File search with Ctrl+Shift+F.</p>
+        <h3>Files, diffs, and Git</h3>
+        <p>Browse your project and preview code, images, PDFs, and HTML. Review the diff, then Commit, Commit + Push, or open a pull request from the same bar. Switch or create branches from the status bar.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
         <h3>Code editor</h3>
-        <p>Open and edit files in a real CodeMirror 6 editor with syntax highlighting for 15+ languages. Save/Revert controls and instant feedback.</p>
+        <p>Open and edit files in a CodeMirror 6 editor with syntax highlighting for 15+ languages and Git change markers in the gutter.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
         <h3>Integrated terminal</h3>
-        <p>Full PTY terminal with ANSI color support, right inside the app, so you don't have to switch windows.</p>
+        <p>A full PTY terminal with ANSI colors, one per workspace. Drag its edge to resize it.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>
         <h3>Package browser</h3>
-        <p>Browse and install Pi packages from pi.dev/packages without leaving the app. The Installed tab checks npm for newer versions and updates one package or all of them.</p>
+        <p>Browse and install Pi packages from pi.dev/packages. The Installed tab checks npm for newer versions and updates one package or all of them.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg></div>
         <h3>Themes</h3>
-        <p>Dark, Light, System, Nord, Gruvbox, Breeze Dark, Breeze Light, and Breeze Claudius, or build your own from 7 seed colors with a live-previewing editor. System follows the OS and can map light and dark mode to any two installed themes. Import, export, install from a URL, or browse the <a href="https://github.com/FaqFirebase/pi-desktop-themes">community gallery</a>.</p>
+        <p>Dark, Light, System, Nord, Gruvbox, Breeze Dark, Breeze Light, and Breeze Claudius, or build your own from 7 seed colors with a live preview. System follows the OS and can map light and dark mode to any two installed themes. Import, export, install from a URL, or browse the <a href="https://github.com/FaqFirebase/pi-desktop-themes">community gallery</a> in the app.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
-        <h3>Model switching</h3>
-        <p>Cycle between models with Ctrl+P. Session tags keep your work organized.</p>
+        <h3>Models and shortcuts</h3>
+        <p>Pick a model from the keyboard or cycle models with Ctrl+P. Change the app shortcuts in Settings, and add your own models and providers.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></div>
         <h3>Session naming</h3>
-        <p>Session names read straight from Pi, with inline rename right in the sidebar. Delete confirmations are themed and in-app, so no native dialog steals window focus.</p>
+        <p>Session names come from Pi, and you can rename a session in the sidebar. Tag sessions, archive them, or branch from a message.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
         <h3>Activity dashboard</h3>
-        <p>Home shows usage stats over 7 days to a year: messages, tokens, active-day streaks, peak hour, and per-model breakdown. The stats persist even if you delete the session.</p>
+        <p>Home shows usage stats for 7 days up to a year: messages, tokens, active-day streaks, peak hour, and a per-model breakdown. The stats stay after you delete a session.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></svg></div>
         <h3>TypeSafe Jev</h3>
-        <p>Save your <a href="https://docs.typesafe.ai/introduction">TypeSafe</a> API key once and every new Pi or OMP session gets it. One click installs the official Jev skill for both engines. Off until you set it up; Pi Desktop never calls TypeSafe itself.</p>
+        <p>Save your <a href="https://docs.typesafe.ai/introduction">TypeSafe</a> API key once and every new Pi or OMP session gets it. One click installs the official Jev skill for both engines. It stays off until you set it up, and Pi Desktop never calls TypeSafe itself.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></div>
         <h3>Voice dictation</h3>
-        <p>Click the mic and talk. Your words show up in the prompt box while you speak, and it stops after a short pause. Speech-to-text runs on your own machine, so nothing goes to a server. Pick a model in Settings (Moonshine for fast English, Whisper or Parakeet for more languages). None ships by default; it downloads only when you choose one.</p>
+        <p>Click the mic and talk. Your words show up in the prompt box while you speak, and recording stops after a short pause. Speech-to-text runs on your own machine, so nothing goes to a server. Pick a model in Settings (Moonshine for fast English, Whisper or Parakeet for more languages). No model ships with the app; one downloads only when you choose it.</p>
       </div>
     </div>
   </section>
@@ -433,9 +433,9 @@
     </div>
 
     <p class="install-note">
-      macOS and Windows builds are unsigned (community-tested); see the
+      macOS and Windows builds are unsigned. See the
       <a href="https://github.com/FaqFirebase/pi-desktop#macos">README</a> for the one-time Gatekeeper/SmartScreen steps, or
-      <a href="https://github.com/FaqFirebase/pi-desktop#build-it-yourself">build from source</a> to skip them entirely.
+      <a href="https://github.com/FaqFirebase/pi-desktop#build-it-yourself">build from source</a> to skip them.
     </p>
   </section>
 
