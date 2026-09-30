@@ -5,6 +5,8 @@ import { modelDisplayName } from '../../../shared/models-config'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import {
   toolCallLabel,
+  toolCallSource,
+  toolCommand,
   toolCallStatusLabel,
   toolKind,
   toolCallFile,
@@ -644,7 +646,7 @@ function ToolCallBadge({
             <EditDiff blocks={edits} lang={editLang} />
           ) : (
             <pre className="font-jetbrains overflow-x-auto text-xs text-dim">
-              {formatToolCallArgs(toolCall.arguments)}
+              {toolCallCopyText(toolCall)}
             </pre>
           )}
           {toolCall.result && (
@@ -733,6 +735,9 @@ function ToolResultMessage({ message }: { message: DisplayMessage }): React.JSX.
       ? getCodeEditorLanguageName(message.toolFile)
       : 'plain text'
   const isCode = codeLang !== 'plain text'
+  const source = message.toolName && message.toolCallArguments !== undefined
+    ? toolCallSource(message.toolName, message.toolCallArguments, t)
+    : null
 
   return (
     <div className="mb-4 animate-fade-in">
@@ -741,6 +746,9 @@ function ToolResultMessage({ message }: { message: DisplayMessage }): React.JSX.
             keeps the result box left-aligned with the tool-call box above it. */}
         <div className="w-7 shrink-0" />
         <div className="min-w-0 flex-1">
+          {source && (
+            <div className="mb-1 truncate font-jetbrains text-xs text-faint" title={source}>{source}</div>
+          )}
           <div className="relative rounded-lg border border-border bg-surface/50">
             <CopyButton text={message.content} className="absolute right-1.5 top-1.5" />
             {!expandable ? (
@@ -1007,16 +1015,5 @@ function groupCopyText(messages: DisplayMessage[]): string {
 // What the copy button on a tool-call box yields: the raw command for
 // shell-style tools (so it pastes cleanly), otherwise the formatted arguments.
 function toolCallCopyText(toolCall: NonNullable<DisplayMessage['toolCalls']>[number]): string {
-  try {
-    const parsed = JSON.parse(toolCall.arguments)
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      for (const key of ['command', 'cmd', 'script']) {
-        const value = (parsed as Record<string, unknown>)[key]
-        if (typeof value === 'string' && value.length > 0) return value
-      }
-    }
-  } catch {
-    // fall through to formatted args
-  }
-  return formatToolCallArgs(toolCall.arguments)
+  return toolCommand(toolCall.arguments) ?? formatToolCallArgs(toolCall.arguments)
 }

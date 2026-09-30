@@ -36,6 +36,8 @@ export interface DisplayMessage {
   toolCallId?: string
   toolName?: string
   toolFile?: string
+  /** toolResult only: its call's arguments, set when the call shared its turn with others. */
+  toolCallArguments?: string
   isError?: boolean
 }
 

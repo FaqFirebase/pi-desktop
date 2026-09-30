@@ -134,3 +134,11 @@ test('message_end with stopReason error records a failed timeline event', () => 
   assert.ok(failure, 'expected an assistant_message timeline event')
   assert.equal(failure.status, 'error')
 })
+
+test('an OMP local command answered in the prompt response ends the wait for a turn', async () => {
+  const { promptRanWithoutAgent } = await import('./store')
+  assert.equal(promptRanWithoutAgent({ type: 'response', command: 'prompt', success: true, data: { agentInvoked: false } }), true)
+  assert.equal(promptRanWithoutAgent({ type: 'response', command: 'prompt', success: true, data: { agentInvoked: true } }), false)
+  assert.equal(promptRanWithoutAgent({ type: 'response', command: 'prompt', success: true }), false)
+  assert.equal(promptRanWithoutAgent(null), false)
+})

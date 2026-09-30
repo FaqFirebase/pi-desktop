@@ -40,6 +40,7 @@ export const IPC_CHANNELS = {
   SESSION_SET_NAME: 'session:set-name',
   SESSION_EXPORT_HTML: 'session:export-html',
   SESSION_GET_FORK_MESSAGES: 'session:get-fork-messages',
+  SESSION_GET_STREAMING_TEXT: 'session:get-streaming-text',
   SESSION_DELETE: 'session:delete',
   SESSION_ARCHIVE: 'session:archive',
   SESSION_UNARCHIVE: 'session:unarchive',
@@ -433,6 +434,12 @@ export interface PiAgentEndEvent {
   messages: unknown[]
 }
 
+/** The text and thinking of the assistant message a Pi process is streaming, so far. */
+export interface StreamingTextSnapshot {
+  content: string
+  thinking: string
+}
+
 export interface PiMessageUpdateEvent {
   type: 'message_update'
   message: Record<string, unknown>
@@ -440,6 +447,12 @@ export interface PiMessageUpdateEvent {
     type: string
     contentIndex?: number
     delta?: string
+    /**
+     * Where a text or thinking delta starts in its message's text of that
+     * kind. Main stamps it (Pi sends none), so a view that attached in the
+     * middle of a message can tell a gap from the next delta.
+     */
+    offset?: number
     partial?: Record<string, unknown>
     content?: string
     thinking?: string

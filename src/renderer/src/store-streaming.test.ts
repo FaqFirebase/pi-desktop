@@ -152,3 +152,43 @@ test('a user message ending mid-stream leaves the assistant buffers intact', () 
   assert.equal(useAppStore.getState().messages.length, 0)
   assert.equal(useAppStore.getState().timelineEvents.length, 0)
 })
+
+test('deltas take their place by offset, and a delta the view already holds changes nothing', async () => {
+  const { placeStreamedDelta } = await import('./store')
+  assert.equal(placeStreamedDelta('', 'Hello', 0), 'Hello')
+  assert.equal(placeStreamedDelta('Hello', ' world', 5), 'Hello world')
+  assert.equal(placeStreamedDelta('Hello world', ' world', 5), 'Hello world')
+  assert.equal(placeStreamedDelta('Hello', ' there', undefined), 'Hello there')
+  assert.equal(placeStreamedDelta('', 'middle of a sentence', 40), null)
+})
+
+test('a view that missed the start of a message shows what main kept, then continues from it', async () => {
+  const session = (window as unknown as { piDesktop: { session: Record<string, unknown> } }).piDesktop.session
+  const prefix = 'The first part streamed while another project was on screen. '
+  session.getStreamingText = async () => ({ content: `${prefix}Then`, thinking: 'Earlier reasoning.' })
+  try {
+    useAppStore.setState({ reattachedMidTurn: true })
+    update({ type: 'text_delta', delta: 'Then', offset: prefix.length })
+    assert.equal(useAppStore.getState().streamingContent, '', 'no mid-sentence fragment before the start is known')
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(useAppStore.getState().streamingContent, `${prefix}Then`)
+    assert.equal(useAppStore.getState().streamingThinking, 'Earlier reasoning.')
+
+    update({ type: 'text_delta', delta: ' this.', offset: `${prefix}Then`.length })
+    assert.equal(useAppStore.getState().streamingContent, `${prefix}Then this.`)
+  } finally {
+    delete session.getStreamingText
+  }
+})
+
+test('without the kept text, the view shows no mid-sentence fragment', async () => {
+  const session = (window as unknown as { piDesktop: { session: Record<string, unknown> } }).piDesktop.session
+  session.getStreamingText = async () => null
+  try {
+    update({ type: 'text_delta', delta: 'middle of a sentence', offset: 120 })
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(useAppStore.getState().streamingContent, '')
+  } finally {
+    delete session.getStreamingText
+  }
+})

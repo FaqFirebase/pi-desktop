@@ -256,6 +256,11 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     return Array.isArray(data?.messages) ? data.messages : []
   })
 
+  ipcMain.handle(IPC_CHANNELS.SESSION_GET_STREAMING_TEXT, async () => {
+    const pi = workspaceManager.getActivePiManager()
+    return pi ? pi.getStreamingText() : null
+  })
+
   ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, async (event, sessionPath: unknown): Promise<SessionDeleteResult> => {
     assertTrustedSender(event)
     if (!isString(sessionPath)) throw new Error('sessionPath must be a string')

@@ -5,6 +5,8 @@ import {
   toolKind,
   toolLabel,
   toolCallLabel,
+  toolCallSource,
+  toolCommand,
   toolCallFile,
   parseEdits,
   editStats,
@@ -431,4 +433,55 @@ test('prepareChatMessages drops edit toolResult pills after folding', () => {
   assert.equal(out[0].role, 'assistant')
   assert.equal(out[0].toolCalls?.[0].result, 'ok')
   assert.equal(out[0].toolCalls?.[0].isError, false)
+})
+
+test('prepareChatMessages shows a paired command result once, in its result row only', () => {
+  // A live turn commits each call with its result AND a toolResult row.
+  const out = prepareChatMessages([
+    assistant({
+      toolCalls: [
+        { id: 'ls1', name: 'bash', arguments: '{"command":"ls"}', result: 'alpha.txt' },
+        { id: 'st1', name: 'bash', arguments: '{"command":"git status"}', result: 'On branch main' },
+      ],
+    }),
+    resultFor('ls1', 'alpha.txt'),
+    resultFor('st1', 'On branch main'),
+  ])
+  const calls = out.flatMap((m) => m.toolCalls ?? [])
+  assert.deepEqual(calls.map((tc) => tc.result), [undefined, undefined])
+  assert.deepEqual(out.filter((m) => m.role === 'toolResult').map((m) => m.content), ['alpha.txt', 'On branch main'])
+})
+
+test('prepareChatMessages keeps a command result on its badge when no result row pairs to it', () => {
+  const out = prepareChatMessages([
+    assistant({ toolCalls: [{ id: 'x1', name: 'bash', arguments: '{"command":"ls"}', result: 'alpha.txt' }] }),
+  ])
+  assert.equal(out[0].toolCalls?.[0].result, 'alpha.txt')
+})
+
+test('results of calls made together name their call; a lone call result does not repeat it', () => {
+  const prepared = prepareChatMessages([
+    {
+      id: 'a1', role: 'assistant', content: '', timestamp: 0,
+      toolCalls: [
+        { id: 'ls', name: 'bash', arguments: '{"command":"ls"}' },
+        { id: 'st', name: 'bash', arguments: '{"command":"git status"}' },
+      ],
+    },
+    { id: 'r1', role: 'toolResult', content: 'app.ts', timestamp: 0, toolCallId: 'ls' },
+    { id: 'r2', role: 'toolResult', content: 'clean', timestamp: 0, toolCallId: 'st' },
+    { id: 'a2', role: 'assistant', content: '', timestamp: 0, toolCalls: [{ id: 'rd', name: 'read', arguments: '{"path":"a.ts"}' }] },
+    { id: 'r3', role: 'toolResult', content: 'x', timestamp: 0, toolCallId: 'rd' },
+  ])
+  const results = prepared.filter((message) => message.role === 'toolResult')
+  assert.deepEqual(
+    results.map((message) => message.toolCallArguments && toolCallSource(message.toolName!, message.toolCallArguments, t)),
+    ['ls', 'git status', undefined],
+  )
+})
+
+test('a call source falls back to its label when it carries no command', () => {
+  assert.equal(toolCallSource('bash', '{}', t), toolCallLabel('bash', '{}', t))
+  assert.equal(toolCommand('{"cmd":"npm test"}'), 'npm test')
+  assert.equal(toolCommand('not json'), null)
 })

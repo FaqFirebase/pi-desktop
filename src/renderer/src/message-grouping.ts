@@ -141,6 +141,32 @@ export function toolCallLabel(name: string, argumentsJson: string, t: Translate 
   return t(TOOL_DONE_KEYS[kind], { target: displayArg(kind, arg) })
 }
 
+// Argument fields that carry the command line of a shell-style call.
+const COMMAND_ARG_KEYS = ['command', 'cmd', 'script'] as const
+
+/** The command line a shell-style call ran, when its arguments carry one. */
+export function toolCommand(argumentsJson: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(argumentsJson)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    for (const key of COMMAND_ARG_KEYS) {
+      const value = (parsed as Record<string, unknown>)[key]
+      if (typeof value === 'string' && value.length > 0) return value
+    }
+  } catch {
+    // Not JSON: no command to show.
+  }
+  return null
+}
+
+/**
+ * Names one call among several in a turn, for the row that shows its result:
+ * the command a shell call ran, else the call's own label ("Read app.ts").
+ */
+export function toolCallSource(name: string, argumentsJson: string, t: Translate = sharedT): string {
+  return (toolKind(name) === 'run' ? toolCommand(argumentsJson) : null) ?? toolCallLabel(name, argumentsJson, t)
+}
+
 // Combine the per-tool verbs across a run into one title, e.g.
 // "Fetched 4 URLs, read 2 files, edited a file". Counts are bucketed by kind in
 // first-appearance order and count *distinct* targets, so re-reading one file
@@ -337,11 +363,13 @@ export function splitReadTruncationNote(content: string): { code: string; note: 
  * Pure; reuses message objects when nothing changed so memoized bubbles stay stable.
  */
 export function prepareChatMessages(messages: DisplayMessage[]): DisplayMessage[] {
-  const calls = new Map<string, { name: string; file: string | null }>()
+  const calls = new Map<string, { name: string; file: string | null; arguments: string; shared: boolean }>()
   for (const m of messages) {
     if (m.role === 'assistant' && m.toolCalls) {
       for (const tc of m.toolCalls) {
-        calls.set(tc.id, { name: tc.name, file: toolCallFile(tc.name, tc.arguments) })
+        calls.set(tc.id, {
+          name: tc.name, file: toolCallFile(tc.name, tc.arguments), arguments: tc.arguments, shared: m.toolCalls.length > 1,
+        })
       }
     }
   }
@@ -361,7 +389,8 @@ export function prepareChatMessages(messages: DisplayMessage[]): DisplayMessage[
     const hasTools = (m.toolCalls?.length ?? 0) > 0
 
     // Fold result bodies onto edit/write calls only. Read/bash keep a standalone
-    // result pill — putting the body on the badge as well would show it twice.
+    // result pill, so a live call's own copy of that body is dropped from the
+    // badge — showing it there as well would render the result twice.
     let toolCalls = m.toolCalls
     if (toolCalls && results.size > 0) {
       let changed = false
@@ -372,7 +401,7 @@ export function prepareChatMessages(messages: DisplayMessage[]): DisplayMessage[
         changed = true
         return {
           ...tc,
-          result: foldIntoBadge ? (tc.result ?? r.content) : tc.result,
+          result: foldIntoBadge ? (tc.result ?? r.content) : undefined,
           isError: tc.isError ?? r.isError ?? false,
         }
       })
@@ -403,7 +432,13 @@ export function prepareChatMessages(messages: DisplayMessage[]): DisplayMessage[
       // Edit/write: result lives on the call badge. Read/bash keep a result row.
       if (paired) {
         if (resultFoldsIntoBadge(paired.name)) continue
-        out.push({ ...m, toolName: paired.name, toolFile: paired.file ?? undefined })
+        out.push({
+          ...m,
+          toolName: paired.name,
+          toolFile: paired.file ?? undefined,
+          // Results of calls made together follow all of them; name the call.
+          toolCallArguments: paired.shared ? paired.arguments : undefined,
+        })
       } else {
         out.push(m)
       }

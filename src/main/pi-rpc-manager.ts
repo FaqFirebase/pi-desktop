@@ -12,6 +12,7 @@ import type {
   PiStatus,
   PiResponseEvent,
   AgentInstallation,
+  StreamingTextSnapshot,
 } from '../shared/ipc-contracts'
 import type { CaptureOptions, PiEngine, PiResolution, PiStartFailure, ResolutionDeps } from './pi-binary-resolution'
 import {
@@ -22,6 +23,7 @@ import {
   whichInPath,
 } from './pi-binary-resolution'
 import { escapeCmdSpawn } from './cmd-escape'
+import { StreamingTextTracker } from './streaming-text-tracker'
 import { appLog } from './app-log'
 import { getGuiDataPath } from './app-data-paths'
 import { loadPiDotenv } from './pi-dotenv'
@@ -677,6 +679,7 @@ export class PiRpcManager extends EventEmitter {
   private nextRequestId = 1
   private decoder = new StringDecoder('utf8')
   private rpcFrameDecoder = new RpcFrameDecoder()
+  private readonly streamingText = new StreamingTextTracker()
   private startInFlight: Promise<PiStatus> | null = null
   private runningEngine: 'pi' | 'omp' | null = null
   private readonly exitWaiters = new Map<ChildProcess, Set<() => void>>()
@@ -718,6 +721,11 @@ export class PiRpcManager extends EventEmitter {
       startupPhase: this.startupPhase ?? undefined,
     }
   }
+  /** What the current assistant message has streamed so far. */
+  getStreamingText(): StreamingTextSnapshot {
+    return this.streamingText.snapshot()
+  }
+
   /** Engine identity of the live child, not the currently configured future one. */
   getEngineKind(): AgentEngineKind {
     return this.runningEngine ?? getConfiguredEngineKind()
@@ -932,6 +940,7 @@ export class PiRpcManager extends EventEmitter {
         if (this.status === 'running') {
           // Exited after becoming ready → normal lifecycle stop.
           this.setStatus('stopped')
+          this.streamingText.reset()
           this.emit('exit', { code, signal })
           this.rejectAllPending(t('errors.pi.processExited'))
           return
@@ -1199,6 +1208,7 @@ export class PiRpcManager extends EventEmitter {
       }
     }
 
+    this.streamingText.observe(event)
     // Emit all events for subscribers
     this.emit('event', event)
     this.emit(event.type, event)

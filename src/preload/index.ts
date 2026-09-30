@@ -68,6 +68,7 @@ import type {
   WorkflowControlAction,
   WorkflowControlResult,
   SessionRuntimeInfo,
+  StreamingTextSnapshot,
   SessionRuntimeCloseResult,
   SessionLaunchTaskOptions,
   WorkspaceActivationIntent,
@@ -122,6 +123,8 @@ interface PiDesktopAPI {
     setName(name: string): Promise<unknown>
     exportHtml(outputPath?: string): Promise<unknown>
     getForkMessages(): Promise<unknown>
+    /** What the active session's current assistant message has streamed so far; null without a running Pi. */
+    getStreamingText(): Promise<StreamingTextSnapshot | null>
     delete(sessionPath: string): Promise<SessionDeleteResult>
     archive(sessionId: string): Promise<ArchivedSessionsMap>
     unarchive(sessionId: string): Promise<ArchivedSessionsMap>
@@ -429,6 +432,7 @@ const api: PiDesktopAPI = {
     setName: (name) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SET_NAME, name),
     exportHtml: (outputPath) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_EXPORT_HTML, outputPath),
     getForkMessages: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_FORK_MESSAGES),
+    getStreamingText: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_STREAMING_TEXT),
     getLineage: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_LINEAGE),
     compact: (customInstructions) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_COMPACT, customInstructions),
     delete: (sessionPath) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_DELETE, sessionPath),

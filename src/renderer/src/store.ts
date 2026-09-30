@@ -6,7 +6,9 @@ import { t } from '../../shared/i18n'
 import { buildPlanningPrompt } from './utils/planning-prompt'
 import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
 import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
+import { stripAnsi } from './utils/strip-ansi'
 import { splitClaudeCliMarkers } from './claude-cli-markers'
+import { markUnansweredToolCallsRunning, settleRunningToolCall } from './reattached-tool-calls'
 import type { PiCommand } from '../../shared/pi-command'
 import { normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
@@ -731,6 +733,21 @@ function enqueueAttachBackfill(get: () => AppState & AppActions): Promise<void> 
   return switchPipeline
 }
 
+/**
+ * True for a prompt response that says the agent was not invoked: OMP ran a
+ * local command. Pi and OMP answer an agent prompt without `agentInvoked`.
+ */
+export function promptRanWithoutAgent(response: unknown): boolean {
+  const data = (response as { data?: { agentInvoked?: unknown } } | null)?.data
+  return data?.agentInvoked === false
+}
+
+/** A prompt that ran no agent turn: stop waiting for one. */
+function endTurnWithoutAgent(set: ZustandSet, get: () => AppState & AppActions): void {
+  set({ isStreaming: false })
+  void get().refreshSessionState()
+}
+
 // Coalesce filesystem session-list walks: rapid switches used to stack N full
 // directory scans and freeze the renderer/main.
 let sessionListRefreshInFlight = false
@@ -1169,7 +1186,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         // Record the text actually sent (plan mode wraps it), not the text
         // displayed — Pi's message_start echo carries the sent form.
         recordLocalEcho(prompt)
-        await window.piDesktop.commands.prompt(prompt, options)
+        const response = await window.piDesktop.commands.prompt(prompt, options)
+        // OMP answers a local slash command (`/context`) in the response itself
+        // and starts no turn, so no agent_end will end the stream.
+        if (promptRanWithoutAgent(response)) endTurnWithoutAgent(set, get)
       }
     } catch (err) {
       get().addMessage({
@@ -1705,7 +1725,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
             const existing = previous.get(key(entry))?.shift()
             return existing ? { ...entry, id: existing.id, initiallyShowThinking: existing.initiallyShowThinking } : entry
           })
-          set({ messages, sessionLoading: false })
+          // Back in a turn that is still running: its unanswered tools are running.
+          const reattached = get().isStreaming && get().reattachedMidTurn
+          set({ messages: reattached ? markUnansweredToolCallsRunning(messages) : messages, sessionLoading: false })
         } else {
           set({ sessionLoading: false })
         }
@@ -2166,7 +2188,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       }
 
       case 'message_update':
-        handleMessageUpdate(event as PiMessageUpdateEvent, set)
+        handleMessageUpdate(event as PiMessageUpdateEvent, set, get)
         break
 
       case 'message_end': {
@@ -2312,17 +2334,16 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
       case 'command_output': {
         const text = (event as { text?: unknown }).text
-        if (typeof text === 'string' && text.trim()) {
-          get().addMessage({ id: generateId(), role: 'system', content: text, timestamp: Date.now() })
+        // OMP writes command output for its terminal UI, colors included.
+        const content = typeof text === 'string' ? stripAnsi(text) : ''
+        if (content.trim()) {
+          get().addMessage({ id: generateId(), role: 'system', content, timestamp: Date.now() })
         }
         break
       }
 
       case 'prompt_result':
-        if (!(event as { agentInvoked?: unknown }).agentInvoked) {
-          set({ isStreaming: false })
-          void get().refreshSessionState()
-        }
+        if (!(event as { agentInvoked?: unknown }).agentInvoked) endTurnWithoutAgent(set, get)
         break
 
       case 'config_update':
@@ -3377,9 +3398,56 @@ useAppStore.subscribe((state) => {
 // Zustand set supports both object and callback forms
 type ZustandSet = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void
 
+/**
+ * `current` with one streamed delta placed at its offset, or null when the
+ * delta starts past the end of `current`: the view attached in the middle of
+ * the message and missed its start. A delta `current` already holds (a
+ * snapshot covered it) changes nothing; a delta without an offset appends.
+ */
+export function placeStreamedDelta(current: string, delta: string, offset: number | undefined): string | null {
+  if (offset === undefined) return current + delta
+  if (offset > current.length) return null
+  return offset + delta.length <= current.length ? current : current.slice(0, offset) + delta
+}
+
+// Counts committed assistant messages, so a streamed-text snapshot requested
+// for one message is never applied to the next.
+let committedStreamCount = 0
+let streamingTextBackfill: Promise<void> | null = null
+
+/**
+ * Fill the start of a message this view missed: after switching back to a
+ * project whose turn kept running, the deltas resume in the middle of the
+ * message. Main keeps what the message streamed so far; take it, and the
+ * following deltas continue from its end. When it cannot be had, nothing
+ * mid-sentence is shown: the "still working" banner stands in until the turn
+ * ends and the attach backfill loads the full answer.
+ */
+function backfillStreamingText(get: () => AppState & AppActions, set: ZustandSet): void {
+  if (streamingTextBackfill) return
+  const scope = { streamed: committedStreamCount, gen: sessionLoadGeneration, runtimeId: get().activeSessionRuntimeId }
+  streamingTextBackfill = window.piDesktop.session.getStreamingText()
+    .then((snapshot) => {
+      if (!snapshot || scope.streamed !== committedStreamCount || scope.gen !== sessionLoadGeneration ||
+        scope.runtimeId !== get().activeSessionRuntimeId) return
+      set((state) => ({
+        streamingContent: snapshot.content.length >= state.streamingContent.length ? snapshot.content : state.streamingContent,
+        streamingThinking: snapshot.thinking.length >= state.streamingThinking.length ? snapshot.thinking : state.streamingThinking,
+      }))
+    })
+    .catch(() => undefined)
+    .finally(() => { streamingTextBackfill = null })
+}
+
+const STREAMED_DELTA_FIELDS = {
+  text_delta: 'streamingContent',
+  thinking_delta: 'streamingThinking',
+} as const satisfies Record<string, keyof AppState>
+
 function handleMessageUpdate(
   event: PiMessageUpdateEvent,
-  set: ZustandSet
+  set: ZustandSet,
+  get: () => AppState & AppActions,
 ): void {
   const { assistantMessageEvent } = event
   // Start/delta events identify the call by its index in the partial message;
@@ -3393,22 +3461,22 @@ function handleMessageUpdate(
 
   switch (assistantMessageEvent.type) {
     case 'text_delta':
-      set((state) => ({
-        streamingContent: state.streamingContent + (assistantMessageEvent.delta ?? ''),
-      }))
+    case 'thinking_delta': {
+      const field = STREAMED_DELTA_FIELDS[assistantMessageEvent.type]
+      let missedStart = false
+      set((state) => {
+        const placed = placeStreamedDelta(state[field], assistantMessageEvent.delta ?? '', assistantMessageEvent.offset)
+        if (placed !== null) return { [field]: placed }
+        missedStart = true
+        return {}
+      })
+      if (missedStart) backfillStreamingText(get, set)
       break
+    }
 
     case 'text_end':
-      // Content is finalized in message_end
-      break
-
-    case 'thinking_delta':
-      set((state) => ({
-        streamingThinking: state.streamingThinking + (assistantMessageEvent.delta ?? ''),
-      }))
-      break
-
     case 'thinking_end':
+      // Content is finalized in message_end
       break
 
     case 'toolcall_start': {
@@ -3490,6 +3558,7 @@ function handleTurnComplete(
   message: Record<string, unknown> | undefined,
   completeTools: boolean
 ): void {
+  committedStreamCount += 1
   set((state) => {
     const newMessages = [...state.messages]
     // Final messages contain the full body, including bytes emitted before a
@@ -3687,7 +3756,12 @@ function handleToolEnd(
       }
     })
 
-    return { streamingToolCalls: newMap, subagentProgress: newProgress }
+    return {
+      streamingToolCalls: newMap,
+      subagentProgress: newProgress,
+      // A tool that started before a mid-turn return lives only in history.
+      ...(existing ? {} : { messages: settleRunningToolCall(state.messages, event.toolCallId, event.isError) }),
+    }
   })
 }
 

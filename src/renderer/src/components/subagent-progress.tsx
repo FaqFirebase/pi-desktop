@@ -2,6 +2,7 @@ import { useAppStore } from '../store'
 import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
+import { stripAnsi } from '../utils/strip-ansi'
 import {
   ChevronDown,
   Loader2,
@@ -15,12 +16,6 @@ import {
  * left/right inset). Collapsed: one summary line. Expanded: one line per
  * agent, max 4 then scroll.
  */
-
-function stripAnsi(text: string): string {
-  // ESC sequences in tool/status text; control chars are intentional.
-  // eslint-disable-next-line no-control-regex -- strip CSI color / OSC hyperlink sequences
-  return text.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;[^\x1b]*\x1b\\/g, '')
-}
 
 function formatDuration(ms: number): string {
   if (ms <= 0) return ''
