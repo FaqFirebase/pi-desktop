@@ -276,6 +276,14 @@
       "prTitle": "创建 PR",
       "titleLabel": "标题"
     },
+    "draft": {
+      "engineUnavailable": "代理可执行文件不可用。请检查代理配置，或手动填写提交信息。",
+      "failed": "无法生成提交信息。请再次点击“建议”，或手动填写。",
+      "generating": "正在生成英文提交信息…",
+      "suggest": "建议提交信息",
+      "suggestTitle": "将所选更改发送给会话模型，以建议提交信息",
+      "timedOut": "提交信息生成超时。请再次点击“建议”，或手动填写。"
+    },
     "errors": {
       "branchRequired": "创建 PR 需要一个具名分支。",
       "commitBeforePr": "创建 PR 前请先提交更改。",

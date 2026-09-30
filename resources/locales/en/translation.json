@@ -280,6 +280,14 @@
       "prTitle": "Create pull request",
       "titleLabel": "Title"
     },
+    "draft": {
+      "engineUnavailable": "The agent executable is unavailable. Check Agent Configuration or write your message manually.",
+      "failed": "Couldn't generate a message. Try Suggest again or write your own.",
+      "generating": "Generating an English commit message…",
+      "suggest": "Suggest message",
+      "suggestTitle": "Send the selected changes to the session model to suggest a commit message",
+      "timedOut": "Message generation timed out. Try Suggest again or write your own."
+    },
     "errors": {
       "branchRequired": "A named branch is required to create a pull request.",
       "commitBeforePr": "Commit changes before creating a pull request.",

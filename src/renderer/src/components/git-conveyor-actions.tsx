@@ -1,12 +1,20 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { ExternalLink, GitCommitHorizontal, GitPullRequest, Loader2, Upload, X } from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { ExternalLink, GitCommitHorizontal, GitPullRequest, Loader2, Sparkles, Upload, X } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
-import type { GitConveyorStatus } from '../../../shared/ipc-contracts'
+import type { GitCommitMessageError, GitConveyorStatus } from '../../../shared/ipc-contracts'
+import { t } from '../../../shared/i18n'
+import { GIT_COMMIT_MESSAGE_CONFIG } from '../../../shared/default-settings'
 import { formatIpcError } from '../utils/ipc-error'
 import { withGitOperation } from '../utils/git-operation'
+import { isImeComposing } from '../utils/ime-composing'
+import { createStaleGuard } from '../utils/stale-guard'
 import { subscribeWorktreeRefresh } from '../utils/worktree-refresh'
+import {
+  applyCommitMessageSuggestion, commitMessageScope, openCommitMessageInput,
+  type CommitMessageInput, type LastCommitMessageSuggestion,
+} from '../utils/commit-message-input'
 
 /** Files on screen a commit is limited to; untracked ones among them stay out. */
 export interface GitCommitSelection {
@@ -16,11 +24,30 @@ export interface GitCommitSelection {
 }
 
 type ConveyorDialog =
-  | { kind: 'commit'; message: string; paths: string[] | undefined }
+  | ({
+    kind: 'commit'
+    workspaceId: string | undefined
+    paths: string[] | undefined
+    scope: string
+  } & CommitMessageInput)
   | { kind: 'pr'; title: string; body: string; base: string }
 
 // A git identifier, not prose — stays literal (ruling on Task 25 fix item 2).
 const DEFAULT_GIT_REMOTE = 'origin'
+
+function assertWorkspace(workspaceId: string | undefined): void {
+  if (!workspaceId || useAppStore.getState().activeWorkspace?.id !== workspaceId) {
+    throw new Error(t('conveyor.errors.workspaceChanged'))
+  }
+}
+
+function commitMessageErrorText(error: GitCommitMessageError): string {
+  switch (error) {
+    case 'timed-out': return t('conveyor.draft.timedOut')
+    case 'engine-unavailable': return t('conveyor.draft.engineUnavailable')
+    case 'generation-failed': return t('conveyor.draft.failed')
+  }
+}
 
 export function GitConveyorActions({ children, onChanged, selection, watchDisk = false }: {
   children?: ReactNode
@@ -32,7 +59,12 @@ export function GitConveyorActions({ children, onChanged, selection, watchDisk =
 }): React.JSX.Element {
   const { t } = useTranslation()
   const requestConfirm = useAppStore((state) => state.requestConfirm)
+  const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
   const [status, setStatus] = useState<GitConveyorStatus | null>(null)
+  const [suggestion, setSuggestion] = useState<'idle' | 'generating' | GitCommitMessageError>('idle')
+  const lastSuggestion = useRef<LastCommitMessageSuggestion | null>(null)
+  const commitMessageId = useId()
+  const requestGuard = useRef(createStaleGuard())
   const [busy, setBusy] = useState<'commit' | 'push' | 'pr' | null>(null)
   const [dialog, setDialog] = useState<ConveyorDialog | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -53,7 +85,11 @@ export function GitConveyorActions({ children, onChanged, selection, watchDisk =
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refresh()
     }, 5000)
-    return () => window.clearInterval(timer)
+    const requests = requestGuard.current
+    return () => {
+      requests.begin()
+      window.clearInterval(timer)
+    }
   }, [refresh])
 
   // Same triggers as the diff list, so a change that updates the list also
@@ -81,14 +117,37 @@ export function GitConveyorActions({ children, onChanged, selection, watchDisk =
     }
   }
 
+  /**
+   * Sends the selected diff to the session model, only when the user clicks
+   * Suggest. Runs beside the dialog: a slow or failed suggestion never blocks
+   * a manual commit, and typing while it runs keeps the typed text.
+   */
+  const requestSuggestion = useCallback(async (paths: string[] | undefined, scope: string): Promise<void> => {
+    const isCurrent = requestGuard.current.begin()
+    // A suggestion already shown for this selection means the user wants a new one.
+    const regenerated = lastSuggestion.current?.scope === scope
+    setDialog((current) => current?.kind === 'commit' && current.scope === scope ? { ...current, edited: false } : current)
+    const stillCurrent = (): boolean => isCurrent() && useAppStore.getState().activeWorkspace?.id === workspaceId
+    setSuggestion('generating')
+    try {
+      const result = await window.piDesktop.git.generateCommitMessage({ force: regenerated, ...(paths ? { paths } : {}) })
+      if (!stillCurrent()) return
+      if (result.message) lastSuggestion.current = { scope, message: result.message }
+      else if (!result.error) lastSuggestion.current = null
+      setSuggestion(result.error ?? 'idle')
+      setDialog((current) => current?.kind === 'commit' && current.scope === scope
+        ? applyCommitMessageSuggestion(current, result.message) : current)
+    } catch {
+      if (stillCurrent()) setSuggestion('generation-failed')
+    }
+  }, [workspaceId])
+
   const openCommitDialog = (): void => {
     setError(null)
     if (selection && selection.paths.length === 0) return
-    setDialog({
-      kind: 'commit',
-      message: status?.lastCommitMessage ?? 'chore: update implementation',
-      paths: selection ? [...selection.paths] : undefined,
-    })
+    const paths = selection ? [...selection.paths] : undefined
+    const scope = commitMessageScope(workspaceId, paths)
+    setDialog({ kind: 'commit', ...openCommitMessageInput(lastSuggestion.current, scope), workspaceId, paths, scope })
   }
 
   const openPrDialog = (): void => {
@@ -116,14 +175,15 @@ export function GitConveyorActions({ children, onChanged, selection, watchDisk =
     if (!dialog) return
     if (dialog.kind === 'commit') {
       const message = dialog.message.trim()
-      if (!message) {
-        setError(t('conveyor.errors.commitMessageRequired'))
-        return
-      }
+      if (!message) return
+      lastSuggestion.current = null
       setDialog(null)
       void run(
         'commit',
-        () => window.piDesktop.git.commit({ message, ...(dialog.paths ? { paths: dialog.paths } : {}) }),
+        () => {
+          assertWorkspace(dialog.workspaceId)
+          return window.piDesktop.git.commit({ message, ...(dialog.paths ? { paths: dialog.paths } : {}) })
+        },
         (next) => t('conveyor.feedback.committed', { sha: next.head.slice(0, 8) }),
       )
       return
@@ -217,15 +277,46 @@ export function GitConveyorActions({ children, onChanged, selection, watchDisk =
               </button>
             </div>
             {dialog.kind === 'commit' ? (
-              <label className="block text-xs text-muted">
-                {t('conveyor.dialog.commitMessageLabel')}
-                <input
+              <div>
+                <div className="flex items-center justify-between">
+                  <label htmlFor={commitMessageId} className="text-xs text-muted">{t('conveyor.dialog.commitMessageLabel')}</label>
+                  <button
+                    type="button"
+                    onClick={() => void requestSuggestion(dialog.paths, dialog.scope)}
+                    disabled={suggestion === 'generating'}
+                    title={t('conveyor.draft.suggestTitle')}
+                    className="flex h-6 items-center gap-1 rounded px-1.5 text-[11px] text-faint transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-faint"
+                  >
+                    {suggestion === 'generating'
+                      ? <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+                      : <Sparkles size={12} aria-hidden="true" />}
+                    {t('conveyor.draft.suggest')}
+                  </button>
+                </div>
+                <textarea
+                  id={commitMessageId}
                   autoFocus
+                  rows={5}
+                  wrap="soft"
+                  maxLength={GIT_COMMIT_MESSAGE_CONFIG.maxMessageLength}
                   value={dialog.message}
-                  onChange={(event) => setDialog({ ...dialog, message: event.target.value })}
-                  className="mt-1 w-full rounded border border-border-strong bg-app px-2 py-1.5 text-sm text-primary outline-none focus:border-focus"
+                  placeholder={suggestion === 'generating' ? t('conveyor.draft.generating') : undefined}
+                  onChange={(event) => setDialog({ ...dialog, message: event.target.value, edited: true })}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !isImeComposing(event.nativeEvent)) {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      event.currentTarget.form?.requestSubmit()
+                    }
+                  }}
+                  className="mt-1 w-full resize-y whitespace-pre-wrap [overflow-wrap:anywhere] rounded border border-border-strong bg-app px-2 py-1.5 text-sm text-primary outline-none placeholder:text-faint focus:border-focus"
                 />
-              </label>
+                {suggestion !== 'idle' && suggestion !== 'generating' && (
+                  <p className="mt-1 text-[11px] text-faint" role="status">
+                    {commitMessageErrorText(suggestion)}
+                  </p>
+                )}
+              </div>
             ) : (
               <div className="space-y-2">
                 <label className="block text-xs text-muted">
@@ -259,7 +350,14 @@ export function GitConveyorActions({ children, onChanged, selection, watchDisk =
             )}
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setDialog(null)} className="rounded border border-border px-3 py-1.5 text-xs text-muted hover:bg-surface-hover hover:text-primary">{t('common.cancel')}</button>
-              <button type="submit" className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/90">{dialog.kind === 'commit' ? t('conveyor.commit') : t('conveyor.createPrButton')}</button>
+              <button
+                type="submit"
+                disabled={dialog.kind === 'commit' && !dialog.message.trim()}
+                title={dialog.kind === 'commit' && !dialog.message.trim() ? t('conveyor.errors.commitMessageRequired') : undefined}
+                className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/90 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-accent"
+              >
+                {dialog.kind === 'commit' ? t('conveyor.commit') : t('conveyor.createPrButton')}
+              </button>
             </div>
           </form>
         </div>

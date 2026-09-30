@@ -73,10 +73,11 @@ export interface GitWorktreeEntry {
   bare: boolean
 }
 
-export function runGit(args: readonly string[], cwd: string): Promise<GitCommandResult> {
+export function runGit(args: readonly string[], cwd: string, env?: NodeJS.ProcessEnv): Promise<GitCommandResult> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn('git', [...args], {
       cwd,
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     })

@@ -1,5 +1,7 @@
-import { access, realpath } from 'fs/promises'
-import { isAbsolute, relative, resolve, sep } from 'path'
+import { access, mkdtemp, realpath, rm } from 'fs/promises'
+import { createHash } from 'crypto'
+import { tmpdir } from 'os'
+import { isAbsolute, join, relative, resolve, sep } from 'path'
 import { spawn } from 'child_process'
 import { inspectGitRepository, isMissingRepositoryError, runGit } from './git-worktree'
 import type {
@@ -9,9 +11,9 @@ import type {
   GitConveyorStatus,
 } from '../shared/ipc-contracts'
 import { t } from '../shared/i18n'
+import { GIT_COMMIT_MESSAGE_CONFIG } from '../shared/default-settings'
 
 const COMMAND_TIMEOUT_MS = 30_000
-const MAX_COMMIT_MESSAGE_LENGTH = 200
 
 /** Status of a workspace folder that Git does not track. */
 const NOT_A_REPOSITORY_STATUS: GitConveyorStatus = Object.freeze({
@@ -222,6 +224,30 @@ async function resolveCommittablePaths(cwd: string, paths: readonly string[]): P
   return { ...selection, paths: selection.paths.filter((path) => !untracked.has(path)) }
 }
 
+/**
+ * Diff of the committable paths' working-tree content against HEAD: the exact
+ * tree a filtered commit records. A throwaway index keeps the user's index
+ * untouched.
+ */
+async function readSelectedPathsDiff({ worktreeRoot, paths }: SelectedPaths, head: string): Promise<string> {
+  // An empty pathspec would match the whole tree.
+  if (paths.length === 0) return ''
+  const dir = await mkdtemp(join(tmpdir(), 'pi-desktop-commit-'))
+  const env = { ...process.env, GIT_INDEX_FILE: join(dir, 'index') }
+  try {
+    await runGit(head ? ['read-tree', head] : ['read-tree', '--empty'], worktreeRoot, env)
+    await runGit(['--literal-pathspecs', 'add', '--all', '--', ...paths], worktreeRoot, env)
+    const { stdout } = await runGit([
+      '--literal-pathspecs', 'diff', '--cached',
+      '--binary', '--full-index', '--no-ext-diff', '--no-textconv', '--no-renames',
+      '--', ...paths,
+    ], worktreeRoot, env)
+    return stdout
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
 async function commitSelection(cwd: string): Promise<{ autoStage: boolean; workspaceRoot: string }> {
   const staged = await stagedPaths(cwd)
   const workspaceRoot = await realpath(cwd)
@@ -229,6 +255,44 @@ async function commitSelection(cwd: string): Promise<{ autoStage: boolean; works
     throw new Error(t('errors.git.stagedOutsideWorkspace'))
   }
   return { autoStage: staged.length === 0, workspaceRoot }
+}
+
+export interface CommitDiffSnapshot {
+  fingerprint: string
+  diff: string
+}
+
+/**
+ * Read exactly the selection commitAll would commit, without touching the index.
+ * `paths` is the Diff Viewer's filtered selection; without it the commit
+ * follows the index (or auto-stages tracked changes).
+ */
+export async function readCommitDiff(cwd: string, paths?: readonly string[]): Promise<CommitDiffSnapshot | null> {
+  const repository = await inspectGitRepository(cwd).catch((error: unknown) => {
+    if (isMissingRepositoryError(error)) return null
+    throw error
+  })
+  if (!repository?.branch) return null
+  let diff: string
+  let scope: string
+  if (paths) {
+    const selection = await resolveCommittablePaths(cwd, paths)
+    diff = await readSelectedPathsDiff(selection, repository.head)
+    scope = selection.worktreeRoot
+  } else {
+    const { autoStage, workspaceRoot } = await commitSelection(cwd)
+    diff = (await runGit([
+      'diff', ...(autoStage ? [] : ['--cached']),
+      '--binary', '--full-index', '--no-ext-diff', '--no-textconv', '--no-renames',
+      '--', '.',
+    ], workspaceRoot)).stdout
+    scope = workspaceRoot
+  }
+  if (!diff) return null
+  const fingerprint = createHash('sha256')
+    .update(JSON.stringify([scope, repository.head, repository.branch, diff]))
+    .digest('hex')
+  return { fingerprint, diff }
 }
 
 /**
@@ -338,8 +402,8 @@ export async function createLocalBranch(cwd: string, name: string): Promise<GitC
 export async function commitAll(cwd: string, options: GitConveyorCommitOptions): Promise<GitConveyorStatus> {
   const message = options.message.trim()
   if (!message) throw new Error(t('errors.git.commitMessageRequired'))
-  if (message.length > MAX_COMMIT_MESSAGE_LENGTH) {
-    throw new Error(t('errors.git.commitMessageTooLong', { max: MAX_COMMIT_MESSAGE_LENGTH }))
+  if (message.length > GIT_COMMIT_MESSAGE_CONFIG.maxMessageLength) {
+    throw new Error(t('errors.git.commitMessageTooLong', { max: GIT_COMMIT_MESSAGE_CONFIG.maxMessageLength }))
   }
   const repository = await inspectGitRepository(cwd)
   if (!repository.branch) throw new Error(t('errors.git.detachedHeadCommit'))

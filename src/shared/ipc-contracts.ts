@@ -150,6 +150,7 @@ export const IPC_CHANNELS = {
   GIT_BRANCH: 'git:branch',
   GIT_PREFIX: 'git:prefix',
   GIT_CONVEYOR_STATUS: 'git:conveyor-status',
+  GIT_COMMIT_MESSAGE_GENERATE: 'git:commit-message-generate',
   GIT_LOCAL_BRANCHES: 'git:local-branches',
   GIT_SWITCH_BRANCH: 'git:switch-branch',
   GIT_CREATE_BRANCH: 'git:create-branch',
@@ -301,6 +302,21 @@ export interface GitConveyorStatus {
   /** Default base branch discovered from the upstream remote, when available. */
   baseBranch: string | null
   remoteUrl: string | null
+}
+
+/** Both fields null: the commit selection has nothing to describe. */
+export interface GitCommitMessageSuggestion {
+  message: string | null
+  error: GitCommitMessageError | null
+}
+
+export type GitCommitMessageError = 'generation-failed' | 'timed-out' | 'engine-unavailable'
+
+export interface GitCommitMessageRequest {
+  /** Generate again even when this diff already has a suggestion. */
+  force: boolean
+  /** Describe only these repository-root-relative paths (the filtered Diff Viewer). */
+  paths?: string[]
 }
 
 export interface GitConveyorCommitOptions {

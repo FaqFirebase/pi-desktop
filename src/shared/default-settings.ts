@@ -5,6 +5,14 @@ import { DEFAULT_CHAT_WIDTH } from './chat-width'
 import { SYSTEM_LANGUAGE } from './i18n/languages'
 import { DEFAULT_KEYBOARD_SHORTCUTS } from './keyboard-shortcuts'
 
+export const GIT_COMMIT_MESSAGE_CONFIG = {
+  maxMessageLength: 10_000,
+  maxSuggestionLength: 120,
+  maxDiffBytes: 120_000,
+  maxOutputBytes: 1_000_000,
+  timeoutMs: 60_000,
+} as const
+
 /**
  * The single source of truth for default app settings. Used by the main process
  * to seed settings.json on first run, and by the renderer's Settings panel for

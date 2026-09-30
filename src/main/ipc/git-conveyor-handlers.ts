@@ -1,4 +1,5 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
+import { realpath } from 'fs/promises'
 import { IPC_CHANNELS, WHOLE_WORKSPACE_CHANGE_PATH } from '../../shared/ipc-contracts'
 import type {
   GitBranchSwitchResult,
@@ -11,8 +12,13 @@ import {
   assertTrustedSender, isObject, isOptionalBoolean, isOptionalString, isOptionalStringArray, isString,
 } from './validation'
 import {
-  GitSwitchRefusal, commitAll, createLocalBranch, createPullRequest, getGitConveyorStatus, listLocalBranches, pushBranch, switchLocalBranch,
+  GitSwitchRefusal, commitAll, createLocalBranch, createPullRequest, getGitConveyorStatus, listLocalBranches, pushBranch,
+  readCommitDiff, switchLocalBranch,
 } from '../git-conveyor'
+import { CommitMessageService } from '../commit-message-service'
+import { generateCommitMessage, sessionCommitMessageModel, type CommitMessageModel } from '../commit-message-generator'
+import { activeEngineKind } from './active-engine'
+import { loadAppSettings } from './settings'
 import type { IpcContext } from './context'
 import { t } from '../../shared/i18n'
 
@@ -20,6 +26,19 @@ function activeCwd(ctx: IpcContext): string {
   const cwd = ctx.workspaceManager.getActiveWorkspace()?.path
   if (!cwd) throw new Error(t('errors.workspace.noneActive'))
   return cwd
+}
+
+/** The active session's model when it is running, else the configured default. */
+async function commitMessageModel(ctx: IpcContext): Promise<CommitMessageModel> {
+  const manager = ctx.workspaceManager.getActivePiManager()
+  const session = manager?.getStatus().status === 'running' ? await sessionCommitMessageModel(manager) : null
+  if (session) return session
+  const settings = await loadAppSettings(ctx.workspaceManager)
+  return {
+    engine: activeEngineKind(ctx.workspaceManager),
+    selection: settings.defaultProvider && settings.defaultModel
+      ? { provider: settings.defaultProvider, model: settings.defaultModel } : null,
+  }
 }
 
 /**
@@ -45,6 +64,18 @@ async function changeBranch(
 }
 
 export function registerGitConveyorHandlers(ctx: IpcContext): void {
+  const messages = new CommitMessageService({ resolvePath: realpath, readDiff: readCommitDiff })
+  app.on('will-quit', () => messages.dispose())
+
+  ipcMain.handle(IPC_CHANNELS.GIT_COMMIT_MESSAGE_GENERATE, async (event, input: unknown) => {
+    assertTrustedSender(event)
+    if (!isObject(input) || typeof input.force !== 'boolean' || !isOptionalStringArray(input.paths)) {
+      throw new Error('force must be a boolean and paths an optional string array')
+    }
+    return messages.suggest(activeCwd(ctx), async (diff, signal) =>
+      generateCommitMessage(diff, await commitMessageModel(ctx), signal), input.force, input.paths)
+  })
+
   ipcMain.handle(IPC_CHANNELS.GIT_CONVEYOR_STATUS, async (event) => {
     assertTrustedSender(event)
     return getGitConveyorStatus(activeCwd(ctx))
