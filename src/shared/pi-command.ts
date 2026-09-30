@@ -18,6 +18,16 @@ export interface PiCommand {
  */
 export const BUILTIN_SOURCE = 'builtin'
 
+/**
+ * True for a command registered by an extension built into Pi itself (such as
+ * `/llama`). Pi marks those extensions hidden and their commands only work in
+ * its terminal UI, so the GUI leaves them out of its command catalog.
+ */
+export function isPiBuiltInExtensionCommand(command: unknown): boolean {
+  const sourceInfo = (command as { sourceInfo?: { source?: unknown } } | null)?.sourceInfo
+  return sourceInfo?.source === 'inline'
+}
+
 /** Pi lists skills under their invocation token: "skill:<name>". */
 export const SKILL_COMMAND_PREFIX = 'skill:'
 

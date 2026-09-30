@@ -8,6 +8,7 @@ import {
   filterCommands,
   groupCommands,
   invocationToken,
+  isPiBuiltInExtensionCommand,
   isSlashCommandToken,
   skillDisplayName,
   type PiCommand,
@@ -18,6 +19,23 @@ const cmds: PiCommand[] = [
   { name: 'review', description: 'Review a diff', source: 'prompt' },
   { name: 'deploy', description: 'Deploy via extension', source: 'extension' },
 ]
+
+test('only commands from Pi built-in extensions are flagged as built-in', () => {
+  const llama = {
+    name: 'llama',
+    source: 'extension',
+    sourceInfo: { path: '<inline:llama.cpp>', source: 'inline', scope: 'temporary', origin: 'top-level' },
+  }
+  const userExtension = {
+    name: 'deploy',
+    source: 'extension',
+    sourceInfo: { path: '/home/u/.pi/agent/extensions/deploy.ts', source: 'local', scope: 'user', origin: 'top-level' },
+  }
+  assert.equal(isPiBuiltInExtensionCommand(llama), true)
+  assert.equal(isPiBuiltInExtensionCommand(userExtension), false)
+  assert.equal(isPiBuiltInExtensionCommand({ name: 'review', source: 'prompt' }), false)
+  assert.equal(isPiBuiltInExtensionCommand(null), false)
+})
 
 test('empty query returns all commands', () => {
   assert.equal(filterCommands(cmds, '').length, 3)
