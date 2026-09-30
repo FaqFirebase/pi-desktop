@@ -14,6 +14,7 @@ import {
 import { detectAgents } from './agent-detection'
 import { escapeCmdSpawn } from './cmd-escape'
 import { getPiCli } from './pi-rpc-manager'
+import { loadPiDotenv } from './pi-dotenv'
 import { t } from '../shared/i18n'
 
 const IS_WINDOWS = process.platform === 'win32'
@@ -165,6 +166,8 @@ export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeout
     )
     const child = spawn(file, args, {
       cwd,
+      // Only the Pi consultant is an agent engine run; ~/.pi/.env is not for other CLIs.
+      env: piCli ? { ...loadPiDotenv(), ...process.env } : process.env,
       shell: IS_WINDOWS,
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],

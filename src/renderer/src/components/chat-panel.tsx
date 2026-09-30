@@ -11,12 +11,15 @@ import { ResizeHandle } from './resize-handle'
 import {
   DEFAULT_FILE_PANE_WIDTH,
   DEFAULT_SIDE_PANEL_WIDTH,
-  MAX_SIDE_PANEL_WIDTH,
+  MIN_CHAT_COLUMN_WIDTH,
   MIN_EDITOR_PANE_WIDTH,
   MIN_FILE_PANE_WIDTH,
   clamp,
+  resolvePaneLayout,
   resolveSidePanelMetrics,
+  sidePanelContentMinWidth,
 } from './chat-panel-widths'
+import { ReviewRail } from './review-rail'
 
 import { groupToolMessages, prepareChatMessages } from '../../../shared/chat/message-grouping'
 import { NowContext } from '../utils/relative-time'
@@ -24,27 +27,27 @@ import { FileTree, FileSearch, FilePreview } from './file-tree'
 import { ImageViewer } from './image-viewer'
 import { DiffViewer } from './diff-viewer'
 import { TerminalPanel } from './terminal'
-import { useChatScroll, useChatVisible, useChatWidth } from '../hooks'
+import { isFileWatchDemanded, useChatScroll, useChatVisible, useChatWidth } from '../hooks'
 import { messageColumnClass } from '../utils/chat-width'
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { createMeasureRef } from '../utils/element-measure'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import piLogo from '../assets/pi-logo.svg'
-import {
-  FolderTree,
-  GitCompare,
-  Terminal,
-  ShieldCheck,
-  PanelLeft,
-  PanelLeftClose,
-  X,
-  ChevronDown,
-  Loader2,
-  Workflow as WorkflowIcon,
-} from 'lucide-react'
+import { X, ChevronDown, Loader2 } from 'lucide-react'
 
 // Fallback padding when the composer has not measured yet (~idle pill + gradient).
 const DEFAULT_COMPOSER_PAD_PX = 144
+
+const readComposerPad = (element: HTMLElement): number => Math.max(element.offsetHeight, DEFAULT_COMPOSER_PAD_PX)
+const readClientWidth = (element: HTMLElement): number => element.clientWidth
+
+/** `read(element)` for the element given the returned ref, updated whenever it mounts or resizes. */
+function useElementMeasure(read: (element: HTMLElement) => number, fallback: number): [number, (element: HTMLElement | null) => void] {
+  const [value, setValue] = useState(fallback)
+  const ref = useMemo(() => createMeasureRef(read, setValue), [read])
+  return [value, ref]
+}
 
 export function ChatPanel(): React.JSX.Element {
   const { t } = useTranslation()
@@ -52,35 +55,22 @@ export function ChatPanel(): React.JSX.Element {
   const sessionLoading = useAppStore((state) => state.sessionLoading)
   const isStreaming = useAppStore((state) => state.isStreaming)
   const reattachedMidTurn = useAppStore((state) => state.reattachedMidTurn)
-  const composerWrapRef = useRef<HTMLDivElement>(null)
-  const [composerPadPx, setComposerPadPx] = useState(DEFAULT_COMPOSER_PAD_PX)
-
   // Drive message-list bottom padding from the real floating composer height so
   // a tall draft / attachments row never permanently covers the last message.
-  useEffect(() => {
-    const el = composerWrapRef.current
-    if (!el) return
-    const measure = (): void => {
-      setComposerPadPx(Math.max(el.offsetHeight, DEFAULT_COMPOSER_PAD_PX))
-    }
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
+  // The composer mounts only once the empty chat has messages, hence the ref.
+  const [composerPadPx, composerWrapRef] = useElementMeasure(readComposerPad, DEFAULT_COMPOSER_PAD_PX)
+  // The chat column and side panel share this row; the side panel gets what the column leaves.
+  const [panelRowWidth, panelRowRef] = useElementMeasure(readClientWidth, Number.POSITIVE_INFINITY)
   const streamingContent = useAppStore((state) => state.streamingContent)
   const streamingThinking = useAppStore((state) => state.streamingThinking)
   const streamingToolCalls = useAppStore((state) => state.streamingToolCalls)
   const piStatus = useAppStore((state) => state.piStatus)
   const piStartupPhase = useAppStore((state) => state.piStartupPhase)
   const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? 'Pi')
-  const terminalOpen = useAppStore((state) => state.terminalOpen)
-  const reviewOpen = useAppStore((state) => state.reviewOpen)
-  const sidebarOpen = useAppStore((state) => state.sidebarOpen)
   const fileSearchOpen = useAppStore((state) => state.fileSearchOpen)
   const toggleFileSearch = useAppStore((state) => state.toggleFileSearch)
   const previewTarget = useAppStore((state) => state.previewTarget)
-  const workflowPanelOpen = useAppStore((state) => state.workflowPanelOpen)
+  const reviewOpen = useAppStore((state) => state.reviewOpen)
   const messageColumn = messageColumnClass(useChatWidth())
 
   // sidePanel lives in the store so it survives view switches (e.g. Settings
@@ -103,7 +93,7 @@ export function ChatPanel(): React.JSX.Element {
   // decides whether chat is on screen. Without it the scroll hook never sees
   // the hidden→shown edge and cannot re-anchor the reading position.
   const chatVisible = useChatVisible()
-  const { scrollRef, onScroll, atBottom, scrollToBottom } = useChatScroll(chatVisible)
+  const { scrollRef, onScroll, atBottom, scrollToBottom } = useChatScroll(chatVisible, composerPadPx)
 
   // In-conversation search (Ctrl/Cmd+F while in chat). The nonce bumps on every
   // press so re-triggering refocuses/selects the already-open input.
@@ -137,8 +127,8 @@ export function ChatPanel(): React.JSX.Element {
   // the grouping only recomputes when the message list changes, and so lone
   // MessageBubbles keep their stable refs (no markdown re-parse on re-render).
   const renderItems = useMemo(
-    () => groupToolMessages(prepareChatMessages(messages), t),
-    [messages, t]
+    () => groupToolMessages(prepareChatMessages(messages), t, isStreaming),
+    [messages, t, isStreaming]
   )
 
   const handleRetry = useCallback(async (messageId: string) => {
@@ -151,100 +141,143 @@ export function ChatPanel(): React.JSX.Element {
     }
   }, [])
 
-  const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const showSidePanel = sidePanel !== null || previewTarget !== null
   const showFileTree = sidePanel === 'files'
   const showImage = previewTarget?.kind === 'image' && sidePanel !== 'diff'
   const showEditor = previewTarget?.kind === 'code' && sidePanel !== 'diff'
   const showDiff = sidePanel === 'diff'
+  const sidePanes = { showFileTree, showEditor, showImage }
+  const paneLayout = resolvePaneLayout(
+    panelRowWidth,
+    showSidePanel ? sidePanelContentMinWidth(sidePanes) : null,
+    reviewOpen && chatVisible
+  )
+  const sidePanelStacked = paneLayout.sidePanel === 'stacked'
   const {
     fileTreeOnly: showFileTreeOnly,
     minSidePanelWidth,
+    maxSidePanelWidth,
     contentWidth: sidePanelContentWidth,
     filePaneWidth: effectiveFilePaneWidth,
     maxFilePaneWidth,
-  } = resolveSidePanelMetrics({ showFileTree, showEditor, showImage }, sidePanelWidth, filePaneWidth)
+  } = resolveSidePanelMetrics(
+    sidePanes,
+    sidePanelWidth,
+    filePaneWidth,
+    // Stacked under the chat column, the side panel spans that column, so its
+    // ceiling is the whole column rather than what the column leaves beside it.
+    sidePanelStacked ? paneLayout.sidePanelRowWidth + MIN_CHAT_COLUMN_WIDTH : paneLayout.sidePanelRowWidth
+  )
+  const paneBesideChat = paneLayout.sidePanel === 'beside' || paneLayout.review === 'beside'
+  const paneUnderChat = sidePanelStacked || paneLayout.review === 'stacked'
 
   // Disk watching is demand-driven: the main process only attaches chokidar
-  // while a visible files panel consumes change events. Without this, cold
-  // start and the Home view would pay the full workspace-watch cost for a
+  // while a visible files or diff panel consumes change events. Without this,
+  // cold start and the Home view would pay the full workspace-watch cost for a
   // tree nobody is looking at — and ChatPanel stays mounted (just hidden)
-  // when navigating away, so visibility has to be part of the demand. The
-  // tree still loads on open, and FileTree reloads once when Chat becomes
-  // visible again, with the safety poll + focus refresh covering the rest.
+  // when navigating away, so visibility has to be part of the demand. It
+  // lives here, in the one panel that is always mounted, so the Diff view's
+  // demand and the chat panes' demand never race each other. The tree and the
+  // diff still load on open, and both reload once when they become visible
+  // again, with the tree's safety poll + focus refresh covering the rest.
+  const fileWatchDemanded = useAppStore(isFileWatchDemanded)
   useEffect(() => {
-    void window.piDesktop.files.setWatchDemand(showFileTree && chatVisible).catch(() => {})
+    void window.piDesktop.files.setWatchDemand(fileWatchDemanded).catch(() => {})
     return () => {
       void window.piDesktop.files.setWatchDemand(false).catch(() => {})
     }
-  }, [showFileTree, chatVisible])
+  }, [fileWatchDemanded])
+
+  const sidePanelPane = showSidePanel ? (
+    <div
+      className={clsx(
+        'relative flex bg-app',
+        sidePanelStacked ? 'min-h-0 flex-1 border-t border-border' : 'shrink-0 border-l border-border'
+      )}
+      style={sidePanelStacked ? undefined : { width: sidePanelContentWidth }}
+    >
+      {!sidePanelStacked && (
+        <ResizeHandle
+          onResize={(delta) => {
+            if (showFileTreeOnly) {
+              // Same ceiling the render uses, so the state cannot outrun it.
+              setFilePaneWidth((width) =>
+                clamp(width - delta, MIN_FILE_PANE_WIDTH, maxFilePaneWidth)
+              )
+              return
+            }
+
+            setSidePanelWidth((width) =>
+              clamp(width - delta, minSidePanelWidth, maxSidePanelWidth)
+            )
+          }}
+        />
+      )}
+      <div className="flex min-w-0 flex-1 flex-row-reverse overflow-hidden">
+        {showFileTree && (
+          <>
+            {/* Stacked alone, the tree spans the column; beside the chat it keeps its dragged width. */}
+            <div
+              className={clsx('flex min-w-0 flex-col overflow-hidden', showFileTreeOnly && sidePanelStacked ? 'flex-1' : 'shrink-0')}
+              style={showFileTreeOnly && sidePanelStacked ? undefined : { width: effectiveFilePaneWidth }}
+            >
+              <FileTree />
+            </div>
+            {(showEditor || showImage) && (
+              <ResizeHandle
+                onResize={(delta) =>
+                  setFilePaneWidth((width) =>
+                    clamp(width - delta, MIN_FILE_PANE_WIDTH, maxFilePaneWidth)
+                  )
+                }
+              />
+            )}
+          </>
+        )}
+        {showDiff && (
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <DiffViewer onClose={() => setSidePanel(null)} />
+          </div>
+        )}
+        {showEditor && (
+          <div
+            className={clsx(
+              'flex flex-1 flex-col overflow-hidden',
+              // Separate the preview from the file tree on its right.
+              showFileTree && 'border-r border-border'
+            )}
+            // The same constant the file pane's ceiling reserves for.
+            style={{ minWidth: MIN_EDITOR_PANE_WIDTH }}
+          >
+            <FilePreview />
+          </div>
+        )}
+        {showImage && (
+          <div
+            className="flex flex-1 flex-col overflow-hidden"
+            style={{ minWidth: MIN_EDITOR_PANE_WIDTH }}
+          >
+            <ImageViewer />
+          </div>
+        )}
+      </div>
+      {showFileTreeOnly && (
+        <button
+          onClick={() => setSidePanel(null)}
+          className="absolute top-1 right-1 z-10 flex h-6 w-6 items-center justify-center rounded text-faint hover:text-muted"
+          title={t('chat.closeFileTree')}
+        >
+          <X size={12} />
+        </button>
+      )}
+    </div>
+  ) : null
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex flex-1 overflow-hidden">
-        {/* Main chat area */}
-        <div className="chat-center flex flex-1 flex-col overflow-hidden">
-          {/* Toolbar */}
-          <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
-            <div className="flex items-center gap-0.5">
-              {/* Workspace path — always visible */}
-              {activeWorkspace && (
-                <div className="flex items-center gap-1.5 mr-2 px-2 py-0.5 rounded bg-card/60" title={activeWorkspace.path}>
-                  <FolderTree size={12} className="text-dim shrink-0" />
-                  <span className="text-xs text-muted max-w-[300px] truncate">
-                    {activeWorkspace.name}: {activeWorkspace.path}
-                  </span>
-                </div>
-              )}
-              <ToolbarButton
-                icon={sidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeft size={14} />}
-                active={false}
-                onClick={() => useAppStore.getState().toggleSidebar()}
-                title={sidebarOpen ? t('common.hideSidebar') : t('common.showSidebar')}
-              />
-              <ToolbarButton
-                icon={<ShieldCheck size={14} />}
-                active={reviewOpen}
-                onClick={() => useAppStore.getState().toggleReview()}
-                title={t('chat.toolbar.reviewPanel')}
-              />
-              <ToolbarButton
-                icon={<FolderTree size={14} />}
-                active={sidePanel === 'files'}
-                onClick={() => void setSidePanel(sidePanel === 'files' ? null : 'files')}
-                title={t('chat.toolbar.fileTree')}
-              />
-              <ToolbarButton
-                icon={<GitCompare size={14} />}
-                active={sidePanel === 'diff'}
-                onClick={() => void setSidePanel(sidePanel === 'diff' ? null : 'diff')}
-                title={t('chat.toolbar.diffViewer')}
-              />
-              <ToolbarButton
-                icon={<Terminal size={14} />}
-                active={terminalOpen}
-                onClick={() => useAppStore.getState().toggleTerminal()}
-                title={t('chat.toolbar.terminal')}
-              />
-              <ToolbarButton
-                icon={<WorkflowIcon size={14} />}
-                active={workflowPanelOpen}
-                workflowToggle
-                onClick={() => {
-                  // Session-surface button: while a session is active this opens
-                  // THAT session's runs (scoped by Pi's header UUID, the exact
-                  // identifier persisted runs carry). The global list is only a
-                  // fallback for the no-session state; closing preserves scope.
-                  const state = useAppStore.getState()
-                  if (state.workflowPanelOpen) state.setWorkflowPanelOpen(false)
-                  else if (state.sessionState?.sessionId) state.openWorkflowRunsForSession(state.sessionState.sessionId)
-                  else state.setWorkflowPanelOpen(true)
-                }}
-                title={t('common.workflowRuns')}
-              />
-            </div>
-          </div>
-
+      <div ref={panelRowRef} className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Panes beside the column leave it this width; without room they stack under it. */}
+        <div className="chat-center flex flex-1 flex-col overflow-hidden" style={paneBesideChat ? { minWidth: MIN_CHAT_COLUMN_WIDTH } : undefined}>
           <div className="relative flex min-h-0 flex-1 flex-col">
             {searchOpen && (
               <ChatSearch
@@ -282,7 +315,7 @@ export function ChatPanel(): React.JSX.Element {
                               : t('chat.emptyState.chooseProject', { agent: engineLabel })}
                       </p>
                     </div>
-                    <div className="w-full max-w-3xl">
+                    <div className={clsx('w-full', messageColumn)}>
                       {piStatus === 'running' && (
                         <div className="mb-4 flex flex-wrap justify-center gap-2 px-4">
                           {EXAMPLE_PROMPTS.map((prompt) => (
@@ -312,7 +345,7 @@ export function ChatPanel(): React.JSX.Element {
               return (
                 <>
                   <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-                    {sessionLoading && messages.length === 0 ? (
+                    {sessionLoading && messages.length === 0 && !isStreaming ? (
                       <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-dim">
                         <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
                         {piStatus === 'running' ? t('chat.loadingSession') : t('chat.startingAgent')}
@@ -389,82 +422,16 @@ export function ChatPanel(): React.JSX.Element {
               )
             })()}
           </div>
+          {paneUnderChat && (
+            <div className="flex min-h-0 flex-1 flex-col">
+              {sidePanelStacked && sidePanelPane}
+              {paneLayout.review === 'stacked' && <ReviewRail placement="stacked" />}
+            </div>
+          )}
         </div>
 
-        {/* Side panel */}
-        {showSidePanel && (
-          <div className="relative flex border-l border-border bg-app" style={{ width: sidePanelContentWidth }}>
-            <ResizeHandle
-              onResize={(delta) => {
-                if (showFileTreeOnly) {
-                  // Same ceiling the render uses, so the state cannot outrun it.
-                  setFilePaneWidth((width) =>
-                    clamp(width - delta, MIN_FILE_PANE_WIDTH, maxFilePaneWidth)
-                  )
-                  return
-                }
-
-                setSidePanelWidth((width) =>
-                  clamp(width - delta, minSidePanelWidth, MAX_SIDE_PANEL_WIDTH)
-                )
-              }}
-            />
-            <div className="flex min-w-0 flex-1 overflow-hidden">
-              {showFileTree && (
-                <>
-                  <div className="flex min-w-0 shrink-0 flex-col overflow-hidden" style={{ width: effectiveFilePaneWidth }}>
-                    <FileTree />
-                  </div>
-                  {(showEditor || showImage) && (
-                    <ResizeHandle
-                      onResize={(delta) =>
-                        setFilePaneWidth((width) =>
-                          clamp(width + delta, MIN_FILE_PANE_WIDTH, maxFilePaneWidth)
-                        )
-                      }
-                    />
-                  )}
-                </>
-              )}
-              {showDiff && (
-                <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                  <DiffViewer onClose={() => setSidePanel(null)} />
-                </div>
-              )}
-              {showEditor && (
-                <div
-                  className={clsx(
-                    'flex flex-1 flex-col overflow-hidden',
-                    // Divider only when the file tree is beside it; alone, the
-                    // outer panel's border-l is the left edge (avoids doubling).
-                    showFileTree && 'border-l border-border'
-                  )}
-                  // The same constant the file pane's ceiling reserves for.
-                  style={{ minWidth: MIN_EDITOR_PANE_WIDTH }}
-                >
-                  <FilePreview />
-                </div>
-              )}
-              {showImage && (
-                <div
-                  className="flex flex-1 flex-col overflow-hidden"
-                  style={{ minWidth: MIN_EDITOR_PANE_WIDTH }}
-                >
-                  <ImageViewer />
-                </div>
-              )}
-            </div>
-            {showFileTreeOnly && (
-              <button
-                onClick={() => setSidePanel(null)}
-                className="absolute top-1 right-1 z-10 rounded p-1 text-faint hover:text-muted"
-                title={t('chat.closeFileTree')}
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-        )}
+        {paneLayout.sidePanel === 'beside' && sidePanelPane}
+        {paneLayout.review === 'beside' && <ReviewRail placement="beside" />}
       </div>
 
       {/* Terminal panel */}
@@ -473,36 +440,6 @@ export function ChatPanel(): React.JSX.Element {
       {/* File search modal */}
       <FileSearch isOpen={fileSearchOpen} onClose={toggleFileSearch} />
     </div>
-  )
-}
-
-function ToolbarButton({
-  icon,
-  active,
-  onClick,
-  title,
-  workflowToggle = false,
-}: {
-  icon: React.ReactNode
-  active: boolean
-  onClick: () => void
-  title: string
-  workflowToggle?: boolean
-}): React.JSX.Element {
-  return (
-    <button
-      onClick={onClick}
-      data-workflow-toggle={workflowToggle ? 'true' : undefined}
-      className={clsx(
-        'rounded p-1 transition-colors',
-        active
-          ? 'bg-card text-primary'
-          : 'hover:bg-highlight text-dim hover:text-secondary'
-      )}
-      title={title}
-    >
-      {icon}
-    </button>
   )
 }
 

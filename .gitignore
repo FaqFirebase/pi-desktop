@@ -4,7 +4,6 @@ node_modules/
 .pnp.js
 .npm/
 jspm_packages/
-docs/superpowers/
 
 # Build outputs
 out/
@@ -103,11 +102,10 @@ speech-models/
 .pi-desktop/
 .pi-subagents/
 
-# Agent context — local-only memory and architecture notes
+# Agent context — local-only memory, architecture notes and plans
 MEMORY.md
 TEST.md
-
-# Local agent / tool config (per-developer, never committed)
+docs/superpowers/
 
 # AI Coding Agents
 .serena/
@@ -147,7 +145,6 @@ TEST.md
 
 # Local Runtime Environments
 .venv/
-.env/
 
 # Worktrees / Local Sandboxes
 .worktrees/

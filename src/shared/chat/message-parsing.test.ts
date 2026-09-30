@@ -84,3 +84,10 @@ test('returns null for non-objects and unknown roles', () => {
   assert.equal(parseAgentMessage('nope'), null)
   assert.equal(parseAgentMessage({ role: 'mystery' }), null)
 })
+
+test('a reloaded answer the user stopped keeps its stopped mark', () => {
+  const stopped = parseAgentMessage({ role: 'assistant', stopReason: 'aborted', content: [{ type: 'text', text: 'Half' }] })
+  assert.equal(stopped?.stopped, true)
+  const finished = parseAgentMessage({ role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: 'All' }] })
+  assert.equal(finished?.stopped, undefined)
+})

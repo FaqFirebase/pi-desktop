@@ -1,4 +1,6 @@
 import { t } from '../i18n'
+import { isStoppedAnswer } from '../stopped-answer'
+import { splitClaudeCliMarkers } from './claude-cli-markers'
 
 export interface DisplayAttachment {
   kind: 'image'
@@ -23,6 +25,8 @@ export interface DisplayMessage {
     durationMs?: number
   }>
   thinking?: string
+  /** Keep reasoning that was visible during streaming open on its first render. */
+  initiallyShowThinking?: boolean
   model?: string
   provider?: string
   cost?: number
@@ -33,7 +37,11 @@ export interface DisplayMessage {
   toolCallId?: string
   toolName?: string
   toolFile?: string
+  /** toolResult only: its call's arguments, set when the call shared its turn with others. */
+  toolCallArguments?: string
   isError?: boolean
+  /** assistant only: the user stopped this answer before it finished. */
+  stopped?: boolean
 }
 
 let fallbackMessageCounter = 0
@@ -132,15 +140,22 @@ export function parseAgentMessage(msg: unknown): DisplayMessage | null {
         }
       })
 
+    const text = splitClaudeCliMarkers(
+      textParts.join(''),
+      typeof m.provider === 'string' ? m.provider : undefined
+    )
+    const allToolCalls = [...toolCalls, ...text.toolCalls]
+
     return {
       id: String(m.id ?? generateFallbackId()),
       role: 'assistant',
-      content: textParts.join(''),
+      content: text.content,
       timestamp: parseTimestamp(m.timestamp),
       thinking: thinkingParts.length > 0 ? thinkingParts.join('') : undefined,
-      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
       model: typeof m.model === 'string' ? m.model : undefined,
       provider: typeof m.provider === 'string' ? m.provider : undefined,
+      stopped: isStoppedAnswer(m) || undefined,
     }
   }
 

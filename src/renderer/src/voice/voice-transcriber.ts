@@ -1,5 +1,5 @@
 import type { VoiceModel, VoicePrecision } from '../../../shared/voice-models'
-import type { TranscribeRequest, TranscribeResponse } from './voice-worker-protocol'
+import { voiceEngineKey, type TranscribeRequest, type TranscribeResponse } from './voice-worker-protocol'
 
 // Where onnxruntime-web loads its WebAssembly runtime from. The build copies the
 // files here and the dev server serves them (see voiceWasmPlugin). Loading them
@@ -12,6 +12,8 @@ interface PendingRequest {
 }
 
 let worker: Worker | null = null
+// Model and precision the current worker has loaded (or will load next).
+let workerEngineKey: string | null = null
 let nextRequestId = 0
 const pending = new Map<number, PendingRequest>()
 
@@ -20,7 +22,18 @@ function failAll(error: Error): void {
   pending.clear()
 }
 
-function getWorker(): Worker {
+/**
+ * The worker for `engineKey`. A worker keeps its loaded model until it ends,
+ * and an ONNX session holds its memory (up to about 1.3 GB) even after the
+ * worker drops it, so a different model or precision gets a fresh worker once
+ * nothing is pending on the old one.
+ */
+function getWorker(engineKey: string): Worker {
+  if (worker && workerEngineKey !== engineKey && pending.size === 0) {
+    worker.terminate()
+    worker = null
+  }
+  workerEngineKey = engineKey
   if (worker) return worker
   const created = new Worker(new URL('./voice-worker.ts', import.meta.url), { type: 'module' })
   created.onmessage = (event: MessageEvent<TranscribeResponse>) => {
@@ -55,8 +68,11 @@ export function transcribeAudio(
 ): Promise<string> {
   const id = nextRequestId++
   const request: TranscribeRequest = { id, audio, model, precision, wasmBaseUrl: WASM_BASE_URL }
+  // Pick the worker before this request counts as pending, so a model switch
+  // can replace an idle worker.
+  const target = getWorker(voiceEngineKey(model.id, precision))
   return new Promise<string>((resolve, reject) => {
     pending.set(id, { resolve, reject })
-    getWorker().postMessage(request, [audio.buffer])
+    target.postMessage(request, [audio.buffer])
   })
 }

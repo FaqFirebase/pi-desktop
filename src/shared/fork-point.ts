@@ -1,3 +1,5 @@
+import { stripInjectedPreamble } from './session-preview'
+
 /** A prior user message that can be forked from (RPC `get_fork_messages`). */
 export interface ForkPoint {
   entryId: string
@@ -21,4 +23,35 @@ export function normalizeForkMessages(raw: unknown): ForkPoint[] {
     out.push({ entryId: id, text: String(text) })
   }
   return out
+}
+
+/** A chat message, as far as fork matching needs it. */
+interface ChatMessageRef {
+  id: string
+  role: string
+  content: string
+}
+
+/** The user's own words, without GUI-injected boilerplate such as the planning preamble. */
+function userWords(text: string): string {
+  return stripInjectedPreamble(text).trim()
+}
+
+/**
+ * The fork point of the chat's user message `messageId`, or null when the
+ * session does not hold it. Fork points list every user message with text;
+ * compaction hides a session's early messages from the chat but not from the
+ * fork points, so both lists are aligned at their ends, and the texts must
+ * agree.
+ */
+export function forkPointForUserMessage(
+  messages: readonly ChatMessageRef[],
+  messageId: string,
+  points: readonly ForkPoint[],
+): ForkPoint | null {
+  const userMessages = messages.filter((message) => message.role === 'user' && message.content)
+  const index = userMessages.findIndex((message) => message.id === messageId)
+  if (index === -1) return null
+  const point = points[points.length - (userMessages.length - index)]
+  return point && userWords(point.text) === userWords(userMessages[index].content) ? point : null
 }

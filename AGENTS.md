@@ -68,6 +68,7 @@ src/
 │   ├── fork-point.ts             # Fork/branch message helpers
 │   ├── session-lineage.ts        # Cross-session lineage tree
 │   ├── session-preview.ts        # First user message -> one-line row label
+│   ├── stopped-answer.ts         # The one rule for an answer the user stopped (stopReason "aborted")
 │   ├── sidebar-width.ts          # Bounds/resolution for the user-adjustable sidebar width
 │   ├── chat-width.ts             # Chat column width setting values (normal / full)
 │   ├── workflow-control.ts       # Control eligibility for persisted workflow runs
@@ -109,6 +110,7 @@ src/
 │   ├── fs-errors.ts              # Friendly file-system error messages
 │   ├── models-file.ts            # Per-engine models file (Pi models.json / OMP models.yml) resolve + parse
 │   ├── omp-fork-points.ts        # Fork candidates read from an OMP session file (no get_fork_messages RPC)
+│   ├── omp-stopped-answers.ts    # Stopped answers a reloaded OMP session leaves out of get_messages, read back from its file
 │   ├── omp-plugin-list.ts        # Parse `omp plugin list --json` for the installed-packages panel
 │   ├── skills-discovery.ts       # Per-engine skill roots scan + catalog merge
 │   ├── session-metadata.ts       # Bounded reader: session name, header, first-message preview
@@ -118,6 +120,7 @@ src/
 │   ├── extension-ui-ipc.ts       # Extension-UI half of the IPC surface
 │   ├── pi-event-router.ts        # Routes every runtime's Pi events to the renderer
 │   ├── git-worktree.ts           # Isolated Git worktrees for New Task
+│   ├── git-head-watcher.ts       # Reports a HEAD or local branch change made outside the app; always on for the active workspace
 │   ├── theme-store.ts            # User theme files: list, save, delete
 │   ├── workflow-monitor.ts       # ~/.pi/workflows run and project discovery
 │   ├── tray-manager.ts           # System-tray lifecycle (minimize to tray on close)
@@ -195,6 +198,7 @@ src/
             ├── session-menu-position.ts # Session menu placement
             ├── timeline.tsx       # Agent activity timeline
             ├── review-rail.tsx    # Permissions, approvals, changed files (toggleable)
+            ├── chat-tool-rail.tsx # Right-edge icon rail: review, files, diff, and terminal toggles
             ├── package-browser.tsx # Package/skill browser, fetch-once + local filter, update check
             ├── skills-panel.tsx   # Skills browser
             ├── notes-panel.tsx    # Reusable prompts/notes
@@ -234,8 +238,9 @@ src/
 - Tool names differ per engine (Pi ships `find`/`ls`, OMP ships `glob`), so Plan/Read-only mode derives its tool list from the session's engine, never from the configured one.
 - Every surface that names the running agent (status bar, empty chat, permission prompts, Diagnostics, session tags) reads `shared/agent-engine-label.ts`; the permission extension gets the label via `PI_DESKTOP_AGENT_LABEL`. Session rows show the Pi/OMP tag only when both engines appear in one list.
 - OMP specifics: protocol-v2 chunked frames are decoded with the limits the engine advertises in its ready frame; OMP starts subagents in a new process group, so shutdown walks the descendant tree before signalling; OMP's plugin verbs back the package actions.
-- OMP RPC gaps the GUI bridges: OMP has no `fork`/`clone`/`get_fork_messages`/`get_commands`. Fork maps to OMP's `branch` (same entryId argument), fork candidates are read from the session file (`omp-fork-points.ts`), the Clone action is hidden under OMP, and the command catalog uses `get_available_commands` (`skills-mcp-handlers.ts`).
-- Per-engine config files: Pi keeps `~/.pi/agent/models.json` (JSON); OMP 18 keeps `~/.omp/agent/models.yml` (YAML) — `models-file.ts` resolves and (de)serializes both. OMP's installed-package list comes from `omp plugin list --json` (`omp-plugin-list.ts`), not from a settings.json `packages` array. `omp plugin upgrade` covers marketplace plugins only, so an npm plugin updates by reinstalling from its dist-tag with its feature selection and disabled state carried over (`package-updates.ts`).
+- OMP RPC gaps the GUI bridges: OMP has no `fork`/`clone`/`get_fork_messages`/`get_commands`. Fork maps to OMP's `branch` (same entryId argument), fork candidates are read from the session file (`omp-fork-points.ts`), the Clone action is hidden under OMP, and the command catalog uses `get_available_commands` (`skills-mcp-handlers.ts`). OMP reports its own commands with source `builtin`; a GUI action of the same name replaces it, and the rest are sent as typed text, which OMP runs. A session OMP loads from disk leaves stopped answers out of `get_messages`; they are read back from the file (`omp-stopped-answers.ts`).
+- OMP names a session directory for a project under the home or temporary directory `-<relative path>` / `-tmp-<relative path>` (`ompSessionDirName`); Resume Last Session reads only the selected engine's store. Session tabs are live runtimes and are not restored after a restart: only the resume target starts.
+- Per-engine config files: Pi keeps `~/.pi/agent/models.json` (JSON); OMP 18 keeps `~/.omp/agent/models.yml` (YAML) — `models-file.ts` resolves and (de)serializes both, and keeps reading a not-yet-migrated OMP `models.json`. OMP's installed-package list comes from `omp plugin list --json` (`omp-plugin-list.ts`), not from a settings.json `packages` array. `omp plugin upgrade` covers marketplace plugins only, so an npm plugin updates by reinstalling from its dist-tag with its feature selection and disabled state carried over (`package-updates.ts`). Per-engine IPC decisions read `ipc/active-engine.ts` so the active session's engine wins over the configured default.
 - Session names: Pi appends `session_info` records; OMP rewrites a fixed first-line `{"type":"title"}` slot. `session-name.ts`/`session-metadata.ts` read both (session_info outranks the title slot).
 - Skills are listed per engine (`skills-discovery.ts`): Pi scans `~/.pi/agent/skills`, `~/.agents/skills` and project `.pi/skills`/`.agents/skills` recursively; OMP scans `.omp`, `.claude` and `.agents` roots one level deep. Skills only the other engine can load are never shown. When the engine is running, plugin-shipped skills from its command catalog are merged in (`rpc:`-prefixed pseudo-paths render from the description).
 
@@ -248,6 +253,7 @@ src/
 - Session navigation is immediate; Pi startup and history hydration continue in the background
 - Default workspace: user's home directory
 - Workspace switcher in sidebar
+- Project tabs keep creation order until the user drags one to a new place; the custom order is saved (`utils/tab-navigation.ts`) and the project-tab shortcuts follow it
 - Auto-creates workspace when switching to a session from a different project
 - **Drag-and-drop a folder** onto the window to open it as a project (create workspace if needed, switch, show Chat) — same path as File → Open Project
 
@@ -298,7 +304,9 @@ src/
 
 - Task Launcher accepts an issue description or URL, optionally creates or reuses a local Git worktree, and sends the task to a dedicated Pi runtime. PR URLs are resolved with `gh pr view`; unrelated or ambiguous worktrees are never guessed.
 - Diff Review exposes explicit Commit, Push, and PR actions; mutating Git operations never happen implicitly.
-- PR creation uses GitHub CLI when available, targets the configured `upstream` remote when present, and opens the returned PR URL.
+- Untracked files reach a commit only when the user checks them in the Commit dialog (listed unchecked; ignored files and directories are refused). An upstream whose remote-tracking branch is missing counts as not published, so Push publishes it with `--set-upstream`.
+- The status-bar branch menu switches only a clean worktree, and its New branch item creates a branch from HEAD (`git switch --create`), which is allowed with uncommitted changes because they move with it.
+- PR creation uses GitHub CLI when available, targets the configured `upstream` remote when present, and opens the returned PR URL. An open pull request of the branch (`gh pr list`, cached for a minute with the status poll) turns the button into Open PR #N.
 
 ### Workspace Activity & Desktop Notifications
 
@@ -350,7 +358,7 @@ src/
 ### File Preview Panes
 
 - Click a workspace file link (chat or file tree) to open it in a side pane: code (CodeMirror), image, or HTML (via a sandboxed `<webview>` — no Node access, isolated partition, `file://` source only). HTML preview runs scripts and network only when the workspace is trusted; an untrusted workspace gets a static preview with a "Trust workspace" banner
-- Independent from the review rail; chat toolbar toggles for sidebar, review panel, and file tree
+- Independent from the review rail; the right-edge tool rail toggles the review panel, file tree, diff, and terminal
 
 ### Packages & Skills
 
@@ -435,6 +443,7 @@ data-dir migration the GUI's files live under the OS app-data dir
 | `~/.pi/workflows/` | Workflow runs and projects (Mission Control) |
 | `pi-desktop.boot-theme` (renderer `localStorage`) | Last-applied theme colors, painted before the first frame so it is not a flash of the default theme |
 | `pi-desktop.boot-language` (renderer `localStorage`) | Last-resolved interface language, shown before Settings loads for the same reason |
+| `pi-desktop.project-tab-order` (renderer `localStorage`) | Project tab order the user set by dragging tabs |
 
 ## Distribution
 

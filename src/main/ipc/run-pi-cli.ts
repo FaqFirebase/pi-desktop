@@ -2,6 +2,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import type { AgentEngineKind } from '../../shared/ipc-contracts'
 import { buildPiInvocation, getPiCli, getPiCliForEngine } from '../pi-rpc-manager'
+import { loadPiDotenv } from '../pi-dotenv'
 import { t } from '../../shared/i18n'
 
 const execFileAsync = promisify(execFile)
@@ -34,7 +35,7 @@ export async function runPiCli(
     const { stdout, stderr } = await execFileAsync(invocation.file, invocation.args, {
       cwd,
       timeout,
-      env: { ...process.env },
+      env: { ...loadPiDotenv(), ...process.env },
       // Windows .cmd/.bat shims require shell:true to be invoked.
       shell: cli.needsShell,
     })

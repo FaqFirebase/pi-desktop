@@ -286,6 +286,7 @@ function EmptyHint({ children }: { children: React.ReactNode }): React.JSX.Eleme
 
 function HomeScreenInfo(): React.JSX.Element {
   const { t } = useTranslation()
+  const engineLabel = useAppStore((s) => agentEngineLabel(s.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const activeWorkspace = useAppStore((s) => s.activeWorkspace)
   const activateWorkspace = useAppStore((s) => s.activateWorkspace)
   const createWorkspace = useAppStore((s) => s.createWorkspace)
@@ -381,7 +382,7 @@ function HomeScreenInfo(): React.JSX.Element {
             <Play size={18} className="shrink-0 text-accent-fg" />
             <div className="min-w-0">
               <div className="text-sm font-medium text-primary">{t('home.actions.newTask.title')}</div>
-              <div className="truncate text-xs text-dim">{t('home.actions.newTask.description')}</div>
+              <div className="truncate text-xs text-dim">{t('home.actions.newTask.description', { agent: engineLabel })}</div>
             </div>
           </button>
         </div>

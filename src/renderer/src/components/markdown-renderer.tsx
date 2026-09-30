@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useContextMenu, buildCodeBlockContextMenu, buildLinkContextMenu } from './context-menu'
 import { CopyButton } from './copy-button'
@@ -18,132 +18,133 @@ interface MarkdownRendererProps {
 export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.Element {
   const { show, ContextMenuComponent } = useContextMenu()
 
+  // Component identity must survive token updates or React remounts code
+  // blocks, images and their local controls on every chunk.
+  const components = useMemo<Components>(() => ({
+    // Links — right-click for context menu
+    a: ({ href, children, ...props }) => (
+      <a
+        {...props}
+        href={href}
+        onClick={(e) => {
+          e.preventDefault()
+          if (href) {
+            window.piDesktop.system.openExternal(href)
+          }
+        }}
+        onContextMenu={(e) => {
+          if (href) {
+            show(e, buildLinkContextMenu(href))
+          }
+        }}
+        className="text-accent-fg hover:underline cursor-pointer"
+      >
+        {children}
+      </a>
+    ),
+
+    // Code blocks — right-click to copy
+    pre: (props) => {
+      const p = props as Record<string, unknown>
+      const children = p.children as React.ReactNode
+      const codeText = extractCodeText(children)
+
+      // A fenced block whose content is a complete SVG document renders as
+      // an image (with a source toggle), regardless of the fence's language
+      // tag — models emit SVG under ```svg / ```xml / ```html or untagged.
+      if (isRenderableSvg(codeText)) {
+        return <SvgBlock raw={codeText.replace(/\n$/, '')} />
+      }
+
+      return (
+        <pre
+          className="relative"
+          onContextMenu={(e) => {
+            if (codeText) {
+              show(e, buildCodeBlockContextMenu(codeText))
+            }
+          }}
+        >
+          {children}
+          <CopyButton text={codeText} className="absolute right-1.5 top-1.5" />
+        </pre>
+      )
+    },
+
+    // Inline code — right-click to copy
+    code: (props) => {
+      const p = props as Record<string, unknown>
+      const children = p.children as React.ReactNode
+      const className = p.className as string | undefined
+
+      // Fenced code block: highlight with the same CodeMirror pipeline the
+      // code editor uses. `language-xxx` class is added by mdast-util-to-hast
+      // from the fence info string. Context menu is handled by the pre wrapper.
+      if (className?.includes('language-')) {
+        const lang = className.replace(/^.*language-/, '').split(/\s+/)[0]
+        const raw = extractCodeText(children).replace(/\n$/, '')
+        // Models often paste a truncated read verbatim; peel Pi's
+        // "[N more lines in file…]" footer out of the fence so it renders as
+        // a note rather than syntax-highlighted code. Line-numbered via the
+        // same component as file-read tool results so both look identical.
+        const { code: codeBody, note } = splitReadTruncationNote(raw)
+        return (
+          <code className={className}>
+            <LineNumberedCode content={codeBody} lang={lang} />
+            {note && <div className="mt-2 text-xs italic text-dim">{note}</div>}
+          </code>
+        )
+      }
+
+      const inlineText = typeof children === 'string' ? children : ''
+
+      // Inline code that reads like a real filename opens in the editor;
+      // everything else (keywords, function names, literals) copies on click.
+      if (looksLikeFilePath(inlineText)) {
+        return (
+          <code
+            className="chat-file-link"
+            onClick={() => {
+              void openFileFromChat(inlineText)
+            }}
+            onContextMenu={(e) => {
+              show(e, buildCodeBlockContextMenu(inlineText))
+            }}
+          >
+            {children}
+          </code>
+        )
+      }
+
+      return (
+        <code
+          onClick={() => {
+            if (inlineText) navigator.clipboard.writeText(inlineText)
+          }}
+          onContextMenu={(e) => {
+            if (inlineText) {
+              show(e, buildCodeBlockContextMenu(inlineText))
+            }
+          }}
+        >
+          {children}
+        </code>
+      )
+    },
+
+    // Tables
+    table: ({ children, ...props }) => (
+      <div className="overflow-x-auto">
+        <table {...props}>{children}</table>
+      </div>
+    ),
+  }), [show])
+
   return (
     <ErrorBoundary
       fallback={<pre className="whitespace-pre-wrap break-words text-secondary">{content}</pre>}
     >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          // Links — right-click for context menu
-          a: ({ href, children, ...props }) => (
-            <a
-              {...props}
-              href={href}
-              onClick={(e) => {
-                e.preventDefault()
-                if (href) {
-                  window.piDesktop.system.openExternal(href)
-                }
-              }}
-              onContextMenu={(e) => {
-                if (href) {
-                  show(e, buildLinkContextMenu(href))
-                }
-              }}
-              className="text-accent-fg hover:underline cursor-pointer"
-            >
-              {children}
-            </a>
-          ),
-
-          // Code blocks — right-click to copy
-          pre: (props) => {
-            const p = props as Record<string, unknown>
-            const children = p.children as React.ReactNode
-            const codeText = extractCodeText(children)
-
-            // A fenced block whose content is a complete SVG document renders as
-            // an image (with a source toggle), regardless of the fence's language
-            // tag — models emit SVG under ```svg / ```xml / ```html or untagged.
-            if (isRenderableSvg(codeText)) {
-              return <SvgBlock raw={codeText.replace(/\n$/, '')} />
-            }
-
-            return (
-              <pre
-                className="relative"
-                onContextMenu={(e) => {
-                  if (codeText) {
-                    show(e, buildCodeBlockContextMenu(codeText))
-                  }
-                }}
-              >
-                {children}
-                <CopyButton text={codeText} className="absolute right-1.5 top-1.5" />
-              </pre>
-            )
-          },
-
-          // Inline code — right-click to copy
-          code: (props) => {
-            const p = props as Record<string, unknown>
-            const children = p.children as React.ReactNode
-            const className = p.className as string | undefined
-
-            // Fenced code block: highlight with the same CodeMirror pipeline the
-            // code editor uses. `language-xxx` class is added by mdast-util-to-hast
-            // from the fence info string. Context menu is handled by the pre wrapper.
-            if (className?.includes('language-')) {
-              const lang = className.replace(/^.*language-/, '').split(/\s+/)[0]
-              const raw = extractCodeText(children).replace(/\n$/, '')
-              // Models often paste a truncated read verbatim; peel Pi's
-              // "[N more lines in file…]" footer out of the fence so it renders as
-              // a note rather than syntax-highlighted code. Line-numbered via the
-              // same component as file-read tool results so both look identical.
-              const { code: codeBody, note } = splitReadTruncationNote(raw)
-              return (
-                <code className={className}>
-                  <LineNumberedCode content={codeBody} lang={lang} />
-                  {note && <div className="mt-2 text-xs italic text-dim">{note}</div>}
-                </code>
-              )
-            }
-
-            const inlineText = typeof children === 'string' ? children : ''
-
-            // Inline code that reads like a real filename opens in the editor;
-            // everything else (keywords, function names, literals) copies on click.
-            if (looksLikeFilePath(inlineText)) {
-              return (
-                <code
-                  className="chat-file-link"
-                  onClick={() => {
-                    void openFileFromChat(inlineText)
-                  }}
-                  onContextMenu={(e) => {
-                    show(e, buildCodeBlockContextMenu(inlineText))
-                  }}
-                >
-                  {children}
-                </code>
-              )
-            }
-
-            return (
-              <code
-                onClick={() => {
-                  if (inlineText) navigator.clipboard.writeText(inlineText)
-                }}
-                onContextMenu={(e) => {
-                  if (inlineText) {
-                    show(e, buildCodeBlockContextMenu(inlineText))
-                  }
-                }}
-              >
-                {children}
-              </code>
-            )
-          },
-
-          // Tables
-          table: ({ children, ...props }) => (
-            <div className="overflow-x-auto">
-              <table {...props}>{children}</table>
-            </div>
-          ),
-        }}
-      >
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>
       {ContextMenuComponent}

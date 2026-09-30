@@ -2,6 +2,11 @@ import { existsSync } from 'fs'
 import os from 'os'
 import pty, { type IPty } from 'node-pty'
 import type { TerminalStartOptions, TerminalStartResult } from '../shared/ipc-contracts'
+import { loadPiDotenv } from './pi-dotenv'
+
+// Classic VT100 grid, used until the renderer reports the fitted size.
+export const DEFAULT_TERMINAL_COLS = 80
+export const DEFAULT_TERMINAL_ROWS = 24
 
 type TerminalDataHandler = (data: string) => void
 type TerminalExitHandler = (event: { exitCode: number; signal?: number }) => void
@@ -21,6 +26,7 @@ export class TerminalService {
     const shell = getShell()
     const cwd = getCwd(options.cwd)
     const env = {
+      ...loadPiDotenv(),
       ...process.env,
       TERM: 'xterm-256color',
     } as Record<string, string>
@@ -31,8 +37,8 @@ export class TerminalService {
     // for. Only pass it on POSIX platforms.
     const terminal = pty.spawn(shell, [], {
       name: 'xterm-256color',
-      cols: options.cols ?? 80,
-      rows: options.rows ?? 24,
+      cols: options.cols ?? DEFAULT_TERMINAL_COLS,
+      rows: options.rows ?? DEFAULT_TERMINAL_ROWS,
       cwd,
       env,
       ...(process.platform === 'win32' ? {} : { encoding: 'utf8' }),
@@ -67,7 +73,6 @@ export class TerminalService {
   }
 
   stop(): void {
-    if (!this.terminal) return
     // Detach handlers before killing so the resulting exit event neither
     // broadcasts a spurious "process exited" into a freshly-created terminal
     // nor nulls it out. See the identity guard in start().
@@ -75,7 +80,7 @@ export class TerminalService {
     this.disposables = []
     const terminal = this.terminal
     this.terminal = null
-    terminal.kill()
+    terminal?.kill()
   }
 
   getCwd(): string {

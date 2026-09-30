@@ -6,7 +6,9 @@ import { promisify } from 'util'
 import { homedir } from 'os'
 import { describeWriteError } from './fs-errors'
 import { appLog } from './app-log'
-import type { FileChangeEvent } from '../shared/ipc-contracts'
+import { WHOLE_WORKSPACE_CHANGE_PATH, type FileChangeEvent } from '../shared/ipc-contracts'
+import { watchGitHead } from './git-head-watcher'
+import { canDiscardGitPatch, gitDiffPaths, splitGitDiff, workspaceRelativeGitPath } from '../shared/git-diff'
 import { i18n, t, tEnglish, type Translate } from '../shared/i18n'
 
 const execFileAsync = promisify(execFile)
@@ -213,27 +215,34 @@ export interface SearchResult {
 }
 
 export function buildNewFileDiff(relativePath: string, content: string): string {
-  const lines = content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n')
+  const lines = content === '' ? [] : (content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n'))
   const hunkSize = lines.length
+  const oldPath = /["\\\r\n\t]/.test(relativePath) ? JSON.stringify(`a/${relativePath}`) : `a/${relativePath}`
+  const newPath = /["\\\r\n\t]/.test(relativePath) ? JSON.stringify(`b/${relativePath}`) : `b/${relativePath}`
 
   return [
-    `diff --git a/${relativePath} b/${relativePath}`,
+    `diff --git ${oldPath} ${newPath}`,
     'new file mode 100644',
     'index 0000000..0000000',
-    '--- /dev/null',
-    `+++ b/${relativePath}`,
-    `@@ -0,0 +1,${hunkSize} @@`,
-    ...lines.map((line) => `+${line}`),
+    ...(hunkSize ? [
+      '--- /dev/null',
+      `+++ ${newPath}`,
+      `@@ -0,0 +1,${hunkSize} @@`,
+      ...lines.map((line) => `+${line}`),
+      ...(content.endsWith('\n') ? [] : ['\\ No newline at end of file']),
+    ] : []),
     '',
   ].join('\n')
 }
 
 export class FileService {
   private watcher: FSWatcher | null = null
+  private stopGitHeadWatch: (() => void) | null = null
   private workspacePath: string
   private readonly isHomeWorkspace: boolean
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
   private pendingChange: FileChangeEvent | null = null
+  private discardingDiff = false
 
   constructor(workspacePath: string, homePath: string = homedir()) {
     this.workspacePath = workspacePath
@@ -398,13 +407,14 @@ export class FileService {
   }
 
   /**
-   * Get a diff for a specific file. Empty for non-repos and machines without
-   * git; throws on real git failures so callers can surface them.
+   * Get a diff for a specific file, or for the whole workspace (never the rest
+   * of a monorepo). Empty for non-repos and machines without git; throws on
+   * real git failures so callers can surface them.
    */
   async getFileDiff(filePath?: string): Promise<string> {
     try {
-      const args = ['diff']
-      if (filePath) args.push(filePath)
+      const args = ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--src-prefix=a/', '--dst-prefix=b/']
+      args.push('--', filePath ?? '.')
       const { stdout } = await execFileAsync('git', args, {
         cwd: this.workspacePath,
         timeout: 10_000,
@@ -418,17 +428,85 @@ export class FileService {
     }
   }
 
+  /** Reverse only patches the user reviewed; never touch the index or commits. */
+  async discardFileDiff(patches: string[]): Promise<void> {
+    if (this.discardingDiff) throw new Error(t('diff.discard.busy'))
+    this.discardingDiff = true
+    try {
+      if (!patches.length || new Set(patches).size !== patches.length) {
+        throw new Error(t('diff.discard.stale'))
+      }
+      const current = new Set(splitGitDiff(await this.getFileDiff()))
+      if (patches.some((patch) => !current.has(patch))) throw new Error(t('diff.discard.stale'))
+      const { stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], { cwd: this.workspacePath })
+      const root = await realpath(stdout.trim())
+      const workspaceRoot = await realpath(this.workspacePath)
+      for (const patch of patches) {
+        if (!canDiscardGitPatch(patch)) throw new Error(t('diff.discard.unsupported'))
+        const paths = gitDiffPaths(patch)!
+        for (const path of [paths.oldPath, paths.newPath]) {
+          if (isAbsolute(path) || path.split(/[\\/]/).some((part) => part === '..' || part.toLowerCase() === '.git')) {
+            throw new Error(t('diff.discard.unsupported'))
+          }
+          await this.resolveInsideWorkspace(relative(workspaceRoot, resolve(root, path)), 'write')
+        }
+      }
+      const patch = patches.join('')
+      // Git preflights the entire batch without --reject; it does not apply a
+      // subset when another selected patch cannot be reversed.
+      await this.applyReversePatch(root, patch, true)
+      await this.applyReversePatch(root, patch, false)
+    } finally {
+      this.discardingDiff = false
+    }
+  }
+
+  private applyReversePatch(cwd: string, patch: string, check: boolean): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const child = execFile('git', ['apply', '--reverse', ...(check ? ['--check'] : []), '--whitespace=nowarn', '-'], {
+        cwd,
+        timeout: 10_000,
+        maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
+      }, (error) => {
+        if (error) reject(new Error(t('diff.discard.failed')))
+        else resolve()
+      })
+      // An early Git rejection can close stdin before the patch is written.
+      child.stdin!.on('error', () => {})
+      child.stdin!.end(patch)
+    })
+  }
+
+  /**
+   * The workspace's directory inside its repository (`pkg/app/`, '' at the
+   * root or outside a repository). Git diff and status paths start from the
+   * repository root, so this maps them onto workspace paths.
+   */
+  async getGitPrefix(): Promise<string> {
+    try {
+      const { stdout } = await execFileAsync('git', ['rev-parse', '--show-prefix'], {
+        cwd: this.workspacePath,
+        timeout: 5_000,
+      })
+      return stdout.trim()
+    } catch (err) {
+      if (isBenignGitError(err) || (await this.probeGitRepo()) === 'outside') return ''
+      throw this.describeAndLogGitError('rev-parse', err)
+    }
+  }
+
+  /** Untracked files inside the workspace, as new-file patches with repository-root paths. */
   private async getUntrackedFileDiff(filePath?: string): Promise<string> {
-    const statusMap = await this.getGitStatus()
+    const [statusMap, prefix] = await Promise.all([this.getGitStatus(), this.getGitPrefix()])
     const untrackedPaths = [...statusMap.entries()]
       .filter(([, status]) => status.index === '?' && status.worktree === '?')
-      .map(([path]) => path)
-      .filter((path) => !filePath || path === filePath)
+      .map(([path]) => ({ path, relativePath: workspaceRelativeGitPath(path, prefix) }))
+      .filter(({ relativePath }) => !relativePath.startsWith('../') && (!filePath || relativePath === filePath))
 
     const diffs: string[] = []
-    for (const path of untrackedPaths) {
+    for (const { path, relativePath } of untrackedPaths) {
       try {
-        const content = await readFile(join(this.workspacePath, path), 'utf-8')
+        const content = await readFile(join(this.workspacePath, relativePath), 'utf-8')
         diffs.push(buildNewFileDiff(path, content))
       } catch {
         // Skip unreadable or binary-like untracked files.
@@ -439,13 +517,12 @@ export class FileService {
   }
 
   /**
-   * Get the staged diff. Empty for non-repos and machines without git;
+   * Get the staged diff of a file or of the workspace. Empty for non-repos and machines without git;
    * throws on real git failures so callers can surface them.
    */
   async getStagedDiff(filePath?: string): Promise<string> {
     try {
-      const args = ['diff', '--cached']
-      if (filePath) args.push(filePath)
+      const args = ['diff', '--cached', '--', filePath ?? '.']
       const { stdout } = await execFileAsync('git', args, {
         cwd: this.workspacePath,
         timeout: 10_000,
@@ -502,6 +579,7 @@ export class FileService {
    * (debounced) when files are added, changed, or removed. Heavy and hidden
    * directories are ignored, and recursion is bounded to `WATCH_DEPTH` so the
    * watcher stays cheap even when the workspace is the user's home directory.
+   * `.git` is skipped; `startGitWatching` covers HEAD and the branches.
    * Idempotent per instance: a second call replaces the previous watcher.
    */
   startWatching(callback: FileChangeCallback): void {
@@ -572,6 +650,25 @@ export class FileService {
     }
   }
 
+  /**
+   * Report a change of HEAD or of the local branches made outside the app (a
+   * terminal, another tool) as a whole-worktree change. Separate from
+   * `startWatching` because the branch shown in the status bar needs it while
+   * no files pane is open; it watches only a few git directories, so it stays
+   * cheap. Idempotent per instance: a second call replaces the previous watch.
+   */
+  startGitWatching(callback: FileChangeCallback): void {
+    this.stopGitWatching()
+    this.stopGitHeadWatch = watchGitHead(this.workspacePath, () => {
+      callback({ changeType: 'change', relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
+    })
+  }
+
+  stopGitWatching(): void {
+    this.stopGitHeadWatch?.()
+    this.stopGitHeadWatch = null
+  }
+
   /** True if any path segment under the workspace is an ignored directory. */
   private isIgnoredPath(absolutePath: string): boolean {
     const rel = relative(this.workspacePath, absolutePath)
@@ -607,7 +704,7 @@ export class FileService {
 
           // Sort: directories first, then files, both alphabetical
           const sorted = items
-            .filter((item) => !this.isIgnoredEntry(item.name, depth) && !item.name.startsWith('.git'))
+            .filter((item) => !this.isIgnoredEntry(item.name, depth))
             .sort((a, b) => {
               if (a.isDirectory() && !b.isDirectory()) return -1
               if (!a.isDirectory() && b.isDirectory()) return 1
@@ -641,7 +738,7 @@ export class FileService {
       const depth = relBase ? relBase.split('/').length : WORKSPACE_ROOT_DEPTH
 
       for (const item of items) {
-        if (this.isIgnoredEntry(item.name, depth) || item.name.startsWith('.git')) continue
+        if (this.isIgnoredEntry(item.name, depth)) continue
 
         const fullPath = join(dir, item.name)
         const relPath = relBase ? `${relBase}/${item.name}` : item.name

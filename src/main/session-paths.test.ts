@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  ompSessionDirName,
   sanitizePath,
   sessionDirName,
   desanitizeSessionDir,
@@ -107,4 +108,16 @@ test('pathsEqual is exact when case-sensitive (Linux/macOS)', () => {
   // Regression guard: must NOT change behavior on case-sensitive systems.
   assert.equal(pathsEqual('/home/alice/App', '/home/alice/app', false), false)
   assert.equal(pathsEqual('/home/alice/app', '/home/alice/app', false), true)
+})
+
+test('OMP names home and temporary-directory projects by their relative path, others like Pi', () => {
+  assert.equal(ompSessionDirName('/home/alice', '/home/alice', '/tmp'), '-')
+  assert.equal(ompSessionDirName('/home/alice/code/app', '/home/alice', '/tmp'), '-code-app')
+  assert.equal(ompSessionDirName('/tmp', '/home/alice', '/tmp'), '-tmp')
+  assert.equal(
+    ompSessionDirName('/tmp/claude-1000/-mnt-x/scratchpad/gh-testapp', '/home/alice', '/tmp'),
+    '-tmp-claude-1000--mnt-x-scratchpad-gh-testapp',
+  )
+  assert.equal(ompSessionDirName('/mnt/data/Projects/App Test', '/home/alice', '/tmp'), '--mnt-data-Projects-App Test--')
+  assert.equal(ompSessionDirName('/home/alicex/app', '/home/alice', '/tmp'), '--home-alicex-app--')
 })

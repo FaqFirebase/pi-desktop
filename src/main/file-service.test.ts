@@ -208,6 +208,19 @@ test('a home workspace hides tooling stores only at its root', async () => {
   assert.deepEqual(found.map((hit) => hit.relativePath), ['Projects/app/.cargo/config.toml'])
 })
 
+test('Git config files show in the tree and in search, the .git folder does not', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pi-fs-git-files-'))
+  execFileSync('git', ['init', '-q'], { cwd: dir })
+  await writeFile(join(dir, '.gitignore'), 'out\n')
+  await mkdir(join(dir, '.github', 'workflows'), { recursive: true })
+  await writeFile(join(dir, '.github', 'workflows', 'ci.yml'), 'on: push\n')
+  const service = new FileService(dir, join(dir, 'not-home'))
+  const tree = await service.getFileTree()
+  assert.deepEqual(childNames(tree).sort(), ['.github', '.gitignore'])
+  const found = await service.searchFiles('i')
+  assert.deepEqual(found.map((hit) => hit.relativePath).sort(), ['.github/workflows/ci.yml', '.gitignore'])
+})
+
 async function testHomeWatcherIgnoresRootToolingOnly(): Promise<void> {
   const dir = await makeToolingWorkspace()
   const service = new FileService(dir, dir)
@@ -279,6 +292,16 @@ test('getFileDiff and getStagedDiff return empty for a non-repo directory', asyn
   assert.equal(await service.getStagedDiff(), '')
 })
 
+test('getGitPrefix reports the workspace directory inside its repository', async () => {
+  const repo = await mkdtemp(join(tmpdir(), 'fs-prefix-'))
+  execFileSync('git', ['init', '-q'], { cwd: repo })
+  const subfolder = join(repo, 'pkg', 'app')
+  await mkdir(subfolder, { recursive: true })
+  assert.equal(await new FileService(repo).getGitPrefix(), '')
+  assert.equal(await new FileService(subfolder).getGitPrefix(), 'pkg/app/')
+  assert.equal(await new FileService(await mkdtemp(join(tmpdir(), 'fs-nonrepo-'))).getGitPrefix(), '')
+})
+
 // Node's execFile default maxBuffer; a diff above it used to fail (#70).
 const EXEC_FILE_DEFAULT_MAX_BUFFER_BYTES = 1024 * 1024
 
@@ -302,4 +325,31 @@ test('getFileDiff and getStagedDiff return diffs larger than the execFile defaul
   git('add', 'big.txt')
   const stagedDiff = await service.getStagedDiff()
   assert.ok(stagedDiff.length > EXEC_FILE_DEFAULT_MAX_BUFFER_BYTES)
+})
+
+test('a monorepo subfolder workspace reports its Git prefix and diffs only its own files', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'fs-monorepo-'))
+  const git = (...args: string[]): void => {
+    execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', ...args], { cwd: dir })
+  }
+  git('init', '-q')
+  await writeFile(join(dir, 'tracked.ts'), 'original\n')
+  git('add', 'tracked.ts')
+  git('commit', '-q', '-m', 'init')
+  const workspace = join(dir, 'pkg', 'app')
+  await mkdir(join(workspace, 'src'), { recursive: true })
+  await writeFile(join(workspace, 'src', 'new.ts'), 'inside\n')
+  await writeFile(join(dir, 'root.ts'), 'outside\n')
+  await writeFile(join(dir, 'tracked.ts'), 'changed outside\n')
+  git('add', 'tracked.ts')
+  await writeFile(join(dir, 'tracked.ts'), 'changed again outside\n')
+  const service = new FileService(workspace)
+
+  assert.equal(await service.getGitPrefix(), 'pkg/app/')
+  const diff = await service.getFileDiff()
+  assert.match(diff, /^diff --git a\/pkg\/app\/src\/new\.ts b\/pkg\/app\/src\/new\.ts$/m)
+  assert.match(diff, /^\+inside$/m)
+  assert.doesNotMatch(diff, /root\.ts|tracked\.ts/)
+  assert.equal(await service.getStagedDiff(), '')
+  assert.match(await service.getFileDiff('src/new.ts'), /pkg\/app\/src\/new\.ts/)
 })

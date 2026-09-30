@@ -29,10 +29,12 @@
     "attach": {
       "allFilesFilter": "所有文件",
       "attachFailed": "无法附加文件",
+      "dropHint": "拖放文件以添加附件",
       "imagesFilter": "图片",
       "onlyImagesPasted": "只能向输入框粘贴图片",
       "pasteFailed": "无法粘贴图片",
       "readImageFailed": "无法读取图片数据",
+      "reading": "正在添加附件…",
       "unknownMimeType": "未知",
       "unsupportedImageType": "不支持的图片类型（{{mimeType}}）。请使用 PNG、JPEG、GIF 或 WebP。"
     },
@@ -43,9 +45,7 @@
     "composer": {
       "placeholderIdle": "向 {{agent}} 提问 — 输入 / 使用命令",
       "placeholderNotRunning": "{{agent}} 智能体未在运行…",
-      "placeholderSteering": "输入以引导智能体…",
-      "shiftEnterNewline": "Shift+Enter 换行",
-      "streaming": "流式输出中…"
+      "placeholderSteering": "输入以引导智能体…"
     },
     "council": {
       "planWithCouncil": "使用委员会规划",
@@ -79,7 +79,8 @@
     "message": {
       "branchedFrom": "分支自：“{{excerpt}}”",
       "branchFromHere": "从此处创建分支",
-      "editAndResend": "编辑并重新发送"
+      "editAndResend": "编辑并重新发送",
+      "stopped": "已停止"
     },
     "projectPicker": {
       "noProject": "无项目",
@@ -135,6 +136,7 @@
     },
     "voice": {
       "errorTitle": "语音听写失败：{{error}}",
+      "needsGpu": "此模型版本需要显卡（GPU），但未找到可用的显卡。请在“设置 > 语音”中选择 CPU 以获取 CPU 版本。",
       "setUpTitle": "在设置中配置语音听写",
       "startTitle": "开始语音听写",
       "stopTitle": "停止并插入文本",
@@ -158,6 +160,9 @@
     "fork": {
       "description": "打开分支视图，从某条消息分叉"
     },
+    "model": {
+      "description": "选择模型"
+    },
     "new": {
       "description": "开始新会话"
     },
@@ -168,7 +173,7 @@
       "description": "打开设置"
     },
     "task": {
-      "description": "在新的 Pi 会话中启动任务"
+      "description": "在新的 {{agent}} 会话中启动任务"
     }
   },
   "commandSources": {
@@ -191,7 +196,6 @@
     "dismiss": "忽略",
     "export": "导出",
     "global": "全局",
-    "hideSidebar": "隐藏侧边栏",
     "import": "导入",
     "install": "安装",
     "installed": "已安装",
@@ -248,9 +252,23 @@
     "workflowRuns": "工作流运行"
   },
   "conveyor": {
+    "branches": {
+      "agentWorking": "请等待此工作区中的所有代理完成后再切换分支。",
+      "createBranch": "创建分支",
+      "description": "切换项目的本地分支，不强制切换，也不自动贮藏更改",
+      "label": "项目分支",
+      "nameRequired": "请输入新分支的名称。",
+      "newBranchHint": "从 {{branch}} 创建。未提交的更改会随你移到新分支。",
+      "newBranchOption": "新建分支…",
+      "newBranchPlaceholder": "feature/my-change",
+      "newBranchTitle": "新建分支",
+      "saveEditor": "切换分支前，请先保存或还原编辑器中的更改。"
+    },
     "branchStatusClean": "{{branch}}",
     "branchStatusDirty_other": "{{branch}} · {{count}} 处更改",
     "commit": "提交",
+    "commitAndPush": "提交 + 推送",
+    "commitAndPushTitle": "一步完成提交更改并推送分支",
     "commitButtonTitle": "提交已暂存的更改或该工作区中的更改",
     "createPrButton": "创建 PR",
     "detachedBranch": "分离",
@@ -261,24 +279,46 @@
       "commitMessageLabel": "提交信息",
       "commitTitle": "提交更改",
       "descriptionLabel": "描述",
+      "newFilesLabel": "新文件：勾选要包含的文件",
+      "newFilesLeftOut_other": "{{count}} 个新文件不会被提交。",
       "prTitle": "创建 PR",
       "titleLabel": "标题"
     },
+    "draft": {
+      "engineUnavailable": "代理可执行文件不可用。请检查代理配置，或手动填写提交信息。",
+      "failed": "无法生成提交信息。请再次点击“建议”，或手动填写。",
+      "generating": "正在生成英文提交信息…",
+      "suggest": "建议提交信息",
+      "suggestTitle": "将所选更改发送给会话模型，以建议提交信息",
+      "timedOut": "提交信息生成超时。请再次点击“建议”，或手动填写。"
+    },
     "errors": {
       "branchRequired": "创建 PR 需要一个具名分支。",
+      "chooseNewFiles": "请至少勾选一个要提交的新文件。",
       "commitBeforePr": "创建 PR 前请先提交更改。",
       "commitBeforePush": "推送前请先提交工作树。",
       "commitMessageRequired": "提交信息为必填项。",
+      "committedPushFailed": "提交 {{sha}} 已保存在本地，但推送未完成：{{detail}}",
+      "operationInProgress": "另一个 Git 操作正在进行中。请等待其完成。",
+      "prBaseMissing": "远程仓库还没有基础分支。请先推送基础分支，或运行 git remote set-head origin --auto。",
+      "prNeedsGitHub": "拉取请求需要 GitHub 远程仓库。此分支推送到的远程仓库不在 GitHub 上。",
+      "prNothingToMerge": "此分支没有 {{base}} 缺少的提交，因此没有可合并的内容。",
+      "prOnBaseBranch": "当前位于基础分支 {{base}}。请切换到其他分支以创建 PR。",
       "prTitleRequired": "PR 标题为必填项。",
-      "pushBeforePr": "创建 PR 前请先推送该分支。"
+      "pushBeforePr": "创建 PR 前请先推送该分支。",
+      "workspaceChanged": "当前工作区已更改，Git 操作已停止。"
     },
     "feedback": {
       "branchPushed": "分支已推送。",
       "committed": "已提交 {{sha}}。",
+      "committedAndPushed": "已提交 {{sha}} 并推送分支。",
+      "openLinkTitle": "在浏览器中打开",
       "prCreated": "PR 已创建。",
-      "prCreatedWithUrl": "PR 已创建：{{url}}",
       "pushedCommits_other": "已推送 {{count}} 个提交。"
     },
+    "openPrButtonLabel": "打开 PR #{{number}}",
+    "openPrButtonTitle": "在 GitHub 上打开此分支的 PR #{{number}}",
+    "openRepositoryTitle": "在 GitHub 上打开仓库",
     "prButtonLabel": "PR",
     "prButtonTitle": "使用 GitHub CLI 创建 PR",
     "push": "推送",
@@ -434,13 +474,33 @@
   "diff": {
     "closeAriaLabel": "关闭差异查看器",
     "deletedFileBadge": "已删除",
+    "discard": {
+      "agentWorking": "请等待此项目中的所有代理完成后再放弃更改。",
+      "all": "放弃所显示文件的更改",
+      "busy": "正在执行放弃更改操作。",
+      "confirm": "拒绝",
+      "failed": "Git 无法放弃所选更改。请刷新差异并重新检查。",
+      "file": "放弃 {{path}} 的更改",
+      "message_other": "放弃所显示文件中的未暂存更改？这也包括其他会话对同一文件的更改。新文件将被删除。已暂存的更改和提交不受影响。此操作无法撤销。\n\n{{files}}",
+      "saveEditor": "请先保存或关闭有未保存更改的编辑器。",
+      "stale": "所选更改已发生变化。请刷新差异并重新检查。",
+      "title_other": "放弃所显示的更改？",
+      "unsupported": "无法在此放弃该差异。不支持二进制文件、符号链接、子模块和转义路径。",
+      "workingOnly": "切换到未暂存视图以放弃未暂存更改。"
+    },
     "fileCount_other": "{{count}} 个文件",
     "heading": "差异查看器",
     "loadErrorTitle": "无法加载差异",
     "newFileBadge": "新建",
     "noChanges": "无更改",
     "noStagedChanges": "无已暂存更改",
+    "openFile": "打开文件",
     "refreshAriaLabel": "刷新差异",
+    "sessionFilter": {
+      "description": "仅显示此聊天中 edit/write 调用涉及的文件。完整文件差异可能包含其他会话的更改，也可能遗漏 Shell 和子代理的更改。关闭筛选可查看整个项目。推送操作始终针对整个分支。",
+      "label": "此会话涉及的文件",
+      "noMatches": "没有与此会话匹配的更改"
+    },
     "stagedToggle": "已暂存",
     "workingToggle": "未暂存",
     "workingTreeClean": "工作树是干净的"
@@ -454,6 +514,7 @@
   },
   "errors": {
     "attachments": {
+      "notText": "附件不是文本文件或受支持的图片",
       "pathNotPermitted": "附件路径未被允许",
       "tooLarge": "附件过大（最大 {{limit}} MB）"
     },
@@ -475,18 +536,29 @@
       "blockedWrite": "无法写入“{{path}}”（{{code}}）。在 Windows 上这通常是受控文件夹访问（勒索软件保护）阻止了更改。你可以在 Windows 安全中心 → 病毒和威胁防护 → 勒索软件保护 →“通过受控文件夹访问允许应用”中允许 Pi Desktop，或者把本项目移出“文档”/“桌面”到不受保护的文件夹（例如 C:\\dev）。"
     },
     "git": {
+      "branchExists": "名为“{{name}}”的分支已存在。请在分支菜单中选择它以切换过去",
+      "branchNameInvalid": "“{{name}}”不是有效的分支名称",
       "commandFailed": "{{command}} 失败",
       "commandFailedWithDetail": "{{command}} 失败：{{detail}}",
       "commitBeforePullRequest": "创建 PR 前请先提交工作树",
       "commitBeforePush": "推送前请先提交工作树",
+      "commitBeforeSwitch": "切换分支前请先提交或放弃更改",
       "commitMessageRequired": "必须填写提交信息",
       "commitMessageTooLong": "提交信息必须不超过 {{max}} 个字符",
+      "commitSelectionEmpty": "没有选择要提交的文件",
+      "commitSelectionOutsideWorkspace": "要提交的文件必须位于当前工作区内",
       "detachedHeadCommit": "无法在分离 HEAD 状态下提交",
       "detachedHeadPush": "无法在分离 HEAD 状态下推送",
+      "localBranchRequired": "请选择一个现有的本地分支",
       "namedBranchRequired": "创建 PR 需要一个具名分支",
+      "newFileNotCommittable": "无法提交 {{path}}：它不是所选更改中的新文件，或被 Git 忽略",
       "noTrackedChanges": "本工作区没有可提交的已跟踪更改。请先暂存未跟踪的文件以将其包含进来。",
       "operationInProgressCommit": "Git {{operation}} 进行中，无法提交",
+      "operationInProgressCreateBranch": "Git {{operation}} 进行中，无法创建分支",
       "operationInProgressPush": "Git {{operation}} 进行中，无法推送",
+      "operationInProgressSwitch": "Git {{operation}} 进行中，无法切换分支",
+      "pullRequestBaseMissing": "远程仓库没有 PR 的基础分支。请先推送基础分支，或填写基础分支",
+      "pullRequestExists": "此分支已有打开的 PR #{{number}}：{{url}}",
       "pullRequestTitleRequired": "必须填写 PR 标题",
       "pushBeforePullRequest": "创建 PR 前请先推送分支",
       "pushUpstreamIsLocal": "无法推送上游为本地仓库的分支",
@@ -630,7 +702,7 @@
         "pickFolderFirst": "请先选择文件夹"
       },
       "newTask": {
-        "description": "在全新的 Pi 会话中开始工作",
+        "description": "在全新的 {{agent}} 会话中开始工作",
         "title": "新建任务"
       },
       "openFolder": {
@@ -736,12 +808,13 @@
     },
     "selector": {
       "current": "当前",
+      "currentModelTitle": "{{model}}\n{{hint}}",
       "loadFailed": "无法加载模型",
       "noModelsMatch": "没有匹配的模型",
       "searchPlaceholder": "搜索模型…",
       "selectModel": "选择模型",
-      "selectModelWithShortcut": "选择模型（{{agent}} 运行时按 Ctrl+P 切换）",
-      "startToListModels": "启动 Pi 以列出和更换模型。"
+      "selectModelCycleHint": "选择模型（{{agent}} 运行时按 Ctrl+P 切换）",
+      "selectModelWithShortcut": "选择模型（{{shortcut}}，{{agent}} 运行时按 Ctrl+P 切换）"
     }
   },
   "notes": {
@@ -840,20 +913,24 @@
   },
   "permissionMode": {
     "ask-commands": {
-      "description": "Pi 在运行 shell 命令前会先询问。",
-      "label": "执行命令前询问"
+      "description": "{{agent}} 在运行 shell 命令前会先询问。",
+      "label": "执行命令前询问",
+      "shortLabel": "命令询问"
     },
     "ask-edits": {
-      "description": "Pi 在编辑文件以及运行可能更改文件的 shell 命令前会先询问。",
-      "label": "编辑文件前询问"
+      "description": "{{agent}} 在编辑文件以及运行可能更改文件的 shell 命令前会先询问。",
+      "label": "编辑文件前询问",
+      "shortLabel": "编辑询问"
     },
     "plan-readonly": {
       "description": "仅启用读取/搜索/列表类工具。文件编辑和 shell 命令会被阻止。",
-      "label": "计划 / 只读"
+      "label": "计划 / 只读",
+      "shortLabel": "只读"
     },
     "trusted": {
-      "description": "对你信任的工作流启用所有 Pi 工具。",
-      "label": "受信任"
+      "description": "对你信任的工作流启用所有 {{agent}} 工具。",
+      "label": "受信任",
+      "shortLabel": "受信任"
     }
   },
   "permissionRules": {
@@ -978,6 +1055,7 @@
       "saved": "已保存！"
     },
     "agentInstallation": {
+      "appliesToNewSessions": "此更改适用于新会话。已打开的会话继续使用启动时的引擎。",
       "autoDetectOption": "自动检测（先 Pi，后 OMP）",
       "chooseExecutableTitle": "选择可执行文件或安装目录",
       "customPathOption": "自定义路径…",
@@ -1101,6 +1179,29 @@
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "语音听写"
     },
+    "shortcuts": {
+      "actionWithShortcut": "{{action}}（{{shortcut}}）",
+      "commandPalette": "命令面板",
+      "commitPush": "审查 / 提交并推送",
+      "description": "点击快捷键并按下包含 Cmd 或 Ctrl 的新组合。更改立即生效；保存后重启仍有效。会话导航在当前项目的已打开会话之间循环。其他原生菜单和编辑器快捷键保持不变。按 Escape 取消录制。",
+      "disable": "禁用",
+      "disableAction": "禁用{{action}}的快捷键",
+      "disabled": "已禁用",
+      "duplicate": "{{action}}与{{other}}使用了相同的快捷键，请选择其他组合。",
+      "heading": "键盘快捷键",
+      "inUse": "{{shortcut}} 已被{{action}}使用，请选择其他组合。",
+      "invalid": "请使用 Cmd 或 Ctrl 加字母、数字、标点键或 F1–F12。",
+      "modelSelector": "模型选择器",
+      "nextProject": "下一个项目",
+      "nextSession": "下一个已打开会话",
+      "notes": "笔记选择器",
+      "pressKeys": "请按下组合键…",
+      "previousProject": "上一个项目",
+      "previousSession": "上一个已打开会话",
+      "reserved": "此组合键已被原生菜单或编辑器操作占用。",
+      "reset": "重置快捷键",
+      "sidebar": "侧边栏"
+    },
     "showThinking": {
       "description": "在回复中显示模型思考块",
       "label": "显示思考过程"
@@ -1151,6 +1252,11 @@
         "update": "更新到 {{version}}"
       }
     },
+    "uiFontFamily": {
+      "description": "从列表中选择字体。未安装的字体将使用系统字体。选择“默认字体”可恢复默认设置。终端和代码编辑器不受影响。",
+      "label": "界面字体",
+      "placeholder": "默认字体"
+    },
     "uiFontSize": {
       "description": "聊天、面板和侧边栏 — 不包括终端和代码编辑器",
       "label": "界面字体大小"
@@ -1189,11 +1295,6 @@
       "expandTitle": "展开已归档会话",
       "heading_other": "已归档（{{count}}）"
     },
-    "currentSession": {
-      "heading": "当前会话",
-      "messageCount_other": "{{count}} 条消息",
-      "openTitle": "在聊天中打开当前会话 · 双击重命名"
-    },
     "header": {
       "closeSidebar": "关闭侧边栏",
       "homeAriaLabel": "主页",
@@ -1204,7 +1305,7 @@
       "chat": "聊天",
       "missionControl": "任务控制中心",
       "missionControlTitle": "所有后台会话和工作流",
-      "newTaskTitle": "在新的 Pi 会话中开始任务",
+      "newTaskTitle": "在新的 {{agent}} 会话中开始任务",
       "sessions": "会话",
       "sessionsTitle": "此项目中的会话",
       "timeline": "时间线",
@@ -1434,6 +1535,9 @@
       "createWorkspaceError": "创建工作区错误：{{detail}}",
       "defaultTaskLabel": "任务",
       "deleteError": "删除错误：{{detail}}",
+      "editedSessionName": "{{title}}（已编辑）",
+      "editNotInSession": "已保存的会话中没有这条消息。",
+      "editResendError": "无法编辑并重新发送该消息：{{detail}}",
       "error": "错误：{{detail}}",
       "followUpError": "追问发送错误：{{detail}}",
       "imageFallbackName": "图片 {{index}}",
@@ -1476,15 +1580,16 @@
     "openProjectFirst": "请先打开一个项目",
     "starting": "正在启动…",
     "startTask": "启动任务",
-    "subtitle": "启动一个新的 Pi 会话并立即发送任务。",
+    "subtitle": "启动一个新的 {{agent}} 会话并立即发送任务。",
     "task": "任务",
     "taskPlaceholder": "修复失败的测试，解释根本原因，并准备更改以供审查…"
   },
   "terminal": {
     "clearAriaLabel": "清空终端",
     "clearTitle": "清空",
-    "closeTitle": "关闭终端",
+    "hideTitle": "隐藏终端（Shell 仍在运行）",
     "maximizeLabel": "最大化终端",
+    "restartHint": "按任意键启动新的 Shell",
     "restoreLabel": "还原终端",
     "title": "终端"
   },
@@ -1545,9 +1650,8 @@
     }
   },
   "thinking": {
-    "effort": "强度",
-    "effortWithLevel": "思考强度：{{level}}",
-    "modelAwareDepth": "随模型自适应的思考深度"
+    "effort": "思考强度",
+    "effortWithLevel": "思考强度：{{level}}"
   },
   "time": {
     "justNow": "刚刚"
@@ -1777,7 +1881,6 @@
     "newIsolatedTabTitle": "新建隔离 Git 标签页（需要 Git 项目）",
     "newSessionAriaLabel": "在此项目中新建会话",
     "newSessionFallback": "新建会话",
-    "newSessionTitle": "在此项目中新建会话（Ctrl/Cmd+N）",
     "removeWorkspaceAriaLabel": "移除 {{name}}",
     "sessions": "会话",
     "tools": "工具"

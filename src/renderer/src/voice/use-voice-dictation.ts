@@ -75,6 +75,9 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
   const recorderRef = useRef<VoiceRecorder | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const stoppedRef = useRef(false)
+  // True while the mic is opening, before phase turns 'recording'; a second
+  // click then must not open a second mic that nothing would close.
+  const startingRef = useRef(false)
   const sessionRef = useRef<DictationSession>(newSession(0))
   const handlersRef = useRef(handlers)
   handlersRef.current = handlers
@@ -94,6 +97,7 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
 
   useEffect(() => {
     return () => {
+      stoppedRef.current = true
       clearTimer()
       recorderRef.current?.cancel()
     }
@@ -142,7 +146,8 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
   }, [model, status])
 
   const startRecording = useCallback(async () => {
-    if (!model || !status || !ready) return
+    if (!model || !status || !ready || startingRef.current) return
+    startingRef.current = true
     setError(null)
     stoppedRef.current = false
     try {
@@ -197,6 +202,8 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setPhase('idle')
+    } finally {
+      startingRef.current = false
     }
   }, [model, status, ready, finalize])
 

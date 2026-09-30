@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
   buildPiArgs,
   buildPiInvocation,
@@ -15,6 +15,7 @@ import {
   type PiCli,
 } from './pi-rpc-manager'
 import { appLog } from './app-log'
+import { piDotenvPath } from './pi-dotenv'
 import { i18n } from '../shared/i18n'
 import { PSEUDO_LANGUAGE, SOURCE_LANGUAGE } from '../shared/i18n/languages'
 
@@ -73,6 +74,30 @@ function decodeAll(frames: Array<Record<string, unknown>>): object | undefined {
 function responsePayload(size: number, filler: string): string {
   return JSON.stringify({ type: 'response', command: 'get_messages', success: true, data: filler.repeat(size) })
 }
+
+test('fresh sessions launch with the remembered model and reasoning', () => {
+  assert.deepEqual(buildPiArgs({
+    provider: 'test', model: 'test-model', defaultThinkingLevel: 'high', continueSession: false,
+  }), ['--mode', 'rpc', '--provider', 'test', '--model', 'test-model', '--thinking', 'high'])
+  assert.equal(buildPiArgs({}).includes('--thinking'), false)
+  assert.ok(buildPiArgs({ defaultThinkingLevel: 'off' }).includes('off'))
+})
+
+test('remembered reasoning never overrides a resumed or forked session', () => {
+  for (const binding of [
+    { sessionPath: '/sessions/existing.jsonl' },
+    { forkSessionPath: '/sessions/parent.jsonl' },
+    { continueSession: true },
+  ]) {
+    assert.equal(buildPiArgs({ defaultThinkingLevel: 'high', ...binding }).includes('--thinking'), false)
+  }
+})
+
+test('explicit thinking arguments override the saved preference', () => {
+  for (const args of [['--thinking', 'low'], ['--thinking=low']]) {
+    assert.deepEqual(buildPiArgs({ defaultThinkingLevel: 'high', args }), ['--mode', 'rpc', ...args])
+  }
+})
 
 test('RpcFrameDecoder reassembles a lossless OMP protocol-v2 frame', () => {
   const frames = chunkFrames('rpc-test', responsePayload(1_100_000, 'x'))
@@ -423,6 +448,25 @@ test('a chatty but never-ready Pi fails at the engine-busy cap with an engine-bu
     assert.match(status.error ?? '', /model server/, 'the message points at the real cause class')
     assert.equal(status.startupPhase, undefined, 'phase reporting ends with startup')
   }, { FAKE_PI_MODE: 'never-ready' })
+})
+
+test('the Pi child receives variables from the user env file', SKIP_ON_WINDOWS, async () => {
+  const home = mkdtempSync(join(tmpdir(), 'pi-dotenv-home-'))
+  const savedHome = process.env.HOME
+  try {
+    mkdirSync(dirname(piDotenvPath(home)))
+    writeFileSync(piDotenvPath(home), 'FAKE_PI_MODE=late-ready\n')
+    process.env.HOME = home
+    await withFakeEngine(async (manager, env) => {
+      // Without the env file the fake engine stays silent and fails the start.
+      const status = await manager.start({ env })
+      assert.equal(status.status, 'running')
+    }, {})
+  } finally {
+    if (savedHome === undefined) delete process.env.HOME
+    else process.env.HOME = savedHome
+    rmSync(home, { recursive: true, force: true })
+  }
 })
 
 test('detectPiInstallations serves a cached scan until a rescan forces a fresh one', () => {

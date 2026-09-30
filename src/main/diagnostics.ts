@@ -11,6 +11,7 @@ import {
 } from './diagnostics-report'
 import type { WorkspaceManager } from './workspace-manager'
 import { getConfiguredEngineKind, getPiCli, getPiResolution } from './pi-rpc-manager'
+import { loadPiDotenv } from './pi-dotenv'
 import { workspaceTrustStore } from './workspace-trust'
 import { getOmpSessionsRoot, getSessionsRoot } from './pi-paths'
 import { getGuiDataDir } from './app-data-paths'
@@ -63,7 +64,7 @@ export async function collectDiagnostics(
   }))
 
   const modelsRead = await readModelsConfigFile(getConfiguredEngineKind())
-  const providers = 'config' in modelsRead ? summarizeProviders(modelsRead.config, process.env) : null
+  const providers = 'config' in modelsRead ? summarizeProviders(modelsRead.config, { ...loadPiDotenv(), ...process.env }) : null
   const providersError = 'failure' in modelsRead ? reportModelsReadFailure(modelsRead.location.name, modelsRead.failure) : null
 
   const globalRules = await readGlobalRuleCount()

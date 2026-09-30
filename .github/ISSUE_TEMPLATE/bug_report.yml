@@ -62,7 +62,7 @@ body:
     id: pi-desktop-version
     attributes:
       label: Pi Desktop version
-      description: "Open Diagnostics and copy the App version line. Example: 0.1.8-alpha"
+      description: "Open Diagnostics and copy the App version line. Example: 0.1.9-alpha"
     validations:
       required: true
 
