@@ -6,6 +6,7 @@ import { t } from '../../shared/i18n'
 import { buildPlanningPrompt } from './utils/planning-prompt'
 import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
 import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
+import { splitClaudeCliMarkers } from './claude-cli-markers'
 import type { PiCommand } from '../../shared/pi-command'
 import { normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
@@ -3447,19 +3448,23 @@ function handleTurnComplete(
 ): void {
   set((state) => {
     const newMessages = [...state.messages]
+    const text = splitClaudeCliMarkers(state.streamingContent, state.sessionState?.model?.provider)
 
     // Commit streaming content as assistant message
-    if (state.streamingContent || state.streamingThinking || state.streamingToolCalls.size > 0) {
+    if (text.content || state.streamingThinking || text.toolCalls.length > 0 || state.streamingToolCalls.size > 0) {
       const entries = Array.from(state.streamingToolCalls.entries())
-      const toolCalls = entries.map(([id, tc]) => ({
-        id,
-        name: tc.name,
-        arguments: tc.args,
-        result: tc.result,
-        isError: tc.isError,
-        isExecuting: false,
-        durationMs: tc.durationMs,
-      }))
+      const toolCalls = [
+        ...entries.map(([id, tc]) => ({
+          id,
+          name: tc.name,
+          arguments: tc.args,
+          result: tc.result,
+          isError: tc.isError,
+          isExecuting: false,
+          durationMs: tc.durationMs,
+        })),
+        ...text.toolCalls,
+      ]
 
       // Prefer the model/provider Pi records on this specific message (the
       // authoritative source, robust to mid-turn model switches); fall back to
@@ -3470,7 +3475,7 @@ function handleTurnComplete(
       newMessages.push({
         id: generateId(),
         role: 'assistant',
-        content: state.streamingContent,
+        content: text.content,
         timestamp: Date.now(),
         thinking: state.streamingThinking || undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
