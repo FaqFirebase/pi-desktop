@@ -7,8 +7,10 @@ import {
   DEFAULT_PERMISSION_MODE,
   PERMISSION_MODE_OPTIONS,
   PERMISSION_MODE_LABEL_KEYS,
-  PERMISSION_MODE_DESCRIPTION_KEYS,
+  getPermissionModeDescription,
 } from './permission-mode'
+import { useAppStore } from '../store'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 
 interface PermissionSelectorProps {
   value: PermissionMode | null | undefined
@@ -22,6 +24,7 @@ export function PermissionSelector({
   compact = false,
 }: PermissionSelectorProps): React.JSX.Element {
   const { t } = useTranslation()
+  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const [isOpen, setIsOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -65,7 +68,7 @@ export function PermissionSelector({
             <span className="block truncate text-primary">{t(PERMISSION_MODE_LABEL_KEYS[current.value])}</span>
             {!compact && (
               <span className="mt-0.5 block truncate text-xs text-dim">
-                {t(PERMISSION_MODE_DESCRIPTION_KEYS[current.value])}
+                {getPermissionModeDescription(t, current.value, engineLabel)}
               </span>
             )}
           </span>
@@ -92,7 +95,7 @@ export function PermissionSelector({
               <span className="min-w-0">
                 <span className="block text-sm text-primary">{t(PERMISSION_MODE_LABEL_KEYS[option.value])}</span>
                 <span className="mt-0.5 block text-xs leading-4 text-dim">
-                  {t(PERMISSION_MODE_DESCRIPTION_KEYS[option.value])}
+                  {getPermissionModeDescription(t, option.value, engineLabel)}
                 </span>
               </span>
             </button>

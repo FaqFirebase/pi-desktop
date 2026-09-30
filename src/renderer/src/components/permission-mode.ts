@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 import type { PermissionMode } from '../../../shared/ipc-contracts'
 import { t } from '../../../shared/i18n'
 
@@ -44,6 +45,11 @@ export function getPermissionModeLabel(mode: PermissionMode): string {
   return t(PERMISSION_MODE_LABEL_KEYS[mode])
 }
 
-export function getPermissionModeDescription(mode: PermissionMode): string {
-  return t(PERMISSION_MODE_DESCRIPTION_KEYS[mode])
+/**
+ * A mode's description naming the running engine ("Pi" or "OMP"). Takes the
+ * caller's reactive `t` for the language-change reason above; the lookup
+ * stays beside the key map so the i18n extractor can resolve it.
+ */
+export function getPermissionModeDescription(t: TFunction, mode: PermissionMode, agent: string): string {
+  return t(PERMISSION_MODE_DESCRIPTION_KEYS[mode], { agent })
 }

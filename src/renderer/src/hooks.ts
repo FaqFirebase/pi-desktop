@@ -4,6 +4,7 @@ import { useAppStore } from './store'
 import { getAppliedThemeId, subscribeAppliedTheme } from './utils/theme'
 import { DEFAULT_SETTINGS } from '../../shared/default-settings'
 import { withGuiCommands, type GuiCommand, type PiCommand } from '../../shared/pi-command'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../shared/agent-engine-label'
 import type { WorkspaceActivationIntent } from '../../shared/ipc-contracts'
 import type { ChatWidth } from '../../shared/chat-width'
 import { t } from '../../shared/i18n'
@@ -518,7 +519,11 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
         ? []
         : [{ name: 'clone', description: t('commands.clone.description'), run: () => { void cloneBranch() } }]),
       { name: 'new', description: t('commands.new.description'), run: () => { void createNewSession() } },
-      { name: 'task', description: t('commands.task.description'), run: () => setTaskLauncherOpen(true) },
+      {
+        name: 'task',
+        description: t('commands.task.description', { agent: agentEngineLabel(piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL }),
+        run: () => setTaskLauncherOpen(true),
+      },
       { name: 'resume', description: t('commands.resume.description'), run: () => setCurrentView('sessions') },
       { name: 'fork', description: t('commands.fork.description'), run: () => setCurrentView('timeline') },
       { name: 'settings', description: t('commands.settings.description'), run: () => setCurrentView('settings') },

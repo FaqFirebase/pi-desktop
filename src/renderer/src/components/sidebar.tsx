@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useAppStore, countPromptsWaitingElsewhere, formatPromptsWaiting } from '../store'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { summarizeBackgroundActivity, workspaceActivityIndicator } from './sidebar-activity'
 import { pathGroupKey, pathsEqual } from '../../../shared/path-compare'
 import { PI_DESKTOP_PRODUCT_NAME } from '../../../shared/product-name'
@@ -56,6 +57,7 @@ interface RecentSessionGroup {
 
 export function Sidebar(): React.JSX.Element {
   const { t } = useTranslation()
+  const activeEngineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const currentView = useAppStore((state) => state.currentView)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
@@ -526,7 +528,7 @@ export function Sidebar(): React.JSX.Element {
               label={t('missionControl.newTask')}
               active={false}
               onClick={() => setTaskLauncherOpen(true)}
-              title={t('sidebar.nav.newTaskTitle')}
+              title={t('sidebar.nav.newTaskTitle', { agent: activeEngineLabel })}
             />
           </div>
         </div>

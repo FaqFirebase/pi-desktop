@@ -175,7 +175,7 @@
       "description": "Open Settings"
     },
     "task": {
-      "description": "Launch a task in a new Pi session"
+      "description": "Launch a task in a new {{agent}} session"
     }
   },
   "commandSources": {
@@ -713,7 +713,7 @@
         "pickFolderFirst": "Pick a folder first"
       },
       "newTask": {
-        "description": "Start work in a fresh Pi session",
+        "description": "Start work in a fresh {{agent}} session",
         "title": "New Task"
       },
       "openFolder": {
@@ -927,12 +927,12 @@
   },
   "permissionMode": {
     "ask-commands": {
-      "description": "Pi will ask before running shell commands.",
+      "description": "{{agent}} will ask before running shell commands.",
       "label": "Ask before commands",
       "shortLabel": "Ask commands"
     },
     "ask-edits": {
-      "description": "Pi will ask before file edits and shell commands that can change files.",
+      "description": "{{agent}} will ask before file edits and shell commands that can change files.",
       "label": "Ask before edits",
       "shortLabel": "Ask edits"
     },
@@ -942,7 +942,7 @@
       "shortLabel": "Read-only"
     },
     "trusted": {
-      "description": "All Pi tools are enabled for workflows you trust.",
+      "description": "All {{agent}} tools are enabled for workflows you trust.",
       "label": "Trusted",
       "shortLabel": "Trusted"
     }
@@ -1075,6 +1075,7 @@
       "saved": "Saved!"
     },
     "agentInstallation": {
+      "appliesToNewSessions": "This change applies to new sessions. Open sessions keep the engine they started with.",
       "autoDetectOption": "Auto-detect (Pi first, then OMP)",
       "chooseExecutableTitle": "Choose executable or install directory",
       "customPathOption": "Custom path…",
@@ -1321,7 +1322,7 @@
       "chat": "Chat",
       "missionControl": "Mission Control",
       "missionControlTitle": "All background sessions and workflows",
-      "newTaskTitle": "Start a task in a new Pi session",
+      "newTaskTitle": "Start a task in a new {{agent}} session",
       "sessions": "Sessions",
       "sessionsTitle": "Sessions in this project",
       "timeline": "Timeline",
@@ -1604,7 +1605,7 @@
     "openProjectFirst": "Open a project first",
     "starting": "Starting…",
     "startTask": "Start task",
-    "subtitle": "Start a fresh Pi session and send the task immediately.",
+    "subtitle": "Start a fresh {{agent}} session and send the task immediately.",
     "task": "Task",
     "taskPlaceholder": "Fix the failing tests, explain the root cause, and prepare the changes for review…"
   },

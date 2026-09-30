@@ -7,8 +7,10 @@ import {
   DEFAULT_PERMISSION_MODE,
   PERMISSION_MODE_OPTIONS,
   PERMISSION_MODE_LABEL_KEYS,
-  PERMISSION_MODE_DESCRIPTION_KEYS,
+  getPermissionModeDescription,
 } from './permission-mode'
+import { useAppStore } from '../store'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 
 // Labels for a composer too narrow for the full ones. Kept beside their only
 // t() call so the i18n extractor can resolve them.
@@ -29,6 +31,7 @@ interface ComposerPermissionMenuProps {
  */
 export function ComposerPermissionMenu({ value, onChange }: ComposerPermissionMenuProps): React.JSX.Element {
   const { t } = useTranslation()
+  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const [isOpen, setIsOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -65,7 +68,7 @@ export function ComposerPermissionMenu({ value, onChange }: ComposerPermissionMe
             ? 'bg-warning/15 text-warning hover:bg-warning/35'
             : 'hover:bg-highlight-strong text-secondary hover:text-primary'
         )}
-        title={t(PERMISSION_MODE_DESCRIPTION_KEYS[mode]).replace(/\.$/, '')}
+        title={getPermissionModeDescription(t, mode, engineLabel).replace(/\.$/, '')}
       >
         {/* A narrow composer (the diff or file pane open) takes the short label, so the toolbar stays on one line. */}
         <span className="@max-lg/composer:hidden">{t(PERMISSION_MODE_LABEL_KEYS[mode])}</span>

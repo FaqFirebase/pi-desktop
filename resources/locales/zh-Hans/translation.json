@@ -173,7 +173,7 @@
       "description": "打开设置"
     },
     "task": {
-      "description": "在新的 Pi 会话中启动任务"
+      "description": "在新的 {{agent}} 会话中启动任务"
     }
   },
   "commandSources": {
@@ -702,7 +702,7 @@
         "pickFolderFirst": "请先选择文件夹"
       },
       "newTask": {
-        "description": "在全新的 Pi 会话中开始工作",
+        "description": "在全新的 {{agent}} 会话中开始工作",
         "title": "新建任务"
       },
       "openFolder": {
@@ -913,12 +913,12 @@
   },
   "permissionMode": {
     "ask-commands": {
-      "description": "Pi 在运行 shell 命令前会先询问。",
+      "description": "{{agent}} 在运行 shell 命令前会先询问。",
       "label": "执行命令前询问",
       "shortLabel": "命令询问"
     },
     "ask-edits": {
-      "description": "Pi 在编辑文件以及运行可能更改文件的 shell 命令前会先询问。",
+      "description": "{{agent}} 在编辑文件以及运行可能更改文件的 shell 命令前会先询问。",
       "label": "编辑文件前询问",
       "shortLabel": "编辑询问"
     },
@@ -928,7 +928,7 @@
       "shortLabel": "只读"
     },
     "trusted": {
-      "description": "对你信任的工作流启用所有 Pi 工具。",
+      "description": "对你信任的工作流启用所有 {{agent}} 工具。",
       "label": "受信任",
       "shortLabel": "受信任"
     }
@@ -1055,6 +1055,7 @@
       "saved": "已保存！"
     },
     "agentInstallation": {
+      "appliesToNewSessions": "此更改适用于新会话。已打开的会话继续使用启动时的引擎。",
       "autoDetectOption": "自动检测（先 Pi，后 OMP）",
       "chooseExecutableTitle": "选择可执行文件或安装目录",
       "customPathOption": "自定义路径…",
@@ -1299,7 +1300,7 @@
       "chat": "聊天",
       "missionControl": "任务控制中心",
       "missionControlTitle": "所有后台会话和工作流",
-      "newTaskTitle": "在新的 Pi 会话中开始任务",
+      "newTaskTitle": "在新的 {{agent}} 会话中开始任务",
       "sessions": "会话",
       "sessionsTitle": "此项目中的会话",
       "timeline": "时间线",
@@ -1574,7 +1575,7 @@
     "openProjectFirst": "请先打开一个项目",
     "starting": "正在启动…",
     "startTask": "启动任务",
-    "subtitle": "启动一个新的 Pi 会话并立即发送任务。",
+    "subtitle": "启动一个新的 {{agent}} 会话并立即发送任务。",
     "task": "任务",
     "taskPlaceholder": "修复失败的测试，解释根本原因，并准备更改以供审查…"
   },

@@ -99,6 +99,8 @@ export function SettingsPanel(): React.JSX.Element {
   const initialPiEngine = draft0.piEngine ?? settings?.piEngine ?? DEFAULT_SETTINGS.piEngine
   const [piPath, setPiPath] = useState(initialPiPath)
   const [piEngine, setPiEngine] = useState<AgentEngine>(initialPiEngine)
+  // Open sessions keep the engine they started with; say so while a change is unsaved.
+  const agentChangePending = !!settings && (piPath !== settings.piExecutablePath || piEngine !== settings.piEngine)
   // The setting above may be 'auto'; this is the engine that actually resolved,
   // which is what any sentence naming the running agent has to say.
   const runningEngineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
@@ -774,6 +776,9 @@ export function SettingsPanel(): React.JSX.Element {
                     ? t('settings.agentInstallation.detectedCount', { count: detectedAgentInstalls.length })
                     : t('settings.agentInstallation.noneDetected')}
               </div>
+              {agentChangePending && (
+                <div className="text-xs text-warning" role="status">{t('settings.agentInstallation.appliesToNewSessions')}</div>
+              )}
             </div>
           </SettingsRow>
         </SettingsSection>
