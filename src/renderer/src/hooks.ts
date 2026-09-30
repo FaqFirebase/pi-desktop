@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useAppStore } from './store'
 import { getAppliedThemeId, subscribeAppliedTheme } from './utils/theme'
 import { DEFAULT_SETTINGS } from '../../shared/default-settings'
-import { BUILTIN_SOURCE, type PiCommand } from '../../shared/pi-command'
+import { withGuiCommands, type GuiCommand, type PiCommand } from '../../shared/pi-command'
 import type { WorkspaceActivationIntent } from '../../shared/ipc-contracts'
 import type { ChatWidth } from '../../shared/chat-width'
 import { t } from '../../shared/i18n'
@@ -487,9 +487,7 @@ export function useChatKeyboard(
 }
 
 /** A Pi built-in that maps to a GUI action rather than being inserted as text. */
-export interface BuiltinCommand {
-  name: string
-  description: string
+export interface BuiltinCommand extends GuiCommand {
   run: () => void
 }
 
@@ -508,11 +506,13 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
   const createNewSession = useAppStore((s) => s.createNewSession)
   const setTaskLauncherOpen = useAppStore((s) => s.setTaskLauncherOpen)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
+  const requestModelSelectorOpen = useAppStore((s) => s.requestModelSelectorOpen)
   const piEngine = useAppStore((s) => s.piEngine)
 
   const builtins = useMemo<BuiltinCommand[]>(
     () => [
       { name: 'compact', description: t('commands.compact.description'), run: () => { void compactContext() } },
+      { name: 'model', description: t('commands.model.description'), run: requestModelSelectorOpen },
       // OMP has no clone RPC command, so the action is not offered there.
       ...(piEngine === 'omp'
         ? []
@@ -523,16 +523,10 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
       { name: 'fork', description: t('commands.fork.description'), run: () => setCurrentView('timeline') },
       { name: 'settings', description: t('commands.settings.description'), run: () => setCurrentView('settings') },
     ],
-    [compactContext, cloneBranch, createNewSession, setTaskLauncherOpen, setCurrentView, piEngine, t]
+    [compactContext, cloneBranch, createNewSession, setTaskLauncherOpen, setCurrentView, requestModelSelectorOpen, piEngine, t]
   )
 
-  const allCommands = useMemo<PiCommand[]>(
-    () => [
-      ...commands,
-      ...builtins.map((b) => ({ name: b.name, description: b.description, source: BUILTIN_SOURCE })),
-    ],
-    [commands, builtins]
-  )
+  const allCommands = useMemo<PiCommand[]>(() => withGuiCommands(commands, builtins), [commands, builtins])
 
   return { builtins, allCommands }
 }

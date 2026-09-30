@@ -162,6 +162,9 @@
     "fork": {
       "description": "Open Branches to fork from a message"
     },
+    "model": {
+      "description": "Choose the model"
+    },
     "new": {
       "description": "Start a new session"
     },

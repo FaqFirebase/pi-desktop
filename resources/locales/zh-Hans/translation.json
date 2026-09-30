@@ -160,6 +160,9 @@
     "fork": {
       "description": "打开分支视图，从某条消息分叉"
     },
+    "model": {
+      "description": "选择模型"
+    },
     "new": {
       "description": "开始新会话"
     },

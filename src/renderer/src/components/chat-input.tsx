@@ -21,9 +21,9 @@ import { formatAttachedFile } from '../../../shared/untrusted-data'
 import { isPointerMovement } from '../utils/pointer-movement'
 import { rankFileResults } from '../utils/rank-file-results'
 import {
-  BUILTIN_SOURCE,
   filterCommands,
   groupCommands,
+  guiCommandFor,
   invocationToken,
   isSlashCommandToken,
   type PiCommand,
@@ -276,8 +276,9 @@ export function ChatInput(): React.JSX.Element {
       setSlashToken(null)
       const ta = textareaRef.current
       if (!ta) return
-      if (cmd.source === BUILTIN_SOURCE) {
-        builtins.find((b) => b.name === cmd.name)?.run()
+      const guiCommand = guiCommandFor(cmd, builtins)
+      if (guiCommand) {
+        guiCommand.run()
         resetComposer()
         return
       }
