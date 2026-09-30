@@ -52,6 +52,15 @@ function dropBundledOrtWasmPlugin(): Plugin {
   }
 }
 
+// The renderer CSP loads fonts only from 'self' (font-src 'self'), so a font
+// Vite inlines as a data: URL is blocked. Emit every font as a file; other
+// assets keep Vite's default inlining (undefined falls back to it).
+const FONT_FILE = /\.(woff2?|ttf|otf|eot)$/i
+
+function neverInlineFonts(filePath: string): false | undefined {
+  return FONT_FILE.test(filePath) ? false : undefined
+}
+
 function voiceWasmPlugin(): Plugin {
   const assets = ortWasmAssets()
   return {
@@ -102,6 +111,7 @@ export default defineConfig({
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
     build: {
+      assetsInlineLimit: neverInlineFonts,
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/renderer/index.html')
