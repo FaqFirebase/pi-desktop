@@ -10,6 +10,8 @@ import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { clsx } from 'clsx'
 import { useContextMenu, buildTerminalContextMenu } from './context-menu'
 import { isNativeClipboardShortcut, usesCtrlClipboardShortcuts } from './terminal-clipboard'
+import { ResizeHandle } from './resize-handle'
+import { clampTerminalHeight, DEFAULT_TERMINAL_HEIGHT, MAX_TERMINAL_HEIGHT_RATIO } from '../../../shared/terminal-height'
 import {
   Terminal as TerminalIcon,
   X,
@@ -96,6 +98,8 @@ function TerminalSession({ workspaceId, visible }: { workspaceId: string; visibl
   const fontSize = useAppStore(selectTerminalFontSize)
 
   const [maximized, setMaximized] = useState(false)
+  const [height, setHeight] = useState(DEFAULT_TERMINAL_HEIGHT)
+  const panelRef = useRef<HTMLDivElement>(null)
   const [shellLabel, setShellLabel] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<XTerm | null>(null)
@@ -220,13 +224,25 @@ function TerminalSession({ workspaceId, visible }: { workspaceId: string; visibl
 
   return (
     <div
-      style={visible ? undefined : { display: 'none' }}
+      ref={panelRef}
+      // Maximized takes the chat pane's full height, so the chat above it keeps
+      // no height but stays mounted. Restore returns to the dragged height.
+      style={{
+        display: visible ? undefined : 'none',
+        ...(maximized ? {} : { height, maxHeight: `${MAX_TERMINAL_HEIGHT_RATIO * 100}%` }),
+      }}
       className={clsx(
-        'flex flex-col border-t border-border bg-app',
-        maximized ? 'flex-1' : 'h-64'
+        'flex min-h-0 shrink-0 flex-col border-t border-border bg-app',
+        maximized && 'basis-full'
       )}
     >
-      <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+      <ResizeHandle axis="y" onResize={(delta) => {
+        const panel = panelRef.current
+        if (!panel?.parentElement) return
+        setHeight(clampTerminalHeight(panel.getBoundingClientRect().height - delta, panel.parentElement.clientHeight))
+        setMaximized(false)
+      }} />
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-1.5">
         <div className="flex items-center gap-2">
           <TerminalIcon size={14} className="text-dim" />
           <span className="text-xs text-muted">{t('terminal.title')}</span>
@@ -260,19 +276,21 @@ function TerminalSession({ workspaceId, visible }: { workspaceId: string; visibl
         </div>
       </div>
 
-      <div
-        ref={containerRef}
-        className="min-h-0 flex-1 overflow-hidden p-2"
-        onContextMenu={(e) => {
-          const terminal = terminalRef.current
-          if (terminal) {
-            showContextMenu(
-              e,
-              buildTerminalContextMenu(terminal, usesCtrlClipboardShortcuts(window.piDesktop.system.platform))
-            )
-          }
-        }}
-      />
+      <div className="flex min-h-0 flex-1 overflow-hidden p-2">
+        <div
+          ref={containerRef}
+          className="min-h-0 min-w-0 flex-1"
+          onContextMenu={(e) => {
+            const terminal = terminalRef.current
+            if (terminal) {
+              showContextMenu(
+                e,
+                buildTerminalContextMenu(terminal, usesCtrlClipboardShortcuts(window.piDesktop.system.platform))
+              )
+            }
+          }}
+        />
+      </div>
       {TerminalContextMenu}
     </div>
   )
