@@ -102,6 +102,8 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 test('a fresh composer can list and select models before sending its first prompt', async () => {
   assert.deepEqual(await useAppStore.getState().listModels(), [MODEL])
   assert.deepEqual(calls, ['start', 'list'])
+  // Opening the picker must never resume an earlier conversation into the empty chat.
+  assert.deepEqual(startOptions, [{ continueSession: false }])
   assert.equal(useAppStore.getState().sessionState?.model?.id, MODEL.id)
 
   await useAppStore.getState().setModel(MODEL.provider, MODEL.id)

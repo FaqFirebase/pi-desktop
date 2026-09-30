@@ -153,6 +153,138 @@ test('a user message ending mid-stream leaves the assistant buffers intact', () 
   assert.equal(useAppStore.getState().timelineEvents.length, 0)
 })
 
+test('a finished turn refreshes the session state and then the session list', async () => {
+  const sessionFile = '/sessions/first-turn.jsonl'
+  const session = (window as unknown as { piDesktop: { session: Record<string, unknown> } }).piDesktop.session
+  const calls: string[] = []
+  session.getState = async () => {
+    calls.push('state')
+    return { success: true, data: { sessionFile, sessionId: 'first-turn', messageCount: 2 } }
+  }
+  session.list = async () => {
+    calls.push('list')
+    return [{ path: sessionFile, name: null, preview: 'hi', sessionId: 'first-turn', lastModified: 1, messageCount: 2, projectPath: '', projectName: '' }]
+  }
+  try {
+    useAppStore.setState({ sessionList: [], sessionState: null })
+    emit({ type: 'agent_end', messages: [] })
+    const listed = new Promise<void>((resolve) => {
+      const unsubscribe = useAppStore.subscribe((state) => {
+        if (state.sessionList.length === 0) return
+        unsubscribe()
+        resolve()
+      })
+    })
+    await listed
+    assert.deepEqual(calls, ['state', 'list'])
+    assert.equal(useAppStore.getState().sessionState?.sessionFile, sessionFile)
+    assert.deepEqual(useAppStore.getState().sessionList.map((item) => item.path), [sessionFile])
+  } finally {
+    delete session.getState
+    delete session.list
+  }
+})
+
+test('a turn of a session missing from the list lists it when the turn starts', async () => {
+  const sessionFile = '/sessions/new-session.jsonl'
+  const session = (window as unknown as { piDesktop: { session: Record<string, unknown> } }).piDesktop.session
+  const calls: string[] = []
+  session.getState = async () => {
+    calls.push('state')
+    return { success: true, data: { sessionFile, sessionId: 'new-session', messageCount: 1 } }
+  }
+  // Pi writes the file only after the first answer, so the store may not list it yet.
+  session.list = async () => {
+    calls.push('list')
+    return []
+  }
+  try {
+    useAppStore.setState({
+      sessionList: [],
+      sessionState: null,
+      messages: [{ id: 'u1', role: 'user', content: 'Count to three', timestamp: 1 }],
+    })
+    emit({ type: 'agent_start' })
+    const listed = new Promise<void>((resolve) => {
+      const unsubscribe = useAppStore.subscribe((state) => {
+        if (state.sessionList.length === 0) return
+        unsubscribe()
+        resolve()
+      })
+    })
+    await listed
+    assert.deepEqual(calls, ['state', 'list'])
+    assert.deepEqual(
+      useAppStore.getState().sessionList.map((item) => [item.path, item.preview]),
+      [[sessionFile, 'Count to three']]
+    )
+  } finally {
+    delete session.getState
+    delete session.list
+  }
+})
+
+test('a first prompt lists its new session at once, before the engine starts the turn', async () => {
+  const sessionFile = '/sessions/sent.jsonl'
+  const piDesktop = (window as unknown as { piDesktop: Record<string, Record<string, unknown>> }).piDesktop
+  // The engine has not recorded the prompt yet: no messages, and no file content to list.
+  piDesktop.session.list = async () => []
+  piDesktop.commands = { prompt: () => new Promise(() => {}) }
+  try {
+    useAppStore.setState({
+      piStatus: 'running',
+      isStreaming: false,
+      messages: [],
+      sessionList: [],
+      sessionState: { sessionFile, sessionId: 'sent', messageCount: 0 } as never,
+    })
+    const listed = new Promise<void>((resolve) => {
+      const unsubscribe = useAppStore.subscribe((state) => {
+        if (state.sessionList.length === 0) return
+        unsubscribe()
+        resolve()
+      })
+    })
+    void useAppStore.getState().sendPrompt('Count to three')
+    await listed
+    assert.deepEqual(
+      useAppStore.getState().sessionList.map((item) => [item.path, item.preview]),
+      [[sessionFile, 'Count to three']]
+    )
+  } finally {
+    delete piDesktop.session.list
+    delete piDesktop.commands
+  }
+})
+
+test('a turn of a session the list already holds does not reload the list when it starts', async () => {
+  const sessionFile = '/sessions/listed.jsonl'
+  const session = (window as unknown as { piDesktop: { session: Record<string, unknown> } }).piDesktop.session
+  const calls: string[] = []
+  session.getState = async () => {
+    calls.push('state')
+    return { success: true, data: { sessionFile, sessionId: 'listed', messageCount: 3 } }
+  }
+  session.list = async () => {
+    calls.push('list')
+    return []
+  }
+  try {
+    const row = { path: sessionFile, name: null, preview: 'hi', sessionId: 'listed', lastModified: 1, messageCount: 3, projectPath: '', projectName: '' }
+    useAppStore.setState({
+      sessionList: [row],
+      sessionState: { sessionFile, sessionId: 'listed', messageCount: 3 } as never,
+    })
+    emit({ type: 'agent_start' })
+    const { SESSION_LIST_REFRESH_DELAY_MS } = await import('./store')
+    await new Promise((resolve) => setTimeout(resolve, SESSION_LIST_REFRESH_DELAY_MS * 2))
+    assert.deepEqual(calls, [])
+  } finally {
+    delete session.getState
+    delete session.list
+  }
+})
+
 test('deltas take their place by offset, and a delta the view already holds changes nothing', async () => {
   const { placeStreamedDelta } = await import('./store')
   assert.equal(placeStreamedDelta('', 'Hello', 0), 'Hello')

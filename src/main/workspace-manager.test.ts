@@ -836,3 +836,21 @@ test('stopAll stops the watcher', async () => {
     assert.equal(mgr.getWatchedWorkspaceId(), null, 'quit must leave no watcher attached')
   })
 })
+
+test('a workspace names the session runtime its next start reuses, and only once it has one', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const ws = await mgr.createWorkspace('Alpha', await project())
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id), null, 'the per-workspace fallback manager is not a session runtime')
+    const fresh = await mgr.createNewSessionRuntime(ws.id)
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.runtimeId, fresh.runtimeId)
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.sessionPath, null)
+
+    const existingPath = join(await project(), 'session.jsonl')
+    await writeFile(existingPath, '{}\n', 'utf-8')
+    const activated = await mgr.activateSession(ws.id, existingPath)
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.runtimeId, activated.runtimeId)
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.sessionPath, existingPath)
+  })
+})

@@ -117,6 +117,8 @@ interface PiDesktopAPI {
     clone(): Promise<unknown>
     list(cwd?: string): Promise<SessionListItem[]>
     listAll(cwd?: string): Promise<SessionListItem[]>
+    /** The session any start would continue for a registered project; null means a new session. */
+    resumeTarget(cwd: string): Promise<string | null>
     getState(): Promise<unknown>
     getMessages(): Promise<unknown>
     getStats(): Promise<unknown>
@@ -426,6 +428,7 @@ const api: PiDesktopAPI = {
     clone: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_CLONE),
     list: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST, cwd),
     listAll: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_ALL, cwd),
+    resumeTarget: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RESUME_TARGET, cwd),
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_STATE),
     getMessages: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_MESSAGES),
     getStats: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_STATS),

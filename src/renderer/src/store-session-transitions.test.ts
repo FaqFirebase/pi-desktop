@@ -40,6 +40,8 @@ let sessionStateResult: SessionState | null = null
 // What the stubbed session.delete reports. `replacementSessionPath` mirrors
 // the runtime main promoted while closing the deleted session's tab.
 let sessionDeleteResult: SessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: null }
+// The fork candidates the stubbed session.getForkMessages lists.
+let forkMessagesResult: Array<{ entryId: string; text: string }> = []
 
 // Only sessionFile is read by the code under test; the cast keeps this
 // fixture from churning as SessionState grows fields.
@@ -218,6 +220,11 @@ const piDesktopStub = {
       calls.push(`fork:${entryId}`)
       return { success: true }
     },
+    getForkMessages: async () => forkMessagesResult,
+    setName: async (name: string) => {
+      calls.push(`setName:${name}`)
+      return { success: true }
+    },
     clone: async () => {
       calls.push('clone')
       return { success: true }
@@ -229,6 +236,7 @@ const piDesktopStub = {
     getState: async () => ({ success: true, data: sessionStateResult }),
     getStats: async () => ({ success: true, data: null }),
     list: async () => [],
+    resumeTarget: async () => null,
   },
 }
 
@@ -313,6 +321,7 @@ beforeEach(() => {
   fileSearchHook = null
   sessionStateResult = null
   sessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: null }
+  forkMessagesResult = []
   useAppStore.setState({
     isStreaming: false,
     streamingContent: '',
@@ -578,6 +587,52 @@ test('forkFrom is gated by the same warning', async () => {
 
   assert.deepEqual(calls, [], 'a declined fork must not reach Pi')
   assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+test('edit & resend continues from just before the edited message, then sends the edited text', async () => {
+  useAppStore.setState({
+    piStatus: 'running',
+    messages: [
+      { id: 'u1', role: 'user', content: 'first', timestamp: 0 },
+      { id: 'a1', role: 'assistant', content: 'one', timestamp: 0 },
+      { id: 'u2', role: 'user', content: 'second', timestamp: 0 },
+      { id: 'a2', role: 'assistant', content: 'two', timestamp: 0 },
+    ],
+  })
+  forkMessagesResult = [{ entryId: 'e1', text: 'first' }, { entryId: 'e2', text: 'second' }]
+
+  assert.equal(await useAppStore.getState().editAndResend('u2', 'second, edited'), true)
+
+  const forkAt = calls.indexOf('fork:e2')
+  const nameAt = calls.indexOf('setName:first (edited)')
+  const promptAt = calls.indexOf('prompt:second, edited')
+  assert.ok(forkAt !== -1, 'the session forks at the edited message')
+  assert.ok(nameAt > forkAt, 'the fork gets a title the original does not share')
+  assert.ok(promptAt > nameAt, 'the edited text is sent only after the fork')
+})
+
+test('edit & resend sends nothing when the session does not hold the message', async () => {
+  useAppStore.setState({
+    piStatus: 'running',
+    messages: [{ id: 'u1', role: 'user', content: 'not saved yet', timestamp: 0 }],
+  })
+
+  assert.equal(await useAppStore.getState().editAndResend('u1', 'edited'), false)
+
+  assert.deepEqual(calls, [])
+  const last = useAppStore.getState().messages.at(-1)
+  assert.equal(last?.role, 'system')
+  assert.match(last?.content ?? '', /does not contain this message/)
+})
+
+test('a declined fork warning keeps the edit from being sent', async () => {
+  enterStreamingState()
+  forkMessagesResult = [{ entryId: 'e1', text: 'hello' }]
+  answerConfirm(false)
+
+  assert.equal(await useAppStore.getState().editAndResend('m1', 'edited'), false)
+
+  assert.deepEqual(calls, [])
 })
 
 // Workspace switches are safe because each workspace owns a separate Pi

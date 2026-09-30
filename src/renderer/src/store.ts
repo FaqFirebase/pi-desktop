@@ -11,11 +11,12 @@ import { stripAnsi } from './utils/strip-ansi'
 import { splitClaudeCliMarkers } from './claude-cli-markers'
 import { markUnansweredToolCallsRunning, settleRunningToolCall } from './reattached-tool-calls'
 import type { PiCommand } from '../../shared/pi-command'
-import { normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
+import { forkPointForUserMessage, normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
 import { clampSidebarWidth } from '../../shared/sidebar-width'
 import { workspaceNameFromFolderPath } from '../../shared/folder-drop'
 import { pathsEqual } from '../../shared/path-compare'
+import { EDITED_TITLE_MAX_CHARS, sessionPreview, stripInjectedPreamble, truncateTitle } from '../../shared/session-preview'
 import { validateModelsConfig, mergeModelsConfig, type ModelsConfig } from '../../shared/models-config'
 import {
   resolveActiveMembers,
@@ -450,6 +451,13 @@ interface AppState {
 interface AppActions {
   // Pi lifecycle
   startPi: (options?: Record<string, unknown>) => Promise<void>
+  /**
+   * Show the session a start would continue for the active project: its
+   * bound runtime's session or, with "Resume Last Session" on, its newest
+   * session. Resolves true when a session was opened; false leaves the empty
+   * new-session view, which every start then honors.
+   */
+  openLastSession: () => Promise<boolean>
   stopPi: () => Promise<void>
   restartPi: (options?: Record<string, unknown>) => Promise<void>
 
@@ -488,7 +496,14 @@ interface AppActions {
   refreshSessionList: () => Promise<void>
   setSessionName: (name: string) => Promise<void>
   loadForkMessages: () => Promise<void>
-  forkFrom: (entryId: string) => Promise<void>
+  /** True once the session continues from just before the entry. */
+  forkFrom: (entryId: string) => Promise<boolean>
+  /**
+   * Replace a sent user message: continue the session from just before it
+   * (the same fork as Branch from here), then send `text`. False, with the
+   * reason in the chat, when the message could not be replaced.
+   */
+  editAndResend: (messageId: string, text: string) => Promise<boolean>
   cloneBranch: () => Promise<void>
 
   // Model
@@ -712,6 +727,9 @@ let switchCoalesceTimer: ReturnType<typeof setTimeout> | null = null
 let switchCoalesceResolve: (() => void) | null = null
 // Only one get_messages/switch pipeline at a time (Pi + IPC can't keep up).
 let switchPipeline: Promise<void> = Promise.resolve()
+// The last-session lookup a start must wait for, so a send or a model-picker
+// open during the lookup joins the resumed session instead of racing it.
+let pendingLastSessionOpen: Promise<boolean> | null = null
 
 // Attach backfills ride the same pipeline as session switches so their
 // get_messages can never run concurrently with a switch's (each response is a
@@ -747,6 +765,14 @@ export function promptRanWithoutAgent(response: unknown): boolean {
 function endTurnWithoutAgent(set: ZustandSet, get: () => AppState & AppActions): void {
   set({ isStreaming: false })
   void get().refreshSessionState()
+}
+
+/** The title a session shows in the list: its name, else a preview of its first prompt. */
+function sessionTitleForFork(sessionName: string | null | undefined, messages: DisplayMessage[]): string | null {
+  const name = sessionName?.trim()
+  if (name) return name
+  const firstPrompt = messages.find((message) => message.role === 'user')?.content
+  return firstPrompt ? sessionPreview(stripInjectedPreamble(firstPrompt)) : null
 }
 
 // Coalesce filesystem session-list walks: rapid switches used to stack N full
@@ -802,11 +828,23 @@ function adoptMainSideActivation(
   // Start the promoted workspace when there was a previous active workspace;
   // the first-workspace open flow starts it through its regular switch path.
   if (previousActiveId !== null) {
-    void get().startPi().then(() => {
-      if (get().activeWorkspace?.id !== active.id || get().piStatus !== 'running') return
-      void get().reloadActiveSession()
+    void get().openLastSession().then((opened) => {
+      if (!opened && get().activeWorkspace?.id === active.id) void get().startPi()
     })
   }
+}
+
+/** A burst of session changes reloads the session list once it settles. */
+export const SESSION_LIST_REFRESH_DELAY_MS = 250
+
+/**
+ * Whether the session lists hold the active session. A new session is missing
+ * until a list reload after its first prompt, and its first turn can run for
+ * minutes, so a prompt and a turn start list it when it is missing.
+ */
+function isActiveSessionListed(state: AppState): boolean {
+  const sessionFile = state.sessionState?.sessionFile
+  return !!sessionFile && state.sessionList.some((item) => item.path === sessionFile)
 }
 
 function scheduleSessionListRefresh(get: () => AppState & AppActions): void {
@@ -814,7 +852,7 @@ function scheduleSessionListRefresh(get: () => AppState & AppActions): void {
   sessionListRefreshTimer = setTimeout(() => {
     sessionListRefreshTimer = null
     void get().refreshSessionList()
-  }, 250)
+  }, SESSION_LIST_REFRESH_DELAY_MS)
 }
 
 const PARSE_CHUNK = 50
@@ -1046,6 +1084,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Pi Lifecycle ─────────────────────────────────────────────────────
 
   startPi: async (options) => {
+    if (pendingLastSessionOpen) await pendingLastSessionOpen
     // Don't start if already running
     if (get().piStatus === 'running') return
     const gen = sessionLoadGeneration
@@ -1053,7 +1092,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const isCurrent = (): boolean => gen === sessionLoadGeneration && workspaceId === get().activeWorkspace?.id
 
     try {
-      const status = await window.piDesktop.pi.start(options as Record<string, unknown> | undefined)
+      // The renderer starts only what the chat shows. A resumed session is
+      // already bound to its runtime (its --session outranks this flag), so an
+      // unbound start is always the empty new-session view and must never
+      // pick up an earlier conversation through --continue.
+      const status = await window.piDesktop.pi.start({ continueSession: false, ...options })
       if (!isCurrent()) return
       set({ piStatus: status.status, piStartupPhase: status.startupPhase ?? null, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
 
@@ -1069,6 +1112,38 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     } catch (err) {
       if (!isCurrent()) return
       set({ piStatus: 'error', piStartupPhase: null, piError: err instanceof Error ? err.message : String(err) })
+    }
+  },
+
+  openLastSession: async () => {
+    const workspace = get().activeWorkspace
+    if (!workspace) return false
+    const gen = sessionLoadGeneration
+    const isCurrent = (): boolean => gen === sessionLoadGeneration && workspace.id === get().activeWorkspace?.id
+    const open = async (): Promise<boolean> => {
+      // Hold the empty new-session view back while the lookup runs; showing
+      // it and then swapping in the resumed history would flash.
+      set({ sessionLoading: true })
+      let sessionPath: string | null = null
+      try {
+        sessionPath = await window.piDesktop.session.resumeTarget(workspace.path)
+      } catch {
+        // A failed lookup leaves the empty chat, and starts then match it.
+      }
+      if (!isCurrent()) return false
+      if (!sessionPath) {
+        set({ sessionLoading: false })
+        return false
+      }
+      await get().switchSession(sessionPath, workspace.path)
+      return true
+    }
+    const lookup = open()
+    pendingLastSessionOpen = lookup
+    try {
+      return await lookup
+    } finally {
+      if (pendingLastSessionOpen === lookup) pendingLastSessionOpen = null
     }
   },
 
@@ -1142,9 +1217,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
     if (trimmed.startsWith('/workflows run ')) get().setWorkflowPanelOpen(true)
 
-    // Navigation never spawns Pi; the first prompt or model-picker open does.
-    // A prompt start applies the resume preference: a previously-used project
-    // continues its last conversation; a fresh one gets a new session.
+    // A stopped runtime starts on the first prompt: the bound session when
+    // the chat shows one, otherwise a new session for the empty chat.
     if (get().piStatus !== 'running') {
       await get().startPi()
       if (get().piStatus !== 'running') return
@@ -1173,6 +1247,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
     if (!isStreaming) {
       set({ isStreaming: true, streamingContent: '', streamingThinking: '', streamingToolCalls: new Map() })
+      if (!isActiveSessionListed(get())) scheduleSessionListRefresh(get)
     }
 
     try {
@@ -1814,7 +1889,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       const list = await window.piDesktop.session.list()
       const sessionState = get().sessionState
       const activeWorkspace = get().activeWorkspace
-      const activeHasContent = (sessionState?.messageCount ?? 0) > 0
+      // A prompt on screen counts: the engine may not have recorded it yet.
+      const activeHasContent =
+        (sessionState?.messageCount ?? 0) > 0 || get().messages.some((message) => message.role === 'user')
       const hasActiveSession = activeHasContent && sessionState?.sessionFile
         ? list.some((item) => item.path === sessionState.sessionFile || item.sessionId === sessionState.sessionId)
         : false
@@ -1826,10 +1903,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
             {
               path: sessionState.sessionFile,
               name: sessionState.sessionName,
-              // The active session's first message is not on `sessionState`, and
-              // the renderer cannot read the file; the row falls back to its name
-              // or timestamp until the next list refresh supplies a preview.
-              preview: null,
+              // The engine may not have written the file yet, so the preview is
+              // the first prompt on screen until a list refresh reads the file.
+              preview: get().messages.find((message) => message.role === 'user')?.content ?? null,
               sessionId: sessionState.sessionId,
               piSessionId: sessionState.sessionId,
               lastModified: Date.now(),
@@ -1874,11 +1950,38 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   forkFrom: async (entryId) => {
-    if (!(await get().confirmSessionChange('fork'))) return
-    const result = (await window.piDesktop.session.fork(entryId)) as { success?: boolean } | null
-    if (result?.success) {
-      await get().reloadActiveSession()
+    if (!(await get().confirmSessionChange('fork'))) return false
+    const result = (await window.piDesktop.session.fork(entryId)) as
+      { success?: boolean; data?: { cancelled?: boolean } } | null
+    if (!result?.success) return false
+    await get().reloadActiveSession()
+    // An extension can cancel the fork; the session then stays where it was.
+    return result.data?.cancelled !== true
+  },
+
+  editAndResend: async (messageId, text) => {
+    try {
+      await get().loadForkMessages()
+      const point = forkPointForUserMessage(get().messages, messageId, get().forkMessages)
+      if (!point) throw new Error(t('store.messages.editNotInSession'))
+      const title = sessionTitleForFork(get().sessionState?.sessionName, get().messages)
+      if (!(await get().forkFrom(point.entryId))) return false
+      // The fork starts with the same first message, so unnamed it would list
+      // under the same title as the session it came from.
+      if (title) {
+        await get().setSessionName(t('store.messages.editedSessionName', { title: truncateTitle(title, EDITED_TITLE_MAX_CHARS) }))
+      }
+    } catch (err) {
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: t('store.messages.editResendError', { detail: err instanceof Error ? err.message : String(err) }),
+        timestamp: Date.now(),
+      })
+      return false
     }
+    await get().sendPrompt(text)
+    return true
   },
 
   cloneBranch: async () => {
@@ -1939,11 +2042,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const workspaceId = get().activeWorkspace?.id
     const isCurrent = (): boolean => gen === sessionLoadGeneration && workspaceId === get().activeWorkspace?.id
     // The picker is also usable on a fresh composer. Starting the runtime
-    // discovers the engine's real catalog without sending a prompt. Opening a
-    // menu must not swap the empty chat for an earlier conversation, so this
-    // start skips the resume preference; a runtime already bound to a session
-    // still reopens that session.
-    if (get().piStatus !== 'running') await get().startPi({ continueSession: false })
+    // discovers the engine's real catalog without sending a prompt; like every
+    // renderer start it opens what the chat shows (see startPi).
+    if (get().piStatus !== 'running') await get().startPi()
     if (!isCurrent() || get().piStatus !== 'running') {
       throw new Error(t('models.selector.loadFailed'))
     }
@@ -2222,7 +2323,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         handleTurnComplete(set, (event as { message?: Record<string, unknown> }).message, true)
         break
 
-      case 'agent_start':
+      case 'agent_start': {
         // A fresh turn means real stream context from its first byte — any
         // pending mid-turn-attach backfill was already handled at agent_end.
         set({ isStreaming: true, reattachedMidTurn: false })
@@ -2234,7 +2335,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           title: t('timeline.agentStarted'),
           status: 'running',
         })
+        // A turn this window did not prompt (a queued or external prompt) can
+        // also be a new session's first. The fresh session state names its file.
+        if (!isActiveSessionListed(get())) {
+          void get().refreshSessionState().then(() => scheduleSessionListRefresh(get))
+        }
         break
+      }
 
       case 'agent_end':
         handleTurnComplete(set, undefined, true)
@@ -2246,6 +2353,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           timelineEvents: closeMostRecentRunning(state.timelineEvents, (e) => e.kind === 'agent-run', 'success'),
         }))
         get().refreshSessionStats()
+        // Pi writes a new session's file only after its first assistant
+        // message, so a finished turn is when the session lists can show it.
+        // The fresh session state names that file and its message count.
+        void get().refreshSessionState().then(() => scheduleSessionListRefresh(get))
         get().addTimelineEvent({
           id: generateId(),
           type: 'system',
@@ -2773,7 +2884,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       }))
       void window.piDesktop.ui.flushPendingPrompts(workspace.id)
       scheduleSessionListRefresh(get)
-      if (live && options?.awaitingSession !== true) {
+      if (!live && options?.awaitingSession !== true) {
+        // Show the conversation a start would continue, if any.
+        void get().openLastSession()
+      } else if (live && options?.awaitingSession !== true) {
         void get().reloadActiveSession({ refreshList: false })
         // A turn may already be running here (that is what the sidebar dot
         // advertised). Arm the mid-turn attach so the next turn boundary

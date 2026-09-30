@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createRequire } from 'node:module'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IpcContext } from './context'
@@ -102,6 +102,59 @@ test('switching back to an unpersisted live session reuses its runtime', async (
     await assert.rejects(async () => switchSession(null, sessionPath, root))
     assert.equal(activations, 2)
     assert.equal(starts, 0, 'must not restart a live runtime')
+  } finally {
+    electronModule.exports = originalExports
+    if (originalRoot === undefined) delete process.env.PI_CODING_AGENT_DIR
+    else process.env.PI_CODING_AGENT_DIR = originalRoot
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('the resume target is the project runtime session, else its newest used file when resuming', async () => {
+  const require = createRequire(import.meta.url)
+  const electronPath = require.resolve('electron')
+  require('electron')
+  const electronModule = require.cache[electronPath]!
+  const originalExports = electronModule.exports
+  handlers.clear()
+  electronModule.exports = {
+    ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler) },
+    app: { isPackaged: false, getAppPath: () => process.cwd() },
+  }
+  const root = await mkdtemp(join(tmpdir(), 'pi-resume-'))
+  const project = join(root, 'project')
+  const originalRoot = process.env.PI_CODING_AGENT_DIR
+  process.env.PI_CODING_AGENT_DIR = root
+  configureGuiDataDir(root)
+  try {
+    const { registerSessionHandlers } = await import('./session-handlers')
+    const { sanitizePath } = await import('../session-paths')
+    const sessionDir = join(root, 'sessions', sanitizePath(project))
+    await mkdir(sessionDir, { recursive: true })
+    const onDisk = join(sessionDir, 'last.jsonl')
+    await writeFile(onDisk, [
+      JSON.stringify({ type: 'session', id: 'last', cwd: project }),
+      JSON.stringify({ type: 'message', message: { role: 'user', content: 'hi' } }),
+    ].join('\n'))
+    let current: { sessionPath: string | null } | null = null
+    registerSessionHandlers({
+      workspaceManager: {
+        getActiveWorkspace: () => ({ id: 'workspace', path: project }),
+        getWorkspaces: () => [{ id: 'workspace', path: project }],
+        getWorkspaceSessionRuntime: (id: string) => id === 'workspace' ? current : null,
+      },
+    } as unknown as IpcContext)
+    const resumeTarget = handlers.get(IPC_CHANNELS.SESSION_RESUME_TARGET)!
+    const { saveAppSettings } = await import('./settings')
+
+    assert.equal(await resumeTarget(null, project), onDisk)
+    await saveAppSettings({ resumeLastSession: false })
+    assert.equal(await resumeTarget(null, project), null, 'the setting off never resumes a file')
+    assert.equal(await resumeTarget(null, join(root, 'unregistered')), null)
+    current = { sessionPath: null }
+    assert.equal(await resumeTarget(null, project), null, 'an unsaved new session keeps the empty chat')
+    current = { sessionPath: join(sessionDir, 'open-tab.jsonl') }
+    assert.equal(await resumeTarget(null, project), current.sessionPath, 'a bound runtime shows its session with the setting off too')
   } finally {
     electronModule.exports = originalExports
     if (originalRoot === undefined) delete process.env.PI_CODING_AGENT_DIR

@@ -1,4 +1,4 @@
-import { memo, useState, useRef } from 'react'
+import { memo, useLayoutEffect, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore, type DisplayMessage } from '../store'
 import { modelDisplayName } from '../../../shared/models-config'
@@ -70,10 +70,10 @@ function MessageBubbleImpl({
   }
 
   const handleSaveEdit = async () => {
-    if (editContent.trim() !== message.content) {
-      // Resend the edited message
-      await useAppStore.getState().sendPrompt(editContent.trim())
-    }
+    const text = editContent.trim()
+    // The editor stays open when the message could not be replaced, so the
+    // edited text is not lost.
+    if (text && text !== message.content && !(await useAppStore.getState().editAndResend(message.id, text))) return
     setIsEditing(false)
   }
 
@@ -187,6 +187,14 @@ export const MessageBubble = memo(MessageBubbleImpl)
 
 // ─── User Message ────────────────────────────────────────────────────────────
 
+// Tallest the edit box grows before it scrolls.
+const EDIT_BOX_MAX_HEIGHT_PX = 192
+
+function fitEditBoxToContent(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = 'auto'
+  textarea.style.height = `${Math.min(textarea.scrollHeight, EDIT_BOX_MAX_HEIGHT_PX)}px`
+}
+
 function UserMessage({
   message,
   isEditing,
@@ -215,6 +223,11 @@ function UserMessage({
   const { t } = useTranslation()
   const editRef = useRef<HTMLTextAreaElement>(null)
 
+  // Open the editor at the height of the message it edits, not one row.
+  useLayoutEffect(() => {
+    if (isEditing && editRef.current) fitEditBoxToContent(editRef.current)
+  }, [isEditing])
+
   if (isEditing) {
     return (
       <div className="group mb-4 flex justify-end animate-fade-in">
@@ -230,13 +243,10 @@ function UserMessage({
                 onSaveEdit()
               }
             }}
-            className="font-chat w-full rounded-2xl rounded-br-md bg-card px-4 py-2.5 text-sm text-primary resize-none min-h-[40px] max-h-48 outline-none"
+            className="font-chat w-full rounded-2xl rounded-br-md bg-card px-4 py-2.5 text-sm text-primary resize-none min-h-[40px] outline-none"
+            style={{ maxHeight: EDIT_BOX_MAX_HEIGHT_PX }}
             rows={1}
-            onInput={(e) => {
-              const t = e.currentTarget
-              t.style.height = 'auto'
-              t.style.height = `${Math.min(t.scrollHeight, 192)}px`
-            }}
+            onInput={(e) => fitEditBoxToContent(e.currentTarget)}
             autoFocus
           />
           <div className="flex items-center justify-end gap-1 mt-1">

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  EDITED_TITLE_MAX_CHARS,
+  truncateTitle,
   MAX_PREVIEW_CHARS,
   PLANNING_PREAMBLE_OPENING,
   PLANNING_PREAMBLE_SENTINEL,
@@ -90,4 +92,14 @@ test('stripInjectedPreamble keeps the preamble when no request follows it', () =
 test('a planning prompt previews as the user request alone', () => {
   const prompt = injectedPrompt('  Wire up the token refresh retry  ')
   assert.equal(sessionPreview(stripInjectedPreamble(prompt)), 'Wire up the token refresh retry')
+})
+
+test('an edited copy keeps a short title so its edited mark stays visible', () => {
+  const long = 'Work only inside the current project folder; do not touch anything outside it.'
+  const short = truncateTitle(long, EDITED_TITLE_MAX_CHARS)
+  assert.equal(Array.from(short).length, EDITED_TITLE_MAX_CHARS + 1)
+  assert.ok(short.endsWith('…'))
+  assert.equal(truncateTitle('Short title', EDITED_TITLE_MAX_CHARS), 'Short title')
+  // Editing an edited copy again cuts the old mark instead of stacking a second one after it.
+  assert.equal(truncateTitle(`${short} (edited)`, EDITED_TITLE_MAX_CHARS), short)
 })

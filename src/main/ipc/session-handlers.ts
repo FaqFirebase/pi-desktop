@@ -11,6 +11,8 @@ import {
 } from '../session-paths'
 import { pathGroupKey as workspaceMatchKey, pathsEqual } from '../../shared/path-compare'
 import { readSessionMetadataCached } from '../session-metadata'
+import { engineProjectSessionDirs, findLatestProjectSession } from '../latest-project-session'
+import { getConfiguredEngineKind } from '../pi-rpc-manager'
 import { readForkPointsCached } from '../omp-fork-points'
 import { mapWithConcurrency } from '../map-concurrent'
 import { readSessionLineage } from '../session-lineage-reader'
@@ -210,6 +212,25 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     const ws = workspaceManager.getActiveWorkspace()
     const listAllSessions = createListAllSessions(workspaceManager)
     return listAllSessions(isString(cwd) ? cwd : ws?.path ?? process.cwd())
+  })
+
+  // The session the renderer shows for a project whose runtime is not live, so
+  // the chat matches what any start then continues.
+  ipcMain.handle(IPC_CHANNELS.SESSION_RESUME_TARGET, async (_event, cwd: unknown): Promise<string | null> => {
+    if (!isString(cwd)) throw new Error('cwd must be a string')
+    const workspace = workspaceManager.getWorkspaces().find((item) => pathsEqual(item.path, cwd))
+    if (!workspace) return null
+    // A start reopens the project's current runtime, so its session wins even
+    // over a newer file (another tab's). One not persisted yet is a new
+    // session: the empty chat is already right.
+    const current = workspaceManager.getWorkspaceSessionRuntime(workspace.id)
+    if (current) return current.sessionPath
+    // Otherwise the newest session of the engine the user selected. Session
+    // tabs are live runtimes, one agent process each, and are not kept across
+    // a restart: only this one session starts again.
+    const settings = await loadAppSettings(workspaceManager)
+    if (!settings.resumeLastSession) return null
+    return findLatestProjectSession(await engineProjectSessionDirs(getConfiguredEngineKind(), workspace.path))
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_STATE, async () => {

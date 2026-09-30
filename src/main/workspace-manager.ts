@@ -513,6 +513,13 @@ export class WorkspaceManager {
     return entry ? this.snapshotRuntime(entry) : null
   }
 
+  /** The runtime a start for this workspace reuses (see startPiForWorkspace), if it has one. */
+  getWorkspaceSessionRuntime(workspaceId: string): SessionRuntimeInfo | null {
+    const runtimeId = this.activeRuntimeByWorkspace.get(workspaceId)
+    const entry = runtimeId ? this.sessionRuntimes.get(runtimeId) : undefined
+    return entry ? this.snapshotRuntime(entry) : null
+  }
+
   getSessionRuntime(runtimeId: string): SessionRuntimeInfo | null {
     const entry = this.sessionRuntimes.get(runtimeId)
     return entry ? this.snapshotRuntime(entry) : null

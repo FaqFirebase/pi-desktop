@@ -542,6 +542,7 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
  */
 export function useInitialize(): void {
   const startPi = useAppStore((state) => state.startPi)
+  const openLastSession = useAppStore((state) => state.openLastSession)
   const loadSettings = useAppStore((state) => state.loadSettings)
   const loadWorkspaces = useAppStore((state) => state.loadWorkspaces)
   const refreshSessionStats = useAppStore((state) => state.refreshSessionStats)
@@ -597,21 +598,26 @@ export function useInitialize(): void {
       void useAppStore.getState().loadCustomModels()
       void useAppStore.getState().checkForUpdates()
 
+      // "Resume Last Session" opens the project's last conversation in the
+      // background, Home included, so the chat shows what the next start
+      // continues. The session-runtime running event hydrates it when ready.
+      const resumed = await openLastSession().catch(() => false)
+
       if (openToHome) {
-        // Pi starts lazily on first action from Home.
+        // Without a resumed session, Pi starts lazily on first action from Home.
         return
       }
 
       // Boot Pi in the background. The shell is already interactive; the
       // session-runtime running event hydrates Chat when the process is ready.
-      void startPi().then(() => refreshSessionStats()).catch(() => undefined)
+      if (!resumed) void startPi().then(() => refreshSessionStats()).catch(() => undefined)
       void window.piDesktop.workspace.getActivity()
         .then((activity) => useAppStore.getState().handleWorkspaceActivity(activity))
         .catch(() => undefined)
     }
 
     initialize()
-  }, [startPi, loadSettings, loadWorkspaces, refreshSessionStats, refreshSessionList])
+  }, [startPi, openLastSession, loadSettings, loadWorkspaces, refreshSessionStats, refreshSessionList])
 }
 
 /**

@@ -34,6 +34,7 @@ export const IPC_CHANNELS = {
   SESSION_CLONE: 'session:clone',
   SESSION_LIST: 'session:list',
   SESSION_LIST_ALL: 'session:list-all',
+  SESSION_RESUME_TARGET: 'session:resume-target',
   SESSION_GET_STATE: 'session:get-state',
   SESSION_GET_MESSAGES: 'session:get-messages',
   SESSION_GET_STATS: 'session:get-stats',
@@ -382,7 +383,8 @@ export interface PiStartOptions {
   noSession?: boolean
   // When true (and neither sessionPath, forkSessionPath nor noSession is set),
   // Pi is launched with --continue so it resumes the most recent session for
-  // the cwd instead of creating a fresh one.
+  // the cwd instead of creating a fresh one. Left unset, the Resume Last
+  // Session setting decides; an explicit false always starts a fresh session.
   continueSession?: boolean
   // Start a new session by forking this existing Pi session file. The new
   // session is created in the supplied cwd.
