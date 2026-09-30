@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
+import { WHOLE_WORKSPACE_CHANGE_PATH } from '../../../shared/ipc-contracts'
 import { clsx } from 'clsx'
 import {
   AlertTriangle,
@@ -33,6 +34,12 @@ interface DiffFileBlock {
   isNew: boolean
   isDeleted: boolean
   hunks: DiffLine[][]
+}
+
+export function subscribeDiffRefresh(refresh: () => Promise<void>): () => void {
+  return window.piDesktop.onFileChange((event) => {
+    if (event.relativePath === WHOLE_WORKSPACE_CHANGE_PATH) void refresh()
+  })
 }
 
 interface DiffViewerProps {
@@ -78,6 +85,8 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
     void loadDiff()
     return () => { loadGuard.begin() }
   }, [loadDiff, loadGuard, workspaceId])
+
+  useEffect(() => subscribeDiffRefresh(loadDiff), [loadDiff])
 
   useEffect(() => {
     setExpandedFiles(new Set())

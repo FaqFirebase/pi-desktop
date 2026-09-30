@@ -250,6 +250,12 @@
     "workflowRuns": "工作流运行"
   },
   "conveyor": {
+    "branches": {
+      "agentWorking": "请等待此工作区中的所有代理完成后再切换分支。",
+      "description": "切换项目的本地分支，不强制切换，也不自动贮藏更改",
+      "label": "项目分支",
+      "saveEditor": "切换分支前，请先保存或还原编辑器中的更改。"
+    },
     "branchStatusClean": "{{branch}}",
     "branchStatusDirty_other": "{{branch}} · {{count}} 处更改",
     "commit": "提交",
@@ -271,8 +277,10 @@
       "commitBeforePr": "创建 PR 前请先提交更改。",
       "commitBeforePush": "推送前请先提交工作树。",
       "commitMessageRequired": "提交信息为必填项。",
+      "operationInProgress": "另一个 Git 操作正在进行中。请等待其完成。",
       "prTitleRequired": "PR 标题为必填项。",
-      "pushBeforePr": "创建 PR 前请先推送该分支。"
+      "pushBeforePr": "创建 PR 前请先推送该分支。",
+      "workspaceChanged": "当前工作区已更改，Git 操作已停止。"
     },
     "feedback": {
       "branchPushed": "分支已推送。",
@@ -483,14 +491,17 @@
       "commandFailedWithDetail": "{{command}} 失败：{{detail}}",
       "commitBeforePullRequest": "创建 PR 前请先提交工作树",
       "commitBeforePush": "推送前请先提交工作树",
+      "commitBeforeSwitch": "切换分支前请先提交或放弃更改",
       "commitMessageRequired": "必须填写提交信息",
       "commitMessageTooLong": "提交信息必须不超过 {{max}} 个字符",
       "detachedHeadCommit": "无法在分离 HEAD 状态下提交",
       "detachedHeadPush": "无法在分离 HEAD 状态下推送",
+      "localBranchRequired": "请选择一个现有的本地分支",
       "namedBranchRequired": "创建 PR 需要一个具名分支",
       "noTrackedChanges": "本工作区没有可提交的已跟踪更改。请先暂存未跟踪的文件以将其包含进来。",
       "operationInProgressCommit": "Git {{operation}} 进行中，无法提交",
       "operationInProgressPush": "Git {{operation}} 进行中，无法推送",
+      "operationInProgressSwitch": "Git {{operation}} 进行中，无法切换分支",
       "pullRequestTitleRequired": "必须填写 PR 标题",
       "pushBeforePullRequest": "创建 PR 前请先推送分支",
       "pushUpstreamIsLocal": "无法推送上游为本地仓库的分支",

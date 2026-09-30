@@ -149,6 +149,8 @@ export const IPC_CHANNELS = {
   GIT_BRANCH: 'git:branch',
   GIT_PREFIX: 'git:prefix',
   GIT_CONVEYOR_STATUS: 'git:conveyor-status',
+  GIT_LOCAL_BRANCHES: 'git:local-branches',
+  GIT_SWITCH_BRANCH: 'git:switch-branch',
   GIT_CONVEYOR_COMMIT: 'git:conveyor-commit',
   GIT_CONVEYOR_PUSH: 'git:conveyor-push',
   GIT_CONVEYOR_CREATE_PR: 'git:conveyor-create-pr',
@@ -278,6 +280,9 @@ export interface SessionLaunchTaskOptions {
   prompt: string
   isolated?: boolean
 }
+
+/** A branch switch or creation lands with the new status, or is refused with a reason for the user. */
+export type GitBranchSwitchResult = { ok: true; status: GitConveyorStatus } | { ok: false; error: string }
 
 export interface GitConveyorStatus {
   branch: string | null
@@ -1589,6 +1594,9 @@ export interface FileChangeEvent {
   changeType: 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir'
   relativePath: string
 }
+
+/** `relativePath` of a FileChangeEvent that replaced the whole worktree, such as a branch switch. */
+export const WHOLE_WORKSPACE_CHANGE_PATH = '.'
 
 export interface DiffHunk {
   oldStart: number

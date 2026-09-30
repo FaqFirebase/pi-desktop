@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
 import type { GitConveyorStatus } from '../../../shared/ipc-contracts'
 import { formatIpcError } from '../utils/ipc-error'
+import { withGitOperation } from '../utils/git-operation'
 
 type ConveyorDialog =
   | { kind: 'commit'; message: string }
@@ -50,7 +51,7 @@ export function GitConveyorActions({ onChanged }: { onChanged?: () => void }): R
     setError(null)
     setFeedback(null)
     try {
-      const result = await action()
+      const result = await withGitOperation(action)
       setFeedback(success(result))
       await refresh()
       onChanged?.()

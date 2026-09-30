@@ -231,6 +231,41 @@ export async function getGitConveyorStatus(cwd: string): Promise<GitConveyorStat
   }
 }
 
+export async function listLocalBranches(cwd: string): Promise<string[]> {
+  try {
+    const { stdout } = await runGit(['for-each-ref', '--sort=refname', '--format=%(refname:lstrip=2)', 'refs/heads/'], cwd)
+    return stdout.split(/\r?\n/).filter(Boolean)
+  } catch (error) {
+    if (isMissingRepositoryError(error)) return []
+    throw error
+  }
+}
+
+/**
+ * A branch switch or branch creation refused for a reason the user can act on
+ * (changes to commit, a merge in progress, a name already taken). It is an
+ * answer, not a failure: callers report it without an error stack.
+ */
+export class GitSwitchRefusal extends Error {}
+
+/**
+ * Switch a clean worktree without forcing, merging, stashing, or guessing a
+ * remote branch. Any change, untracked files included, blocks the switch so
+ * work in progress never moves to another branch.
+ */
+export async function switchLocalBranch(cwd: string, branch: string): Promise<GitConveyorStatus> {
+  if (branch.startsWith('-') || !(await listLocalBranches(cwd)).includes(branch)) {
+    throw new GitSwitchRefusal(t('errors.git.localBranchRequired'))
+  }
+  const operation = await activeGitOperation(cwd)
+  if (operation) throw new GitSwitchRefusal(t('errors.git.operationInProgressSwitch', { operation }))
+  // Untracked files refuse the switch too (owner decision): they belong to the
+  // branch the user is on, even though git itself would carry them along.
+  if ((await inspectGitRepository(cwd)).status.trim()) throw new GitSwitchRefusal(t('errors.git.commitBeforeSwitch'))
+  await runGit(['switch', '--no-guess', '--', branch], cwd)
+  return getGitConveyorStatus(cwd)
+}
+
 export async function commitAll(cwd: string, options: GitConveyorCommitOptions): Promise<GitConveyorStatus> {
   const message = options.message.trim()
   if (!message) throw new Error(t('errors.git.commitMessageRequired'))

@@ -71,6 +71,7 @@ import type {
   SessionRuntimeCloseResult,
   SessionLaunchTaskOptions,
   WorkspaceActivationIntent,
+  GitBranchSwitchResult,
   GitConveyorStatus,
   GitConveyorCommitOptions,
   GitConveyorPullRequestOptions,
@@ -267,6 +268,8 @@ interface PiDesktopAPI {
   // Git issue-to-PR conveyor. All mutating actions require explicit renderer clicks.
   git: {
     status(): Promise<GitConveyorStatus>
+    localBranches(): Promise<string[]>
+    switchBranch(workspaceId: string, branch: string): Promise<GitBranchSwitchResult>
     commit(options: GitConveyorCommitOptions): Promise<GitConveyorStatus>
     push(): Promise<GitConveyorStatus>
     createPullRequest(options: GitConveyorPullRequestOptions): Promise<GitConveyorPullRequestResult>
@@ -556,6 +559,8 @@ const api: PiDesktopAPI = {
 
   git: {
     status: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_STATUS),
+    localBranches: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_LOCAL_BRANCHES),
+    switchBranch: (workspaceId, branch) => ipcRenderer.invoke(IPC_CHANNELS.GIT_SWITCH_BRANCH, workspaceId, branch),
     commit: (options) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_COMMIT, options),
     push: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_PUSH),
     createPullRequest: (options) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_CREATE_PR, options),
