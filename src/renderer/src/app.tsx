@@ -17,6 +17,7 @@ import { NotePicker } from './components/note-picker'
 import { CommandPalette } from './components/command-palette'
 import { ExtensionUiDialog, AppConfirmDialog } from './components/extension-ui-dialog'
 import { ReviewRail } from './components/review-rail'
+import { ChatToolRail } from './components/chat-tool-rail'
 import { WorkspaceTabs } from './components/workspace-tabs'
 import { WorkflowNavigator } from './components/workflow-navigator'
 import { useContextMenu, buildDefaultContextMenu } from './components/context-menu'
@@ -166,6 +167,7 @@ export function App(): React.JSX.Element {
               {globalWorkflowOpen && <WorkflowNavigator embedded />}
             </main>
             {currentView === 'chat' && !globalWorkflowOpen && <ReviewRail />}
+            {currentView === 'chat' && !globalWorkflowOpen && <ChatToolRail />}
           </div>
         </div>
       </div>
