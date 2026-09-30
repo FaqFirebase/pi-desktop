@@ -1193,6 +1193,11 @@
         "update": "更新到 {{version}}"
       }
     },
+    "uiFontFamily": {
+      "description": "从列表中选择字体。未安装的字体将使用系统字体。选择“默认字体”可恢复默认设置。终端和代码编辑器不受影响。",
+      "label": "界面字体",
+      "placeholder": "默认字体"
+    },
     "uiFontSize": {
       "description": "聊天、面板和侧边栏 — 不包括终端和代码编辑器",
       "label": "界面字体大小"

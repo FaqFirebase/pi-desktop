@@ -28,10 +28,13 @@ export function normalizeStoredSettings(stored: Record<string, unknown>, languag
   if (!isEngineSetting(merged.piEngine)) merged.piEngine = DEFAULT_SETTINGS.piEngine
   if (!isPermissionMode(merged.permissionMode)) merged.permissionMode = DEFAULT_SETTINGS.permissionMode
   if (!isChatWidth(merged.chatWidth)) merged.chatWidth = DEFAULT_SETTINGS.chatWidth
-  merged.language = normalizeLanguageSetting(merged.language, languages)
+  merged.uiFontFamily = typeof merged.uiFontFamily === 'string'
+    ? merged.uiFontFamily.trim()
+    : DEFAULT_SETTINGS.uiFontFamily
   if (typeof merged.defaultThinkingLevel !== 'string' || !merged.defaultThinkingLevel.trim()) {
     merged.defaultThinkingLevel = DEFAULT_SETTINGS.defaultThinkingLevel
   }
+  merged.language = normalizeLanguageSetting(merged.language, languages)
   merged.shortcuts = normalizeKeyboardShortcuts(merged.shortcuts)
   if (typeof merged.voiceModel !== 'string' || !getVoiceModel(merged.voiceModel)) {
     merged.voiceModel = DEFAULT_SETTINGS.voiceModel

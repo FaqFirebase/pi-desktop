@@ -1211,6 +1211,11 @@
         "update": "Update to {{version}}"
       }
     },
+    "uiFontFamily": {
+      "description": "Choose a font from the list. A font that is not installed falls back to the system font. Choose Default fonts to restore the defaults. Terminal and code editor are unchanged.",
+      "label": "UI Font",
+      "placeholder": "Default fonts"
+    },
     "uiFontSize": {
       "description": "Chat, panels, and sidebar — not the terminal or code editor",
       "label": "UI Font Size"

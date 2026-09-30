@@ -1149,6 +1149,8 @@ export interface AppSettings {
   defaultCwd: string | null
   // UI font size in px (chat, panels, sidebar). Applied to the document root.
   fontSize: number
+  // Installed font family for UI and chat; empty keeps the built-in fonts.
+  uiFontFamily: string
   // Terminal (xterm) font size in px — independent of the UI font size.
   terminalFontSize: number
   // Code editor (CodeMirror) font size in px — independent of the UI font size.

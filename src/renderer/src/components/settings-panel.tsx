@@ -25,6 +25,7 @@ import { TypeSafeSettings } from './typesafe-settings'
 import { Settings, Save, RotateCcw, FolderOpen, RefreshCw, Check, ChevronDown } from 'lucide-react'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { activeShortcuts } from '../utils/app-shortcuts'
+import { applyUiFont } from '../utils/ui-font'
 import { isChatWidth } from '../../../shared/chat-width'
 import { PermissionSelector } from './permission-selector'
 import { PermissionRulesEditor } from './permission-rules-editor'
@@ -122,6 +123,7 @@ export function SettingsPanel(): React.JSX.Element {
   } | null>(null)
   const [installUrl, setInstallUrl] = useState('')
   const [galleryOpen, setGalleryOpen] = useState(false)
+  const [uiFontFamily, setUiFontFamily] = useState(draft0.uiFontFamily ?? settings?.uiFontFamily ?? DEFAULT_SETTINGS.uiFontFamily)
   const [fontSize, setFontSize] = useState(draft0.fontSize ?? settings?.fontSize ?? DEFAULT_SETTINGS.fontSize)
   const [terminalFontSize, setTerminalFontSize] = useState(draft0.terminalFontSize ?? settings?.terminalFontSize ?? DEFAULT_SETTINGS.terminalFontSize)
   const [codeEditorFontSize, setCodeEditorFontSize] = useState(draft0.codeEditorFontSize ?? settings?.codeEditorFontSize ?? DEFAULT_SETTINGS.codeEditorFontSize)
@@ -306,6 +308,7 @@ export function SettingsPanel(): React.JSX.Element {
     setTheme(draft.theme ?? settings.theme)
     setSystemLightTheme(draft.systemLightTheme ?? settings.systemLightTheme)
     setSystemDarkTheme(draft.systemDarkTheme ?? settings.systemDarkTheme)
+    setUiFontFamily(draft.uiFontFamily ?? settings.uiFontFamily)
     setFontSize(draft.fontSize ?? settings.fontSize)
     setTerminalFontSize(draft.terminalFontSize ?? settings.terminalFontSize)
     setCodeEditorFontSize(draft.codeEditorFontSize ?? settings.codeEditorFontSize)
@@ -563,6 +566,7 @@ export function SettingsPanel(): React.JSX.Element {
       systemLightTheme,
       systemDarkTheme,
       fontSize,
+      uiFontFamily: uiFontFamily.trim(),
       terminalFontSize,
       codeEditorFontSize,
       chatWidth,
@@ -634,6 +638,7 @@ export function SettingsPanel(): React.JSX.Element {
       systemLightTheme: DEFAULT_SETTINGS.systemLightTheme,
       systemDarkTheme: DEFAULT_SETTINGS.systemDarkTheme,
       fontSize: DEFAULT_SETTINGS.fontSize,
+      uiFontFamily: DEFAULT_SETTINGS.uiFontFamily,
       terminalFontSize: DEFAULT_SETTINGS.terminalFontSize,
       codeEditorFontSize: DEFAULT_SETTINGS.codeEditorFontSize,
       chatWidth: DEFAULT_SETTINGS.chatWidth,
@@ -655,6 +660,7 @@ export function SettingsPanel(): React.JSX.Element {
     setTheme(defaults.theme!)
     setSystemLightTheme(defaults.systemLightTheme!)
     setSystemDarkTheme(defaults.systemDarkTheme!)
+    setUiFontFamily(defaults.uiFontFamily!)
     setFontSize(defaults.fontSize!)
     setTerminalFontSize(defaults.terminalFontSize!)
     setCodeEditorFontSize(defaults.codeEditorFontSize!)
@@ -885,6 +891,25 @@ export function SettingsPanel(): React.JSX.Element {
             </div>
           </SettingsRow>
 
+          <SettingsRow label={t('settings.uiFontFamily.label')} description={t('settings.uiFontFamily.description')}>
+            <select
+              aria-label={t('settings.uiFontFamily.label')}
+              value={uiFontFamily}
+              onChange={(e) => {
+                const family = e.target.value
+                setUiFontFamily(family)
+                applyUiFont(family)
+                setSettingsDraft({ uiFontFamily: family })
+              }}
+              className="w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary focus:border-focus focus:outline-none"
+            >
+              <option value="">{t('settings.uiFontFamily.placeholder')}</option>
+              {Array.from(new Set(['Inter Variable', 'Arial', 'Helvetica Neue', 'Segoe UI', 'Verdana', 'Georgia', 'JetBrains Mono Variable', uiFontFamily])).filter(Boolean).map((family) => (
+                <option key={family} value={family}>{family}</option>
+              ))}
+            </select>
+          </SettingsRow>
+
           <SettingsRow label={t('settings.uiFontSize.label')} description={t('settings.uiFontSize.description')}>
             <div className="flex items-center gap-3">
               <input
@@ -895,12 +920,22 @@ export function SettingsPanel(): React.JSX.Element {
                 onChange={(e) => {
                   const size = Number(e.target.value)
                   setFontSize(size)
-                  document.documentElement.style.fontSize = `${size}px`
-                  setSettingsDraft({ fontSize: size })
                 }}
                 className="flex-1 accent-accent"
               />
               <span className="w-8 text-right text-sm text-muted">{fontSize}</span>
+              <button
+                type="button"
+                aria-label={t('common.confirm')}
+                title={t('common.confirm')}
+                onClick={() => {
+                  document.documentElement.style.fontSize = `${fontSize}px`
+                  setSettingsDraft({ fontSize })
+                }}
+                className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+              >
+                <Check size={14} aria-hidden="true" />
+              </button>
             </div>
           </SettingsRow>
 
@@ -914,11 +949,19 @@ export function SettingsPanel(): React.JSX.Element {
                 onChange={(e) => {
                   const size = Number(e.target.value)
                   setTerminalFontSize(size)
-                  setSettingsDraft({ terminalFontSize: size })
                 }}
                 className="flex-1 accent-accent"
               />
               <span className="w-8 text-right text-sm text-muted">{terminalFontSize}</span>
+              <button
+                type="button"
+                aria-label={t('common.confirm')}
+                title={t('common.confirm')}
+                onClick={() => setSettingsDraft({ terminalFontSize })}
+                className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+              >
+                <Check size={14} aria-hidden="true" />
+              </button>
             </div>
           </SettingsRow>
 
@@ -932,11 +975,19 @@ export function SettingsPanel(): React.JSX.Element {
                 onChange={(e) => {
                   const size = Number(e.target.value)
                   setCodeEditorFontSize(size)
-                  setSettingsDraft({ codeEditorFontSize: size })
                 }}
                 className="flex-1 accent-accent"
               />
               <span className="w-8 text-right text-sm text-muted">{codeEditorFontSize}</span>
+              <button
+                type="button"
+                aria-label={t('common.confirm')}
+                title={t('common.confirm')}
+                onClick={() => setSettingsDraft({ codeEditorFontSize })}
+                className="rounded-md border border-border-strong px-3 py-1.5 text-sm text-muted hover:bg-surface-hover transition-colors"
+              >
+                <Check size={14} aria-hidden="true" />
+              </button>
             </div>
           </SettingsRow>
 
@@ -1280,11 +1331,11 @@ function SettingsRow({
   }
   return (
     <div className="flex items-center justify-between gap-4">
-      <div>
+      <div className="min-w-0 flex-1">
         <div className="text-sm text-primary">{label}</div>
         <div className="text-xs text-dim">{description}</div>
       </div>
-      <div className="w-64">{children}</div>
+      <div className="w-64 max-w-[50%] shrink-0">{children}</div>
     </div>
   )
 }
@@ -1390,13 +1441,13 @@ function Toggle({
   return (
     <button
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 align-middle transition-colors ${
         checked ? 'bg-accent' : 'bg-elevated'
       }`}
     >
       <span
-        className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-          checked ? 'translate-x-4' : 'translate-x-1'
+        className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+          checked ? 'translate-x-4' : 'translate-x-0'
         }`}
       />
     </button>
