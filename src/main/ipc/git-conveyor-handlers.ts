@@ -9,7 +9,7 @@ import type {
 } from '../../shared/ipc-contracts'
 import { assertTrustedSender, isObject, isOptionalBoolean, isOptionalString, isString } from './validation'
 import {
-  GitSwitchRefusal, commitAll, createPullRequest, getGitConveyorStatus, listLocalBranches, pushBranch, switchLocalBranch,
+  GitSwitchRefusal, commitAll, createLocalBranch, createPullRequest, getGitConveyorStatus, listLocalBranches, pushBranch, switchLocalBranch,
 } from '../git-conveyor'
 import type { IpcContext } from './context'
 import { t } from '../../shared/i18n'
@@ -62,6 +62,14 @@ export function registerGitConveyorHandlers(ctx: IpcContext): void {
       if (active) throw new GitSwitchRefusal(t('conveyor.branches.agentWorking'))
       return switchLocalBranch(workspace.path, branch)
     })
+  })
+
+  // A new branch starts at HEAD and keeps the worktree as it is, so a running
+  // agent is not stopped by it and uncommitted changes simply move along.
+  ipcMain.handle(IPC_CHANNELS.GIT_CREATE_BRANCH, async (event, workspaceId: unknown, name: unknown): Promise<GitBranchSwitchResult> => {
+    assertTrustedSender(event)
+    if (!isString(workspaceId) || !isString(name)) throw new Error('workspaceId and name must be strings')
+    return changeBranch(ctx, workspaceId, (workspace) => createLocalBranch(workspace.path, name))
   })
 
   ipcMain.handle(IPC_CHANNELS.GIT_CONVEYOR_COMMIT, async (event, input: unknown) => {

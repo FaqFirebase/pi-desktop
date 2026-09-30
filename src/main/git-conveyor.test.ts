@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
@@ -7,6 +7,7 @@ import { test } from 'node:test'
 import {
   commitAll,
   countPorcelainFiles,
+  createLocalBranch,
   extractGitHubPullRequestUrl,
   extractUrl,
   getGitConveyorStatus,
@@ -301,5 +302,37 @@ test('commitAll preserves a curated index inside the workspace', async () => {
 
     assert.equal(git(['show', '--format=', '--name-only', 'HEAD']), 'app/a.txt')
     assert.match(git(['status', '--porcelain']), /M app\/b\.txt$/m)
+  })
+})
+
+test('createLocalBranch creates a valid new branch from HEAD and carries uncommitted changes', async () => {
+  await withGitRepo(async (repo, git) => {
+    await writeFile(join(repo, 'app.ts'), 'v0\n', 'utf8')
+    git(['add', '.'])
+    git(['commit', '-m', 'initial'])
+    const head = git(['rev-parse', 'HEAD'])
+    const original = git(['branch', '--show-current'])
+    await writeFile(join(repo, 'app.ts'), 'v1\n', 'utf8')
+    await writeFile(join(repo, 'new.ts'), 'new\n', 'utf8')
+
+    for (const name of ['', 'bad..name', '-option', 'HEAD', 'with space', '@{-1}']) {
+      await assert.rejects(() => createLocalBranch(repo, name), /not a valid branch name/)
+    }
+    await assert.rejects(() => createLocalBranch(repo, original), /already exists/)
+
+    const status = await createLocalBranch(repo, 'feature/new-work')
+    assert.equal(status.branch, 'feature/new-work')
+    assert.equal(git(['rev-parse', 'HEAD']), head)
+    assert.equal(await readFile(join(repo, 'app.ts'), 'utf8'), 'v1\n')
+    assert.equal(git(['diff', '--name-only']), 'app.ts')
+    assert.match(git(['status', '--porcelain']), /^\?\? new\.ts$/m)
+  })
+})
+
+test('createLocalBranch refuses while a Git operation is in progress', async () => {
+  await withGitRepo(async (repo, git) => {
+    git(['commit', '--allow-empty', '-m', 'initial'])
+    await writeFile(join(repo, '.git', 'MERGE_HEAD'), `${git(['rev-parse', 'HEAD'])}\n`, 'utf8')
+    await assert.rejects(() => createLocalBranch(repo, 'feature'), /merge is in progress/)
   })
 })

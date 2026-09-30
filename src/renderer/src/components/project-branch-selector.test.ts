@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { GitBranchSwitchResult, GitConveyorStatus } from '../../../shared/ipc-contracts'
 import { useAppStore } from '../store'
 import { withGitOperation } from '../utils/git-operation'
-import { switchProjectBranch } from './project-branch-selector'
+import { NEW_BRANCH_OPTION_VALUE, createProjectBranch, switchProjectBranch } from './project-branch-selector'
 
 const status: GitConveyorStatus = {
   branch: 'main', head: 'head', lastCommitMessage: 'Previous commit',
@@ -19,6 +19,12 @@ beforeEach(() => {
     value: { piDesktop: {
       ui: { setEditorDirty: () => {} },
       git: {
+        createBranch: async (workspaceId: string, name: string): Promise<GitBranchSwitchResult> => {
+          calls.push(`create:${workspaceId}:${name}`)
+          return name === 'main'
+            ? { ok: false, error: 'A branch named "main" already exists.' }
+            : { ok: true, status: { ...status, branch: name } }
+        },
         switchBranch: async (workspaceId: string, branch: string) => {
           calls.push(`switch:${workspaceId}:${branch}`)
           return branch === 'refused'
@@ -113,4 +119,26 @@ test('a branch switch in flight prevents a second Git mutation from starting', a
 test('a refused switch reports its reason as an error', async () => {
   await assert.rejects(switchProjectBranch('project', 'refused'), /Commit or discard/)
   assert.deepEqual(calls, ['switch:project:refused'])
+})
+
+test('a new branch is created on the bound workspace, even with unsaved editor text or an open preview', async () => {
+  useAppStore.setState({
+    editorDirty: true,
+    previewTarget: { kind: 'code', path: '/project/app.ts', name: 'app.ts', relativePath: 'app.ts' },
+  })
+  assert.equal((await createProjectBranch('project', '  feature/new  ')).branch, 'feature/new')
+  assert.deepEqual(calls, ['create:project:feature/new'])
+})
+
+test('a new branch needs a name and the same workspace, and a refusal comes back as the error', async () => {
+  await assert.rejects(createProjectBranch('project', '   '), /Enter a name/)
+  await assert.rejects(createProjectBranch('previous-workspace', 'feature'), /workspace changed/)
+  await assert.rejects(createProjectBranch('project', 'main'), /already exists/)
+  assert.deepEqual(calls, ['create:project:main'])
+  // The operation guard is released after a refusal.
+  assert.equal((await withGitOperation(async () => 'free')), 'free')
+})
+
+test('the New branch item can never be mistaken for a branch name', () => {
+  assert.match(NEW_BRANCH_OPTION_VALUE, /:/, 'Git branch names cannot contain a colon')
 })

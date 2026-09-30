@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { GitBranch, Loader2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { t } from '../../../shared/i18n'
@@ -7,6 +7,31 @@ import { useAppStore } from '../store'
 import { withGitOperation } from '../utils/git-operation'
 import { formatIpcError } from '../utils/ipc-error'
 import { createStaleGuard } from '../utils/stale-guard'
+import { isImeComposing } from '../utils/ime-composing'
+
+/**
+ * Value of the "New branch" item in the branch menu. A colon can never be part
+ * of a Git branch name, so it cannot collide with a real branch.
+ */
+export const NEW_BRANCH_OPTION_VALUE = ':new-branch'
+
+/**
+ * Create a branch from the current HEAD on the workspace the user is looking
+ * at and switch to it. Unsaved editor text and uncommitted changes stay as
+ * they are: the files do not change.
+ */
+export async function createProjectBranch(workspaceId: string, name: string): Promise<GitConveyorStatus> {
+  const branch = name.trim()
+  if (!branch) throw new Error(t('conveyor.branches.nameRequired'))
+  return withGitOperation(async () => {
+    if (useAppStore.getState().activeWorkspace?.id !== workspaceId) {
+      throw new Error(t('conveyor.errors.workspaceChanged'))
+    }
+    const result = await window.piDesktop.git.createBranch(workspaceId, branch)
+    if (!result.ok) throw new Error(result.error)
+    return result.status
+  })
+}
 
 export async function switchProjectBranch(workspaceId: string, branch: string): Promise<GitConveyorStatus | null> {
   const assertWorkspace = (): void => {
@@ -38,6 +63,9 @@ export function ProjectBranchSelector({ workspaceId }: { workspaceId: string }):
   const [loadError, setLoadError] = useState<string | null>(null)
   const [switchError, setSwitchError] = useState<string | null>(null)
   const error = switchError ?? loadError
+  /** The inline "New branch" form: the typed name and the last refusal. */
+  const [newBranch, setNewBranch] = useState<{ name: string; error: string | null } | null>(null)
+  const newBranchInputId = useId()
 
   const sameWorkspace = useCallback((): boolean =>
     mounted.current && useAppStore.getState().activeWorkspace?.id === workspaceId, [workspaceId])
@@ -75,7 +103,31 @@ export function ProjectBranchSelector({ workspaceId }: { workspaceId: string }):
     }
   }, [refresh])
 
+  const createBranch = async (): Promise<void> => {
+    if (busyRef.current || !newBranch) return
+    busyRef.current = true
+    setBusy(true)
+    setSwitchError(null)
+    try {
+      await createProjectBranch(workspaceId, newBranch.name)
+      if (sameWorkspace()) setNewBranch(null)
+    } catch (err) {
+      if (sameWorkspace()) setNewBranch((current) => current && { ...current, error: formatIpcError(err) })
+    } finally {
+      if (sameWorkspace()) {
+        await refresh()
+        setBusy(false)
+      }
+      busyRef.current = false
+    }
+  }
+
   const switchBranch = async (branch: string): Promise<void> => {
+    if (branch === NEW_BRANCH_OPTION_VALUE) {
+      setSwitchError(null)
+      setNewBranch({ name: '', error: null })
+      return
+    }
     if (busyRef.current || branch === repository?.branch) return
     busyRef.current = true
     setBusy(true)
@@ -113,8 +165,52 @@ export function ProjectBranchSelector({ workspaceId }: { workspaceId: string }):
             {!repository.branch && <option value="" disabled>{t('conveyor.detachedBranch')}</option>}
             {repository.branch && !repository.branches.includes(repository.branch) && <option value={repository.branch}>{repository.branch}</option>}
             {repository.branches.map((branch) => <option key={branch} value={branch}>{branch}</option>)}
+            <option value={NEW_BRANCH_OPTION_VALUE}>{t('conveyor.branches.newBranchOption')}</option>
           </select>
         </label>
+      )}
+      {newBranch && (
+        <form
+          aria-label={t('conveyor.branches.newBranchTitle')}
+          className="absolute bottom-full left-0 z-50 mb-2 w-80 max-w-[80vw] rounded-lg border border-border-strong bg-surface p-3 text-xs shadow-lg"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void createBranch()
+          }}
+        >
+          <label htmlFor={newBranchInputId} className="text-muted">{t('conveyor.branches.newBranchTitle')}</label>
+          <input
+            id={newBranchInputId}
+            autoFocus
+            value={newBranch.name}
+            onChange={(event) => setNewBranch({ name: event.target.value, error: null })}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && !isImeComposing(event.nativeEvent)) {
+                event.preventDefault()
+                setNewBranch(null)
+              }
+            }}
+            placeholder={t('conveyor.branches.newBranchPlaceholder')}
+            spellCheck={false}
+            className="mt-1 w-full rounded border border-border-strong bg-app px-2 py-1 font-mono text-xs text-primary outline-none focus:border-focus"
+          />
+          <p className="mt-1 text-[11px] text-faint">
+            {t('conveyor.branches.newBranchHint', { branch: repository?.branch ?? t('conveyor.detachedBranch') })}
+          </p>
+          {newBranch.error && <p role="alert" className="mt-1 whitespace-pre-wrap break-words text-[11px] text-error">{newBranch.error}</p>}
+          <div className="mt-2 flex justify-end gap-2">
+            <button type="button" onClick={() => setNewBranch(null)} className="rounded border border-border px-2 py-1 text-muted hover:bg-surface-hover hover:text-primary">
+              {t('common.cancel')}
+            </button>
+            <button
+              type="submit"
+              disabled={busy || !newBranch.name.trim()}
+              className="rounded bg-accent px-2 py-1 font-medium text-white hover:bg-accent/90 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-accent"
+            >
+              {t('conveyor.branches.createBranch')}
+            </button>
+          </div>
+        </form>
       )}
       {error && (
         <div role="alert" className="absolute bottom-full left-0 z-50 mb-2 flex w-80 max-w-[80vw] items-start gap-2 rounded-lg border border-error/20 bg-surface p-3 text-xs text-error shadow-lg">

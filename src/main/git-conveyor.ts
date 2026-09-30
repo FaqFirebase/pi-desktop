@@ -266,6 +266,25 @@ export async function switchLocalBranch(cwd: string, branch: string): Promise<Gi
   return getGitConveyorStatus(cwd)
 }
 
+/**
+ * Create `name` from the current HEAD and switch to it, without force.
+ * Uncommitted changes are allowed: a new branch starts at the same commit, so
+ * the changes move with the user and no work can be lost. The name must pass
+ * `git check-ref-format --branch` unchanged (no `@{-1}` shorthand) and must not
+ * name an existing local branch.
+ */
+export async function createLocalBranch(cwd: string, name: string): Promise<GitConveyorStatus> {
+  // A leading dash would read as an option; Git rejects such names anyway.
+  const valid = !name.startsWith('-') && await runGit(['check-ref-format', '--branch', name], cwd)
+    .then((result) => result.stdout.trim() === name, () => false)
+  if (!valid) throw new GitSwitchRefusal(t('errors.git.branchNameInvalid', { name }))
+  if ((await listLocalBranches(cwd)).includes(name)) throw new GitSwitchRefusal(t('errors.git.branchExists', { name }))
+  const operation = await activeGitOperation(cwd)
+  if (operation) throw new GitSwitchRefusal(t('errors.git.operationInProgressCreateBranch', { operation }))
+  await runGit(['switch', '--create', name], cwd)
+  return getGitConveyorStatus(cwd)
+}
+
 export async function commitAll(cwd: string, options: GitConveyorCommitOptions): Promise<GitConveyorStatus> {
   const message = options.message.trim()
   if (!message) throw new Error(t('errors.git.commitMessageRequired'))

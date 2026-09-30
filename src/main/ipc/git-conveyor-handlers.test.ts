@@ -87,3 +87,56 @@ test('branch IPC validates inputs and workspace activity, switches explicitly, a
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('new-branch IPC creates from HEAD while an agent works, refuses bad names as results, and notifies file consumers', async () => {
+  const require = createRequire(import.meta.url)
+  const electronPath = require.resolve('electron')
+  require('electron')
+  const electronModule = require.cache[electronPath]!
+  const originalExports = electronModule.exports
+  electronModule.exports = electronStub
+  const root = await mkdtemp(join(tmpdir(), 'pi-new-branch-ipc-'))
+  const git = (args: string[]): string => {
+    const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    return result.stdout.trim()
+  }
+  try {
+    git(['init'])
+    git(['config', 'user.email', 'pi-desktop@example.test'])
+    git(['config', 'user.name', 'Pi Desktop Tests'])
+    git(['commit', '--allow-empty', '-m', 'initial'])
+    const initialBranch = git(['branch', '--show-current'])
+    const { registerGitConveyorHandlers } = await import('./git-conveyor-handlers')
+    const events: unknown[][] = []
+    registerGitConveyorHandlers({
+      workspaceManager: {
+        getActiveWorkspace: () => ({ id: 'project', path: root }),
+        getSessionRuntimes: () => [{ activity: 'working' }],
+      },
+      broadcast: (...args: unknown[]) => events.push(args),
+    } as unknown as IpcContext)
+    const event = { senderFrame: { url: process.env.ELECTRON_RENDERER_URL ?? pathToFileURL(RENDERER_INDEX_PATH).href } }
+    const createBranch = handlers.get(IPC_CHANNELS.GIT_CREATE_BRANCH)!
+    await assert.rejects(createBranch({}, 'project', 'feature'), /Unauthorized/)
+    await assert.rejects(createBranch(event, 'project', 7), /must be strings/)
+    for (const [workspaceId, name, pattern] of [
+      ['old-workspace', 'feature', /workspace changed/],
+      ['project', 'bad..name', /not a valid branch name/],
+      ['project', initialBranch, /already exists/],
+    ] as const) {
+      const result = await createBranch(event, workspaceId, name) as GitBranchSwitchResult
+      assert.equal(result.ok, false)
+      assert.match(result.ok ? '' : result.error, pattern)
+    }
+    assert.deepEqual(events, [])
+    writeFileSync(join(root, 'work.txt'), 'uncommitted\n')
+    const result = await createBranch(event, 'project', 'feature/new') as GitBranchSwitchResult
+    assert.equal(result.ok && result.status.branch, 'feature/new')
+    assert.equal(git(['status', '--porcelain']), '?? work.txt')
+    assert.deepEqual(events, [[IPC_CHANNELS.EVENT_FILE_CHANGE, { changeType: 'change', relativePath: '.' }]])
+  } finally {
+    electronModule.exports = originalExports
+    await rm(root, { recursive: true, force: true })
+  }
+})

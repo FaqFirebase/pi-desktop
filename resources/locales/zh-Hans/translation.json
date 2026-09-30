@@ -252,8 +252,14 @@
   "conveyor": {
     "branches": {
       "agentWorking": "请等待此工作区中的所有代理完成后再切换分支。",
+      "createBranch": "创建分支",
       "description": "切换项目的本地分支，不强制切换，也不自动贮藏更改",
       "label": "项目分支",
+      "nameRequired": "请输入新分支的名称。",
+      "newBranchHint": "从 {{branch}} 创建。未提交的更改会随你移到新分支。",
+      "newBranchOption": "新建分支…",
+      "newBranchPlaceholder": "feature/my-change",
+      "newBranchTitle": "新建分支",
       "saveEditor": "切换分支前，请先保存或还原编辑器中的更改。"
     },
     "branchStatusClean": "{{branch}}",
@@ -487,6 +493,8 @@
       "blockedWrite": "无法写入“{{path}}”（{{code}}）。在 Windows 上这通常是受控文件夹访问（勒索软件保护）阻止了更改。你可以在 Windows 安全中心 → 病毒和威胁防护 → 勒索软件保护 →“通过受控文件夹访问允许应用”中允许 Pi Desktop，或者把本项目移出“文档”/“桌面”到不受保护的文件夹（例如 C:\\dev）。"
     },
     "git": {
+      "branchExists": "名为“{{name}}”的分支已存在。请在分支菜单中选择它以切换过去",
+      "branchNameInvalid": "“{{name}}”不是有效的分支名称",
       "commandFailed": "{{command}} 失败",
       "commandFailedWithDetail": "{{command}} 失败：{{detail}}",
       "commitBeforePullRequest": "创建 PR 前请先提交工作树",
@@ -500,6 +508,7 @@
       "namedBranchRequired": "创建 PR 需要一个具名分支",
       "noTrackedChanges": "本工作区没有可提交的已跟踪更改。请先暂存未跟踪的文件以将其包含进来。",
       "operationInProgressCommit": "Git {{operation}} 进行中，无法提交",
+      "operationInProgressCreateBranch": "Git {{operation}} 进行中，无法创建分支",
       "operationInProgressPush": "Git {{operation}} 进行中，无法推送",
       "operationInProgressSwitch": "Git {{operation}} 进行中，无法切换分支",
       "pullRequestTitleRequired": "必须填写 PR 标题",

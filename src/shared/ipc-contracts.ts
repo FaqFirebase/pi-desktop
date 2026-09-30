@@ -151,6 +151,7 @@ export const IPC_CHANNELS = {
   GIT_CONVEYOR_STATUS: 'git:conveyor-status',
   GIT_LOCAL_BRANCHES: 'git:local-branches',
   GIT_SWITCH_BRANCH: 'git:switch-branch',
+  GIT_CREATE_BRANCH: 'git:create-branch',
   GIT_CONVEYOR_COMMIT: 'git:conveyor-commit',
   GIT_CONVEYOR_PUSH: 'git:conveyor-push',
   GIT_CONVEYOR_CREATE_PR: 'git:conveyor-create-pr',
