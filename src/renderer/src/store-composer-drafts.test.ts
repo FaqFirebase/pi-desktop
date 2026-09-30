@@ -67,3 +67,25 @@ test('a removed workspace keeps no draft when its composer saves late', () => {
 
   assert.equal('project-a' in useAppStore.getState().composerDrafts, false)
 })
+
+test('clearing sent attachments preserves another project and the outgoing image', () => {
+  const { saveComposerDraft } = useAppStore.getState()
+  const attachments: ComposerAttachment[] = [{
+    kind: 'image',
+    name: 'image.png',
+    path: '/project/image.png',
+    image: { type: 'image', mimeType: 'image/png', data: 'aW1hZ2U=' },
+  }]
+  saveComposerDraft('project-a', { text: '', attachments })
+  saveComposerDraft('project-b', { text: '', attachments })
+
+  const outgoing = useAppStore.getState().composerDrafts['project-a'].attachments
+  saveComposerDraft('project-a', EMPTY_COMPOSER_DRAFT)
+  // A subsequent unmount also saves the now-empty composer.
+  saveComposerDraft('project-a', EMPTY_COMPOSER_DRAFT)
+
+  assert.equal(useAppStore.getState().composerDrafts['project-a'], undefined)
+  assert.deepEqual(useAppStore.getState().composerDrafts['project-b'].attachments, attachments)
+  assert.equal(outgoing.length, 1)
+  assert.equal(outgoing[0].kind, 'image')
+})

@@ -4,7 +4,7 @@ import { clsx } from 'clsx'
 import { EMPTY_COMPOSER_DRAFT, useAppStore, type ComposerAttachment } from '../store'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { useChatKeyboard, useChatWidth, useCommandCatalog } from '../hooks'
-import { composerColumnClass } from '../utils/chat-width'
+import { messageColumnClass } from '../utils/chat-width'
 import { ComposerPermissionMenu } from './composer-permission-menu'
 import { CommandResults } from './command-results'
 import { SubagentProgress } from './subagent-progress'
@@ -17,7 +17,8 @@ import {
   SUPPORTED_IMAGE_EXTENSIONS,
   type FileSearchResult,
 } from '../../../shared/ipc-contracts'
-import { formatUntrustedBlock } from '../../../shared/untrusted-data'
+import { formatAttachedFile } from '../../../shared/untrusted-data'
+import { isPointerMovement } from '../utils/pointer-movement'
 import { rankFileResults } from '../utils/rank-file-results'
 import {
   BUILTIN_SOURCE,
@@ -75,7 +76,7 @@ export function ChatInput(): React.JSX.Element {
   const abort = useAppStore((state) => state.abort)
   const isStreaming = useAppStore((state) => state.isStreaming)
   const piStatus = useAppStore((state) => state.piStatus)
-  const composerColumn = composerColumnClass(useChatWidth())
+  const composerColumn = messageColumnClass(useChatWidth())
   const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const pendingInsert = useAppStore((state) => state.pendingInsert)
   const clearPendingInsert = useAppStore((state) => state.clearPendingInsert)
@@ -315,18 +316,22 @@ export function ChatInput(): React.JSX.Element {
       let fullMessage = message
       if (textAttachments.length > 0) {
         fullMessage += textAttachments
-          .map((a) => `\n\n${formatUntrustedBlock(`ATTACHED FILE: ${a.name}`, a.content, ATTACHMENT_DATA_NOTE)}`)
+          .map((a) => formatAttachedFile(a.name, a.content, ATTACHMENT_DATA_NOTE))
           .join('')
       }
 
+      // Sending can replace this composer before React renders the cleared state.
+      // Clear the cleanup snapshot first so an already-sent image cannot be saved again.
+      attachmentsRef.current = []
+      setAttachments([])
+      resetComposer()
+      useAppStore.getState().saveComposerDraft(workspaceId, EMPTY_COMPOSER_DRAFT)
       sendPrompt(
         fullMessage,
         images.length > 0 ? { images, attachments: displayAttachments } : undefined
       )
-      setAttachments([])
-      resetComposer()
     },
-    [sendPrompt, attachments, recordPrompt, resetComposer]
+    [sendPrompt, attachments, recordPrompt, resetComposer, workspaceId]
   )
 
   const handleAbort = useCallback(() => {
@@ -630,7 +635,7 @@ export function ChatInput(): React.JSX.Element {
                   // textarea (which would close the popup before onClick fires).
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => selectMention(result)}
-                  onMouseEnter={() => setMentionIndex(i)}
+                  onMouseMove={(e) => { if (isPointerMovement(e)) setMentionIndex(i) }}
                   className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors ${
                     i === mentionIndex ? 'bg-card' : 'hover:bg-surface-hover/50'
                   }`}

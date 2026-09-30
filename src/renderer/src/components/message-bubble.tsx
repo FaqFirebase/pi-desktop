@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useState, useRef } from 'react'
+import { memo, useLayoutEffect, useMemo, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore, type DisplayMessage } from '../store'
 import { modelDisplayName } from '../../../shared/models-config'
@@ -25,6 +25,7 @@ import { useContextMenu, buildMessageContextMenu } from './context-menu'
 import { RelativeTime } from '../utils/relative-time'
 import { isImeComposing } from '../utils/ime-composing'
 import { clsx } from 'clsx'
+import { splitAttachedFiles } from '../../../shared/untrusted-data'
 import {
   Copy,
   Check,
@@ -39,6 +40,7 @@ import {
   Send,
   ImageOff,
   Square,
+  FileText,
 } from 'lucide-react'
 
 function MessageBubbleImpl({
@@ -222,6 +224,8 @@ function UserMessage({
 }): React.JSX.Element {
   const { t } = useTranslation()
   const editRef = useRef<HTMLTextAreaElement>(null)
+  // Attached text files travel inside the prompt; show them as chips.
+  const attachedFiles = useMemo(() => splitAttachedFiles(message.content), [message.content])
 
   // Open the editor at the height of the message it edits, not one row.
   useLayoutEffect(() => {
@@ -269,13 +273,14 @@ function UserMessage({
     )
   }
 
+  const hasChips = (message.attachments?.length ?? 0) > 0 || attachedFiles.fileNames.length > 0
   return (
     <div className="group mb-4 flex justify-end animate-fade-in">
       <div className="relative max-w-[80%]">
         <div className="rounded-2xl rounded-br-md bg-card px-4 py-2.5 text-sm text-primary">
-          {message.attachments && message.attachments.length > 0 && (
-            <div className={clsx('flex flex-wrap gap-2', message.content && 'mb-2')}>
-              {message.attachments.map((attachment, index) => (
+          {hasChips && (
+            <div className={clsx('flex flex-wrap gap-2', attachedFiles.text && 'mb-2')}>
+              {message.attachments?.map((attachment, index) => (
                 <div
                   key={`${attachment.name}-${index}`}
                   className="overflow-hidden rounded-md border border-white/20 bg-black/10"
@@ -295,9 +300,19 @@ function UserMessage({
                   )}
                 </div>
               ))}
+              {attachedFiles.fileNames.map((name, index) => (
+                <div
+                  key={`${name}-${index}`}
+                  className="flex max-w-60 items-center gap-1.5 rounded-md border border-white/20 bg-black/10 px-2 py-1 text-xs text-secondary"
+                  title={name}
+                >
+                  <FileText size={12} className="shrink-0 text-muted" aria-hidden="true" />
+                  <span className="truncate">{name}</span>
+                </div>
+              ))}
             </div>
           )}
-          <div className="font-chat whitespace-pre-wrap break-words">{message.content}</div>
+          {attachedFiles.text && <div className="font-chat whitespace-pre-wrap break-words">{attachedFiles.text}</div>}
         </div>
         {/* Actions */}
         <div className="mt-1 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">

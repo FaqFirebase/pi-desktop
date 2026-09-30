@@ -222,6 +222,20 @@
     padding-left: 1.5em;
   }
 
+  /* Tailwind's preflight strips list markers; chat Markdown needs them back. */
+  .markdown-body ul {
+    list-style-type: disc;
+  }
+
+  .markdown-body ol {
+    list-style-type: decimal;
+  }
+
+  /* A GFM task list already shows a checkbox per item. */
+  .markdown-body ul.contains-task-list {
+    list-style-type: none;
+  }
+
   .markdown-body li {
     margin-bottom: 0.25em;
   }

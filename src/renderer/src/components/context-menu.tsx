@@ -21,6 +21,13 @@ import { useAppStore } from '../store'
 import { getSessionTitle } from '../utils/session-title'
 import { t } from '../../../shared/i18n'
 
+/**
+ * Events that close the menu because the user scrolls. A plain `scroll` event
+ * also fires when the app scrolls a box by itself (a live answer following its
+ * newest text), which closed the menu the moment it opened.
+ */
+export const CONTEXT_MENU_USER_SCROLL_EVENTS = ['wheel', 'touchmove'] as const
+
 interface ContextMenuItem {
   id: string
   label: string
@@ -114,12 +121,18 @@ export function useContextMenu(): {
     }
   }, [state.visible, hide])
 
-  // Close on scroll
+  // Close when the user scrolls
   useEffect(() => {
     if (!state.visible) return
     const handleScroll = () => hide()
-    window.addEventListener('scroll', handleScroll, true)
-    return () => window.removeEventListener('scroll', handleScroll, true)
+    for (const type of CONTEXT_MENU_USER_SCROLL_EVENTS) {
+      window.addEventListener(type, handleScroll, { capture: true, passive: true })
+    }
+    return () => {
+      for (const type of CONTEXT_MENU_USER_SCROLL_EVENTS) {
+        window.removeEventListener(type, handleScroll, { capture: true })
+      }
+    }
   }, [state.visible, hide])
 
   // Move focus into the menu when it opens; restore it to the trigger on close.

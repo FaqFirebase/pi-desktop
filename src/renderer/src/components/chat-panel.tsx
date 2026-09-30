@@ -315,7 +315,7 @@ export function ChatPanel(): React.JSX.Element {
                               : t('chat.emptyState.chooseProject', { agent: engineLabel })}
                       </p>
                     </div>
-                    <div className="w-full max-w-3xl">
+                    <div className={clsx('w-full', messageColumn)}>
                       {piStatus === 'running' && (
                         <div className="mb-4 flex flex-wrap justify-center gap-2 px-4">
                           {EXAMPLE_PROMPTS.map((prompt) => (
