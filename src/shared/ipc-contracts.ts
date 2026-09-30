@@ -291,9 +291,20 @@ export interface GitConveyorStatus {
   branch: string | null
   head: string
   lastCommitMessage: string | null
+  /** Every changed row, untracked files included. */
   dirtyFiles: number
+  /**
+   * Staged or unstaged changes to tracked files. Untracked files never reach a
+   * commit on their own, so only these block a push or a pull request.
+   */
+  dirtyTrackedFiles: number
   ahead: number
   behind: number
+  /**
+   * The configured upstream exists as a remote-tracking branch. False for a
+   * branch never pushed, a clone of an empty repository, or a remote branch
+   * that was deleted: Push publishes it again.
+   */
   hasUpstream: boolean
   /** Remote branch used by the explicit push target, when configured. */
   pushRemote: string | null
@@ -301,7 +312,18 @@ export interface GitConveyorStatus {
   upstreamBranch: string | null
   /** Default base branch discovered from the upstream remote, when available. */
   baseBranch: string | null
+  /** Commits on HEAD that the remote base branch lacks; null when the base is unknown. */
+  aheadOfBase: number | null
   remoteUrl: string | null
+  /** GitHub `owner/name` a pull request targets; null when that remote is not on GitHub. */
+  pullRequestRepo: string | null
+  /** The open pull request from this branch, when GitHub reports one. */
+  openPullRequest: GitOpenPullRequest | null
+}
+
+export interface GitOpenPullRequest {
+  number: number
+  url: string
 }
 
 /** Both fields null: the commit selection has nothing to describe. */
@@ -317,15 +339,23 @@ export interface GitCommitMessageRequest {
   force: boolean
   /** Describe only these repository-root-relative paths (the filtered Diff Viewer). */
   paths?: string[]
+  /** Untracked files among `paths` the user chose to commit; the others stay out. */
+  newFiles?: string[]
 }
 
 export interface GitConveyorCommitOptions {
   message: string
   /**
-   * Commit only these repository-root-relative paths; untracked ones stay out.
+   * Commit only these repository-root-relative paths; untracked ones stay out
+   * unless listed in `newFiles`.
    * Omitted: commit the staged index, or auto-stage tracked changes.
    */
   paths?: string[]
+  /**
+   * Untracked files among `paths` the user checked in the Commit dialog. They
+   * are added and committed; ignored files and directories are refused.
+   */
+  newFiles?: string[]
 }
 
 export interface GitConveyorPullRequestOptions {

@@ -132,3 +132,15 @@ test('shutdown cancels pending work', async () => {
   assert.equal(signal?.aborted, true)
 })
 
+test('the chosen new files reach the diff reader with the selected paths', async () => {
+  const reads: unknown[][] = []
+  const service = new CommitMessageService({
+    resolvePath: async (cwd) => cwd,
+    readDiff: async (...args) => {
+      reads.push(args)
+      return { fingerprint: 'new-file', diff: 'new file' }
+    },
+  })
+  await service.suggest('/repo', async () => 'feat: add file', false, ['a.ts', 'new.ts'], ['new.ts'])
+  assert.deepEqual(reads, [['/repo', ['a.ts', 'new.ts'], ['new.ts']]])
+})

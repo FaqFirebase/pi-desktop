@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useReducer, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
 import { AlertCircle, ExternalLink, GitCommitHorizontal, GitPullRequest, Loader2, Sparkles, Upload, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
@@ -15,7 +15,7 @@ import {
   type CommitMessageInput, type LastCommitMessageSuggestion,
 } from '../utils/commit-message-input'
 
-/** Files on screen a commit is limited to; untracked ones among them stay out. */
+/** Files on screen a commit is limited to; untracked ones among them stay out unless the user checks them. */
 export interface GitCommitSelection {
   files: number
   /** Repository-root-relative paths, both sides of a rename included. */
@@ -28,9 +28,21 @@ type ConveyorDialog =
     workspaceId: string | undefined
     pushAfter: boolean
     paths: string[] | undefined
+    /** Untracked files in the selection, listed unchecked when the dialog opens. */
+    newFiles: string[]
+    /** The subset of `newFiles` the user checked: they are added and committed. */
+    chosenNewFiles: string[]
+    /** The selection holds staged or tracked changes, so it commits even with no new file checked. */
+    hasTrackedChanges: boolean
     scope: string
   } & CommitMessageInput)
   | { kind: 'pr'; title: string; body: string; base: string }
+
+/** A result line under the action bar; a link (a new pull request) stays until dismissed. */
+interface ConveyorFeedback {
+  message: string
+  link: string | null
+}
 
 type ConveyorAction = 'commit' | 'commitPush' | 'push' | 'pr'
 
@@ -53,6 +65,8 @@ export function gitStatusErrorReducer(state: GitStatusError, action: GitStatusEr
 
 // A git identifier, not prose — stays literal (ruling on Task 25 fix item 2).
 const DEFAULT_GIT_REMOTE = 'origin'
+/** Web address of a GitHub repository is this origin plus `owner/name`. */
+const GITHUB_WEB_ORIGIN = 'https://github.com'
 /** `git status --porcelain` marks an untracked file with this code in both columns. */
 const UNTRACKED_STATUS = '?'
 // Markdown section headings prefilled in a new pull request description.
@@ -102,14 +116,17 @@ export async function commitConveyorChanges(
   message: string,
   pushAfter: boolean,
   paths?: string[],
+  newFiles: string[] = [],
 ): Promise<ConveyorCommitResult> {
   if (!message.trim()) throw new Error(t('conveyor.errors.commitMessageRequired'))
   const workspaceId = useAppStore.getState().activeWorkspace?.id
   assertWorkspace(workspaceId)
-  const committed = await window.piDesktop.git.commit({ message, ...(paths ? { paths } : {}) })
+  const committed = await window.piDesktop.git.commit({
+    message, ...(paths ? { paths } : {}), ...(paths && newFiles.length > 0 ? { newFiles } : {}),
+  })
   if (!pushAfter) return { status: committed, pushed: false }
   try {
-    if (committed.dirtyFiles > 0) throw new Error(t('conveyor.errors.commitBeforePush'))
+    if (committed.dirtyTrackedFiles > 0) throw new Error(t('conveyor.errors.commitBeforePush'))
     assertWorkspace(workspaceId)
     if (!(await confirmPush(committed))) return { status: committed, pushed: false }
     assertWorkspace(workspaceId)
@@ -121,25 +138,90 @@ export async function commitConveyorChanges(
   }
 }
 
-/** Staged entries and tracked changes; untracked files never reach a commit on their own. */
+/** Staged entries and tracked changes; untracked files reach a commit only when the user chooses them. */
 function isCommittable(file: GitFileStatus | undefined): boolean {
   return !!file && (file.isStaged || (file.worktree !== ' ' && file.worktree !== UNTRACKED_STATUS && file.worktree !== '!'))
+}
+
+type GitPublishAction = 'commitPush' | 'push' | 'pushBlocked' | null
+
+/** The selection holds staged or tracked changes (without one: the whole tree). */
+export function hasCommittableChanges(files: Record<string, GitFileStatus>, selection?: GitCommitSelection): boolean {
+  const candidates = selection ? selection.paths.map((path) => files[path]) : Object.values(files)
+  return candidates.some(isCommittable)
+}
+
+/**
+ * Untracked files among the selection's paths, which the Commit dialog lists
+ * for the user to choose. Without a selection (the staged view) the commit
+ * follows the index, so no file is listed.
+ */
+export function selectionNewFiles(files: Record<string, GitFileStatus>, selection?: GitCommitSelection): string[] {
+  if (!selection) return []
+  return selection.paths.filter((path) => files[path]?.index === UNTRACKED_STATUS && files[path]?.worktree === UNTRACKED_STATUS)
 }
 
 /**
  * A selection commits only the committable files among its listed paths;
  * without one, the index or the tracked changes. Push is offered only while
- * the working tree is clean and the branch has commits the remote lacks (or
- * is not published yet).
+ * the branch has commits the remote lacks (or is not published yet), and
+ * stays blocked while tracked files have uncommitted changes. Untracked files
+ * never block it: a commit takes them only when the user chooses them. A
+ * branch with no commit yet has nothing to push.
  */
 export function gitPublishAction(
   files: Record<string, GitFileStatus>,
   status: GitConveyorStatus | null,
   selection?: GitCommitSelection,
-): 'commitPush' | 'push' | null {
-  const candidates = selection ? selection.paths.map((path) => files[path]) : Object.values(files)
-  if (candidates.some(isCommittable)) return 'commitPush'
-  return status?.branch && status.dirtyFiles === 0 && (status.ahead > 0 || !status.hasUpstream) ? 'push' : null
+): GitPublishAction {
+  if (hasCommittableChanges(files, selection)) return 'commitPush'
+  if (!status?.branch || !status.head || (status.ahead === 0 && status.hasUpstream)) return null
+  return status.dirtyTrackedFiles > 0 ? 'pushBlocked' : 'push'
+}
+
+/**
+ * Which commit buttons show. New files alone offer Commit, so the user can
+ * choose them; Commit + Push joins it unless a plain Push is already offered,
+ * which untracked files must never hide.
+ */
+export function commitButtons(publishAction: GitPublishAction, newFileCount: number): { commit: boolean; commitPush: boolean } {
+  const tracked = publishAction === 'commitPush'
+  return {
+    commit: tracked || newFileCount > 0,
+    commitPush: tracked || (newFileCount > 0 && publishAction === null),
+  }
+}
+
+/** A commit from the dialog records something: tracked changes, or at least one chosen new file. */
+export function commitDialogHasContent(dialog: { hasTrackedChanges: boolean; chosenNewFiles: readonly string[] }): boolean {
+  return dialog.hasTrackedChanges || dialog.chosenNewFiles.length > 0
+}
+
+/**
+ * Why Create PR is unavailable, or null when it can open. A pull request needs
+ * a named branch other than the base, no uncommitted tracked changes, commits
+ * the base lacks, every commit already pushed (the branch published), a
+ * GitHub remote (the GitHub CLI opens it), and a base branch on that remote.
+ */
+export function pullRequestBlocker(status: GitConveyorStatus | null): string | null {
+  if (!status?.branch) return t('conveyor.errors.branchRequired')
+  if (status.branch === status.baseBranch) return t('conveyor.errors.prOnBaseBranch', { base: status.baseBranch })
+  if (status.dirtyTrackedFiles) return t('conveyor.errors.commitBeforePr')
+  if (status.aheadOfBase === 0) return t('conveyor.errors.prNothingToMerge', { base: status.baseBranch })
+  if (status.ahead > 0 || !status.hasUpstream) return t('conveyor.errors.pushBeforePr')
+  if (!status.pullRequestRepo) return t('conveyor.errors.prNeedsGitHub')
+  if (!status.baseBranch) return t('conveyor.errors.prBaseMissing')
+  return null
+}
+
+/** The GitHub page of the repository a pull request targets, when it is on GitHub. */
+export function pullRequestRepositoryUrl(status: GitConveyorStatus | null): string | null {
+  return status?.pullRequestRepo ? `${GITHUB_WEB_ORIGIN}/${status.pullRequestRepo}` : null
+}
+
+/** A result line with a link waits for the user; a plain one hides after the success timeout. */
+export function feedbackHidesAutomatically(feedback: ConveyorFeedback | null): boolean {
+  return !!feedback && feedback.link === null
 }
 
 export function scheduleGitNoticeDismissal(kind: keyof typeof GIT_CONVEYOR_NOTICE_TIMEOUT_MS, dismiss: () => void): () => void {
@@ -163,17 +245,23 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
   const [suggestion, setSuggestion] = useState<'idle' | 'generating' | GitCommitMessageError>('idle')
   const lastSuggestion = useRef<LastCommitMessageSuggestion | null>(null)
   const commitMessageId = useId()
+  const dialogTitleId = useId()
   const requestGuard = useRef(createStaleGuard())
   const refreshGuard = useRef(createStaleGuard())
   const [busy, setBusy] = useState<ConveyorAction | null>(null)
   const busyRef = useRef(false)
   const [dialog, setDialog] = useState<ConveyorDialog | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [feedback, setFeedback] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<ConveyorFeedback | null>(null)
   const [statusError, dispatchStatusError] = useReducer(gitStatusErrorReducer, null)
   const visibleError = error ?? (statusError?.dismissed ? null : statusError?.message)
   const [gitFiles, setGitFiles] = useState<Record<string, GitFileStatus>>({})
   const publishAction = gitPublishAction(gitFiles, status, selection)
+  const newFiles = useMemo(() => selectionNewFiles(gitFiles, selection), [gitFiles, selection])
+  const buttons = commitButtons(publishAction, newFiles.length)
+  const prBlocker = pullRequestBlocker(status)
+  const openPullRequest = status?.openPullRequest ?? null
+  const repositoryUrl = pullRequestRepositoryUrl(status)
   const dismissError = useCallback(() => {
     setError(null)
     setFeedback(null)
@@ -186,7 +274,7 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
   }, [visibleError, dismissError])
 
   useEffect(() => {
-    if (!feedback) return
+    if (!feedbackHidesAutomatically(feedback)) return
     return scheduleGitNoticeDismissal('success', () => setFeedback(null))
   }, [feedback])
 
@@ -236,7 +324,7 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
   const run = async <T,>(
     kind: ConveyorAction,
     action: () => Promise<T>,
-    success: (result: T) => string | null,
+    success: (result: T) => ConveyorFeedback | null,
   ): Promise<void> => {
     if (busyRef.current) return
     busyRef.current = true
@@ -262,7 +350,9 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
    * Suggest. Runs beside the dialog: a slow or failed suggestion never blocks
    * a manual commit, and typing while it runs keeps the typed text.
    */
-  const requestSuggestion = useCallback(async (paths: string[] | undefined, scope: string): Promise<void> => {
+  const requestSuggestion = useCallback(async (
+    paths: string[] | undefined, newFiles: string[], scope: string,
+  ): Promise<void> => {
     const isCurrent = requestGuard.current.begin()
     // A suggestion already shown for this selection means the user wants a new one.
     const regenerated = lastSuggestion.current?.scope === scope
@@ -270,7 +360,9 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
     const stillCurrent = (): boolean => isCurrent() && useAppStore.getState().activeWorkspace?.id === workspaceId
     setSuggestion('generating')
     try {
-      const result = await window.piDesktop.git.generateCommitMessage({ force: regenerated, ...(paths ? { paths } : {}) })
+      const result = await window.piDesktop.git.generateCommitMessage({
+        force: regenerated, ...(paths ? { paths } : {}), ...(paths && newFiles.length > 0 ? { newFiles } : {}),
+      })
       if (!stillCurrent()) return
       if (result.message) lastSuggestion.current = { scope, message: result.message }
       else if (!result.error) lastSuggestion.current = null
@@ -286,27 +378,32 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
     setError(null)
     if (selection && selection.paths.length === 0) return
     const paths = selection ? [...selection.paths] : undefined
-    const scope = commitMessageScope(workspaceId, paths)
-    setDialog({ kind: 'commit', ...openCommitMessageInput(lastSuggestion.current, scope), workspaceId, pushAfter, paths, scope })
-  }, [selection, workspaceId])
+    const scope = commitMessageScope(workspaceId, paths, [])
+    setDialog({
+      kind: 'commit', ...openCommitMessageInput(lastSuggestion.current, scope), workspaceId, pushAfter, paths, scope,
+      newFiles: [...newFiles], chosenNewFiles: [], hasTrackedChanges: hasCommittableChanges(gitFiles, selection),
+    })
+  }, [gitFiles, newFiles, selection, workspaceId])
+
+  /** Check or uncheck one listed new file; the suggestion scope follows what will be committed. */
+  const toggleNewFile = (path: string, chosen: boolean): void => {
+    setDialog((current) => {
+      if (current?.kind !== 'commit') return current
+      const chosenNewFiles = current.newFiles.filter((file) =>
+        file === path ? chosen : current.chosenNewFiles.includes(file))
+      return { ...current, chosenNewFiles, scope: commitMessageScope(current.workspaceId, current.paths, chosenNewFiles) }
+    })
+  }
 
   useEffect(() => {
     if (!shortcutActive || shortcutRequest !== 'commitPush') return
     useAppStore.setState({ diffShortcutRequest: null })
-    if (!dialog && !busyRef.current && status?.branch && publishAction === 'commitPush') openCommitDialog(true)
-  }, [shortcutActive, shortcutRequest, dialog, status, publishAction, openCommitDialog])
+    if (!dialog && !busyRef.current && status?.branch && buttons.commitPush) openCommitDialog(true)
+  }, [shortcutActive, shortcutRequest, dialog, status, buttons.commitPush, openCommitDialog])
 
   const openPrDialog = (): void => {
-    if (!status?.branch) {
-      setError(t('conveyor.errors.branchRequired'))
-      return
-    }
-    if (status.dirtyFiles || status.ahead > 0 || !status.hasUpstream) {
-      setError(
-        status.dirtyFiles
-          ? t('conveyor.errors.commitBeforePr')
-          : t('conveyor.errors.pushBeforePr')
-      )
+    if (prBlocker || !status?.branch) {
+      setError(prBlocker)
       return
     }
     setDialog({
@@ -336,7 +433,7 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
         if (result.url) void window.piDesktop.system.openExternal(result.url)
         return result
       },
-      (result) => result.url ? t('conveyor.feedback.prCreatedWithUrl', { url: result.url }) : t('conveyor.feedback.prCreated'),
+      (result) => ({ message: t('conveyor.feedback.prCreated'), link: result.url }),
     )
   }
 
@@ -347,18 +444,21 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
       return
     }
     const message = dialog.message.trim()
-    if (!message) return
+    if (!message || !commitDialogHasContent(dialog)) return
     lastSuggestion.current = null
     setDialog(null)
     void run(
       dialog.pushAfter ? 'commitPush' : 'commit',
       () => {
         assertWorkspace(dialog.workspaceId)
-        return commitConveyorChanges(message, dialog.pushAfter, dialog.paths)
+        return commitConveyorChanges(message, dialog.pushAfter, dialog.paths, dialog.chosenNewFiles)
       },
-      ({ status: next, pushed }) => pushed
-        ? t('conveyor.feedback.committedAndPushed', { sha: next.head.slice(0, 8) })
-        : t('conveyor.feedback.committed', { sha: next.head.slice(0, 8) }),
+      ({ status: next, pushed }) => ({
+        message: pushed
+          ? t('conveyor.feedback.committedAndPushed', { sha: next.head.slice(0, 8) })
+          : t('conveyor.feedback.committed', { sha: next.head.slice(0, 8) }),
+        link: null,
+      }),
     )
   }
 
@@ -372,8 +472,10 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
         assertWorkspace(workspaceId)
         return window.piDesktop.git.push()
       },
-      (next) => !next ? null
-        : next.ahead > 0 ? t('conveyor.feedback.pushedCommits', { count: next.ahead }) : t('conveyor.feedback.branchPushed'),
+      (next) => !next ? null : {
+        message: next.ahead > 0 ? t('conveyor.feedback.pushedCommits', { count: next.ahead }) : t('conveyor.feedback.branchPushed'),
+        link: null,
+      },
     )
   }
 
@@ -388,28 +490,45 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
           </span>
         )}
         {children}
-        {publishAction === 'commitPush' && (
+        {buttons.commit && (
           <button type="button" onClick={() => openCommitDialog(false)} disabled={busy !== null || !status?.branch} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title={t('conveyor.commitButtonTitle')}>
             {busy === 'commit' ? <Loader2 size={11} className="animate-spin" /> : <GitCommitHorizontal size={11} />}
             {t('conveyor.commit')}
           </button>
         )}
-        {publishAction === 'commitPush' ? (
+        {buttons.commitPush ? (
           <button type="button" onClick={() => openCommitDialog(true)} disabled={busy !== null || !status?.branch} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title={t('conveyor.commitAndPushTitle')}>
             {busy === 'commitPush' ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
             {t('conveyor.commitAndPush')}
           </button>
-        ) : publishAction === 'push' && (
-          <button type="button" onClick={() => void push()} disabled={busy !== null || !status?.branch} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title={t('conveyor.pushButtonTitle')}>
+        ) : (publishAction === 'push' || publishAction === 'pushBlocked') && (
+          <button type="button" onClick={() => void push()} disabled={busy !== null || !status?.branch || publishAction === 'pushBlocked'} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title={publishAction === 'pushBlocked' ? t('conveyor.errors.commitBeforePush') : t('conveyor.pushButtonTitle')}>
             {busy === 'push' || busy === 'commitPush' ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
             {t('conveyor.push')}
           </button>
         )}
-        <button type="button" onClick={openPrDialog} disabled={busy !== null || !status || !!status.dirtyFiles || !!status.ahead || !status.branch || !status.hasUpstream} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title={t('conveyor.prButtonTitle')}>
-          {busy === 'pr' ? <Loader2 size={11} className="animate-spin" /> : <GitPullRequest size={11} />}
-          {t('conveyor.prButtonLabel')}
-        </button>
-        {status?.remoteUrl && <ExternalLink size={11} className="text-faint" aria-hidden="true" />}
+        {openPullRequest ? (
+          <button type="button" onClick={() => void window.piDesktop.system.openExternal(openPullRequest.url)} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary" title={t('conveyor.openPrButtonTitle', { number: openPullRequest.number })}>
+            <GitPullRequest size={11} />
+            {t('conveyor.openPrButtonLabel', { number: openPullRequest.number })}
+          </button>
+        ) : (
+          <button type="button" onClick={openPrDialog} disabled={busy !== null || prBlocker !== null} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title={prBlocker ?? t('conveyor.prButtonTitle')}>
+            {busy === 'pr' ? <Loader2 size={11} className="animate-spin" /> : <GitPullRequest size={11} />}
+            {t('conveyor.prButtonLabel')}
+          </button>
+        )}
+        {repositoryUrl && (
+          <button
+            type="button"
+            onClick={() => void window.piDesktop.system.openExternal(repositoryUrl)}
+            aria-label={t('conveyor.openRepositoryTitle')}
+            title={t('conveyor.openRepositoryTitle')}
+            className="flex size-6 shrink-0 items-center justify-center rounded text-faint transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          >
+            <ExternalLink size={11} aria-hidden="true" />
+          </button>
+        )}
         {visibleError ? (
           <div role="alert" className="flex min-w-0 basis-full items-start gap-2 rounded-lg border border-error/20 bg-error-bg px-3 py-2 text-xs text-error">
             <AlertCircle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
@@ -426,7 +545,22 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
           </div>
         ) : feedback && (
           <div className="flex min-w-0 basis-full items-center gap-2 text-success">
-            <span className="min-w-0 flex-1 break-words text-xs leading-relaxed" role="status">{feedback}</span>
+            <span className="min-w-0 flex-1 break-words text-xs leading-relaxed" role="status">
+              {feedback.message}
+              {feedback.link && (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    onClick={() => { if (feedback.link) void window.piDesktop.system.openExternal(feedback.link) }}
+                    title={t('conveyor.feedback.openLinkTitle')}
+                    className="break-all text-left underline underline-offset-2 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                  >
+                    {feedback.link}
+                  </button>
+                </>
+              )}
+            </span>
             <button
               type="button"
               onClick={() => setFeedback(null)}
@@ -442,6 +576,9 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
       {dialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4" role="presentation">
           <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={dialogTitleId}
             className="w-full max-w-lg rounded-lg border border-border-strong bg-surface p-4 shadow-2xl"
             onSubmit={(event) => {
               event.preventDefault()
@@ -449,7 +586,7 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
             }}
           >
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-primary">
+              <h2 id={dialogTitleId} className="text-sm font-semibold text-primary">
                 {dialog.kind === 'pr' ? t('conveyor.dialog.prTitle') : dialog.pushAfter ? t('conveyor.commitAndPush') : t('conveyor.dialog.commitTitle')}
               </h2>
               <button type="button" onClick={() => setDialog(null)} className="rounded p-1 text-muted hover:bg-surface-hover hover:text-primary" aria-label={t('conveyor.dialog.closeAriaLabel')}>
@@ -492,7 +629,7 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
                   <label htmlFor={commitMessageId} className="text-xs text-muted">{t('conveyor.dialog.commitMessageLabel')}</label>
                   <button
                     type="button"
-                    onClick={() => void requestSuggestion(dialog.paths, dialog.scope)}
+                    onClick={() => void requestSuggestion(dialog.paths, dialog.chosenNewFiles, dialog.scope)}
                     disabled={suggestion === 'generating'}
                     title={t('conveyor.draft.suggestTitle')}
                     className="flex h-6 items-center gap-1 rounded px-1.5 text-[11px] text-faint transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-faint"
@@ -526,14 +663,41 @@ export function GitConveyorActions({ children, onChanged, selection, shortcutAct
                     {commitMessageErrorText(suggestion)}
                   </p>
                 )}
+                {dialog.newFiles.length > 0 && (
+                  <fieldset className="mt-3">
+                    <legend className="text-xs text-muted">{t('conveyor.dialog.newFilesLabel')}</legend>
+                    <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto rounded border border-border bg-app px-2 py-1">
+                      {dialog.newFiles.map((path) => (
+                        <li key={path}>
+                          <label className="flex min-w-0 items-center gap-2 py-0.5 text-xs text-secondary">
+                            <input
+                              type="checkbox"
+                              checked={dialog.chosenNewFiles.includes(path)}
+                              onChange={(event) => toggleNewFile(path, event.target.checked)}
+                              className="shrink-0 accent-accent"
+                            />
+                            <span className="min-w-0 truncate font-mono" title={path}>{path}</span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                    {dialog.chosenNewFiles.length < dialog.newFiles.length && (
+                      <p className="mt-1 text-[11px] text-warning" role="status">
+                        {t('conveyor.dialog.newFilesLeftOut', { count: dialog.newFiles.length - dialog.chosenNewFiles.length })}
+                      </p>
+                    )}
+                  </fieldset>
+                )}
             </div>
             )}
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setDialog(null)} className="rounded border border-border px-3 py-1.5 text-xs text-muted hover:bg-surface-hover hover:text-primary">{t('common.cancel')}</button>
               <button
                 type="submit"
-                disabled={dialog.kind === 'commit' && !dialog.message.trim()}
-                title={dialog.kind === 'commit' && !dialog.message.trim() ? t('conveyor.errors.commitMessageRequired') : undefined}
+                disabled={dialog.kind === 'commit' && (!dialog.message.trim() || !commitDialogHasContent(dialog))}
+                title={dialog.kind !== 'commit' ? undefined
+                  : !commitDialogHasContent(dialog) ? t('conveyor.errors.chooseNewFiles')
+                    : !dialog.message.trim() ? t('conveyor.errors.commitMessageRequired') : undefined}
                 className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/90 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-accent"
               >
                 {dialog.kind === 'pr' ? t('conveyor.createPrButton') : dialog.pushAfter ? t('conveyor.commitAndPush') : t('conveyor.commit')}

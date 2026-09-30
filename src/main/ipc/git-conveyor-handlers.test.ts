@@ -135,6 +135,12 @@ test('new-branch IPC creates from HEAD while an agent works, refuses bad names a
     assert.equal(result.ok && result.status.branch, 'feature/new')
     assert.equal(git(['status', '--porcelain']), '?? work.txt')
     assert.deepEqual(events, [[IPC_CHANNELS.EVENT_FILE_CHANGE, { changeType: 'change', relativePath: '.' }]])
+
+    const commit = handlers.get(IPC_CHANNELS.GIT_CONVEYOR_COMMIT)!
+    await assert.rejects(commit(event, { message: 'm', newFiles: ['work.txt'] }), /newFiles a string array with paths/)
+    await assert.rejects(commit(event, { message: 'm', paths: ['work.txt'], newFiles: 'work.txt' }), /newFiles a string array/)
+    await commit(event, { message: 'add work', paths: ['work.txt'], newFiles: ['work.txt'] })
+    assert.equal(git(['show', '--format=', '--name-only', 'HEAD']), 'work.txt')
   } finally {
     electronModule.exports = originalExports
     await rm(root, { recursive: true, force: true })

@@ -69,11 +69,12 @@ export function registerGitConveyorHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC_CHANNELS.GIT_COMMIT_MESSAGE_GENERATE, async (event, input: unknown) => {
     assertTrustedSender(event)
-    if (!isObject(input) || typeof input.force !== 'boolean' || !isOptionalStringArray(input.paths)) {
-      throw new Error('force must be a boolean and paths an optional string array')
+    if (!isObject(input) || typeof input.force !== 'boolean' || !isOptionalStringArray(input.paths) ||
+        !isOptionalStringArray(input.newFiles) || (input.newFiles && !input.paths)) {
+      throw new Error('force must be a boolean, paths an optional string array, and newFiles a string array with paths')
     }
     return messages.suggest(activeCwd(ctx), async (diff, signal) =>
-      generateCommitMessage(diff, await commitMessageModel(ctx), signal), input.force, input.paths)
+      generateCommitMessage(diff, await commitMessageModel(ctx), signal), input.force, input.paths, input.newFiles)
   })
 
   ipcMain.handle(IPC_CHANNELS.GIT_CONVEYOR_STATUS, async (event) => {
@@ -107,12 +108,14 @@ export function registerGitConveyorHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC_CHANNELS.GIT_CONVEYOR_COMMIT, async (event, input: unknown) => {
     assertTrustedSender(event)
-    if (!isObject(input) || !isString(input.message) || !isOptionalStringArray(input.paths)) {
-      throw new Error('Commit message must be a string and paths an optional string array')
+    if (!isObject(input) || !isString(input.message) || !isOptionalStringArray(input.paths) ||
+        !isOptionalStringArray(input.newFiles) || (input.newFiles && !input.paths)) {
+      throw new Error('Commit message must be a string, paths an optional string array, and newFiles a string array with paths')
     }
     const options: GitConveyorCommitOptions = {
       message: input.message,
       ...(input.paths ? { paths: input.paths } : {}),
+      ...(input.newFiles ? { newFiles: input.newFiles } : {}),
     }
     return commitAll(activeCwd(ctx), options)
   })

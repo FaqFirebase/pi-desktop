@@ -20,7 +20,7 @@ interface SuggestionEntry {
 
 interface CommitMessageDeps {
   resolvePath(cwd: string): Promise<string>
-  readDiff(cwd: string, paths?: readonly string[]): Promise<CommitDiffSnapshot | null>
+  readDiff(cwd: string, paths?: readonly string[], newFiles?: readonly string[]): Promise<CommitDiffSnapshot | null>
 }
 
 /**
@@ -36,13 +36,14 @@ export class CommitMessageService {
 
   /**
    * `force` replaces a finished suggestion for the same diff; it never
-   * duplicates an in-flight one.
+   * duplicates an in-flight one. `newFiles` are the untracked files the user
+   * chose to commit: only they, not the other untracked files, reach the diff.
    */
   async suggest(
-    cwd: string, generate: CommitMessageGenerator, force = false, paths?: readonly string[],
+    cwd: string, generate: CommitMessageGenerator, force = false, paths?: readonly string[], newFiles?: readonly string[],
   ): Promise<GitCommitMessageSuggestion> {
     const key = await this.deps.resolvePath(cwd)
-    const snapshot = await this.deps.readDiff(key, paths)
+    const snapshot = await this.deps.readDiff(key, paths, newFiles)
     if (!snapshot || this.disposed) return { message: null, error: null }
     let entry = this.entries.get(key)
     if (!entry || entry.fingerprint !== snapshot.fingerprint || (force && entry.settled)) {

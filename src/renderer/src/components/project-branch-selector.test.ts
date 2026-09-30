@@ -7,8 +7,9 @@ import { NEW_BRANCH_OPTION_VALUE, createProjectBranch, switchProjectBranch } fro
 
 const status: GitConveyorStatus = {
   branch: 'main', head: 'head', lastCommitMessage: 'Previous commit',
-  dirtyFiles: 0, ahead: 0, behind: 0, hasUpstream: true,
-  pushRemote: 'origin', upstreamBranch: 'main', baseBranch: 'main', remoteUrl: null,
+  dirtyFiles: 0, dirtyTrackedFiles: 0, ahead: 0, behind: 0, hasUpstream: true,
+  pushRemote: 'origin', upstreamBranch: 'main', baseBranch: 'main', aheadOfBase: 0, remoteUrl: null, pullRequestRepo: null,
+  openPullRequest: null,
 }
 let calls: string[]
 

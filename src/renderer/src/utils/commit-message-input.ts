@@ -10,10 +10,12 @@ export interface LastCommitMessageSuggestion {
 
 /**
  * A suggestion describes one workspace and one commit selection: all changes,
- * or the filtered paths.
+ * or the filtered paths plus the new files chosen among them.
  */
-export function commitMessageScope(workspaceId: string | undefined, paths: readonly string[] | undefined): string {
-  return JSON.stringify([workspaceId ?? null, paths ?? null])
+export function commitMessageScope(
+  workspaceId: string | undefined, paths: readonly string[] | undefined, newFiles: readonly string[],
+): string {
+  return JSON.stringify([workspaceId ?? null, paths ?? null, newFiles])
 }
 
 /**
