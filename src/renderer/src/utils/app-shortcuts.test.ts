@@ -202,6 +202,23 @@ test('project shortcuts use visible order, wrap, and respect a cancelled workspa
   assert.equal(useAppStore.getState().workflowPanelOpen, true)
 })
 
+test('project shortcuts follow the manually reordered tabs in both directions', async () => {
+  const base = useAppStore.getState().activeWorkspace!
+  const workspaces = ['a', 'b', 'c'].map((id, createdAt) => ({ ...base, id, createdAt }))
+  const selected: string[] = []
+  useAppStore.setState({ workspaces, activeWorkspace: workspaces[0], activateWorkspace: async (id) => {
+    selected.push(id)
+    useAppStore.setState({ activeWorkspace: workspaces.find((workspace) => workspace.id === id)! })
+    return true
+  } })
+  useAppStore.getState().reorderProjectTab('c', 'a', 'after')
+  await runAppShortcut('nextProject')
+  await runAppShortcut('nextProject')
+  await runAppShortcut('nextProject')
+  await runAppShortcut('previousProject')
+  assert.deepEqual(selected, ['c', 'b', 'a', 'b'])
+})
+
 test('session navigation uses open sessions in the active project, supports remapping and ignores recording', async () => {
   const runtime = (id: string, workspaceId = 'project', sessionPath: string | null = `/${id}`): SessionRuntimeInfo => ({
     runtimeId: id, workspaceId, sessionPath, sessionId: id, activity: null, active: false, status: 'running', pid: null, error: null,

@@ -54,7 +54,7 @@ export async function runAppShortcut(action: ShortcutAction): Promise<void> {
       return
     case 'previousProject':
     case 'nextProject': {
-      const tabs = projectTabs(state.workspaces)
+      const tabs = projectTabs(state.workspaces, state.projectTabOrder)
       const index = adjacentTabIndex(tabs.findIndex((tab) => tab.id === state.activeWorkspace?.id), tabs.length,
         action === 'nextProject' ? 'next' : 'previous')
       if (index === null) return
