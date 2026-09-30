@@ -2,7 +2,7 @@
 
 A desktop GUI for the [Pi](https://pi.dev) and [oh-my-pi](https://github.com/can1357/oh-my-pi) coding agents. Chat, manage projects, browse files, run commands, and install packages in one window.
 
-![Pi Desktop — Home launcher screen](docs/screenshots/Screenshot_20260824_181929.png)
+![Pi Desktop — Home launcher screen](docs/screenshots/home.png)
 
 Still in alpha, so expect rough edges.
 
