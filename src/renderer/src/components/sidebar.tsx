@@ -31,7 +31,6 @@ import { StatusPopover } from './status-popover'
 import { useContextMenu, buildSessionContextMenu } from './context-menu'
 import { getSessionEngineLabel, getSessionRowLabels, hasMixedSessionEngines } from './sidebar-session-labels'
 import { ResizeHandle } from './resize-handle'
-import { findSessionPreview, getSessionTitle } from '../utils/session-title'
 import { formatRelativeTime } from '../utils/format-relative-time'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import { resolveRunSessionId } from '../utils/workflow-runs'
@@ -109,14 +108,12 @@ export function Sidebar(): React.JSX.Element {
     })
   }
 
-  // Inline session rename. Only the active session can be renamed (Pi's rename
-  // targets it), and it's reachable from two spots — the Current Session panel
-  // (`'current'`) and its highlighted row in Recent Sessions (`'recent'`).
-  const [renamingWhere, setRenamingWhere] = useState<'current' | 'recent' | null>(null)
+  // Pi's rename targets the active session, exposed through its Recent row.
+  const [renamingWhere, setRenamingWhere] = useState<'recent' | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameCancelRef = useRef(false)
 
-  const startSessionRename = (where: 'current' | 'recent'): void => {
+  const startSessionRename = (where: 'recent'): void => {
     renameCancelRef.current = false
     // Prefill with the explicit name only; a timestamp/guid is not a name.
     setRenameValue(sessionState?.sessionName ?? '')
@@ -228,14 +225,6 @@ export function Sidebar(): React.JSX.Element {
     }))
   }
 
-  // The live session state has no preview, so the Current Session panel would
-  // fall back to the raw id while the same session's Recent row shows its first
-  // message. Both read the same preview instead.
-  const currentSessionPreview = useMemo(
-    () => findSessionPreview(sessionList, sessionState?.sessionFile),
-    [sessionList, sessionState?.sessionFile]
-  )
-
   // Gated on every known session, not on one section's slice, so the same chat
   // carries the same tag in Recent, in a folder group and under Archived.
   const showEngineTags = useMemo(() => hasMixedSessionEngines(sessionList), [sessionList])
@@ -298,20 +287,6 @@ export function Sidebar(): React.JSX.Element {
         onRuns: (s) => openWorkflowRunsForSession(resolveRunSessionId(s.piSessionId, s.sessionId) ?? s.sessionId),
       })
     )
-  }
-
-  // Right-click menu for the Current Session panel — same active session, so
-  // just the rename affordance.
-  const handleCurrentSessionRightClick = (e: React.MouseEvent): void => {
-    e.nativeEvent.stopPropagation()
-    showMenu(e, [
-      {
-        id: 'current-session-rename',
-        label: t('contextMenu.rename'),
-        icon: <Pencil size={14} />,
-        action: () => startSessionRename('current'),
-      },
-    ])
   }
 
   const renderSessionRow = (
@@ -607,54 +582,6 @@ export function Sidebar(): React.JSX.Element {
           </div>
         </div>
       </nav>
-
-      {/* Current session info */}
-      {sessionState && (
-        renamingWhere === 'current' ? (
-          <div className="mx-3 mt-2 rounded-md bg-surface p-3">
-            <div className="text-xs font-medium text-muted uppercase tracking-wider">{t('sidebar.currentSession.heading')}</div>
-            <div className="mt-1.5 flex">{renderRenameInput()}</div>
-            {sessionState.model && (
-              <div className="mt-1 text-xs text-dim">{sessionState.model.name}</div>
-            )}
-            <div className="mt-1 text-xs text-dim">{t('sidebar.currentSession.messageCount', { count: sessionState.messageCount })}</div>
-          </div>
-        ) : (
-          <div className="group relative mx-3 mt-2">
-            <button
-              type="button"
-              onClick={() => setCurrentView('chat')}
-              onDoubleClick={() => startSessionRename('current')}
-              onContextMenu={handleCurrentSessionRightClick}
-              className="w-full rounded-md bg-surface p-3 pr-9 text-left transition-colors hover:bg-surface-hover focus:outline-none focus:ring-1 focus:ring-border-strong"
-              title={t('sidebar.currentSession.openTitle')}
-            >
-              <div className="text-xs font-medium text-muted uppercase tracking-wider">{t('sidebar.currentSession.heading')}</div>
-              <div className="mt-1.5 text-sm text-primary truncate">
-                {getSessionTitle(sessionState.sessionName, sessionState.sessionId, currentSessionPreview)}
-              </div>
-              {sessionState.model && (
-                <div className="mt-1 text-xs text-dim">
-                  {sessionState.model.name}
-                </div>
-              )}
-              <div className="mt-1 text-xs text-dim">
-                {t('sidebar.currentSession.messageCount', { count: sessionState.messageCount })}
-              </div>
-            </button>
-            {/* Sibling overlay — the panel above stays a single non-nested button. */}
-            <button
-              type="button"
-              onClick={() => openWorkflowRunsForSession(sessionState.sessionId)}
-              className="absolute right-2 top-3 rounded p-1.5 text-faint opacity-0 transition-opacity hover:bg-highlight hover:text-accent-fg focus-visible:opacity-100 group-hover:opacity-100"
-              title={t('sidebar.workflowRunsForSession')}
-              aria-label={t('sidebar.workflowRunsForSession')}
-            >
-              <WorkflowIcon size={13} />
-            </button>
-          </div>
-        )
-      )}
 
       {/* Recent sessions for the active project. Cross-project history stays in Sessions. */}
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
