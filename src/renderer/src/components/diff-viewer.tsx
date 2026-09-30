@@ -2,10 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
+import { t } from '../../../shared/i18n'
+import { canDiscardGitPatch, gitDiffPaths, splitGitDiff } from '../../../shared/git-diff'
 import { clsx } from 'clsx'
 import {
   AlertTriangle,
   GitCompare,
+  MessageSquare,
+  Undo2,
   FilePenLine,
   File,
   RefreshCw,
@@ -15,10 +19,12 @@ import {
   Loader2,
 } from 'lucide-react'
 import { formatIpcError } from '../utils/ipc-error'
+import { withGitOperation } from '../utils/git-operation'
 import { createStaleGuard } from '../utils/stale-guard'
 import { subscribeWorktreeRefresh } from '../utils/worktree-refresh'
+import { filterSessionDiffFiles } from '../utils/session-diff'
 import { isChatVisible, isGlobalWorkflowOpen } from '../hooks'
-import { GitConveyorActions } from './git-conveyor-actions'
+import { GitConveyorActions, type GitCommitSelection } from './git-conveyor-actions'
 import { openFilePreview } from './chat-file-link'
 import { joinWorkspacePath, workspaceRelativeGitPath } from '../utils/workspace-path'
 
@@ -30,12 +36,16 @@ interface DiffLine {
 }
 
 interface DiffFileBlock {
+  patch: string
   oldPath: string
   newPath: string
   isNew: boolean
   isDeleted: boolean
   hunks: DiffLine[][]
 }
+
+// Same shape as the Commit/Push/PR buttons in GitConveyorActions so both header rows line up.
+const TOOLBAR_BUTTON = 'flex shrink-0 items-center justify-center gap-1 rounded border px-1.5 py-1 text-[10px] transition-colors'
 
 interface DiffViewerProps {
   onClose?: () => void
@@ -49,12 +59,26 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   const [loadError, setLoadError] = useState<string | null>(null)
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
   const [stagedMode, setStagedMode] = useState(false)
+  // Off by default: a fresh chat has touched no files yet, so the filter would hide every change.
+  const [sessionOnly, setSessionOnly] = useState(false)
+  const [discarding, setDiscarding] = useState(false)
+  const discardBusy = useRef(false)
+  const [discardError, setDiscardError] = useState<string | null>(null)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
   const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
+  const workspacePath = useAppStore((state) => state.activeWorkspace?.path)
   // The chat's diff pane stays mounted while another view hides the chat; the
   // Diff view page is mounted only while it is the current view.
   const visible = useAppStore((state) => onClose ? isChatVisible(state) : !isGlobalWorkflowOpen(state))
+  const messages = useAppStore((state) => state.messages)
   const loadGuard = useMemo(() => createStaleGuard(), [])
+  const visibleFiles = useMemo(() => sessionOnly
+    ? workspacePath ? filterSessionDiffFiles(files, messages, workspacePath, gitPrefix) : []
+    : files, [files, gitPrefix, messages, sessionOnly, workspacePath])
+  // Commit is limited to the files on screen. The staged view without a filter
+  // commits the index it shows.
+  const commitSelection = useMemo(() => stagedMode && !sessionOnly ? undefined : diffCommitSelection(visibleFiles),
+    [sessionOnly, stagedMode, visibleFiles])
 
   // A background load keeps the current list on screen until the new one
   // arrives, so automatic refreshes never flash the list empty.
@@ -104,6 +128,21 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
     setExpandedFiles(new Set())
   }, [workspaceId])
 
+  const discard = async (selected: DiffFileBlock[]): Promise<void> => {
+    if (!workspaceId || stagedMode || discardBusy.current) return
+    discardBusy.current = true
+    setDiscarding(true)
+    setDiscardError(null)
+    try {
+      if (await discardDiffFiles(workspaceId, selected, gitPrefix)) await reloadDiff()
+    } catch (error) {
+      setDiscardError(formatIpcError(error))
+    } finally {
+      discardBusy.current = false
+      setDiscarding(false)
+    }
+  }
+
   const toggleFile = (path: string) => {
     setExpandedFiles((prev) => {
       const next = new Set(prev)
@@ -122,27 +161,43 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
             <GitCompare size={16} className="shrink-0 text-muted" />
             <h2 className="truncate text-sm font-medium text-primary">{t('diff.heading')}</h2>
             <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-xs text-dim">
-              {t('diff.fileCount', { count: files.length })}
+              {t('diff.fileCount', { count: visibleFiles.length })}
             </span>
           </div>
-          <div className="order-2 flex shrink-0 items-center gap-2">
+          <div className="order-2 flex shrink-0 items-stretch gap-1.5">
+            <button
+              type="button"
+              onClick={() => setSessionOnly((value) => !value)}
+              aria-pressed={sessionOnly}
+              aria-label={t('diff.sessionFilter.label')}
+              title={t('diff.sessionFilter.description')}
+              className={clsx(
+                TOOLBAR_BUTTON,
+                sessionOnly
+                  ? 'border-accent/50 bg-accent-bg/20 text-accent-fg'
+                  : 'border-border text-muted hover:bg-surface-hover hover:text-primary'
+              )}
+            >
+              <MessageSquare size={11} aria-hidden="true" />
+            </button>
             <button
               onClick={() => setStagedMode(!stagedMode)}
               className={clsx(
-                'rounded px-2 py-1 text-xs transition-colors',
+                TOOLBAR_BUTTON,
+                'px-2',
                 stagedMode
-                  ? 'bg-success-bg text-success'
-                  : 'bg-card text-muted hover:text-secondary'
+                  ? 'border-success/50 bg-success-bg text-success'
+                  : 'border-border text-muted hover:bg-surface-hover hover:text-primary'
               )}
             >
               {stagedMode ? t('diff.stagedToggle') : t('diff.workingToggle')}
             </button>
             <button
               onClick={reloadDiff}
-              className="rounded p-1.5 text-dim transition-colors hover:bg-surface-hover hover:text-secondary"
+              className={clsx(TOOLBAR_BUTTON, 'border-border text-muted hover:bg-surface-hover hover:text-primary')}
               aria-label={t('diff.refreshAriaLabel')}
             >
-              <RefreshCw size={14} />
+              <RefreshCw size={11} />
             </button>
             <button
               onClick={() => {
@@ -152,7 +207,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
                   setCurrentView('chat')
                 }
               }}
-              className="rounded p-1.5 text-dim transition-colors hover:bg-surface-hover hover:text-secondary"
+              className="ml-1 rounded p-1 text-dim hover:text-secondary"
               aria-label={t('diff.closeAriaLabel')}
             >
               <X size={14} />
@@ -160,9 +215,23 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
           </div>
         </div>
         <div className="flex min-h-8 min-w-0 flex-col justify-center border-t border-border px-4 py-0.5">
-          <GitConveyorActions key={workspaceId} onChanged={reloadDiff} watchDisk={visible} />
+          <GitConveyorActions key={workspaceId} onChanged={reloadDiff} selection={commitSelection} watchDisk={visible}>
+            <button
+              type="button"
+              onClick={() => void discard(visibleFiles)}
+              disabled={loading || discarding || stagedMode || visibleFiles.length === 0 || visibleFiles.some((file) => !canDiscardGitPatch(file.patch))}
+              title={stagedMode ? t('diff.discard.workingOnly') : t('diff.discard.all')}
+              aria-label={t('diff.discard.all')}
+              className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-error-bg hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {discarding ? <Loader2 size={11} className="animate-spin" /> : <Undo2 size={11} />}
+              {t('diff.discard.confirm')}
+            </button>
+          </GitConveyorActions>
         </div>
       </div>
+
+      {discardError && <p role="alert" className="shrink-0 px-4 py-2 text-xs text-error">{discardError}</p>}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
@@ -182,23 +251,30 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
               {t('common.retry')}
             </button>
           </div>
-        ) : files.length === 0 ? (
+        ) : visibleFiles.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-dim">
             <GitCompare size={32} className="mb-3 text-faint" />
-            <p className="text-sm">{t('diff.noChanges')}</p>
-            <p className="mt-1 text-xs text-faint">
-              {stagedMode ? t('diff.noStagedChanges') : t('diff.workingTreeClean')}
+            <p className="text-sm">{sessionOnly ? t('diff.sessionFilter.noMatches') : t('diff.noChanges')}</p>
+            <p className="mt-1 max-w-md px-4 text-center text-xs text-faint">
+              {sessionOnly
+                ? t('diff.sessionFilter.description')
+                : stagedMode ? t('diff.noStagedChanges') : t('diff.workingTreeClean')}
             </p>
           </div>
         ) : (
           <div className="p-4 space-y-2">
-            {files.map((file) => (
+            {visibleFiles.map((file) => (
               <DiffFileEntry
                 key={file.newPath}
                 file={file}
                 gitPrefix={gitPrefix}
                 expanded={expandedFiles.has(file.newPath)}
                 onToggle={() => toggleFile(file.newPath)}
+                onDiscard={() => void discard([file])}
+                discardDisabled={discarding || stagedMode || !canDiscardGitPatch(file.patch)}
+                discardTitle={stagedMode ? t('diff.discard.workingOnly')
+                  : !canDiscardGitPatch(file.patch) ? t('diff.discard.unsupported')
+                    : t('diff.discard.file', { path: file.newPath })}
               />
             ))}
           </div>
@@ -206,6 +282,37 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
       </div>
     </div>
   )
+}
+
+function diffCommitSelection(files: readonly Pick<DiffFileBlock, 'oldPath' | 'newPath'>[]): GitCommitSelection {
+  return { files: files.length, paths: [...new Set(files.flatMap((file) => [file.oldPath, file.newPath]))] }
+}
+
+export async function discardDiffFiles(
+  workspaceId: string,
+  files: Pick<DiffFileBlock, 'oldPath' | 'newPath' | 'patch'>[],
+  gitPrefix: string,
+): Promise<boolean> {
+  const store = useAppStore.getState()
+  if (!files.length || store.activeWorkspace?.id !== workspaceId) return false
+  if (store.editorDirty) throw new Error(t('diff.discard.saveEditor'))
+  const confirmed = await store.requestConfirm({
+    title: t('diff.discard.title', { count: files.length }),
+    message: t('diff.discard.message', { count: files.length, files: files.map((file) => file.newPath).join('\n') }),
+    confirmLabel: t('diff.discard.confirm'),
+    cancelLabel: t('common.cancel'),
+    danger: true,
+  })
+  if (!confirmed || useAppStore.getState().activeWorkspace?.id !== workspaceId) return false
+  if (useAppStore.getState().editorDirty) throw new Error(t('diff.discard.saveEditor'))
+  await withGitOperation(() => window.piDesktop.files.discardDiff(workspaceId, files.map((file) => file.patch)))
+  const current = useAppStore.getState()
+  const opened = current.previewTarget?.relativePath
+  if (current.activeWorkspace?.id === workspaceId && !current.editorDirty && opened !== undefined
+    && files.some((file) => [file.newPath, file.oldPath].some((path) => workspaceRelativeGitPath(path, gitPrefix) === opened))) {
+    await current.setPreviewTarget(null)
+  }
+  return true
 }
 
 type OpenableDiffFile = Pick<DiffFileBlock, 'newPath' | 'isDeleted'>
@@ -232,11 +339,17 @@ function DiffFileEntry({
   gitPrefix,
   expanded,
   onToggle,
+  onDiscard,
+  discardDisabled,
+  discardTitle,
 }: {
   file: DiffFileBlock
   gitPrefix: string
   expanded: boolean
   onToggle: () => void
+  onDiscard: () => void
+  discardDisabled: boolean
+  discardTitle: string
 }): React.JSX.Element {
   const { t } = useTranslation()
   const additions = file.hunks.flat().filter((l) => l.type === 'add').length
@@ -272,10 +385,20 @@ function DiffFileEntry({
             )}
           </div>
         </button>
+        <button
+          type="button"
+          onClick={onDiscard}
+          disabled={discardDisabled}
+          title={discardTitle}
+          aria-label={t('diff.discard.file', { path: file.newPath })}
+          className="mr-2 shrink-0 rounded p-1.5 text-dim transition-colors hover:bg-error-bg hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Undo2 size={14} />
+        </button>
         {openableDiffPath(file, gitPrefix) !== null && (
           <button
             onClick={() => void openDiffFile(file, gitPrefix)}
-            className="mr-2 flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
+            className="mr-2 flex shrink-0 items-center justify-center rounded p-1.5 text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
             title={t('diff.openFile')}
             aria-label={t('diff.openFile')}
           >
@@ -339,16 +462,13 @@ function parseDiff(diffText: string): DiffFileBlock[] {
   if (!diffText.trim()) return []
 
   const files: DiffFileBlock[] = []
-  const fileBlocks = diffText.split(/^diff --git /m).filter(Boolean)
+  const fileBlocks = splitGitDiff(diffText)
 
   for (const block of fileBlocks) {
     const lines = block.split('\n')
-
-    // Parse file paths from "a/path b/path"
-    const pathLine = lines[0] ?? ''
-    const pathMatch = pathLine.match(/^a\/(.+?) b\/(.+)$/)
-    const oldPath = pathMatch?.[1] ?? 'unknown'
-    const newPath = pathMatch?.[2] ?? oldPath
+    const paths = gitDiffPaths(block)
+    const oldPath = paths?.oldPath ?? 'unknown'
+    const newPath = paths?.newPath ?? oldPath
 
     const isNew = lines.some((l) => l.startsWith('new file mode'))
     const isDeleted = lines.some((l) => l.startsWith('deleted file mode'))
@@ -385,7 +505,7 @@ function parseDiff(diffText: string): DiffFileBlock[] {
 
     if (currentHunk.length > 0) hunks.push(currentHunk)
 
-    files.push({ oldPath, newPath, isNew, isDeleted, hunks })
+    files.push({ patch: block, oldPath, newPath, isNew, isDeleted, hunks })
   }
 
   return files

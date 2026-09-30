@@ -175,10 +175,60 @@ function isPathWithin(base: string, candidate: string): boolean {
  */
 async function stagedPaths(cwd: string): Promise<string[]> {
   const [worktreeRoot, output] = await Promise.all([
-    runGit(['rev-parse', '--show-toplevel'], cwd).then((result) => realpath(result.stdout.trim())),
+    physicalWorktreeRoot(cwd),
     runGit(['diff', '--cached', '--name-only', '-z'], cwd).then((result) => result.stdout),
   ])
   return output.split('\0').filter(Boolean).map((path) => resolve(worktreeRoot, path))
+}
+
+async function physicalWorktreeRoot(cwd: string): Promise<string> {
+  return realpath((await runGit(['rev-parse', '--show-toplevel'], cwd)).stdout.trim())
+}
+
+interface SelectedPaths {
+  worktreeRoot: string
+  paths: string[]
+}
+
+/**
+ * Validate the repository-root-relative paths the Diff Viewer listed. Every
+ * path must stay inside the workspace, so a filtered commit opened from a
+ * monorepo subdirectory can never reach a sibling project.
+ */
+async function resolveSelectedPaths(cwd: string, paths: readonly string[]): Promise<SelectedPaths> {
+  if (paths.length === 0) throw new Error(t('errors.git.commitSelectionEmpty'))
+  const [worktreeRoot, workspaceRoot] = await Promise.all([physicalWorktreeRoot(cwd), realpath(cwd)])
+  for (const path of paths) {
+    if (!path || isAbsolute(path) || !isPathWithin(workspaceRoot, resolve(worktreeRoot, path))) {
+      throw new Error(t('errors.git.commitSelectionOutsideWorkspace'))
+    }
+  }
+  return { worktreeRoot, paths: [...new Set(paths)] }
+}
+
+async function untrackedPaths(worktreeRoot: string, paths: readonly string[]): Promise<Set<string>> {
+  const { stdout } = await runGit(['--literal-pathspecs', 'ls-files', '--others', '-z', '--', ...paths], worktreeRoot)
+  return new Set(stdout.split('\0').filter(Boolean))
+}
+
+/**
+ * The validated selection without its untracked paths. An untracked file
+ * reaches a commit only when the user staged it, even when the filtered Diff
+ * Viewer lists it by name.
+ */
+async function resolveCommittablePaths(cwd: string, paths: readonly string[]): Promise<SelectedPaths> {
+  const selection = await resolveSelectedPaths(cwd, paths)
+  const untracked = await untrackedPaths(selection.worktreeRoot, selection.paths)
+  return { ...selection, paths: selection.paths.filter((path) => !untracked.has(path)) }
+}
+
+async function commitSelection(cwd: string): Promise<{ autoStage: boolean; workspaceRoot: string }> {
+  const staged = await stagedPaths(cwd)
+  const workspaceRoot = await realpath(cwd)
+  if (staged.some((path) => !isPathWithin(workspaceRoot, path))) {
+    throw new Error(t('errors.git.stagedOutsideWorkspace'))
+  }
+  return { autoStage: staged.length === 0, workspaceRoot }
 }
 
 /**
@@ -296,24 +346,17 @@ export async function commitAll(cwd: string, options: GitConveyorCommitOptions):
   const operation = await activeGitOperation(cwd)
   if (operation) throw new Error(t('errors.git.operationInProgressCommit', { operation }))
   if (!repository.status.trim()) throw new Error(t('errors.git.workingTreeClean'))
+  if (options.paths) return commitSelectedPaths(cwd, message, options.paths)
 
   // Preserve an intentionally curated index. Only auto-stage when there is no
   // staged content at all, and never allow staged paths outside the workspace
   // to be swept into a commit opened from a monorepo subdirectory.
-  const staged = await stagedPaths(cwd)
-  // Both sides of the comparison must be physical paths: a workspace can be
-  // opened through a symlink while Git always reports the resolved worktree.
-  const workspaceRoot = await realpath(cwd)
-  const outsideWorkspace = staged.filter((path) => !isPathWithin(workspaceRoot, path))
-  if (outsideWorkspace.length > 0) {
-    throw new Error(t('errors.git.stagedOutsideWorkspace'))
-  }
+  const { autoStage } = await commitSelection(cwd)
 
   // Auto-staging covers tracked modifications only. A stray secret, key, or
   // build artefact sitting untracked in the workspace reaches a commit only
   // after the user staged it deliberately. The Commit button counts untracked
   // rows too, so say plainly when that leaves nothing to commit.
-  const autoStage = staged.length === 0
   if (autoStage && !(await hasUnstagedTrackedChanges(cwd))) {
     throw new Error(t('errors.git.noTrackedChanges'))
   }
@@ -329,6 +372,22 @@ export async function commitAll(cwd: string, options: GitConveyorCommitOptions):
     if (indexSnapshot) await runGit(['read-tree', indexSnapshot], cwd)
     throw error
   }
+  return getGitConveyorStatus(cwd)
+}
+
+/**
+ * Commit only the paths the user reviewed in the filtered Diff Viewer, with
+ * their working-tree content. Tracked and already staged paths are included;
+ * untracked ones stay out. Anything else staged stays staged and out of the
+ * commit.
+ */
+async function commitSelectedPaths(cwd: string, message: string, paths: readonly string[]): Promise<GitConveyorStatus> {
+  const selection = await resolveCommittablePaths(cwd, paths)
+  // An empty pathspec would commit the whole index.
+  if (selection.paths.length === 0) throw new Error(t('errors.git.noTrackedChanges'))
+  // `--only` stages into a locked copy of the index that Git discards when the
+  // commit is rejected, so the user's index is left as it was.
+  await runGit(['--literal-pathspecs', 'commit', '-m', message, '--only', '--', ...selection.paths], selection.worktreeRoot)
   return getGitConveyorStatus(cwd)
 }
 

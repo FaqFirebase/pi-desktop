@@ -7,7 +7,9 @@ import type {
   GitConveyorStatus,
   Workspace,
 } from '../../shared/ipc-contracts'
-import { assertTrustedSender, isObject, isOptionalBoolean, isOptionalString, isString } from './validation'
+import {
+  assertTrustedSender, isObject, isOptionalBoolean, isOptionalString, isOptionalStringArray, isString,
+} from './validation'
 import {
   GitSwitchRefusal, commitAll, createLocalBranch, createPullRequest, getGitConveyorStatus, listLocalBranches, pushBranch, switchLocalBranch,
 } from '../git-conveyor'
@@ -74,8 +76,13 @@ export function registerGitConveyorHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC_CHANNELS.GIT_CONVEYOR_COMMIT, async (event, input: unknown) => {
     assertTrustedSender(event)
-    if (!isObject(input) || !isString(input.message)) throw new Error('Commit message must be a string')
-    const options: GitConveyorCommitOptions = { message: input.message }
+    if (!isObject(input) || !isString(input.message) || !isOptionalStringArray(input.paths)) {
+      throw new Error('Commit message must be a string and paths an optional string array')
+    }
+    const options: GitConveyorCommitOptions = {
+      message: input.message,
+      ...(input.paths ? { paths: input.paths } : {}),
+    }
     return commitAll(activeCwd(ctx), options)
   })
 

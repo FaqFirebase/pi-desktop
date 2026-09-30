@@ -454,6 +454,22 @@
   "diff": {
     "closeAriaLabel": "Close diff viewer",
     "deletedFileBadge": "DELETED",
+    "discard": {
+      "agentWorking": "Wait for all agents in this project to finish before discarding changes.",
+      "all": "Discard changes in shown files",
+      "busy": "A discard operation is already running.",
+      "confirm": "Reject",
+      "failed": "Git could not discard the selected changes. Refresh the diff and review it again.",
+      "file": "Discard changes in {{path}}",
+      "message_one": "Discard the shown unstaged changes in this file? This includes changes from other sessions in the same file. A new file will be deleted. Staged changes and commits are not affected. This cannot be undone.\n\n{{files}}",
+      "message_other": "Discard the shown unstaged changes in these files? This includes changes from other sessions in the same files. New files will be deleted. Staged changes and commits are not affected. This cannot be undone.\n\n{{files}}",
+      "saveEditor": "Save or close the unsaved editor before discarding changes.",
+      "stale": "The selected changes are no longer current. Refresh the diff and review it again.",
+      "title_one": "Discard shown change?",
+      "title_other": "Discard shown changes?",
+      "unsupported": "This diff cannot be discarded here. Binary files, symlinks, submodules and escaped paths are not supported.",
+      "workingOnly": "Switch to Working to discard unstaged changes."
+    },
     "fileCount_one": "{{count}} file",
     "fileCount_other": "{{count}} files",
     "heading": "Diff Viewer",
@@ -463,6 +479,11 @@
     "noStagedChanges": "No staged changes",
     "openFile": "Open file",
     "refreshAriaLabel": "Refresh diff",
+    "sessionFilter": {
+      "description": "Filter to files touched by edit/write calls in this chat. Whole-file diffs may include other sessions. Shell and subagent changes may be missing. Turn off to see the whole project. Push always applies to the whole branch.",
+      "label": "Files touched in this session",
+      "noMatches": "No matching changes for this session"
+    },
     "stagedToggle": "Staged",
     "workingToggle": "Working",
     "workingTreeClean": "Working tree is clean"
@@ -507,6 +528,8 @@
       "commitBeforeSwitch": "Commit or discard your changes before switching branches",
       "commitMessageRequired": "Commit message is required",
       "commitMessageTooLong": "Commit message must be {{max}} characters or fewer",
+      "commitSelectionEmpty": "No files are selected to commit",
+      "commitSelectionOutsideWorkspace": "The files selected to commit must be inside the active workspace",
       "detachedHeadCommit": "Cannot commit from a detached HEAD",
       "detachedHeadPush": "Cannot push from a detached HEAD",
       "localBranchRequired": "Choose an existing local branch",

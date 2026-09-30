@@ -448,6 +448,20 @@
   "diff": {
     "closeAriaLabel": "关闭差异查看器",
     "deletedFileBadge": "已删除",
+    "discard": {
+      "agentWorking": "请等待此项目中的所有代理完成后再放弃更改。",
+      "all": "放弃所显示文件的更改",
+      "busy": "正在执行放弃更改操作。",
+      "confirm": "拒绝",
+      "failed": "Git 无法放弃所选更改。请刷新差异并重新检查。",
+      "file": "放弃 {{path}} 的更改",
+      "message_other": "放弃所显示文件中的未暂存更改？这也包括其他会话对同一文件的更改。新文件将被删除。已暂存的更改和提交不受影响。此操作无法撤销。\n\n{{files}}",
+      "saveEditor": "请先保存或关闭有未保存更改的编辑器。",
+      "stale": "所选更改已发生变化。请刷新差异并重新检查。",
+      "title_other": "放弃所显示的更改？",
+      "unsupported": "无法在此放弃该差异。不支持二进制文件、符号链接、子模块和转义路径。",
+      "workingOnly": "切换到未暂存视图以放弃未暂存更改。"
+    },
     "fileCount_other": "{{count}} 个文件",
     "heading": "差异查看器",
     "loadErrorTitle": "无法加载差异",
@@ -456,6 +470,11 @@
     "noStagedChanges": "无已暂存更改",
     "openFile": "打开文件",
     "refreshAriaLabel": "刷新差异",
+    "sessionFilter": {
+      "description": "仅显示此聊天中 edit/write 调用涉及的文件。完整文件差异可能包含其他会话的更改，也可能遗漏 Shell 和子代理的更改。关闭筛选可查看整个项目。推送操作始终针对整个分支。",
+      "label": "此会话涉及的文件",
+      "noMatches": "没有与此会话匹配的更改"
+    },
     "stagedToggle": "已暂存",
     "workingToggle": "未暂存",
     "workingTreeClean": "工作树是干净的"
@@ -500,6 +519,8 @@
       "commitBeforeSwitch": "切换分支前请先提交或放弃更改",
       "commitMessageRequired": "必须填写提交信息",
       "commitMessageTooLong": "提交信息必须不超过 {{max}} 个字符",
+      "commitSelectionEmpty": "没有选择要提交的文件",
+      "commitSelectionOutsideWorkspace": "要提交的文件必须位于当前工作区内",
       "detachedHeadCommit": "无法在分离 HEAD 状态下提交",
       "detachedHeadPush": "无法在分离 HEAD 状态下推送",
       "localBranchRequired": "请选择一个现有的本地分支",

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { ExternalLink, GitCommitHorizontal, GitPullRequest, Loader2, Upload, X } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useTranslation } from 'react-i18next'
@@ -8,15 +8,25 @@ import { formatIpcError } from '../utils/ipc-error'
 import { withGitOperation } from '../utils/git-operation'
 import { subscribeWorktreeRefresh } from '../utils/worktree-refresh'
 
+/** Files on screen a commit is limited to; untracked ones among them stay out. */
+export interface GitCommitSelection {
+  files: number
+  /** Repository-root-relative paths, both sides of a rename included. */
+  paths: string[]
+}
+
 type ConveyorDialog =
-  | { kind: 'commit'; message: string }
+  | { kind: 'commit'; message: string; paths: string[] | undefined }
   | { kind: 'pr'; title: string; body: string; base: string }
 
 // A git identifier, not prose — stays literal (ruling on Task 25 fix item 2).
 const DEFAULT_GIT_REMOTE = 'origin'
 
-export function GitConveyorActions({ onChanged, watchDisk = false }: {
+export function GitConveyorActions({ children, onChanged, selection, watchDisk = false }: {
+  children?: ReactNode
   onChanged?: () => void
+  /** What Commit records; absent commits the index (or the tracked changes when nothing is staged). */
+  selection?: GitCommitSelection
   /** The bar is on screen: follow disk edits as the diff above it does. */
   watchDisk?: boolean
 }): React.JSX.Element {
@@ -73,9 +83,11 @@ export function GitConveyorActions({ onChanged, watchDisk = false }: {
 
   const openCommitDialog = (): void => {
     setError(null)
+    if (selection && selection.paths.length === 0) return
     setDialog({
       kind: 'commit',
       message: status?.lastCommitMessage ?? 'chore: update implementation',
+      paths: selection ? [...selection.paths] : undefined,
     })
   }
 
@@ -111,7 +123,7 @@ export function GitConveyorActions({ onChanged, watchDisk = false }: {
       setDialog(null)
       void run(
         'commit',
-        () => window.piDesktop.git.commit({ message }),
+        () => window.piDesktop.git.commit({ message, ...(dialog.paths ? { paths: dialog.paths } : {}) }),
         (next) => t('conveyor.feedback.committed', { sha: next.head.slice(0, 8) }),
       )
       return
@@ -168,12 +180,13 @@ export function GitConveyorActions({ onChanged, watchDisk = false }: {
       <div className="flex min-w-0 flex-wrap items-center justify-start gap-1.5 lg:justify-end">
         {status && (
           <span className="basis-full mr-1 max-w-60 truncate text-[10px] text-faint sm:basis-auto" title={status.branch ?? undefined}>
-            {status.dirtyFiles > 0
-              ? t('conveyor.branchStatusDirty', { branch: status.branch ?? t('conveyor.detachedBranch'), count: status.dirtyFiles })
+            {(selection?.files ?? status.dirtyFiles) > 0
+              ? t('conveyor.branchStatusDirty', { branch: status.branch ?? t('conveyor.detachedBranch'), count: selection?.files ?? status.dirtyFiles })
               : t('conveyor.branchStatusClean', { branch: status.branch ?? t('conveyor.detachedBranch') })}
           </span>
         )}
-        <button type="button" onClick={openCommitDialog} disabled={busy !== null || !status?.dirtyFiles} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title={t('conveyor.commitButtonTitle')}>
+        {children}
+        <button type="button" onClick={openCommitDialog} disabled={busy !== null || !(selection ? selection.paths.length : status?.dirtyFiles)} className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-40" title={t('conveyor.commitButtonTitle')}>
           {busy === 'commit' ? <Loader2 size={11} className="animate-spin" /> : <GitCommitHorizontal size={11} />}
           {t('conveyor.commit')}
         </button>
