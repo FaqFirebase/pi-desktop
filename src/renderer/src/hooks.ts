@@ -174,6 +174,16 @@ export function useChatVisible(): boolean {
 }
 
 /**
+ * Whether a panel on screen consumes disk-change events: the chat's files or
+ * diff pane while the chat is visible, or the Diff view. The main process
+ * watches the workspace only while this holds.
+ */
+export function isFileWatchDemanded(scope: ChatVisibilityScope & { chatSidePanel: 'files' | 'diff' | null }): boolean {
+  if (isGlobalWorkflowOpen(scope)) return false
+  return scope.currentView === 'diff' || (scope.currentView === 'chat' && scope.chatSidePanel !== null)
+}
+
+/**
  * The session tab the macOS Close shortcut acts on: the active one, and only
  * while the chat is on screen, so a tab hidden behind another view is never
  * closed without the user seeing it.

@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
-import { WHOLE_WORKSPACE_CHANGE_PATH } from '../../../shared/ipc-contracts'
 import { clsx } from 'clsx'
 import {
   AlertTriangle,
@@ -17,6 +16,8 @@ import {
 } from 'lucide-react'
 import { formatIpcError } from '../utils/ipc-error'
 import { createStaleGuard } from '../utils/stale-guard'
+import { subscribeWorktreeRefresh } from '../utils/worktree-refresh'
+import { isChatVisible, isGlobalWorkflowOpen } from '../hooks'
 import { GitConveyorActions } from './git-conveyor-actions'
 import { openFilePreview } from './chat-file-link'
 import { joinWorkspacePath, workspaceRelativeGitPath } from '../utils/workspace-path'
@@ -36,12 +37,6 @@ interface DiffFileBlock {
   hunks: DiffLine[][]
 }
 
-export function subscribeDiffRefresh(refresh: () => Promise<void>): () => void {
-  return window.piDesktop.onFileChange((event) => {
-    if (event.relativePath === WHOLE_WORKSPACE_CHANGE_PATH) void refresh()
-  })
-}
-
 interface DiffViewerProps {
   onClose?: () => void
 }
@@ -56,13 +51,20 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   const [stagedMode, setStagedMode] = useState(false)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
   const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
+  // The chat's diff pane stays mounted while another view hides the chat; the
+  // Diff view page is mounted only while it is the current view.
+  const visible = useAppStore((state) => onClose ? isChatVisible(state) : !isGlobalWorkflowOpen(state))
   const loadGuard = useMemo(() => createStaleGuard(), [])
 
-  const loadDiff = useCallback(async () => {
+  // A background load keeps the current list on screen until the new one
+  // arrives, so automatic refreshes never flash the list empty.
+  const loadDiff = useCallback(async (showLoading: boolean) => {
     const isCurrent = loadGuard.begin()
-    setLoading(true)
-    setFiles([])
-    setLoadError(null)
+    if (showLoading) {
+      setLoading(true)
+      setFiles([])
+      setLoadError(null)
+    }
     try {
       const [diff, prefix] = await Promise.all([
         stagedMode ? window.piDesktop.files.getStagedDiff() : window.piDesktop.files.getDiff(),
@@ -77,16 +79,26 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
       setFiles([])
       setLoadError(formatIpcError(err))
     } finally {
+      // Also on a background load: it may have superseded a visible one.
       if (isCurrent()) setLoading(false)
     }
   }, [stagedMode, loadGuard])
+  const reloadDiff = useCallback(() => loadDiff(true), [loadDiff])
+  const refreshDiff = useCallback(() => loadDiff(false), [loadDiff])
 
   useEffect(() => {
-    void loadDiff()
+    void reloadDiff()
     return () => { loadGuard.begin() }
-  }, [loadDiff, loadGuard, workspaceId])
+  }, [reloadDiff, loadGuard, workspaceId])
 
-  useEffect(() => subscribeDiffRefresh(loadDiff), [loadDiff])
+  useEffect(() => subscribeWorktreeRefresh(refreshDiff, visible), [refreshDiff, visible])
+
+  // Disk edits made while the pane was hidden were not watched; catch up on return.
+  const wasVisible = useRef(visible)
+  useEffect(() => {
+    if (visible && !wasVisible.current) void refreshDiff()
+    wasVisible.current = visible
+  }, [visible, refreshDiff])
 
   useEffect(() => {
     setExpandedFiles(new Set())
@@ -126,7 +138,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
               {stagedMode ? t('diff.stagedToggle') : t('diff.workingToggle')}
             </button>
             <button
-              onClick={loadDiff}
+              onClick={reloadDiff}
               className="rounded p-1.5 text-dim transition-colors hover:bg-surface-hover hover:text-secondary"
               aria-label={t('diff.refreshAriaLabel')}
             >
@@ -148,7 +160,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
           </div>
         </div>
         <div className="flex min-h-8 min-w-0 flex-col justify-center border-t border-border px-4 py-0.5">
-          <GitConveyorActions key={workspaceId} onChanged={loadDiff} />
+          <GitConveyorActions key={workspaceId} onChanged={reloadDiff} watchDisk={visible} />
         </div>
       </div>
 
@@ -164,7 +176,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
             <p className="text-sm text-secondary">{t('diff.loadErrorTitle')}</p>
             <p className="mt-1 max-w-md break-words px-4 text-center text-xs text-faint">{loadError}</p>
             <button
-              onClick={loadDiff}
+              onClick={reloadDiff}
               className="mt-3 rounded bg-card px-3 py-1 text-xs text-secondary transition-colors hover:bg-surface-hover"
             >
               {t('common.retry')}

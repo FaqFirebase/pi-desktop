@@ -5,11 +5,12 @@ import { existsSync } from 'fs'
 import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
 import { join, resolve } from 'path'
-import type {
-  PiProcessStatus,
-  PiStartOptions,
-  SessionRuntimeCloseResult,
-  SessionRuntimeInfo,
+import {
+  WHOLE_WORKSPACE_CHANGE_PATH,
+  type PiProcessStatus,
+  type PiStartOptions,
+  type SessionRuntimeCloseResult,
+  type SessionRuntimeInfo,
 } from '../shared/ipc-contracts'
 import { configureGuiDataDir, getGuiDataPath } from './app-data-paths'
 import { isPathWithin } from './path-authorization'
@@ -759,6 +760,33 @@ test('workspace switches stay watcher-free while nothing is demanded', async () 
 
     await mgr.setActiveWorkspace(beta.id)
     assert.equal(mgr.getWatchedWorkspaceId(), null)
+  })
+})
+
+/** Time the git watcher needs to resolve the git directory and start. */
+const GIT_WATCH_START_MS = 500
+/** Upper bound for a branch change to be reported: the debounce plus watcher start-up. */
+const GIT_CHANGE_REPORT_WITHIN_MS = 2_000
+
+test('a branch created outside the app is reported for the active workspace without file watch demand', async () => {
+  await freshDataDir()
+  const repo = await project()
+  await writeFile(join(repo, 'README.md'), '# app\n')
+  const git = gitRepo(repo)
+
+  await withManager(async (mgr) => {
+    const changes: string[] = []
+    mgr.onFileChange((event) => changes.push(event.relativePath))
+    await mgr.createWorkspace('Alpha', repo)
+    assert.equal(mgr.getWatchedWorkspaceId(), null, 'no disk watcher without demand')
+
+    await new Promise((resolveWait) => setTimeout(resolveWait, GIT_WATCH_START_MS))
+    git(['branch', 'from-terminal'])
+    const started = Date.now()
+    while (changes.length === 0 && Date.now() - started < GIT_CHANGE_REPORT_WITHIN_MS) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 50))
+    }
+    assert.deepEqual(changes, [WHOLE_WORKSPACE_CHANGE_PATH])
   })
 })
 

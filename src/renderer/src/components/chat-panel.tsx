@@ -24,7 +24,7 @@ import { FileTree, FileSearch, FilePreview } from './file-tree'
 import { ImageViewer } from './image-viewer'
 import { DiffViewer } from './diff-viewer'
 import { TerminalPanel } from './terminal'
-import { useChatScroll, useChatVisible, useChatWidth } from '../hooks'
+import { isFileWatchDemanded, useChatScroll, useChatVisible, useChatWidth } from '../hooks'
 import { messageColumnClass } from '../utils/chat-width'
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -165,18 +165,21 @@ export function ChatPanel(): React.JSX.Element {
   } = resolveSidePanelMetrics({ showFileTree, showEditor, showImage }, sidePanelWidth, filePaneWidth)
 
   // Disk watching is demand-driven: the main process only attaches chokidar
-  // while a visible files panel consumes change events. Without this, cold
-  // start and the Home view would pay the full workspace-watch cost for a
+  // while a visible files or diff panel consumes change events. Without this,
+  // cold start and the Home view would pay the full workspace-watch cost for a
   // tree nobody is looking at — and ChatPanel stays mounted (just hidden)
-  // when navigating away, so visibility has to be part of the demand. The
-  // tree still loads on open, and FileTree reloads once when Chat becomes
-  // visible again, with the safety poll + focus refresh covering the rest.
+  // when navigating away, so visibility has to be part of the demand. It
+  // lives here, in the one panel that is always mounted, so the Diff view's
+  // demand and the chat panes' demand never race each other. The tree and the
+  // diff still load on open, and both reload once when they become visible
+  // again, with the tree's safety poll + focus refresh covering the rest.
+  const fileWatchDemanded = useAppStore(isFileWatchDemanded)
   useEffect(() => {
-    void window.piDesktop.files.setWatchDemand(showFileTree && chatVisible).catch(() => {})
+    void window.piDesktop.files.setWatchDemand(fileWatchDemanded).catch(() => {})
     return () => {
       void window.piDesktop.files.setWatchDemand(false).catch(() => {})
     }
-  }, [showFileTree, chatVisible])
+  }, [fileWatchDemanded])
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">

@@ -6,6 +6,7 @@ import { useAppStore } from '../store'
 import type { GitConveyorStatus } from '../../../shared/ipc-contracts'
 import { formatIpcError } from '../utils/ipc-error'
 import { withGitOperation } from '../utils/git-operation'
+import { subscribeWorktreeRefresh } from '../utils/worktree-refresh'
 
 type ConveyorDialog =
   | { kind: 'commit'; message: string }
@@ -14,7 +15,11 @@ type ConveyorDialog =
 // A git identifier, not prose — stays literal (ruling on Task 25 fix item 2).
 const DEFAULT_GIT_REMOTE = 'origin'
 
-export function GitConveyorActions({ onChanged }: { onChanged?: () => void }): React.JSX.Element {
+export function GitConveyorActions({ onChanged, watchDisk = false }: {
+  onChanged?: () => void
+  /** The bar is on screen: follow disk edits as the diff above it does. */
+  watchDisk?: boolean
+}): React.JSX.Element {
   const { t } = useTranslation()
   const requestConfirm = useAppStore((state) => state.requestConfirm)
   const [status, setStatus] = useState<GitConveyorStatus | null>(null)
@@ -40,6 +45,10 @@ export function GitConveyorActions({ onChanged }: { onChanged?: () => void }): R
     }, 5000)
     return () => window.clearInterval(timer)
   }, [refresh])
+
+  // Same triggers as the diff list, so a change that updates the list also
+  // updates Commit/Push, and a branch switch shows the new branch at once.
+  useEffect(() => subscribeWorktreeRefresh(refresh, watchDisk), [refresh, watchDisk])
 
   const run = async <T,>(
     kind: 'commit' | 'push' | 'pr',

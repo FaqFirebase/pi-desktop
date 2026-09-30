@@ -139,7 +139,8 @@ export function FileTree(): React.JSX.Element {
   // watch-demand effect): navigating away stops it, so coming back can land
   // on a stale tree. Treat the return as a focus event and reload once — the
   // 15s safety poll would otherwise be the only refresh for up to 15s.
-  // useChatVisible is the same test ChatPanel uses to declare the demand, so
+  // The tree is on screen only inside a visible chat, so useChatVisible flips
+  // exactly when ChatPanel's demand for this pane does (isFileWatchDemanded):
   // the reload edge and the watcher edge can never drift apart.
   const chatVisible = useChatVisible()
   const wasChatVisible = useRef(chatVisible)

@@ -6,7 +6,8 @@ import { promisify } from 'util'
 import { homedir } from 'os'
 import { describeWriteError } from './fs-errors'
 import { appLog } from './app-log'
-import type { FileChangeEvent } from '../shared/ipc-contracts'
+import { WHOLE_WORKSPACE_CHANGE_PATH, type FileChangeEvent } from '../shared/ipc-contracts'
+import { watchGitHead } from './git-head-watcher'
 import { i18n, t, tEnglish, type Translate } from '../shared/i18n'
 
 const execFileAsync = promisify(execFile)
@@ -230,6 +231,7 @@ export function buildNewFileDiff(relativePath: string, content: string): string 
 
 export class FileService {
   private watcher: FSWatcher | null = null
+  private stopGitHeadWatch: (() => void) | null = null
   private workspacePath: string
   private readonly isHomeWorkspace: boolean
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -520,6 +522,7 @@ export class FileService {
    * (debounced) when files are added, changed, or removed. Heavy and hidden
    * directories are ignored, and recursion is bounded to `WATCH_DEPTH` so the
    * watcher stays cheap even when the workspace is the user's home directory.
+   * `.git` is skipped; `startGitWatching` covers HEAD and the branches.
    * Idempotent per instance: a second call replaces the previous watcher.
    */
   startWatching(callback: FileChangeCallback): void {
@@ -588,6 +591,25 @@ export class FileService {
       void this.watcher.close()
       this.watcher = null
     }
+  }
+
+  /**
+   * Report a change of HEAD or of the local branches made outside the app (a
+   * terminal, another tool) as a whole-worktree change. Separate from
+   * `startWatching` because the branch shown in the status bar needs it while
+   * no files pane is open; it watches only a few git directories, so it stays
+   * cheap. Idempotent per instance: a second call replaces the previous watch.
+   */
+  startGitWatching(callback: FileChangeCallback): void {
+    this.stopGitWatching()
+    this.stopGitHeadWatch = watchGitHead(this.workspacePath, () => {
+      callback({ changeType: 'change', relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
+    })
+  }
+
+  stopGitWatching(): void {
+    this.stopGitHeadWatch?.()
+    this.stopGitHeadWatch = null
   }
 
   /** True if any path segment under the workspace is an ignored directory. */

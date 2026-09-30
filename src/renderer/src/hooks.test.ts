@@ -13,6 +13,9 @@ const WORKSPACE_ID = 'ws-1'
 
 let isGlobalWorkflowOpen: (scope: WorkflowPanelScope) => boolean
 let isAbortShortcut: (event: { key: string; defaultPrevented: boolean }, isStreaming: boolean) => boolean
+let isFileWatchDemanded: (
+  scope: WorkflowPanelScope & { currentView: string; chatSidePanel: 'files' | 'diff' | null }
+) => boolean
 let sessionTabToClose: (
   state: WorkflowPanelScope & { currentView: string; activeSessionRuntimeId: string | null }
 ) => string | null
@@ -28,7 +31,20 @@ const NO_WORKFLOW_PANEL: WorkflowPanelScope = {
 // actions. A bare stub is enough to import the module under test.
 before(async () => {
   ;(globalThis as unknown as { window: unknown }).window = { piDesktop: {} }
-  ;({ isGlobalWorkflowOpen, isAbortShortcut, sessionTabToClose } = await import('./hooks'))
+  ;({ isGlobalWorkflowOpen, isAbortShortcut, isFileWatchDemanded, sessionTabToClose } = await import('./hooks'))
+})
+
+test('the workspace is watched only while a files or diff panel is on screen', () => {
+  const chat = { ...NO_WORKFLOW_PANEL, currentView: 'chat' }
+  assert.equal(isFileWatchDemanded({ ...chat, chatSidePanel: 'files' }), true)
+  assert.equal(isFileWatchDemanded({ ...chat, chatSidePanel: 'diff' }), true)
+  assert.equal(isFileWatchDemanded({ ...chat, chatSidePanel: null }), false)
+  // The chat's panes stay mounted behind another view, but nobody sees them.
+  assert.equal(isFileWatchDemanded({ ...NO_WORKFLOW_PANEL, currentView: 'settings', chatSidePanel: 'diff' }), false)
+  assert.equal(isFileWatchDemanded({ ...NO_WORKFLOW_PANEL, currentView: 'diff', chatSidePanel: null }), true)
+  const globalWorkflow = { workflowPanelOpen: true, workflowPanelFilter: null, workflowPanelWorkspaceId: null }
+  assert.equal(isFileWatchDemanded({ ...globalWorkflow, currentView: 'diff', chatSidePanel: null }), false)
+  assert.equal(isFileWatchDemanded({ ...globalWorkflow, currentView: 'chat', chatSidePanel: 'files' }), false)
 })
 
 test('an unscoped open panel is the global workflow view', () => {
