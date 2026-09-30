@@ -2,6 +2,7 @@ import { existsSync } from 'fs'
 import os from 'os'
 import pty, { type IPty } from 'node-pty'
 import type { TerminalStartOptions, TerminalStartResult } from '../shared/ipc-contracts'
+import { loadPiDotenv } from './pi-dotenv'
 
 // Classic VT100 grid, used until the renderer reports the fitted size.
 export const DEFAULT_TERMINAL_COLS = 80
@@ -25,6 +26,7 @@ export class TerminalService {
     const shell = getShell()
     const cwd = getCwd(options.cwd)
     const env = {
+      ...loadPiDotenv(),
       ...process.env,
       TERM: 'xterm-256color',
     } as Record<string, string>

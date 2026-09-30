@@ -24,6 +24,7 @@ import {
 import { escapeCmdSpawn } from './cmd-escape'
 import { appLog } from './app-log'
 import { getGuiDataPath } from './app-data-paths'
+import { loadPiDotenv } from './pi-dotenv'
 import { t, tEnglish } from '../shared/i18n'
 
 /**
@@ -839,7 +840,7 @@ export class PiRpcManager extends EventEmitter {
       cwd: options.cwd,
       // Windows only: redirect TEMP so pi-subagents can mkdir without EPERM on
       // locked %LocalAppData%\Temp trees. POSIX keeps the system temp (OS cleanup).
-      env: { ...process.env, ...buildPiChildEnv(), ...options.env },
+      env: { ...loadPiDotenv(), ...process.env, ...buildPiChildEnv(), ...options.env },
       // .cmd/.bat/.ps1 shims on Windows can't be invoked directly from
       // spawn — they need the cmd.exe interpreter via shell:true.
       shell: cli.needsShell,
