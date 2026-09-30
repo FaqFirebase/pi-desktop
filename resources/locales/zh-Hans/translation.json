@@ -79,7 +79,8 @@
     "message": {
       "branchedFrom": "分支自：“{{excerpt}}”",
       "branchFromHere": "从此处创建分支",
-      "editAndResend": "编辑并重新发送"
+      "editAndResend": "编辑并重新发送",
+      "stopped": "已停止"
     },
     "projectPicker": {
       "noProject": "无项目",

@@ -459,6 +459,14 @@ test('prepareChatMessages keeps a command result on its badge when no result row
   assert.equal(out[0].toolCalls?.[0].result, 'alpha.txt')
 })
 
+test('a stopped answer split into prose and tools shows its stopped mark once, after the tools', () => {
+  const prepared = prepareChatMessages([{
+    id: 'a1', role: 'assistant', content: 'Checking', timestamp: 0, stopped: true,
+    toolCalls: [{ id: 'c1', name: 'bash', arguments: '{"command":"ls"}' }],
+  }])
+  assert.deepEqual(prepared.map((message) => [message.id, message.stopped]), [['a1', undefined], ['a1::tools', true]])
+})
+
 test('results of calls made together name their call; a lone call result does not repeat it', () => {
   const prepared = prepareChatMessages([
     {

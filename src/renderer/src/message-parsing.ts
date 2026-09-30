@@ -1,4 +1,5 @@
 import { t } from '../../shared/i18n'
+import { isStoppedAnswer } from '../../shared/stopped-answer'
 import { splitClaudeCliMarkers } from './claude-cli-markers'
 
 export interface DisplayAttachment {
@@ -39,6 +40,8 @@ export interface DisplayMessage {
   /** toolResult only: its call's arguments, set when the call shared its turn with others. */
   toolCallArguments?: string
   isError?: boolean
+  /** assistant only: the user stopped this answer before it finished. */
+  stopped?: boolean
 }
 
 let fallbackMessageCounter = 0
@@ -152,6 +155,7 @@ export function parseAgentMessage(msg: unknown): DisplayMessage | null {
       toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
       model: typeof m.model === 'string' ? m.model : undefined,
       provider: typeof m.provider === 'string' ? m.provider : undefined,
+      stopped: isStoppedAnswer(m) || undefined,
     }
   }
 

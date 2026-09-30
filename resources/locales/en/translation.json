@@ -79,7 +79,8 @@
     "message": {
       "branchedFrom": "Branched from: \"{{excerpt}}\"",
       "branchFromHere": "Branch from here",
-      "editAndResend": "Edit & resend"
+      "editAndResend": "Edit & resend",
+      "stopped": "Stopped"
     },
     "projectPicker": {
       "noProject": "No project",

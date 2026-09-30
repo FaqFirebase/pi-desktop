@@ -192,3 +192,18 @@ test('without the kept text, the view shows no mid-sentence fragment', async () 
     delete session.getStreamingText
   }
 })
+
+test('an answer the user stopped is marked once, even when nothing streamed', () => {
+  const stopped = { role: 'assistant', stopReason: 'aborted', content: [{ type: 'text', text: 'Partial answ' }] }
+  emit({ type: 'message_end', message: stopped })
+  emit({ type: 'turn_end', message: stopped, toolResults: [] } as PiRpcEvent)
+  assert.deepEqual(useAppStore.getState().messages.map((message) => [message.content, message.stopped]), [['Partial answ', true]])
+
+  useAppStore.setState({ messages: [] })
+  emit({ type: 'message_end', message: { role: 'assistant', stopReason: 'aborted', content: [] } })
+  assert.deepEqual(useAppStore.getState().messages.map((message) => [message.content, message.stopped]), [['', true]])
+
+  useAppStore.setState({ messages: [] })
+  emit({ type: 'message_end', message: { role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: 'Done' }] } })
+  assert.equal(useAppStore.getState().messages[0]?.stopped, undefined)
+})

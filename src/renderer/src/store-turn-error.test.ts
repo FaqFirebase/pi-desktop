@@ -113,6 +113,18 @@ test('aborted turn surfaces only a non-generic abort reason', () => {
   assert.deepEqual(systemMessages(), ['Error: Aborted by permission extension'])
 })
 
+test('a user stop on OMP reads as a plain stop, not an error', () => {
+  useAppStore.getState().handlePiEvent({
+    type: 'message_end',
+    message: erroredAssistantMessage({
+      stopReason: 'aborted',
+      errorMessage: 'Interrupted by user',
+      content: [{ type: 'text', text: 'Partial answer' }],
+    }),
+  } as PiRpcEvent)
+  assert.deepEqual(systemMessages(), [])
+})
+
 test('message_end for a non-assistant message adds no error message', () => {
   useAppStore.getState().handlePiEvent({
     type: 'message_end',

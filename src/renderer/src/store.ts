@@ -6,6 +6,7 @@ import { t } from '../../shared/i18n'
 import { buildPlanningPrompt } from './utils/planning-prompt'
 import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
 import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
+import { isStoppedAnswer } from '../../shared/stopped-answer'
 import { stripAnsi } from './utils/strip-ansi'
 import { splitClaudeCliMarkers } from './claude-cli-markers'
 import { markUnansweredToolCallsRunning, settleRunningToolCall } from './reattached-tool-calls'
@@ -3532,10 +3533,14 @@ function handleMessageUpdate(
   }
 }
 
-// Pi reports a generic abort with exactly this text; anything else on an
-// aborted turn is a specific reason worth showing (mirrors Pi's own TUI). Not
-// translated: it is compared against Pi's own (English) output, never shown.
-const GENERIC_ABORT_MESSAGE = 'Request was aborted'
+// Pi and OMP report a plain user stop with exactly these texts; anything else
+// on an aborted turn is a specific reason worth showing (mirrors Pi's own TUI).
+// Not translated: they are compared against the engines' own (English)
+// output, never shown. The "Stopped" mark already tells the user.
+const GENERIC_ABORT_MESSAGES: ReadonlySet<string> = new Set([
+  'Request was aborted', // Pi
+  'Interrupted by user', // OMP
+])
 
 /**
  * Error text to surface in chat for a finished assistant message, or null.
@@ -3547,7 +3552,7 @@ function turnErrorText(message?: Record<string, unknown>): string | null {
   if (!message || message.role !== 'assistant') return null
   const errorMessage = typeof message.errorMessage === 'string' ? message.errorMessage : ''
   if (message.stopReason === 'error') return errorMessage || t('store.messages.unknownError')
-  if (message.stopReason === 'aborted' && errorMessage && errorMessage !== GENERIC_ABORT_MESSAGE) {
+  if (message.stopReason === 'aborted' && errorMessage && !GENERIC_ABORT_MESSAGES.has(errorMessage)) {
     return errorMessage
   }
   return null
@@ -3582,9 +3587,12 @@ function handleTurnComplete(
     // The assistant message ends before its tools execute. Keep their live
     // state until turn_end so each call is committed only once, with its result.
     const entries = completeTools ? Array.from(state.streamingToolCalls.entries()) : []
+    // turn_end re-delivers the ended message; only its message_end marks it.
+    const stopped = !completeTools && isStoppedAnswer(message)
 
-    // Commit streaming content as assistant message
-    if (text.content || thinking || text.toolCalls.length > 0 || entries.length > 0) {
+    // Commit streaming content as assistant message. A stopped answer is kept
+    // even when nothing streamed, so its "Stopped" notice still shows.
+    if (text.content || thinking || text.toolCalls.length > 0 || entries.length > 0 || stopped) {
       const toolCalls = [
         ...entries.map(([id, tc]) => ({
           id,
@@ -3614,6 +3622,7 @@ function handleTurnComplete(
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         model,
         provider,
+        stopped: stopped || undefined,
       })
 
       for (const [id, tc] of entries) {

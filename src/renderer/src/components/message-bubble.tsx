@@ -38,6 +38,7 @@ import {
   Download,
   Send,
   ImageOff,
+  Square,
 } from 'lucide-react'
 
 function MessageBubbleImpl({
@@ -153,6 +154,8 @@ function MessageBubbleImpl({
         onExport={handleExport}
         hideModelHeader={hideModelHeader}
       />
+      {/* Indented past the avatar column so it reads as part of the answer. */}
+      {message.stopped && <StoppedNotice className="-mt-2 mb-4 pl-10" />}
       </div>
       {MessageContextMenu}
       </>
@@ -924,6 +927,7 @@ function ToolGroupBubbleImpl({
               the rows inside, so the header→first-row gap equals the row-to-row
               gap. Last child's bottom margin trimmed so it doesn't double up on
               the group's own mb-4. */}
+          {!expanded && messages.some((m) => m.stopped) && <StoppedNotice className="mt-1.5" />}
           {expanded && (
             <div className="mt-4 pl-3 [&>*:last-child]:mb-0">
               {messages.map((m) => (
@@ -943,6 +947,17 @@ function ToolGroupBubbleImpl({
 }
 
 export const ToolGroupBubble = memo(ToolGroupBubbleImpl)
+
+/** Marks an answer the user stopped before it finished. */
+function StoppedNotice({ className }: { className: string }): React.JSX.Element {
+  const { t } = useTranslation()
+  return (
+    <div className={clsx('flex items-center gap-1.5 text-xs text-dim', className)}>
+      <Square size={10} aria-hidden="true" />
+      {t('chat.message.stopped')}
+    </div>
+  )
+}
 
 // ─── System Message ──────────────────────────────────────────────────────────
 

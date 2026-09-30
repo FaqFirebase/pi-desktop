@@ -15,6 +15,7 @@ import { readForkPointsCached } from '../omp-fork-points'
 import { mapWithConcurrency } from '../map-concurrent'
 import { readSessionLineage } from '../session-lineage-reader'
 import { trimGetMessagesResponse } from '../get-messages-trim'
+import { withStoppedAnswers } from '../omp-stopped-answers'
 import { activityStatsStore } from '../activity-stats'
 import type { SessionDeleteResult, SessionListItem, SessionRuntimeCloseResult, SessionRuntimeInfo } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
@@ -221,8 +222,11 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     const pi = workspaceManager.getActivePiManager()
     if (!pi || pi.getStatus().status !== 'running') return null
     const response = await pi.sendCommand({ type: 'get_messages' })
+    // OMP leaves stopped answers out of a session it loaded from disk.
+    const sessionPath = pi.getEngineKind() === 'omp' ? workspaceManager.sessionPathFor(pi) : null
+    const complete = sessionPath ? await withStoppedAnswers(response, sessionPath) : response
     // Bound IPC payload size so multi‑MB histories don't freeze the renderer.
-    return trimGetMessagesResponse(response)
+    return trimGetMessagesResponse(complete)
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_STATS, async () => {

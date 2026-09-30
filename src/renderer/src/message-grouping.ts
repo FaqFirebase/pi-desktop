@@ -413,7 +413,8 @@ export function prepareChatMessages(messages: DisplayMessage[]): DisplayMessage[
       out.push(base)
       return
     }
-    out.push({ ...base, toolCalls: undefined })
+    // A stopped mark belongs after the whole answer: on the tools part only.
+    out.push({ ...base, toolCalls: undefined, stopped: undefined })
     out.push({
       ...base,
       id: `${m.id}::tools`,
