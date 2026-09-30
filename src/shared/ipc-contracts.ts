@@ -1130,6 +1130,7 @@ export interface AgentDetectionOptions {
 }
 
 export interface AppSettings {
+  shortcuts: import('./keyboard-shortcuts').KeyboardShortcuts
   piExecutablePath: string
   /** Explicit engine identity; auto preserves legacy Pi/OMP detection. */
   piEngine: AgentEngine

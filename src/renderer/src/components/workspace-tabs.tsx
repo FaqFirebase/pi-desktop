@@ -5,6 +5,9 @@ import { clsx } from 'clsx'
 import { useAppStore } from '../store'
 import { useGlobalWorkflowOpen } from '../hooks'
 import { getSessionTitle } from '../utils/session-title'
+import { sessionTabs as getSessionTabs } from '../utils/tab-navigation'
+import { activeShortcuts } from '../utils/app-shortcuts'
+import { formatShortcut } from '../../../shared/keyboard-shortcuts'
 import { pathsEqual } from '../../../shared/path-compare'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import type { Workspace } from '../../../shared/ipc-contracts'
@@ -32,6 +35,7 @@ export function WorkspaceTabs(): React.JSX.Element {
   const removeWorkspace = useAppStore((state) => state.removeWorkspace)
   const createWorktreeTab = useAppStore((state) => state.createWorktreeTab)
   const createNewSession = useAppStore((state) => state.createNewSession)
+  const newSessionShortcut = useAppStore((state) => activeShortcuts(state).newSession)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
 
   const toolView = ['settings', 'packages', 'notes', 'skills', 'diagnostics'] as const
@@ -43,10 +47,7 @@ export function WorkspaceTabs(): React.JSX.Element {
     [workspaces]
   )
   const sessionTabs = useMemo(
-    () => Object.values(sessionRuntimes)
-      .filter((runtime) => runtime.workspaceId === activeWorkspace?.id && runtime.sessionPath)
-      // Newest runtime first; selecting a tab never changes its position.
-      .reverse(),
+    () => getSessionTabs(sessionRuntimes, activeWorkspace?.id),
     [activeWorkspace?.id, sessionRuntimes]
   )
 
@@ -172,7 +173,9 @@ export function WorkspaceTabs(): React.JSX.Element {
           void createNewSession()
         }}
         className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary transition-colors"
-        title={t('workspaceTabs.newSessionTitle')}
+        title={newSessionShortcut
+          ? t('settings.shortcuts.actionWithShortcut', { action: t('workspaceTabs.newSessionAriaLabel'), shortcut: formatShortcut(newSessionShortcut, window.piDesktop.system.platform) })
+          : t('workspaceTabs.newSessionAriaLabel')}
         aria-label={t('workspaceTabs.newSessionAriaLabel')}
       >
         <MessageSquarePlus size={15} />

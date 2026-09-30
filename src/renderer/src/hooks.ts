@@ -606,26 +606,6 @@ export function useInitialize(): void {
 }
 
 /**
- * Global shortcut (Ctrl+Shift+P) that toggles the quick note picker, letting
- * the user insert a saved prompt from anywhere in the app. (Ctrl+Shift+N is
- * reserved for the New Workspace menu accelerator.)
- */
-export function useNotePickerShortcut(): void {
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent): void => {
-      if (e.ctrlKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
-        e.preventDefault()
-        const { notePickerOpen, setNotePickerOpen } = useAppStore.getState()
-        setNotePickerOpen(!notePickerOpen)
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
-}
-
-/**
  * Copies the page background to the native window, which paints areas the
  * page has not drawn yet (live-resize edges on Windows and macOS). The body
  * uses the theme's app color, and its computed value is always rgb()/rgba().

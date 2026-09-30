@@ -1137,6 +1137,27 @@
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "Voice dictation"
     },
+    "shortcuts": {
+      "actionWithShortcut": "{{action}} ({{shortcut}})",
+      "commandPalette": "Command palette",
+      "description": "Click a shortcut and press a new combination including Cmd or Ctrl. Changes apply immediately; Save keeps them after restart. Session navigation cycles through open sessions in the current project. Other native menu and editor shortcuts stay unchanged. Escape cancels recording.",
+      "disable": "Disable",
+      "disableAction": "Disable shortcut for {{action}}",
+      "disabled": "Disabled",
+      "duplicate": "{{action}} and {{other}} use the same shortcut. Choose another combination.",
+      "heading": "Keyboard shortcuts",
+      "inUse": "{{shortcut}} is already used by {{action}}. Choose another combination.",
+      "invalid": "Use Cmd or Ctrl with a letter, number, punctuation key, or F1–F12.",
+      "nextProject": "Next project",
+      "nextSession": "Next open session",
+      "notes": "Note picker",
+      "pressKeys": "Press a combination…",
+      "previousProject": "Previous project",
+      "previousSession": "Previous open session",
+      "reserved": "This combination is reserved for a native menu or editor action.",
+      "reset": "Reset shortcuts",
+      "sidebar": "Sidebar"
+    },
     "showThinking": {
       "description": "Display model thinking blocks in responses",
       "label": "Show Thinking"
@@ -1843,7 +1864,6 @@
     "newIsolatedTabTitle": "New isolated Git tab (requires a Git project)",
     "newSessionAriaLabel": "New session in this project",
     "newSessionFallback": "New session",
-    "newSessionTitle": "New session in this project (Ctrl/Cmd+N)",
     "removeWorkspaceAriaLabel": "Remove {{name}}",
     "sessions": "Sessions",
     "tools": "Tools"

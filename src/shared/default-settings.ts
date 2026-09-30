@@ -3,6 +3,7 @@ import { DEFAULT_COUNCIL_CONFIG } from './council-config'
 import { DEFAULT_SIDEBAR_WIDTH } from './sidebar-width'
 import { DEFAULT_CHAT_WIDTH } from './chat-width'
 import { SYSTEM_LANGUAGE } from './i18n/languages'
+import { DEFAULT_KEYBOARD_SHORTCUTS } from './keyboard-shortcuts'
 
 /**
  * The single source of truth for default app settings. Used by the main process
@@ -37,6 +38,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   hasSeenTrayHint: false,
   desktopNotifications: true,
   language: SYSTEM_LANGUAGE,
+  shortcuts: DEFAULT_KEYBOARD_SHORTCUTS,
   council: DEFAULT_COUNCIL_CONFIG,
   voiceModel: null,
   voicePrecision: 'int8',

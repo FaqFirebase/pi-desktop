@@ -20,9 +20,10 @@ import { ReviewRail } from './components/review-rail'
 import { WorkspaceTabs } from './components/workspace-tabs'
 import { WorkflowNavigator } from './components/workflow-navigator'
 import { useContextMenu, buildDefaultContextMenu } from './components/context-menu'
-import { usePiEvents, useMenuActions, useInitialize, useNotePickerShortcut } from './hooks'
+import { usePiEvents, useMenuActions, useInitialize } from './hooks'
 import { useFolderDrop } from './hooks/use-folder-drop'
 import { useAppStore } from './store'
+import { handleAppShortcut } from './utils/app-shortcuts'
 import { useEffect } from 'react'
 import { ArrowUpCircle, FolderOpen, PanelLeft, X } from 'lucide-react'
 
@@ -31,7 +32,6 @@ export function App(): React.JSX.Element {
   usePiEvents()
   useMenuActions()
   useInitialize()
-  useNotePickerShortcut()
   const { isDraggingFolder } = useFolderDrop()
 
   const currentView = useAppStore((state) => state.currentView)
@@ -69,20 +69,9 @@ export function App(): React.JSX.Element {
     return () => document.removeEventListener('contextmenu', handleContextMenu)
   }, [show])
 
-  // Global quick-switcher launcher (Ctrl/Cmd+K): commands, workspaces,
-  // sessions, and files. No Pi-running gate — workspace/session/file
-  // navigation works with Pi stopped, and command actions soft-fail the same
-  // way their buttons do. Slash-typing in the composer is handled by
-  // ChatInput's inline popup instead.
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
-        e.preventDefault()
-        useAppStore.getState().setCommandPalette(true)
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
+    document.addEventListener('keydown', handleAppShortcut, true)
+    return () => document.removeEventListener('keydown', handleAppShortcut, true)
   }, [])
 
   // Home is a full-screen splash (no sidebar/status). Chat keeps chrome; the
