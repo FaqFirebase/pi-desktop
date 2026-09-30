@@ -421,6 +421,8 @@ interface AppState {
   // draft into another.
   composerDrafts: Record<string, ComposerDraft>
   saveComposerDraft: (workspaceId: string, draft: ComposerDraft) => void
+  // Set by the diff shortcuts; the diff viewer or Git actions consume and clear it.
+  diffShortcutRequest: 'review' | 'commitPush' | null
   // A prompt queued for insertion into the chat input. The nonce lets the
   // chat input re-apply the same text on repeated inserts.
   pendingInsert: { text: string; nonce: number; replace?: boolean } | null
@@ -1013,6 +1015,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     else delete composerDrafts[workspaceId]
     return { composerDrafts }
   }),
+  diffShortcutRequest: null,
   pendingInsert: null,
   composerFocusRequested: false,
   modelPickerOpen: false,

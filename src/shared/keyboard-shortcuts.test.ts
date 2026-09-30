@@ -44,6 +44,15 @@ test('conflicts account for primary-modifier aliases and reserved native/editor 
   assert.equal(shortcutProblem({ ...defaults, diff: null }, 'darwin'), null)
 })
 
+test('Commit + Push uses the platform primary modifier, never the Super/Windows key', () => {
+  const binding = DEFAULT_SETTINGS.shortcuts.commitPush!
+  assert.equal(binding.startsWith('Mod+'), true)
+  const press = { key: 'h', code: 'KeyH', altKey: false, shiftKey: true }
+  assert.equal(matchesShortcut({ ...press, ctrlKey: false, metaKey: true }, binding, 'darwin'), true)
+  assert.equal(matchesShortcut({ ...press, ctrlKey: true, metaKey: false }, binding, 'linux'), true)
+  assert.equal(matchesShortcut({ ...press, ctrlKey: false, metaKey: true }, binding, 'win32'), false)
+})
+
 test('a recorded duplicate names the action that already owns the binding, whichever side the validator reports', () => {
   const defaults = DEFAULT_SETTINGS.shortcuts
   // Sidebar comes before Diff viewer, so the validator reports Diff viewer as the duplicate.

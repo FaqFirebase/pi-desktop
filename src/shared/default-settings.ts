@@ -13,6 +13,11 @@ export const GIT_COMMIT_MESSAGE_CONFIG = {
   timeoutMs: 60_000,
 } as const
 
+export const GIT_CONVEYOR_NOTICE_TIMEOUT_MS = {
+  success: 5_000,
+  error: 10_000,
+} as const
+
 /**
  * The single source of truth for default app settings. Used by the main process
  * to seed settings.json on first run, and by the renderer's Settings panel for

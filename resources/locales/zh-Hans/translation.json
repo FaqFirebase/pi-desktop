@@ -263,6 +263,8 @@
     "branchStatusClean": "{{branch}}",
     "branchStatusDirty_other": "{{branch}} · {{count}} 处更改",
     "commit": "提交",
+    "commitAndPush": "提交 + 推送",
+    "commitAndPushTitle": "一步完成提交更改并推送分支",
     "commitButtonTitle": "提交已暂存的更改或该工作区中的更改",
     "createPrButton": "创建 PR",
     "detachedBranch": "分离",
@@ -289,6 +291,7 @@
       "commitBeforePr": "创建 PR 前请先提交更改。",
       "commitBeforePush": "推送前请先提交工作树。",
       "commitMessageRequired": "提交信息为必填项。",
+      "committedPushFailed": "提交 {{sha}} 已保存在本地，但推送未完成：{{detail}}",
       "operationInProgress": "另一个 Git 操作正在进行中。请等待其完成。",
       "prTitleRequired": "PR 标题为必填项。",
       "pushBeforePr": "创建 PR 前请先推送该分支。",
@@ -297,6 +300,7 @@
     "feedback": {
       "branchPushed": "分支已推送。",
       "committed": "已提交 {{sha}}。",
+      "committedAndPushed": "已提交 {{sha}} 并推送分支。",
       "prCreated": "PR 已创建。",
       "prCreatedWithUrl": "PR 已创建：{{url}}",
       "pushedCommits_other": "已推送 {{count}} 个提交。"
@@ -1155,6 +1159,7 @@
     "shortcuts": {
       "actionWithShortcut": "{{action}}（{{shortcut}}）",
       "commandPalette": "命令面板",
+      "commitPush": "审查 / 提交并推送",
       "description": "点击快捷键并按下包含 Cmd 或 Ctrl 的新组合。更改立即生效；保存后重启仍有效。会话导航在当前项目的已打开会话之间循环。其他原生菜单和编辑器快捷键保持不变。按 Escape 取消录制。",
       "disable": "禁用",
       "disableAction": "禁用{{action}}的快捷键",

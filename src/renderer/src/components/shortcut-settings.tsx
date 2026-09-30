@@ -15,6 +15,7 @@ function actionLabel(action: ShortcutAction, t: TFunction): string {
     case 'commandPalette': return t('settings.shortcuts.commandPalette')
     case 'modelSelector': return t('settings.shortcuts.modelSelector')
     case 'notes': return t('settings.shortcuts.notes')
+    case 'commitPush': return t('settings.shortcuts.commitPush')
     case 'sidebar': return t('settings.shortcuts.sidebar')
     case 'files': return t('chat.toolbar.fileTree')
     case 'review': return t('chat.toolbar.reviewPanel')

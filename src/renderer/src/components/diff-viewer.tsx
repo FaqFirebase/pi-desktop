@@ -65,6 +65,16 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   const discardBusy = useRef(false)
   const [discardError, setDiscardError] = useState<string | null>(null)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
+  const shortcutActive = useAppStore((state) =>
+    state.currentView === (onClose ? 'chat' : 'diff') &&
+    !(state.workflowPanelOpen && !state.workflowPanelFilter && state.workflowPanelWorkspaceId === null))
+  const shortcutRequest = useAppStore((state) => state.diffShortcutRequest)
+  useEffect(() => {
+    if (!shortcutActive || shortcutRequest !== 'review') return
+    setSessionOnly(true)
+    setStagedMode(false)
+    useAppStore.setState({ diffShortcutRequest: null })
+  }, [shortcutActive, shortcutRequest])
   const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
   const workspacePath = useAppStore((state) => state.activeWorkspace?.path)
   // The chat's diff pane stays mounted while another view hides the chat; the
@@ -215,7 +225,7 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
           </div>
         </div>
         <div className="flex min-h-8 min-w-0 flex-col justify-center border-t border-border px-4 py-0.5">
-          <GitConveyorActions key={workspaceId} onChanged={reloadDiff} selection={commitSelection} watchDisk={visible}>
+          <GitConveyorActions key={workspaceId} onChanged={reloadDiff} selection={commitSelection} shortcutActive={shortcutActive && !loading && !loadError} watchDisk={visible}>
             <button
               type="button"
               onClick={() => void discard(visibleFiles)}

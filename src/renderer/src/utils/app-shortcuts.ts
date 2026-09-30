@@ -2,6 +2,7 @@ import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { matchesShortcut, SHORTCUT_ACTIONS, shortcutProblem, type KeyboardShortcuts, type ShortcutAction } from '../../../shared/keyboard-shortcuts'
 import type { AppSettings } from '../../../shared/ipc-contracts'
 import { useAppStore } from '../store'
+import { requestCommitPushDialog } from './commit-push-shortcut'
 import { adjacentTabIndex, projectTabs, sessionTabs } from './tab-navigation'
 
 /** The shortcuts in force: the unsaved Settings draft first, then the saved settings, then the defaults. */
@@ -86,6 +87,9 @@ export async function runAppShortcut(action: ShortcutAction): Promise<void> {
       return
     case 'notes':
       state.setNotePickerOpen(!state.notePickerOpen)
+      return
+    case 'commitPush':
+      await requestCommitPushDialog()
   }
 }
 

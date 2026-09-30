@@ -267,6 +267,8 @@
     "branchStatusDirty_one": "{{branch}} · {{count}} changed",
     "branchStatusDirty_other": "{{branch}} · {{count}} changed",
     "commit": "Commit",
+    "commitAndPush": "Commit + Push",
+    "commitAndPushTitle": "Commit changes and push the branch in one step",
     "commitButtonTitle": "Commit staged changes or changes in this workspace",
     "createPrButton": "Create PR",
     "detachedBranch": "detached",
@@ -293,6 +295,7 @@
       "commitBeforePr": "Commit changes before creating a pull request.",
       "commitBeforePush": "Commit the working tree before pushing.",
       "commitMessageRequired": "Commit message is required.",
+      "committedPushFailed": "Commit {{sha}} was saved locally, but Push did not complete: {{detail}}",
       "operationInProgress": "Another Git operation is in progress. Wait for it to finish.",
       "prTitleRequired": "Pull request title is required.",
       "pushBeforePr": "Push the branch before creating a pull request.",
@@ -301,6 +304,7 @@
     "feedback": {
       "branchPushed": "Branch pushed.",
       "committed": "Committed {{sha}}.",
+      "committedAndPushed": "Committed {{sha}} and pushed the branch.",
       "prCreated": "Pull request created.",
       "prCreatedWithUrl": "Pull request created: {{url}}",
       "pushedCommits_one": "Pushed {{count}} commit.",
@@ -1175,6 +1179,7 @@
     "shortcuts": {
       "actionWithShortcut": "{{action}} ({{shortcut}})",
       "commandPalette": "Command palette",
+      "commitPush": "Review / Commit and push",
       "description": "Click a shortcut and press a new combination including Cmd or Ctrl. Changes apply immediately; Save keeps them after restart. Session navigation cycles through open sessions in the current project. Other native menu and editor shortcuts stay unchanged. Escape cancels recording.",
       "disable": "Disable",
       "disableAction": "Disable shortcut for {{action}}",
