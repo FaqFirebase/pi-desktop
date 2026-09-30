@@ -144,7 +144,7 @@
         "zip"
       ],
       "category": "public.app-category.developer-tools",
-      "icon": "resources/icons/icon.icns",
+      "icon": "resources/icons/Icon.icon",
       "darkModeSupport": true,
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
