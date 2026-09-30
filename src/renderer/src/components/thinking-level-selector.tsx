@@ -59,7 +59,6 @@ export function ThinkingLevelSelector({ className }: ThinkingLevelSelectorProps)
         <div className="absolute bottom-full right-0 z-50 mb-2 w-40 overflow-hidden rounded-xl border border-border-strong bg-surface py-1 shadow-xl shadow-black/30 animate-fade-in">
           <div className="border-b border-border px-3 py-2">
             <div className="text-[10px] font-medium uppercase tracking-wide text-faint">{t('thinking.effort')}</div>
-            <div className="mt-0.5 text-xs text-dim">{t('thinking.modelAwareDepth')}</div>
           </div>
           {levels.map((level) => (
             <button

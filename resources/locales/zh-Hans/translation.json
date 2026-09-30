@@ -1544,9 +1544,8 @@
     }
   },
   "thinking": {
-    "effort": "强度",
-    "effortWithLevel": "思考强度：{{level}}",
-    "modelAwareDepth": "随模型自适应的思考深度"
+    "effort": "思考强度",
+    "effortWithLevel": "思考强度：{{level}}"
   },
   "time": {
     "justNow": "刚刚"
