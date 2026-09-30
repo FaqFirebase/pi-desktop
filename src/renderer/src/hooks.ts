@@ -276,7 +276,7 @@ function restoreAnchor(el: HTMLElement, anchor: ScrollAnchor): void {
  * stays mounted (so scrollTop persists) but we defer any scrolling until it's
  * shown again, so measurements are valid.
  */
-export function useChatScroll(active: boolean): {
+export function useChatScroll(active: boolean, bottomPadPx: number): {
   scrollRef: React.RefObject<HTMLDivElement | null>
   onScroll: () => void
   atBottom: boolean
@@ -288,7 +288,11 @@ export function useChatScroll(active: boolean): {
   )
   const sessionId = useAppStore((state) => state.sessionState?.sessionId ?? null)
   const messages = useAppStore((state) => state.messages)
-  const streamingContent = useAppStore((state) => state.streamingContent)
+  // Everything the streaming bubble renders counts as new content: a turn that
+  // is only thinking or running tools must be followed as much as one writing text.
+  const streamSize = useAppStore(
+    (state) => state.streamingContent.length + state.streamingThinking.length + state.streamingToolCalls.size
+  )
   const scrollBottomNonce = useAppStore((state) => state.chatScrollBottomNonce)
 
   const positions = useRef<Map<string, ScrollAnchor>>(new Map())
@@ -304,7 +308,8 @@ export function useChatScroll(active: boolean): {
   // Track content size to distinguish genuinely new content from unrelated
   // re-renders (e.g. re-showing the panel), so returning to chat doesn't scroll.
   const prevMsgCount = useRef(0)
-  const prevStreamLen = useRef(0)
+  const prevStreamSize = useRef(0)
+  const prevBottomPad = useRef(bottomPadPx)
 
   // Whether the viewport is at (or within a hair of) the bottom. `atBottom` (state)
   // drives the jump-to-bottom button; `atBottomRef` is read synchronously in the
@@ -351,9 +356,13 @@ export function useChatScroll(active: boolean): {
     // Did content actually grow (new message or streamed text)? Tracked even
     // while hidden so re-showing the panel isn't mistaken for new content.
     const messagesGrew = messages.length > prevMsgCount.current
-    const grew = messagesGrew || streamingContent.length > prevStreamLen.current
+    // A taller composer (a banner or a multi-line draft) raises the bottom
+    // padding; without following it the newest lines slide under the composer.
+    const grew =
+      messagesGrew || streamSize > prevStreamSize.current || bottomPadPx > prevBottomPad.current
     prevMsgCount.current = messages.length
-    prevStreamLen.current = streamingContent.length
+    prevStreamSize.current = streamSize
+    prevBottomPad.current = bottomPadPx
 
     // Defer scrolling while hidden: a display:none element has no layout, so
     // scrollHeight is 0 and any positioning would be wrong.
@@ -429,7 +438,7 @@ export function useChatScroll(active: boolean): {
     }
 
     syncAtBottom()
-  }, [active, sessionId, messages, streamingContent, scrollBottomNonce, autoScroll, syncAtBottom])
+  }, [active, sessionId, messages, streamSize, bottomPadPx, scrollBottomNonce, autoScroll, syncAtBottom])
 
   return { scrollRef: ref, onScroll, atBottom, scrollToBottom }
 }

@@ -93,7 +93,7 @@ export function ChatPanel(): React.JSX.Element {
   // decides whether chat is on screen. Without it the scroll hook never sees
   // the hidden→shown edge and cannot re-anchor the reading position.
   const chatVisible = useChatVisible()
-  const { scrollRef, onScroll, atBottom, scrollToBottom } = useChatScroll(chatVisible)
+  const { scrollRef, onScroll, atBottom, scrollToBottom } = useChatScroll(chatVisible, composerPadPx)
 
   // In-conversation search (Ctrl/Cmd+F while in chat). The nonce bumps on every
   // press so re-triggering refocuses/selects the already-open input.
@@ -127,8 +127,8 @@ export function ChatPanel(): React.JSX.Element {
   // the grouping only recomputes when the message list changes, and so lone
   // MessageBubbles keep their stable refs (no markdown re-parse on re-render).
   const renderItems = useMemo(
-    () => groupToolMessages(prepareChatMessages(messages), t),
-    [messages, t]
+    () => groupToolMessages(prepareChatMessages(messages), t, isStreaming),
+    [messages, t, isStreaming]
   )
 
   const handleRetry = useCallback(async (messageId: string) => {
@@ -345,7 +345,7 @@ export function ChatPanel(): React.JSX.Element {
               return (
                 <>
                   <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-                    {sessionLoading && messages.length === 0 ? (
+                    {sessionLoading && messages.length === 0 && !isStreaming ? (
                       <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-dim">
                         <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
                         {piStatus === 'running' ? t('chat.loadingSession') : t('chat.startingAgent')}

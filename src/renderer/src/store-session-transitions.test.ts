@@ -1716,9 +1716,11 @@ function enterWorkspacesWithBackgroundTurn(): void {
   // The background turn lives in WORKSPACE_TWO's own process, so main reports
   // that workspace's manager as running and its activity as working.
   piStatusResult = 'running'
+  sessionStateResult = sessionStateWith(SESSION_PATH)
   useAppStore.setState({
     activeWorkspace: WORKSPACE_ONE,
     workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    sessionRuntimes: { rt: runtimeIn(WORKSPACE_TWO, { status: 'running', active: true, activity: 'working' }) },
     workspaceActivity: { [WORKSPACE_ID]: { state: 'working', since: 1 } },
   })
 }
@@ -1772,7 +1774,7 @@ test('switching into a working workspace shows the indicator and marks the attac
 
 test('switching into an idle workspace attaches nothing', async () => {
   enterWorkspacesWithBackgroundTurn()
-  useAppStore.setState({ workspaceActivity: {} })
+  useAppStore.setState({ workspaceActivity: {}, sessionRuntimes: { rt: runtimeIn(WORKSPACE_TWO, { status: 'running', active: true }) } })
 
   await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
 
@@ -1847,14 +1849,14 @@ test('agent_end after a mid-turn attach backfills from the session', async () =>
   )
 })
 
-test('the activity map going quiet after an attach stops the indicator and backfills', async () => {
+test('the active runtime going quiet after an attach stops the indicator and backfills', async () => {
   enterWorkspacesWithBackgroundTurn()
   await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
   const loadsBefore = calls.filter((c) => c === 'getMessages').length
 
   // The turn ended during the switch: its agent_end was filtered while the
-  // manager was not yet active, so only the activity broadcast reports it.
-  useAppStore.getState().handleWorkspaceActivity({})
+  // manager was not yet active, so only the runtime snapshot reports it.
+  useAppStore.getState().handleSessionRuntime(runtimeIn(WORKSPACE_TWO, { status: 'running', active: true, activity: 'completed' }))
   await new Promise((resolve) => setTimeout(resolve, 20))
 
   const state = useAppStore.getState()
@@ -1926,31 +1928,30 @@ test('a background runtime never blocks session navigation with a warning', asyn
   assert.equal(useAppStore.getState().confirmRequest, null)
 })
 
-test('a mid-turn message_end keeps the attach armed and restores the indicator', async () => {
+test('a mid-turn message_end preserves the chat without a history reload', async () => {
   enterWorkspacesWithBackgroundTurn()
   await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
   const loadsBefore = calls.filter((c) => c === 'getMessages').length
 
-  // The in-flight message completes but the TURN continues (tool-using
-  // turns have several messages). The backfill's teardown clears the
-  // indicator; it must come back, and the attach must stay armed so the
-  // kill-gates keep warning and later boundaries keep backfilling.
-  useAppStore.getState().handlePiEvent({ type: 'message_end', message: {} })
+  // The final event already contains the complete body, including the prefix
+  // emitted before attachment. Reloading here would erase the next live chunk.
+  useAppStore.getState().handlePiEvent({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'Full response' }] } })
   await new Promise((resolve) => setTimeout(resolve, 20))
 
   const state = useAppStore.getState()
   assert.equal(state.reattachedMidTurn, true)
   assert.equal(state.isStreaming, true, 'the turn is still running — the UI must not look idle')
-  assert.equal(calls.filter((c) => c === 'getMessages').length, loadsBefore + 1)
+  assert.equal(state.messages.at(-1)?.content, 'Full response')
+  assert.equal(calls.filter((c) => c === 'getMessages').length, loadsBefore)
 })
 
-test('an activity broadcast arms the attach for a renderer that booted mid-turn', async () => {
+test('an active-runtime broadcast arms the attach for a renderer that booted mid-turn', async () => {
   // Ctrl+R mid-turn: the fresh renderer is idle while Pi still streams.
   workspaceListResult = [WORKSPACE_TWO]
   activeWorkspaceResult = WORKSPACE_TWO
   useAppStore.setState({ activeWorkspace: WORKSPACE_TWO, workspaces: [WORKSPACE_TWO] })
 
-  useAppStore.getState().handleWorkspaceActivity({ [WORKSPACE_ID]: { state: 'working', since: 1 } })
+  useAppStore.getState().handleSessionRuntime(runtimeIn(WORKSPACE_TWO, { status: 'running', active: true, activity: 'working', sessionPath: null }))
 
   const state = useAppStore.getState()
   assert.equal(state.isStreaming, true)
@@ -1966,7 +1967,7 @@ test('the boot arm stays out of session-change teardown windows', async () => {
     sessionLoading: true,
   })
 
-  useAppStore.getState().handleWorkspaceActivity({ [WORKSPACE_ID]: { state: 'working', since: 1 } })
+  useAppStore.getState().handleSessionRuntime(runtimeIn(WORKSPACE_TWO, { status: 'running', active: true, activity: 'working', sessionPath: null }))
 
   assert.equal(useAppStore.getState().reattachedMidTurn, false)
 })

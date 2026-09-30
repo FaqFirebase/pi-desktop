@@ -50,7 +50,7 @@ export function StreamingBubble({ content: rawContent, thinking, toolCalls }: St
   }, [thinking])
 
   return (
-    <div className="mb-4 animate-fade-in">
+    <div className="mb-4">
       <div className="flex items-start gap-3">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-bg">
           <Bot size={14} className="text-accent-fg animate-pulse" />
@@ -68,8 +68,8 @@ export function StreamingBubble({ content: rawContent, thinking, toolCalls }: St
                 ref={thinkingScrollRef}
                 className="max-h-36 min-w-0 overflow-x-hidden overflow-y-auto"
               >
-                <div className="markdown-body font-sans italic text-sm text-muted break-words [overflow-wrap:anywhere] whitespace-pre-wrap">
-                  {thinking}
+                <div className="markdown-body min-w-0 font-sans italic text-sm text-muted break-words [overflow-wrap:anywhere]">
+                  <MarkdownRenderer content={thinking} />
                 </div>
               </div>
             </div>
@@ -84,15 +84,13 @@ export function StreamingBubble({ content: rawContent, thinking, toolCalls }: St
                     key={id}
                     className={clsx(
                       'flex min-w-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm',
-                      tc.isExecuting
-                        ? 'border-warning-bg bg-warning-bg text-warning'
-                        : tc.isError
-                          ? 'border-error-bg bg-surface/50 text-muted'
-                          : 'border-border bg-surface/50 text-muted'
+                      !tc.isExecuting && tc.isError
+                        ? 'border-error-bg bg-surface/50 text-muted'
+                        : 'border-border bg-surface/50 text-muted'
                     )}
                   >
                     {tc.isExecuting ? (
-                      <Loader2 size={12} className="shrink-0 animate-spin" />
+                      <Loader2 size={12} className="shrink-0 animate-spin text-accent-fg" />
                     ) : (
                       <Icon size={12} className="shrink-0" />
                     )}
@@ -100,7 +98,7 @@ export function StreamingBubble({ content: rawContent, thinking, toolCalls }: St
                     <span
                       className={clsx(
                         'ml-auto shrink-0 text-xs capitalize',
-                        tc.isExecuting && 'text-warning animate-pulse',
+                        tc.isExecuting && 'text-accent-fg animate-pulse',
                         !tc.isExecuting && tc.isError && 'text-error',
                         !tc.isExecuting && !tc.isError && 'text-success'
                       )}
@@ -149,10 +147,10 @@ export function StreamingBubble({ content: rawContent, thinking, toolCalls }: St
             </div>
           )}
 
-          {!content && !thinking && toolCalls.size === 0 && markerCalls.length === 0 && (
+          {!content && (!thinking || !thinkingEnabled) && toolCalls.size === 0 && markerCalls.length === 0 && (
             <div className="flex h-7 items-center gap-2 text-sm text-dim">
               <Loader2 size={12} className="animate-spin" />
-              {t('chat.waitingForResponse')}
+              {thinking ? t('common.thinking') : t('chat.waitingForResponse')}
             </div>
           )}
         </div>
