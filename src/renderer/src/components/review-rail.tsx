@@ -6,15 +6,17 @@ import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/ag
 import { PermissionSelector } from './permission-selector'
 import { formatIpcError } from '../utils/ipc-error'
 import type { GitFileStatus } from '../../../shared/ipc-contracts'
+import { REVIEW_PANEL_WIDTH, type PanePlacement } from './chat-panel-widths'
+import { clsx } from 'clsx'
 
 interface ChangedFile {
   path: string
   status: GitFileStatus
 }
 
-export function ReviewRail(): React.JSX.Element | null {
+/** The review panel; the chat panel renders it only while it is open and places it. */
+export function ReviewRail({ placement }: { placement: PanePlacement }): React.JSX.Element {
   const { t } = useTranslation()
-  const reviewOpen = useAppStore((state) => state.reviewOpen)
   const settings = useAppStore((state) => state.settings)
   const setPermissionMode = useAppStore((state) => state.setPermissionMode)
   const pendingSteering = useAppStore((state) => state.pendingSteering)
@@ -63,10 +65,14 @@ export function ReviewRail(): React.JSX.Element | null {
     }
   }, [activeWorkspace?.id, messages.length, isStreaming])
 
-  if (!reviewOpen) return null
-
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-border bg-app">
+    <aside
+      className={clsx(
+        'flex flex-col bg-app',
+        placement === 'beside' ? 'shrink-0 border-l border-border' : 'min-h-0 flex-1 border-t border-border'
+      )}
+      style={placement === 'beside' ? { width: REVIEW_PANEL_WIDTH } : undefined}
+    >
       <div className="shrink-0 border-b border-border">
         <div className="flex h-8 items-center gap-2 border-b border-border px-4">
           <ShieldCheck size={16} className="text-success" />

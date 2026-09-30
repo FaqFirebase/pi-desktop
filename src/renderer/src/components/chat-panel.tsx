@@ -11,12 +11,15 @@ import { ResizeHandle } from './resize-handle'
 import {
   DEFAULT_FILE_PANE_WIDTH,
   DEFAULT_SIDE_PANEL_WIDTH,
-  MAX_SIDE_PANEL_WIDTH,
+  MIN_CHAT_COLUMN_WIDTH,
   MIN_EDITOR_PANE_WIDTH,
   MIN_FILE_PANE_WIDTH,
   clamp,
+  resolvePaneLayout,
   resolveSidePanelMetrics,
+  sidePanelContentMinWidth,
 } from './chat-panel-widths'
+import { ReviewRail } from './review-rail'
 
 import { groupToolMessages, prepareChatMessages } from '../message-grouping'
 import { NowContext } from '../utils/relative-time'
@@ -26,7 +29,8 @@ import { DiffViewer } from './diff-viewer'
 import { TerminalPanel } from './terminal'
 import { isFileWatchDemanded, useChatScroll, useChatVisible, useChatWidth } from '../hooks'
 import { messageColumnClass } from '../utils/chat-width'
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { createMeasureRef } from '../utils/element-measure'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import piLogo from '../assets/pi-logo.svg'
@@ -35,28 +39,28 @@ import { X, ChevronDown, Loader2 } from 'lucide-react'
 // Fallback padding when the composer has not measured yet (~idle pill + gradient).
 const DEFAULT_COMPOSER_PAD_PX = 144
 
+const readComposerPad = (element: HTMLElement): number => Math.max(element.offsetHeight, DEFAULT_COMPOSER_PAD_PX)
+const readClientWidth = (element: HTMLElement): number => element.clientWidth
+
+/** `read(element)` for the element given the returned ref, updated whenever it mounts or resizes. */
+function useElementMeasure(read: (element: HTMLElement) => number, fallback: number): [number, (element: HTMLElement | null) => void] {
+  const [value, setValue] = useState(fallback)
+  const ref = useMemo(() => createMeasureRef(read, setValue), [read])
+  return [value, ref]
+}
+
 export function ChatPanel(): React.JSX.Element {
   const { t } = useTranslation()
   const messages = useAppStore((state) => state.messages)
   const sessionLoading = useAppStore((state) => state.sessionLoading)
   const isStreaming = useAppStore((state) => state.isStreaming)
   const reattachedMidTurn = useAppStore((state) => state.reattachedMidTurn)
-  const composerWrapRef = useRef<HTMLDivElement>(null)
-  const [composerPadPx, setComposerPadPx] = useState(DEFAULT_COMPOSER_PAD_PX)
-
   // Drive message-list bottom padding from the real floating composer height so
   // a tall draft / attachments row never permanently covers the last message.
-  useEffect(() => {
-    const el = composerWrapRef.current
-    if (!el) return
-    const measure = (): void => {
-      setComposerPadPx(Math.max(el.offsetHeight, DEFAULT_COMPOSER_PAD_PX))
-    }
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
+  // The composer mounts only once the empty chat has messages, hence the ref.
+  const [composerPadPx, composerWrapRef] = useElementMeasure(readComposerPad, DEFAULT_COMPOSER_PAD_PX)
+  // The chat column and side panel share this row; the side panel gets what the column leaves.
+  const [panelRowWidth, panelRowRef] = useElementMeasure(readClientWidth, Number.POSITIVE_INFINITY)
   const streamingContent = useAppStore((state) => state.streamingContent)
   const streamingThinking = useAppStore((state) => state.streamingThinking)
   const streamingToolCalls = useAppStore((state) => state.streamingToolCalls)
@@ -66,6 +70,7 @@ export function ChatPanel(): React.JSX.Element {
   const fileSearchOpen = useAppStore((state) => state.fileSearchOpen)
   const toggleFileSearch = useAppStore((state) => state.toggleFileSearch)
   const previewTarget = useAppStore((state) => state.previewTarget)
+  const reviewOpen = useAppStore((state) => state.reviewOpen)
   const messageColumn = messageColumnClass(useChatWidth())
 
   // sidePanel lives in the store so it survives view switches (e.g. Settings
@@ -141,13 +146,30 @@ export function ChatPanel(): React.JSX.Element {
   const showImage = previewTarget?.kind === 'image' && sidePanel !== 'diff'
   const showEditor = previewTarget?.kind === 'code' && sidePanel !== 'diff'
   const showDiff = sidePanel === 'diff'
+  const sidePanes = { showFileTree, showEditor, showImage }
+  const paneLayout = resolvePaneLayout(
+    panelRowWidth,
+    showSidePanel ? sidePanelContentMinWidth(sidePanes) : null,
+    reviewOpen && chatVisible
+  )
+  const sidePanelStacked = paneLayout.sidePanel === 'stacked'
   const {
     fileTreeOnly: showFileTreeOnly,
     minSidePanelWidth,
+    maxSidePanelWidth,
     contentWidth: sidePanelContentWidth,
     filePaneWidth: effectiveFilePaneWidth,
     maxFilePaneWidth,
-  } = resolveSidePanelMetrics({ showFileTree, showEditor, showImage }, sidePanelWidth, filePaneWidth)
+  } = resolveSidePanelMetrics(
+    sidePanes,
+    sidePanelWidth,
+    filePaneWidth,
+    // Stacked under the chat column, the side panel spans that column, so its
+    // ceiling is the whole column rather than what the column leaves beside it.
+    sidePanelStacked ? paneLayout.sidePanelRowWidth + MIN_CHAT_COLUMN_WIDTH : paneLayout.sidePanelRowWidth
+  )
+  const paneBesideChat = paneLayout.sidePanel === 'beside' || paneLayout.review === 'beside'
+  const paneUnderChat = sidePanelStacked || paneLayout.review === 'stacked'
 
   // Disk watching is demand-driven: the main process only attaches chokidar
   // while a visible files or diff panel consumes change events. Without this,
@@ -166,11 +188,96 @@ export function ChatPanel(): React.JSX.Element {
     }
   }, [fileWatchDemanded])
 
+  const sidePanelPane = showSidePanel ? (
+    <div
+      className={clsx(
+        'relative flex bg-app',
+        sidePanelStacked ? 'min-h-0 flex-1 border-t border-border' : 'shrink-0 border-l border-border'
+      )}
+      style={sidePanelStacked ? undefined : { width: sidePanelContentWidth }}
+    >
+      {!sidePanelStacked && (
+        <ResizeHandle
+          onResize={(delta) => {
+            if (showFileTreeOnly) {
+              // Same ceiling the render uses, so the state cannot outrun it.
+              setFilePaneWidth((width) =>
+                clamp(width - delta, MIN_FILE_PANE_WIDTH, maxFilePaneWidth)
+              )
+              return
+            }
+
+            setSidePanelWidth((width) =>
+              clamp(width - delta, minSidePanelWidth, maxSidePanelWidth)
+            )
+          }}
+        />
+      )}
+      <div className="flex min-w-0 flex-1 flex-row-reverse overflow-hidden">
+        {showFileTree && (
+          <>
+            {/* Stacked alone, the tree spans the column; beside the chat it keeps its dragged width. */}
+            <div
+              className={clsx('flex min-w-0 flex-col overflow-hidden', showFileTreeOnly && sidePanelStacked ? 'flex-1' : 'shrink-0')}
+              style={showFileTreeOnly && sidePanelStacked ? undefined : { width: effectiveFilePaneWidth }}
+            >
+              <FileTree />
+            </div>
+            {(showEditor || showImage) && (
+              <ResizeHandle
+                onResize={(delta) =>
+                  setFilePaneWidth((width) =>
+                    clamp(width - delta, MIN_FILE_PANE_WIDTH, maxFilePaneWidth)
+                  )
+                }
+              />
+            )}
+          </>
+        )}
+        {showDiff && (
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <DiffViewer onClose={() => setSidePanel(null)} />
+          </div>
+        )}
+        {showEditor && (
+          <div
+            className={clsx(
+              'flex flex-1 flex-col overflow-hidden',
+              // Separate the preview from the file tree on its right.
+              showFileTree && 'border-r border-border'
+            )}
+            // The same constant the file pane's ceiling reserves for.
+            style={{ minWidth: MIN_EDITOR_PANE_WIDTH }}
+          >
+            <FilePreview />
+          </div>
+        )}
+        {showImage && (
+          <div
+            className="flex flex-1 flex-col overflow-hidden"
+            style={{ minWidth: MIN_EDITOR_PANE_WIDTH }}
+          >
+            <ImageViewer />
+          </div>
+        )}
+      </div>
+      {showFileTreeOnly && (
+        <button
+          onClick={() => setSidePanel(null)}
+          className="absolute top-1 right-1 z-10 flex h-6 w-6 items-center justify-center rounded text-faint hover:text-muted"
+          title={t('chat.closeFileTree')}
+        >
+          <X size={12} />
+        </button>
+      )}
+    </div>
+  ) : null
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex flex-1 overflow-hidden">
-        {/* Main chat area */}
-        <div className="chat-center flex flex-1 flex-col overflow-hidden">
+      <div ref={panelRowRef} className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Panes beside the column leave it this width; without room they stack under it. */}
+        <div className="chat-center flex flex-1 flex-col overflow-hidden" style={paneBesideChat ? { minWidth: MIN_CHAT_COLUMN_WIDTH } : undefined}>
           <div className="relative flex min-h-0 flex-1 flex-col">
             {searchOpen && (
               <ChatSearch
@@ -315,81 +422,16 @@ export function ChatPanel(): React.JSX.Element {
               )
             })()}
           </div>
+          {paneUnderChat && (
+            <div className="flex min-h-0 flex-1 flex-col">
+              {sidePanelStacked && sidePanelPane}
+              {paneLayout.review === 'stacked' && <ReviewRail placement="stacked" />}
+            </div>
+          )}
         </div>
 
-        {/* Side panel */}
-        {showSidePanel && (
-          <div className="relative flex shrink-0 border-l border-border bg-app" style={{ width: sidePanelContentWidth }}>
-            <ResizeHandle
-              onResize={(delta) => {
-                if (showFileTreeOnly) {
-                  // Same ceiling the render uses, so the state cannot outrun it.
-                  setFilePaneWidth((width) =>
-                    clamp(width - delta, MIN_FILE_PANE_WIDTH, maxFilePaneWidth)
-                  )
-                  return
-                }
-
-                setSidePanelWidth((width) =>
-                  clamp(width - delta, minSidePanelWidth, MAX_SIDE_PANEL_WIDTH)
-                )
-              }}
-            />
-            <div className="flex min-w-0 flex-1 flex-row-reverse overflow-hidden">
-              {showFileTree && (
-                <>
-                  <div className="flex min-w-0 shrink-0 flex-col overflow-hidden" style={{ width: effectiveFilePaneWidth }}>
-                    <FileTree />
-                  </div>
-                  {(showEditor || showImage) && (
-                    <ResizeHandle
-                      onResize={(delta) =>
-                        setFilePaneWidth((width) =>
-                          clamp(width - delta, MIN_FILE_PANE_WIDTH, maxFilePaneWidth)
-                        )
-                      }
-                    />
-                  )}
-                </>
-              )}
-              {showDiff && (
-                <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                  <DiffViewer onClose={() => setSidePanel(null)} />
-                </div>
-              )}
-              {showEditor && (
-                <div
-                  className={clsx(
-                    'flex flex-1 flex-col overflow-hidden',
-                    // Separate the preview from the file tree on its right.
-                    showFileTree && 'border-r border-border'
-                  )}
-                  // The same constant the file pane's ceiling reserves for.
-                  style={{ minWidth: MIN_EDITOR_PANE_WIDTH }}
-                >
-                  <FilePreview />
-                </div>
-              )}
-              {showImage && (
-                <div
-                  className="flex flex-1 flex-col overflow-hidden"
-                  style={{ minWidth: MIN_EDITOR_PANE_WIDTH }}
-                >
-                  <ImageViewer />
-                </div>
-              )}
-            </div>
-            {showFileTreeOnly && (
-              <button
-                onClick={() => setSidePanel(null)}
-                className="absolute top-1 right-1 z-10 flex h-6 w-6 items-center justify-center rounded text-faint hover:text-muted"
-                title={t('chat.closeFileTree')}
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-        )}
+        {paneLayout.sidePanel === 'beside' && sidePanelPane}
+        {paneLayout.review === 'beside' && <ReviewRail placement="beside" />}
       </div>
 
       {/* Terminal panel */}
