@@ -81,6 +81,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       ...(sessionPath ? { sessionPath } : {}),
       provider: settings.defaultProvider ?? undefined,
       model: settings.defaultModel ?? undefined,
+      defaultThinkingLevel: settings.defaultThinkingLevel ?? undefined,
     }
     await workspaceManager.startSessionRuntime(runtime.runtimeId, applyPermissionModeToStartOptions(
       sessionPath ? applyResumePreference(options, settings) : options,

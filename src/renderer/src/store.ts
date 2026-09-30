@@ -629,6 +629,7 @@ interface AppActions {
   setNotePickerOpen: (open: boolean) => void
   setCommandPalette: (open: boolean) => void
   setTaskLauncherOpen: (open: boolean) => void
+  requestModelSelectorOpen: () => void
   startNoteFromText: (text: string) => void
   clearNoteDraft: () => void
 
@@ -1825,6 +1826,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       } catch {
         // Non-fatal — model still applied for this session.
       }
+      set({ composerFocusRequested: true })
       get().refreshSessionState()
     } catch (err) {
       get().addMessage({
@@ -1881,8 +1883,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   setThinkingLevel: async (level) => {
     try {
-      await window.piDesktop.thinking.setLevel(level)
-      get().refreshSessionState()
+      const response = await window.piDesktop.thinking.setLevel(level) as { success?: boolean } | null
+      if (!response?.success) return
+      try {
+        const updated = await window.piDesktop.settings.save({ defaultThinkingLevel: level })
+        set({ settings: updated })
+      } finally {
+        await get().refreshSessionState()
+      }
     } catch {
       // Silent failure
     }
@@ -1890,8 +1898,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   cycleThinkingLevel: async () => {
     try {
-      await window.piDesktop.thinking.cycleLevel()
-      get().refreshSessionState()
+      const response = await window.piDesktop.thinking.cycleLevel() as { success?: boolean } | null
+      if (!response?.success) return
+      const state = await window.piDesktop.session.getState() as { success?: boolean; data?: SessionState } | null
+      if (state?.success && state.data?.thinkingLevel) {
+        try {
+          const updated = await window.piDesktop.settings.save({ defaultThinkingLevel: state.data.thinkingLevel })
+          set({ settings: updated })
+        } finally {
+          await get().refreshSessionState()
+        }
+      }
     } catch {
       // Silent failure
     }
@@ -3252,6 +3269,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   setCommandPalette: (open) => set({ commandPaletteOpen: open }),
   setTaskLauncherOpen: (open) => set({ taskLauncherOpen: open }),
+
+  // The Ctrl/Cmd+Shift+M shortcut. The open state lives in the store (see
+  // modelPickerOpen), so a composer remount keeps the picker open.
+  requestModelSelectorOpen: () => set({ modelPickerOpen: true }),
 
   startNoteFromText: (text) =>
     set({ noteDraft: text, notePickerOpen: false, currentView: 'notes' }),

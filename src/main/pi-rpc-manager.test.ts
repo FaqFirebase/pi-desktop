@@ -75,6 +75,30 @@ function responsePayload(size: number, filler: string): string {
   return JSON.stringify({ type: 'response', command: 'get_messages', success: true, data: filler.repeat(size) })
 }
 
+test('fresh sessions launch with the remembered model and reasoning', () => {
+  assert.deepEqual(buildPiArgs({
+    provider: 'test', model: 'test-model', defaultThinkingLevel: 'high', continueSession: false,
+  }), ['--mode', 'rpc', '--provider', 'test', '--model', 'test-model', '--thinking', 'high'])
+  assert.equal(buildPiArgs({}).includes('--thinking'), false)
+  assert.ok(buildPiArgs({ defaultThinkingLevel: 'off' }).includes('off'))
+})
+
+test('remembered reasoning never overrides a resumed or forked session', () => {
+  for (const binding of [
+    { sessionPath: '/sessions/existing.jsonl' },
+    { forkSessionPath: '/sessions/parent.jsonl' },
+    { continueSession: true },
+  ]) {
+    assert.equal(buildPiArgs({ defaultThinkingLevel: 'high', ...binding }).includes('--thinking'), false)
+  }
+})
+
+test('explicit thinking arguments override the saved preference', () => {
+  for (const args of [['--thinking', 'low'], ['--thinking=low']]) {
+    assert.deepEqual(buildPiArgs({ defaultThinkingLevel: 'high', args }), ['--mode', 'rpc', ...args])
+  }
+})
+
 test('RpcFrameDecoder reassembles a lossless OMP protocol-v2 frame', () => {
   const frames = chunkFrames('rpc-test', responsePayload(1_100_000, 'x'))
   assert.equal((decodeAll(frames) as { data?: string }).data?.length, 1_100_000)

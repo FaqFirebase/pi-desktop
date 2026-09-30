@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   systemDarkTheme: 'dark',
   defaultModel: null,
   defaultProvider: null,
+  defaultThinkingLevel: null,
   defaultCwd: null,
   fontSize: 16,
   terminalFontSize: 12,

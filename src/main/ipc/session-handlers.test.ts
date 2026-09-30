@@ -5,9 +5,51 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IpcContext } from './context'
-import type { SessionRuntimeInfo } from '../../shared/ipc-contracts'
+import type { PiStartOptions, SessionRuntimeInfo } from '../../shared/ipc-contracts'
+import { buildPiArgs } from '../pi-rpc-manager'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { configureGuiDataDir } from '../app-data-paths'
+
+const handlers = new Map<string, (...args: unknown[]) => unknown>()
+
+test('new sessions receive the persisted model and reasoning preference', async () => {
+  const require = createRequire(import.meta.url)
+  const electronPath = require.resolve('electron')
+  require('electron')
+  const electronModule = require.cache[electronPath]!
+  const originalExports = electronModule.exports
+  handlers.clear()
+  electronModule.exports = {
+    ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler) },
+    app: { isPackaged: false, getAppPath: () => process.cwd() },
+  }
+  const root = await mkdtemp(join(tmpdir(), 'pi-new-effort-'))
+  configureGuiDataDir(root)
+  try {
+    const { registerSessionHandlers } = await import('./session-handlers')
+    const { saveAppSettings } = await import('./settings')
+    await saveAppSettings({ defaultProvider: 'test', defaultModel: 'chosen', defaultThinkingLevel: 'high' })
+    const runtime = { runtimeId: 'new', workspaceId: 'workspace' }
+    let started!: (options: PiStartOptions) => void
+    const optionsReady = new Promise<PiStartOptions>((resolve) => { started = resolve })
+    registerSessionHandlers({
+      workspaceManager: {
+        getActiveWorkspace: () => ({ id: 'workspace', path: root }),
+        getWorkspaces: () => [{ id: 'workspace', path: root }],
+        createNewSessionRuntime: async () => runtime,
+        startSessionRuntime: async (_id: string, options: PiStartOptions) => { started(options) },
+      },
+    } as unknown as IpcContext)
+    assert.equal(await handlers.get(IPC_CHANNELS.SESSION_NEW)!(null), runtime)
+    const args = buildPiArgs(await optionsReady)
+    assert.equal(args[args.indexOf('--model') + 1], 'chosen')
+    assert.equal(args[args.indexOf('--thinking') + 1], 'high')
+    assert.equal(args.includes('--continue'), false)
+  } finally {
+    electronModule.exports = originalExports
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 test('switching back to an unpersisted live session reuses its runtime', async () => {
   const require = createRequire(import.meta.url)
@@ -15,7 +57,7 @@ test('switching back to an unpersisted live session reuses its runtime', async (
   require('electron')
   const electronModule = require.cache[electronPath]!
   const originalExports = electronModule.exports
-  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  handlers.clear()
   electronModule.exports = {
     ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler) },
     app: { isPackaged: false, getAppPath: () => process.cwd() },

@@ -122,6 +122,7 @@ export function registerWorkspaceHandlers(ctx: IpcContext): void {
             cwd: workspace.path,
             provider: settings.defaultProvider ?? undefined,
             model: settings.defaultModel ?? undefined,
+            defaultThinkingLevel: settings.defaultThinkingLevel ?? undefined,
             forkSessionPath: options.forkSessionPath,
           },
           settings

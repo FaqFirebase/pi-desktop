@@ -547,6 +547,15 @@ export function buildPiArgs(options: PiStartOptions): string[] {
     args.push(MODEL_FLAG, options.model)
   }
 
+  if (
+    options.defaultThinkingLevel &&
+    !options.sessionPath && !options.forkSessionPath &&
+    !(options.continueSession && !options.noSession) &&
+    !options.args?.some((arg) => arg === '--thinking' || arg.startsWith('--thinking='))
+  ) {
+    args.push('--thinking', options.defaultThinkingLevel)
+  }
+
   if (options.forkSessionPath) {
     args.push(FORK_FLAG, options.forkSessionPath)
   } else if (options.sessionPath) {

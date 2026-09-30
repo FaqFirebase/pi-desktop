@@ -770,11 +770,13 @@
     },
     "selector": {
       "current": "Current",
+      "currentModelTitle": "{{model}}\n{{hint}}",
       "loadFailed": "Could not load models",
       "noModelsMatch": "No models match",
       "searchPlaceholder": "Search models…",
       "selectModel": "Select model",
-      "selectModelWithShortcut": "Select model (Ctrl+P to cycle when {{agent}} is running)"
+      "selectModelCycleHint": "Select model (Ctrl+P to cycle when {{agent}} is running)",
+      "selectModelWithShortcut": "Select model ({{shortcut}}, or Ctrl+P to cycle when {{agent}} is running)"
     }
   },
   "notes": {
@@ -1148,6 +1150,7 @@
       "heading": "Keyboard shortcuts",
       "inUse": "{{shortcut}} is already used by {{action}}. Choose another combination.",
       "invalid": "Use Cmd or Ctrl with a letter, number, punctuation key, or F1–F12.",
+      "modelSelector": "Model selector",
       "nextProject": "Next project",
       "nextSession": "Next open session",
       "notes": "Note picker",

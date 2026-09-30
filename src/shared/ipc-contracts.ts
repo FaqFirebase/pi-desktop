@@ -323,6 +323,8 @@ export interface PiStartOptions {
   cwd?: string
   model?: string
   provider?: string
+  /** Saved effort for fresh sessions only; never overrides a resumed session. */
+  defaultThinkingLevel?: string
   sessionPath?: string
   noSession?: boolean
   // When true (and neither sessionPath, forkSessionPath nor noSession is set),
@@ -1143,6 +1145,7 @@ export interface AppSettings {
   systemDarkTheme: string
   defaultModel: string | null
   defaultProvider: string | null
+  defaultThinkingLevel: string | null
   defaultCwd: string | null
   // UI font size in px (chat, panels, sidebar). Applied to the document root.
   fontSize: number

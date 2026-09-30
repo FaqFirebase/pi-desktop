@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Check, ChevronUp, Zap } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAppStore } from '../store'
+import { thinkingLevels } from '../utils/thinking-levels'
 
 interface ThinkingLevelSelectorProps {
   className?: string
@@ -17,13 +18,7 @@ export function ThinkingLevelSelector({ className }: ThinkingLevelSelectorProps)
   const [isOpen, setIsOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  const modelEfforts = sessionState?.model?.thinking?.efforts?.filter(
-    (level) => typeof level === 'string' && level.length > 0,
-  )
-  const levels =
-    modelEfforts && modelEfforts.length > 0
-      ? ['off', ...modelEfforts.filter((level) => level !== 'off')]
-      : ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+  const levels = thinkingLevels(sessionState?.model)
   const currentLevel = sessionState?.thinkingLevel ?? 'medium'
 
   useEffect(() => {

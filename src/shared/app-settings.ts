@@ -29,6 +29,9 @@ export function normalizeStoredSettings(stored: Record<string, unknown>, languag
   if (!isPermissionMode(merged.permissionMode)) merged.permissionMode = DEFAULT_SETTINGS.permissionMode
   if (!isChatWidth(merged.chatWidth)) merged.chatWidth = DEFAULT_SETTINGS.chatWidth
   merged.language = normalizeLanguageSetting(merged.language, languages)
+  if (typeof merged.defaultThinkingLevel !== 'string' || !merged.defaultThinkingLevel.trim()) {
+    merged.defaultThinkingLevel = DEFAULT_SETTINGS.defaultThinkingLevel
+  }
   merged.shortcuts = normalizeKeyboardShortcuts(merged.shortcuts)
   if (typeof merged.voiceModel !== 'string' || !getVoiceModel(merged.voiceModel)) {
     merged.voiceModel = DEFAULT_SETTINGS.voiceModel

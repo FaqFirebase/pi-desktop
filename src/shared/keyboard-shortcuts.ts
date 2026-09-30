@@ -1,5 +1,5 @@
 export const SHORTCUT_ACTIONS = [
-  'sidebar', 'files', 'diff', 'terminal', 'review',
+  'modelSelector', 'sidebar', 'files', 'diff', 'terminal', 'review',
   'newSession', 'previousProject', 'nextProject', 'previousSession', 'nextSession',
   'settings', 'commandPalette', 'notes',
 ] as const
@@ -11,6 +11,7 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   terminal: 'Ctrl+Backquote',
   settings: 'Mod+Comma',
   commandPalette: 'Mod+K',
+  modelSelector: 'Mod+Shift+M',
   notes: 'Ctrl+Shift+P',
   sidebar: 'Mod+B',
   files: 'Mod+Shift+E',

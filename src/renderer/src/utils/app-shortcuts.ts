@@ -81,6 +81,9 @@ export async function runAppShortcut(action: ShortcutAction): Promise<void> {
     case 'commandPalette':
       state.setCommandPalette(true)
       return
+    case 'modelSelector':
+      state.requestModelSelectorOpen()
+      return
     case 'notes':
       state.setNotePickerOpen(!state.notePickerOpen)
   }

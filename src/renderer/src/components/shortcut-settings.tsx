@@ -13,6 +13,7 @@ function actionLabel(action: ShortcutAction, t: TFunction): string {
     case 'terminal': return t('chat.toolbar.terminal')
     case 'settings': return t('common.settings')
     case 'commandPalette': return t('settings.shortcuts.commandPalette')
+    case 'modelSelector': return t('settings.shortcuts.modelSelector')
     case 'notes': return t('settings.shortcuts.notes')
     case 'sidebar': return t('settings.shortcuts.sidebar')
     case 'files': return t('chat.toolbar.fileTree')

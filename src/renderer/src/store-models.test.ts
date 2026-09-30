@@ -16,6 +16,8 @@ let startHook: (() => Promise<void>) | null = null
 let listHook: (() => Promise<void>) | null = null
 let listResponse: unknown
 let startFailure: Error | null = null
+let thinkingLevel = 'low'
+let thinkingSuccess = true
 let saveFailure: Error | null = null
 let useAppStore: typeof import('./store')['useAppStore']
 
@@ -43,6 +45,17 @@ before(async () => {
             return { success: true }
           },
         },
+        thinking: {
+          setLevel: async (level: string) => {
+            calls.push(`thinking:${level}`)
+            if (thinkingSuccess) thinkingLevel = level
+            return { success: thinkingSuccess }
+          },
+          cycleLevel: async () => {
+            thinkingLevel = 'high'
+            return { success: thinkingSuccess }
+          },
+        },
         settings: {
           save: async (settings: unknown) => {
             calls.push('save')
@@ -51,7 +64,7 @@ before(async () => {
           },
         },
         session: {
-          getState: async () => ({ success: true, data: { model: MODEL } }),
+          getState: async () => ({ success: true, data: { model: MODEL, thinkingLevel } }),
           getStats: async () => ({ success: true, data: null }),
           list: async () => [],
         },
@@ -69,6 +82,8 @@ beforeEach(() => {
   startHook = null
   listHook = null
   startFailure = null
+  thinkingLevel = 'low'
+  thinkingSuccess = true
   saveFailure = null
   listResponse = { success: true, data: { models: [MODEL] } }
   useAppStore.setState({
@@ -114,6 +129,33 @@ test('a failed default save while stopped is reported in the chat, not thrown', 
   const [message] = useAppStore.getState().messages
   assert.equal(message?.role, 'system')
   assert.match(message?.content ?? '', /settings write failed/)
+})
+
+test('choosing reasoning remembers it for future sessions', async () => {
+  await useAppStore.getState().setThinkingLevel('xhigh')
+  assert.deepEqual(calls, ['thinking:xhigh', 'save'])
+  assert.equal(useAppStore.getState().settings?.defaultThinkingLevel, 'xhigh')
+  assert.equal(useAppStore.getState().sessionState?.thinkingLevel, 'xhigh')
+})
+
+test('rejected reasoning changes do not overwrite the remembered level', async () => {
+  const previous = useAppStore.getState().settings?.defaultThinkingLevel
+  thinkingSuccess = false
+  await useAppStore.getState().setThinkingLevel('max')
+  assert.deepEqual(calls, ['thinking:max'])
+  assert.equal(useAppStore.getState().settings?.defaultThinkingLevel, previous)
+})
+
+test('cycling reasoning remembers the engine-selected level', async () => {
+  await useAppStore.getState().cycleThinkingLevel()
+  assert.equal(useAppStore.getState().settings?.defaultThinkingLevel, 'high')
+  assert.equal(useAppStore.getState().sessionState?.thinkingLevel, 'high')
+})
+
+test('a failed settings save still refreshes the applied reasoning', async () => {
+  saveFailure = new Error('disk unavailable')
+  await useAppStore.getState().setThinkingLevel('high')
+  assert.equal(useAppStore.getState().sessionState?.thinkingLevel, 'high')
 })
 
 test('listing models reuses an already running runtime', async () => {
