@@ -59,7 +59,9 @@ jobs:
             eb_args: '--win nsis portable'
             artifacts: |
               release/*.exe
-          - os: macos-latest
+          # macOS 26 ships Xcode 26, whose actool compiles the Icon Composer
+          # asset (resources/icons/Icon.icon) that package.json uses as the app icon.
+          - os: macos-26
             eb_args: '--mac dmg zip'
             artifacts: |
               release/*.dmg
@@ -84,6 +86,10 @@ jobs:
       # libs — see README.)
       - name: Install dependencies
         run: npm ci
+
+      - name: Select Xcode for Icon Composer assets
+        if: runner.os == 'macOS'
+        run: sudo xcode-select --switch /Applications/Xcode_26.3.app/Contents/Developer
 
       - name: Type-check
         run: npm run typecheck

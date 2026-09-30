@@ -447,11 +447,11 @@ app.whenReady().then(async () => {
     })
   }
 
-  // Set the macOS dock icon in development only. A packaged app already gets its
-  // dock icon from the bundled .icns. The raw icon.png is full-bleed, so calling
-  // setIcon in a packaged build overrode the .icns with a wrongly sized icon once
-  // the app started (issue #66). icon.icns and icon-macos.png are both generated
-  // from the padded macOS icon grid in resources/icons/generate_icons.py.
+  // Set the macOS dock icon in development only. A packaged app gets its dock
+  // icon from the Icon Composer asset (resources/icons/Icon.icon); setting a
+  // Dock image there would replace its layered look with a flat bitmap (issue
+  // #66). icon-macos.png is generated from the padded macOS icon grid in
+  // resources/icons/generate_icons.py.
   if (process.platform === 'darwin' && app.dock && !app.isPackaged) {
     app.dock.setIcon(nativeImage.createFromPath(join(dirname(getAppIconPath()), 'icon-macos.png')))
   }
