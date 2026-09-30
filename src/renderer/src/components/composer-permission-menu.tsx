@@ -10,6 +10,15 @@ import {
   PERMISSION_MODE_DESCRIPTION_KEYS,
 } from './permission-mode'
 
+// Labels for a composer too narrow for the full ones. Kept beside their only
+// t() call so the i18n extractor can resolve them.
+const PERMISSION_MODE_SHORT_LABEL_KEYS = {
+  'plan-readonly': 'permissionMode.plan-readonly.shortLabel',
+  'ask-edits': 'permissionMode.ask-edits.shortLabel',
+  'ask-commands': 'permissionMode.ask-commands.shortLabel',
+  trusted: 'permissionMode.trusted.shortLabel',
+} as const satisfies Record<PermissionMode, string>
+
 interface ComposerPermissionMenuProps {
   value: PermissionMode | null | undefined
   onChange: (mode: PermissionMode) => Promise<void> | void
@@ -51,14 +60,16 @@ export function ComposerPermissionMenu({ value, onChange }: ComposerPermissionMe
         type="button"
         onClick={() => setIsOpen((open) => !open)}
         className={clsx(
-          'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
+          'flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2 text-xs transition-colors',
           isTrusted
             ? 'bg-warning/15 text-warning hover:bg-warning/35'
             : 'hover:bg-highlight-strong text-secondary hover:text-primary'
         )}
         title={t(PERMISSION_MODE_DESCRIPTION_KEYS[mode]).replace(/\.$/, '')}
       >
-        {t(PERMISSION_MODE_LABEL_KEYS[mode])}
+        {/* A narrow composer (the diff or file pane open) takes the short label, so the toolbar stays on one line. */}
+        <span className="@max-lg/composer:hidden">{t(PERMISSION_MODE_LABEL_KEYS[mode])}</span>
+        <span className="hidden @max-lg/composer:inline">{t(PERMISSION_MODE_SHORT_LABEL_KEYS[mode])}</span>
         <ChevronUp
           size={12}
           className={clsx(

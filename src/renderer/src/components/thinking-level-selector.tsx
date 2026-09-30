@@ -38,16 +38,19 @@ export function ThinkingLevelSelector({ className }: ThinkingLevelSelectorProps)
         type="button"
         onClick={() => setIsOpen((open) => !open)}
         className={clsx(
-          'flex h-6 items-center gap-1 rounded-md px-2 text-[11px] transition-colors active:scale-[0.98]',
+          'flex h-7 items-center justify-center gap-1 rounded-l-none rounded-r-[7px] px-2 text-[11px] transition-colors active:scale-[0.98] @max-sm/composer:w-7 @max-sm/composer:gap-0 @max-sm/composer:px-0',
           isOpen ? 'bg-surface-hover text-primary' : 'text-dim hover:bg-surface-hover hover:text-secondary',
         )}
         title={t('thinking.effortWithLevel', { level: currentLevel })}
         aria-label={t('thinking.effortWithLevel', { level: currentLevel })}
         aria-expanded={isOpen}
       >
-        <Zap size={11} className="shrink-0 text-accent-fg" />
-        <span>{currentLevel}</span>
-        <ChevronUp size={10} className={clsx('shrink-0 transition-transform', isOpen && 'rotate-180')} />
+        <Zap size={12} className="shrink-0 text-accent-fg" />
+        <span className="whitespace-nowrap @max-sm/composer:hidden">{currentLevel}</span>
+        <ChevronUp
+          size={10}
+          className={clsx('shrink-0 transition-transform @max-lg/composer:hidden', isOpen && 'rotate-180')}
+        />
       </button>
 
       {isOpen && (

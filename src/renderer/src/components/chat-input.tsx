@@ -12,7 +12,7 @@ import { ModelSelector } from './model-selector'
 import { VoiceMicButton } from './voice-mic-button'
 import { applyInterim } from '../../../shared/voice-composer'
 import { ThinkingLevelSelector } from './thinking-level-selector'
-import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users, Search } from 'lucide-react'
+import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users, Search, AlertCircle } from 'lucide-react'
 import {
   SUPPORTED_IMAGE_EXTENSIONS,
   type FileSearchResult,
@@ -554,13 +554,6 @@ export function ChatInput(): React.JSX.Element {
 
   return (
     <div className={clsx('pointer-events-none mx-auto w-full px-4', composerColumn)}>
-      {attachError && (
-        <div className="pointer-events-auto mb-2 flex items-center gap-1.5 text-xs text-error">
-          <X size={12} className="shrink-0" />
-          <span>{attachError}</span>
-        </div>
-      )}
-
       <div
         className={clsx(
           'pointer-events-auto relative flex flex-col rounded-2xl border bg-surface/95 shadow-lg shadow-black/25 backdrop-blur-sm transition-colors',
@@ -587,6 +580,20 @@ export function ChatInput(): React.JSX.Element {
           <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-accent bg-surface/95 text-sm text-primary" role="status">
             <Paperclip size={18} />
             {t('chat.attach.dropHint')}
+          </div>
+        )}
+        {attachError && (
+          <div role="alert" className="m-2 flex items-start gap-2 rounded-lg border border-error/30 bg-error/10 p-2 text-xs text-error">
+            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+            <span className="max-h-32 min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words leading-relaxed">{attachError}</span>
+            <button
+              type="button"
+              onClick={() => setAttachError(null)}
+              aria-label={t('common.close')}
+              className="shrink-0 rounded p-0.5 text-error transition-colors hover:bg-error/15"
+            >
+              <X size={14} />
+            </button>
           </div>
         )}
         {isReadingDrop && <div className="px-3 pt-2 text-xs text-muted" role="status">{t('chat.attach.reading')}</div>}
@@ -643,25 +650,30 @@ export function ChatInput(): React.JSX.Element {
         )}
 
         {attachments.length > 0 && (
-          <div className="flex flex-wrap gap-1 border-b border-border/60 px-3 pt-2.5 pb-2">
+          <div className="flex flex-wrap gap-2 p-2">
             {attachments.map((att, i) => (
               <div
                 key={att.path}
-                className="flex items-center gap-1.5 rounded-md border border-border-strong bg-card px-2 py-1 text-xs text-secondary"
+                className={clsx(
+                  'relative flex h-16 min-w-0 max-w-full shrink-0 items-center overflow-hidden rounded-lg border border-border-strong bg-card text-xs text-secondary',
+                  att.kind === 'image' ? 'w-16' : 'w-28 flex-col justify-center gap-1 p-2'
+                )}
               >
                 {att.kind === 'image' ? (
                   <img
                     src={`data:${att.image.mimeType};base64,${att.image.data}`}
                     alt={att.name}
-                    className="h-5 w-5 shrink-0 rounded object-cover"
+                    className="h-full w-full object-cover"
                   />
                 ) : (
-                  <FileText size={12} className="text-dim" />
+                  <FileText size={22} className="shrink-0 text-dim" />
                 )}
-                <span className="max-w-[120px] truncate">{att.name}</span>
+                {att.kind !== 'image' && <span className="w-full truncate text-center" title={att.name}>{att.name}</span>}
                 <button
+                  type="button"
                   onClick={() => removeAttachment(i)}
-                  className="rounded p-0.5 text-dim hover:text-secondary"
+                  aria-label={`${t('common.remove')}: ${att.name}`}
+                  className="absolute right-1 top-1 rounded bg-surface p-0.5 text-secondary shadow-sm hover:bg-surface-hover hover:text-primary"
                 >
                   <X size={10} />
                 </button>
@@ -809,7 +821,7 @@ export function ChatInput(): React.JSX.Element {
           }}
         />
 
-        <div className="font-chat flex items-center gap-0.5 px-1.5 pb-1.5 pt-0">
+        <div className="@container/composer font-chat flex items-center gap-1 px-2 pb-2 pt-0">
           <ComposerPermissionMenu value={permissionMode} onChange={setPermissionMode} />
           <button
             onClick={handleAttachFile}
@@ -859,47 +871,41 @@ export function ChatInput(): React.JSX.Element {
             </button>
           )}
 
-          <span className="ml-auto mr-1 hidden text-[11px] text-faint sm:inline">
-            {isStreaming ? (
-              <span className="text-warning animate-pulse">{t('chat.composer.streaming')}</span>
-            ) : (
-              t('chat.composer.shiftEnterNewline')
+          <div className="ml-auto flex min-w-0 items-center gap-1">
+            {!isDisabled && (
+              <div className="flex min-w-0 items-center rounded-lg border border-border-strong bg-card">
+                <ModelSelector compact className="min-w-0" />
+                <div className="h-3.5 w-px bg-border" aria-hidden="true" />
+                <ThinkingLevelSelector className="shrink-0" />
+              </div>
             )}
-          </span>
 
-          {!isDisabled && (
-            <div className="flex h-6 shrink-0 items-center gap-0 rounded-md bg-card/60 ring-1 ring-inset ring-border-strong/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              <ModelSelector compact />
-              <div className="h-3.5 w-px bg-border" aria-hidden="true" />
-              <ThinkingLevelSelector />
-            </div>
-          )}
-
-          {isStreaming ? (
-            <button
-              onClick={handleAbort}
-              className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors"
-              title={t('chat.stopButton.titleWithShortcut')}
-              aria-label={t('chat.stopButton.ariaLabel')}
-            >
-              <Square size={16} />
-            </button>
-          ) : (
-            <button
-              onClick={() => {
-                const value = textareaRef.current?.value.trim()
-                if (value) {
-                  handleSend(value)
-                }
-              }}
-              disabled={isDisabled || isReadingDrop}
-              className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title={t('chat.sendButton.titleWithShortcut')}
-              aria-label={t('chat.sendButton.ariaLabel')}
-            >
-              <CornerDownLeft size={16} />
-            </button>
-          )}
+            {isStreaming ? (
+              <button
+                onClick={handleAbort}
+                className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors"
+                title={t('chat.stopButton.titleWithShortcut')}
+                aria-label={t('chat.stopButton.ariaLabel')}
+              >
+                <Square size={16} />
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  const value = textareaRef.current?.value.trim()
+                  if (value) {
+                    handleSend(value)
+                  }
+                }}
+                disabled={isDisabled || isReadingDrop}
+                className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={t('chat.sendButton.titleWithShortcut')}
+                aria-label={t('chat.sendButton.ariaLabel')}
+              >
+                <CornerDownLeft size={16} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -45,9 +45,7 @@
     "composer": {
       "placeholderIdle": "向 {{agent}} 提问 — 输入 / 使用命令",
       "placeholderNotRunning": "{{agent}} 智能体未在运行…",
-      "placeholderSteering": "输入以引导智能体…",
-      "shiftEnterNewline": "Shift+Enter 换行",
-      "streaming": "流式输出中…"
+      "placeholderSteering": "输入以引导智能体…"
     },
     "council": {
       "planWithCouncil": "使用委员会规划",
@@ -866,19 +864,23 @@
   "permissionMode": {
     "ask-commands": {
       "description": "Pi 在运行 shell 命令前会先询问。",
-      "label": "执行命令前询问"
+      "label": "执行命令前询问",
+      "shortLabel": "命令询问"
     },
     "ask-edits": {
       "description": "Pi 在编辑文件以及运行可能更改文件的 shell 命令前会先询问。",
-      "label": "编辑文件前询问"
+      "label": "编辑文件前询问",
+      "shortLabel": "编辑询问"
     },
     "plan-readonly": {
       "description": "仅启用读取/搜索/列表类工具。文件编辑和 shell 命令会被阻止。",
-      "label": "计划 / 只读"
+      "label": "计划 / 只读",
+      "shortLabel": "只读"
     },
     "trusted": {
       "description": "对你信任的工作流启用所有 Pi 工具。",
-      "label": "受信任"
+      "label": "受信任",
+      "shortLabel": "受信任"
     }
   },
   "permissionRules": {

@@ -170,14 +170,18 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
   }
 
   return (
-    <div ref={ref} className={clsx('relative', className)}>
+    // flex: lets the trigger shrink with its wrapper (truncating the label)
+    // instead of overflowing onto the thinking selector beside it.
+    <div ref={ref} className={clsx('relative flex', className)}>
       <button
         type="button"
         onClick={() => void open()}
         className={clsx(
-          'flex h-6 max-w-52 items-center gap-1 rounded-md px-2 text-[11px] transition-colors active:scale-[0.98]',
+          'flex items-center gap-1 px-2 text-[11px] transition-colors active:scale-[0.98]',
           isOpen ? 'bg-surface-hover text-primary' : 'text-dim hover:bg-surface-hover hover:text-secondary',
-          compact && 'max-w-36',
+          // min-w-0: without it the button keeps its full label width and a
+          // narrow toolbar draws it over the thinking selector.
+          compact ? 'h-7 min-w-0 max-w-36 rounded-l-[7px] rounded-r-none' : 'h-6 max-w-52 rounded-md',
         )}
         // The label may be truncated, so the tooltip always names the model.
         title={t('models.selector.currentModelTitle', {

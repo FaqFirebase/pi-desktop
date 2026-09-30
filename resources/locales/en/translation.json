@@ -45,9 +45,7 @@
     "composer": {
       "placeholderIdle": "Ask {{agent}} anything — / for commands",
       "placeholderNotRunning": "{{agent}} agent is not running...",
-      "placeholderSteering": "Type to steer the agent...",
-      "shiftEnterNewline": "Shift+Enter newline",
-      "streaming": "Streaming…"
+      "placeholderSteering": "Type to steer the agent..."
     },
     "council": {
       "planWithCouncil": "Plan with Council",
@@ -877,19 +875,23 @@
   "permissionMode": {
     "ask-commands": {
       "description": "Pi will ask before running shell commands.",
-      "label": "Ask before commands"
+      "label": "Ask before commands",
+      "shortLabel": "Ask commands"
     },
     "ask-edits": {
       "description": "Pi will ask before file edits and shell commands that can change files.",
-      "label": "Ask before edits"
+      "label": "Ask before edits",
+      "shortLabel": "Ask edits"
     },
     "plan-readonly": {
       "description": "Only read/search/list tools are enabled. File edits and shell commands are blocked.",
-      "label": "Plan / Read-only"
+      "label": "Plan / Read-only",
+      "shortLabel": "Read-only"
     },
     "trusted": {
       "description": "All Pi tools are enabled for workflows you trust.",
-      "label": "Trusted"
+      "label": "Trusted",
+      "shortLabel": "Trusted"
     }
   },
   "permissionRules": {
