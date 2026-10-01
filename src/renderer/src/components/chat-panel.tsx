@@ -30,7 +30,7 @@ import { TerminalPanel } from './terminal'
 import { isFileWatchDemanded, useChatScroll, useChatVisible, useChatWidth } from '../hooks'
 import { messageColumnClass } from '../utils/chat-width'
 import { createMeasureRef } from '../utils/element-measure'
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import piLogo from '../assets/pi-logo.svg'
@@ -61,6 +61,7 @@ export function ChatPanel(): React.JSX.Element {
   const [composerPadPx, composerWrapRef] = useElementMeasure(readComposerPad, DEFAULT_COMPOSER_PAD_PX)
   // The chat column and side panel share this row; the side panel gets what the column leaves.
   const [panelRowWidth, panelRowRef] = useElementMeasure(readClientWidth, Number.POSITIVE_INFINITY)
+  const chatDropZoneRef = useRef<HTMLDivElement>(null)
   const streamingContent = useAppStore((state) => state.streamingContent)
   const streamingThinking = useAppStore((state) => state.streamingThinking)
   const streamingToolCalls = useAppStore((state) => state.streamingToolCalls)
@@ -278,7 +279,7 @@ export function ChatPanel(): React.JSX.Element {
       <div ref={panelRowRef} className="flex min-h-0 flex-1 overflow-hidden">
         {/* Panes beside the column leave it this width; without room they stack under it. */}
         <div className="chat-center flex flex-1 flex-col overflow-hidden" style={paneBesideChat ? { minWidth: MIN_CHAT_COLUMN_WIDTH } : undefined}>
-          <div className="relative flex min-h-0 flex-1 flex-col">
+          <div ref={chatDropZoneRef} className="relative flex min-h-0 flex-1 flex-col">
             {searchOpen && (
               <ChatSearch
                 containerRef={scrollRef}
@@ -333,7 +334,7 @@ export function ChatPanel(): React.JSX.Element {
                           ))}
                         </div>
                       )}
-                      <ChatInput />
+                      <ChatInput dropZoneRef={chatDropZoneRef} />
                       <div className="px-4">
                         <ChatProjectPicker />
                       </div>
@@ -416,7 +417,7 @@ export function ChatPanel(): React.JSX.Element {
                         </div>
                       </div>
                     )}
-                    <ChatInput />
+                    <ChatInput dropZoneRef={chatDropZoneRef} />
                   </div>
                 </>
               )

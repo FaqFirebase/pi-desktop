@@ -44,6 +44,7 @@ import type {
   VoiceProgressEvent,
   AttachmentReadResult,
   OpenDialogOptions,
+  OpenAttachmentDialogOptions,
   PathKindResult,
   PromptImage,
   ActivityStatsResult,
@@ -318,6 +319,8 @@ interface PiDesktopAPI {
   // System
   system: {
     openDialog(options?: OpenDialogOptions): Promise<string | null>
+    /** Pick one or more files to attach; every picked path is approved for readAttachment. */
+    openAttachmentDialog(options?: OpenAttachmentDialogOptions): Promise<string[]>
     getPath(name: string): Promise<string>
     /** Absolute path for a File from a drag-drop (Electron webUtils). */
     getPathForFile(file: File): string
@@ -606,6 +609,7 @@ const api: PiDesktopAPI = {
 
   system: {
     openDialog: (options) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_DIALOG, options),
+    openAttachmentDialog: (options) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_ATTACHMENT_DIALOG, options),
     getPath: (name) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_PATH, name),
     getPathForFile: (file) => webUtils.getPathForFile(file),
     pathKind: (path) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_PATH_KIND, path),

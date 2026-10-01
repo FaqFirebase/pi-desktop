@@ -1,4 +1,3 @@
-import { t } from '../../../shared/i18n'
 import { assertAttachmentSize, decodeTextAttachment, imageMimeTypeForFileName } from '../../../shared/attachment-rules'
 import type { AttachmentReadResult } from '../../../shared/ipc-contracts'
 import type { FileDragTransfer } from '../../../shared/folder-drop'
@@ -29,30 +28,4 @@ export async function readDroppedAttachment(file: File): Promise<AttachmentReadR
     return { kind: 'image', name: file.name, image: { type: 'image', mimeType, data: await readFileAsBase64(file) } }
   }
   return { kind: 'text', name: file.name, content: decodeTextAttachment(new Uint8Array(await file.arrayBuffer())) }
-}
-
-export interface DroppedAttachmentReads {
-  attachments: Array<{ file: File; result: AttachmentReadResult }>
-  errors: string[]
-}
-
-/**
- * Read dropped files in order. Returns null once `isDropCurrent` reports the
- * drop went stale during a read (the user switched workspace), so files dropped
- * in one workspace never land in another workspace's composer.
- */
-export async function readDroppedAttachments(
-  files: readonly File[],
-  isDropCurrent: () => boolean
-): Promise<DroppedAttachmentReads | null> {
-  const reads: DroppedAttachmentReads = { attachments: [], errors: [] }
-  for (const file of files) {
-    try {
-      reads.attachments.push({ file, result: await readDroppedAttachment(file) })
-    } catch (error) {
-      reads.errors.push(`${file.name}: ${error instanceof Error ? error.message : t('chat.attach.attachFailed')}`)
-    }
-    if (!isDropCurrent()) return null
-  }
-  return reads
 }

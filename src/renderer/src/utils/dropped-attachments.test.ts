@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { before, test } from 'node:test'
 import { MAX_ATTACHMENT_BYTES } from '../../../shared/attachment-rules'
-import { droppedAttachmentFiles, readDroppedAttachment, readDroppedAttachments } from './dropped-attachments'
+import { droppedAttachmentFiles, readDroppedAttachment } from './dropped-attachments'
 
 // Node has no FileReader; this stand-in yields the data URL the renderer's reads.
 class DataUrlFileReader {
@@ -84,41 +84,4 @@ test('oversized attachments are rejected before reading', async () => {
     size: MAX_ATTACHMENT_BYTES + 1,
     arrayBuffer: () => { throw new Error('must not read') },
   } as unknown as File), /too large/i)
-})
-
-test('a batch keeps its order and reports each failed file by name', async () => {
-  const huge = { name: 'huge.txt', size: MAX_ATTACHMENT_BYTES + 1 } as unknown as File
-  const reads = await readDroppedAttachments([file, huge], () => true)
-
-  assert.deepEqual(reads?.attachments.map(({ result }) => result.name), ['notes.txt'])
-  assert.equal(reads?.errors.length, 1)
-  assert.match(reads?.errors[0] ?? '', /^huge\.txt: .*too large/i)
-})
-
-test('a drop that goes stale mid-read is discarded, not attached elsewhere', async () => {
-  const DROP_WORKSPACE_ID = 'ws-a'
-  let activeWorkspaceId = DROP_WORKSPACE_ID
-  let secondFileRead = false
-  // The user switches workspace while the first file is read.
-  const switching = {
-    name: 'first.txt',
-    size: 0,
-    arrayBuffer: async () => {
-      activeWorkspaceId = 'ws-b'
-      return new TextEncoder().encode('first').buffer
-    },
-  } as unknown as File
-  const second = {
-    name: 'second.txt',
-    size: 0,
-    arrayBuffer: async () => {
-      secondFileRead = true
-      return new TextEncoder().encode('second').buffer
-    },
-  } as unknown as File
-
-  const reads = await readDroppedAttachments([switching, second], () => activeWorkspaceId === DROP_WORKSPACE_ID)
-
-  assert.equal(reads, null)
-  assert.equal(secondFileRead, false, 'no further files are read once the drop is stale')
 })

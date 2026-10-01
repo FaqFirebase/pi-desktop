@@ -322,7 +322,7 @@ resources/
 - Message editing (edit and resend)
 - Conversation branching
 - Per-message copy and export (Markdown file)
-- File attachments, picked, pasted, or dropped on the composer (`shared/attachment-rules.ts`): text is inlined into the prompt; images are sent as Pi image blocks
+- File attachments, picked (several at once), pasted, or dropped anywhere on the chat pane (`shared/attachment-rules.ts`, `utils/attachment-batch.ts`): text is inlined into the prompt; images are sent as Pi image blocks. A dropped folder still opens as a workspace
 - Markdown rendering with syntax highlighting; bundled Inter/JetBrains Mono variable fonts and OpenMoji color emoji, so rendering does not depend on system fonts
 - Fenced SVG documents render as a sandboxed `data:` image with a source/render toggle (no scripts, no external loads)
 - File names mentioned in chat text become links that open a code/image preview pane

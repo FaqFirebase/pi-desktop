@@ -81,6 +81,7 @@ export const IPC_CHANNELS = {
 
   // System
   SYSTEM_OPEN_DIALOG: 'system:open-dialog',
+  SYSTEM_OPEN_ATTACHMENT_DIALOG: 'system:open-attachment-dialog',
   SYSTEM_GET_PATH: 'system:get-path',
   SYSTEM_PATH_KIND: 'system:path-kind',
   SYSTEM_OPEN_EXTERNAL: 'system:open-external',
@@ -973,9 +974,12 @@ export type AttachmentReadResult =
 /** Options for the native open dialog. Defaults to picking a directory. */
 export interface OpenDialogOptions {
   title?: string
-  mode?: 'file' | 'directory' | 'either'
+  mode?: 'directory' | 'either'
   filters?: Array<{ name: string; extensions: string[] }>
 }
+
+/** Options for the composer's multi-file attachment picker. */
+export type OpenAttachmentDialogOptions = Pick<OpenDialogOptions, 'title' | 'filters'>
 
 /** Result of SYSTEM_PATH_KIND (drag-drop folder open). */
 export interface PathKindResult {

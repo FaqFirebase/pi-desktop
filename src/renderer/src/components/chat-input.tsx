@@ -31,7 +31,8 @@ import {
 import { isImeComposing } from '../utils/ime-composing'
 import { NO_RECALLED_PROMPT, composerDraftText } from './composer-draft'
 import { isFileDrag } from '../../../shared/folder-drop'
-import { droppedAttachmentFiles, readDroppedAttachments } from '../utils/dropped-attachments'
+import { droppedAttachmentFiles, readDroppedAttachment } from '../utils/dropped-attachments'
+import { readAttachmentBatch, type AttachmentSource } from '../utils/attachment-batch'
 import { readFileAsBase64 } from '../utils/file-base64'
 
 const MAX_INPUT_HEIGHT = 160
@@ -65,7 +66,12 @@ function detectMention(ta: HTMLTextAreaElement): MentionState | null {
   return { start: pos - query.length - 1, query }
 }
 
-export function ChatInput(): React.JSX.Element {
+interface ChatInputProps {
+  /** The chat pane around the composer; file drops anywhere on it attach. */
+  dropZoneRef: React.RefObject<HTMLElement | null>
+}
+
+export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
   const { t } = useTranslation()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const workspaceId = useAppStore((state) => state.activeWorkspace?.id ?? '')
@@ -145,8 +151,8 @@ export function ChatInput(): React.JSX.Element {
   const [attachError, setAttachError] = useState<string | null>(null)
   const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
   const attachmentDragDepth = useRef(0)
-  const pendingDrops = useRef(0)
-  const [isReadingDrop, setIsReadingDrop] = useState(false)
+  const pendingReads = useRef(0)
+  const [isReadingAttachments, setIsReadingAttachments] = useState(false)
 
   // Stage an attachment once; re-attaching the same path is a no-op.
   const addAttachment = useCallback((next: ComposerAttachment) => {
@@ -293,7 +299,7 @@ export function ChatInput(): React.JSX.Element {
 
   const handleSend = useCallback(
     async (message: string) => {
-      if (pendingDrops.current > 0) return
+      if (pendingReads.current > 0) return
       // Record the raw prompt (pre-attachment-inlining) for ↑/↓ recall, and
       // reset any in-progress history navigation.
       recordPrompt(message)
@@ -389,28 +395,46 @@ export function ChatInput(): React.JSX.Element {
     [resizeTextarea]
   )
 
+  // Read picked or dropped files and stage them. Send waits until every read
+  // settles. The composer is shared across workspaces: a batch whose workspace
+  // was switched away mid-read is discarded, not attached to the new one.
+  const stageAttachmentBatch = useCallback(async (sources: AttachmentSource[]): Promise<void> => {
+    const batchWorkspaceId = workspaceId
+    const isBatchCurrent = (): boolean =>
+      (useAppStore.getState().activeWorkspace?.id ?? '') === batchWorkspaceId
+    pendingReads.current += 1
+    setIsReadingAttachments(true)
+    try {
+      const batch = await readAttachmentBatch(sources, isBatchCurrent)
+      if (!batch) return
+      for (const attachment of batch.attachments) addAttachment(attachment)
+      if (batch.errors.length) setAttachError(batch.errors.join('\n'))
+      textareaRef.current?.focus()
+    } finally {
+      pendingReads.current -= 1
+      setIsReadingAttachments(pendingReads.current > 0)
+    }
+  }, [addAttachment, workspaceId])
+
   const handleAttachFile = useCallback(async () => {
     setAttachError(null)
     try {
-      const path = await window.piDesktop.system.openDialog({
+      const paths = await window.piDesktop.system.openAttachmentDialog({
         title: t('common.attachFile'),
-        mode: 'file',
         filters: [
           { name: t('chat.attach.imagesFilter'), extensions: [...SUPPORTED_IMAGE_EXTENSIONS] },
           { name: t('chat.attach.allFilesFilter'), extensions: ['*'] },
         ],
       })
-      if (!path) return
-      const result = await window.piDesktop.files.readAttachment(path)
-      const next: ComposerAttachment =
-        result.kind === 'image'
-          ? { kind: 'image', name: result.name, path, image: result.image }
-          : { kind: 'text', name: result.name, path, content: result.content }
-      addAttachment(next)
+      await stageAttachmentBatch(paths.map((path) => ({
+        label: path,
+        path,
+        read: () => window.piDesktop.files.readAttachment(path),
+      })))
     } catch (err) {
       setAttachError(err instanceof Error ? err.message : t('chat.attach.attachFailed'))
     }
-  }, [addAttachment, t])
+  }, [stageAttachmentBatch, t])
 
   const attachImageFile = useCallback(async (file: File): Promise<void> => {
     const mime = file.type.toLowerCase()
@@ -517,40 +541,57 @@ export function ChatInput(): React.JSX.Element {
     [attachImageFile, isDisabled]
   )
 
-  const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = useCallback((event: DragEvent) => {
     attachmentDragDepth.current = 0
     setIsDraggingAttachment(false)
-    if (!isFileDrag(event.dataTransfer)) return
-    const files = droppedAttachmentFiles(event.dataTransfer)
+    const transfer = event.dataTransfer
+    if (!transfer || !isFileDrag(transfer)) return
+    const files = droppedAttachmentFiles(transfer)
     // A folder-only drop still bubbles to the workspace opener.
     if (files.length === 0) return
     event.preventDefault()
     if (isDisabled) return
-
-    // The composer is shared across workspaces: a drop whose workspace was
-    // switched away mid-read is discarded, not attached to the new one.
-    const dropWorkspaceId = workspaceId
-    const isDropCurrent = (): boolean =>
-      (useAppStore.getState().activeWorkspace?.id ?? '') === dropWorkspaceId
-    pendingDrops.current += 1
-    setIsReadingDrop(true)
     setAttachError(null)
-    void (async () => {
-      try {
-        const reads = await readDroppedAttachments(files, isDropCurrent)
-        if (!reads) return
-        for (const { file, result } of reads.attachments) {
-          const path = window.piDesktop.system.getPathForFile(file) || `drop://${file.name}-${file.size}-${file.lastModified}`
-          addAttachment({ ...result, path })
-        }
-        if (reads.errors.length) setAttachError(reads.errors.join('\n'))
-        textareaRef.current?.focus()
-      } finally {
-        pendingDrops.current -= 1
-        setIsReadingDrop(pendingDrops.current > 0)
-      }
-    })()
-  }, [addAttachment, isDisabled, workspaceId])
+    void stageAttachmentBatch(files.map((file) => ({
+      label: file.name,
+      path: window.piDesktop.system.getPathForFile(file) || `drop://${file.name}-${file.size}-${file.lastModified}`,
+      read: () => readDroppedAttachment(file),
+    })))
+  }, [isDisabled, stageAttachmentBatch])
+
+  // The whole chat pane takes file drops, not only the composer box. Claiming
+  // a file drag here also hides the window's folder-drop overlay; a drop with
+  // no plain file is left unclaimed and still opens as a workspace.
+  useEffect(() => {
+    const zone = dropZoneRef.current
+    if (!zone) return
+    const onDragEnter = (event: DragEvent): void => {
+      if (!isFileDrag(event.dataTransfer)) return
+      event.preventDefault()
+      attachmentDragDepth.current += 1
+      if (!isDisabled) setIsDraggingAttachment(true)
+    }
+    const onDragOver = (event: DragEvent): void => {
+      const transfer = event.dataTransfer
+      if (!transfer || !isFileDrag(transfer)) return
+      event.preventDefault()
+      transfer.dropEffect = isDisabled ? 'none' : 'copy'
+    }
+    const onDragLeave = (): void => {
+      attachmentDragDepth.current = Math.max(0, attachmentDragDepth.current - 1)
+      if (attachmentDragDepth.current === 0) setIsDraggingAttachment(false)
+    }
+    zone.addEventListener('dragenter', onDragEnter)
+    zone.addEventListener('dragover', onDragOver)
+    zone.addEventListener('dragleave', onDragLeave)
+    zone.addEventListener('drop', handleDrop)
+    return () => {
+      zone.removeEventListener('dragenter', onDragEnter)
+      zone.removeEventListener('dragover', onDragOver)
+      zone.removeEventListener('dragleave', onDragLeave)
+      zone.removeEventListener('drop', handleDrop)
+    }
+  }, [dropZoneRef, handleDrop, isDisabled])
 
   const removeAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index))
@@ -565,22 +606,6 @@ export function ChatInput(): React.JSX.Element {
           'pointer-events-auto relative flex flex-col rounded-2xl border bg-surface/95 shadow-lg shadow-black/25 backdrop-blur-sm transition-colors',
           isDraggingAttachment ? 'border-accent' : 'border-border-strong focus-within:border-border-strong-hover'
         )}
-        onDragEnter={(event) => {
-          if (!isFileDrag(event.dataTransfer)) return
-          event.preventDefault()
-          attachmentDragDepth.current += 1
-          if (!isDisabled) setIsDraggingAttachment(true)
-        }}
-        onDragOver={(event) => {
-          if (!isFileDrag(event.dataTransfer)) return
-          event.preventDefault()
-          event.dataTransfer.dropEffect = isDisabled ? 'none' : 'copy'
-        }}
-        onDragLeave={() => {
-          attachmentDragDepth.current = Math.max(0, attachmentDragDepth.current - 1)
-          if (attachmentDragDepth.current === 0) setIsDraggingAttachment(false)
-        }}
-        onDrop={handleDrop}
       >
         {isDraggingAttachment && (
           <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-accent bg-surface/95 text-sm text-primary" role="status">
@@ -602,7 +627,7 @@ export function ChatInput(): React.JSX.Element {
             </button>
           </div>
         )}
-        {isReadingDrop && <div className="px-3 pt-2 text-xs text-muted" role="status">{t('chat.attach.reading')}</div>}
+        {isReadingAttachments && <div className="px-3 pt-2 text-xs text-muted" role="status">{t('chat.attach.reading')}</div>}
         {/* Subagent strip sits on the top edge, inset ~5% each side so the pill
             width doesn't look like it grew with the fleet UI. */}
         <div className="pointer-events-auto absolute bottom-full left-[5%] right-[5%] z-20 mb-0">
@@ -720,7 +745,7 @@ export function ChatInput(): React.JSX.Element {
           }}
           onKeyDown={(e) => {
             if (isImeComposing(e.nativeEvent)) return
-            if (e.key === 'Enter' && !e.shiftKey && pendingDrops.current > 0) {
+            if (e.key === 'Enter' && !e.shiftKey && pendingReads.current > 0) {
               e.preventDefault()
               e.stopPropagation()
               return
@@ -903,7 +928,7 @@ export function ChatInput(): React.JSX.Element {
                     handleSend(value)
                   }
                 }}
-                disabled={isDisabled || isReadingDrop}
+                disabled={isDisabled || isReadingAttachments}
                 className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title={t('chat.sendButton.titleWithShortcut')}
                 aria-label={t('chat.sendButton.ariaLabel')}
