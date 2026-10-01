@@ -226,10 +226,10 @@ export const IPC_CHANNELS = {
 export type PiProcessStatus = 'stopped' | 'starting' | 'running' | 'error'
 
 /**
- * Where a 'starting' runtime is in its startup: 'spawning' until the first
- * stdout byte proves the process is alive, 'waiting-on-engine' once the
- * silence deadline passed with output flowing but readiness still pending —
- * typically an extension startup hook waiting on a local model server.
+ * Where a 'starting' runtime is in its startup: 'spawning' at first,
+ * 'waiting-on-engine' once the notice delay passed with the process still
+ * running but readiness still pending — a slow workspace startup, or an
+ * extension startup hook waiting on a local model server.
  */
 export type PiStartupPhase = 'spawning' | 'waiting-on-engine'
 
