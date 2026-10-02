@@ -1879,8 +1879,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   refreshSubagentTasks: async () => {
     const gen = sessionLoadGeneration
     const runtimeId = get().activeSessionRuntimeId
+    if (!runtimeId) return
     try {
-      const result = await window.piDesktop.subagents.list()
+      const result = await window.piDesktop.subagents.list(runtimeId)
       if (gen !== sessionLoadGeneration || runtimeId !== get().activeSessionRuntimeId) return
       set((state) => ({
         subagentEventsSupported: result.supported,

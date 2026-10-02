@@ -6,12 +6,13 @@ import { PI_ASYNC_WIDGET_PREFIX, type SubagentListResult } from '../../shared/su
 type AppStore = typeof import('./store')['useAppStore']
 let useAppStore: AppStore
 let listReply: () => Promise<SubagentListResult>
+let listedRuntimeIds: string[] = []
 
 before(async () => {
   ;(globalThis as unknown as { window: unknown }).window = {
     piDesktop: {
       session: { getStats: async () => null },
-      subagents: { list: () => listReply() },
+      subagents: { list: (runtimeId: string) => { listedRuntimeIds.push(runtimeId); return listReply() } },
     },
   }
   ;({ useAppStore } = await import('./store'))
@@ -19,7 +20,9 @@ before(async () => {
 
 beforeEach(() => {
   listReply = async () => ({ supported: false, tasks: [] })
+  listedRuntimeIds = []
   useAppStore.setState({
+    activeSessionRuntimeId: 'rt-1',
     messages: [],
     isStreaming: true,
     streamingToolCalls: new Map(),
@@ -106,4 +109,11 @@ test('a status from the transcript view updates its row', () => {
   useAppStore.setState({ subagentTasks: [{ id: 'x', source: 'pi-subagents', agent: 'a', label: '', status: 'running', transcriptRef: { kind: 'pi-async', asyncId: 'x' } }] })
   useAppStore.getState().setSubagentTaskStatus('x', 'done')
   assert.equal(useAppStore.getState().subagentTasks[0].status, 'done')
+})
+
+test('the listing asks for the active session and is skipped without one', async () => {
+  await useAppStore.getState().refreshSubagentTasks()
+  useAppStore.setState({ activeSessionRuntimeId: null })
+  await useAppStore.getState().refreshSubagentTasks()
+  assert.deepEqual(listedRuntimeIds, ['rt-1'])
 })

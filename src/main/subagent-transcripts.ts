@@ -21,8 +21,15 @@ import { readSessionEntries } from './session-jsonl'
 const MAX_FOREGROUND_SESSION_BYTES = 8 * 1024 * 1024
 /** Pi lists commands an extension registered under this source. */
 const EXTENSION_COMMAND_SOURCE = 'extension'
-/** pi-subagents inspect error codes that mean the run is gone, not a passing failure. */
-const INSPECT_GONE_CODES: ReadonlySet<string> = new Set(['not_found', 'stale'])
+/** pi-subagents inspect errors that say the run is not there (it may still appear). */
+const INSPECT_NOT_FOUND_CODES: ReadonlySet<string> = new Set(['not_found', 'stale'])
+/** pi-subagents inspect errors that will not change on a retry. */
+const INSPECT_PERMANENT_CODES: ReadonlySet<string> = new Set(['invalid_request', 'foreign_session', 'no_active_session'])
+
+function inspectErrorCode(code: string): SubagentTranscriptErrorCode {
+  if (INSPECT_PERMANENT_CODES.has(code)) return 'unavailable'
+  return INSPECT_NOT_FOUND_CODES.has(code) ? 'not-found' : 'failed'
+}
 
 /** The slice of PiRpcManager this module needs, so tests can pass a fake. */
 export interface SubagentRpc {
@@ -59,6 +66,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Newest messages only, each trimmed, so one huge transcript cannot stall the renderer. */
 function shipMessages(messages: unknown[]): unknown[] {
   return messages.slice(-MAX_TRANSCRIPT_MESSAGES).map(trimMessagePayload)
+}
+
+/** The slice of WorkspaceManager that picks the manager for a request. */
+export interface RuntimeManagerSource<T> {
+  getActivePiManager(): T | null
+  runtimeIdFor(manager: T): string | null
+}
+
+/**
+ * The active manager, but only while it still runs the session the renderer
+ * asked about: a request that crosses a chat switch must not reach the new
+ * chat's process.
+ */
+export function activeManagerForRuntime<T>(source: RuntimeManagerSource<T>, runtimeId: string): T | null {
+  const manager = source.getActivePiManager()
+  return manager && source.runtimeIdFor(manager) === runtimeId ? manager : null
 }
 
 /**
@@ -145,7 +168,7 @@ async function fetchInspectTranscript(
       const reply = parseInspectReply(event.widgetLines)
       if (!reply || reply.requestId !== requestId) return
       if (reply.errorCode) {
-        finish(failure(INSPECT_GONE_CODES.has(reply.errorCode) ? 'not-found' : 'failed'))
+        finish(failure(inspectErrorCode(reply.errorCode)))
         return
       }
       finish({
@@ -157,7 +180,13 @@ async function fetchInspectTranscript(
     }
     const timer = setTimeout(() => finish(failure('timeout')), deps.timeoutMs)
     pi.on('event', onEvent)
-    pi.sendCommand({ type: 'prompt', message: command }).catch(() => finish(failure('failed')))
+    // A refused prompt sends no widget, so it fails now instead of at the timeout.
+    pi.sendCommand({ type: 'prompt', message: command }).then(
+      (response) => {
+        if (response && !response.success) finish(failure('failed'))
+      },
+      () => finish(failure('failed'))
+    )
   })
 }
 

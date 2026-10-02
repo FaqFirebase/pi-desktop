@@ -43,6 +43,7 @@ export function ChatToolRail(): React.JSX.Element {
         onClick={() => void setSidePanel(sidePanel === 'tasks' ? null : 'tasks')}
         title={t('chat.toolbar.subagents')}
         badge={runningSubagents}
+        badgeLabel={t('chat.toolbar.subagentsRunning', { count: runningSubagents })}
       />
       <RailButton
         icon={<Terminal size={16} />}
@@ -60,19 +61,23 @@ function RailButton({
   onClick,
   title,
   badge,
+  badgeLabel,
 }: {
   icon: React.ReactNode
   active: boolean
   onClick: () => void
   title: string
   badge?: number
+  /** Spoken instead of `title` while the badge shows, so the count is not visual only. */
+  badgeLabel?: string
 }): React.JSX.Element {
+  const showBadge = badge !== undefined && badge > 0
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      aria-label={title}
+      aria-label={showBadge && badgeLabel ? badgeLabel : title}
       className={clsx(
         'relative flex h-8 w-8 items-center justify-center rounded-md transition-colors',
         active
@@ -82,7 +87,7 @@ function RailButton({
       title={title}
     >
       {icon}
-      {badge !== undefined && badge > 0 && (
+      {showBadge && (
         <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-accent-bg px-0.5 text-[9px] font-semibold leading-none text-accent-fg tabular-nums">
           {badge}
         </span>

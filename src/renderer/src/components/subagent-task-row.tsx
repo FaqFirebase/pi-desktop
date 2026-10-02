@@ -1,4 +1,5 @@
 import { clsx } from 'clsx'
+import { useTranslation } from 'react-i18next'
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import type { SubagentTask, SubagentTaskStatus } from '../../../shared/subagent-task'
 
@@ -21,11 +22,21 @@ export function formatSubagentTokens(n: number): string {
   return `${Math.round(n / TOKENS_PER_K)}k`
 }
 
+/** Read by screen readers: failed and stopped share an icon and differ only by color. */
+const STATUS_LABEL_KEYS = {
+  running: 'chat.subagentPanel.status.running',
+  done: 'chat.subagentPanel.status.done',
+  failed: 'chat.subagentPanel.status.failed',
+  stopped: 'chat.subagentPanel.status.stopped',
+} as const satisfies Record<SubagentTaskStatus, string>
+
 export function SubagentStatusIcon({ status }: { status: SubagentTaskStatus }): React.JSX.Element {
-  if (status === 'running') return <Loader2 size={11} className="shrink-0 animate-spin text-accent-fg" />
-  if (status === 'failed') return <XCircle size={11} className="shrink-0 text-error" />
-  if (status === 'stopped') return <XCircle size={11} className="shrink-0 text-faint" />
-  return <CheckCircle2 size={11} className="shrink-0 text-success" />
+  const { t } = useTranslation()
+  const a11y = { role: 'img', 'aria-label': t(STATUS_LABEL_KEYS[status]), 'aria-hidden': false }
+  if (status === 'running') return <Loader2 size={11} className="shrink-0 animate-spin text-accent-fg" {...a11y} />
+  if (status === 'failed') return <XCircle size={11} className="shrink-0 text-error" {...a11y} />
+  if (status === 'stopped') return <XCircle size={11} className="shrink-0 text-faint" {...a11y} />
+  return <CheckCircle2 size={11} className="shrink-0 text-success" {...a11y} />
 }
 
 /** One subagent line: status, agent, current tool or label, stats. Clickable when `onSelect` is given. */

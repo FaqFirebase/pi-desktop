@@ -11,6 +11,7 @@ import {
   parseInspectReply,
   parseTranscriptRef,
   replacePiAsyncRuns,
+  summarizeSubagentTasks,
   stripSubagentTasks,
   tasksFromOmpSubagents,
   tasksFromPiAsyncWidget,
@@ -232,7 +233,8 @@ test('the async widget snapshot becomes one row per child run', () => {
     ['async-2', 'oracle', 'failed', undefined],
   ])
   assert.equal(tasks[0].currentTool, 'read')
-  assert.equal(tasks[0].label, 'review fan-out')
+  // The run label does not name each child, so it is not repeated on every row.
+  assert.equal(tasks[0].label, '')
   assert.deepEqual(tasks[0].transcriptRef, { kind: 'pi-async', asyncId: 'async-1', childId: 'step:0' })
   assert.deepEqual(tasks[2].transcriptRef, { kind: 'pi-async', asyncId: 'async-2' })
 })
@@ -331,4 +333,47 @@ test('the strip shows running rows and rows spawned since the turn began', () =>
   const fresh: SubagentTask = { ...old, id: 'fresh' }
   const known = new Set(['old', 'old-running'])
   assert.deepEqual(stripSubagentTasks([old, oldRunning, fresh], known).map((task) => task.id), ['old-running', 'fresh'])
+})
+
+test('a parallel run label names each child agent, and the step label becomes the row label', () => {
+  const snapshot = {
+    kind: 'pi-subagents.async-status-snapshot', version: 1,
+    runs: [{
+      id: 'async-1', kind: 'workflow', label: 'scout, oracle', state: 'running',
+      children: [
+        { id: 'list-files', kind: 'step', label: 'list-files', state: 'running' },
+        { id: 'oracle', kind: 'step', label: 'oracle', state: 'running' },
+      ],
+    }],
+  }
+  const tasks = tasksFromPiAsyncWidget(asyncWidget(snapshot))!
+  assert.deepEqual(tasks.map((task) => [task.agent, task.label]), [['scout', 'list-files'], ['oracle', '']])
+  const capped = { ...snapshot, runs: [{ ...snapshot.runs[0], label: 'a, b, c, +2 more' }] }
+  assert.deepEqual(tasksFromPiAsyncWidget(asyncWidget(capped))!.map((task) => task.agent), ['list-files', 'oracle'])
+})
+
+test('a subagent that starts its own subagents is listed with its children', () => {
+  const snapshot = {
+    kind: 'pi-subagents.async-status-snapshot', version: 1,
+    runs: [{
+      id: 'async-1', kind: 'workflow', label: 'lead', state: 'running',
+      children: [{
+        id: 'lead', kind: 'subagent', label: 'lead', state: 'running',
+        children: [{ id: 'helper', kind: 'subagent', label: 'helper', state: 'running' }],
+      }],
+    }],
+  }
+  assert.deepEqual(tasksFromPiAsyncWidget(asyncWidget(snapshot))!.map((task) => task.id), ['async-1:lead', 'async-1:helper'])
+})
+
+test('a launch row is not added when the snapshot already lists its run', () => {
+  const snapshot = tasksFromPiAsyncWidget(asyncWidget(SNAPSHOT))!
+  const tasks = applySubagentToolEvent(snapshot, toolEvent({ phase: 'end', details: { asyncId: 'async-1', results: [] } }))
+  assert.deepEqual(tasks.map((task) => task.id), snapshot.map((task) => task.id))
+})
+
+test('the summary counts running, failed and all rows', () => {
+  const base: SubagentTask = { id: 'a', source: 'omp', agent: 's', label: '', status: 'done', transcriptRef: { kind: 'none' } }
+  const rows = [base, { ...base, id: 'b', status: 'failed' as const }, { ...base, id: 'c', status: 'running' as const }, { ...base, id: 'd', status: 'stopped' as const }]
+  assert.deepEqual(summarizeSubagentTasks(rows), { running: 1, failed: 1, total: 4 })
 })

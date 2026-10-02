@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SubagentTask, SubagentTranscriptResult } from '../../../shared/subagent-task'
 import { useAppStore } from '../store'
+import { useChatVisible } from '../hooks'
 import {
   initialTranscriptState,
   reduceTranscript,
+  transcriptFetchAllowed,
   transcriptPollMs,
   transcriptStatusUpdate,
   type TranscriptState,
@@ -11,9 +13,11 @@ import {
 } from '../subagent-transcript-view'
 
 const FAILED_FETCH: SubagentTranscriptResult = { kind: 'error', code: 'failed' }
+const UNAVAILABLE_FETCH: SubagentTranscriptResult = { kind: 'error', code: 'unavailable' }
 
 /**
- * Fetch a subagent's transcript and keep it live while the subagent runs.
+ * Fetch a subagent's transcript and keep it live while the subagent runs and
+ * the chat is on screen.
  * One request at a time (setTimeout after each reply, never setInterval), and
  * a reply that lands after the row changed or the view closed is dropped.
  * When the row stops running the effect runs once more for the final fetch,
@@ -22,6 +26,7 @@ const FAILED_FETCH: SubagentTranscriptResult = { kind: 'error', code: 'failed' }
 export function useSubagentTranscript(task: SubagentTask): TranscriptView {
   const refKey = JSON.stringify(task.transcriptRef)
   const running = task.status === 'running'
+  const chatVisible = useChatVisible()
   const stateRef = useRef<{ key: string; state: TranscriptState }>({ key: '', state: initialTranscriptState(task.transcriptRef, running) })
   const [view, setView] = useState<TranscriptView>(stateRef.current.state.view)
 
@@ -33,8 +38,7 @@ export function useSubagentTranscript(task: SubagentTask): TranscriptView {
       stateRef.current = { key, state: initialTranscriptState(task.transcriptRef, running) }
       setView(stateRef.current.state.view)
     }
-    const startView = stateRef.current.state.view.kind
-    if (startView === 'unavailable' || startView === 'progress') return
+    if (!transcriptFetchAllowed(task.transcriptRef, running, chatVisible)) return
 
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -43,7 +47,10 @@ export function useSubagentTranscript(task: SubagentTask): TranscriptView {
     const tick = async (): Promise<void> => {
       let result: SubagentTranscriptResult
       try {
-        result = await window.piDesktop.subagents.getTranscript(ref, stateRef.current.state.cursor)
+        const runtimeId = useAppStore.getState().activeSessionRuntimeId
+        result = runtimeId
+          ? await window.piDesktop.subagents.getTranscript(runtimeId, ref, stateRef.current.state.cursor)
+          : UNAVAILABLE_FETCH
       } catch {
         result = FAILED_FETCH
       }
@@ -54,7 +61,7 @@ export function useSubagentTranscript(task: SubagentTask): TranscriptView {
       const status = transcriptStatusUpdate(ref, result)
       if (status && status !== task.status) useAppStore.getState().setSubagentTaskStatus(task.id, status)
       if (!running) fetchesAfterEnd += 1
-      const delay = transcriptPollMs(ref, running, stateRef.current.state.view, fetchesAfterEnd)
+      const delay = transcriptPollMs(ref, running, stateRef.current.state, fetchesAfterEnd)
       if (delay !== null && !cancelled) timer = setTimeout(() => void tick(), delay)
     }
     void tick()
@@ -64,7 +71,7 @@ export function useSubagentTranscript(task: SubagentTask): TranscriptView {
     }
     // task.transcriptRef is covered by refKey; task.status by running.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [task.id, refKey, running])
+  }, [task.id, refKey, running, chatVisible])
 
   return view
 }

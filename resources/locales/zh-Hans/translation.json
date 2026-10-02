@@ -123,11 +123,18 @@
       "progressOnly": "此运行结束后会显示完整记录。",
       "refreshFailed": "无法刷新。",
       "running": "正在运行",
+      "status": {
+        "done": "已完成",
+        "failed": "失败",
+        "running": "运行中",
+        "stopped": "已停止"
+      },
       "title": "子智能体",
       "transcriptUnavailable": "没有可用的记录。"
     },
     "subagentProgress": {
       "done_other": "{{count}} 个子智能体已完成",
+      "finishedWithFailures_other": "{{count}} 个子智能体已结束，{{failed}} 个失败",
       "openPanel": "打开子智能体面板",
       "running_other": "{{count}} 个子智能体正在运行"
     },
@@ -141,6 +148,7 @@
       "fileTree": "文件树",
       "reviewPanel": "审查面板",
       "subagents": "子智能体",
+      "subagentsRunning_other": "子智能体，{{count}} 个正在运行",
       "terminal": "终端"
     },
     "toolCall": {

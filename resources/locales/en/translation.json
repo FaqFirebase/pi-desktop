@@ -123,12 +123,20 @@
       "progressOnly": "The full transcript shows when this run finishes.",
       "refreshFailed": "Could not refresh.",
       "running": "Running",
+      "status": {
+        "done": "Done",
+        "failed": "Failed",
+        "running": "Running",
+        "stopped": "Stopped"
+      },
       "title": "Subagents",
       "transcriptUnavailable": "Transcript not available."
     },
     "subagentProgress": {
       "done_one": "{{count}} subagent done",
       "done_other": "{{count}} subagents done",
+      "finishedWithFailures_one": "{{count}} subagent finished, {{failed}} failed",
+      "finishedWithFailures_other": "{{count}} subagents finished, {{failed}} failed",
       "openPanel": "Open subagent panel",
       "running_one": "{{count}} subagent running",
       "running_other": "{{count}} subagents running"
@@ -143,6 +151,8 @@
       "fileTree": "File tree",
       "reviewPanel": "Review panel",
       "subagents": "Subagents",
+      "subagentsRunning_one": "Subagents, {{count}} running",
+      "subagentsRunning_other": "Subagents, {{count}} running",
       "terminal": "Terminal"
     },
     "toolCall": {

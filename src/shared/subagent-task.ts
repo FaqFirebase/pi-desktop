@@ -84,6 +84,20 @@ export function countRunningSubagentTasks(tasks: readonly SubagentTask[]): numbe
   return tasks.filter((task) => task.status === 'running').length
 }
 
+export interface SubagentTaskSummary {
+  running: number
+  failed: number
+  total: number
+}
+
+export function summarizeSubagentTasks(tasks: readonly SubagentTask[]): SubagentTaskSummary {
+  return {
+    running: countRunningSubagentTasks(tasks),
+    failed: tasks.filter((task) => task.status === 'failed').length,
+    total: tasks.length,
+  }
+}
+
 /**
  * Rows the composer strip shows: every running row, plus rows that are not in
  * `knownAtTurnStart` (the ids the chat had when the current turn began).
@@ -265,6 +279,18 @@ function tasksFromToolDetails(event: SubagentToolEvent): SubagentTask[] | null {
 }
 
 /**
+ * A background launch whose run the async widget already lists: the widget's
+ * rows stand for it, so a launch row beside them would count the run twice.
+ */
+function isListedLaunch(tasks: SubagentTask[], toolCallId: string, derived: SubagentTask[]): boolean {
+  const ref = derived.length === 1 && derived[0].id === toolCallId ? derived[0].transcriptRef : undefined
+  if (ref?.kind !== 'pi-async') return false
+  return tasks.some((task) =>
+    task.toolCallId !== toolCallId && task.transcriptRef.kind === 'pi-async' && task.transcriptRef.asyncId === ref.asyncId
+  )
+}
+
+/**
  * Fold one spawn-tool event into the rows. Returns `tasks` itself when the
  * event changes nothing, so the store can skip the update.
  */
@@ -273,6 +299,7 @@ export function applySubagentToolEvent(tasks: SubagentTask[], event: SubagentToo
     return tasks.some((task) => task.toolCallId === event.toolCallId) ? replaceToolCallTasks(tasks, event.toolCallId, []) : tasks
   }
   const derived = tasksFromToolDetails(event)
+  if (derived && isListedLaunch(tasks, event.toolCallId, derived)) return replaceToolCallTasks(tasks, event.toolCallId, [])
   if (derived) return replaceToolCallTasks(tasks, event.toolCallId, derived)
   if (event.phase === 'update') return tasks
 
@@ -314,6 +341,11 @@ const PI_INSPECT_REPLY_KIND = 'pi-subagents.inspect-reply'
 /** Snapshots are capped by the extension; this only stops a malformed cycle. */
 const MAX_SNAPSHOT_DEPTH = 8
 const HOST_STEP_KIND = 'host-step'
+const SUBAGENT_NODE_KIND = 'subagent'
+/** pi-subagents names a run after its agents: up to three, joined by this. */
+const RUN_AGENT_SEPARATOR = ', '
+/** ...and ends the list with ", +N more" when it has more than three. */
+const RUN_AGENT_OVERFLOW_PREFIX = '+'
 const WHITESPACE = /\s/
 
 // ─── OMP ────────────────────────────────────────────────────────────────────
@@ -414,15 +446,31 @@ function prefixedJson(lines: unknown, prefix: string): unknown {
   return undefined
 }
 
-/** Child nodes with no children of their own; host steps are gates, not agents. */
+/**
+ * The rows of a run: child nodes with no children of their own, plus any
+ * subagent node that started subagents of its own (it has a transcript too).
+ * Host steps are gates, not agents.
+ */
 function snapshotLeaves(node: UnknownRecord, depth: number, out: UnknownRecord[]): void {
   if (depth > MAX_SNAPSHOT_DEPTH || !Array.isArray(node.children)) return
   for (const child of node.children as unknown[]) {
     if (!isRecord(child) || child.kind === HOST_STEP_KIND) continue
     const before = out.length
+    if (child.kind === SUBAGENT_NODE_KIND && Array.isArray(child.children) && child.children.length > 0) out.push(child)
     snapshotLeaves(child, depth + 1, out)
     if (out.length === before) out.push(child)
   }
+}
+
+/**
+ * The agent of each row, read from the run label, or undefined when the label
+ * cannot be matched one to one (a single name, or a capped "+N more" list).
+ */
+function runAgentNames(runLabel: string | undefined, rowCount: number): string[] | undefined {
+  if (!runLabel) return undefined
+  const names = runLabel.split(RUN_AGENT_SEPARATOR)
+  if (names.length !== rowCount || names.some((name) => name.startsWith(RUN_AGENT_OVERFLOW_PREFIX))) return undefined
+  return names
 }
 
 function snapshotDuration(node: UnknownRecord): number | undefined {
@@ -432,8 +480,9 @@ function snapshotDuration(node: UnknownRecord): number | undefined {
   return end !== undefined && end >= startedAt ? end - startedAt : undefined
 }
 
-function piAsyncTask(asyncId: string, node: UnknownRecord, childId: string | undefined, runLabel: string | undefined): SubagentTask {
+function piAsyncTask(asyncId: string, node: UnknownRecord, childId: string | undefined, agentName: string | undefined): SubagentTask {
   const activity = isRecord(node.activity) ? node.activity : {}
+  const nodeLabel = text(node.label)
   const status = normalizeSubagentStatus(node.state) ?? 'running'
   const currentTool = status === 'running' ? text(activity.currentTool) : undefined
   const toolCount = count(activity.toolCount)
@@ -441,8 +490,9 @@ function piAsyncTask(asyncId: string, node: UnknownRecord, childId: string | und
   return {
     id: childId ? `${asyncId}:${childId}` : asyncId,
     source: 'pi-subagents',
-    agent: clip(text(node.label) ?? DEFAULT_SUBAGENT_AGENT),
-    label: childId && runLabel ? clip(runLabel) : '',
+    agent: clip(agentName ?? nodeLabel ?? DEFAULT_SUBAGENT_AGENT),
+    // A step's own label (when it is not just the agent name) says what it does.
+    label: agentName && nodeLabel && nodeLabel !== agentName ? clip(nodeLabel) : '',
     status,
     ...(currentTool ? { currentTool } : {}),
     ...(toolCount !== undefined ? { toolCount } : {}),
@@ -469,7 +519,8 @@ export function tasksFromPiAsyncWidget(lines: unknown): SubagentTask[] | null {
       tasks.push(piAsyncTask(asyncId, run, undefined, undefined))
       continue
     }
-    for (const leaf of leaves) tasks.push(piAsyncTask(asyncId, leaf, text(leaf.id), text(run.label)))
+    const agents = runAgentNames(text(run.label), leaves.length)
+    leaves.forEach((leaf, index) => tasks.push(piAsyncTask(asyncId, leaf, text(leaf.id), agents?.[index])))
   }
   return tasks
 }

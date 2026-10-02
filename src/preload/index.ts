@@ -356,8 +356,9 @@ interface PiDesktopAPI {
 
   // Subagent panel: OMP subagent list and per-subagent transcripts
   subagents: {
-    list(): Promise<SubagentListResult>
-    getTranscript(ref: SubagentTranscriptRef, cursor: number): Promise<SubagentTranscriptResult>
+    /** Both calls answer only while `runtimeId` is the active session runtime. */
+    list(runtimeId: string): Promise<SubagentListResult>
+    getTranscript(runtimeId: string, ref: SubagentTranscriptRef, cursor: number): Promise<SubagentTranscriptResult>
   }
 
   // Diagnostics report
@@ -638,8 +639,8 @@ const api: PiDesktopAPI = {
   },
 
   subagents: {
-    list: () => ipcRenderer.invoke(IPC_CHANNELS.SUBAGENT_LIST),
-    getTranscript: (ref, cursor) => ipcRenderer.invoke(IPC_CHANNELS.SUBAGENT_GET_TRANSCRIPT, ref, cursor),
+    list: (runtimeId) => ipcRenderer.invoke(IPC_CHANNELS.SUBAGENT_LIST, runtimeId),
+    getTranscript: (runtimeId, ref, cursor) => ipcRenderer.invoke(IPC_CHANNELS.SUBAGENT_GET_TRANSCRIPT, runtimeId, ref, cursor),
   },
 
   diagnostics: {

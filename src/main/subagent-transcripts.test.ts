@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import type { AgentEngineKind, PiResponseEvent, PiRpcEvent } from '../shared/ipc-contracts'
 import { MAX_TRANSCRIPT_MESSAGES, PI_INSPECT_WIDGET_KEY, PI_INSPECT_WIDGET_PREFIX } from '../shared/subagent-task'
-import { fetchSubagentTranscript, listSubagents, type SubagentRpc, type TranscriptDeps } from './subagent-transcripts'
+import { activeManagerForRuntime, fetchSubagentTranscript, listSubagents, type SubagentRpc, type TranscriptDeps } from './subagent-transcripts'
 
 class FakeRpc extends EventEmitter implements SubagentRpc {
   readonly sent: Array<Record<string, unknown>> = []
@@ -141,4 +141,31 @@ test('without the inspect command (an old pi-subagents), no prompt is ever sent'
   const noReply = new FakeRpc('pi', () => null)
   assert.deepEqual(await fetchSubagentTranscript(noReply, { kind: 'pi-async', asyncId: 'a' }, 0, DEPS), { kind: 'error', code: 'unavailable' })
   assert.deepEqual(noReply.sent.map((command) => command.type), ['get_commands'])
+})
+
+test('permanent inspect errors are unavailable; a missing run is not found; others failed', async () => {
+  const cases: Array<[string, string]> = [['invalid_request', 'unavailable'], ['foreign_session', 'unavailable'], ['no_active_session', 'unavailable'], ['stale', 'not-found'], ['internal', 'failed']]
+  for (const [code, expected] of cases) {
+    const rpc = new FakeRpc('pi', withInspect(() => {
+      rpc.emitWidget(inspectLines('req-1', { error: { code, message: 'x' } }))
+      return null
+    }))
+    assert.deepEqual(await fetchSubagentTranscript(rpc, { kind: 'pi-async', asyncId: 'a' }, 0, DEPS), { kind: 'error', code: expected }, code)
+  }
+})
+
+test('a rejected inspect prompt fails at once instead of waiting for the timeout', async () => {
+  const rejected = new FakeRpc('pi', withInspect((command) => ({ type: 'response', command: String(command.type), success: false, error: 'busy' })))
+  const started = Date.now()
+  const result = await fetchSubagentTranscript(rejected, { kind: 'pi-async', asyncId: 'a' }, 0, { ...DEPS, timeoutMs: 5000 })
+  assert.deepEqual(result, { kind: 'error', code: 'failed' })
+  assert.ok(Date.now() - started < 1000)
+})
+
+test('a request reaches the active manager only when it still runs the asked-for session', () => {
+  const manager = { name: 'm' }
+  const source = { getActivePiManager: () => manager, runtimeIdFor: (m: typeof manager) => (m === manager ? 'rt-1' : null) }
+  assert.equal(activeManagerForRuntime(source, 'rt-1'), manager)
+  assert.equal(activeManagerForRuntime(source, 'rt-2'), null)
+  assert.equal(activeManagerForRuntime({ getActivePiManager: () => null, runtimeIdFor: () => null }, 'rt-1'), null)
 })

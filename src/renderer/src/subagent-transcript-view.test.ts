@@ -1,6 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { initialTranscriptState, MAX_FETCHES_AFTER_END, reduceTranscript, transcriptPollMs, transcriptStatusUpdate, type TranscriptView } from './subagent-transcript-view'
+import {
+  initialTranscriptState,
+  MAX_FETCHES_AFTER_END,
+  reduceTranscript,
+  transcriptFetchAllowed,
+  transcriptPollMs,
+  transcriptStatusUpdate,
+  type TranscriptState,
+  type TranscriptView,
+} from './subagent-transcript-view'
 import { OMP_TRANSCRIPT_POLL_MS, PI_INSPECT_POLL_MS } from '../../shared/subagent-task'
 
 const OMP_REF = { kind: 'omp' as const, subagentId: 'A' }
@@ -49,9 +58,13 @@ test('inspect lines replace the view each time', () => {
   assert.deepEqual(state.view, { kind: 'lines', lines: [{ role: 'assistant', kind: 'text', text: 'hi' }], finalOutput: 'end', refreshFailed: false })
 })
 
-const LOADING: TranscriptView = { kind: 'loading' }
-const LINES_NO_FINAL: TranscriptView = { kind: 'lines', lines: [], refreshFailed: false }
-const LINES_FINAL: TranscriptView = { kind: 'lines', lines: [], finalOutput: 'done', refreshFailed: false }
+function stateOf(view: TranscriptView, settled = false): TranscriptState {
+  return { view, cursor: 0, settled }
+}
+
+const LOADING = stateOf({ kind: 'loading' })
+const LINES_NO_FINAL = stateOf({ kind: 'lines', lines: [], refreshFailed: false })
+const LINES_FINAL = stateOf({ kind: 'lines', lines: [], finalOutput: 'done', refreshFailed: false })
 
 test('polling runs only for live OMP and background Pi rows', () => {
   assert.equal(transcriptPollMs(OMP_REF, true, LOADING, 0), OMP_TRANSCRIPT_POLL_MS)
@@ -67,6 +80,34 @@ test('a finished background Pi row is fetched again until its final output arriv
   assert.equal(transcriptPollMs(ref, false, LINES_NO_FINAL, 0), PI_INSPECT_POLL_MS)
   assert.equal(transcriptPollMs(ref, false, LINES_NO_FINAL, MAX_FETCHES_AFTER_END), null)
   assert.equal(transcriptPollMs(ref, false, LINES_FINAL, 0), null)
+})
+
+test('a permanent failure stops polling but keeps what was shown', () => {
+  const ref = { kind: 'pi-async' as const, asyncId: 'a' }
+  const shown = reduceTranscript(stateOf({ kind: 'lines', lines: [{ role: 'assistant', kind: 'text', text: 'hi' }], refreshFailed: false }), { kind: 'error', code: 'unavailable' }, true)
+  assert.equal(shown.settled, true)
+  assert.equal(shown.view.kind, 'lines')
+  assert.equal(transcriptPollMs(ref, true, shown, 0), null)
+  // A run that is not found yet may appear: polling goes on.
+  const early = reduceTranscript(LOADING, { kind: 'error', code: 'not-found' }, true)
+  assert.equal(transcriptPollMs(ref, true, early, 0), PI_INSPECT_POLL_MS)
+})
+
+test('a fetch is allowed while the chat is visible and the row has a source, also after a mid-run failure', () => {
+  assert.equal(transcriptFetchAllowed(OMP_REF, true, true), true)
+  assert.equal(transcriptFetchAllowed(OMP_REF, false, true), true)
+  assert.equal(transcriptFetchAllowed(OMP_REF, true, false), false)
+  assert.equal(transcriptFetchAllowed({ kind: 'none' }, true, true), false)
+  assert.equal(transcriptFetchAllowed({ kind: 'pi-foreground' }, true, true), false)
+})
+
+test('an empty page and an unchanged inspect reply keep the same view object', () => {
+  const page = reduceTranscript(LOADING, { kind: 'messages', messages: [assistant('one')], nextCursor: 10, reset: false }, true)
+  assert.equal(reduceTranscript(page, { kind: 'messages', messages: [], nextCursor: 10, reset: false }, true), page)
+  assert.equal(reduceTranscript(page, { kind: 'messages', messages: [], nextCursor: 12, reset: false }, true).view, page.view)
+  const reply = { kind: 'lines' as const, lines: [{ role: 'assistant', kind: 'text' as const, text: 'hi' }], finalOutput: 'end' }
+  const lines = reduceTranscript(LOADING, reply, true)
+  assert.equal(reduceTranscript(lines, { ...reply, lines: [{ role: 'assistant', kind: 'text', text: 'hi' }] }, true), lines)
 })
 
 test('an inspect status updates only a run-level row, never a step child', () => {

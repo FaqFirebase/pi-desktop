@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import { stripAnsi } from '../utils/strip-ansi'
 import { ChevronDown, Loader2, Bot } from 'lucide-react'
-import { countRunningSubagentTasks, stripSubagentTasks } from '../../../shared/subagent-task'
+import { stripSubagentTasks, summarizeSubagentTasks } from '../../../shared/subagent-task'
 import { SubagentTaskRow } from './subagent-task-row'
 
 /**
@@ -48,7 +48,7 @@ export function SubagentProgress(): React.JSX.Element | null {
   }, [extensionStatuses])
 
   const tasks = useMemo(() => stripSubagentTasks(allTasks, knownAtTurnStart), [allTasks, knownAtTurnStart])
-  const runningCount = countRunningSubagentTasks(tasks)
+  const { running: runningCount, failed: failedCount } = summarizeSubagentTasks(tasks)
   const hasRunning = runningCount > 0
   const hasContent = hasRunning || (isStreaming && tasks.length > 0) || statusLines.length > 0
   const totalCount = tasks.length || statusLines.length
@@ -69,7 +69,9 @@ export function SubagentProgress(): React.JSX.Element | null {
 
   const summary = hasRunning
     ? t('chat.subagentProgress.running', { count: runningCount })
-    : t('chat.subagentProgress.done', { count: totalCount })
+    : failedCount > 0
+      ? t('chat.subagentProgress.finishedWithFailures', { count: totalCount, failed: failedCount })
+      : t('chat.subagentProgress.done', { count: totalCount })
   const scrolls = tasks.length > MAX_VISIBLE_ROWS || statusLines.length > MAX_VISIBLE_ROWS
 
   return (
