@@ -112,8 +112,23 @@
       "ariaLabel": "停止生成",
       "titleWithShortcut": "停止（Esc）"
     },
+    "subagentPanel": {
+      "back": "返回列表",
+      "close": "关闭",
+      "empty": "此对话中还没有子智能体。",
+      "finalOutput": "最终输出",
+      "finished": "已完成",
+      "liveViewUnavailable": "此运行没有实时视图。",
+      "loading": "正在加载…",
+      "progressOnly": "此运行结束后会显示完整记录。",
+      "refreshFailed": "无法刷新。",
+      "running": "正在运行",
+      "title": "子智能体",
+      "transcriptUnavailable": "没有可用的记录。"
+    },
     "subagentProgress": {
       "done_other": "{{count}} 个子智能体已完成",
+      "openPanel": "打开子智能体面板",
       "running_other": "{{count}} 个子智能体正在运行"
     },
     "svgBlock": {
@@ -125,6 +140,7 @@
       "diffViewer": "差异查看器",
       "fileTree": "文件树",
       "reviewPanel": "审查面板",
+      "subagents": "子智能体",
       "terminal": "终端"
     },
     "toolCall": {

@@ -83,6 +83,7 @@ import type {
   I18nEnvironment,
 } from '../shared/ipc-contracts'
 import type { ThemeFile } from '../shared/theme/theme-file'
+import type { SubagentListResult, SubagentTranscriptRef, SubagentTranscriptResult } from '../shared/subagent-task'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 
 // ─── Type Definitions for the Exposed API ────────────────────────────────────
@@ -351,6 +352,12 @@ interface PiDesktopAPI {
      */
     control(workspaceId: string, runId: string, action: WorkflowControlAction): Promise<WorkflowControlResult>
     setPersistAgentSessions(enabled: boolean): Promise<void>
+  }
+
+  // Subagent panel: OMP subagent list and per-subagent transcripts
+  subagents: {
+    list(): Promise<SubagentListResult>
+    getTranscript(ref: SubagentTranscriptRef, cursor: number): Promise<SubagentTranscriptResult>
   }
 
   // Diagnostics report
@@ -628,6 +635,11 @@ const api: PiDesktopAPI = {
     getRun: (workspaceId, runId) => ipcRenderer.invoke(IPC_CHANNELS.WORKFLOW_GET_RUN, workspaceId, runId),
     control: (workspaceId, runId, action) => ipcRenderer.invoke(IPC_CHANNELS.WORKFLOW_CONTROL, workspaceId, runId, action),
     setPersistAgentSessions: (enabled) => ipcRenderer.invoke(IPC_CHANNELS.WORKFLOW_SET_PERSISTENCE, enabled),
+  },
+
+  subagents: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.SUBAGENT_LIST),
+    getTranscript: (ref, cursor) => ipcRenderer.invoke(IPC_CHANNELS.SUBAGENT_GET_TRANSCRIPT, ref, cursor),
   },
 
   diagnostics: {

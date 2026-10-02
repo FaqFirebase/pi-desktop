@@ -112,9 +112,24 @@
       "ariaLabel": "Stop generating",
       "titleWithShortcut": "Stop (Esc)"
     },
+    "subagentPanel": {
+      "back": "Back to list",
+      "close": "Close",
+      "empty": "No subagents in this chat yet.",
+      "finalOutput": "Final output",
+      "finished": "Finished",
+      "liveViewUnavailable": "Live view not available for this run.",
+      "loading": "Loading…",
+      "progressOnly": "The full transcript shows when this run finishes.",
+      "refreshFailed": "Could not refresh.",
+      "running": "Running",
+      "title": "Subagents",
+      "transcriptUnavailable": "Transcript not available."
+    },
     "subagentProgress": {
       "done_one": "{{count}} subagent done",
       "done_other": "{{count}} subagents done",
+      "openPanel": "Open subagent panel",
       "running_one": "{{count}} subagent running",
       "running_other": "{{count}} subagents running"
     },
@@ -127,6 +142,7 @@
       "diffViewer": "Diff viewer",
       "fileTree": "File tree",
       "reviewPanel": "Review panel",
+      "subagents": "Subagents",
       "terminal": "Terminal"
     },
     "toolCall": {

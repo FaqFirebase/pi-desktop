@@ -47,9 +47,12 @@ function MessageBubbleImpl({
   message,
   onRetry,
   hideModelHeader,
+  readOnly,
 }: {
   message: DisplayMessage
   onRetry?: (messageId: string) => void
+  // Transcript of another session (subagent panel): no edit, branch or export.
+  readOnly?: boolean
   // When rendered inside a tool group that shows a single shared model header,
   // suppress this message's own provider · model line to avoid repetition.
   hideModelHeader?: boolean
@@ -136,6 +139,7 @@ function MessageBubbleImpl({
         onBranch={handleBranch}
         onRetry={onRetry}
         onExport={handleExport}
+        readOnly={readOnly}
       />
       </div>
       {MessageContextMenu}
@@ -209,6 +213,7 @@ function UserMessage({
   onBranch,
   onRetry,
   onExport,
+  readOnly,
 }: {
   message: DisplayMessage
   isEditing: boolean
@@ -221,6 +226,7 @@ function UserMessage({
   onBranch: () => void
   onRetry?: (id: string) => void
   onExport: () => void
+  readOnly?: boolean
 }): React.JSX.Element {
   const { t } = useTranslation()
   const editRef = useRef<HTMLTextAreaElement>(null)
@@ -317,12 +323,16 @@ function UserMessage({
         {/* Actions */}
         <div className="mt-1 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <ActionButton icon={<Copy size={11} />} onClick={onCopy} title={t('common.copy')} />
-          <ActionButton icon={<Edit3 size={11} />} onClick={onEdit} title={t('chat.message.editAndResend')} />
-          <ActionButton icon={<GitBranch size={11} />} onClick={onBranch} title={t('chat.message.branchFromHere')} />
+          {!readOnly && (
+            <>
+              <ActionButton icon={<Edit3 size={11} />} onClick={onEdit} title={t('chat.message.editAndResend')} />
+              <ActionButton icon={<GitBranch size={11} />} onClick={onBranch} title={t('chat.message.branchFromHere')} />
+            </>
+          )}
           {onRetry && (
             <ActionButton icon={<RotateCcw size={11} />} onClick={() => onRetry(message.id)} title={t('common.retry')} />
           )}
-          <ActionButton icon={<Download size={11} />} onClick={onExport} title={t('common.export')} />
+          {!readOnly && <ActionButton icon={<Download size={11} />} onClick={onExport} title={t('common.export')} />}
         </div>
       </div>
     </div>

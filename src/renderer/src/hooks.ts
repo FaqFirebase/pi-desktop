@@ -179,9 +179,11 @@ export function useChatVisible(): boolean {
  * diff pane while the chat is visible, or the Diff view. The main process
  * watches the workspace only while this holds.
  */
-export function isFileWatchDemanded(scope: ChatVisibilityScope & { chatSidePanel: 'files' | 'diff' | null }): boolean {
+export function isFileWatchDemanded(scope: ChatVisibilityScope & { chatSidePanel: 'files' | 'diff' | 'tasks' | null }): boolean {
   if (isGlobalWorkflowOpen(scope)) return false
-  return scope.currentView === 'diff' || (scope.currentView === 'chat' && scope.chatSidePanel !== null)
+  if (scope.currentView === 'diff') return true
+  // The Tasks panel reads no workspace files, so it does not demand the watcher.
+  return scope.currentView === 'chat' && (scope.chatSidePanel === 'files' || scope.chatSidePanel === 'diff')
 }
 
 /**

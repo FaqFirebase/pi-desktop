@@ -19,6 +19,19 @@ import { pathsEqual } from '../../shared/path-compare'
 import { EDITED_TITLE_MAX_CHARS, sessionPreview, stripInjectedPreamble, truncateTitle } from '../../shared/session-preview'
 import { validateModelsConfig, mergeModelsConfig, type ModelsConfig } from '../../shared/models-config'
 import {
+  applyOmpLifecycle,
+  applyOmpProgress,
+  applyOmpSubagentList,
+  applySubagentToolEvent,
+  isSubagentTool,
+  PI_ASYNC_WIDGET_KEY,
+  replacePiAsyncRuns,
+  tasksFromPiAsyncWidget,
+  type SubagentTask,
+  type SubagentTaskStatus,
+  type SubagentToolEvent,
+} from '../../shared/subagent-task'
+import {
   resolveActiveMembers,
   hasQuorum,
   buildImplementationPrompt,
@@ -304,7 +317,7 @@ interface AppState {
   // Chat side panel: which secondary view (file tree or diff) is open in
   // the chat workspace. Lifted into the store so it survives navigating
   // away from chat (e.g. into Settings) and back.
-  chatSidePanel: 'files' | 'diff' | null
+  chatSidePanel: 'files' | 'diff' | 'tasks' | null
   sidebarOpen: boolean
   terminalOpen: boolean
   reviewOpen: boolean
@@ -335,29 +348,12 @@ interface AppState {
   workflowRuns: WorkflowRunSummary[]
   // Extension status entries (setStatus fire-and-forget). Keyed by statusKey.
   extensionStatuses: Record<string, string>
-  // Live subagent progress from tool_execution_update events (subagent tool).
-  subagentProgress: Array<{
-    toolCallId: string
-    agent: string
-    status: string
-    task: string
-    toolCount: number
-    tokens: number
-    turnCount?: number
-    durationMs: number
-    currentTool?: string
-    /** Parallel/chain children when the tool streams a progress list. */
-    children?: Array<{
-      id: string
-      agent: string
-      status: string
-      task: string
-      toolCount: number
-      tokens: number
-      durationMs: number
-      currentTool?: string
-    }>
-  }>
+  // Subagent rows shared by the Tasks panel, the rail badge and the composer strip.
+  subagentTasks: SubagentTask[]
+  // OMP answered get_subagents: its rows come from subagent events, not tool events.
+  subagentEventsSupported: boolean
+  // Row open in the Tasks panel's transcript view; null shows the list.
+  selectedSubagentTaskId: string | null
 
   // App-level confirmation dialog (themed replacement for window.confirm)
   confirmRequest: ConfirmRequest | null
@@ -492,6 +488,9 @@ interface AppActions {
   openSessionItem: (session: SessionListItem) => Promise<void>
   reloadActiveSession: (options?: { refreshList?: boolean }) => Promise<void>
   refreshSessionState: () => Promise<void>
+  refreshSubagentTasks: () => Promise<void>
+  selectSubagentTask: (id: string | null) => void
+  setSubagentTaskStatus: (id: string, status: SubagentTaskStatus) => void
   refreshSessionStats: () => Promise<void>
   refreshSessionList: () => Promise<void>
   setSessionName: (name: string) => Promise<void>
@@ -1020,7 +1019,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   workspaceActivity: {},
   workflowRuns: [],
   extensionStatuses: {},
-  subagentProgress: [],
+  subagentTasks: [],
+  subagentEventsSupported: false,
+  selectedSubagentTaskId: null,
   confirmRequest: null,
 
   workspaces: [],
@@ -1189,7 +1190,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   clearMessages: () => {
     historyLoadId += 1
     historyLoadingRuntime = null
-    set({ messages: [], promptHistory: [], subagentProgress: [], ...idleTurnState() })
+    set({
+      messages: [],
+      promptHistory: [],
+      subagentTasks: [],
+      subagentEventsSupported: false,
+      selectedSubagentTaskId: null,
+      ...idleTurnState(),
+    })
   },
 
   // Append a sent prompt to the recall history. Ignores blanks and consecutive
@@ -1858,12 +1866,39 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         const resp = response as { success?: boolean; data?: SessionState }
         if (resp.success && resp.data) {
           set({ sessionState: resp.data })
+          void get().refreshSubagentTasks()
         }
       }
     } catch {
       // Silent failure
     }
   },
+
+  // Seed OMP's running subagents and learn whether OMP reports them by event.
+  // Called with every session-state refresh, so a chat switch re-seeds it.
+  refreshSubagentTasks: async () => {
+    const gen = sessionLoadGeneration
+    const runtimeId = get().activeSessionRuntimeId
+    try {
+      const result = await window.piDesktop.subagents.list()
+      if (gen !== sessionLoadGeneration || runtimeId !== get().activeSessionRuntimeId) return
+      set((state) => ({
+        subagentEventsSupported: result.supported,
+        subagentTasks: result.supported ? applyOmpSubagentList(state.subagentTasks, result.tasks) : state.subagentTasks,
+      }))
+    } catch {
+      // No list: the rows the events and tools gave stay as they are.
+    }
+  },
+
+  selectSubagentTask: (id) => set({ selectedSubagentTaskId: id }),
+
+  setSubagentTaskStatus: (id, status) =>
+    set((state) => ({
+      subagentTasks: state.subagentTasks.map((task) =>
+        task.id === id && task.status !== status ? { ...task, status, currentTool: undefined } : task
+      ),
+    })),
 
   refreshSessionStats: async () => {
     try {
@@ -2458,6 +2493,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         if (!(event as { agentInvoked?: unknown }).agentInvoked) endTurnWithoutAgent(set, get)
         break
 
+      case 'subagent_lifecycle':
+        set((state) => ({ subagentTasks: applyOmpLifecycle(state.subagentTasks, event.payload) }))
+        break
+
+      case 'subagent_progress':
+        set((state) => ({ subagentTasks: applyOmpProgress(state.subagentTasks, event.payload) }))
+        break
+
       case 'config_update':
         void get().refreshSessionState()
         break
@@ -2470,7 +2513,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         } else if (uiEvent.method === 'cancel') {
           set((state) => state.extensionUiRequest?.id === uiEvent.targetId ? { extensionUiRequest: null } : state)
         } else if (uiEvent.method === 'setWidget') {
-          // Fire-and-forget: no renderer surface consumes widget lines yet.
+          // pi-subagents reports background runs as one JSON line. Its inspect
+          // replies are consumed in main; other widgets have no surface yet.
+          if (uiEvent.widgetKey === PI_ASYNC_WIDGET_KEY) {
+            const snapshot = tasksFromPiAsyncWidget(uiEvent.widgetLines)
+            if (snapshot) set((state) => ({ subagentTasks: replacePiAsyncRuns(state.subagentTasks, snapshot) }))
+          }
         } else if (uiEvent.method === 'setStatus') {
           set((state) => {
             const key = uiEvent.statusKey ?? 'default'
@@ -3757,9 +3805,27 @@ function handleTurnComplete(
       streamingContent: '',
       streamingThinking: '',
       streamingToolCalls: completeTools ? new Map() : pendingTools,
-      subagentProgress: completeTools ? [] : state.subagentProgress,
     }
   })
+}
+
+/**
+ * Spawn-tool events feed the subagent rows, except under an OMP that reports
+ * subagents by event: its `task` tool returns at once while the agents run on,
+ * so the tool end would mark them done too early. Null: no change.
+ */
+function subagentTasksAfterTool(
+  state: AppState,
+  toolName: string,
+  event: Omit<SubagentToolEvent, 'source'>
+): SubagentTask[] | null {
+  if (!isSubagentTool(toolName)) return null
+  if (state.piEngine === 'omp' && state.subagentEventsSupported) return null
+  const next = applySubagentToolEvent(state.subagentTasks, {
+    ...event,
+    source: state.piEngine === 'omp' ? 'omp' : 'pi-subagents',
+  })
+  return next === state.subagentTasks ? null : next
 }
 
 function handleToolStart(
@@ -3774,26 +3840,14 @@ function handleToolStart(
       isExecuting: true,
       startedAt: Date.now(),
     })
-    // Track subagent calls in subagentProgress
-    if (isSubagentTool(event.toolName)) {
-      const args = event.args as Record<string, unknown>
-      const agent = subagentAgentName(args)
-      const task = subagentTaskText(args)
-      const newProgress = {
-        toolCallId: event.toolCallId,
-        agent,
-        status: 'running',
-        task: task.slice(0, 120),
-        toolCount: 0,
-        tokens: 0,
-        durationMs: 0,
-      }
-      return {
-        streamingToolCalls: newMap,
-        subagentProgress: [...state.subagentProgress, newProgress],
-      }
-    }
-    return { streamingToolCalls: newMap }
+    const subagentTasks = subagentTasksAfterTool(state, event.toolName, {
+      toolCallId: event.toolCallId,
+      args: event.args,
+      details: undefined,
+      phase: 'start',
+      isError: false,
+    })
+    return subagentTasks ? { streamingToolCalls: newMap, subagentTasks } : { streamingToolCalls: newMap }
   })
 }
 
@@ -3814,24 +3868,14 @@ function handleToolUpdate(
       result: text || existing?.result,
     })
 
-    // Update subagent progress from details
-    if (isSubagentTool(event.toolName)) {
-      const details = event.partialResult.details as Record<string, unknown> | undefined
-      const progressList = details?.progress as Array<Record<string, unknown>> | undefined
-      const results = details?.results as Array<Record<string, unknown>> | undefined
-      if (progressList || results) {
-        const newProgress = state.subagentProgress.map((p) => {
-          if (p.toolCallId !== event.toolCallId) return p
-          return {
-            ...p,
-            ...aggregateSubagentDetails(p, progressList, results),
-          }
-        })
-        return { streamingToolCalls: newMap, subagentProgress: newProgress }
-      }
-    }
-
-    return { streamingToolCalls: newMap }
+    const subagentTasks = subagentTasksAfterTool(state, event.toolName, {
+      toolCallId: event.toolCallId,
+      args: event.args,
+      details: event.partialResult.details,
+      phase: 'update',
+      isError: false,
+    })
+    return subagentTasks ? { streamingToolCalls: newMap, subagentTasks } : { streamingToolCalls: newMap }
   })
 }
 
@@ -3857,165 +3901,21 @@ function handleToolEnd(
       })
     }
 
-    // Finalize subagent progress: mark done and capture final stats
-    const newProgress = state.subagentProgress.map((p) => {
-      if (p.toolCallId !== event.toolCallId) return p
-      const details = isSubagentTool(event.toolName)
-        ? (event.result.details as Record<string, unknown> | undefined)
-        : undefined
-      const progressList = details?.progress as Array<Record<string, unknown>> | undefined
-      const results = details?.results as Array<Record<string, unknown>> | undefined
-      const agg = aggregateSubagentDetails(p, progressList, results)
-      const elapsed =
-        agg.durationMs ||
-        (p.durationMs > 0 ? p.durationMs : existing?.startedAt ? Date.now() - existing.startedAt : 0)
-
-      return {
-        ...p,
-        ...agg,
-        status: event.isError ? 'error' : 'done',
-        durationMs: elapsed,
-        currentTool: undefined,
-      }
+    const subagentTasks = subagentTasksAfterTool(state, event.toolName, {
+      toolCallId: event.toolCallId,
+      args: undefined,
+      details: event.result.details,
+      phase: 'end',
+      isError: event.isError,
     })
 
     return {
       streamingToolCalls: newMap,
-      subagentProgress: newProgress,
+      ...(subagentTasks ? { subagentTasks } : {}),
       // A tool that started before a mid-turn return lives only in history.
       ...(existing ? {} : { messages: settleRunningToolCall(state.messages, event.toolCallId, event.isError) }),
     }
   })
-}
-
-/** Fold tool details.progress / results into a single progress row (+ children). */
-/**
- * Tool names that spawn a subagent.
- *
- * Pi delegates through the `pi-subagents` package, which registers `subagent`
- * and `subagent_wait`. OMP has delegation built in and groups it under
- * coordination as `task` (delegate one) and `hub` (fan out to several); `hub`
- * is what a plain "use the reviewer agent" request actually calls, observed on
- * the wire. The strip keyed off the Pi names only, so under OMP it stayed
- * empty while five reviewers really were running.
- */
-const SUBAGENT_TOOL_NAMES: ReadonlySet<string> = new Set(['subagent', 'subagent_wait', 'task', 'hub'])
-
-export function isSubagentTool(toolName: string): boolean {
-  return SUBAGENT_TOOL_NAMES.has(toolName)
-}
-
-/**
- * First non-empty string among `keys`, or null.
- *
- * The two engines label a spawn with different argument names and OMP's schema
- * is not published anywhere this code can read, so the label is resolved by
- * trying the plausible keys rather than hard-coding one engine's spelling. A
- * miss costs a generic label, never a missing progress row.
- */
-function firstStringArg(args: Record<string, unknown> | undefined, keys: readonly string[]): string | null {
-  if (!args) return null
-  for (const key of keys) {
-    const value = args[key]
-    if (typeof value === 'string' && value.trim()) return value
-  }
-  return null
-}
-
-/** Which agent a spawn targets. Both engines have used `agent`; the rest are fallbacks. */
-export function subagentAgentName(args: Record<string, unknown> | undefined): string {
-  return firstStringArg(args, ['agent', 'agentType', 'subagent_type', 'name', 'type']) ?? 'subagent'
-}
-
-/** The instruction given to the spawn, used as the row's caption. */
-export function subagentTaskText(args: Record<string, unknown> | undefined): string {
-  return firstStringArg(args, ['task', 'prompt', 'description', 'instructions', 'message']) ?? ''
-}
-
-function aggregateSubagentDetails(
-  prev: AppState['subagentProgress'][number],
-  progressList: Array<Record<string, unknown>> | undefined,
-  results: Array<Record<string, unknown>> | undefined
-): Partial<AppState['subagentProgress'][number]> {
-  let toolCount = 0
-  let tokens = 0
-  let durationMs = 0
-  let currentTool: string | undefined
-  const statuses: string[] = []
-  const children: NonNullable<AppState['subagentProgress'][number]['children']> = []
-
-  if (progressList) {
-    progressList.forEach((prog, index) => {
-      const tc = typeof prog.toolCount === 'number' ? prog.toolCount : 0
-      const tok = typeof prog.tokens === 'number' ? prog.tokens : 0
-      const dur = typeof prog.durationMs === 'number' ? prog.durationMs : 0
-      toolCount += tc
-      tokens += tok
-      durationMs = Math.max(durationMs, dur)
-      if (typeof prog.status === 'string') statuses.push(prog.status)
-      const tool =
-        typeof prog.currentTool === 'string'
-          ? prog.currentTool
-          : typeof prog.tool === 'string'
-            ? prog.tool
-            : undefined
-      if (tool) currentTool = tool
-
-      const agent =
-        typeof prog.agent === 'string'
-          ? prog.agent
-          : typeof prog.name === 'string'
-            ? prog.name
-            : prev.agent
-      const task =
-        typeof prog.task === 'string'
-          ? prog.task
-          : typeof prog.label === 'string'
-            ? prog.label
-            : ''
-      const st = typeof prog.status === 'string' ? prog.status : 'running'
-      const id =
-        typeof prog.id === 'string'
-          ? prog.id
-          : typeof prog.runId === 'string'
-            ? prog.runId
-            : `${prev.toolCallId}-${index}`
-
-      children.push({
-        id,
-        agent,
-        status: st === 'completed' || st === 'done' ? 'done' : st === 'failed' || st === 'error' ? 'error' : 'running',
-        task: task.slice(0, 160),
-        toolCount: tc,
-        tokens: tok,
-        durationMs: dur,
-        currentTool: tool,
-      })
-    })
-  }
-
-  if (results) {
-    for (const r of results) {
-      const usage = r.usage as Record<string, number> | undefined
-      if (usage) {
-        tokens += (usage.input ?? 0) + (usage.output ?? 0)
-      }
-    }
-  }
-
-  const running = statuses.some((s) => s === 'running' || s === 'starting')
-  const allDone =
-    statuses.length > 0 &&
-    statuses.every((s) => s === 'completed' || s === 'failed' || s === 'done' || s === 'error' || s === 'stopped')
-
-  return {
-    status: allDone ? 'done' : running ? 'running' : prev.status,
-    toolCount: toolCount || prev.toolCount,
-    tokens: tokens || prev.tokens,
-    durationMs: durationMs || prev.durationMs,
-    currentTool,
-    children: children.length > 0 ? children : prev.children,
-  }
 }
 
 function handleQueueUpdate(

@@ -3,7 +3,8 @@ import { activeShortcuts } from '../utils/app-shortcuts'
 import { formatShortcut } from '../../../shared/keyboard-shortcuts'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
-import { FolderTree, GitCompare, Terminal, ShieldCheck } from 'lucide-react'
+import { FolderTree, GitCompare, ListChecks, Terminal, ShieldCheck } from 'lucide-react'
+import { countRunningSubagentTasks } from '../../../shared/subagent-task'
 
 export function ChatToolRail(): React.JSX.Element {
   const { t } = useTranslation()
@@ -12,6 +13,7 @@ export function ChatToolRail(): React.JSX.Element {
   const sidePanel = useAppStore((state) => state.chatSidePanel)
   const diffShortcut = useAppStore((state) => activeShortcuts(state).diff)
   const setSidePanel = useAppStore((state) => state.setChatSidePanel)
+  const runningSubagents = useAppStore((state) => countRunningSubagentTasks(state.subagentTasks))
 
   return (
     <nav className="flex w-10 shrink-0 flex-col items-center gap-1 border-l border-border bg-app py-2">
@@ -36,6 +38,13 @@ export function ChatToolRail(): React.JSX.Element {
           : t('chat.toolbar.diffViewer')}
       />
       <RailButton
+        icon={<ListChecks size={16} />}
+        active={sidePanel === 'tasks'}
+        onClick={() => void setSidePanel(sidePanel === 'tasks' ? null : 'tasks')}
+        title={t('chat.toolbar.subagents')}
+        badge={runningSubagents}
+      />
+      <RailButton
         icon={<Terminal size={16} />}
         active={terminalOpen}
         onClick={() => useAppStore.getState().toggleTerminal()}
@@ -50,11 +59,13 @@ function RailButton({
   active,
   onClick,
   title,
+  badge,
 }: {
   icon: React.ReactNode
   active: boolean
   onClick: () => void
   title: string
+  badge?: number
 }): React.JSX.Element {
   return (
     <button
@@ -71,6 +82,11 @@ function RailButton({
       title={title}
     >
       {icon}
+      {badge !== undefined && badge > 0 && (
+        <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-accent-bg px-0.5 text-[9px] font-semibold leading-none text-accent-fg tabular-nums">
+          {badge}
+        </span>
+      )}
     </button>
   )
 }

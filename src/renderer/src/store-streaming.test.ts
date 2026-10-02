@@ -20,7 +20,7 @@ beforeEach(() => {
     streamingContent: '',
     streamingThinking: '',
     streamingToolCalls: new Map(),
-    subagentProgress: [],
+    subagentTasks: [],
     reattachedMidTurn: false,
   })
 })
@@ -81,7 +81,7 @@ test('one completed tool does not clear another running tool or its subagent pro
 
   assert.equal(useAppStore.getState().streamingToolCalls.get('agent-1')?.isExecuting, true)
   assert.equal(useAppStore.getState().streamingToolCalls.get('read-1')?.result, 'file contents')
-  assert.equal(useAppStore.getState().subagentProgress[0]?.status, 'running')
+  assert.equal(useAppStore.getState().subagentTasks[0]?.status, 'running')
   assert.equal(useAppStore.getState().timelineEvents.some((event) => event.type === 'assistant_message'), false)
 
   emit({
@@ -105,7 +105,7 @@ test('one completed tool does not clear another running tool or its subagent pro
     'file contents', 'Review complete',
   ])
   assert.equal(state.streamingToolCalls.size, 0)
-  assert.equal(state.subagentProgress.length, 0)
+  assert.equal(state.subagentTasks[0]?.status, 'done')
   assert.equal(state.isStreaming, true)
 
   update({ type: 'text_delta', delta: 'All checked.' })

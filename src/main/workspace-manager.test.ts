@@ -7,6 +7,7 @@ import { tmpdir } from 'os'
 import { join, resolve } from 'path'
 import {
   WHOLE_WORKSPACE_CHANGE_PATH,
+  type AgentEngineKind,
   type PiProcessStatus,
   type PiStartOptions,
   type SessionRuntimeCloseResult,
@@ -439,6 +440,36 @@ test('a session starts on the engine that owns its store, not the configured def
       const freshProcess = fakePiProcess(freshManager, 603, 'stopped')
       await mgr.startSessionRuntime(fresh.runtimeId)
       assert.equal(freshProcess.lastStartOptions?.engine, undefined)
+    })
+  })
+})
+
+test('an OMP session subscribes to subagent progress when it starts; a Pi session does not', async () => {
+  await freshDataDir()
+
+  await withSessionStores(async (roots) => {
+    await withManager(async (mgr) => {
+      const workspace = await mgr.createWorkspace('Alpha', await project())
+      const cases: Array<{ engine: AgentEngineKind; file: string; pid: number }> = [
+        { engine: 'omp', file: 'omp.jsonl', pid: 611 },
+        { engine: 'pi', file: 'pi.jsonl', pid: 612 },
+      ]
+      for (const { engine, file, pid } of cases) {
+        const path = await storedSession(engine === 'omp' ? roots.omp : roots.pi, file, { type: 'session', id: engine })
+        const runtime = await mgr.activateSession(workspace.id, path)
+        const manager = mgr.getActivePiManager()
+        assert.ok(manager)
+        fakePiProcess(manager, pid, 'stopped')
+        const sent: Array<Record<string, unknown>> = []
+        manager.getEngineKind = () => engine
+        manager.sendCommand = async (command) => {
+          sent.push(command)
+          return null
+        }
+        await mgr.startSessionRuntime(runtime.runtimeId, { sessionPath: path })
+        const subscribed = sent.some((command) => command.type === 'set_subagent_subscription' && command.level === 'progress')
+        assert.equal(subscribed, engine === 'omp', engine)
+      }
     })
   })
 })

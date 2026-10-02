@@ -26,6 +26,7 @@ import { registerDiagnosticsHandlers } from './ipc/diagnostics-handlers'
 import { registerVoiceHandlers } from './ipc/voice-handlers'
 import { registerTypeSafeHandlers } from './ipc/typesafe-handlers'
 import { registerWorkflowHandlers } from './ipc/workflow-handlers'
+import { registerSubagentHandlers } from './ipc/subagent-handlers'
 import { wireWorkspaceActivity, type WindowControls } from './ipc/workspace-activity-wiring'
 import type { WorkspaceTerminals } from './workspace-terminals'
 
@@ -71,6 +72,7 @@ export function registerIpcHandlers(
   registerUpdateHandlers()
   registerDiagnosticsHandlers(ctx)
   registerWorkflowHandlers(ctx)
+  registerSubagentHandlers(ctx)
   registerVoiceHandlers(ctx)
   registerTypeSafeHandlers()
 

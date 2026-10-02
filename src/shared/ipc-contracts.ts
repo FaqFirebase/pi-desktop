@@ -97,6 +97,10 @@ export const IPC_CHANNELS = {
   WORKFLOW_CONTROL: 'workflow:control',
   WORKFLOW_SET_PERSISTENCE: 'workflow:set-persistence',
 
+  // Subagent panel
+  SUBAGENT_LIST: 'subagent:list',
+  SUBAGENT_GET_TRANSCRIPT: 'subagent:get-transcript',
+
   // Diagnostics
   DIAGNOSTICS_GET: 'diagnostics:get',
 
@@ -777,6 +781,18 @@ export interface PiConfigUpdateEvent {
   thinkingLevel?: string
 }
 
+/** OMP subagent start/finish, pushed after `set_subagent_subscription`. */
+export interface PiSubagentLifecycleEvent {
+  type: 'subagent_lifecycle'
+  payload: unknown
+}
+
+/** OMP subagent progress, pushed at subscription level `progress`. */
+export interface PiSubagentProgressEvent {
+  type: 'subagent_progress'
+  payload: unknown
+}
+
 export type PiRpcEvent =
   | PiAgentStartEvent
   | PiAgentEndEvent
@@ -803,6 +819,8 @@ export type PiRpcEvent =
   | PiCommandOutputEvent
   | PiPromptResultEvent
   | PiConfigUpdateEvent
+  | PiSubagentLifecycleEvent
+  | PiSubagentProgressEvent
 
 // ─── Model Types ────────────────────────────────────────────────────────────
 

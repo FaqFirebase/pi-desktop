@@ -26,6 +26,7 @@ import { NowContext } from '../utils/relative-time'
 import { FileTree, FileSearch, FilePreview } from './file-tree'
 import { ImageViewer } from './image-viewer'
 import { DiffViewer } from './diff-viewer'
+import { SubagentPanel } from './subagent-panel'
 import { TerminalPanel } from './terminal'
 import { isFileWatchDemanded, useChatScroll, useChatVisible, useChatWidth } from '../hooks'
 import { messageColumnClass } from '../utils/chat-width'
@@ -144,9 +145,12 @@ export function ChatPanel(): React.JSX.Element {
 
   const showSidePanel = sidePanel !== null || previewTarget !== null
   const showFileTree = sidePanel === 'files'
-  const showImage = previewTarget?.kind === 'image' && sidePanel !== 'diff'
-  const showEditor = previewTarget?.kind === 'code' && sidePanel !== 'diff'
+  // The diff and the Tasks panel take the whole side slot; previews wait behind them.
+  const previewAllowed = sidePanel !== 'diff' && sidePanel !== 'tasks'
+  const showImage = previewTarget?.kind === 'image' && previewAllowed
+  const showEditor = previewTarget?.kind === 'code' && previewAllowed
   const showDiff = sidePanel === 'diff'
+  const showTasks = sidePanel === 'tasks'
   const sidePanes = { showFileTree, showEditor, showImage }
   const paneLayout = resolvePaneLayout(
     panelRowWidth,
@@ -238,6 +242,11 @@ export function ChatPanel(): React.JSX.Element {
         {showDiff && (
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <DiffViewer onClose={() => setSidePanel(null)} />
+          </div>
+        )}
+        {showTasks && (
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <SubagentPanel onClose={() => setSidePanel(null)} />
           </div>
         )}
         {showEditor && (

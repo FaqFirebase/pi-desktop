@@ -14,7 +14,7 @@ const WORKSPACE_ID = 'ws-1'
 let isGlobalWorkflowOpen: (scope: WorkflowPanelScope) => boolean
 let isAbortShortcut: (event: { key: string; defaultPrevented: boolean }, isStreaming: boolean) => boolean
 let isFileWatchDemanded: (
-  scope: WorkflowPanelScope & { currentView: string; chatSidePanel: 'files' | 'diff' | null }
+  scope: WorkflowPanelScope & { currentView: string; chatSidePanel: 'files' | 'diff' | 'tasks' | null }
 ) => boolean
 let sessionTabToClose: (
   state: WorkflowPanelScope & { currentView: string; activeSessionRuntimeId: string | null }
@@ -39,6 +39,8 @@ test('the workspace is watched only while a files or diff panel is on screen', (
   assert.equal(isFileWatchDemanded({ ...chat, chatSidePanel: 'files' }), true)
   assert.equal(isFileWatchDemanded({ ...chat, chatSidePanel: 'diff' }), true)
   assert.equal(isFileWatchDemanded({ ...chat, chatSidePanel: null }), false)
+  // The Tasks panel reads no workspace files, so it must not start the watcher.
+  assert.equal(isFileWatchDemanded({ ...chat, chatSidePanel: 'tasks' }), false)
   // The chat's panes stay mounted behind another view, but nobody sees them.
   assert.equal(isFileWatchDemanded({ ...NO_WORKFLOW_PANEL, currentView: 'settings', chatSidePanel: 'diff' }), false)
   assert.equal(isFileWatchDemanded({ ...NO_WORKFLOW_PANEL, currentView: 'diff', chatSidePanel: null }), true)

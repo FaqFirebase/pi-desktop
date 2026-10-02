@@ -31,6 +31,7 @@ import {
 } from './git-worktree'
 import { extractGitHubPullRequestUrl, resolvePullRequestHeadBranch } from './git-conveyor'
 import { t, tEnglish } from '../shared/i18n'
+import { OMP_SUBAGENT_SUBSCRIPTION_LEVEL } from '../shared/subagent-task'
 
 /**
  * Manages project workspaces and their independent Pi session runtimes.
@@ -615,6 +616,13 @@ export class WorkspaceManager {
     // emit the now-detached entry after the closed marker was broadcast.
     if (this.sessionRuntimes.get(runtimeId) !== entry) {
       return { ...entry.info, ...entry.manager.getStatus(), active: false, closed: true }
+    }
+    // OMP pushes subagent lifecycle and progress only after this; an OMP build
+    // without the command answers with an error, which is ignored here.
+    if (entry.manager.getEngineKind() === 'omp') {
+      await entry.manager
+        .sendCommand({ type: 'set_subagent_subscription', level: OMP_SUBAGENT_SUBSCRIPTION_LEVEL })
+        .catch(() => null)
     }
     const response = await entry.manager.sendCommand({ type: 'get_state' }).catch(() => null)
     if (this.sessionRuntimes.get(runtimeId) !== entry) {
