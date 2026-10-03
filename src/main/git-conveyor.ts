@@ -1,5 +1,7 @@
-import { access, realpath } from 'fs/promises'
-import { isAbsolute, relative, resolve, sep } from 'path'
+import { access, mkdtemp, realpath, rm } from 'fs/promises'
+import { createHash } from 'crypto'
+import { tmpdir } from 'os'
+import { isAbsolute, join, relative, resolve, sep } from 'path'
 import { spawn } from 'child_process'
 import { inspectGitRepository, isMissingRepositoryError, runGit } from './git-worktree'
 import type {
@@ -7,11 +9,31 @@ import type {
   GitConveyorPullRequestOptions,
   GitConveyorPullRequestResult,
   GitConveyorStatus,
+  GitOpenPullRequest,
 } from '../shared/ipc-contracts'
 import { t } from '../shared/i18n'
+import { GIT_COMMIT_MESSAGE_CONFIG } from '../shared/default-settings'
 
 const COMMAND_TIMEOUT_MS = 30_000
-const MAX_COMMIT_MESSAGE_LENGTH = 200
+
+/**
+ * Words of a subprocess command line kept in its error text (`gh pr create`).
+ * The rest can hold a pull request title and body, which must never be shown
+ * glued to the error.
+ */
+const COMMAND_LABEL_WORDS = 3
+
+/** The status poll asks GitHub again for the branch's open pull request after this long. */
+export const OPEN_PULL_REQUEST_CACHE_TTL_MS = 60_000
+
+/** A lookup that GitHub does not answer in time reports no pull request instead of slowing the status poll. */
+const OPEN_PULL_REQUEST_LOOKUP_TIMEOUT_MS = 10_000
+
+/** Open pull requests `gh pr list` returns per branch; forks can share a branch name. */
+const OPEN_PULL_REQUEST_LOOKUP_LIMIT = 20
+
+/** Remote a branch pushes to when nothing else is configured. */
+const DEFAULT_PUSH_REMOTE = 'origin'
 
 /** Status of a workspace folder that Git does not track. */
 const NOT_A_REPOSITORY_STATUS: GitConveyorStatus = Object.freeze({
@@ -19,14 +41,28 @@ const NOT_A_REPOSITORY_STATUS: GitConveyorStatus = Object.freeze({
   head: '',
   lastCommitMessage: null,
   dirtyFiles: 0,
+  dirtyTrackedFiles: 0,
   ahead: 0,
   behind: 0,
   hasUpstream: false,
   pushRemote: null,
   upstreamBranch: null,
   baseBranch: null,
+  aheadOfBase: null,
   remoteUrl: null,
+  pullRequestRepo: null,
+  openPullRequest: null,
 })
+
+/** `git status --porcelain` marks an untracked file with this row prefix. */
+const UNTRACKED_PORCELAIN_PREFIX = '??'
+
+/**
+ * Default branch names tried, in order, when a remote has no recorded HEAD
+ * (a remote added by hand instead of cloned). Only names the remote actually
+ * has are used.
+ */
+const CONVENTIONAL_BASE_BRANCHES = ['main', 'master'] as const
 
 const GIT_OPERATION_MARKERS = [
   ['MERGE_HEAD', 'merge'],
@@ -42,8 +78,17 @@ interface UpstreamConfig {
   branch: string
 }
 
+function porcelainRows(status: string): string[] {
+  return status.split(/\r?\n/).filter((line) => line.trim().length > 0)
+}
+
 export function countPorcelainFiles(status: string): number {
-  return status.split(/\r?\n/).filter((line) => line.trim().length > 0).length
+  return porcelainRows(status).length
+}
+
+/** Changed rows Git tracks: staged or unstaged edits, deletions, and renames. */
+export function countTrackedPorcelainFiles(status: string): number {
+  return porcelainRows(status).filter((row) => !row.startsWith(UNTRACKED_PORCELAIN_PREFIX)).length
 }
 
 export function parseAheadBehind(value: string | null): { ahead: number; behind: number } {
@@ -81,7 +126,12 @@ export function githubRepoFromRemote(remote: string | null): string | null {
   return match?.[1] ?? null
 }
 
-function runCommand(file: string, args: readonly string[], cwd: string): Promise<string> {
+/** The command as the user reads it in an error: the program and its subcommand, no arguments. */
+export function commandLabel(file: string, args: readonly string[]): string {
+  return [file, ...args].slice(0, COMMAND_LABEL_WORDS).join(' ')
+}
+
+function runCommand(file: string, args: readonly string[], cwd: string, timeoutMs = COMMAND_TIMEOUT_MS): Promise<string> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(file, [...args], {
       cwd,
@@ -90,11 +140,11 @@ function runCommand(file: string, args: readonly string[], cwd: string): Promise
     })
     let stdout = ''
     let stderr = ''
-    const command = `${file} ${args.join(' ')}`
+    const command = commandLabel(file, args)
     const timer = setTimeout(() => {
       child.kill()
       reject(new Error(t('errors.git.subprocessTimedOut', { command })))
-    }, COMMAND_TIMEOUT_MS)
+    }, timeoutMs)
     child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf8') })
     child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8') })
     child.once('error', (error) => {
@@ -120,6 +170,10 @@ async function gitConfig(cwd: string, key: string): Promise<string | null> {
     .catch(() => null)
 }
 
+async function remoteUrlFor(cwd: string, remote: string | null): Promise<string | null> {
+  return remote ? gitConfig(cwd, `remote.${remote}.url`) : null
+}
+
 async function branchRemote(cwd: string, branch: string): Promise<string | null> {
   return gitConfig(cwd, `branch.${branch}.remote`)
 }
@@ -133,13 +187,40 @@ async function resolveUpstream(cwd: string, branch: string): Promise<UpstreamCon
   return { remote, branch: merge.slice('refs/heads/'.length) }
 }
 
+/**
+ * True when the branch's upstream has a remote-tracking ref. A clone of an
+ * empty repository, or a branch whose remote branch was deleted, keeps the
+ * upstream in its config while the ref is gone: that branch is not published.
+ */
+async function hasPublishedUpstream(cwd: string): Promise<boolean> {
+  return runGit(['rev-parse', '--verify', '--quiet', '@{upstream}'], cwd).then(() => true, () => false)
+}
+
 async function defaultBranchForRemote(cwd: string, remote: string | null): Promise<string | null> {
   if (!remote || remote === '.') return null
   const ref = await runGit(['symbolic-ref', '--quiet', '--short', `refs/remotes/${remote}/HEAD`], cwd)
     .then((result) => result.stdout.trim())
     .catch(() => '')
   const prefix = `${remote}/`
-  return ref.startsWith(prefix) ? ref.slice(prefix.length) : null
+  if (ref.startsWith(prefix)) return ref.slice(prefix.length)
+  for (const branch of CONVENTIONAL_BASE_BRANCHES) {
+    const exists = await runGit(['rev-parse', '--verify', '--quiet', remoteBranchRef(remote, branch)], cwd)
+      .then(() => true, () => false)
+    if (exists) return branch
+  }
+  return null
+}
+
+function remoteBranchRef(remote: string, branch: string): string {
+  return `refs/remotes/${remote}/${branch}`
+}
+
+/** Commits on HEAD that `remote`/`branch` lacks, or null when that ref is unknown. */
+async function countCommitsAheadOf(cwd: string, remote: string | null, branch: string | null): Promise<number | null> {
+  if (!remote || !branch) return null
+  return runGit(['rev-list', '--count', `${remoteBranchRef(remote, branch)}..HEAD`], cwd)
+    .then((result) => Number(result.stdout.trim()))
+    .catch(() => null)
 }
 
 async function activeGitOperation(cwd: string): Promise<string | null> {
@@ -175,10 +256,150 @@ function isPathWithin(base: string, candidate: string): boolean {
  */
 async function stagedPaths(cwd: string): Promise<string[]> {
   const [worktreeRoot, output] = await Promise.all([
-    runGit(['rev-parse', '--show-toplevel'], cwd).then((result) => realpath(result.stdout.trim())),
+    physicalWorktreeRoot(cwd),
     runGit(['diff', '--cached', '--name-only', '-z'], cwd).then((result) => result.stdout),
   ])
   return output.split('\0').filter(Boolean).map((path) => resolve(worktreeRoot, path))
+}
+
+async function physicalWorktreeRoot(cwd: string): Promise<string> {
+  return realpath((await runGit(['rev-parse', '--show-toplevel'], cwd)).stdout.trim())
+}
+
+interface SelectedPaths {
+  worktreeRoot: string
+  paths: string[]
+}
+
+/**
+ * Validate the repository-root-relative paths the Diff Viewer listed. Every
+ * path must stay inside the workspace, so a filtered commit opened from a
+ * monorepo subdirectory can never reach a sibling project.
+ */
+async function resolveSelectedPaths(cwd: string, paths: readonly string[]): Promise<SelectedPaths> {
+  if (paths.length === 0) throw new Error(t('errors.git.commitSelectionEmpty'))
+  const [worktreeRoot, workspaceRoot] = await Promise.all([physicalWorktreeRoot(cwd), realpath(cwd)])
+  for (const path of paths) {
+    if (!path || isAbsolute(path) || !isPathWithin(workspaceRoot, resolve(worktreeRoot, path))) {
+      throw new Error(t('errors.git.commitSelectionOutsideWorkspace'))
+    }
+  }
+  return { worktreeRoot, paths: [...new Set(paths)] }
+}
+
+interface CommittablePaths extends SelectedPaths {
+  /** Untracked files the user chose; the commit adds them first. */
+  newFiles: string[]
+}
+
+async function untrackedPaths(worktreeRoot: string, paths: readonly string[], excludeIgnored: boolean): Promise<Set<string>> {
+  const { stdout } = await runGit([
+    '--literal-pathspecs', 'ls-files', '--others', ...(excludeIgnored ? ['--exclude-standard'] : []), '-z', '--', ...paths,
+  ], worktreeRoot)
+  return new Set(stdout.split('\0').filter(Boolean))
+}
+
+/**
+ * The validated selection without the untracked paths the user did not
+ * choose. An untracked file reaches a commit only when the user checked it in
+ * the Commit dialog (or staged it), even when the filtered Diff Viewer lists
+ * it by name. A chosen file must be one of the selected paths, an untracked
+ * file (never a directory), and not ignored by Git.
+ */
+async function resolveCommittablePaths(
+  cwd: string, paths: readonly string[], chosenNewFiles: readonly string[] = [],
+): Promise<CommittablePaths> {
+  const selection = await resolveSelectedPaths(cwd, paths)
+  const [untracked, addable] = await Promise.all([
+    untrackedPaths(selection.worktreeRoot, selection.paths, false),
+    untrackedPaths(selection.worktreeRoot, selection.paths, true),
+  ])
+  const chosen = new Set(chosenNewFiles)
+  for (const path of chosen) {
+    if (!selection.paths.includes(path) || !addable.has(path)) {
+      throw new Error(t('errors.git.newFileNotCommittable', { path }))
+    }
+  }
+  const newFiles = selection.paths.filter((path) => chosen.has(path))
+  return {
+    ...selection,
+    paths: selection.paths.filter((path) => !untracked.has(path) || newFiles.includes(path)),
+    newFiles,
+  }
+}
+
+/**
+ * Diff of the committable paths' working-tree content against HEAD: the exact
+ * tree a filtered commit records. A throwaway index keeps the user's index
+ * untouched.
+ */
+async function readSelectedPathsDiff({ worktreeRoot, paths }: SelectedPaths, head: string): Promise<string> {
+  // An empty pathspec would match the whole tree.
+  if (paths.length === 0) return ''
+  const dir = await mkdtemp(join(tmpdir(), 'pi-desktop-commit-'))
+  const env = { ...process.env, GIT_INDEX_FILE: join(dir, 'index') }
+  try {
+    await runGit(head ? ['read-tree', head] : ['read-tree', '--empty'], worktreeRoot, env)
+    await runGit(['--literal-pathspecs', 'add', '--all', '--', ...paths], worktreeRoot, env)
+    const { stdout } = await runGit([
+      '--literal-pathspecs', 'diff', '--cached',
+      '--binary', '--full-index', '--no-ext-diff', '--no-textconv', '--no-renames',
+      '--', ...paths,
+    ], worktreeRoot, env)
+    return stdout
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
+async function commitSelection(cwd: string): Promise<{ autoStage: boolean; workspaceRoot: string }> {
+  const staged = await stagedPaths(cwd)
+  const workspaceRoot = await realpath(cwd)
+  if (staged.some((path) => !isPathWithin(workspaceRoot, path))) {
+    throw new Error(t('errors.git.stagedOutsideWorkspace'))
+  }
+  return { autoStage: staged.length === 0, workspaceRoot }
+}
+
+export interface CommitDiffSnapshot {
+  fingerprint: string
+  diff: string
+}
+
+/**
+ * Read exactly the selection commitAll would commit, without touching the index.
+ * `paths` is the Diff Viewer's filtered selection and `newFiles` the untracked
+ * files among them the user chose; without `paths` the commit follows the
+ * index (or auto-stages tracked changes).
+ */
+export async function readCommitDiff(
+  cwd: string, paths?: readonly string[], newFiles: readonly string[] = [],
+): Promise<CommitDiffSnapshot | null> {
+  const repository = await inspectGitRepository(cwd).catch((error: unknown) => {
+    if (isMissingRepositoryError(error)) return null
+    throw error
+  })
+  if (!repository?.branch) return null
+  let diff: string
+  let scope: string
+  if (paths) {
+    const selection = await resolveCommittablePaths(cwd, paths, newFiles)
+    diff = await readSelectedPathsDiff(selection, repository.head)
+    scope = selection.worktreeRoot
+  } else {
+    const { autoStage, workspaceRoot } = await commitSelection(cwd)
+    diff = (await runGit([
+      'diff', ...(autoStage ? [] : ['--cached']),
+      '--binary', '--full-index', '--no-ext-diff', '--no-textconv', '--no-renames',
+      '--', '.',
+    ], workspaceRoot)).stdout
+    scope = workspaceRoot
+  }
+  if (!diff) return null
+  const fingerprint = createHash('sha256')
+    .update(JSON.stringify([scope, repository.head, repository.branch, diff]))
+    .digest('hex')
+  return { fingerprint, diff }
 }
 
 /**
@@ -208,58 +429,229 @@ export async function getGitConveyorStatus(cwd: string): Promise<GitConveyorStat
   })
   if (!repository) return NOT_A_REPOSITORY_STATUS
   const upstream = repository.branch ? await resolveUpstream(cwd, repository.branch) : null
+  const published = upstream ? await hasPublishedUpstream(cwd) : false
   const configuredRemote = repository.branch ? await branchRemote(cwd, repository.branch) : null
-  const pushRemote = upstream?.remote ?? configuredRemote ?? (await gitConfig(cwd, 'remote.origin.url') ? 'origin' : null)
+  const pushRemote = upstream?.remote ?? configuredRemote ?? (await gitConfig(cwd, 'remote.origin.url') ? DEFAULT_PUSH_REMOTE : null)
   const baseRemote = (await gitConfig(cwd, 'remote.upstream.url')) ? 'upstream' : upstream?.remote ?? null
-  const [lastCommitMessage, counts, remoteUrl, baseBranch] = await Promise.all([
+  const [lastCommitMessage, counts, remoteUrl, baseBranch, pullRequestRemoteUrl] = await Promise.all([
     runGit(['log', '-1', '--pretty=%s'], cwd).then((result) => result.stdout.trim()).catch(() => ''),
     runGit(['rev-list', '--left-right', '--count', '@{upstream}...HEAD'], cwd).then((result) => result.stdout.trim()).catch(() => null),
-    runGit(['config', '--get', 'remote.origin.url'], cwd).then((result) => result.stdout.trim()).catch(() => ''),
+    gitConfig(cwd, 'remote.origin.url'),
     defaultBranchForRemote(cwd, baseRemote),
+    // The remote createPullRequest targets: the base remote, else the one the branch pushes to.
+    remoteUrlFor(cwd, baseRemote ?? pushRemote),
   ])
+  const pullRequestRepo = githubRepoFromRemote(pullRequestRemoteUrl)
+  const mayHavePullRequest = published && !!pullRequestRepo && !!repository.branch && repository.branch !== baseBranch
   return {
     branch: repository.branch,
     head: repository.head,
     lastCommitMessage: lastCommitMessage || null,
     dirtyFiles: countPorcelainFiles(repository.status),
+    dirtyTrackedFiles: countTrackedPorcelainFiles(repository.status),
     ...parseAheadBehind(counts),
-    hasUpstream: !!upstream,
+    hasUpstream: published,
     pushRemote,
     upstreamBranch: upstream?.branch ?? null,
     baseBranch,
-    remoteUrl: remoteUrl || null,
+    aheadOfBase: await countCommitsAheadOf(cwd, baseRemote, baseBranch),
+    remoteUrl,
+    pullRequestRepo,
+    openPullRequest: mayHavePullRequest && repository.branch ? await findOpenPullRequest(cwd, repository.branch) : null,
   }
+}
+
+interface PullRequestRoute {
+  /** Remote whose default branch is the base: `upstream` for a fork, else the branch's upstream remote. */
+  baseRemote: string | null
+  /** GitHub `owner/name` the pull request is opened on. */
+  baseRepo: string | null
+  /** GitHub `owner/name` the branch is pushed to. */
+  headRepo: string | null
+  /** Branch name on the head repository. */
+  headBranch: string
+}
+
+/** Where a pull request from `branch` goes, from the same remotes Create PR uses. */
+async function pullRequestRoute(cwd: string, branch: string): Promise<PullRequestRoute> {
+  const [upstream, branchRemoteName, upstreamRemoteUrl, originRemoteUrl] = await Promise.all([
+    resolveUpstream(cwd, branch),
+    branchRemote(cwd, branch),
+    gitConfig(cwd, 'remote.upstream.url'),
+    gitConfig(cwd, `remote.${DEFAULT_PUSH_REMOTE}.url`),
+  ])
+  const baseRemote = upstreamRemoteUrl ? 'upstream' : upstream?.remote ?? null
+  const headRemote = branchRemoteName ?? upstream?.remote ?? DEFAULT_PUSH_REMOTE
+  const [baseRemoteUrl, headRemoteUrl] = await Promise.all([
+    remoteUrlFor(cwd, baseRemote),
+    remoteUrlFor(cwd, headRemote),
+  ])
+  return {
+    baseRemote,
+    baseRepo: githubRepoFromRemote(baseRemoteUrl ?? upstreamRemoteUrl),
+    headRepo: githubRepoFromRemote(headRemoteUrl ?? originRemoteUrl),
+    headBranch: upstream?.branch ?? branch,
+  }
+}
+
+function repositoryOwner(repo: string | null): string | null {
+  return repo?.split('/')[0] ?? null
+}
+
+/** Loads shared by concurrent callers and kept for a fixed time, failures included. */
+export class ExpiringLookupCache<T> {
+  private readonly entries = new Map<string, { value: Promise<T>; expiresAt: number }>()
+
+  constructor(private readonly ttlMs: number, private readonly now: () => number = Date.now) {}
+
+  /** `load` must not reject: its result, a failure answer included, is cached. */
+  get(key: string, load: () => Promise<T>): Promise<T> {
+    const hit = this.entries.get(key)
+    if (hit && hit.expiresAt > this.now()) return hit.value
+    const value = load()
+    this.entries.set(key, { value, expiresAt: this.now() + this.ttlMs })
+    return value
+  }
+
+  set(key: string, value: T): void {
+    this.entries.set(key, { value: Promise.resolve(value), expiresAt: this.now() + this.ttlMs })
+  }
+
+  delete(key: string): void {
+    this.entries.delete(key)
+  }
+}
+
+const openPullRequests = new ExpiringLookupCache<GitOpenPullRequest | null>(OPEN_PULL_REQUEST_CACHE_TTL_MS)
+
+function pullRequestCacheKey(route: PullRequestRoute): string {
+  return JSON.stringify([route.baseRepo, route.headRepo, route.headBranch])
+}
+
+/**
+ * The open pull request in `gh pr list --json number,url,headRepositoryOwner`
+ * output whose head is on `headOwner`'s repository (any head when the owner is
+ * unknown). Null for no match or output that is not the expected JSON.
+ */
+export function parseOpenPullRequest(output: string, headOwner: string | null): GitOpenPullRequest | null {
+  let rows: unknown
+  try {
+    rows = JSON.parse(output)
+  } catch {
+    return null
+  }
+  if (!Array.isArray(rows)) return null
+  for (const row of rows) {
+    const { number, url, headRepositoryOwner } = (row ?? {}) as {
+      number?: unknown; url?: unknown; headRepositoryOwner?: { login?: unknown } | null
+    }
+    if (typeof number !== 'number' || typeof url !== 'string') continue
+    const owner = headRepositoryOwner?.login
+    if (headOwner && typeof owner === 'string' && owner.toLowerCase() !== headOwner.toLowerCase()) continue
+    return { number, url }
+  }
+  return null
+}
+
+/** Number of a GitHub pull request URL, or null when the URL is not one. */
+export function pullRequestNumberFromUrl(url: string): number | null {
+  const match = extractGitHubPullRequestUrl(url)?.match(/\/pull\/(\d+)$/)
+  return match ? Number(match[1]) : null
+}
+
+/**
+ * The branch's open pull request on GitHub, asked through the GitHub CLI at
+ * most once per cache period. No `gh`, no login, or no network reads as "no
+ * pull request": Create PR stays available and reports the real error.
+ */
+async function findOpenPullRequest(cwd: string, branch: string): Promise<GitOpenPullRequest | null> {
+  const route = await pullRequestRoute(cwd, branch)
+  if (!route.baseRepo) return null
+  const baseRepo = route.baseRepo
+  return openPullRequests.get(pullRequestCacheKey(route), () => runCommand('gh', [
+    'pr', 'list', '--repo', baseRepo, '--head', route.headBranch, '--state', 'open',
+    '--json', 'number,url,headRepositoryOwner', '--limit', String(OPEN_PULL_REQUEST_LOOKUP_LIMIT),
+  ], cwd, OPEN_PULL_REQUEST_LOOKUP_TIMEOUT_MS)
+    .then((output) => parseOpenPullRequest(output, repositoryOwner(route.headRepo)))
+    .catch(() => null))
+}
+
+export async function listLocalBranches(cwd: string): Promise<string[]> {
+  try {
+    const { stdout } = await runGit(['for-each-ref', '--sort=refname', '--format=%(refname:lstrip=2)', 'refs/heads/'], cwd)
+    return stdout.split(/\r?\n/).filter(Boolean)
+  } catch (error) {
+    if (isMissingRepositoryError(error)) return []
+    throw error
+  }
+}
+
+/**
+ * A branch switch or branch creation refused for a reason the user can act on
+ * (changes to commit, a merge in progress, a name already taken). It is an
+ * answer, not a failure: callers report it without an error stack.
+ */
+export class GitSwitchRefusal extends Error {}
+
+/**
+ * Switch a clean worktree without forcing, merging, stashing, or guessing a
+ * remote branch. Any change, untracked files included, blocks the switch so
+ * work in progress never moves to another branch.
+ */
+export async function switchLocalBranch(cwd: string, branch: string): Promise<GitConveyorStatus> {
+  if (branch.startsWith('-') || !(await listLocalBranches(cwd)).includes(branch)) {
+    throw new GitSwitchRefusal(t('errors.git.localBranchRequired'))
+  }
+  const operation = await activeGitOperation(cwd)
+  if (operation) throw new GitSwitchRefusal(t('errors.git.operationInProgressSwitch', { operation }))
+  // Untracked files refuse the switch too (owner decision): they belong to the
+  // branch the user is on, even though git itself would carry them along.
+  if ((await inspectGitRepository(cwd)).status.trim()) throw new GitSwitchRefusal(t('errors.git.commitBeforeSwitch'))
+  await runGit(['switch', '--no-guess', '--', branch], cwd)
+  return getGitConveyorStatus(cwd)
+}
+
+/**
+ * Create `name` from the current HEAD and switch to it, without force.
+ * Uncommitted changes are allowed: a new branch starts at the same commit, so
+ * the changes move with the user and no work can be lost. The name must pass
+ * `git check-ref-format --branch` unchanged (no `@{-1}` shorthand) and must not
+ * name an existing local branch.
+ */
+export async function createLocalBranch(cwd: string, name: string): Promise<GitConveyorStatus> {
+  // A leading dash would read as an option; Git rejects such names anyway.
+  const valid = !name.startsWith('-') && await runGit(['check-ref-format', '--branch', name], cwd)
+    .then((result) => result.stdout.trim() === name, () => false)
+  if (!valid) throw new GitSwitchRefusal(t('errors.git.branchNameInvalid', { name }))
+  if ((await listLocalBranches(cwd)).includes(name)) throw new GitSwitchRefusal(t('errors.git.branchExists', { name }))
+  const operation = await activeGitOperation(cwd)
+  if (operation) throw new GitSwitchRefusal(t('errors.git.operationInProgressCreateBranch', { operation }))
+  await runGit(['switch', '--create', name], cwd)
+  return getGitConveyorStatus(cwd)
 }
 
 export async function commitAll(cwd: string, options: GitConveyorCommitOptions): Promise<GitConveyorStatus> {
   const message = options.message.trim()
   if (!message) throw new Error(t('errors.git.commitMessageRequired'))
-  if (message.length > MAX_COMMIT_MESSAGE_LENGTH) {
-    throw new Error(t('errors.git.commitMessageTooLong', { max: MAX_COMMIT_MESSAGE_LENGTH }))
+  if (message.length > GIT_COMMIT_MESSAGE_CONFIG.maxMessageLength) {
+    throw new Error(t('errors.git.commitMessageTooLong', { max: GIT_COMMIT_MESSAGE_CONFIG.maxMessageLength }))
   }
   const repository = await inspectGitRepository(cwd)
   if (!repository.branch) throw new Error(t('errors.git.detachedHeadCommit'))
   const operation = await activeGitOperation(cwd)
   if (operation) throw new Error(t('errors.git.operationInProgressCommit', { operation }))
   if (!repository.status.trim()) throw new Error(t('errors.git.workingTreeClean'))
+  if (options.paths) return commitSelectedPaths(cwd, message, options.paths, options.newFiles)
 
   // Preserve an intentionally curated index. Only auto-stage when there is no
   // staged content at all, and never allow staged paths outside the workspace
   // to be swept into a commit opened from a monorepo subdirectory.
-  const staged = await stagedPaths(cwd)
-  // Both sides of the comparison must be physical paths: a workspace can be
-  // opened through a symlink while Git always reports the resolved worktree.
-  const workspaceRoot = await realpath(cwd)
-  const outsideWorkspace = staged.filter((path) => !isPathWithin(workspaceRoot, path))
-  if (outsideWorkspace.length > 0) {
-    throw new Error(t('errors.git.stagedOutsideWorkspace'))
-  }
+  const { autoStage } = await commitSelection(cwd)
 
   // Auto-staging covers tracked modifications only. A stray secret, key, or
   // build artefact sitting untracked in the workspace reaches a commit only
   // after the user staged it deliberately. The Commit button counts untracked
   // rows too, so say plainly when that leaves nothing to commit.
-  const autoStage = staged.length === 0
   if (autoStage && !(await hasUnstagedTrackedChanges(cwd))) {
     throw new Error(t('errors.git.noTrackedChanges'))
   }
@@ -278,19 +670,51 @@ export async function commitAll(cwd: string, options: GitConveyorCommitOptions):
   return getGitConveyorStatus(cwd)
 }
 
+/**
+ * Commit only the paths the user reviewed in the filtered Diff Viewer, with
+ * their working-tree content. Tracked and already staged paths are included,
+ * and so are the untracked files the user checked; every other untracked file
+ * stays out. Anything else staged stays staged and out of the commit.
+ */
+async function commitSelectedPaths(
+  cwd: string, message: string, paths: readonly string[], newFiles: readonly string[] = [],
+): Promise<GitConveyorStatus> {
+  const selection = await resolveCommittablePaths(cwd, paths, newFiles)
+  // An empty pathspec would commit the whole index.
+  if (selection.paths.length === 0) throw new Error(t('errors.git.noTrackedChanges'))
+  // `--only` stages into a locked copy of the index that Git discards when the
+  // commit is rejected. Chosen new files must be added first (`--only` refuses
+  // a path Git does not know), so a rejected commit restores the index from
+  // its snapshot and they stay untracked.
+  const indexSnapshot = selection.newFiles.length > 0 ? await snapshotIndex(selection.worktreeRoot) : null
+  try {
+    if (selection.newFiles.length > 0) {
+      await runGit(['--literal-pathspecs', 'add', '--', ...selection.newFiles], selection.worktreeRoot)
+    }
+    await runGit(['--literal-pathspecs', 'commit', '-m', message, '--only', '--', ...selection.paths], selection.worktreeRoot)
+  } catch (error) {
+    if (indexSnapshot) await runGit(['read-tree', indexSnapshot], selection.worktreeRoot)
+    throw error
+  }
+  return getGitConveyorStatus(cwd)
+}
+
 export async function pushBranch(cwd: string): Promise<GitConveyorStatus> {
   const repository = await inspectGitRepository(cwd)
   if (!repository.branch) throw new Error(t('errors.git.detachedHeadPush'))
-  if (repository.status.trim()) throw new Error(t('errors.git.commitBeforePush'))
+  // Commits never take untracked files, so only tracked changes can be left behind.
+  if (countTrackedPorcelainFiles(repository.status) > 0) throw new Error(t('errors.git.commitBeforePush'))
   const operation = await activeGitOperation(cwd)
   if (operation) throw new Error(t('errors.git.operationInProgressPush', { operation }))
   const upstream = await resolveUpstream(cwd, repository.branch)
   const configuredRemote = await branchRemote(cwd, repository.branch)
-  const remote = upstream?.remote ?? configuredRemote ?? 'origin'
+  const remote = upstream?.remote ?? configuredRemote ?? DEFAULT_PUSH_REMOTE
   if (remote === '.') throw new Error(t('errors.git.pushUpstreamIsLocal'))
   const branch = upstream?.branch ?? repository.branch
   const args = ['push']
-  if (!upstream) args.push('--set-upstream')
+  // An upstream whose remote branch does not exist (first push of a cloned
+  // empty repository, or a deleted remote branch) is published again.
+  if (!upstream || !(await hasPublishedUpstream(cwd))) args.push('--set-upstream')
   args.push(remote, `HEAD:${branch}`)
   await runGit(args, cwd)
   return getGitConveyorStatus(cwd)
@@ -304,35 +728,31 @@ export async function createPullRequest(
   if (!title) throw new Error(t('errors.git.pullRequestTitleRequired'))
   const body = options.body.trim()
   const status = await getGitConveyorStatus(cwd)
-  if (status.dirtyFiles > 0) throw new Error(t('errors.git.commitBeforePullRequest'))
+  if (status.dirtyTrackedFiles > 0) throw new Error(t('errors.git.commitBeforePullRequest'))
   if (!status.hasUpstream) throw new Error(t('errors.git.pushBeforePullRequest'))
   if (status.ahead > 0) throw new Error(t('errors.git.pushBeforePullRequest'))
+  if (status.openPullRequest) {
+    throw new Error(t('errors.git.pullRequestExists', { number: status.openPullRequest.number, url: status.openPullRequest.url }))
+  }
   const branch = await runGit(['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd)
     .then((result) => result.stdout.trim())
     .catch(() => '')
   if (!branch) throw new Error(t('errors.git.namedBranchRequired'))
-  const [upstream, branchRemoteName, upstreamRemote, originRemote] = await Promise.all([
-    resolveUpstream(cwd, branch),
-    branchRemote(cwd, branch),
-    gitConfig(cwd, 'remote.upstream.url'),
-    gitConfig(cwd, 'remote.origin.url'),
-  ])
-  const baseRemoteName = upstreamRemote ? 'upstream' : upstream?.remote ?? null
-  const headRemoteName = branchRemoteName ?? upstream?.remote ?? 'origin'
-  const [baseBranch, baseRemoteUrl, headRemoteUrl] = await Promise.all([
-    options.base?.trim() || defaultBranchForRemote(cwd, baseRemoteName),
-    baseRemoteName ? gitConfig(cwd, `remote.${baseRemoteName}.url`) : Promise.resolve(null),
-    gitConfig(cwd, `remote.${headRemoteName}.url`),
-  ])
-  const baseRepo = githubRepoFromRemote(baseRemoteUrl ?? upstreamRemote)
-  const headRepo = githubRepoFromRemote(headRemoteUrl ?? originRemote)
-  const headBranch = upstream?.branch ?? branch
+  const route = await pullRequestRoute(cwd, branch)
+  const baseBranch = options.base?.trim() || await defaultBranchForRemote(cwd, route.baseRemote)
+  // Without a base GitHub answers only "can't be blank".
+  if (!baseBranch) throw new Error(t('errors.git.pullRequestBaseMissing'))
   const args = ['pr', 'create']
-  if (baseRepo) args.push('--repo', baseRepo)
-  if (baseBranch) args.push('--base', baseBranch)
-  args.push('--head', headRepo ? `${headRepo.split('/')[0]}:${headBranch}` : headBranch)
+  if (route.baseRepo) args.push('--repo', route.baseRepo)
+  args.push('--base', baseBranch)
+  const headOwner = repositoryOwner(route.headRepo)
+  args.push('--head', headOwner ? `${headOwner}:${route.headBranch}` : route.headBranch)
   args.push('--title', title, '--body', body)
   if (options.draft) args.push('--draft')
   const output = await runCommand('gh', args, cwd)
-  return { url: extractUrl(output), output }
+  const url = extractUrl(output)
+  const number = url ? pullRequestNumberFromUrl(url) : null
+  if (url && number !== null) openPullRequests.set(pullRequestCacheKey(route), { number, url })
+  else openPullRequests.delete(pullRequestCacheKey(route))
+  return { url, output }
 }

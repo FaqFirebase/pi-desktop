@@ -1,9 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, session, shell } from 'electron'
 import { existsSync, mkdirSync } from 'fs'
-import { basename, join, resolve as resolvePath } from 'path'
+import { basename, dirname, join, resolve as resolvePath } from 'path'
 import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
 import { workspaceTrustStore } from './workspace-trust'
 import { WorkspaceManager } from './workspace-manager'
+import type { WorkspaceTerminals } from './workspace-terminals'
 import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
 import { setPiExecutableOverride, cleanupPiChildTempDir } from './pi-rpc-manager'
 import { applyLanguageSetting } from './i18n'
@@ -72,12 +73,15 @@ function getAppIconPath(): string {
 // ─── Workspace Manager (singleton) ───────────────────────────────────────────
 
 let workspaceManager: WorkspaceManager | null = null
+let workspaceTerminals: WorkspaceTerminals | null = null
 
 // The single main window, tracked so the tray, single-instance relaunch, and
 // macOS dock-activate can all bring it back. `isQuitting` distinguishes a real
 // quit (menu/tray Quit, Cmd-Ctrl+Q) from a window close that should hide to tray.
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
+let shutdownPending: Promise<void> | null = null
+let shutdownComplete = false
 
 // Guards the renderer's unsaved editor buffer against teardown. The renderer
 // mirrors its dirty flag here (ui:editor-dirty-set); quit, non-tray window
@@ -202,7 +206,7 @@ function createMainWindow(): BrowserWindow {
   })
 
   // Hide the top menu bar (File/Edit/View/Window). The application menu stays
-  // set so its accelerators (Ctrl+N, Ctrl+O, copy/paste, etc.) keep working;
+  // set so its accelerators (Ctrl+O, copy/paste, etc.) keep working;
   // only the visible bar is hidden. autoHideMenuBar is left off so Alt won't
   // reveal it.
   window.setMenuBarVisibility(false)
@@ -309,6 +313,7 @@ function createMainWindow(): BrowserWindow {
 // Bring the main window to the foreground, re-creating it if it was fully
 // closed. Used by the tray, single-instance relaunch, and macOS dock activate.
 function showMainWindow(): void {
+  if (isQuitting) return
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
@@ -327,7 +332,6 @@ function createApplicationMenu(): void {
       submenu: [
         {
           label: t('common.newSession'),
-          accelerator: 'CmdOrCtrl+N',
           click: () => {
             const focusedWindow = BrowserWindow.getFocusedWindow()
             focusedWindow?.webContents.send('menu:new-session')
@@ -396,7 +400,20 @@ function createApplicationMenu(): void {
       submenu: [
         { role: 'minimize', label: t('menu.minimize') },
         { role: 'zoom', label: t('menu.zoom') },
-        { role: 'close', label: t('menu.close') },
+        // macOS: Command+W closes the session tab, as in a browser, and the
+        // window keeps its Close item on Shift+Command+W.
+        ...(process.platform === 'darwin'
+          ? [
+              {
+                label: t('workspaceTabs.closeSessionTab'),
+                accelerator: 'Command+W',
+                click: () => {
+                  BrowserWindow.getFocusedWindow()?.webContents.send('menu:close-session')
+                },
+              },
+              { role: 'close', label: t('menu.close'), accelerator: 'Shift+Command+W' },
+            ] satisfies Electron.MenuItemConstructorOptions[]
+          : [{ role: 'close', label: t('menu.close') } satisfies Electron.MenuItemConstructorOptions]),
       ],
     },
   ]
@@ -429,12 +446,13 @@ app.whenReady().then(async () => {
     })
   }
 
-  // Set the macOS dock icon in development only. A packaged app already gets its
-  // dock icon from the bundled .icns (correct macOS geometry with padding). The
-  // raw icon.png is full-bleed, so calling setIcon in a packaged build overrode
-  // the .icns with a wrongly sized icon once the app started (issue #66).
+  // Set the macOS dock icon in development only. A packaged app gets its dock
+  // icon from the Icon Composer asset (resources/icons/Icon.icon); setting a
+  // Dock image there would replace its layered look with a flat bitmap (issue
+  // #66). icon-macos.png is generated from the padded macOS icon grid in
+  // resources/icons/generate_icons.py.
   if (process.platform === 'darwin' && app.dock && !app.isPackaged) {
-    app.dock.setIcon(nativeImage.createFromPath(getAppIconPath()))
+    app.dock.setIcon(nativeImage.createFromPath(join(dirname(getAppIconPath()), 'icon-macos.png')))
   }
 
   // Initialize workspace manager
@@ -466,7 +484,7 @@ app.whenReady().then(async () => {
   // lazy closure — mainWindow is created later and the notification wiring
   // only dereferences it at event time. showMainWindow recreates the window
   // when a notification is clicked after a full close (macOS).
-  registerIpcHandlers(workspaceManager, {
+  workspaceTerminals = registerIpcHandlers(workspaceManager, {
     getWindow: () => mainWindow,
     showWindow: showMainWindow,
   }, getAppIconPath())
@@ -520,7 +538,6 @@ app.on('window-all-closed', () => {
   }
 })
 
-// Cleanup on quit
 app.on('before-quit', (event) => {
   // Gate BEFORE isQuitting is set: quitting destroys the renderer and its
   // unsaved editor buffer, and a cancelled dialog must leave the tray-hide
@@ -539,13 +556,31 @@ app.on('before-quit', (event) => {
   // the window actually close. This is the single choke point every quit path
   // flows through (menu/tray Quit, Cmd-Ctrl+Q).
   isQuitting = true
+})
+
+// Close the renderer before tearing down the services it can still query.
+app.on('will-quit', (event) => {
+  if (!shutdownComplete) {
+    event.preventDefault()
+    // The executor turns a synchronous stopAll() throw into a rejection, so a
+    // failed teardown is logged and the quit still resumes instead of hanging.
+    shutdownPending ??= new Promise<void>((resolve) => resolve(workspaceManager?.stopAll()))
+      .catch((error) => appLog.warn('app', 'Failed to stop workspaces on quit', error))
+      .then(() => {
+        shutdownComplete = true
+        // Native macOS terminate: is still unwinding during promise microtasks.
+        // Resume on the next turn so it cannot swallow the renewed quit request.
+        setImmediate(() => app.quit())
+      })
+    return
+  }
   // Release the tray icon so it doesn't linger in the notification area.
   destroyTray()
   // Synchronous incremental scan + write: captures every session touched this
   // run before we exit (async I/O isn't guaranteed to finish during shutdown).
   activityStatsStore.flushSync()
   appLog.flushSync()
-  workspaceManager?.stopAll()
+  workspaceTerminals?.stopAll()
   // Windows: GUI-owned Pi TEMP does not get OS cleanup — wipe on quit.
   cleanupPiChildTempDir()
 })

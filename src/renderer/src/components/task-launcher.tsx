@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { GitBranch, Layers, Play, X } from 'lucide-react'
 import { useAppStore } from '../store'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { isImeComposing } from '../utils/ime-composing'
 
 export function TaskLauncher(): React.JSX.Element | null {
   const { t } = useTranslation()
   const open = useAppStore((state) => state.taskLauncherOpen)
+  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const setOpen = useAppStore((state) => state.setTaskLauncherOpen)
   const workspaces = useAppStore((state) => state.workspaces)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
@@ -70,7 +72,7 @@ export function TaskLauncher(): React.JSX.Element | null {
               <Play size={16} className="text-accent-fg" />
               <h2 id="task-launcher-title" className="text-sm font-semibold text-primary">{t('missionControl.newTask')}</h2>
             </div>
-            <p className="mt-1 text-xs text-dim">{t('taskLauncher.subtitle')}</p>
+            <p className="mt-1 text-xs text-dim">{t('taskLauncher.subtitle', { agent: engineLabel })}</p>
           </div>
           <button
             type="button"

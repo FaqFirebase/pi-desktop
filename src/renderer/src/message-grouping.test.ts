@@ -5,6 +5,8 @@ import {
   toolKind,
   toolLabel,
   toolCallLabel,
+  toolCallSource,
+  toolCommand,
   toolCallFile,
   parseEdits,
   editStats,
@@ -55,6 +57,18 @@ test('folds a run of same-tool turns into one titled group', () => {
   assert.equal(items[2].kind, 'message')
   assert.deepEqual(titles(items), ['Fetched 3 URLs'])
   assert.equal((items[1] as { messages: DisplayMessage[] }).messages.length, 6)
+})
+
+test('a live turn keeps completed tools visible instead of replacing them with a collapsed group', () => {
+  const history = [user(), toolTurn('read'), result(), toolTurn('bash'), result()]
+  const oldGroup = groupToolMessages(history)[1]
+  const live = [user(), toolTurn('read'), result(), toolTurn('write'), result()]
+  const items = groupToolMessages([...history, ...live], t, true)
+
+  assert.deepEqual(items[1], oldGroup, 'previous turns retain their grouping')
+  assert.ok(items.slice(2).every((item) => item.kind === 'message'))
+  assert.equal(items.at(-1)?.kind, 'message', 'the latest result remains visible')
+  assert.equal(groupToolMessages([...history, ...live], t, false).at(-1)?.kind, 'toolGroup')
 })
 
 test('a single tool call is not grouped', () => {
@@ -419,4 +433,63 @@ test('prepareChatMessages drops edit toolResult pills after folding', () => {
   assert.equal(out[0].role, 'assistant')
   assert.equal(out[0].toolCalls?.[0].result, 'ok')
   assert.equal(out[0].toolCalls?.[0].isError, false)
+})
+
+test('prepareChatMessages shows a paired command result once, in its result row only', () => {
+  // A live turn commits each call with its result AND a toolResult row.
+  const out = prepareChatMessages([
+    assistant({
+      toolCalls: [
+        { id: 'ls1', name: 'bash', arguments: '{"command":"ls"}', result: 'alpha.txt' },
+        { id: 'st1', name: 'bash', arguments: '{"command":"git status"}', result: 'On branch main' },
+      ],
+    }),
+    resultFor('ls1', 'alpha.txt'),
+    resultFor('st1', 'On branch main'),
+  ])
+  const calls = out.flatMap((m) => m.toolCalls ?? [])
+  assert.deepEqual(calls.map((tc) => tc.result), [undefined, undefined])
+  assert.deepEqual(out.filter((m) => m.role === 'toolResult').map((m) => m.content), ['alpha.txt', 'On branch main'])
+})
+
+test('prepareChatMessages keeps a command result on its badge when no result row pairs to it', () => {
+  const out = prepareChatMessages([
+    assistant({ toolCalls: [{ id: 'x1', name: 'bash', arguments: '{"command":"ls"}', result: 'alpha.txt' }] }),
+  ])
+  assert.equal(out[0].toolCalls?.[0].result, 'alpha.txt')
+})
+
+test('a stopped answer split into prose and tools shows its stopped mark once, after the tools', () => {
+  const prepared = prepareChatMessages([{
+    id: 'a1', role: 'assistant', content: 'Checking', timestamp: 0, stopped: true,
+    toolCalls: [{ id: 'c1', name: 'bash', arguments: '{"command":"ls"}' }],
+  }])
+  assert.deepEqual(prepared.map((message) => [message.id, message.stopped]), [['a1', undefined], ['a1::tools', true]])
+})
+
+test('results of calls made together name their call; a lone call result does not repeat it', () => {
+  const prepared = prepareChatMessages([
+    {
+      id: 'a1', role: 'assistant', content: '', timestamp: 0,
+      toolCalls: [
+        { id: 'ls', name: 'bash', arguments: '{"command":"ls"}' },
+        { id: 'st', name: 'bash', arguments: '{"command":"git status"}' },
+      ],
+    },
+    { id: 'r1', role: 'toolResult', content: 'app.ts', timestamp: 0, toolCallId: 'ls' },
+    { id: 'r2', role: 'toolResult', content: 'clean', timestamp: 0, toolCallId: 'st' },
+    { id: 'a2', role: 'assistant', content: '', timestamp: 0, toolCalls: [{ id: 'rd', name: 'read', arguments: '{"path":"a.ts"}' }] },
+    { id: 'r3', role: 'toolResult', content: 'x', timestamp: 0, toolCallId: 'rd' },
+  ])
+  const results = prepared.filter((message) => message.role === 'toolResult')
+  assert.deepEqual(
+    results.map((message) => message.toolCallArguments && toolCallSource(message.toolName!, message.toolCallArguments, t)),
+    ['ls', 'git status', undefined],
+  )
+})
+
+test('a call source falls back to its label when it carries no command', () => {
+  assert.equal(toolCallSource('bash', '{}', t), toolCallLabel('bash', '{}', t))
+  assert.equal(toolCommand('{"cmd":"npm test"}'), 'npm test')
+  assert.equal(toolCommand('not json'), null)
 })

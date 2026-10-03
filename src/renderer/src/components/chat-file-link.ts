@@ -1,4 +1,4 @@
-import { useAppStore } from '../store'
+import { useAppStore, type PreviewTarget } from '../store'
 
 // Image extensions the viewer can render. png/jpg/jpeg/gif/webp/avif/bmp/ico
 // arrive as base64 from readAttachment; svg comes back as text and is rendered
@@ -71,6 +71,25 @@ export function looksLikeFilePath(text: string): boolean {
   return true
 }
 
+/**
+ * Show a file in the chat view's preview pane (images in the image viewer,
+ * other files in the code editor). The diff pane shares that slot, so it makes
+ * way, and the full-page diff view returns to chat. Resolves false when a
+ * dirty editor declines the change.
+ */
+export async function openFilePreview(file: Omit<PreviewTarget, 'kind'>): Promise<boolean> {
+  const opened = await useAppStore.getState().setPreviewTarget({
+    kind: isImagePath(file.name) ? 'image' : 'code',
+    ...file,
+  })
+  if (!opened) return false
+  // Re-read the state: the diff pane may have opened during the confirm.
+  const current = useAppStore.getState()
+  if (current.chatSidePanel === 'diff') await current.setChatSidePanel(null)
+  if (current.currentView !== 'chat') current.setCurrentView('chat')
+  return true
+}
+
 function normalize(path: string): string {
   return path.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase()
 }
@@ -87,9 +106,6 @@ export async function openFileFromChat(text: string): Promise<void> {
   const base = raw.split('/').pop() ?? raw
   if (!base) return
 
-  const store = useAppStore.getState()
-  const image = isImagePath(base)
-
   try {
     // Absolute path: open it directly rather than searching the workspace.
     // The code editor reads paths inside the workspace; the HTML preview loads
@@ -98,17 +114,7 @@ export async function openFileFromChat(text: string): Promise<void> {
     if (isAbsolutePath(raw)) {
       // Only open absolute paths that live inside the active workspace.
       if (!isInsideWorkspace(raw)) return
-      // Preview first: a dirty editor may decline, and the diff pane must only
-      // make way for a preview that is actually going to show. Re-read the
-      // state after the await — the pane may have opened during the confirm.
-      const ok = await store.setPreviewTarget({
-        kind: image ? 'image' : 'code',
-        name: base,
-        path: original,
-        relativePath: base,
-      })
-      const after = useAppStore.getState()
-      if (ok && after.chatSidePanel === 'diff') void after.setChatSidePanel(null)
+      await openFilePreview({ name: base, path: original, relativePath: base })
       return
     }
 
@@ -124,16 +130,7 @@ export async function openFileFromChat(text: string): Promise<void> {
 
     if (!match) return
 
-    const ok = await store.setPreviewTarget({
-      kind: image ? 'image' : 'code',
-      name: match.name,
-      path: match.path,
-      relativePath: match.relativePath,
-    })
-    // Re-read the state: the diff pane may have opened during the search or
-    // confirm awaits, and a stale snapshot would leave it hiding the preview.
-    const after = useAppStore.getState()
-    if (ok && after.chatSidePanel === 'diff') void after.setChatSidePanel(null)
+    await openFilePreview({ name: match.name, path: match.path, relativePath: match.relativePath })
   } catch {
     // File service unavailable or no active workspace — silently ignore.
   }

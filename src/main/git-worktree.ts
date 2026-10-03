@@ -73,10 +73,11 @@ export interface GitWorktreeEntry {
   bare: boolean
 }
 
-export function runGit(args: readonly string[], cwd: string): Promise<GitCommandResult> {
+export function runGit(args: readonly string[], cwd: string, env?: NodeJS.ProcessEnv): Promise<GitCommandResult> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn('git', [...args], {
       cwd,
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     })
@@ -152,7 +153,8 @@ export async function inspectGitRepository(cwd: string): Promise<GitRepositoryIn
     // An unborn branch has no HEAD yet, but its worktree is still valid and
     // must be able to reach the first commit through the conveyor.
     gitValue(['rev-parse', '--verify', 'HEAD'], cwd).catch(() => ''),
-    gitValue(['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd).catch(() => null),
+    gitValue(['symbolic-ref', '--quiet', 'HEAD'], cwd)
+      .then((ref) => ref.replace(/^refs\/heads\//, '')).catch(() => null),
     gitValue(['status', '--porcelain=v1', '--untracked-files=all'], cwd),
   ])
 

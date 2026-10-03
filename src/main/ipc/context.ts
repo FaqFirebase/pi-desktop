@@ -4,6 +4,7 @@ import { WorkspaceManager } from '../workspace-manager'
 import { SessionTagManager } from '../session-tags'
 import { ArchivedSessionsManager } from '../archived-sessions'
 import { TerminalService } from '../terminal-service'
+import { WorkspaceTerminals } from '../workspace-terminals'
 import { NotesManager } from '../notes-manager'
 
 export interface IpcContext {
@@ -14,13 +15,14 @@ export interface IpcContext {
   tagManager: SessionTagManager
   archivedSessions: ArchivedSessionsManager
   notesManager: NotesManager
-  terminalService: TerminalService
+  terminalService: WorkspaceTerminals
 }
 
 export function createIpcContext(workspaceManager: WorkspaceManager): IpcContext {
   const tagManager = new SessionTagManager()
   const archivedSessions = new ArchivedSessionsManager()
-  const terminalService = new TerminalService()
+  const terminalService = new WorkspaceTerminals(() => new TerminalService())
+  workspaceManager.onWorkspaceRemoved((workspaceId) => terminalService.stop(workspaceId))
   const notesManager = new NotesManager()
 
   // Absolute paths the user explicitly picked via the native open dialog. The

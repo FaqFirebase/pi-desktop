@@ -61,6 +61,7 @@ export function registerWorkspaceHandlers(ctx: IpcContext): void {
     if (!isString(workspaceId)) throw new Error('workspaceId must be a string')
     if (!isString(newPath)) throw new Error('newPath must be a string')
     await workspaceManager.changeWorkspacePath(workspaceId, newPath)
+    ctx.terminalService.stop(workspaceId)
   })
 
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_PATH_EXISTS, async (): Promise<boolean> => {
@@ -121,6 +122,7 @@ export function registerWorkspaceHandlers(ctx: IpcContext): void {
             cwd: workspace.path,
             provider: settings.defaultProvider ?? undefined,
             model: settings.defaultModel ?? undefined,
+            defaultThinkingLevel: settings.defaultThinkingLevel ?? undefined,
             forkSessionPath: options.forkSessionPath,
           },
           settings

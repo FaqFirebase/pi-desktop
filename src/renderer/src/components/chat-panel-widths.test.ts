@@ -4,11 +4,14 @@ import {
   DEFAULT_FILE_PANE_WIDTH,
   DEFAULT_SIDE_PANEL_WIDTH,
   MAX_SIDE_PANEL_WIDTH,
+  MIN_CHAT_COLUMN_WIDTH,
   MIN_EDITOR_PANE_WIDTH,
   MIN_FILE_PANE_WIDTH,
   MIN_SIDE_PANEL_WIDTH,
   MIN_SIDE_PANEL_WIDTH_WITH_EDITOR,
+  REVIEW_PANEL_WIDTH,
   clamp,
+  resolvePaneLayout,
   resolveSidePanelMetrics,
 } from './chat-panel-widths'
 
@@ -128,10 +131,90 @@ test('the side panel is clamped to its own bounds', () => {
   )
 })
 
+// ─── Sharing the row with the chat column ────────────────────────────────────
+
+test('the side panel gives up width so the chat column keeps its minimum', () => {
+  // Regression: a 1040px row held the 640px default panel beside the 480px chat
+  // minimum, so the row scrolled and cut off the diff pane's right edge.
+  const rowWidth = 1040
+  const metrics = resolveSidePanelMetrics(EDITOR_ONLY, DEFAULT_SIDE_PANEL_WIDTH, DEFAULT_FILE_PANE_WIDTH, rowWidth)
+  assert.equal(metrics.maxSidePanelWidth, rowWidth - MIN_CHAT_COLUMN_WIDTH)
+  assert.equal(metrics.contentWidth, rowWidth - MIN_CHAT_COLUMN_WIDTH)
+})
+
+test('a row with room keeps the requested side panel width', () => {
+  const metrics = resolveSidePanelMetrics(EDITOR_ONLY, DEFAULT_SIDE_PANEL_WIDTH, DEFAULT_FILE_PANE_WIDTH, 1600)
+  assert.equal(metrics.contentWidth, DEFAULT_SIDE_PANEL_WIDTH)
+  const wideRow = resolveSidePanelMetrics(EDITOR_ONLY, 99_999, DEFAULT_FILE_PANE_WIDTH, 99_999)
+  assert.equal(wideRow.maxSidePanelWidth, MAX_SIDE_PANEL_WIDTH)
+})
+
+test('a row too narrow for both keeps the side panel minimum', () => {
+  for (const panes of [EDITOR_ONLY, TREE_AND_EDITOR]) {
+    const metrics = resolveSidePanelMetrics(panes, DEFAULT_SIDE_PANEL_WIDTH, DEFAULT_FILE_PANE_WIDTH, 700)
+    assert.equal(metrics.maxSidePanelWidth, metrics.minSidePanelWidth)
+    assert.equal(metrics.contentWidth, metrics.minSidePanelWidth)
+  }
+})
+
+test('a lone file tree also leaves the chat column its minimum', () => {
+  const rowWidth = 1040
+  const metrics = resolveSidePanelMetrics(FILE_TREE_ONLY, DEFAULT_SIDE_PANEL_WIDTH, 900, rowWidth)
+  assert.equal(metrics.maxFilePaneWidth, rowWidth - MIN_CHAT_COLUMN_WIDTH)
+  assert.equal(metrics.contentWidth, rowWidth - MIN_CHAT_COLUMN_WIDTH)
+  const again = resolveSidePanelMetrics(FILE_TREE_ONLY, DEFAULT_SIDE_PANEL_WIDTH, metrics.filePaneWidth, rowWidth)
+  assert.equal(again.filePaneWidth, metrics.filePaneWidth)
+})
+
 test('the defaults sit inside their own bounds', () => {
   assert.ok(DEFAULT_FILE_PANE_WIDTH >= MIN_FILE_PANE_WIDTH)
   assert.ok(DEFAULT_SIDE_PANEL_WIDTH >= MIN_SIDE_PANEL_WIDTH_WITH_EDITOR)
   assert.ok(DEFAULT_SIDE_PANEL_WIDTH <= MAX_SIDE_PANEL_WIDTH)
   // The default panel must actually fit the default tree plus an editor.
   assert.ok(DEFAULT_SIDE_PANEL_WIDTH - MIN_EDITOR_PANE_WIDTH >= MIN_FILE_PANE_WIDTH)
+})
+
+// ─── Sharing the row between the chat column, side panel and review panel ───
+
+// Chat rows measured in the live test: 1400px and 1000px windows with the
+// sidebar and the tool rail open.
+const ROW_AT_1400 = 1040
+const ROW_AT_1000 = 640
+
+test('side panel and review panel both sit beside a wide chat column', () => {
+  const layout = resolvePaneLayout(1560, MIN_SIDE_PANEL_WIDTH, true)
+  assert.deepEqual(layout, { sidePanel: 'beside', review: 'beside', sidePanelRowWidth: 1560 - REVIEW_PANEL_WIDTH })
+})
+
+test('at 1400px the diff stays beside the chat and the review panel moves under it', () => {
+  const layout = resolvePaneLayout(ROW_AT_1400, MIN_SIDE_PANEL_WIDTH, true)
+  assert.deepEqual(layout, { sidePanel: 'beside', review: 'stacked', sidePanelRowWidth: ROW_AT_1400 })
+  const metrics = resolveSidePanelMetrics(EDITOR_ONLY, DEFAULT_SIDE_PANEL_WIDTH, DEFAULT_FILE_PANE_WIDTH, layout.sidePanelRowWidth)
+  assert.ok(metrics.contentWidth + MIN_CHAT_COLUMN_WIDTH <= ROW_AT_1400)
+})
+
+test('at 1000px the diff and the review panel both move under the chat', () => {
+  assert.deepEqual(resolvePaneLayout(ROW_AT_1000, MIN_SIDE_PANEL_WIDTH, false), {
+    sidePanel: 'stacked', review: null, sidePanelRowWidth: ROW_AT_1000,
+  })
+  assert.deepEqual(resolvePaneLayout(ROW_AT_1000, MIN_SIDE_PANEL_WIDTH, true), {
+    sidePanel: 'stacked', review: 'stacked', sidePanelRowWidth: ROW_AT_1000,
+  })
+})
+
+test('a review panel alone moves under a chat column that has no room beside it', () => {
+  assert.equal(resolvePaneLayout(ROW_AT_1000, null, true).review, 'stacked')
+  assert.equal(resolvePaneLayout(MIN_CHAT_COLUMN_WIDTH + REVIEW_PANEL_WIDTH, null, true).review, 'beside')
+})
+
+test('nothing beside the chat column ever needs more than the row', () => {
+  for (const rowWidth of [MIN_CHAT_COLUMN_WIDTH, ROW_AT_1000, 900, ROW_AT_1400, 1560, 2400]) {
+    for (const sideMin of [null, MIN_FILE_PANE_WIDTH, MIN_SIDE_PANEL_WIDTH, MIN_SIDE_PANEL_WIDTH_WITH_EDITOR]) {
+      for (const reviewOpen of [false, true]) {
+        const layout = resolvePaneLayout(rowWidth, sideMin, reviewOpen)
+        const besideWidth = (layout.sidePanel === 'beside' ? sideMin! : 0) + (layout.review === 'beside' ? REVIEW_PANEL_WIDTH : 0)
+        assert.ok(MIN_CHAT_COLUMN_WIDTH + besideWidth <= rowWidth, `${rowWidth} ${sideMin} ${reviewOpen}`)
+      }
+    }
+  }
 })

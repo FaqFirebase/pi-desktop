@@ -7,9 +7,12 @@ import {
   commandSourceLabel,
   filterCommands,
   groupCommands,
+  guiCommandFor,
   invocationToken,
+  isPiBuiltInExtensionCommand,
   isSlashCommandToken,
   skillDisplayName,
+  withGuiCommands,
   type PiCommand,
 } from './pi-command'
 
@@ -18,6 +21,29 @@ const cmds: PiCommand[] = [
   { name: 'review', description: 'Review a diff', source: 'prompt' },
   { name: 'deploy', description: 'Deploy via extension', source: 'extension' },
 ]
+
+test('only commands from Pi built-in extensions are flagged as built-in', () => {
+  const llama = {
+    name: 'llama',
+    source: 'extension',
+    sourceInfo: { path: '<inline:llama.cpp>', source: 'inline', scope: 'temporary', origin: 'top-level' },
+  }
+  const userExtension = {
+    name: 'deploy',
+    source: 'extension',
+    sourceInfo: { path: '/home/u/.pi/agent/extensions/deploy.ts', source: 'local', scope: 'user', origin: 'top-level' },
+  }
+  assert.equal(isPiBuiltInExtensionCommand(llama), true)
+  assert.equal(isPiBuiltInExtensionCommand(userExtension), false)
+  assert.equal(isPiBuiltInExtensionCommand({ name: 'review', source: 'prompt' }), false)
+  assert.equal(isPiBuiltInExtensionCommand(null), false)
+})
+
+test('OMP commands carry no source info and are never flagged as Pi built-ins', () => {
+  // Shape of OMP's get_available_commands entries.
+  assert.equal(isPiBuiltInExtensionCommand({ name: 'compact', source: 'builtin', input: { hint: 'focus' } }), false)
+  assert.equal(isPiBuiltInExtensionCommand({ name: 'deploy', source: 'extension', input: { hint: 'arguments' } }), false)
+})
 
 test('empty query returns all commands', () => {
   assert.equal(filterCommands(cmds, '').length, 3)
@@ -98,14 +124,14 @@ test('non-skill invocation token is /name with trailing space', () => {
   assert.equal(invocationToken('deploy', 'extension'), '/deploy ')
 })
 
-test('groupCommands orders groups skills, prompts, builtins, extensions', () => {
+test('without a query, groups come skills, prompts, builtins, extensions', () => {
   const mixed: PiCommand[] = [
     { name: 'deploy', description: '', source: 'extension' },
     { name: 'compact', description: '', source: BUILTIN_SOURCE },
     { name: 'review', description: '', source: 'prompt' },
     { name: 'skill:plan', description: '', source: 'skill' },
   ]
-  const { grouped } = groupCommands(mixed)
+  const { grouped } = groupCommands(filterCommands(mixed, ''))
   assert.deepEqual(
     grouped.map((g) => g.label),
     ['Skills', 'Prompts', 'Commands', 'Extensions']
@@ -157,9 +183,51 @@ test('groupCommands flat list matches visual group order', () => {
     { name: 'mystery', description: '', source: 'plugin' },
     { name: 'review', description: '', source: 'prompt' },
   ]
-  const { flat } = groupCommands(mixed)
+  const { flat } = groupCommands(filterCommands(mixed, ''))
   assert.deepEqual(
     flat.map((c) => c.name),
     ['skill:plan', 'review', 'deploy', 'mystery']
   )
+})
+
+// Live OMP test: typing `/model` and Enter ran `/skill:claude-api`, a skill
+// that only mentions models in its description, because skills came first.
+const OMP_CATALOG: PiCommand[] = [
+  { name: 'skill:claude-api', description: 'Build apps with the Claude API; choose a model', source: 'skill' },
+  { name: 'skill:model-audit', description: 'Audit a model', source: 'skill' },
+  { name: 'switch', description: 'Switch model for this session only', source: BUILTIN_SOURCE },
+  { name: 'models-sync', description: 'Sync the model list', source: 'extension' },
+  { name: 'model', description: 'Show current model selection', source: BUILTIN_SOURCE },
+]
+
+test('an exact command name ranks first, then command prefixes, then skills, then description matches', () => {
+  const ranked = filterCommands(OMP_CATALOG, '/model')
+  assert.deepEqual(ranked.map((c) => c.name), ['model', 'models-sync', 'skill:model-audit', 'switch', 'skill:claude-api'])
+  const { flat } = groupCommands(ranked)
+  assert.equal(flat[0].name, 'model', 'Enter runs the exact command')
+})
+
+test('a skill still comes first when no command matches its name', () => {
+  assert.equal(filterCommands(OMP_CATALOG, 'claude')[0].name, 'skill:claude-api')
+  assert.equal(filterCommands(OMP_CATALOG, 'skill:cl')[0].name, 'skill:claude-api')
+})
+
+test('a GUI action replaces the agent built-in of the same name, so each command is listed once', () => {
+  const agent: PiCommand[] = [
+    { name: 'compact', description: 'Compact the conversation', source: BUILTIN_SOURCE },
+    { name: 'usage', description: 'Show token usage', source: BUILTIN_SOURCE },
+    { name: 'compact', description: 'A prompt template', source: 'prompt' },
+  ]
+  const gui = [{ name: 'compact', description: 'Compact the context', run: () => {} }]
+  const merged = withGuiCommands(agent, gui)
+  assert.deepEqual(merged.map((c) => `${c.source}:${c.name}`), ['builtin:usage', 'prompt:compact', 'builtin:compact'])
+  assert.equal(merged.filter((c) => c.source === BUILTIN_SOURCE && c.name === 'compact').length, 1)
+})
+
+test('only a GUI action runs in the GUI; an agent built-in without one is sent as text', () => {
+  const gui = [{ name: 'model', description: 'Choose the model', run: () => {} }]
+  assert.equal(guiCommandFor({ name: 'model', description: '', source: BUILTIN_SOURCE }, gui), gui[0])
+  assert.equal(guiCommandFor({ name: 'usage', description: '', source: BUILTIN_SOURCE }, gui), undefined)
+  assert.equal(guiCommandFor({ name: 'model', description: '', source: 'prompt' }, gui), undefined)
+  assert.equal(invocationToken('usage', BUILTIN_SOURCE), '/usage ')
 })

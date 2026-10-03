@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useAppStore } from './store'
 import { getAppliedThemeId, subscribeAppliedTheme } from './utils/theme'
 import { DEFAULT_SETTINGS } from '../../shared/default-settings'
-import { BUILTIN_SOURCE, type PiCommand } from '../../shared/pi-command'
+import { withGuiCommands, type GuiCommand, type PiCommand } from '../../shared/pi-command'
+import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../shared/agent-engine-label'
 import type { WorkspaceActivationIntent } from '../../shared/ipc-contracts'
 import type { ChatWidth } from '../../shared/chat-width'
 import { t } from '../../shared/i18n'
@@ -102,6 +103,12 @@ export function useMenuActions(): void {
         case 'menu:new-session':
           createNewSession()
           break
+        case 'menu:close-session': {
+          const state = useAppStore.getState()
+          const runtimeId = sessionTabToClose(state)
+          if (runtimeId) void state.closeSessionTab(runtimeId)
+          break
+        }
         case 'menu:new-workspace':
           setCurrentView('settings') // Open settings where workspace creation lives
           break
@@ -146,6 +153,11 @@ export function useGlobalWorkflowOpen(): boolean {
   return useAppStore(isGlobalWorkflowOpen)
 }
 
+/** The view state that decides whether the chat pane is on screen. */
+interface ChatVisibilityScope extends WorkflowPanelScope {
+  currentView: string
+}
+
 /**
  * Whether the chat pane is actually on screen. ChatPanel stays mounted behind
  * `display: none` when another view or the global workflow panel takes over,
@@ -153,10 +165,36 @@ export function useGlobalWorkflowOpen(): boolean {
  * hidden -> shown edge (scroll re-anchoring, the disk-watch demand, and the
  * file tree's catch-up reload), which must all agree on one definition.
  */
+export function isChatVisible(scope: ChatVisibilityScope): boolean {
+  return scope.currentView === 'chat' && !isGlobalWorkflowOpen(scope)
+}
+
+/** Component-side subscription to {@link isChatVisible}. */
 export function useChatVisible(): boolean {
-  const currentView = useAppStore((state) => state.currentView)
-  const globalWorkflowOpen = useGlobalWorkflowOpen()
-  return currentView === 'chat' && !globalWorkflowOpen
+  return useAppStore(isChatVisible)
+}
+
+/**
+ * Whether a panel on screen consumes disk-change events: the chat's files or
+ * diff pane while the chat is visible, or the Diff view. The main process
+ * watches the workspace only while this holds.
+ */
+export function isFileWatchDemanded(scope: ChatVisibilityScope & { chatSidePanel: 'files' | 'diff' | 'tasks' | null }): boolean {
+  if (isGlobalWorkflowOpen(scope)) return false
+  if (scope.currentView === 'diff') return true
+  // The Tasks panel reads no workspace files, so it does not demand the watcher.
+  return scope.currentView === 'chat' && (scope.chatSidePanel === 'files' || scope.chatSidePanel === 'diff')
+}
+
+/**
+ * The session tab the macOS Close shortcut acts on: the active one, and only
+ * while the chat is on screen, so a tab hidden behind another view is never
+ * closed without the user seeing it.
+ */
+export function sessionTabToClose(
+  state: ChatVisibilityScope & { activeSessionRuntimeId: string | null }
+): string | null {
+  return isChatVisible(state) ? state.activeSessionRuntimeId : null
 }
 
 /** The chat column width, with an unsaved Settings edit shown live. */
@@ -241,7 +279,7 @@ function restoreAnchor(el: HTMLElement, anchor: ScrollAnchor): void {
  * stays mounted (so scrollTop persists) but we defer any scrolling until it's
  * shown again, so measurements are valid.
  */
-export function useChatScroll(active: boolean): {
+export function useChatScroll(active: boolean, bottomPadPx: number): {
   scrollRef: React.RefObject<HTMLDivElement | null>
   onScroll: () => void
   atBottom: boolean
@@ -253,7 +291,11 @@ export function useChatScroll(active: boolean): {
   )
   const sessionId = useAppStore((state) => state.sessionState?.sessionId ?? null)
   const messages = useAppStore((state) => state.messages)
-  const streamingContent = useAppStore((state) => state.streamingContent)
+  // Everything the streaming bubble renders counts as new content: a turn that
+  // is only thinking or running tools must be followed as much as one writing text.
+  const streamSize = useAppStore(
+    (state) => state.streamingContent.length + state.streamingThinking.length + state.streamingToolCalls.size
+  )
   const scrollBottomNonce = useAppStore((state) => state.chatScrollBottomNonce)
 
   const positions = useRef<Map<string, ScrollAnchor>>(new Map())
@@ -269,7 +311,8 @@ export function useChatScroll(active: boolean): {
   // Track content size to distinguish genuinely new content from unrelated
   // re-renders (e.g. re-showing the panel), so returning to chat doesn't scroll.
   const prevMsgCount = useRef(0)
-  const prevStreamLen = useRef(0)
+  const prevStreamSize = useRef(0)
+  const prevBottomPad = useRef(bottomPadPx)
 
   // Whether the viewport is at (or within a hair of) the bottom. `atBottom` (state)
   // drives the jump-to-bottom button; `atBottomRef` is read synchronously in the
@@ -316,9 +359,13 @@ export function useChatScroll(active: boolean): {
     // Did content actually grow (new message or streamed text)? Tracked even
     // while hidden so re-showing the panel isn't mistaken for new content.
     const messagesGrew = messages.length > prevMsgCount.current
-    const grew = messagesGrew || streamingContent.length > prevStreamLen.current
+    // A taller composer (a banner or a multi-line draft) raises the bottom
+    // padding; without following it the newest lines slide under the composer.
+    const grew =
+      messagesGrew || streamSize > prevStreamSize.current || bottomPadPx > prevBottomPad.current
     prevMsgCount.current = messages.length
-    prevStreamLen.current = streamingContent.length
+    prevStreamSize.current = streamSize
+    prevBottomPad.current = bottomPadPx
 
     // Defer scrolling while hidden: a display:none element has no layout, so
     // scrollHeight is 0 and any positioning would be wrong.
@@ -394,7 +441,7 @@ export function useChatScroll(active: boolean): {
     }
 
     syncAtBottom()
-  }, [active, sessionId, messages, streamingContent, scrollBottomNonce, autoScroll, syncAtBottom])
+  }, [active, sessionId, messages, streamSize, bottomPadPx, scrollBottomNonce, autoScroll, syncAtBottom])
 
   return { scrollRef: ref, onScroll, atBottom, scrollToBottom }
 }
@@ -443,9 +490,7 @@ export function useChatKeyboard(
 }
 
 /** A Pi built-in that maps to a GUI action rather than being inserted as text. */
-export interface BuiltinCommand {
-  name: string
-  description: string
+export interface BuiltinCommand extends GuiCommand {
   run: () => void
 }
 
@@ -464,31 +509,31 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
   const createNewSession = useAppStore((s) => s.createNewSession)
   const setTaskLauncherOpen = useAppStore((s) => s.setTaskLauncherOpen)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
+  const requestModelSelectorOpen = useAppStore((s) => s.requestModelSelectorOpen)
   const piEngine = useAppStore((s) => s.piEngine)
 
   const builtins = useMemo<BuiltinCommand[]>(
     () => [
       { name: 'compact', description: t('commands.compact.description'), run: () => { void compactContext() } },
+      { name: 'model', description: t('commands.model.description'), run: requestModelSelectorOpen },
       // OMP has no clone RPC command, so the action is not offered there.
       ...(piEngine === 'omp'
         ? []
         : [{ name: 'clone', description: t('commands.clone.description'), run: () => { void cloneBranch() } }]),
       { name: 'new', description: t('commands.new.description'), run: () => { void createNewSession() } },
-      { name: 'task', description: t('commands.task.description'), run: () => setTaskLauncherOpen(true) },
+      {
+        name: 'task',
+        description: t('commands.task.description', { agent: agentEngineLabel(piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL }),
+        run: () => setTaskLauncherOpen(true),
+      },
       { name: 'resume', description: t('commands.resume.description'), run: () => setCurrentView('sessions') },
       { name: 'fork', description: t('commands.fork.description'), run: () => setCurrentView('timeline') },
       { name: 'settings', description: t('commands.settings.description'), run: () => setCurrentView('settings') },
     ],
-    [compactContext, cloneBranch, createNewSession, setTaskLauncherOpen, setCurrentView, piEngine, t]
+    [compactContext, cloneBranch, createNewSession, setTaskLauncherOpen, setCurrentView, requestModelSelectorOpen, piEngine, t]
   )
 
-  const allCommands = useMemo<PiCommand[]>(
-    () => [
-      ...commands,
-      ...builtins.map((b) => ({ name: b.name, description: b.description, source: BUILTIN_SOURCE })),
-    ],
-    [commands, builtins]
-  )
+  const allCommands = useMemo<PiCommand[]>(() => withGuiCommands(commands, builtins), [commands, builtins])
 
   return { builtins, allCommands }
 }
@@ -498,6 +543,7 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
  */
 export function useInitialize(): void {
   const startPi = useAppStore((state) => state.startPi)
+  const openLastSession = useAppStore((state) => state.openLastSession)
   const loadSettings = useAppStore((state) => state.loadSettings)
   const loadWorkspaces = useAppStore((state) => state.loadWorkspaces)
   const refreshSessionStats = useAppStore((state) => state.refreshSessionStats)
@@ -553,41 +599,26 @@ export function useInitialize(): void {
       void useAppStore.getState().loadCustomModels()
       void useAppStore.getState().checkForUpdates()
 
+      // "Resume Last Session" opens the project's last conversation in the
+      // background, Home included, so the chat shows what the next start
+      // continues. The session-runtime running event hydrates it when ready.
+      const resumed = await openLastSession().catch(() => false)
+
       if (openToHome) {
-        // Pi starts lazily on first action from Home.
+        // Without a resumed session, Pi starts lazily on first action from Home.
         return
       }
 
       // Boot Pi in the background. The shell is already interactive; the
       // session-runtime running event hydrates Chat when the process is ready.
-      void startPi().then(() => refreshSessionStats()).catch(() => undefined)
+      if (!resumed) void startPi().then(() => refreshSessionStats()).catch(() => undefined)
       void window.piDesktop.workspace.getActivity()
         .then((activity) => useAppStore.getState().handleWorkspaceActivity(activity))
         .catch(() => undefined)
     }
 
     initialize()
-  }, [startPi, loadSettings, loadWorkspaces, refreshSessionStats, refreshSessionList])
-}
-
-/**
- * Global shortcut (Ctrl+Shift+P) that toggles the quick note picker, letting
- * the user insert a saved prompt from anywhere in the app. (Ctrl+Shift+N is
- * reserved for the New Workspace menu accelerator.)
- */
-export function useNotePickerShortcut(): void {
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent): void => {
-      if (e.ctrlKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
-        e.preventDefault()
-        const { notePickerOpen, setNotePickerOpen } = useAppStore.getState()
-        setNotePickerOpen(!notePickerOpen)
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+  }, [startPi, openLastSession, loadSettings, loadWorkspaces, refreshSessionStats, refreshSessionList])
 }
 
 /**

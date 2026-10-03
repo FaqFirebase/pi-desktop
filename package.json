@@ -1,6 +1,6 @@
 {
   "name": "pi-desktop",
-  "version": "0.1.9-alpha",
+  "version": "0.2.0-alpha",
   "description": "Desktop GUI for the Pi and oh-my-pi coding agents",
   "main": "out/main/index.js",
   "desktopName": "pi-desktop.desktop",
@@ -91,7 +91,7 @@
     "@types/react": "^19.1.4",
     "@types/react-dom": "^19.1.5",
     "@vitejs/plugin-react": "^4.5.2",
-    "electron": "^43.0.0",
+    "electron": "^43.7.7",
     "electron-builder": "^26.0.12",
     "electron-vite": "^3.1.0",
     "eslint": "^10.6.0",
@@ -144,7 +144,7 @@
         "zip"
       ],
       "category": "public.app-category.developer-tools",
-      "icon": "resources/icons/icon.icns",
+      "icon": "resources/icons/Icon.icon",
       "darkModeSupport": true,
       "hardenedRuntime": true,
       "gatekeeperAssess": false,

@@ -34,12 +34,14 @@ export const IPC_CHANNELS = {
   SESSION_CLONE: 'session:clone',
   SESSION_LIST: 'session:list',
   SESSION_LIST_ALL: 'session:list-all',
+  SESSION_RESUME_TARGET: 'session:resume-target',
   SESSION_GET_STATE: 'session:get-state',
   SESSION_GET_MESSAGES: 'session:get-messages',
   SESSION_GET_STATS: 'session:get-stats',
   SESSION_SET_NAME: 'session:set-name',
   SESSION_EXPORT_HTML: 'session:export-html',
   SESSION_GET_FORK_MESSAGES: 'session:get-fork-messages',
+  SESSION_GET_STREAMING_TEXT: 'session:get-streaming-text',
   SESSION_DELETE: 'session:delete',
   SESSION_ARCHIVE: 'session:archive',
   SESSION_UNARCHIVE: 'session:unarchive',
@@ -79,6 +81,7 @@ export const IPC_CHANNELS = {
 
   // System
   SYSTEM_OPEN_DIALOG: 'system:open-dialog',
+  SYSTEM_OPEN_ATTACHMENT_DIALOG: 'system:open-attachment-dialog',
   SYSTEM_GET_PATH: 'system:get-path',
   SYSTEM_PATH_KIND: 'system:path-kind',
   SYSTEM_OPEN_EXTERNAL: 'system:open-external',
@@ -93,6 +96,10 @@ export const IPC_CHANNELS = {
   WORKFLOW_GET_RUN: 'workflow:get-run',
   WORKFLOW_CONTROL: 'workflow:control',
   WORKFLOW_SET_PERSISTENCE: 'workflow:set-persistence',
+
+  // Subagent panel
+  SUBAGENT_LIST: 'subagent:list',
+  SUBAGENT_GET_TRANSCRIPT: 'subagent:get-transcript',
 
   // Diagnostics
   DIAGNOSTICS_GET: 'diagnostics:get',
@@ -144,10 +151,16 @@ export const IPC_CHANNELS = {
   FILE_WRITE: 'file:write',
   FILE_DIFF: 'file:diff',
   FILE_STAGED_DIFF: 'file:staged-diff',
+  FILE_DISCARD_DIFF: 'file:discard-diff',
   FILE_WATCH_DEMAND: 'file:watch-demand',
   GIT_STATUS: 'git:status',
   GIT_BRANCH: 'git:branch',
+  GIT_PREFIX: 'git:prefix',
   GIT_CONVEYOR_STATUS: 'git:conveyor-status',
+  GIT_COMMIT_MESSAGE_GENERATE: 'git:commit-message-generate',
+  GIT_LOCAL_BRANCHES: 'git:local-branches',
+  GIT_SWITCH_BRANCH: 'git:switch-branch',
+  GIT_CREATE_BRANCH: 'git:create-branch',
   GIT_CONVEYOR_COMMIT: 'git:conveyor-commit',
   GIT_CONVEYOR_PUSH: 'git:conveyor-push',
   GIT_CONVEYOR_CREATE_PR: 'git:conveyor-create-pr',
@@ -218,10 +231,10 @@ export const IPC_CHANNELS = {
 export type PiProcessStatus = 'stopped' | 'starting' | 'running' | 'error'
 
 /**
- * Where a 'starting' runtime is in its startup: 'spawning' until the first
- * stdout byte proves the process is alive, 'waiting-on-engine' once the
- * silence deadline passed with output flowing but readiness still pending —
- * typically an extension startup hook waiting on a local model server.
+ * Where a 'starting' runtime is in its startup: 'spawning' at first,
+ * 'waiting-on-engine' once the notice delay passed with the process still
+ * running but readiness still pending — a slow workspace startup, or an
+ * extension startup hook waiting on a local model server.
  */
 export type PiStartupPhase = 'spawning' | 'waiting-on-engine'
 
@@ -278,13 +291,27 @@ export interface SessionLaunchTaskOptions {
   isolated?: boolean
 }
 
+/** A branch switch or creation lands with the new status, or is refused with a reason for the user. */
+export type GitBranchSwitchResult = { ok: true; status: GitConveyorStatus } | { ok: false; error: string }
+
 export interface GitConveyorStatus {
   branch: string | null
   head: string
   lastCommitMessage: string | null
+  /** Every changed row, untracked files included. */
   dirtyFiles: number
+  /**
+   * Staged or unstaged changes to tracked files. Untracked files never reach a
+   * commit on their own, so only these block a push or a pull request.
+   */
+  dirtyTrackedFiles: number
   ahead: number
   behind: number
+  /**
+   * The configured upstream exists as a remote-tracking branch. False for a
+   * branch never pushed, a clone of an empty repository, or a remote branch
+   * that was deleted: Push publishes it again.
+   */
   hasUpstream: boolean
   /** Remote branch used by the explicit push target, when configured. */
   pushRemote: string | null
@@ -292,11 +319,50 @@ export interface GitConveyorStatus {
   upstreamBranch: string | null
   /** Default base branch discovered from the upstream remote, when available. */
   baseBranch: string | null
+  /** Commits on HEAD that the remote base branch lacks; null when the base is unknown. */
+  aheadOfBase: number | null
   remoteUrl: string | null
+  /** GitHub `owner/name` a pull request targets; null when that remote is not on GitHub. */
+  pullRequestRepo: string | null
+  /** The open pull request from this branch, when GitHub reports one. */
+  openPullRequest: GitOpenPullRequest | null
+}
+
+export interface GitOpenPullRequest {
+  number: number
+  url: string
+}
+
+/** Both fields null: the commit selection has nothing to describe. */
+export interface GitCommitMessageSuggestion {
+  message: string | null
+  error: GitCommitMessageError | null
+}
+
+export type GitCommitMessageError = 'generation-failed' | 'timed-out' | 'engine-unavailable'
+
+export interface GitCommitMessageRequest {
+  /** Generate again even when this diff already has a suggestion. */
+  force: boolean
+  /** Describe only these repository-root-relative paths (the filtered Diff Viewer). */
+  paths?: string[]
+  /** Untracked files among `paths` the user chose to commit; the others stay out. */
+  newFiles?: string[]
 }
 
 export interface GitConveyorCommitOptions {
   message: string
+  /**
+   * Commit only these repository-root-relative paths; untracked ones stay out
+   * unless listed in `newFiles`.
+   * Omitted: commit the staged index, or auto-stage tracked changes.
+   */
+  paths?: string[]
+  /**
+   * Untracked files among `paths` the user checked in the Commit dialog. They
+   * are added and committed; ignored files and directories are refused.
+   */
+  newFiles?: string[]
 }
 
 export interface GitConveyorPullRequestOptions {
@@ -316,11 +382,14 @@ export interface PiStartOptions {
   cwd?: string
   model?: string
   provider?: string
+  /** Saved effort for fresh sessions only; never overrides a resumed session. */
+  defaultThinkingLevel?: string
   sessionPath?: string
   noSession?: boolean
   // When true (and neither sessionPath, forkSessionPath nor noSession is set),
   // Pi is launched with --continue so it resumes the most recent session for
-  // the cwd instead of creating a fresh one.
+  // the cwd instead of creating a fresh one. Left unset, the Resume Last
+  // Session setting decides; an explicit false always starts a fresh session.
   continueSession?: boolean
   // Start a new session by forking this existing Pi session file. The new
   // session is created in the supplied cwd.
@@ -350,7 +419,13 @@ export interface TerminalStartResult {
   cwd: string
 }
 
+export interface TerminalDataEvent {
+  workspaceId: string
+  data: string
+}
+
 export interface TerminalExitEvent {
+  workspaceId: string
   exitCode: number
   signal?: number
 }
@@ -366,6 +441,12 @@ export interface PiAgentEndEvent {
   messages: unknown[]
 }
 
+/** The text and thinking of the assistant message a Pi process is streaming, so far. */
+export interface StreamingTextSnapshot {
+  content: string
+  thinking: string
+}
+
 export interface PiMessageUpdateEvent {
   type: 'message_update'
   message: Record<string, unknown>
@@ -373,6 +454,12 @@ export interface PiMessageUpdateEvent {
     type: string
     contentIndex?: number
     delta?: string
+    /**
+     * Where a text or thinking delta starts in its message's text of that
+     * kind. Main stamps it (Pi sends none), so a view that attached in the
+     * middle of a message can tell a gap from the next delta.
+     */
+    offset?: number
     partial?: Record<string, unknown>
     content?: string
     thinking?: string
@@ -694,6 +781,18 @@ export interface PiConfigUpdateEvent {
   thinkingLevel?: string
 }
 
+/** OMP subagent start/finish, pushed after `set_subagent_subscription`. */
+export interface PiSubagentLifecycleEvent {
+  type: 'subagent_lifecycle'
+  payload: unknown
+}
+
+/** OMP subagent progress, pushed at subscription level `progress`. */
+export interface PiSubagentProgressEvent {
+  type: 'subagent_progress'
+  payload: unknown
+}
+
 export type PiRpcEvent =
   | PiAgentStartEvent
   | PiAgentEndEvent
@@ -720,6 +819,8 @@ export type PiRpcEvent =
   | PiCommandOutputEvent
   | PiPromptResultEvent
   | PiConfigUpdateEvent
+  | PiSubagentLifecycleEvent
+  | PiSubagentProgressEvent
 
 // ─── Model Types ────────────────────────────────────────────────────────────
 
@@ -891,9 +992,12 @@ export type AttachmentReadResult =
 /** Options for the native open dialog. Defaults to picking a directory. */
 export interface OpenDialogOptions {
   title?: string
-  mode?: 'file' | 'directory' | 'either'
+  mode?: 'directory' | 'either'
   filters?: Array<{ name: string; extensions: string[] }>
 }
+
+/** Options for the composer's multi-file attachment picker. */
+export type OpenAttachmentDialogOptions = Pick<OpenDialogOptions, 'title' | 'filters'>
 
 /** Result of SYSTEM_PATH_KIND (drag-drop folder open). */
 export interface PathKindResult {
@@ -1117,6 +1221,7 @@ export interface AgentDetectionOptions {
 }
 
 export interface AppSettings {
+  shortcuts: import('./keyboard-shortcuts').KeyboardShortcuts
   piExecutablePath: string
   /** Explicit engine identity; auto preserves legacy Pi/OMP detection. */
   piEngine: AgentEngine
@@ -1129,9 +1234,12 @@ export interface AppSettings {
   systemDarkTheme: string
   defaultModel: string | null
   defaultProvider: string | null
+  defaultThinkingLevel: string | null
   defaultCwd: string | null
   // UI font size in px (chat, panels, sidebar). Applied to the document root.
   fontSize: number
+  // Installed font family for UI and chat; empty keeps the built-in fonts.
+  uiFontFamily: string
   // Terminal (xterm) font size in px — independent of the UI font size.
   terminalFontSize: number
   // Code editor (CodeMirror) font size in px — independent of the UI font size.
@@ -1582,6 +1690,9 @@ export interface FileChangeEvent {
   changeType: 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir'
   relativePath: string
 }
+
+/** `relativePath` of a FileChangeEvent that replaced the whole worktree, such as a branch switch. */
+export const WHOLE_WORKSPACE_CHANGE_PATH = '.'
 
 export interface DiffHunk {
   oldStart: number

@@ -31,6 +31,7 @@ import {
 } from './git-worktree'
 import { extractGitHubPullRequestUrl, resolvePullRequestHeadBranch } from './git-conveyor'
 import { t, tEnglish } from '../shared/i18n'
+import { OMP_SUBAGENT_SUBSCRIPTION_LEVEL } from '../shared/subagent-task'
 
 /**
  * Manages project workspaces and their independent Pi session runtimes.
@@ -176,6 +177,10 @@ export class WorkspaceManager {
   // focus refresh keep it fresh.
   private watchingWorkspaceId: string | null = null
   private fileWatchDemanded = false
+  // The workspace whose FileService watches HEAD and the branches. This is
+  // always the active workspace, with or without demand: the status-bar
+  // branch menu is on screen whenever a workspace is open.
+  private gitWatchingWorkspaceId: string | null = null
 
   constructor() {
     this.configPath = getGuiDataPath(WORKSPACES_FILE)
@@ -215,10 +220,12 @@ export class WorkspaceManager {
   /**
    * Ensure the disk watcher is attached to the active workspace's FileService
    * (and detached from any previously-watched one) — but only while the
-   * renderer demands change events. Called on startup, on every
+   * renderer demands change events. The git watcher follows the active
+   * workspace with or without demand. Called on startup, on every
    * active-workspace change, and when demand flips.
    */
   private updateActiveWatcher(): void {
+    this.updateGitWatcher()
     const target = this.fileWatchDemanded ? this.activeWorkspaceId : null
     if (this.watchingWorkspaceId === target) return
 
@@ -231,6 +238,19 @@ export class WorkspaceManager {
       this.fileServices
         .get(target)
         ?.startWatching((event) => this.emitFileChange(event))
+    }
+  }
+
+  private updateGitWatcher(): void {
+    if (this.gitWatchingWorkspaceId === this.activeWorkspaceId) return
+    if (this.gitWatchingWorkspaceId) {
+      this.fileServices.get(this.gitWatchingWorkspaceId)?.stopGitWatching()
+    }
+    this.gitWatchingWorkspaceId = this.activeWorkspaceId
+    if (this.activeWorkspaceId) {
+      this.fileServices
+        .get(this.activeWorkspaceId)
+        ?.startGitWatching((event) => this.emitFileChange(event))
     }
   }
 
@@ -494,6 +514,13 @@ export class WorkspaceManager {
     return entry ? this.snapshotRuntime(entry) : null
   }
 
+  /** The runtime a start for this workspace reuses (see startPiForWorkspace), if it has one. */
+  getWorkspaceSessionRuntime(workspaceId: string): SessionRuntimeInfo | null {
+    const runtimeId = this.activeRuntimeByWorkspace.get(workspaceId)
+    const entry = runtimeId ? this.sessionRuntimes.get(runtimeId) : undefined
+    return entry ? this.snapshotRuntime(entry) : null
+  }
+
   getSessionRuntime(runtimeId: string): SessionRuntimeInfo | null {
     const entry = this.sessionRuntimes.get(runtimeId)
     return entry ? this.snapshotRuntime(entry) : null
@@ -589,6 +616,13 @@ export class WorkspaceManager {
     // emit the now-detached entry after the closed marker was broadcast.
     if (this.sessionRuntimes.get(runtimeId) !== entry) {
       return { ...entry.info, ...entry.manager.getStatus(), active: false, closed: true }
+    }
+    // OMP pushes subagent lifecycle and progress only after this; an OMP build
+    // without the command answers with an error, which is ignored here.
+    if (entry.manager.getEngineKind() === 'omp') {
+      await entry.manager
+        .sendCommand({ type: 'set_subagent_subscription', level: OMP_SUBAGENT_SUBSCRIPTION_LEVEL })
+        .catch(() => null)
     }
     const response = await entry.manager.sendCommand({ type: 'get_state' }).catch(() => null)
     if (this.sessionRuntimes.get(runtimeId) !== entry) {
@@ -866,6 +900,7 @@ export class WorkspaceManager {
     const fileService = this.fileServices.get(workspaceId)
     if (fileService) {
       fileService.stopWatching()
+      fileService.stopGitWatching()
       this.fileServices.delete(workspaceId)
     }
     if (workspace.kind === 'worktree' && workspace.managed !== false && workspace.repoRoot) {
@@ -938,11 +973,13 @@ export class WorkspaceManager {
     }
     const oldFs = this.fileServices.get(workspaceId)
     oldFs?.stopWatching()
+    oldFs?.stopGitWatching()
     this.fileServices.set(workspaceId, new FileService(newPath))
     await this.saveWorkspaces()
     // Re-arm the watcher if this is the active workspace.
     if (this.activeWorkspaceId === workspaceId) {
       this.watchingWorkspaceId = null
+      this.gitWatchingWorkspaceId = null
       this.updateActiveWatcher()
     }
   }
@@ -1142,8 +1179,12 @@ export class WorkspaceManager {
   stopAll(): void {
     for (const [, manager] of this.piManagers) manager.stop()
     for (const [, entry] of this.sessionRuntimes) entry.manager.stop()
-    for (const [, fs] of this.fileServices) fs.stopWatching()
+    for (const [, fs] of this.fileServices) {
+      fs.stopWatching()
+      fs.stopGitWatching()
+    }
     this.watchingWorkspaceId = null
+    this.gitWatchingWorkspaceId = null
     this.fileWatchDemanded = false
     this.piManagers.clear()
     this.sessionRuntimes.clear()

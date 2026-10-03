@@ -15,8 +15,44 @@ export interface PiCommand {
  * Source used for Pi built-in commands that map to a GUI action rather than
  * being inserted as text. Pi's RPC only expands `/skill:` and `/template` from
  * typed input, so these built-ins run the equivalent GUI action directly.
+ * OMP reports its own commands with this source too; OMP runs them from typed
+ * input, so one without a GUI action is inserted like any other command.
  */
 export const BUILTIN_SOURCE = 'builtin'
+
+/** A GUI action offered as a slash command. */
+export interface GuiCommand {
+  name: string
+  description: string
+}
+
+/**
+ * The agent's commands plus the GUI's actions. A GUI action replaces an agent
+ * built-in of the same name (OMP reports its own `compact`), so every name is
+ * listed once and runs the GUI action.
+ */
+export function withGuiCommands(agentCommands: readonly PiCommand[], guiCommands: readonly GuiCommand[]): PiCommand[] {
+  const guiNames = new Set(guiCommands.map((command) => command.name))
+  return [
+    ...agentCommands.filter((command) => command.source !== BUILTIN_SOURCE || !guiNames.has(command.name)),
+    ...guiCommands.map((command) => ({ name: command.name, description: command.description, source: BUILTIN_SOURCE })),
+  ]
+}
+
+/** The GUI action a chosen command runs, or undefined when the command is sent to the agent as text. */
+export function guiCommandFor<T extends GuiCommand>(command: PiCommand, guiCommands: readonly T[]): T | undefined {
+  return command.source === BUILTIN_SOURCE ? guiCommands.find((gui) => gui.name === command.name) : undefined
+}
+
+/**
+ * True for a command registered by an extension built into Pi itself (such as
+ * `/llama`). Pi marks those extensions hidden and their commands only work in
+ * its terminal UI, so the GUI leaves them out of its command catalog.
+ */
+export function isPiBuiltInExtensionCommand(command: unknown): boolean {
+  const sourceInfo = (command as { sourceInfo?: { source?: unknown } } | null)?.sourceInfo
+  return sourceInfo?.source === 'inline'
+}
 
 /** Pi lists skills under their invocation token: "skill:<name>". */
 export const SKILL_COMMAND_PREFIX = 'skill:'
@@ -87,17 +123,57 @@ export interface CommandGroup {
 }
 
 /**
- * Filter commands for the slash palette. A single leading "/" in the query is
- * ignored so typing "/rev" matches the same as "rev". Matching is
- * case-insensitive across name and description.
+ * How well a command matches a query, lower first; null when it does not
+ * match. A command whose name is the query comes first, then commands whose
+ * name starts with it, then skills by name, then other name matches, then
+ * description matches. Enter runs the first row, so typing `/model` must never
+ * pick a skill that only mentions models.
+ */
+const MATCH_RANK = {
+  exactCommand: 0,
+  commandPrefix: 1,
+  skillName: 2,
+  commandName: 3,
+  skillNameContains: 4,
+  commandDescription: 5,
+  skillDescription: 6,
+} as const
+
+function matchRank(command: PiCommand, q: string): number | null {
+  const skill = command.source === 'skill'
+  const shortName = skillDisplayName(command.name).toLowerCase()
+  if (shortName === q || shortName.startsWith(q)) {
+    if (skill) return MATCH_RANK.skillName
+    return shortName === q ? MATCH_RANK.exactCommand : MATCH_RANK.commandPrefix
+  }
+  if (shortName.includes(q) || command.name.toLowerCase().includes(q)) {
+    return skill ? MATCH_RANK.skillNameContains : MATCH_RANK.commandName
+  }
+  if (command.description.toLowerCase().includes(q)) {
+    return skill ? MATCH_RANK.skillDescription : MATCH_RANK.commandDescription
+  }
+  return null
+}
+
+/** Group position of a command source; unknown sources go to the catch-all at the end. */
+function groupIndex(source: string): number {
+  const index = (GROUP_SOURCES as readonly string[]).indexOf(source)
+  return index === -1 ? GROUP_SOURCES.length : index
+}
+
+/**
+ * Filter and order commands for the slash palette. A single leading "/" in
+ * the query is ignored so typing "/rev" matches the same as "rev". Matching is
+ * case-insensitive across name and description; results come best match first
+ * (see MATCH_RANK). Without a query every command is listed in group order.
  */
 export function filterCommands(commands: PiCommand[], query: string): PiCommand[] {
   const q = query.replace(/^\//, '').trim().toLowerCase()
-  if (!q) return commands
-  return commands.filter(
-    (c) =>
-      c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)
-  )
+  const ranked = commands
+    .map((command, index) => ({ command, index, rank: q ? matchRank(command, q) : groupIndex(command.source) }))
+    .filter((entry): entry is { command: PiCommand; index: number; rank: number } => entry.rank !== null)
+  ranked.sort((a, b) => a.rank - b.rank || a.index - b.index)
+  return ranked.map((entry) => entry.command)
 }
 
 /**
@@ -116,9 +192,11 @@ export function invocationToken(name: string, source: string): string {
 }
 
 /**
- * Group commands by source in display order (empty groups dropped), with an
- * "Other" catch-all for any unexpected source so nothing is silently hidden.
- * `flat` matches the visual order — keyboard navigation indexes it.
+ * Group commands by source (empty groups dropped), with an "Other" catch-all
+ * for any unexpected source so nothing is silently hidden. Groups keep the
+ * order of `results`: the group holding the first result comes first, so the
+ * best match of a filtered list is the first row. `flat` matches the visual
+ * order — keyboard navigation indexes it.
  */
 export function groupCommands(
   results: PiCommand[],
@@ -128,12 +206,13 @@ export function groupCommands(
   flat: PiCommand[]
 } {
   const known = new Set<string>(GROUP_SOURCES)
-  const groups: Array<{ id: CommandGroupId; items: PiCommand[] }> = [
-    ...GROUP_SOURCES.map((source) => ({ id: source, items: results.filter((r) => r.source === source) })),
-    { id: OTHER_GROUP_ID, items: results.filter((r) => !known.has(r.source)) },
-  ]
-  const grouped = groups
-    .filter((g) => g.items.length > 0)
-    .map((g) => ({ id: g.id, label: groupLabel(g.id, t), items: g.items }))
+  const groupOf = (command: PiCommand): CommandGroupId =>
+    known.has(command.source) ? command.source as CommandGroupId : OTHER_GROUP_ID
+  const groups = new Map<CommandGroupId, PiCommand[]>()
+  for (const command of results) {
+    const id = groupOf(command)
+    groups.set(id, [...(groups.get(id) ?? []), command])
+  }
+  const grouped = [...groups].map(([id, items]) => ({ id, label: groupLabel(id, t), items }))
   return { grouped, flat: grouped.flatMap((g) => g.items) }
 }

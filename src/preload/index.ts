@@ -21,6 +21,7 @@ import type {
   FileChangeEvent,
   GitFileStatus,
   TerminalExitEvent,
+  TerminalDataEvent,
   TerminalStartOptions,
   TerminalStartResult,
   Note,
@@ -43,6 +44,7 @@ import type {
   VoiceProgressEvent,
   AttachmentReadResult,
   OpenDialogOptions,
+  OpenAttachmentDialogOptions,
   PathKindResult,
   PromptImage,
   ActivityStatsResult,
@@ -67,16 +69,21 @@ import type {
   WorkflowControlAction,
   WorkflowControlResult,
   SessionRuntimeInfo,
+  StreamingTextSnapshot,
   SessionRuntimeCloseResult,
   SessionLaunchTaskOptions,
   WorkspaceActivationIntent,
+  GitBranchSwitchResult,
   GitConveyorStatus,
+  GitCommitMessageRequest,
+  GitCommitMessageSuggestion,
   GitConveyorCommitOptions,
   GitConveyorPullRequestOptions,
   GitConveyorPullRequestResult,
   I18nEnvironment,
 } from '../shared/ipc-contracts'
 import type { ThemeFile } from '../shared/theme/theme-file'
+import type { SubagentListResult, SubagentTranscriptRef, SubagentTranscriptResult } from '../shared/subagent-task'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 
 // ─── Type Definitions for the Exposed API ────────────────────────────────────
@@ -112,12 +119,16 @@ interface PiDesktopAPI {
     clone(): Promise<unknown>
     list(cwd?: string): Promise<SessionListItem[]>
     listAll(cwd?: string): Promise<SessionListItem[]>
+    /** The session any start would continue for a registered project; null means a new session. */
+    resumeTarget(cwd: string): Promise<string | null>
     getState(): Promise<unknown>
     getMessages(): Promise<unknown>
     getStats(): Promise<unknown>
     setName(name: string): Promise<unknown>
     exportHtml(outputPath?: string): Promise<unknown>
     getForkMessages(): Promise<unknown>
+    /** What the active session's current assistant message has streamed so far; null without a running Pi. */
+    getStreamingText(): Promise<StreamingTextSnapshot | null>
     delete(sessionPath: string): Promise<SessionDeleteResult>
     archive(sessionId: string): Promise<ArchivedSessionsMap>
     unarchive(sessionId: string): Promise<ArchivedSessionsMap>
@@ -266,6 +277,11 @@ interface PiDesktopAPI {
   // Git issue-to-PR conveyor. All mutating actions require explicit renderer clicks.
   git: {
     status(): Promise<GitConveyorStatus>
+    /** Suggest an English subject for the pending commit diff; never throws for model failures. */
+    generateCommitMessage(request: GitCommitMessageRequest): Promise<GitCommitMessageSuggestion>
+    localBranches(): Promise<string[]>
+    switchBranch(workspaceId: string, branch: string): Promise<GitBranchSwitchResult>
+    createBranch(workspaceId: string, name: string): Promise<GitBranchSwitchResult>
     commit(options: GitConveyorCommitOptions): Promise<GitConveyorStatus>
     push(): Promise<GitConveyorStatus>
     createPullRequest(options: GitConveyorPullRequestOptions): Promise<GitConveyorPullRequestResult>
@@ -289,6 +305,7 @@ interface PiDesktopAPI {
     write(path: string, content: string): Promise<{ ok: boolean }>
     getDiff(filePath?: string): Promise<string>
     getStagedDiff(filePath?: string): Promise<string>
+    discardDiff(workspaceId: string, patches: string[]): Promise<void>
     /**
      * Declare whether a live files panel consumes file-change events. The
      * main process attaches the workspace watcher only while demanded.
@@ -296,11 +313,15 @@ interface PiDesktopAPI {
     setWatchDemand(demanded: boolean): Promise<{ watching: boolean }>
     getGitStatus(): Promise<Record<string, GitFileStatus>>
     getGitBranch(): Promise<string | null>
+    /** The workspace's directory inside its repository ('' at the root); diff paths start at the root. */
+    getGitPrefix(): Promise<string>
   }
 
   // System
   system: {
     openDialog(options?: OpenDialogOptions): Promise<string | null>
+    /** Pick one or more files to attach; every picked path is approved for readAttachment. */
+    openAttachmentDialog(options?: OpenAttachmentDialogOptions): Promise<string[]>
     getPath(name: string): Promise<string>
     /** Absolute path for a File from a drag-drop (Electron webUtils). */
     getPathForFile(file: File): string
@@ -333,6 +354,13 @@ interface PiDesktopAPI {
     setPersistAgentSessions(enabled: boolean): Promise<void>
   }
 
+  // Subagent panel: OMP subagent list and per-subagent transcripts
+  subagents: {
+    /** Both calls answer only while `runtimeId` is the active session runtime. */
+    list(runtimeId: string): Promise<SubagentListResult>
+    getTranscript(runtimeId: string, ref: SubagentTranscriptRef, cursor: number): Promise<SubagentTranscriptResult>
+  }
+
   // Diagnostics report
   diagnostics: {
     get(): Promise<DiagnosticsReport>
@@ -344,11 +372,11 @@ interface PiDesktopAPI {
   }
 
   terminal: {
-    start(options?: TerminalStartOptions): Promise<TerminalStartResult>
-    input(data: string): Promise<void>
-    resize(cols: number, rows: number): Promise<void>
-    stop(): Promise<void>
-    onData(callback: (data: string) => void): () => void
+    start(workspaceId: string, options?: TerminalStartOptions): Promise<TerminalStartResult>
+    input(workspaceId: string, data: string): Promise<void>
+    resize(workspaceId: string, cols: number, rows: number): Promise<void>
+    stop(workspaceId: string): Promise<void>
+    onData(callback: (event: TerminalDataEvent) => void): () => void
     onExit(callback: (event: TerminalExitEvent) => void): () => void
   }
 
@@ -411,12 +439,14 @@ const api: PiDesktopAPI = {
     clone: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_CLONE),
     list: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST, cwd),
     listAll: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_ALL, cwd),
+    resumeTarget: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RESUME_TARGET, cwd),
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_STATE),
     getMessages: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_MESSAGES),
     getStats: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_STATS),
     setName: (name) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SET_NAME, name),
     exportHtml: (outputPath) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_EXPORT_HTML, outputPath),
     getForkMessages: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_FORK_MESSAGES),
+    getStreamingText: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_STREAMING_TEXT),
     getLineage: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_LINEAGE),
     compact: (customInstructions) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_COMPACT, customInstructions),
     delete: (sessionPath) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_DELETE, sessionPath),
@@ -553,6 +583,10 @@ const api: PiDesktopAPI = {
 
   git: {
     status: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_STATUS),
+    generateCommitMessage: (request) => ipcRenderer.invoke(IPC_CHANNELS.GIT_COMMIT_MESSAGE_GENERATE, request),
+    localBranches: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_LOCAL_BRANCHES),
+    switchBranch: (workspaceId, branch) => ipcRenderer.invoke(IPC_CHANNELS.GIT_SWITCH_BRANCH, workspaceId, branch),
+    createBranch: (workspaceId, name) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CREATE_BRANCH, workspaceId, name),
     commit: (options) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_COMMIT, options),
     push: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_PUSH),
     createPullRequest: (options) => ipcRenderer.invoke(IPC_CHANNELS.GIT_CONVEYOR_CREATE_PR, options),
@@ -574,13 +608,16 @@ const api: PiDesktopAPI = {
     write: (path, content) => ipcRenderer.invoke(IPC_CHANNELS.FILE_WRITE, path, content),
     getDiff: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE_DIFF, filePath),
     getStagedDiff: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.FILE_STAGED_DIFF, filePath),
+    discardDiff: (workspaceId, patches) => ipcRenderer.invoke(IPC_CHANNELS.FILE_DISCARD_DIFF, workspaceId, patches),
     setWatchDemand: (demanded) => ipcRenderer.invoke(IPC_CHANNELS.FILE_WATCH_DEMAND, demanded),
     getGitStatus: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_STATUS),
     getGitBranch: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_BRANCH),
+    getGitPrefix: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_PREFIX),
   },
 
   system: {
     openDialog: (options) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_DIALOG, options),
+    openAttachmentDialog: (options) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_ATTACHMENT_DIALOG, options),
     getPath: (name) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_PATH, name),
     getPathForFile: (file) => webUtils.getPathForFile(file),
     pathKind: (path) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_PATH_KIND, path),
@@ -601,6 +638,11 @@ const api: PiDesktopAPI = {
     setPersistAgentSessions: (enabled) => ipcRenderer.invoke(IPC_CHANNELS.WORKFLOW_SET_PERSISTENCE, enabled),
   },
 
+  subagents: {
+    list: (runtimeId) => ipcRenderer.invoke(IPC_CHANNELS.SUBAGENT_LIST, runtimeId),
+    getTranscript: (runtimeId, ref, cursor) => ipcRenderer.invoke(IPC_CHANNELS.SUBAGENT_GET_TRANSCRIPT, runtimeId, ref, cursor),
+  },
+
   diagnostics: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_GET),
   },
@@ -610,12 +652,12 @@ const api: PiDesktopAPI = {
   },
 
   terminal: {
-    start: (options) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_START, options),
-    input: (data) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_INPUT, data),
-    resize: (cols, rows) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESIZE, { cols, rows }),
-    stop: () => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_STOP),
+    start: (workspaceId, options) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_START, workspaceId, options),
+    input: (workspaceId, data) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_INPUT, workspaceId, data),
+    resize: (workspaceId, cols, rows) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESIZE, workspaceId, { cols, rows }),
+    stop: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_STOP, workspaceId),
     onData: (callback) => {
-      const handler = (_event: Electron.IpcRendererEvent, data: string) => callback(data)
+      const handler = (_event: Electron.IpcRendererEvent, data: TerminalDataEvent) => callback(data)
       ipcRenderer.on(IPC_CHANNELS.EVENT_TERMINAL_DATA, handler)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.EVENT_TERMINAL_DATA, handler)
     },
@@ -691,7 +733,7 @@ const api: PiDesktopAPI = {
 
   onMenuAction: (callback) => {
     const handlers: Array<() => void> = []
-    const actions = ['menu:new-session', 'menu:new-workspace', 'menu:open-project']
+    const actions = ['menu:new-session', 'menu:close-session', 'menu:new-workspace', 'menu:open-project']
 
     for (const action of actions) {
       const handler = () => callback(action)

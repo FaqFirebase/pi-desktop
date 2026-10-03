@@ -113,6 +113,18 @@ test('aborted turn surfaces only a non-generic abort reason', () => {
   assert.deepEqual(systemMessages(), ['Error: Aborted by permission extension'])
 })
 
+test('a user stop on OMP reads as a plain stop, not an error', () => {
+  useAppStore.getState().handlePiEvent({
+    type: 'message_end',
+    message: erroredAssistantMessage({
+      stopReason: 'aborted',
+      errorMessage: 'Interrupted by user',
+      content: [{ type: 'text', text: 'Partial answer' }],
+    }),
+  } as PiRpcEvent)
+  assert.deepEqual(systemMessages(), [])
+})
+
 test('message_end for a non-assistant message adds no error message', () => {
   useAppStore.getState().handlePiEvent({
     type: 'message_end',
@@ -133,4 +145,12 @@ test('message_end with stopReason error records a failed timeline event', () => 
   const failure = events.find((e) => e.type === 'assistant_message')
   assert.ok(failure, 'expected an assistant_message timeline event')
   assert.equal(failure.status, 'error')
+})
+
+test('an OMP local command answered in the prompt response ends the wait for a turn', async () => {
+  const { promptRanWithoutAgent } = await import('./store')
+  assert.equal(promptRanWithoutAgent({ type: 'response', command: 'prompt', success: true, data: { agentInvoked: false } }), true)
+  assert.equal(promptRanWithoutAgent({ type: 'response', command: 'prompt', success: true, data: { agentInvoked: true } }), false)
+  assert.equal(promptRanWithoutAgent({ type: 'response', command: 'prompt', success: true }), false)
+  assert.equal(promptRanWithoutAgent(null), false)
 })

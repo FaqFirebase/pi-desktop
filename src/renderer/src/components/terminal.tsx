@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Terminal as XTerm, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -8,6 +8,10 @@ import { useAppStore } from '../store'
 import { useAppliedThemeId } from '../hooks'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { clsx } from 'clsx'
+import { useContextMenu, buildTerminalContextMenu } from './context-menu'
+import { isNativeClipboardShortcut, usesCtrlClipboardShortcuts } from './terminal-clipboard'
+import { ResizeHandle } from './resize-handle'
+import { clampTerminalHeight, DEFAULT_TERMINAL_HEIGHT, MAX_TERMINAL_HEIGHT_RATIO } from '../../../shared/terminal-height'
 import {
   Terminal as TerminalIcon,
   X,
@@ -53,99 +57,163 @@ function buildTerminalTheme(): ITheme {
   }
 }
 
-export function TerminalPanel(): React.JSX.Element | null {
-  const { t } = useTranslation()
-  const terminalOpen = useAppStore((state) => state.terminalOpen)
+// The Terminal Font Size setting, or the unsaved settings draft while the
+// Settings view edits it. Falls back to the default.
+function selectTerminalFontSize(state: ReturnType<typeof useAppStore.getState>): number {
+  return state.settingsDraft.terminalFontSize ?? state.settings?.terminalFontSize ?? DEFAULT_SETTINGS.terminalFontSize
+}
+
+// Fit xterm to its container and send the new size to the pty. Skipped while
+// the container is hidden (zero size); the resize observer fits it once shown.
+function fitAndResize(workspaceId: string, container: HTMLElement | null, terminal: XTerm, fit: FitAddon): boolean {
+  if (!container?.clientWidth || !container.clientHeight) return false
+  fit.fit()
+  void window.piDesktop.terminal.resize(workspaceId, terminal.cols, terminal.rows).catch(() => {})
+  return true
+}
+
+export function TerminalPanel(): React.JSX.Element {
+  const workspaces = useAppStore((state) => state.workspaces)
+  const activeId = useAppStore((state) => state.activeWorkspace?.id)
+  const open = useAppStore((state) => state.terminalOpen)
+  return <>{workspaces.map((workspace) => (
+    <ProjectTerminal key={`${workspace.id}:${workspace.path}`} workspaceId={workspace.id}
+      visible={open && workspace.id === activeId} />
+  ))}</>
+}
+
+// Lazy creation, then keep xterm (including scrollback) mounted until project closure.
+function ProjectTerminal({ workspaceId, visible }: { workspaceId: string; visible: boolean }): React.JSX.Element | null {
+  const [opened, setOpened] = useState(visible)
+  useEffect(() => {
+    if (visible) setOpened(true)
+  }, [visible])
+  return opened || visible ? <TerminalSession workspaceId={workspaceId} visible={visible} /> : null
+}
+
+function TerminalSession({ workspaceId, visible }: { workspaceId: string; visible: boolean }): React.JSX.Element {
+  const { t, i18n } = useTranslation()
   const toggleTerminal = useAppStore((state) => state.toggleTerminal)
-  const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const appliedThemeId = useAppliedThemeId()
+  const fontSize = useAppStore(selectTerminalFontSize)
 
   const [maximized, setMaximized] = useState(false)
+  const [height, setHeight] = useState(DEFAULT_TERMINAL_HEIGHT)
+  const panelRef = useRef<HTMLDivElement>(null)
   const [shellLabel, setShellLabel] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<XTerm | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
+  const shellRunningRef = useRef(false)
+  const { show: showContextMenu, ContextMenuComponent: TerminalContextMenu } = useContextMenu()
+
+  // Start a shell for this workspace unless one is already running or starting.
+  const startShell = useCallback(async (): Promise<void> => {
+    const terminal = terminalRef.current
+    const fit = fitRef.current
+    if (!terminal || !fit || shellRunningRef.current) return
+    shellRunningRef.current = true
+    fit.fit()
+    try {
+      const result = await window.piDesktop.terminal.start(workspaceId, {
+        cols: terminal.cols,
+        rows: terminal.rows,
+      })
+      if (terminalRef.current !== terminal) return
+      setShellLabel(result.shell.split(/[\\/]/).pop() ?? result.shell)
+    } catch (err) {
+      if (terminalRef.current !== terminal) return
+      shellRunningRef.current = false
+      terminal.writeln(`Failed to start terminal: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [workspaceId])
 
   useEffect(() => {
-    if (!terminalOpen || !containerRef.current) return
+    if (!containerRef.current) return
 
     const terminal = new XTerm({
       cursorBlink: true,
       convertEol: true,
       fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-      // Use the Terminal Font Size setting (or the unsaved settings draft),
-      // read once at creation. Applied on the next mount — i.e. when the user
-      // returns to chat — rather than live, to avoid resizing a hidden pty.
-      // Falls back to the default.
-      fontSize:
-        useAppStore.getState().settingsDraft.terminalFontSize ??
-        useAppStore.getState().settings?.terminalFontSize ??
-        DEFAULT_SETTINGS.terminalFontSize,
+      // Later changes are applied live by the font size effect below.
+      fontSize: selectTerminalFontSize(useAppStore.getState()),
       theme: buildTerminalTheme(),
     })
     const fit = new FitAddon()
     terminal.loadAddon(fit)
     terminal.loadAddon(new WebLinksAddon())
     terminal.open(containerRef.current)
+    const platform = window.piDesktop.system.platform
+    terminal.attachCustomKeyEventHandler(
+      (event) => !isNativeClipboardShortcut(event, platform, terminal.hasSelection())
+    )
 
     terminalRef.current = terminal
     fitRef.current = fit
 
-    const fitAndResize = () => {
-      fit.fit()
-      window.piDesktop.terminal.resize(terminal.cols, terminal.rows)
-    }
-
     const dataDisposable = terminal.onData((data) => {
-      window.piDesktop.terminal.input(data)
+      // With no shell (e.g. after `exit`), the next key starts a new one.
+      // That key only restarts: it is not sent to the new shell.
+      if (!shellRunningRef.current) {
+        void startShell()
+        return
+      }
+      void window.piDesktop.terminal.input(workspaceId, data).catch(() => {})
     })
-    const outputCleanup = window.piDesktop.terminal.onData((data) => {
-      terminal.write(data)
+    const outputCleanup = window.piDesktop.terminal.onData((event) => {
+      if (event.workspaceId === workspaceId) terminal.write(event.data)
     })
     const exitCleanup = window.piDesktop.terminal.onExit((event) => {
+      if (event.workspaceId !== workspaceId) return
+      shellRunningRef.current = false
       terminal.writeln('')
       terminal.writeln(`[process exited with code ${event.exitCode}]`)
+      terminal.writeln(i18n.t('terminal.restartHint'))
     })
 
-    window.setTimeout(async () => {
-      fitAndResize()
-      try {
-        const result = await window.piDesktop.terminal.start({
-          cwd: activeWorkspace?.path,
-          cols: terminal.cols,
-          rows: terminal.rows,
-        })
-        setShellLabel(result.shell.split('/').pop() ?? result.shell)
-      } catch (err) {
-        terminal.writeln(`Failed to start terminal: ${err instanceof Error ? err.message : String(err)}`)
-      }
-      terminal.focus()
-    }, 0)
-
-    window.addEventListener('resize', fitAndResize)
+    const container = containerRef.current
+    const observer = new ResizeObserver(() => fitAndResize(workspaceId, container, terminal, fit))
+    observer.observe(container)
 
     return () => {
-      window.removeEventListener('resize', fitAndResize)
+      observer.disconnect()
       dataDisposable.dispose()
       outputCleanup()
       exitCleanup()
-      window.piDesktop.terminal.stop()
+      void window.piDesktop.terminal.stop(workspaceId).catch(() => {})
+      shellRunningRef.current = false
       terminal.dispose()
       terminalRef.current = null
       fitRef.current = null
     }
-  }, [terminalOpen, activeWorkspace?.path])
+  }, [workspaceId, startShell, i18n])
+
+  // Start the shell when the panel is shown. A shell that exited (e.g. the
+  // user typed `exit`) also starts fresh the next time the panel is shown.
+  useEffect(() => {
+    if (!visible || shellRunningRef.current) return
+    const timer = window.setTimeout(() => void startShell(), 0)
+    return () => window.clearTimeout(timer)
+  }, [visible, startShell])
 
   useEffect(() => {
-    if (!terminalOpen) return
-    window.setTimeout(() => {
-      fitRef.current?.fit()
+    if (!visible) return
+    const timer = window.setTimeout(() => {
       const terminal = terminalRef.current
-      if (terminal) {
-        window.piDesktop.terminal.resize(terminal.cols, terminal.rows)
-      }
+      const fit = fitRef.current
+      if (terminal && fit && fitAndResize(workspaceId, containerRef.current, terminal, fit)) terminal.focus()
     }, 0)
-  }, [terminalOpen, maximized])
+    return () => window.clearTimeout(timer)
+  }, [visible, maximized, workspaceId])
+
+  // Apply Terminal Font Size changes live, then refit so the pty size matches.
+  useEffect(() => {
+    const terminal = terminalRef.current
+    const fit = fitRef.current
+    if (!terminal || !fit || terminal.options.fontSize === fontSize) return
+    terminal.options.fontSize = fontSize
+    fitAndResize(workspaceId, containerRef.current, terminal, fit)
+  }, [fontSize, workspaceId])
 
   // Recolor the live terminal when the app theme changes, without recreating it.
   useEffect(() => {
@@ -154,16 +222,27 @@ export function TerminalPanel(): React.JSX.Element | null {
     }
   }, [appliedThemeId])
 
-  if (!terminalOpen) return null
-
   return (
     <div
+      ref={panelRef}
+      // Maximized takes the chat pane's full height, so the chat above it keeps
+      // no height but stays mounted. Restore returns to the dragged height.
+      style={{
+        display: visible ? undefined : 'none',
+        ...(maximized ? {} : { height, maxHeight: `${MAX_TERMINAL_HEIGHT_RATIO * 100}%` }),
+      }}
       className={clsx(
-        'flex flex-col border-t border-border bg-app',
-        maximized ? 'flex-1' : 'h-64'
+        'flex min-h-0 shrink-0 flex-col border-t border-border bg-app',
+        maximized && 'basis-full'
       )}
     >
-      <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+      <ResizeHandle axis="y" onResize={(delta) => {
+        const panel = panelRef.current
+        if (!panel?.parentElement) return
+        setHeight(clampTerminalHeight(panel.getBoundingClientRect().height - delta, panel.parentElement.clientHeight))
+        setMaximized(false)
+      }} />
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-1.5">
         <div className="flex items-center gap-2">
           <TerminalIcon size={14} className="text-dim" />
           <span className="text-xs text-muted">{t('terminal.title')}</span>
@@ -189,15 +268,30 @@ export function TerminalPanel(): React.JSX.Element | null {
           <button
             onClick={toggleTerminal}
             className="rounded p-1 text-faint hover:text-muted transition-colors"
-            title={t('terminal.closeTitle')}
-            aria-label={t('terminal.closeTitle')}
+            title={t('terminal.hideTitle')}
+            aria-label={t('terminal.hideTitle')}
           >
             <X size={12} />
           </button>
         </div>
       </div>
 
-      <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden p-2" />
+      <div className="flex min-h-0 flex-1 overflow-hidden p-2">
+        <div
+          ref={containerRef}
+          className="min-h-0 min-w-0 flex-1"
+          onContextMenu={(e) => {
+            const terminal = terminalRef.current
+            if (terminal) {
+              showContextMenu(
+                e,
+                buildTerminalContextMenu(terminal, usesCtrlClipboardShortcuts(window.piDesktop.system.platform))
+              )
+            }
+          }}
+        />
+      </div>
+      {TerminalContextMenu}
     </div>
   )
 }

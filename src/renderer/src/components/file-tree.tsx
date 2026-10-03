@@ -139,7 +139,8 @@ export function FileTree(): React.JSX.Element {
   // watch-demand effect): navigating away stops it, so coming back can land
   // on a stale tree. Treat the return as a focus event and reload once — the
   // 15s safety poll would otherwise be the only refresh for up to 15s.
-  // useChatVisible is the same test ChatPanel uses to declare the demand, so
+  // The tree is on screen only inside a visible chat, so useChatVisible flips
+  // exactly when ChatPanel's demand for this pane does (isFileWatchDemanded):
   // the reload edge and the watcher edge can never drift apart.
   const chatVisible = useChatVisible()
   const wasChatVisible = useRef(chatVisible)
@@ -200,7 +201,7 @@ export function FileTree(): React.JSX.Element {
     <div className="flex flex-col h-full">
       {/* Branch indicator */}
       {gitBranch && (
-        <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-dim border-b border-border">
+        <div className="flex h-8 shrink-0 items-center gap-1.5 px-3 text-xs text-dim border-b border-border">
           <GitBranch size={12} />
           <span>{gitBranch}</span>
         </div>
@@ -633,7 +634,7 @@ export function FilePreview(): React.JSX.Element | null {
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-[var(--color-app)]">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+      <div className="flex h-8 shrink-0 items-center justify-between border-b border-border px-3">
         <div className="flex items-center gap-2 min-w-0">
           <FileText size={14} className="shrink-0 text-dim" />
           <span className="text-xs text-secondary truncate">{displayPath}</span>
@@ -726,7 +727,7 @@ export function FilePreview(): React.JSX.Element | null {
                 ? t('files.preview.readFailed')
                 : t('files.preview.saveFailed')}
           </div>
-        ) : content === null ? null : viewMode === 'preview' && isMarkdown ? (
+        ) : content === null || savedContent === null ? null : viewMode === 'preview' && isMarkdown ? (
           <div className="markdown-body text-sm p-4">
             <MarkdownRenderer content={content} />
           </div>
@@ -759,6 +760,7 @@ export function FilePreview(): React.JSX.Element | null {
           <CodeEditor
             filePath={displayPath}
             value={content}
+            savedValue={savedContent}
             readOnly={false}
             onChange={handleChange}
           />

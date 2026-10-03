@@ -1,13 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { composerColumnClass, messageColumnClass } from './chat-width'
+import { messageColumnClass } from './chat-width'
 
-test('the normal width keeps the readable column caps', () => {
-  assert.equal(messageColumnClass('normal'), 'max-w-5xl')
-  assert.equal(composerColumnClass('normal'), 'max-w-3xl')
+test('the normal width is a readable column for messages, composer and the empty chat', () => {
+  assert.equal(messageColumnClass('normal'), 'max-w-3xl')
 })
 
-test('the full width removes the column caps', () => {
+test('the full width removes the column cap', () => {
   assert.equal(messageColumnClass('full'), 'max-w-none')
-  assert.equal(composerColumnClass('full'), 'max-w-none')
 })

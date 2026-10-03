@@ -1,10 +1,12 @@
-import { memo, useState, useRef } from 'react'
+import { memo, useLayoutEffect, useMemo, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore, type DisplayMessage } from '../store'
 import { modelDisplayName } from '../../../shared/models-config'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import {
   toolCallLabel,
+  toolCallSource,
+  toolCommand,
   toolCallStatusLabel,
   toolKind,
   toolCallFile,
@@ -21,7 +23,9 @@ import { MarkdownRenderer } from './markdown-renderer'
 import { CopyButton } from './copy-button'
 import { useContextMenu, buildMessageContextMenu } from './context-menu'
 import { RelativeTime } from '../utils/relative-time'
+import { isImeComposing } from '../utils/ime-composing'
 import { clsx } from 'clsx'
+import { splitAttachedFiles } from '../../../shared/untrusted-data'
 import {
   Copy,
   Check,
@@ -34,22 +38,28 @@ import {
   RotateCcw,
   Download,
   Send,
+  ImageOff,
+  Square,
+  FileText,
 } from 'lucide-react'
 
 function MessageBubbleImpl({
   message,
   onRetry,
   hideModelHeader,
+  readOnly,
 }: {
   message: DisplayMessage
   onRetry?: (messageId: string) => void
+  // Transcript of another session (subagent panel): no edit, branch or export.
+  readOnly?: boolean
   // When rendered inside a tool group that shows a single shared model header,
   // suppress this message's own provider · model line to avoid repetition.
   hideModelHeader?: boolean
 }): React.JSX.Element {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
-  const [showThinking, setShowThinking] = useState(false)
+  const [showThinking, setShowThinking] = useState(message.initiallyShowThinking ?? false)
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(message.content)
 
@@ -65,10 +75,10 @@ function MessageBubbleImpl({
   }
 
   const handleSaveEdit = async () => {
-    if (editContent.trim() !== message.content) {
-      // Resend the edited message
-      await useAppStore.getState().sendPrompt(editContent.trim())
-    }
+    const text = editContent.trim()
+    // The editor stays open when the message could not be replaced, so the
+    // edited text is not lost.
+    if (text && text !== message.content && !(await useAppStore.getState().editAndResend(message.id, text))) return
     setIsEditing(false)
   }
 
@@ -129,6 +139,7 @@ function MessageBubbleImpl({
         onBranch={handleBranch}
         onRetry={onRetry}
         onExport={handleExport}
+        readOnly={readOnly}
       />
       </div>
       {MessageContextMenu}
@@ -149,6 +160,8 @@ function MessageBubbleImpl({
         onExport={handleExport}
         hideModelHeader={hideModelHeader}
       />
+      {/* Indented past the avatar column so it reads as part of the answer. */}
+      {message.stopped && <StoppedNotice className="-mt-2 mb-4 pl-10" />}
       </div>
       {MessageContextMenu}
       </>
@@ -180,6 +193,14 @@ export const MessageBubble = memo(MessageBubbleImpl)
 
 // ─── User Message ────────────────────────────────────────────────────────────
 
+// Tallest the edit box grows before it scrolls.
+const EDIT_BOX_MAX_HEIGHT_PX = 192
+
+function fitEditBoxToContent(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = 'auto'
+  textarea.style.height = `${Math.min(textarea.scrollHeight, EDIT_BOX_MAX_HEIGHT_PX)}px`
+}
+
 function UserMessage({
   message,
   isEditing,
@@ -192,6 +213,7 @@ function UserMessage({
   onBranch,
   onRetry,
   onExport,
+  readOnly,
 }: {
   message: DisplayMessage
   isEditing: boolean
@@ -204,9 +226,17 @@ function UserMessage({
   onBranch: () => void
   onRetry?: (id: string) => void
   onExport: () => void
+  readOnly?: boolean
 }): React.JSX.Element {
   const { t } = useTranslation()
   const editRef = useRef<HTMLTextAreaElement>(null)
+  // Attached text files travel inside the prompt; show them as chips.
+  const attachedFiles = useMemo(() => splitAttachedFiles(message.content), [message.content])
+
+  // Open the editor at the height of the message it edits, not one row.
+  useLayoutEffect(() => {
+    if (isEditing && editRef.current) fitEditBoxToContent(editRef.current)
+  }, [isEditing])
 
   if (isEditing) {
     return (
@@ -216,13 +246,17 @@ function UserMessage({
             ref={editRef}
             value={editContent}
             onChange={(e) => onEditContentChange(e.target.value)}
-            className="font-chat w-full rounded-2xl rounded-br-md bg-card px-4 py-2.5 text-sm text-primary resize-none min-h-[40px] max-h-48 outline-none"
-            rows={1}
-            onInput={(e) => {
-              const t = e.currentTarget
-              t.style.height = 'auto'
-              t.style.height = `${Math.min(t.scrollHeight, 192)}px`
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !isImeComposing(e.nativeEvent)) {
+                e.preventDefault()
+                e.stopPropagation()
+                onSaveEdit()
+              }
             }}
+            className="font-chat w-full rounded-2xl rounded-br-md bg-card px-4 py-2.5 text-sm text-primary resize-none min-h-[40px] outline-none"
+            style={{ maxHeight: EDIT_BOX_MAX_HEIGHT_PX }}
+            rows={1}
+            onInput={(e) => fitEditBoxToContent(e.currentTarget)}
             autoFocus
           />
           <div className="flex items-center justify-end gap-1 mt-1">
@@ -245,38 +279,60 @@ function UserMessage({
     )
   }
 
+  const hasChips = (message.attachments?.length ?? 0) > 0 || attachedFiles.fileNames.length > 0
   return (
     <div className="group mb-4 flex justify-end animate-fade-in">
       <div className="relative max-w-[80%]">
         <div className="rounded-2xl rounded-br-md bg-card px-4 py-2.5 text-sm text-primary">
-          {message.attachments && message.attachments.length > 0 && (
-            <div className={clsx('flex flex-wrap gap-2', message.content && 'mb-2')}>
-              {message.attachments.map((attachment, index) => (
+          {hasChips && (
+            <div className={clsx('flex flex-wrap gap-2', attachedFiles.text && 'mb-2')}>
+              {message.attachments?.map((attachment, index) => (
                 <div
                   key={`${attachment.name}-${index}`}
                   className="overflow-hidden rounded-md border border-white/20 bg-black/10"
                   title={attachment.name}
                 >
-                  <img
-                    src={`data:${attachment.mimeType};base64,${attachment.data}`}
-                    alt={attachment.name}
-                    className="h-16 w-16 object-cover"
-                  />
+                  {attachment.data ? (
+                    <img
+                      src={`data:${attachment.mimeType};base64,${attachment.data}`}
+                      alt={attachment.name}
+                      className="h-16 w-16 object-cover"
+                    />
+                  ) : (
+                    // History reload omits large image payloads (get-messages-trim.ts).
+                    <div className="flex h-16 w-16 items-center justify-center text-muted" aria-label={attachment.name}>
+                      <ImageOff size={20} />
+                    </div>
+                  )}
+                </div>
+              ))}
+              {attachedFiles.fileNames.map((name, index) => (
+                <div
+                  key={`${name}-${index}`}
+                  className="flex max-w-60 items-center gap-1.5 rounded-md border border-white/20 bg-black/10 px-2 py-1 text-xs text-secondary"
+                  title={name}
+                >
+                  <FileText size={12} className="shrink-0 text-muted" aria-hidden="true" />
+                  <span className="truncate">{name}</span>
                 </div>
               ))}
             </div>
           )}
-          <div className="font-chat whitespace-pre-wrap break-words">{message.content}</div>
+          {attachedFiles.text && <div className="font-chat whitespace-pre-wrap break-words">{attachedFiles.text}</div>}
         </div>
         {/* Actions */}
         <div className="mt-1 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <ActionButton icon={<Copy size={11} />} onClick={onCopy} title={t('common.copy')} />
-          <ActionButton icon={<Edit3 size={11} />} onClick={onEdit} title={t('chat.message.editAndResend')} />
-          <ActionButton icon={<GitBranch size={11} />} onClick={onBranch} title={t('chat.message.branchFromHere')} />
+          {!readOnly && (
+            <>
+              <ActionButton icon={<Edit3 size={11} />} onClick={onEdit} title={t('chat.message.editAndResend')} />
+              <ActionButton icon={<GitBranch size={11} />} onClick={onBranch} title={t('chat.message.branchFromHere')} />
+            </>
+          )}
           {onRetry && (
             <ActionButton icon={<RotateCcw size={11} />} onClick={() => onRetry(message.id)} title={t('common.retry')} />
           )}
-          <ActionButton icon={<Download size={11} />} onClick={onExport} title={t('common.export')} />
+          {!readOnly && <ActionButton icon={<Download size={11} />} onClick={onExport} title={t('common.export')} />}
         </div>
       </div>
     </div>
@@ -375,7 +431,7 @@ function AssistantMessage({
       </div>
     ) : null
     return (
-      <div className="group mb-4 animate-fade-in">
+      <div className="group mb-4">
         {/* Attributed (standalone) turn: Bot avatar + provider·model header, with
             the thinking block tucked under it. */}
         {showModelHeader && (
@@ -384,10 +440,10 @@ function AssistantMessage({
               <Bot size={14} className="text-muted" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="flex h-7 items-center gap-2 text-sm text-dim">
-                <span>{message.provider}</span>
+              <div className="flex min-h-7 flex-wrap items-center gap-x-2 whitespace-nowrap text-sm text-dim">
+                <span className="max-w-full truncate">{message.provider}</span>
                 <span className="text-ghost">·</span>
-                <span>{modelDisplayName(message.model!, customModels)}</span>
+                <span className="max-w-full truncate">{modelDisplayName(message.model!, customModels)}</span>
                 {message.cost !== undefined && (
                   <>
                     <span className="text-ghost">·</span>
@@ -437,7 +493,7 @@ function AssistantMessage({
   }
 
   return (
-    <div className={clsx('group animate-fade-in', isGroupedPureThinking ? '-mt-2 mb-2' : 'mb-4')}>
+    <div className={clsx('group', isGroupedPureThinking ? '-mt-2 mb-2' : 'mb-4')}>
       <div className="flex items-start gap-3">
         {/* Avatar — the Bot avatar for a prose turn, except inside a tool group
             (the group shows one shared header above) where it keeps an empty
@@ -455,10 +511,10 @@ function AssistantMessage({
         <div className="min-w-0 flex-1">
           {/* Model info */}
           {showModelHeader && (
-            <div className="flex h-7 items-center gap-2 text-sm text-dim">
-              <span>{message.provider}</span>
+            <div className="flex min-h-7 flex-wrap items-center gap-x-2 whitespace-nowrap text-sm text-dim">
+              <span className="max-w-full truncate">{message.provider}</span>
               <span className="text-ghost">·</span>
-              <span>{modelDisplayName(message.model!, customModels)}</span>
+              <span className="max-w-full truncate">{modelDisplayName(message.model!, customModels)}</span>
               {message.cost !== undefined && (
                 <>
                   <span className="text-ghost">·</span>
@@ -628,7 +684,7 @@ function ToolCallBadge({
             <EditDiff blocks={edits} lang={editLang} />
           ) : (
             <pre className="font-jetbrains overflow-x-auto text-xs text-dim">
-              {formatToolCallArgs(toolCall.arguments)}
+              {toolCallCopyText(toolCall)}
             </pre>
           )}
           {toolCall.result && (
@@ -717,6 +773,9 @@ function ToolResultMessage({ message }: { message: DisplayMessage }): React.JSX.
       ? getCodeEditorLanguageName(message.toolFile)
       : 'plain text'
   const isCode = codeLang !== 'plain text'
+  const source = message.toolName && message.toolCallArguments !== undefined
+    ? toolCallSource(message.toolName, message.toolCallArguments, t)
+    : null
 
   return (
     <div className="mb-4 animate-fade-in">
@@ -725,6 +784,9 @@ function ToolResultMessage({ message }: { message: DisplayMessage }): React.JSX.
             keeps the result box left-aligned with the tool-call box above it. */}
         <div className="w-7 shrink-0" />
         <div className="min-w-0 flex-1">
+          {source && (
+            <div className="mb-1 truncate font-jetbrains text-xs text-faint" title={source}>{source}</div>
+          )}
           <div className="relative rounded-lg border border-border bg-surface/50">
             <CopyButton text={message.content} className="absolute right-1.5 top-1.5" />
             {!expandable ? (
@@ -863,10 +925,10 @@ function ToolGroupBubbleImpl({
         </div>
         <div className="min-w-0 flex-1">
           {showSharedHeader && (
-            <div className="flex h-7 items-center gap-2 text-sm text-dim">
-              <span>{sharedProvider}</span>
+            <div className="flex min-h-7 flex-wrap items-center gap-x-2 whitespace-nowrap text-sm text-dim">
+              <span className="max-w-full truncate">{sharedProvider}</span>
               <span className="text-ghost">·</span>
-              <span>{modelDisplayName(sharedModel as string, customModels)}</span>
+              <span className="max-w-full truncate">{modelDisplayName(sharedModel as string, customModels)}</span>
               {groupTimestamp !== undefined && (
                 <>
                   <span className="text-ghost">·</span>
@@ -900,6 +962,7 @@ function ToolGroupBubbleImpl({
               the rows inside, so the header→first-row gap equals the row-to-row
               gap. Last child's bottom margin trimmed so it doesn't double up on
               the group's own mb-4. */}
+          {!expanded && messages.some((m) => m.stopped) && <StoppedNotice className="mt-1.5" />}
           {expanded && (
             <div className="mt-4 pl-3 [&>*:last-child]:mb-0">
               {messages.map((m) => (
@@ -919,6 +982,17 @@ function ToolGroupBubbleImpl({
 }
 
 export const ToolGroupBubble = memo(ToolGroupBubbleImpl)
+
+/** Marks an answer the user stopped before it finished. */
+function StoppedNotice({ className }: { className: string }): React.JSX.Element {
+  const { t } = useTranslation()
+  return (
+    <div className={clsx('flex items-center gap-1.5 text-xs text-dim', className)}>
+      <Square size={10} aria-hidden="true" />
+      {t('chat.message.stopped')}
+    </div>
+  )
+}
 
 // ─── System Message ──────────────────────────────────────────────────────────
 
@@ -991,16 +1065,5 @@ function groupCopyText(messages: DisplayMessage[]): string {
 // What the copy button on a tool-call box yields: the raw command for
 // shell-style tools (so it pastes cleanly), otherwise the formatted arguments.
 function toolCallCopyText(toolCall: NonNullable<DisplayMessage['toolCalls']>[number]): string {
-  try {
-    const parsed = JSON.parse(toolCall.arguments)
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      for (const key of ['command', 'cmd', 'script']) {
-        const value = (parsed as Record<string, unknown>)[key]
-        if (typeof value === 'string' && value.length > 0) return value
-      }
-    }
-  } catch {
-    // fall through to formatted args
-  }
-  return formatToolCallArgs(toolCall.arguments)
+  return toolCommand(toolCall.arguments) ?? formatToolCallArgs(toolCall.arguments)
 }

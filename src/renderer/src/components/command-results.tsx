@@ -7,6 +7,7 @@ import {
   type CommandGroup,
   type PiCommand,
 } from '../../../shared/pi-command'
+import { isPointerMovement } from '../utils/pointer-movement'
 
 const SOURCE_BADGE: Record<string, string> = {
   skill: 'bg-special-bg text-special',
@@ -27,6 +28,8 @@ interface CommandResultsProps {
  * Grouped command rows shared by the Ctrl+K palette and the composer's inline
  * slash popup. mousedown is prevented so clicking a row never blurs whichever
  * input is driving the list (a blur would close the popup before onClick).
+ * The selection follows the pointer only when it moves, so rows shifting under
+ * a resting pointer while the user types never take over the keyboard choice.
  */
 export function CommandResults({
   grouped,
@@ -50,7 +53,7 @@ export function CommandResults({
                 key={`${cmd.source}:${cmd.name}`}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => onSelect(cmd)}
-                onMouseEnter={() => onHover(index)}
+                onMouseMove={(e) => { if (isPointerMovement(e)) onHover(index) }}
                 className={clsx(
                   'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors',
                   index === activeIndex ? 'bg-card' : 'hover:bg-surface-hover/50'

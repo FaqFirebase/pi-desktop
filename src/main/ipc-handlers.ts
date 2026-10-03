@@ -26,7 +26,9 @@ import { registerDiagnosticsHandlers } from './ipc/diagnostics-handlers'
 import { registerVoiceHandlers } from './ipc/voice-handlers'
 import { registerTypeSafeHandlers } from './ipc/typesafe-handlers'
 import { registerWorkflowHandlers } from './ipc/workflow-handlers'
+import { registerSubagentHandlers } from './ipc/subagent-handlers'
 import { wireWorkspaceActivity, type WindowControls } from './ipc/workspace-activity-wiring'
+import type { WorkspaceTerminals } from './workspace-terminals'
 
 export { loadAppSettings, saveAppSettings } from './ipc/settings'
 
@@ -35,12 +37,13 @@ export { loadAppSettings, saveAppSettings } from './ipc/settings'
  *
  * Security: every handler validates its input types before processing.
  * The preload bridge is the only path from renderer to these handlers.
+ * Returns the terminal pool so the app can stop its shells on quit.
  */
 export function registerIpcHandlers(
   workspaceManager: WorkspaceManager,
   windowControls: WindowControls = { getWindow: () => null, showWindow: () => {} },
   iconPath = '',
-): void {
+): WorkspaceTerminals {
   const ctx = createIpcContext(workspaceManager)
 
   // Session runtime snapshots are separate from workspace activity: several
@@ -69,6 +72,7 @@ export function registerIpcHandlers(
   registerUpdateHandlers()
   registerDiagnosticsHandlers(ctx)
   registerWorkflowHandlers(ctx)
+  registerSubagentHandlers(ctx)
   registerVoiceHandlers(ctx)
   registerTypeSafeHandlers()
 
@@ -99,4 +103,6 @@ export function registerIpcHandlers(
   workspaceManager.onFileChange((event) => {
     ctx.broadcast(IPC_CHANNELS.EVENT_FILE_CHANGE, event)
   })
+
+  return ctx.terminalService
 }

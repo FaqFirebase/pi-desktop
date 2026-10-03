@@ -67,10 +67,16 @@ function toolsForPermissionMode(mode: PermissionMode, runtime: AgentEngineKind =
 /**
  * Opt into resuming the most recent session on launch (Pi's --continue) when
  * the user setting is enabled and the caller hasn't requested a specific
- * session or an ephemeral (no-session) run.
+ * session, an ephemeral (no-session) run, or decided continueSession itself.
  */
 export function applyResumePreference(options: PiStartOptions, settings: AppSettings): PiStartOptions {
-  if (settings.resumeLastSession && !options.sessionPath && !options.forkSessionPath && !options.noSession) {
+  if (
+    settings.resumeLastSession &&
+    options.continueSession === undefined &&
+    !options.sessionPath &&
+    !options.forkSessionPath &&
+    !options.noSession
+  ) {
     return { ...options, continueSession: true }
   }
   return options
@@ -134,6 +140,7 @@ export function validateStartOptions(value: unknown): PiStartOptions {
   if (!isOptionalString(value.sessionPath)) throw new Error('sessionPath must be a string')
   if (!isOptionalString(value.forkSessionPath)) throw new Error('forkSessionPath must be a string')
   if (!isOptionalBoolean(value.noSession)) throw new Error('noSession must be a boolean')
+  if (!isOptionalBoolean(value.continueSession)) throw new Error('continueSession must be a boolean')
   if (!isOptionalStringArray(value.args)) throw new Error('args must be a string array')
   if (value.env !== undefined && !isObject(value.env)) throw new Error('env must be an object')
 
@@ -143,6 +150,7 @@ export function validateStartOptions(value: unknown): PiStartOptions {
   if (isString(value.sessionPath)) opts.sessionPath = value.sessionPath
   if (isString(value.forkSessionPath)) opts.forkSessionPath = value.forkSessionPath
   if (value.noSession === true) opts.noSession = true
+  if (typeof value.continueSession === 'boolean') opts.continueSession = value.continueSession
   if (Array.isArray(value.args)) opts.args = value.args as string[]
   if (isObject(value.env)) {
     opts.env = Object.fromEntries(

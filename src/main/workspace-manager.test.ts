@@ -5,11 +5,13 @@ import { existsSync } from 'fs'
 import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
 import { join, resolve } from 'path'
-import type {
-  PiProcessStatus,
-  PiStartOptions,
-  SessionRuntimeCloseResult,
-  SessionRuntimeInfo,
+import {
+  WHOLE_WORKSPACE_CHANGE_PATH,
+  type AgentEngineKind,
+  type PiProcessStatus,
+  type PiStartOptions,
+  type SessionRuntimeCloseResult,
+  type SessionRuntimeInfo,
 } from '../shared/ipc-contracts'
 import { configureGuiDataDir, getGuiDataPath } from './app-data-paths'
 import { isPathWithin } from './path-authorization'
@@ -442,6 +444,36 @@ test('a session starts on the engine that owns its store, not the configured def
   })
 })
 
+test('an OMP session subscribes to subagent progress when it starts; a Pi session does not', async () => {
+  await freshDataDir()
+
+  await withSessionStores(async (roots) => {
+    await withManager(async (mgr) => {
+      const workspace = await mgr.createWorkspace('Alpha', await project())
+      const cases: Array<{ engine: AgentEngineKind; file: string; pid: number }> = [
+        { engine: 'omp', file: 'omp.jsonl', pid: 611 },
+        { engine: 'pi', file: 'pi.jsonl', pid: 612 },
+      ]
+      for (const { engine, file, pid } of cases) {
+        const path = await storedSession(engine === 'omp' ? roots.omp : roots.pi, file, { type: 'session', id: engine })
+        const runtime = await mgr.activateSession(workspace.id, path)
+        const manager = mgr.getActivePiManager()
+        assert.ok(manager)
+        fakePiProcess(manager, pid, 'stopped')
+        const sent: Array<Record<string, unknown>> = []
+        manager.getEngineKind = () => engine
+        manager.sendCommand = async (command) => {
+          sent.push(command)
+          return null
+        }
+        await mgr.startSessionRuntime(runtime.runtimeId, { sessionPath: path })
+        const subscribed = sent.some((command) => command.type === 'set_subagent_subscription' && command.level === 'progress')
+        assert.equal(subscribed, engine === 'omp', engine)
+      }
+    })
+  })
+})
+
 test('a closed tab is only disposable when this run created its session file', async () => {
   await freshDataDir()
 
@@ -762,6 +794,33 @@ test('workspace switches stay watcher-free while nothing is demanded', async () 
   })
 })
 
+/** Time the git watcher needs to resolve the git directory and start. */
+const GIT_WATCH_START_MS = 500
+/** Upper bound for a branch change to be reported: the debounce plus watcher start-up. */
+const GIT_CHANGE_REPORT_WITHIN_MS = 2_000
+
+test('a branch created outside the app is reported for the active workspace without file watch demand', async () => {
+  await freshDataDir()
+  const repo = await project()
+  await writeFile(join(repo, 'README.md'), '# app\n')
+  const git = gitRepo(repo)
+
+  await withManager(async (mgr) => {
+    const changes: string[] = []
+    mgr.onFileChange((event) => changes.push(event.relativePath))
+    await mgr.createWorkspace('Alpha', repo)
+    assert.equal(mgr.getWatchedWorkspaceId(), null, 'no disk watcher without demand')
+
+    await new Promise((resolveWait) => setTimeout(resolveWait, GIT_WATCH_START_MS))
+    git(['branch', 'from-terminal'])
+    const started = Date.now()
+    while (changes.length === 0 && Date.now() - started < GIT_CHANGE_REPORT_WITHIN_MS) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 50))
+    }
+    assert.deepEqual(changes, [WHOLE_WORKSPACE_CHANGE_PATH])
+  })
+})
+
 test('demand set before any workspace attaches on first activation', async () => {
   await freshDataDir()
 
@@ -806,5 +865,23 @@ test('stopAll stops the watcher', async () => {
 
     mgr.stopAll()
     assert.equal(mgr.getWatchedWorkspaceId(), null, 'quit must leave no watcher attached')
+  })
+})
+
+test('a workspace names the session runtime its next start reuses, and only once it has one', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const ws = await mgr.createWorkspace('Alpha', await project())
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id), null, 'the per-workspace fallback manager is not a session runtime')
+    const fresh = await mgr.createNewSessionRuntime(ws.id)
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.runtimeId, fresh.runtimeId)
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.sessionPath, null)
+
+    const existingPath = join(await project(), 'session.jsonl')
+    await writeFile(existingPath, '{}\n', 'utf-8')
+    const activated = await mgr.activateSession(ws.id, existingPath)
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.runtimeId, activated.runtimeId)
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.sessionPath, existingPath)
   })
 })
