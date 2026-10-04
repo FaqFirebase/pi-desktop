@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pi Desktop — A desktop interface for Pi and oh-my-pi</title>
+  <title>Pi Desktop: desktop GUI for the Pi and oh-my-pi coding agents</title>
   <meta
     name="description"
     content="Pi Desktop is a free, open-source desktop interface for the Pi and oh-my-pi coding agents. Chat, inspect changes, browse files, run commands, and manage sessions without living in the terminal."
@@ -22,7 +22,7 @@
   <meta property="og:url" content="https://pi-desktop.com/" />
 
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Pi Desktop — A desktop interface for Pi and oh-my-pi" />
+  <meta name="twitter:title" content="Pi Desktop: desktop GUI for the Pi and oh-my-pi coding agents" />
   <meta name="twitter:description" content="Chat, review changes, browse files, run commands, and manage coding-agent sessions in one desktop app." />
   <meta name="twitter:image" content="https://pi-desktop.com/screenshots/Screenshot_20260824_181929.png" />
 
@@ -37,7 +37,7 @@
     "name": "Pi Desktop",
     "alternateName": ["Pi Desktop GUI", "pi-desktop", "Pi coding agent GUI", "oh-my-pi GUI", "omp GUI"],
     "sameAs": "https://github.com/FaqFirebase/pi-desktop",
-    "screenshot": "https://pi-desktop.com/screenshots/home.png",
+    "screenshot": "https://pi-desktop.com/screenshots/Screenshot_20260824_181929.png",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Linux, macOS, Windows",
     "description": "A free, open-source desktop interface for the Pi and oh-my-pi coding agents.",
@@ -283,6 +283,16 @@
     }
 
     .hero h1 span { color: var(--muted-2); }
+
+    .hero h1 .hero-subheading {
+      display: block;
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 1.15rem;
+      font-weight: 500;
+      line-height: 1.5;
+      letter-spacing: normal;
+    }
 
     .hero-side {
       padding-bottom: 8px;
@@ -857,7 +867,7 @@
       <div class="shell hero-grid">
         <div>
           <p class="hero-kicker"><strong>Open source</strong> · Alpha · Apache 2.0</p>
-          <h1>Pi, with a <span>desktop.</span></h1>
+          <h1>Pi, with a <span>desktop.</span><span class="hero-subheading">Desktop GUI for the Pi and oh-my-pi coding agents.</span></h1>
         </div>
 
         <div class="hero-side">
@@ -1013,13 +1023,19 @@
           <article class="capability">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-1-.8-1.8-1.8-1.8h-1.4a2.2 2.2 0 0 1-2.2-2.2V6.6A3.6 3.6 0 0 0 12 3Z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7.5" r="1"/></svg>
             <h3>Themes</h3>
-            <p>Built-in themes, custom seed-color themes, import/export, and a community theme gallery.</p>
+            <p>Built-in themes, custom seed-color themes, import/export, and a <a href="https://github.com/FaqFirebase/pi-desktop-themes">community theme gallery</a>.</p>
           </article>
 
           <article class="capability">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16M7 4v6M17 14v6M4 17h16"/></svg>
             <h3>Permission rules</h3>
             <p>Approve or deny tool calls and define reusable allow/deny rules globally or per workspace.</p>
+          </article>
+
+          <article class="capability">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4M21 2l-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></svg>
+            <h3>TypeSafe Jev</h3>
+            <p>Save your <a href="https://docs.typesafe.ai/introduction">TypeSafe</a> API key once and every new Pi or OMP session gets it. One click installs the official Jev skill for both engines. Off until you set it up; Pi Desktop never calls TypeSafe itself.</p>
           </article>
         </div>
       </div>
