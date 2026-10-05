@@ -4,22 +4,32 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pi Desktop: desktop GUI for the Pi and oh-my-pi coding agents</title>
-  <meta name="description" content="Pi Desktop is a free, open-source Electron app that puts a full GUI around the Pi and oh-my-pi coding agents. Chat, manage files, run commands, and review changes in one window." />
+  <meta
+    name="description"
+    content="Pi Desktop is a free, open-source desktop interface for the Pi and oh-my-pi coding agents. Chat, inspect changes, browse files, run commands, and manage sessions without living in the terminal."
+  />
   <link rel="canonical" href="https://pi-desktop.com/" />
+
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Pi Desktop" />
   <meta property="og:title" content="Pi Desktop" />
-  <meta property="og:description" content="A desktop GUI for the Pi and oh-my-pi coding agents. Open source. Alpha." />
+  <meta
+    property="og:description"
+    content="A free, open-source desktop interface for Pi and oh-my-pi."
+  />
   <meta property="og:image" content="https://pi-desktop.com/screenshots/home.png" />
-  <meta property="og:image:alt" content="Pi Desktop Home launcher with recent workspaces and sessions" />
+  <meta property="og:image:alt" content="Pi Desktop home launcher with recent workspaces and sessions" />
   <meta property="og:url" content="https://pi-desktop.com/" />
+
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Pi Desktop: desktop GUI for the Pi and oh-my-pi coding agents" />
-  <meta name="twitter:description" content="A free, open-source Electron app that puts a full GUI around the Pi and oh-my-pi coding agents. Linux, macOS, and Windows." />
+  <meta name="twitter:description" content="Chat, review changes, browse files, run commands, and manage coding-agent sessions in one desktop app." />
   <meta name="twitter:image" content="https://pi-desktop.com/screenshots/home.png" />
-  <meta name="theme-color" content="#0d0d0d" />
+
+  <meta name="theme-color" content="#090909" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="apple-touch-icon" href="/icon-512.png" />
+
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -30,7 +40,7 @@
     "screenshot": "https://pi-desktop.com/screenshots/home.png",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Linux, macOS, Windows",
-    "description": "A free, open-source Electron app that puts a full GUI around the Pi and oh-my-pi coding agents. Chat, manage files, run commands, and review changes in one window.",
+    "description": "A free, open-source desktop interface for the Pi and oh-my-pi coding agents.",
     "url": "https://pi-desktop.com/",
     "downloadUrl": "https://github.com/FaqFirebase/pi-desktop/releases",
     "softwareVersion": "0.1.9-alpha",
@@ -39,416 +49,1128 @@
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
   }
   </script>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+  <style>
     :root {
-      --bg:       #0d0d0d;
-      --surface:  #161616;
-      --border:   #2a2a2a;
-      --text:     #e8e8e8;
-      --muted:    #888;
-      --accent:   #7c6ff7;
-      --accent2:  #5b56cc;
-      --green:    #4ade80;
-      --radius:   10px;
+      --bg: #090909;
+      --bg-raised: #0f0f10;
+      --surface: #131315;
+      --surface-strong: #18181b;
+      --line: #242428;
+      --line-strong: #34343a;
+      --text: #f4f4f5;
+      --muted: #a1a1aa;
+      --muted-2: #71717a;
+      --accent: #8b7cf6;
+      --accent-hover: #9b8df8;
+      --success: #70d69b;
+      --content: 1180px;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      background: var(--bg);
     }
 
     body {
+      margin: 0;
+      min-width: 320px;
       background: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 16px;
+      line-height: 1.6;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: -1;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: linear-gradient(to bottom, black 0%, transparent 44%);
+    }
+
+    ::selection {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    a { color: inherit; }
+    img { max-width: 100%; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+
+    .shell {
+      width: min(calc(100% - 40px), var(--content));
+      margin-inline: auto;
+    }
+
+    .mono {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+
+    .muted { color: var(--muted); }
+
+    .skip-link {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 999;
+      transform: translateY(-140%);
+      padding: 10px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm);
+      background: var(--surface-strong);
+      color: var(--text);
+      text-decoration: none;
+      transition: transform 160ms ease;
+    }
+
+    .skip-link:focus { transform: translateY(0); }
+
+    /* Header */
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: rgba(9, 9, 9, 0.9);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+
+    .nav {
+      min-height: 66px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+    }
+
+    .brand-mark {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: var(--surface-strong);
+      color: var(--text);
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+    }
+
+    .nav-link {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: color 140ms ease;
+    }
+
+    .nav-link:hover { color: var(--text); }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 0 16px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      font: inherit;
+      font-size: 0.92rem;
+      font-weight: 650;
+      line-height: 1;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+    }
+
+    .button:hover { transform: translateY(-1px); }
+
+    .button-primary {
+      background: var(--text);
+      color: #0b0b0c;
+    }
+
+    .button-primary:hover { background: #fff; }
+
+    .button-secondary {
+      border-color: var(--line-strong);
+      background: transparent;
+      color: var(--text);
+    }
+
+    .button-secondary:hover { background: var(--surface); }
+
+    .button-quiet {
+      min-height: 36px;
+      padding-inline: 12px;
+      border-color: var(--line);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 0.84rem;
+    }
+
+    .icon {
+      width: 17px;
+      height: 17px;
+      flex: none;
+    }
+
+    /* Hero */
+    .hero {
+      padding: 104px 0 76px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+      gap: 72px;
+      align-items: end;
+    }
+
+    .hero-kicker {
+      margin: 0 0 24px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      letter-spacing: 0.01em;
+    }
+
+    .hero-kicker strong {
+      color: var(--success);
+      font-weight: 600;
+    }
+
+    .hero h1 {
+      max-width: 780px;
+      margin: 0;
+      font-size: clamp(3.3rem, 7.5vw, 6.9rem);
+      font-weight: 680;
+      line-height: 0.93;
+      letter-spacing: -0.067em;
+    }
+
+    .hero h1 span { color: var(--muted-2); }
+
+    .hero h1 .hero-subheading {
+      display: block;
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 1.15rem;
+      font-weight: 500;
+      line-height: 1.5;
+      letter-spacing: normal;
+    }
+
+    .hero-side {
+      padding-bottom: 8px;
+    }
+
+    .hero-copy {
+      margin: 0 0 28px;
+      color: var(--muted);
+      font-size: clamp(1rem, 1.8vw, 1.15rem);
+      line-height: 1.68;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .platforms {
+      margin: 18px 0 0;
+      color: var(--muted-2);
+      font-size: 0.78rem;
+    }
+
+    .platforms span + span::before {
+      content: "·";
+      margin: 0 8px;
+      color: var(--line-strong);
+    }
+
+    .product-wrap {
+      position: relative;
+      padding: 40px 0 104px;
+      overflow: hidden;
+    }
+
+    .product-wrap::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 0;
+      width: 1px;
+      height: 100%;
+      background: var(--line);
+      opacity: 0.55;
+    }
+
+    .product-shot {
+      position: relative;
+      z-index: 1;
+      margin: 0;
+      border: 1px solid var(--line-strong);
+      border-radius: 14px;
+      background: var(--bg-raised);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .product-shot img {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: var(--surface);
+    }
+
+    .shot-bar {
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+      background: #101011;
+      color: var(--muted-2);
+      font-size: 0.74rem;
+    }
+
+    .window-dots {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .window-dots i {
+      width: 8px;
+      height: 8px;
+      border: 1px solid #45454d;
+      border-radius: 50%;
+      display: block;
+    }
+
+    /* Section foundations */
+    .section {
+      padding: 110px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .section:first-of-type { border-top: 0; }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: 0.7fr 1.3fr;
+      gap: 60px;
+      align-items: start;
+      margin-bottom: 64px;
+    }
+
+    .section-index {
+      margin: 5px 0 0;
+      color: var(--muted-2);
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.76rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .section h2 {
+      margin: 0;
+      max-width: 700px;
+      font-size: clamp(2.25rem, 5vw, 4.3rem);
+      font-weight: 620;
+      line-height: 1.02;
+      letter-spacing: -0.052em;
+    }
+
+    .section-intro {
+      max-width: 650px;
+      margin: 22px 0 0;
+      color: var(--muted);
+      font-size: 1.05rem;
+    }
+
+    /* Workflow */
+    .workflow {
+      display: grid;
+      gap: 104px;
+    }
+
+    .workflow-row {
+      display: grid;
+      grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+      gap: 70px;
+      align-items: center;
+    }
+
+    .workflow-row:nth-child(even) {
+      grid-template-columns: minmax(0, 1.22fr) minmax(0, 0.78fr);
+    }
+
+    .workflow-row:nth-child(even) .workflow-copy { order: 2; }
+    .workflow-row:nth-child(even) .workflow-visual { order: 1; }
+
+    .workflow-num {
+      display: block;
+      margin-bottom: 26px;
+      color: var(--muted-2);
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.76rem;
+    }
+
+    .workflow-copy h3 {
+      margin: 0 0 14px;
+      font-size: clamp(1.8rem, 3.4vw, 2.75rem);
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+      font-weight: 620;
+    }
+
+    .workflow-copy p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    .feature-points {
+      display: grid;
+      gap: 11px;
+      margin: 24px 0 0;
+      padding: 0;
+      list-style: none;
+      color: #c5c5ca;
+      font-size: 0.9rem;
+    }
+
+    .feature-points li {
+      position: relative;
+      padding-left: 18px;
+    }
+
+    .feature-points li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.72em;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .workflow-visual {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: var(--bg-raised);
+      padding: 10px;
+    }
+
+    .workflow-visual img {
+      width: 100%;
+      display: block;
+      border-radius: 9px;
+      border: 1px solid #1c1c20;
+      background: var(--surface);
+    }
+
+    /* Feature inventory */
+    .capabilities {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-top: 1px solid var(--line);
+      border-left: 1px solid var(--line);
+    }
+
+    .capability {
+      min-height: 190px;
+      padding: 26px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,0.008);
+    }
+
+    .capability svg {
+      width: 19px;
+      height: 19px;
+      color: var(--muted-2);
+      margin-bottom: 34px;
+    }
+
+    .capability h3 {
+      margin: 0 0 8px;
+      font-size: 0.98rem;
+      font-weight: 620;
+      letter-spacing: -0.015em;
+    }
+
+    .capability p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.85rem;
       line-height: 1.6;
     }
 
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-
-    /* ── NAV ── */
-    nav {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 18px 40px;
-      border-bottom: 1px solid var(--border);
-      position: sticky;
-      top: 0;
-      background: rgba(13,13,13,0.92);
-      -webkit-backdrop-filter: blur(8px);
-      backdrop-filter: blur(8px);
-      z-index: 100;
-    }
-    .nav-logo { font-weight: 700; font-size: 1.1rem; color: var(--text); letter-spacing: -0.02em; }
-    .nav-logo span { color: var(--accent); }
-    .nav-links { display: flex; gap: 28px; align-items: center; }
-    .nav-links a:not(.btn) { color: var(--muted); font-size: 0.9rem; transition: color 0.15s; }
-    .nav-links a:not(.btn):hover { color: var(--text); text-decoration: none; }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      padding: 9px 20px;
-      border-radius: var(--radius);
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.15s, transform 0.1s;
-      text-decoration: none !important;
-    }
-    .btn:hover { opacity: 0.88; transform: translateY(-1px); }
-    .btn-primary { background: var(--accent); color: #fff; }
-    .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
-    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
-
-    /* ── HERO ── */
-    .hero {
-      text-align: center;
-      padding: 100px 24px 72px;
-      max-width: 760px;
-      margin: 0 auto;
-    }
-    .badge {
-      display: inline-block;
-      padding: 4px 14px;
-      border-radius: 100px;
-      border: 1px solid var(--border);
-      font-size: 0.78rem;
-      color: var(--muted);
-      margin-bottom: 28px;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-    .hero h1 {
-      font-size: clamp(2.2rem, 5vw, 3.4rem);
-      font-weight: 800;
-      letter-spacing: -0.04em;
-      line-height: 1.1;
-      margin-bottom: 22px;
-    }
-    .hero h1 span { color: var(--accent); }
-    .hero p {
-      font-size: 1.15rem;
-      color: var(--muted);
-      max-width: 560px;
-      margin: 0 auto 36px;
-    }
-    .hero-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
-
-    /* ── SCREENSHOTS ── */
-    .screenshots {
-      padding: 0 24px 80px;
-      max-width: 1100px;
-      margin: 0 auto;
-    }
-    .screenshot-grid {
+    /* Engines */
+    .engine-layout {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 16px;
-    }
-    .screenshot-grid img {
-      width: 100%;
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      display: block;
-    }
-    .screenshot-grid img:first-child {
-      grid-column: 1 / -1;
-    }
-
-    /* ── FEATURES ── */
-    .features {
-      padding: 80px 24px;
-      max-width: 1000px;
-      margin: 0 auto;
-    }
-    .section-label {
-      text-align: center;
-      font-size: 0.8rem;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--accent);
-      margin-bottom: 16px;
-      font-weight: 600;
-    }
-    .section-title {
-      text-align: center;
-      font-size: clamp(1.6rem, 3vw, 2.2rem);
-      font-weight: 700;
-      letter-spacing: -0.03em;
-      margin-bottom: 56px;
-    }
-    .feature-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 20px;
-    }
-    .feature-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 28px;
-    }
-    .feature-icon {
-      margin-bottom: 14px;
-      color: var(--accent);
-    }
-    .feature-icon svg {
-      width: 26px;
-      height: 26px;
-      display: block;
-    }
-    .feature-card h3 {
-      font-size: 1rem;
-      font-weight: 600;
-      margin-bottom: 8px;
-    }
-    .feature-card p {
-      font-size: 0.88rem;
-      color: var(--muted);
-      line-height: 1.55;
-    }
-
-    /* ── INSTALL ── */
-    .install {
-      padding: 80px 24px;
-      max-width: 720px;
-      margin: 0 auto;
-      text-align: center;
-    }
-    .install-steps {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
+      grid-template-columns: 1fr 1fr;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
       overflow: hidden;
-      margin: 40px 0 32px;
-      text-align: left;
+      background: var(--bg-raised);
     }
-    .install-step {
-      display: flex;
-      align-items: flex-start;
-      gap: 20px;
-      padding: 22px 28px;
-      border-bottom: 1px solid var(--border);
-    }
-    .install-step:last-child { border-bottom: none; }
-    .step-num {
-      flex-shrink: 0;
-      width: 28px;
-      height: 28px;
-      background: var(--accent);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.8rem;
-      font-weight: 700;
-      color: #fff;
-      margin-top: 2px;
-    }
-    .step-body h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 6px; }
-    .step-body p { font-size: 0.85rem; color: var(--muted); }
-    code {
-      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-      font-size: 0.85em;
-      background: rgba(255,255,255,0.06);
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-    .install-note {
-      font-size: 0.83rem;
-      color: var(--muted);
-    }
-    .mt-8 { margin-top: 8px; }
 
-    /* ── FOOTER ── */
-    footer {
-      border-top: 1px solid var(--border);
-      padding: 32px 40px;
+    .engine {
+      min-height: 380px;
+      padding: 38px;
+    }
+
+    .engine + .engine { border-left: 1px solid var(--line); }
+
+    .engine-label {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      flex-wrap: wrap;
       gap: 16px;
+      margin-bottom: 86px;
+      color: var(--muted-2);
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
-    footer p { font-size: 0.83rem; color: var(--muted); }
-    .footer-links { display: flex; gap: 24px; }
-    .footer-links a { font-size: 0.83rem; color: var(--muted); }
-    .footer-links a:hover { color: var(--text); text-decoration: none; }
 
-    @media (max-width: 600px) {
-      nav { padding: 16px 20px; }
-      .nav-links { gap: 16px; }
-      footer { padding: 24px 20px; flex-direction: column; align-items: flex-start; }
-      .screenshot-grid img:first-child { grid-column: auto; }
+    .engine h3 {
+      margin: 0 0 16px;
+      font-size: 2.4rem;
+      line-height: 1;
+      letter-spacing: -0.045em;
+      font-weight: 650;
+    }
+
+    .engine p {
+      max-width: 480px;
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .engine a {
+      display: inline-block;
+      margin-top: 26px;
+      color: var(--text);
+      text-underline-offset: 4px;
+      text-decoration-color: #4b4b53;
+      font-size: 0.88rem;
+    }
+
+    /* Install */
+    .install-layout {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 70px;
+      align-items: start;
+    }
+
+    .install-copy h2 {
+      max-width: 520px;
+    }
+
+    .install-copy p {
+      max-width: 520px;
+      margin: 22px 0 0;
+      color: var(--muted);
+    }
+
+    .install-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px 18px;
+      margin-top: 30px;
+      color: var(--muted-2);
+      font-size: 0.82rem;
+    }
+
+    .install-meta span::before {
+      content: "✓";
+      margin-right: 7px;
+      color: var(--success);
+    }
+
+    .terminal {
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-md);
+      background: #0b0b0c;
+    }
+
+    .terminal-head {
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted-2);
+      font-size: 0.75rem;
+    }
+
+    .terminal-body {
+      padding: 22px;
+      overflow-x: auto;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.83rem;
+      line-height: 1.75;
+    }
+
+    .terminal-line {
+      display: block;
+      white-space: nowrap;
+    }
+
+    .prompt { color: var(--accent); }
+    .cmd { color: #d4d4d8; }
+    .comment { color: #62626b; }
+
+    .download-panel {
+      margin-top: 14px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--bg-raised);
+    }
+
+    .download-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .download-row strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 0.92rem;
+    }
+
+    .download-row span {
+      color: var(--muted-2);
+      font-size: 0.79rem;
+    }
+
+    .install-note {
+      margin: 16px 0 0;
+      color: var(--muted-2);
+      font-size: 0.78rem;
+    }
+
+    .install-note a {
+      color: var(--muted);
+      text-underline-offset: 3px;
+    }
+
+    /* Open source */
+    .oss {
+      padding: 110px 0;
+      border-top: 1px solid var(--line);
+      background: #0b0b0c;
+    }
+
+    .oss-grid {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 80px;
+      align-items: end;
+    }
+
+    .oss h2 {
+      margin: 0;
+      max-width: 710px;
+      font-size: clamp(2.5rem, 6vw, 5.25rem);
+      font-weight: 620;
+      line-height: 0.98;
+      letter-spacing: -0.058em;
+    }
+
+    .oss h2 span { color: var(--muted-2); }
+
+    .oss-side p {
+      margin: 0 0 24px;
+      color: var(--muted);
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--line);
+      padding: 30px 0 42px;
+      color: var(--muted-2);
+      font-size: 0.8rem;
+    }
+
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+    }
+
+    .footer-links a {
+      color: var(--muted);
+      text-decoration: none;
+    }
+
+    .footer-links a:hover { color: var(--text); }
+
+    /* Motion */
+    @media (prefers-reduced-motion: no-preference) {
+      .reveal {
+        opacity: 0;
+        transform: translateY(18px);
+        transition: opacity 520ms ease, transform 520ms ease;
+      }
+
+      .reveal.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Responsive */
+    @media (max-width: 980px) {
+      .hero-grid,
+      .section-head,
+      .install-layout,
+      .oss-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-grid { gap: 42px; }
+      .hero-side { max-width: 620px; }
+      .section-head { gap: 18px; }
+
+      .workflow-row,
+      .workflow-row:nth-child(even) {
+        grid-template-columns: 1fr;
+        gap: 34px;
+      }
+
+      .workflow-row:nth-child(even) .workflow-copy,
+      .workflow-row:nth-child(even) .workflow-visual { order: initial; }
+
+      .workflow-copy { max-width: 660px; }
+      .capabilities { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .install-layout { gap: 42px; }
+      .oss-grid { gap: 36px; }
+    }
+
+    @media (max-width: 720px) {
+      .shell { width: min(calc(100% - 28px), var(--content)); }
+      .site-header { position: static; }
+      .nav { min-height: 62px; }
+      .nav-links .nav-link { display: none; }
+      .nav-links { gap: 8px; }
+      .nav-links .button-secondary { display: none; }
+
+      .hero { padding: 74px 0 58px; }
+      .hero h1 { font-size: clamp(3rem, 16vw, 5.2rem); }
+      .product-wrap { padding: 26px 0 72px; }
+      .shot-bar span:last-child { display: none; }
+
+      .section,
+      .oss { padding: 78px 0; }
+      .section-head { margin-bottom: 44px; }
+      .workflow { gap: 72px; }
+      .workflow-visual { padding: 6px; border-radius: 12px; }
+      .capabilities { grid-template-columns: 1fr; }
+      .capability { min-height: auto; }
+
+      .engine-layout { grid-template-columns: 1fr; }
+      .engine { min-height: 320px; padding: 28px; }
+      .engine + .engine { border-left: 0; border-top: 1px solid var(--line); }
+      .engine-label { margin-bottom: 58px; }
+
+      .download-row { align-items: flex-start; flex-direction: column; }
+      .download-row .button { width: 100%; }
+      .footer-inner { align-items: flex-start; flex-direction: column; }
+    }
+
+    @media (max-width: 420px) {
+      .hero-actions .button { width: 100%; }
+      .hero h1 { letter-spacing: -0.06em; }
     }
   </style>
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to content</a>
 
-  <!-- NAV -->
-  <nav>
-    <span class="nav-logo">Pi <span>Desktop</span></span>
-    <div class="nav-links">
-      <a href="#features">Features</a>
-      <a href="#install">Install</a>
-      <a href="https://github.com/FaqFirebase/pi-desktop">GitHub</a>
-      <a href="https://github.com/FaqFirebase/pi-desktop/releases" class="btn btn-primary">Download</a>
-    </div>
-  </nav>
-
-  <!-- HERO -->
-  <section class="hero">
-    <div class="badge">Open Source Alpha</div>
-    <h1>A desktop GUI for the<br><span>Pi and oh-my-pi</span> coding agents</h1>
-    <p>Chat, review changes, browse files, and run commands in one window. Works with the standard Pi CLI or oh-my-pi (omp). Free and open source.</p>
-    <div class="hero-actions">
-      <a href="https://github.com/FaqFirebase/pi-desktop/releases/latest" class="btn btn-primary">
-        ↓ Download for Linux
+  <header class="site-header">
+    <div class="shell nav">
+      <a class="brand" href="#top" aria-label="Pi Desktop home">
+        <span class="brand-mark" aria-hidden="true">π</span>
+        <span>Pi Desktop</span>
       </a>
-      <a href="https://github.com/FaqFirebase/pi-desktop" class="btn btn-outline">
-        View on GitHub
-      </a>
+
+      <nav class="nav-links" aria-label="Primary navigation">
+        <a class="nav-link" href="#workflow">Workflow</a>
+        <a class="nav-link" href="#features">Features</a>
+        <a class="nav-link" href="#install">Install</a>
+        <a class="button button-secondary" href="https://github.com/FaqFirebase/pi-desktop">GitHub</a>
+        <a class="button button-primary" href="https://github.com/FaqFirebase/pi-desktop/releases/latest">Download</a>
+      </nav>
     </div>
-  </section>
+  </header>
 
-  <!-- SCREENSHOTS -->
-  <section class="screenshots">
-    <div class="screenshot-grid">
-      <img src="screenshots/home.png" alt="Pi Desktop Home launcher with activity stats and recent work" />
-      <img src="screenshots/chat.png" alt="Pi Desktop chat view with the composer and sidebar" loading="lazy" />
-      <img src="screenshots/chat-file-tree.png" alt="Pi Desktop chat with the file tree open" loading="lazy" />
-      <img src="screenshots/review-panel.png" alt="Pi Desktop Review panel with permissions and changed files" loading="lazy" />
-      <img src="screenshots/diff-terminal.png" alt="Pi Desktop diff viewer with Commit, Commit + Push, and PR buttons above the terminal" loading="lazy" />
-      <img src="screenshots/packages.png" alt="Pi Desktop packages and skills browser" loading="lazy" />
-      <img src="screenshots/new-task.png" alt="Pi Desktop New Task launcher with the isolated worktree option" loading="lazy" />
-      <img src="screenshots/notes.png" alt="Pi Desktop notes" loading="lazy" />
-      <img src="screenshots/settings.png" alt="Pi Desktop settings with the agent installation picker" loading="lazy" />
-    </div>
-  </section>
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="shell hero-grid">
+        <div>
+          <p class="hero-kicker"><strong>Open source</strong> · Alpha · Apache 2.0</p>
+          <h1>Pi, with a <span>desktop.</span><span class="hero-subheading">Desktop GUI for the Pi and oh-my-pi coding agents.</span></h1>
+        </div>
 
-  <!-- FEATURES -->
-  <section class="features" id="features">
-    <p class="section-label">What's inside</p>
-    <h2 class="section-title">One window for your coding agent</h2>
-    <div class="feature-grid">
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
-        <h3>Streaming chat</h3>
-        <p>Streaming replies with thinking blocks and tool calls. Consecutive tool calls fold into groups, file reads show as line-numbered code, and edits show as diffs. File names in replies open a preview. Mention files with @, attach or drop files and images, recall earlier prompts with the arrow keys, and find text with Ctrl/Cmd+F.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></div>
-        <h3>Multiple workspaces</h3>
-        <p>Every live session runs its own agent process, so a turn keeps going after you switch away. Mission Control shows what is running in every project, and New Task starts work in a fresh background session, optionally in its own Git worktree. Drag project tabs to reorder them.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
-        <h3>Review and permissions</h3>
-        <p>The Review panel shows changed files, the permission mode, and session status. Approve or deny tool calls without leaving the chat, and set allow/deny rules per tool, globally or per workspace.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg></div>
-        <h3>Pi or OMP</h3>
-        <p>Run the standard Pi CLI or the compatible omp binary from <a href="https://github.com/can1357/oh-my-pi">oh-my-pi</a>. Each keeps its own sessions and the app reads both, so switching engines never hides your history. Opening a session starts the engine that wrote it.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
-        <h3>Files, diffs, and Git</h3>
-        <p>Browse your project and preview code, images, PDFs, and HTML. Review the diff, then Commit, Commit + Push, or open a pull request from the same bar. Switch or create branches from the status bar.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
-        <h3>Code editor</h3>
-        <p>Open and edit files in a CodeMirror 6 editor with syntax highlighting for 15+ languages and Git change markers in the gutter.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
-        <h3>Integrated terminal</h3>
-        <p>A full PTY terminal with ANSI colors, one per workspace. Drag its edge to resize it.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>
-        <h3>Package browser</h3>
-        <p>Browse and install Pi packages from pi.dev/packages. The Installed tab checks npm for newer versions and updates one package or all of them.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg></div>
-        <h3>Themes</h3>
-        <p>Dark, Light, System, Nord, Gruvbox, Breeze Dark, Breeze Light, and Breeze Claudius, or build your own from 7 seed colors with a live preview. System follows the OS and can map light and dark mode to any two installed themes. Import, export, install from a URL, or browse the <a href="https://github.com/FaqFirebase/pi-desktop-themes">community gallery</a> in the app.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
-        <h3>Models and shortcuts</h3>
-        <p>Pick a model from the keyboard or cycle models with Ctrl+P. Change the app shortcuts in Settings, and add your own models and providers.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></div>
-        <h3>Session naming</h3>
-        <p>Session names come from Pi, and you can rename a session in the sidebar. Tag sessions, archive them, or branch from a message.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
-        <h3>Activity dashboard</h3>
-        <p>Home shows usage stats for 7 days up to a year: messages, tokens, active-day streaks, peak hour, and a per-model breakdown. The stats stay after you delete a session.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></svg></div>
-        <h3>TypeSafe Jev</h3>
-        <p>Save your <a href="https://docs.typesafe.ai/introduction">TypeSafe</a> API key once and every new Pi or OMP session gets it. One click installs the official Jev skill for both engines. It stays off until you set it up, and Pi Desktop never calls TypeSafe itself.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></div>
-        <h3>Voice dictation</h3>
-        <p>Click the mic and talk. Your words show up in the prompt box while you speak, and recording stops after a short pause. Speech-to-text runs on your own machine, so nothing goes to a server. Pick a model in Settings (Moonshine for fast English, Whisper or Parakeet for more languages). No model ships with the app; one downloads only when you choose it.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- INSTALL -->
-  <section class="install" id="install">
-    <p class="section-label">Get started</p>
-    <h2 class="section-title">Up and running in two steps</h2>
-
-    <div class="install-steps">
-      <div class="install-step">
-        <div class="step-num">1</div>
-        <div class="step-body">
-          <h4>Install Pi</h4>
-          <p>Pi Desktop wraps the Pi coding agent. Install it first:</p>
-          <p class="mt-8"><code>npm install -g @earendil-works/pi-coding-agent</code></p>
+        <div class="hero-side">
+          <p class="hero-copy">
+            A focused desktop interface for Pi and oh-my-pi. Chat with your coding agent, inspect every change, browse the project, run commands, and move between sessions without living in the terminal.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" id="download-hero" href="https://github.com/FaqFirebase/pi-desktop/releases/latest">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
+              <span>Download latest</span>
+            </a>
+            <a class="button button-secondary" href="https://github.com/FaqFirebase/pi-desktop">
+              <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.24c-3.23.7-3.91-1.37-3.91-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.17.08 1.78 1.2 1.78 1.2 1.04 1.78 2.72 1.27 3.39.97.1-.75.4-1.27.74-1.56-2.58-.29-5.3-1.29-5.3-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.47.11-3.05 0 0 .97-.31 3.16 1.18A10.97 10.97 0 0 1 12 6.11c.98 0 1.96.13 2.88.39 2.19-1.49 3.15-1.18 3.15-1.18.63 1.58.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.72 5.39-5.31 5.68.42.36.79 1.07.79 2.16v3.25c0 .31.21.68.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
+              View source
+            </a>
+          </div>
+          <p class="platforms"><span>Linux</span><span>macOS</span><span>Windows</span></p>
         </div>
       </div>
-      <div class="install-step">
-        <div class="step-num">2</div>
-        <div class="step-body">
-          <h4>Download and run</h4>
-          <p>Grab the latest build for your platform from <a href="https://github.com/FaqFirebase/pi-desktop/releases">Releases</a>: Linux AppImage, macOS DMG (Apple Silicon), or Windows installer/portable.</p>
-          <p class="mt-8">
-            <code>chmod +x Pi-Desktop-*.AppImage</code><br>
-            <code>./Pi-Desktop-*.AppImage</code>
+    </section>
+
+    <div class="product-wrap">
+      <div class="shell">
+        <figure class="product-shot reveal">
+          <div class="shot-bar">
+            <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="mono">Pi Desktop / Mission Control</span>
+          </div>
+          <img
+            src="screenshots/home.png"
+            alt="Pi Desktop home launcher showing activity, recent workspaces, and sessions"
+            fetchpriority="high"
+          />
+        </figure>
+      </div>
+    </div>
+
+    <section class="section" id="workflow">
+      <div class="shell">
+        <div class="section-head reveal">
+          <p class="section-index">01 / Workflow</p>
+          <div>
+            <h2>Built around the loop you already use.</h2>
+            <p class="section-intro">Ask, inspect, edit, run, review. Pi Desktop keeps the agent and the repository in the same place without hiding what the agent is doing.</p>
+          </div>
+        </div>
+
+        <div class="workflow">
+          <article class="workflow-row reveal">
+            <div class="workflow-copy">
+              <span class="workflow-num">01</span>
+              <h3>Work with the agent, not around it.</h3>
+              <p>Streaming responses, thinking blocks, tool activity, file mentions, prompt history, and conversation search stay visible in one focused thread.</p>
+              <ul class="feature-points">
+                <li>Real-time streaming and tool-use visibility</li>
+                <li>Inline code, diffs, SVGs, and file links</li>
+                <li><span class="mono">@</span> mention workspace files</li>
+              </ul>
+            </div>
+            <div class="workflow-visual">
+              <img src="screenshots/chat.png" alt="Pi Desktop chat view with composer and sidebar" loading="lazy" />
+            </div>
+          </article>
+
+          <article class="workflow-row reveal">
+            <div class="workflow-copy">
+              <span class="workflow-num">02</span>
+              <h3>See exactly what changed.</h3>
+              <p>The review rail keeps changed files, permissions, and session state in view. Open a diff, approve or deny a tool call, then commit, push, or create a pull request without leaving the app.</p>
+              <ul class="feature-points">
+                <li>Changed-file review rail</li>
+                <li>Inline diff viewer</li>
+                <li>Commit, push, and PR actions</li>
+              </ul>
+            </div>
+            <div class="workflow-visual">
+              <img src="screenshots/diff-terminal.png" alt="Pi Desktop diff viewer with Git actions and integrated terminal" loading="lazy" />
+            </div>
+          </article>
+
+          <article class="workflow-row reveal">
+            <div class="workflow-copy">
+              <span class="workflow-num">03</span>
+              <h3>Keep parallel work actually parallel.</h3>
+              <p>Each live session runs its own agent process. Switch projects while work continues, launch a task into a new background session, or isolate it in a Git worktree.</p>
+              <ul class="feature-points">
+                <li>Independent live agent processes</li>
+                <li>Mission Control across projects</li>
+                <li>Optional isolated Git worktrees</li>
+              </ul>
+            </div>
+            <div class="workflow-visual">
+              <img src="screenshots/new-task.png" alt="Pi Desktop New Task launcher with isolated worktree option" loading="lazy" />
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="shell">
+        <div class="section-head reveal">
+          <p class="section-index">02 / Toolkit</p>
+          <div>
+            <h2>The rest is where you expect it.</h2>
+            <p class="section-intro">No feature maze. The surrounding tools are there when the coding loop needs them, then get out of the way.</p>
+          </div>
+        </div>
+
+        <div class="capabilities reveal">
+          <article class="capability">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 4h16v16H4zM8 4v16M8 9h12"/></svg>
+            <h3>File tree & preview</h3>
+            <p>Browse the repository and preview code, images, PDFs, and HTML in a side pane.</p>
+          </article>
+
+          <article class="capability">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m8 9-4 3 4 3M16 9l4 3-4 3M14 5l-4 14"/></svg>
+            <h3>Code editor</h3>
+            <p>CodeMirror 6 editing with syntax highlighting, Save/Revert controls, and immediate feedback.</p>
+          </article>
+
+          <article class="capability">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m5 7 5 5-5 5M12 17h7"/></svg>
+            <h3>Integrated terminal</h3>
+            <p>A full PTY terminal with ANSI color support, right beside the code and agent.</p>
+          </article>
+
+          <article class="capability">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3 4.5 7.2 12 11.5l7.5-4.3L12 3ZM4.5 12 12 16.3l7.5-4.3M4.5 16.7 12 21l7.5-4.3"/></svg>
+            <h3>Package browser</h3>
+            <p>Browse, install, and update Pi packages from pi.dev/packages without leaving the app.</p>
+          </article>
+
+          <article class="capability">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z"/></svg>
+            <h3>Model switching</h3>
+            <p>Cycle between models with <span class="mono">Ctrl+P</span> while session tags keep work organized.</p>
+          </article>
+
+          <article class="capability">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M5 19V9m7 10V4m7 15v-6"/></svg>
+            <h3>Activity dashboard</h3>
+            <p>Track messages, tokens, active-day streaks, peak hour, and per-model usage over time.</p>
+          </article>
+
+          <article class="capability">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5 11v1a7 7 0 0 0 14 0v-1M12 19v3"/></svg>
+            <h3>Local voice dictation</h3>
+            <p>Moonshine, Whisper, or Parakeet speech-to-text runs on your own machine when enabled.</p>
+          </article>
+
+          <article class="capability">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-1-.8-1.8-1.8-1.8h-1.4a2.2 2.2 0 0 1-2.2-2.2V6.6A3.6 3.6 0 0 0 12 3Z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7.5" r="1"/></svg>
+            <h3>Themes</h3>
+            <p>Built-in themes, custom seed-color themes, import/export, and a <a href="https://github.com/FaqFirebase/pi-desktop-themes">community theme gallery</a>.</p>
+          </article>
+
+          <article class="capability">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16M7 4v6M17 14v6M4 17h16"/></svg>
+            <h3>Permission rules</h3>
+            <p>Approve or deny tool calls and define reusable allow/deny rules globally or per workspace.</p>
+          </article>
+
+          <article class="capability">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4M21 2l-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></svg>
+            <h3>TypeSafe Jev</h3>
+            <p>Save your <a href="https://docs.typesafe.ai/introduction">TypeSafe</a> API key once and every new Pi or OMP session gets it. One click installs the official Jev skill for both engines. Off until you set it up; Pi Desktop never calls TypeSafe itself.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="engines">
+      <div class="shell">
+        <div class="section-head reveal">
+          <p class="section-index">03 / Engines</p>
+          <div>
+            <h2>Use Pi. Use OMP. Keep your history.</h2>
+            <p class="section-intro">Pi Desktop understands sessions from both engines and opens each session with the engine that created it.</p>
+          </div>
+        </div>
+
+        <div class="engine-layout reveal">
+          <article class="engine">
+            <div class="engine-label"><span>Engine 01</span><span>Pi</span></div>
+            <h3>Pi</h3>
+            <p>The standard Pi coding agent, wrapped in a native-feeling desktop workflow without changing how Pi itself works.</p>
+            <a href="https://pi.dev">Visit pi.dev →</a>
+          </article>
+
+          <article class="engine">
+            <div class="engine-label"><span>Engine 02</span><span>Compatible</span></div>
+            <h3>oh-my-pi</h3>
+            <p>Run the compatible <span class="mono">omp</span> binary from oh-my-pi. Sessions remain separate, labeled, and available from the same app.</p>
+            <a href="https://github.com/can1357/oh-my-pi">View oh-my-pi →</a>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="install">
+      <div class="shell install-layout">
+        <div class="install-copy reveal">
+          <p class="section-index">04 / Install</p>
+          <h2>Two steps. No account required.</h2>
+          <p>Install Pi, then grab the Pi Desktop build for your platform. The app is free, open source, and currently in alpha.</p>
+          <div class="install-meta">
+            <span>Linux AppImage</span>
+            <span>macOS DMG</span>
+            <span>Windows installer / portable</span>
+          </div>
+        </div>
+
+        <div class="reveal">
+          <div class="terminal" aria-label="Installation commands">
+            <div class="terminal-head">
+              <span class="mono">terminal</span>
+              <span>1 / Install Pi</span>
+            </div>
+            <div class="terminal-body">
+              <span class="terminal-line"><span class="prompt">$</span> <span class="cmd">npm install -g @earendil-works/pi-coding-agent</span></span>
+              <span class="terminal-line comment"># Then download Pi Desktop for your platform.</span>
+            </div>
+          </div>
+
+          <div class="download-panel">
+            <div class="download-row">
+              <div>
+                <strong id="download-title">Get the latest release</strong>
+                <span id="download-subtitle">Linux, macOS, and Windows builds on GitHub</span>
+              </div>
+              <a class="button button-primary" id="download-install" href="https://github.com/FaqFirebase/pi-desktop/releases/latest">Download</a>
+            </div>
+          </div>
+
+          <p class="install-note">
+            macOS and Windows builds are currently unsigned. See the
+            <a href="https://github.com/FaqFirebase/pi-desktop#macos">README</a>
+            for the one-time Gatekeeper / SmartScreen steps, or
+            <a href="https://github.com/FaqFirebase/pi-desktop#build-it-yourself">build from source</a>.
           </p>
         </div>
       </div>
-    </div>
+    </section>
 
-    <p class="install-note">
-      macOS and Windows builds are unsigned. See the
-      <a href="https://github.com/FaqFirebase/pi-desktop#macos">README</a> for the one-time Gatekeeper/SmartScreen steps, or
-      <a href="https://github.com/FaqFirebase/pi-desktop#build-it-yourself">build from source</a> to skip them.
-    </p>
-  </section>
+    <section class="oss">
+      <div class="shell oss-grid reveal">
+        <h2>Open source means <span>you can change it.</span></h2>
+        <div class="oss-side">
+          <p>Pi Desktop is Apache 2.0 licensed and developed in public. Report issues, contribute code, build themes, or fork it into exactly the tool you want.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="https://github.com/FaqFirebase/pi-desktop">Explore the repository</a>
+            <a class="button button-secondary" href="https://github.com/FaqFirebase/pi-desktop/issues">Open issues</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
 
-  <!-- FOOTER -->
   <footer>
-    <p>Pi Desktop &middot; Apache 2.0 &middot; Alpha</p>
-    <div class="footer-links">
-      <a href="https://github.com/FaqFirebase/pi-desktop">GitHub</a>
-      <a href="https://github.com/FaqFirebase/pi-desktop/releases">Releases</a>
-      <a href="https://github.com/FaqFirebase/pi-desktop/issues">Issues</a>
-      <a href="https://pi.dev">Pi agent</a>
+    <div class="shell footer-inner">
+      <span>Pi Desktop · Apache 2.0 · Alpha</span>
+      <div class="footer-links">
+        <a href="https://github.com/FaqFirebase/pi-desktop">GitHub</a>
+        <a href="https://github.com/FaqFirebase/pi-desktop/releases">Releases</a>
+        <a href="https://github.com/FaqFirebase/pi-desktop/issues">Issues</a>
+        <a href="https://pi.dev">Pi agent</a>
+      </div>
     </div>
   </footer>
 
+  <script>
+    (() => {
+      const ua = navigator.userAgent.toLowerCase();
+      const platform = navigator.userAgentData?.platform?.toLowerCase() || navigator.platform?.toLowerCase() || "";
+      let os = "";
+
+      if (platform.includes("win") || ua.includes("windows")) os = "Windows";
+      else if (platform.includes("mac") || ua.includes("macintosh")) os = "macOS";
+      else if (platform.includes("linux") || ua.includes("linux")) os = "Linux";
+
+      if (os) {
+        const hero = document.querySelector("#download-hero span");
+        const title = document.querySelector("#download-title");
+        const subtitle = document.querySelector("#download-subtitle");
+        if (hero) hero.textContent = `Download for ${os}`;
+        if (title) title.textContent = `Download for ${os}`;
+        if (subtitle) subtitle.textContent = "Latest build from GitHub Releases";
+      }
+
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("is-visible");
+          observer.unobserve(entry.target);
+        });
+      }, { threshold: 0.08, rootMargin: "0px 0px -6% 0px" });
+
+      document.querySelectorAll(".reveal").forEach((el) => observer.observe(el));
+    })();
+  </script>
 </body>
 </html>
