@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, globalShortcut } from 'electron'
 import { PiRpcManager } from '../pi-rpc-manager'
 import { WorkspaceManager } from '../workspace-manager'
 import { SessionTagManager } from '../session-tags'
@@ -6,6 +6,9 @@ import { ArchivedSessionsManager } from '../archived-sessions'
 import { TerminalService } from '../terminal-service'
 import { WorkspaceTerminals } from '../workspace-terminals'
 import { NotesManager } from '../notes-manager'
+import { GlobalDictationShortcut } from '../global-dictation-shortcut'
+import { IPC_CHANNELS } from '../../shared/ipc-contracts'
+import { appLog } from '../app-log'
 
 export interface IpcContext {
   workspaceManager: WorkspaceManager
@@ -16,6 +19,7 @@ export interface IpcContext {
   archivedSessions: ArchivedSessionsManager
   notesManager: NotesManager
   terminalService: WorkspaceTerminals
+  globalDictationShortcut: GlobalDictationShortcut
 }
 
 export function createIpcContext(workspaceManager: WorkspaceManager): IpcContext {
@@ -47,6 +51,12 @@ export function createIpcContext(workspaceManager: WorkspaceManager): IpcContext
     }
   }
 
+  const globalDictationShortcut = new GlobalDictationShortcut(
+    globalShortcut,
+    () => broadcast(IPC_CHANNELS.EVENT_VOICE_SHORTCUT, null),
+    (accelerator) => appLog.warn('voice', `Could not register the system-wide dictation shortcut ${accelerator}; another app may use it`),
+  )
+
   return {
     workspaceManager,
     broadcast,
@@ -56,5 +66,6 @@ export function createIpcContext(workspaceManager: WorkspaceManager): IpcContext
     archivedSessions,
     notesManager,
     terminalService,
+    globalDictationShortcut,
   }
 }

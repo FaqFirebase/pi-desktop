@@ -82,7 +82,7 @@ export async function saveAppSettings(settings: Partial<AppSettings>): Promise<v
 }
 
 export function registerSettingsHandlers(ctx: IpcContext): void {
-  const { workspaceManager } = ctx
+  const { workspaceManager, globalDictationShortcut } = ctx
 
   // ─── Settings ───────────────────────────────────────────────────────────
 
@@ -113,6 +113,9 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
     if ('language' in settings) {
       applyLanguageSetting(updated.language)
     }
+    if ('shortcuts' in settings) {
+      globalDictationShortcut.apply(updated.shortcuts.globalDictation)
+    }
     return updated
   })
 
@@ -121,8 +124,12 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
   // Reconcile the OS-level "run on startup" state with the saved preference on
   // launch. Self-healing: repairs a stale Linux autostart Exec path after an
   // app update/move and re-asserts the login item on macOS/Windows. Runs in the
-  // background so a failure never blocks handler registration.
+  // background so a failure never blocks handler registration. The saved
+  // system-wide dictation key is bound here too.
   void loadAppSettings(workspaceManager)
-    .then((settings) => applyRunOnStartup(settings.runOnStartup))
-    .catch((err) => console.error('[startup] Failed to reconcile run-on-startup:', err))
+    .then((settings) => {
+      globalDictationShortcut.apply(settings.shortcuts.globalDictation)
+      return applyRunOnStartup(settings.runOnStartup)
+    })
+    .catch((err) => console.error('[startup] Failed to apply startup settings:', err))
 }

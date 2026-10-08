@@ -240,6 +240,8 @@ interface PiDesktopAPI {
     remove(modelId: string): Promise<VoiceStatus>
     select(request: { modelId: string | null; precision: VoiceInstallRequest['precision'] }): Promise<VoiceStatus>
     onProgress(callback: (event: VoiceProgressEvent) => void): () => void
+    /** The system-wide dictation key was pressed. */
+    onShortcut(callback: () => void): () => void
   }
 
   // TypeSafe (Jev): saved API key and the agent skill. The key goes in once
@@ -549,6 +551,11 @@ const api: PiDesktopAPI = {
       const handler = (_event: Electron.IpcRendererEvent, data: VoiceProgressEvent) => callback(data)
       ipcRenderer.on(IPC_CHANNELS.EVENT_VOICE_PROGRESS, handler)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.EVENT_VOICE_PROGRESS, handler)
+    },
+    onShortcut: (callback) => {
+      const handler = () => callback()
+      ipcRenderer.on(IPC_CHANNELS.EVENT_VOICE_SHORTCUT, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.EVENT_VOICE_SHORTCUT, handler)
     },
   },
 

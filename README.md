@@ -226,6 +226,9 @@ You can change the app shortcuts in **Settings > Keyboard shortcuts**, or turn a
 | `Ctrl+Shift+P` | Insert a saved note |
 | `Mod+[` / `Mod+]` | Previous / next open session in the project |
 | `Mod+Shift+[` / `Mod+Shift+]` | Previous / next project |
+| `Mod+Shift+T` (hold) | Voice dictation while held |
+
+A system-wide voice dictation key, off by default, starts and stops dictation from any app.
 
 These shortcuts are fixed:
 

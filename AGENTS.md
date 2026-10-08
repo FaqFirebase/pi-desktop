@@ -143,6 +143,7 @@ src/
 │   ├── voice-model-download.ts   # Pick and download one speech model's files
 │   ├── voice-protocol.ts         # `pi-voice` scheme that serves model files to the renderer
 │   ├── voice-gpu-switches.ts     # Chromium GPU switches for the saved voice device, read before app ready
+│   ├── global-dictation-shortcut.ts # System-wide dictation key (Electron globalShortcut), toggles the composer mic
 │   ├── workflow-monitor.ts       # ~/.pi/workflows run and project discovery
 │   ├── tray-manager.ts           # System-tray lifecycle (minimize to tray on close)
 │   ├── tray-decision.ts          # Pure tray-availability decision
@@ -348,7 +349,8 @@ resources/
 
 - Settings > Keyboard shortcuts records a new combination per action or disables it. `src/shared/keyboard-shortcuts.ts` holds the actions, the defaults, matching, and the conflict checks; `utils/app-shortcuts.ts` dispatches them
 - Bindings are stored with `Mod` (Cmd on macOS, Ctrl elsewhere). A binding needs Cmd or Ctrl plus a letter, digit, punctuation key, or F1 to F12
-- Default bindings: diff `Mod+G`, terminal `Ctrl+Backquote`, settings `Mod+Comma`, command palette `Mod+K`, model selector `Mod+Shift+M`, note picker `Ctrl+Shift+P`, Review / Commit and push `Mod+Shift+H`, sidebar `Mod+B`, file tree `Mod+Shift+E`, Review panel `Mod+Shift+U`, new session `Mod+N`, previous/next project `Mod+Shift+BracketLeft`/`Mod+Shift+BracketRight`, previous/next open session `Mod+BracketLeft`/`Mod+BracketRight`
+- Default bindings: diff `Mod+G`, terminal `Ctrl+Backquote`, settings `Mod+Comma`, command palette `Mod+K`, model selector `Mod+Shift+M`, note picker `Ctrl+Shift+P`, Review / Commit and push `Mod+Shift+H`, sidebar `Mod+B`, file tree `Mod+Shift+E`, Review panel `Mod+Shift+U`, new session `Mod+N`, previous/next project `Mod+Shift+BracketLeft`/`Mod+Shift+BracketRight`, previous/next open session `Mod+BracketLeft`/`Mod+BracketRight`, push to talk `Mod+Shift+T`; the system-wide dictation key is off by default
+- Voice keys: hold push to talk to record into the composer and let go to stop (silence does not end it while held; losing window focus does). The system-wide dictation key works while other apps are in front: the main process binds it with Electron `globalShortcut` (`global-dictation-shortcut.ts`), which reports presses only, so each press starts or stops dictation like a mic click. It is bound at startup and on Save; a key another app holds is logged to the app log. On Linux Wayland the desktop's global-shortcuts portal must accept the bind
 - Native menu and editing shortcuts are reserved and cannot be assigned (`RESERVED_SHORTCUTS`), for example `Mod+Shift+N` (New Workspace), `Mod+O` (Open Project), `Mod+F`, and `Ctrl+P`. A duplicate or reserved binding blocks dispatch until it is fixed
 - Fixed keys outside the configurable set: `Enter` sends, `Shift+Enter` adds a line, `Esc` stops the running turn, `Up`/`Down` recall prompts, `Ctrl/Cmd+F` finds in the conversation, `Ctrl/Cmd+Shift+F` searches workspace files
 

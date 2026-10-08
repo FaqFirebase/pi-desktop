@@ -210,6 +210,7 @@ export const IPC_CHANNELS = {
   EVENT_TERMINAL_EXIT: 'event:terminal-exit',
   EVENT_COUNCIL_PROGRESS: 'event:council-progress',
   EVENT_VOICE_PROGRESS: 'event:voice-progress',
+  EVENT_VOICE_SHORTCUT: 'event:voice-shortcut',
 
   // Voice dictation
   VOICE_STATUS: 'voice:status',

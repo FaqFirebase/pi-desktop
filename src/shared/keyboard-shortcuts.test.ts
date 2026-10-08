@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { captureShortcut, duplicateShortcutOwner, matchesShortcut, formatShortcut, shortcutProblem, type ShortcutKeyEvent } from './keyboard-shortcuts'
+import {
+  captureShortcut, duplicateShortcutOwner, matchesShortcut, formatShortcut, releasesShortcut, shortcutAccelerator, shortcutProblem,
+  type ShortcutKeyEvent,
+} from './keyboard-shortcuts'
 import { DEFAULT_SETTINGS } from './default-settings'
 import { normalizeStoredSettings } from './app-settings'
 
@@ -82,4 +85,36 @@ test('saved remappings and disabled actions survive normalization; missing actio
   }
   assert.equal(settings.shortcuts.commandPalette, DEFAULT_SETTINGS.shortcuts.commandPalette)
   assert.equal(normalizeStoredSettings({ shortcuts: { diff: 42 } }, ['en']).shortcuts.diff, DEFAULT_SETTINGS.shortcuts.diff)
+})
+
+test('push to talk ends when its key or one of its modifiers comes up, not another key', () => {
+  const binding = DEFAULT_SETTINGS.shortcuts.pushToTalk!
+  const release = (key: string, code: string) => ({ key, code, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false })
+  for (const platform of ['darwin', 'linux']) {
+    assert.equal(releasesShortcut(release('t', 'KeyT'), binding, platform), true)
+    assert.equal(releasesShortcut(release('Shift', 'ShiftLeft'), binding, platform), true)
+    assert.equal(releasesShortcut(release('a', 'KeyA'), binding, platform), false)
+    assert.equal(releasesShortcut(release('Alt', 'AltLeft'), binding, platform), false)
+  }
+  assert.equal(releasesShortcut(release('Meta', 'MetaLeft'), binding, 'darwin'), true)
+  assert.equal(releasesShortcut(release('Control', 'ControlLeft'), binding, 'darwin'), false)
+  assert.equal(releasesShortcut(release('Control', 'ControlLeft'), binding, 'linux'), true)
+  assert.equal(releasesShortcut(release('t', 'KeyT'), 'T', 'linux'), false)
+})
+
+test('stored bindings become Electron accelerators for the system-wide key', () => {
+  assert.equal(shortcutAccelerator('Mod+Shift+T'), 'CommandOrControl+Shift+T')
+  assert.equal(shortcutAccelerator('Ctrl+Meta+Alt+F5'), 'Control+Super+Alt+F5')
+  assert.equal(shortcutAccelerator('Mod+Backquote'), 'CommandOrControl+`')
+  assert.equal(shortcutAccelerator('Mod+Quote'), "CommandOrControl+'")
+  assert.equal(shortcutAccelerator('T'), null)
+})
+
+test('the system-wide dictation key is off by default and conflicts like any other shortcut', () => {
+  const defaults = DEFAULT_SETTINGS.shortcuts
+  assert.equal(defaults.globalDictation, null)
+  assert.deepEqual(shortcutProblem({ ...defaults, globalDictation: 'Mod+Shift+T' }, 'linux'),
+    { kind: 'duplicate', action: 'globalDictation', other: 'pushToTalk' })
+  assert.equal(shortcutProblem({ ...defaults, globalDictation: 'Mod+V' }, 'linux')?.kind, 'reserved')
+  assert.equal(shortcutProblem({ ...defaults, globalDictation: 'Mod+Alt+D' }, 'linux'), null)
 })

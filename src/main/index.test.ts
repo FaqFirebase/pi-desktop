@@ -70,6 +70,7 @@ function setup(stopAll?: () => Promise<void>) {
     editorGuard,
     confirmEditorDiscard: async () => { calls.push('confirm'); return discard },
     destroyTray: () => { calls.push('destroy-tray') },
+    globalShortcut: { unregisterAll: () => { calls.push('release-shortcuts') } },
     activityStatsStore: { flushSync: () => { calls.push('flush-stats') } },
     appLog: {
       warn: () => { calls.push('warn') },
@@ -96,7 +97,7 @@ test('one native macOS quit exits even when shutdown resolves immediately', {
   try {
     const probe = join(dir, 'quit.cjs')
     writeFileSync(probe, `
-      const { app, BrowserWindow, Menu } = require('electron');
+      const { app, BrowserWindow, globalShortcut, Menu } = require('electron');
       const assert = require('node:assert/strict');
       app.setPath('userData', ${JSON.stringify(join(dir, 'profile'))});
       const calls = [];
@@ -155,7 +156,7 @@ test('a single quit closes the renderer, drains pending writes and exits', { tim
   await state.exit
   assert.equal(state.exited(), true, 'no second user quit should be needed')
   assert.deepEqual(state.calls, [
-    'close-renderer', 'stop-all', 'destroy-tray', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
+    'close-renderer', 'stop-all', 'destroy-tray', 'release-shortcuts', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
   ])
 })
 
@@ -171,7 +172,7 @@ test('repeated quits share the drain and cannot reopen the window during shutdow
   await state.exit
   assert.equal(state.exited(), true)
   assert.deepEqual(state.calls, [
-    'close-renderer', 'stop-all', 'destroy-tray', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
+    'close-renderer', 'stop-all', 'destroy-tray', 'release-shortcuts', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
   ])
 })
 
@@ -202,7 +203,7 @@ test('a failed shutdown flush is logged and does not require another quit', { ti
   await state.exit
   assert.equal(state.exited(), true)
   assert.deepEqual(state.calls, [
-    'close-renderer', 'stop-all', 'warn', 'destroy-tray', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
+    'close-renderer', 'stop-all', 'warn', 'destroy-tray', 'release-shortcuts', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
   ])
 })
 
@@ -212,6 +213,6 @@ test('a synchronous shutdown failure is logged and does not hang the quit', { ti
   await state.exit
   assert.equal(state.exited(), true)
   assert.deepEqual(state.calls, [
-    'close-renderer', 'warn', 'destroy-tray', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
+    'close-renderer', 'warn', 'destroy-tray', 'release-shortcuts', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
   ])
 })

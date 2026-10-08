@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, session, shell } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, protocol, session, shell } from 'electron'
 import { existsSync, mkdirSync } from 'fs'
 import { basename, dirname, join, resolve as resolvePath } from 'path'
 import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
@@ -576,6 +576,8 @@ app.on('will-quit', (event) => {
   }
   // Release the tray icon so it doesn't linger in the notification area.
   destroyTray()
+  // Give the system-wide dictation key back to other apps.
+  globalShortcut.unregisterAll()
   // Synchronous incremental scan + write: captures every session touched this
   // run before we exit (async I/O isn't guaranteed to finish during shutdown).
   activityStatsStore.flushSync()

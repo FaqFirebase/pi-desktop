@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { beforeEach, test } from 'node:test'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
-import { activeShortcuts, handleAppShortcut, runAppShortcut } from './app-shortcuts'
+import { activeShortcuts, handleAppShortcut, handleAppShortcutRelease, releasePushToTalk, runAppShortcut } from './app-shortcuts'
+import { onVoiceShortcut, type VoiceShortcutCommand } from '../voice/voice-shortcut'
 import type { SessionRuntimeInfo } from '../../../shared/ipc-contracts'
 
 const initialState = useAppStore.getState()
@@ -253,4 +254,35 @@ test('session navigation uses open sessions in the active project, supports rema
   useAppStore.setState({ sessionRuntimes: {} })
   await runAppShortcut('nextSession')
   assert.equal(selected.length, 4)
+})
+
+test('push to talk holds while its keys are down and releases on its own key-up or a lost focus', () => {
+  const commands: VoiceShortcutCommand[] = []
+  const unsubscribe = onVoiceShortcut((command) => commands.push(command))
+  const press = keyEvent({ key: 'T', code: 'KeyT', shiftKey: true })
+  handleAppShortcut(press)
+  handleAppShortcut(keyEvent({ key: 'T', code: 'KeyT', shiftKey: true, repeat: true }))
+  assert.equal(press.defaultPrevented, true)
+  assert.deepEqual(commands, ['hold'])
+  handleAppShortcutRelease(keyEvent({ key: 'a', code: 'KeyA', metaKey: false }))
+  assert.deepEqual(commands, ['hold'])
+  handleAppShortcutRelease(keyEvent({ key: 'Meta', code: 'MetaLeft', metaKey: false, shiftKey: true }))
+  handleAppShortcutRelease(keyEvent({ key: 'T', code: 'KeyT', metaKey: false }))
+  assert.deepEqual(commands, ['hold', 'release'])
+  handleAppShortcut(keyEvent({ key: 'T', code: 'KeyT', shiftKey: true }))
+  releasePushToTalk()
+  releasePushToTalk()
+  assert.deepEqual(commands, ['hold', 'release', 'hold', 'release'])
+  unsubscribe()
+})
+
+test('the system-wide dictation key is left to the main process when it reaches the window', () => {
+  const commands: VoiceShortcutCommand[] = []
+  const unsubscribe = onVoiceShortcut((command) => commands.push(command))
+  useAppStore.getState().setSettingsDraft({ shortcuts: { ...DEFAULT_SETTINGS.shortcuts, globalDictation: 'Mod+Alt+D' } })
+  const event = keyEvent({ key: 'd', code: 'KeyD', altKey: true })
+  handleAppShortcut(event)
+  assert.equal(event.defaultPrevented, false)
+  assert.deepEqual(commands, [])
+  unsubscribe()
 })

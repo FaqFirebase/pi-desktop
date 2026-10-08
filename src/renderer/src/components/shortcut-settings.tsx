@@ -24,6 +24,8 @@ function actionLabel(action: ShortcutAction, t: TFunction): string {
     case 'nextProject': return t('settings.shortcuts.nextProject')
     case 'previousSession': return t('settings.shortcuts.previousSession')
     case 'nextSession': return t('settings.shortcuts.nextSession')
+    case 'pushToTalk': return t('settings.shortcuts.pushToTalk')
+    case 'globalDictation': return t('settings.shortcuts.globalDictation')
   }
 }
 

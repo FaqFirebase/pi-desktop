@@ -23,7 +23,8 @@ import { useContextMenu, buildDefaultContextMenu } from './components/context-me
 import { usePiEvents, useMenuActions, useInitialize } from './hooks'
 import { useFolderDrop } from './hooks/use-folder-drop'
 import { useAppStore } from './store'
-import { handleAppShortcut } from './utils/app-shortcuts'
+import { handleAppShortcut, handleAppShortcutRelease, releasePushToTalk } from './utils/app-shortcuts'
+import { emitVoiceShortcut } from './voice/voice-shortcut'
 import { useEffect } from 'react'
 import { ArrowUpCircle, FolderOpen, PanelLeft, X } from 'lucide-react'
 
@@ -71,7 +72,15 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     document.addEventListener('keydown', handleAppShortcut, true)
-    return () => document.removeEventListener('keydown', handleAppShortcut, true)
+    document.addEventListener('keyup', handleAppShortcutRelease, true)
+    window.addEventListener('blur', releasePushToTalk)
+    const unsubscribeVoiceShortcut = window.piDesktop.voice.onShortcut(() => emitVoiceShortcut('toggle'))
+    return () => {
+      document.removeEventListener('keydown', handleAppShortcut, true)
+      document.removeEventListener('keyup', handleAppShortcutRelease, true)
+      window.removeEventListener('blur', releasePushToTalk)
+      unsubscribeVoiceShortcut()
+    }
   }, [])
 
   // Home is a full-screen splash (no sidebar/status). Chat keeps chrome; the

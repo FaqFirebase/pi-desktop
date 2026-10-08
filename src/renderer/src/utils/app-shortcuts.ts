@@ -1,16 +1,25 @@
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
-import { matchesShortcut, SHORTCUT_ACTIONS, shortcutProblem, type KeyboardShortcuts, type ShortcutAction } from '../../../shared/keyboard-shortcuts'
+import {
+  matchesShortcut, releasesShortcut, SHORTCUT_ACTIONS, shortcutProblem, type KeyboardShortcuts, type ShortcutAction,
+} from '../../../shared/keyboard-shortcuts'
 import type { AppSettings } from '../../../shared/ipc-contracts'
 import { useAppStore } from '../store'
 import { requestCommitPushDialog } from './commit-push-shortcut'
 import { adjacentTabIndex, projectTabs, sessionTabs } from './tab-navigation'
+import { emitVoiceShortcut } from '../voice/voice-shortcut'
+
+/** Actions that run once per key press; the voice keys are handled in handleAppShortcut. */
+type CommandShortcutAction = Exclude<ShortcutAction, 'pushToTalk' | 'globalDictation'>
+
+// The push-to-talk binding while its key is held down, so the matching key-up ends it.
+let heldPushToTalk: string | null = null
 
 /** The shortcuts in force: the unsaved Settings draft first, then the saved settings, then the defaults. */
 export function activeShortcuts(state: { settingsDraft: Partial<AppSettings>; settings: AppSettings | null }): KeyboardShortcuts {
   return state.settingsDraft.shortcuts ?? state.settings?.shortcuts ?? DEFAULT_SETTINGS.shortcuts
 }
 
-export async function runAppShortcut(action: ShortcutAction): Promise<void> {
+export async function runAppShortcut(action: CommandShortcutAction): Promise<void> {
   const state = useAppStore.getState()
   switch (action) {
     case 'files':
@@ -101,8 +110,29 @@ export function handleAppShortcut(event: KeyboardEvent): void {
   const platform = window.piDesktop.system.platform
   if (shortcutProblem(shortcuts, platform)) return
   const action = SHORTCUT_ACTIONS.find((candidate) => matchesShortcut(event, shortcuts[candidate], platform))
-  if (!action) return
+  // The main process owns the system-wide dictation key.
+  if (!action || action === 'globalDictation') return
   event.preventDefault()
   event.stopPropagation()
-  if (!event.repeat) void runAppShortcut(action)
+  if (event.repeat) return
+  if (action === 'pushToTalk') {
+    heldPushToTalk = shortcuts.pushToTalk
+    emitVoiceShortcut('hold')
+    return
+  }
+  void runAppShortcut(action)
+}
+
+/** Letting go of the push-to-talk key or one of its modifiers ends the recording. */
+export function handleAppShortcutRelease(event: KeyboardEvent): void {
+  if (heldPushToTalk && releasesShortcut(event, heldPushToTalk, window.piDesktop.system.platform)) {
+    releasePushToTalk()
+  }
+}
+
+/** Also called when the window loses focus, because its key-up then never arrives. */
+export function releasePushToTalk(): void {
+  if (!heldPushToTalk) return
+  heldPushToTalk = null
+  emitVoiceShortcut('release')
 }

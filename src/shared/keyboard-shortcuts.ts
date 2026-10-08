@@ -1,7 +1,7 @@
 export const SHORTCUT_ACTIONS = [
   'modelSelector', 'sidebar', 'files', 'diff', 'terminal', 'review',
   'newSession', 'previousProject', 'nextProject', 'previousSession', 'nextSession',
-  'commitPush', 'settings', 'commandPalette', 'notes',
+  'commitPush', 'settings', 'commandPalette', 'notes', 'pushToTalk', 'globalDictation',
 ] as const
 export type ShortcutAction = typeof SHORTCUT_ACTIONS[number]
 export type KeyboardShortcuts = Record<ShortcutAction, string | null>
@@ -24,6 +24,10 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   nextProject: 'Mod+Shift+BracketRight',
   previousSession: 'Mod+BracketLeft',
   nextSession: 'Mod+BracketRight',
+  // Hold to dictate into the composer while the app has focus.
+  pushToTalk: 'Mod+Shift+T',
+  // Off until the user picks one: a system-wide key is taken from every other app.
+  globalDictation: null,
 }
 
 export interface ShortcutKeyEvent {
@@ -41,6 +45,14 @@ const MODIFIERS = ['Mod', 'Ctrl', 'Meta', 'Alt', 'Shift']
 const PUNCTUATION: Record<string, string> = {
   '`': 'Backquote', ',': 'Comma', '.': 'Period', '/': 'Slash', '\\': 'Backslash',
   '[': 'BracketLeft', ']': 'BracketRight', '-': 'Minus', '=': 'Equal', ';': 'Semicolon', "'": 'Quote',
+}
+const KEY_CHARACTERS: Record<string, string> = Object.fromEntries(
+  Object.entries(PUNCTUATION).map(([character, name]) => [name, character]),
+)
+const MODIFIER_KEYS: Record<string, string> = { Control: 'Ctrl', Meta: 'Meta', Alt: 'Alt', Shift: 'Shift' }
+// Electron accelerator names; Super is Cmd on macOS and the Super/Windows key elsewhere.
+const ACCELERATOR_MODIFIERS: Record<string, string> = {
+  Mod: 'CommandOrControl', Ctrl: 'Control', Meta: 'Super', Alt: 'Alt', Shift: 'Shift',
 }
 const KEY_PATTERN = /^(?:[A-Z0-9]|F(?:[1-9]|1[0-2])|Backquote|Comma|Period|Slash|Backslash|BracketLeft|BracketRight|Minus|Equal|Semicolon|Quote)$/
 
@@ -75,6 +87,22 @@ export function matchesShortcut(event: ShortcutKeyEvent, binding: string | null,
   return event.ctrlKey === resolved.includes('Ctrl') && event.metaKey === resolved.includes('Meta')
     && event.altKey === resolved.includes('Alt') && event.shiftKey === resolved.includes('Shift')
     && eventKey(event) === resolved.at(-1)
+}
+
+/** True when letting go of this key ends a held `binding`: its main key or one of its modifiers. */
+export function releasesShortcut(event: ShortcutKeyEvent, binding: string, platform: string): boolean {
+  if (!parseShortcut(binding)) return false
+  const resolved = resolvedShortcut(binding, platform).split('+')
+  const modifier = MODIFIER_KEYS[event.key]
+  return modifier ? resolved.includes(modifier) : eventKey(event) === resolved.at(-1)
+}
+
+/** The Electron accelerator for a stored binding, or null when the binding is malformed. */
+export function shortcutAccelerator(binding: string): string | null {
+  const parts = parseShortcut(binding)
+  if (!parts) return null
+  const key = parts.at(-1)!
+  return [...parts.slice(0, -1).map((part) => ACCELERATOR_MODIFIERS[part]), KEY_CHARACTERS[key] ?? key].join('+')
 }
 
 /** Store the platform's primary modifier portably, but keep Ctrl distinct on macOS. */
@@ -137,9 +165,6 @@ export function normalizeKeyboardShortcuts(value: unknown): KeyboardShortcuts {
 }
 
 export function formatShortcut(binding: string, platform: string): string {
-  const labels: Record<string, string> = {
-    Meta: platform === 'darwin' ? 'Cmd' : 'Meta', Backquote: '`', Comma: ',', Period: '.',
-    Slash: '/', Backslash: '\\', BracketLeft: '[', BracketRight: ']', Minus: '-', Equal: '=', Semicolon: ';', Quote: "'",
-  }
+  const labels: Record<string, string> = { Meta: platform === 'darwin' ? 'Cmd' : 'Meta', ...KEY_CHARACTERS }
   return resolvedShortcut(binding, platform).split('+').map((part) => labels[part] ?? part).join('+')
 }
