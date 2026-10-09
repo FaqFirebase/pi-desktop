@@ -403,8 +403,11 @@ const UNUSUAL_NEW_FILE = 'neue Datei ü.txt'
 async function unusualNamesRepo(): Promise<{ dir: string; git: (...args: string[]) => string; service: FileService }> {
   const dir = await mkdtemp(join(tmpdir(), 'fs-unusual-names-'))
   const git = (...args: string[]): string =>
-    execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', ...args], { cwd: dir, encoding: 'utf8' })
+    execFileSync('git', args, { cwd: dir, encoding: 'utf8' })
   git('init', '-q')
+  // A local identity, so the app's own commit works on a machine with no global one.
+  git('config', 'user.email', 'pi-desktop@example.test')
+  git('config', 'user.name', 'Pi Desktop Tests')
   // Pinned locally so a global setting cannot turn rename detection off.
   git('config', 'diff.renames', 'true')
   git('config', 'status.renames', 'true')
