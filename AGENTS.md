@@ -31,6 +31,7 @@ The project is in **alpha**. APIs, IPC contracts, on-disk config formats, and pa
 - The renderer has no access to Node APIs
 - Main-window navigation is pinned to the packaged renderer; privileged IPC checks that the sender frame is the app renderer
 - Per-workspace trust gate: until the user trusts a workspace, the allow rules in its own `.pi-desktop/permission-rules.json` are ignored and its HTML preview runs without scripts or network
+- Programs the app starts by bare name resolve from PATH only, not from the working folder (`windows-exe-search.ts`; Windows)
 - Attachment reads are limited to picked or in-workspace paths; session deletion is confined to the session stores; package specs are validated before the Pi CLI runs
 
 ### Interface text
@@ -64,7 +65,11 @@ src/
 │   ├── path-compare.ts           # Platform-aware path equality (win32 case-fold); main+renderer
 │   ├── folder-drop.ts            # Pure helpers for drag-drop folder -> workspace
 │   ├── attachment-rules.ts       # Rules for picked and dropped chat attachments
-│   ├── git-diff.ts               # Diff splitting and repository-root -> workspace path helpers
+│   ├── git-diff.ts               # Diff path model (Git C-quoting), pinned diff options, splitting, repository-root -> workspace path helpers
+│   ├── file-url.ts               # file:// URLs for local paths, every segment percent-encoded (drive and UNC paths)
+│   ├── preview-partitions.ts     # File-preview <webview> partition names, the ones main hardens
+│   ├── repo-set-draft.ts         # Repo set editing: unique names; the first repository is the main one
+│   ├── subagent-task.ts          # Subagent rows for the Tasks panel, rail badge and composer strip: parsers and reducers
 │   ├── untrusted-data.ts         # Wrap file/agent text as a labeled untrusted-data block
 │   ├── agent-engine-label.ts     # Display names for the Pi/OMP engines (every surface reads this one map)
 │   ├── product-name.ts           # "Pi Desktop" display name (a named constant, never a translation key)
@@ -95,11 +100,13 @@ src/
 │   ├── pi-binary-resolution.ts   # Locate and identify installed pi/omp executables
 │   ├── pi-paths.ts               # Per-engine session-store roots; which engine owns a session file
 │   ├── pi-dotenv.ts              # Read ~/.pi/.env for agent processes, the terminal, and Diagnostics
+│   ├── agent-resources.ts        # Path of a file shipped in resources/ (an agent extension), dev and packaged
 │   ├── latest-project-session.ts # Per-engine session directories of a project; its latest session
 │   ├── streaming-text-tracker.ts # Offsets of streamed text, so a view that returns mid-message stays in sync
 │   ├── session-trash.ts          # Deleted sessions go to the desktop trash (trash-cli, then gio)
 │   ├── path-authorization.ts     # Path containment checks (attachment/session IPC)
 │   ├── renderer-origin.ts        # Trusted-renderer URL check (navigation + IPC sender)
+│   ├── preview-guest.ts          # File-preview guest rules: which guest is the PDF preview, scripts, per-partition request block
 │   ├── window-background.ts      # Native window background that follows the theme
 │   ├── workspace-trust.ts        # Per-workspace trust registry (gates allow rules + preview)
 │   ├── workspace-manager.ts      # Multi-workspace management
@@ -128,14 +135,20 @@ src/
 │   ├── omp-stopped-answers.ts    # Stopped answers a reloaded OMP session leaves out of get_messages, read back from its file
 │   ├── omp-plugin-list.ts        # Parse `omp plugin list --json` for the installed-packages panel
 │   ├── skills-discovery.ts       # Per-engine skill roots scan + catalog merge
-│   ├── session-metadata.ts       # Bounded reader: session name, header, first-message preview
+│   ├── session-metadata.ts       # Bounded reader: session name, header, first-message preview; header-only (disposable) means metadata only
+│   ├── session-jsonl.ts          # Session JSONL text -> entries (a partial last line is skipped)
 │   ├── session-lineage-reader.ts # Parent links and labels across the session store
 │   ├── get-messages-trim.ts      # Shrink a get_messages response before IPC
 │   ├── map-concurrent.ts         # Bounded-concurrency mapper
 │   ├── extension-ui-ipc.ts       # Extension-UI half of the IPC surface
 │   ├── pi-event-router.ts        # Routes every runtime's Pi events to the renderer
+│   ├── subagent-transcripts.ts   # Subagent transcripts: OMP RPC, pi-subagents inspect command, foreground session files
 │   ├── git-worktree.ts           # Isolated Git worktrees for New Task
 │   ├── git-head-watcher.ts       # Reports a HEAD or local branch change made outside the app; always on for the active workspace
+│   ├── repo-sets.ts              # Saved repo sets (repo-sets.json); a picked folder resolves to the top of its checkout
+│   ├── linked-worktrees.ts       # Worktrees of an isolated linked task, one shared branch
+│   ├── linked-ship.ts            # Ship all: commit, push, and pull request per repository, linked repositories first
+│   ├── linked-task-status.ts     # One repo bar row per repository of a linked task
 │   ├── theme-store.ts            # User theme files: list, save, delete, install from URL, gallery
 │   ├── typesafe-key-store.ts     # TypeSafe API key in an owner-only file in the GUI data dir
 │   ├── typesafe-skill.ts         # Install the TypeSafe agent skill from a pinned release, digest-checked
@@ -150,6 +163,7 @@ src/
 │   ├── startup-launch.ts         # Cross-platform "Run on startup"
 │   ├── autostart-linux.ts        # Linux freedesktop autostart entry helpers
 │   ├── editor-guard.ts           # Unsaved-editor guard for quit/close/reload
+│   ├── windows-exe-search.ts     # Windows: no program starts from the working folder by bare name; child env for direct and cmd.exe launches
 │   └── cmd-escape.ts             # cmd.exe escaping for Windows shell:true spawns
 ├── preload/
 │   └── index.ts                  # contextBridge API
@@ -168,6 +182,8 @@ src/
         ├── message-grouping.ts   # Tool-name labels and message grouping
         ├── reattached-tool-calls.ts # Mark unfinished tool calls as running when a view returns mid-turn
         ├── claude-cli-markers.ts # Parse pi-claude-cli tool markers into tool cards
+        ├── subagent-transcript-view.ts # What the Tasks panel's transcript view shows
+        ├── hooks/use-subagent-transcript.ts # Keep a subagent's transcript live while it runs and the chat is on screen
         ├── theme/engine.ts       # Apply a resolved theme to the document
         ├── themes/               # Built-in theme JSON files
         ├── index.css             # Tailwind + theme overrides
@@ -211,6 +227,8 @@ src/
             ├── composer-draft.ts  # Composer draft kept apart from recalled prompts
             ├── model-selector.tsx # Composer model picker (searchable, keyboard-driven)
             ├── subagent-progress.tsx # Compact live subagent strip on the composer
+            ├── subagent-panel.tsx # Right-side Tasks panel: the chat's subagents and one live transcript
+            ├── subagent-task-row.tsx # One subagent row with its status icon
             ├── voice-mic-button.tsx # Composer mic button for voice dictation
             ├── chat-code-highlight.ts # Fenced-code syntax highlighting -> HTML
             ├── chat-file-link.ts  # Detect/classify filenames mentioned in chat text
@@ -224,6 +242,7 @@ src/
             ├── code-editor-language.ts   # Language detection
             ├── code-editor-highlight.ts  # Theme-aware highlight style
             ├── code-editor-git.ts # Git change markers in the editor gutter
+            ├── code-editor-setup.ts # codemirror basicSetup without the lint keymap (no linter; Mod+Shift+M stays the app's)
             ├── status-bar.tsx     # Agent status, branch menu, workflows, context, compact, cost, panel toggles
             ├── status-popover.tsx # System status popup
             ├── settings-panel.tsx # Language, theme, font, behavior, shortcuts, council settings (live-preview draft)
@@ -267,9 +286,15 @@ src/
             ├── thinking-level-selector.tsx # Thinking level picker
             ├── tool-call-icon.ts  # Icon per tool-call operation
             ├── workflow-navigator.tsx # Workflow runs navigator
+            ├── repo-bar.tsx       # Linked task repositories under the tab bar; selecting one switches the panels to it
+            ├── linked-task-dialog.tsx # Start or edit a linked task across a repo set's repositories
+            ├── ship-all-dialog.tsx # Ship all: one commit message and pull request text for every changed repository
             └── workspace-tabs.tsx # Project tabs (drag to reorder) and the project's session tabs
 resources/
 ├── pi-desktop-permissions.ts     # Pi extension that enforces permission modes and rules
+├── pi-desktop-repo-set.ts        # Pi extension that tells the agent the repositories of a linked task
+├── repo-set-map.ts               # Linked task repo map; the target paths of a tool call, expanded the way Pi does
+├── path-within.ts                # Path containment and real-path resolution, shared by the extensions and main
 ├── permission-rules.ts           # Rules engine shared by the extension and the main process
 ├── permission-prompt-text.ts     # Approval prompt text read from the language files
 └── locales/                      # Interface language files
@@ -352,13 +377,14 @@ resources/
 - Default bindings: diff `Mod+G`, terminal `Ctrl+Backquote`, settings `Mod+Comma`, command palette `Mod+K`, model selector `Mod+Shift+M`, note picker `Ctrl+Shift+P`, Review / Commit and push `Mod+Shift+H`, sidebar `Mod+B`, file tree `Mod+Shift+E`, Review panel `Mod+Shift+U`, new session `Mod+N`, previous/next project `Mod+Shift+BracketLeft`/`Mod+Shift+BracketRight`, previous/next open session `Mod+BracketLeft`/`Mod+BracketRight`, push to talk `Mod+Shift+T`; the system-wide dictation key is off by default
 - Voice keys: hold push to talk to record into the composer and let go to stop (silence does not end it while held; losing window focus does). The system-wide dictation key works while other apps are in front: the main process binds it with Electron `globalShortcut` (`global-dictation-shortcut.ts`), which reports presses only, so each press starts or stops dictation like a mic click. It is bound at startup and on Save; a key another app holds is logged to the app log. On Linux Wayland the desktop's global-shortcuts portal must accept the bind
 - Native menu and editing shortcuts are reserved and cannot be assigned (`RESERVED_SHORTCUTS`), for example `Mod+Shift+N` (New Workspace), `Mod+O` (Open Project), `Mod+F`, and `Ctrl+P`. A duplicate or reserved binding blocks dispatch until it is fixed
+- Inside the code editor and the terminal, their own keys come first: a key the editor's keymap handles (indent, find next, fold) and a plain Ctrl key the terminal sends to the shell (Ctrl+K, Ctrl+B, Ctrl+[) run no app shortcut. Other chords still do, and the terminal toggle always works (`utils/app-shortcuts.ts`)
 - Fixed keys outside the configurable set: `Enter` sends, `Shift+Enter` adds a line, `Esc` stops the running turn, `Up`/`Down` recall prompts, `Ctrl/Cmd+F` finds in the conversation, `Ctrl/Cmd+Shift+F` searches workspace files
 
 ### Chat tool rail and side panels
 
 - The right-edge tool rail (`chat-tool-rail.tsx`) toggles the Review panel, file tree, diff viewer, and terminal. It has no workflow button
 - The Review panel (`review-rail.tsx`) shows the permission mode, pending approvals, changed files, and session status. It is hidden by default
-- Click a workspace file link (chat or file tree) to open it in a side pane: code (CodeMirror), image, PDF, or HTML. HTML runs in a sandboxed `<webview>` (no Node access, isolated partition, `file://` source only). HTML preview runs scripts and network only when the workspace is trusted; an untrusted workspace gets a static preview with a "Trust workspace" banner
+- Click a workspace file link (chat or file tree) to open it in a side pane: code (CodeMirror), image, PDF, or HTML. HTML runs in a sandboxed `<webview>` (no Node access, isolated partition, `file://` source only). HTML preview runs scripts and network only when the workspace is trusted; an untrusted workspace gets a static preview with a "Trust workspace" banner. A PDF preview gets plugins and scripts only when its URL loads a .pdf file, and for an untrusted workspace its partition loads only PDF files and the built-in viewer's own files (`preview-guest.ts`)
 
 ### Workflow runs
 
@@ -457,7 +483,7 @@ Click the status icon in the sidebar header to see:
 - Every field live-previews before Save through a unified settings draft (`store.ts` `settingsDraft`); the draft survives view switches; Save persists it, and Reset restores `DEFAULT_SETTINGS`
 - Permission rules: user-defined allow/deny rules (a glob per Pi tool) on top of the permission modes. Deny beats allow, and allow beats the mode default; deny applies in every mode. Global rules live in `<GUI data dir>/permission-rules.json`. A workspace `.pi-desktop/permission-rules.json` depends on workspace trust: when the workspace is trusted, it replaces the global rules; when it is untrusted (the default), only its deny rules apply, on top of the global rules, and its allow rules are ignored (a repo can tighten, never grant). Opening a workspace whose rules file has allow rules shows a trust prompt; the editor's Global tab notes the override, and the This workspace tab has a Trust/Revoke control. Settings > Behavior edits BOTH scopes through Global | This workspace tabs: create, edit, and remove workspace rules (in-app danger confirmation), Copy from global (seeds an unsaved draft from the current global list), and per-scope JSON import/export. Hand edits to either file on disk are supported: switching scope tabs re-reads that file when the scope has no unsaved draft. Engine: `resources/permission-rules.ts`, shared by the Pi extension (jiti relative import, mtime-cached live re-read) and the main process. The permissions extension always loads alongside Pi when it is present on disk, whatever the mode and whether or not rules exist, so a rules file created mid-session is enforced at once.
   - Trust posture: a workspace's `.pi-desktop/permission-rules.json` is repo content, so its allow rules take effect only after the user explicitly trusts the workspace (saved in `trusted-workspaces.json`; shown as a trust prompt on open and a control in Settings). Until then, the repo can only add deny rules; it cannot suppress ask-mode prompts. Rule globs match raw tool input strings only (no path canonicalization, no command parsing), so rules guard against accidents and are not a security sandbox.
-- Custom models and providers editor: edits the active engine's models file, `~/.pi/agent/models.json` (Pi) or `~/.omp/agent/models.yml` (OMP; a not-yet-migrated `models.json` is kept until OMP migrates it). Main reports the resolved file, so the editor labels always match; changes apply on engine restart
+- Custom models and providers editor: edits the active engine's models file, `~/.pi/agent/models.json` (Pi) or `~/.omp/agent/models.yml` (OMP; a not-yet-migrated `models.json` is kept until OMP migrates it). Main reports the resolved file, so the editor labels always match. Save writes the file the editor read, and the editor reloads when the engine in use changes while it has no unsaved edits; changes apply on engine restart
 - All settings are saved to `<GUI data dir>/settings.json`; defaults come from the single shared `src/shared/default-settings.ts` (used to seed the file AND for the renderer's initial/Reset values)
 - Language (`language`, default `system`; resolved by `src/shared/i18n/resolve.ts` against `app.getPreferredSystemLanguages()`; applies on Save; `PI_DESKTOP_PSEUDO_LANGUAGE=1` offers the `en-XA` test language)
 
@@ -499,6 +525,8 @@ The GUI data dir is `<appData>/pi-desktop` (on Linux, `~/.config/pi-desktop`). `
 | `<GUI data dir>/archived-sessions.json` | Archived sessions |
 | `<GUI data dir>/session-auto-tags.json` | Machine-derived session tags |
 | `<GUI data dir>/permission-rules.json` | Global permission rules |
+| `<GUI data dir>/repo-sets.json` | Saved repo sets for linked tasks |
+| `<GUI data dir>/repo-maps/` | One repo map per running linked task, read by the agent extensions |
 | `<GUI data dir>/themes/` | User theme files |
 | `<GUI data dir>/typesafe-api-key` | TypeSafe API key (owner-only file) |
 | `<GUI data dir>/speech-models/` | Downloaded voice dictation models |
@@ -551,12 +579,13 @@ npm run package       # Create installer
 The agent runs in RPC mode as a subprocess; one `PiRpcManager` is kept for each live session runtime. The binary is `pi` or `omp`, depending on the session's engine (see Engines above):
 
 ```
-pi --mode rpc [--no-session] [--provider <name>] [--model <id>] [--thinking <level>] [--fork <session-file> | --session <session-file> | --continue] [--tools <list>] [-e <pi-desktop-permissions.ts>]
+pi --mode rpc [--no-session] [--provider <name>] [--model <id>] [--thinking <level>] [--fork <session-file> | --session <session-file> | --continue] [--tools <list>] [-e <pi-desktop-permissions.ts>] [-e <pi-desktop-repo-set.ts>]
 ```
 
 - `buildPiArgs` in `pi-rpc-manager.ts` builds the argv. `--thinking` carries the default thinking level for a new session only. `--continue` resumes the latest session when Resume Last Session is on
 - `--tools` is added in Plan / Read-only mode with the engine's read-only tools. `-e` loads the bundled permissions extension whenever it exists on disk (`ipc/pi-start-options.ts`)
 - The extension reads its settings from `PI_DESKTOP_*` environment variables (mode, agent label, language, rules path, workspace trust)
+- A linked task's runtime also loads `pi-desktop-repo-set.ts` and gets `PI_DESKTOP_REPO_MAP_PATH`, its repo map under `<GUI data dir>/repo-maps/` (`WorkspaceManager.startSessionRuntime`)
 - No `--session-dir` is added; each engine uses its own default store. A caller-supplied `--session-dir` in extra args still wins
 
 Communication is JSONL over stdin/stdout:
