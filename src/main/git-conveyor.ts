@@ -62,7 +62,7 @@ const UNTRACKED_PORCELAIN_PREFIX = '??'
  * (a remote added by hand instead of cloned). Only names the remote actually
  * has are used.
  */
-const CONVENTIONAL_BASE_BRANCHES = ['main', 'master'] as const
+export const CONVENTIONAL_BASE_BRANCHES = ['main', 'master'] as const
 
 const GIT_OPERATION_MARKERS = [
   ['MERGE_HEAD', 'merge'],
@@ -89,6 +89,45 @@ export function countPorcelainFiles(status: string): number {
 /** Changed rows Git tracks: staged or unstaged edits, deletions, and renames. */
 export function countTrackedPorcelainFiles(status: string): number {
   return porcelainRows(status).filter((row) => !row.startsWith(UNTRACKED_PORCELAIN_PREFIX)).length
+}
+
+/** Changed paths of a checkout, relative to its root. */
+export interface ChangedPaths {
+  /** Tracked changes; a rename or copy lists both its new and its old path. */
+  tracked: string[]
+  /** Untracked files, which reach a commit only when the user chooses them. */
+  untracked: string[]
+}
+
+/** Rename and copy rows of `--porcelain -z` carry the original path as a second entry. */
+const PORCELAIN_PAIRED_CODES = new Set(['R', 'C'])
+/** `XY ` before the path in every `--porcelain=v1` row. */
+const PORCELAIN_PATH_OFFSET = 3
+const IGNORED_PORCELAIN_PREFIX = '!!'
+
+/** Parse `git status --porcelain=v1 -z`, which never quotes or escapes paths. */
+export function parsePorcelainZ(output: string): ChangedPaths {
+  const entries = output.split('\0')
+  const changed: ChangedPaths = { tracked: [], untracked: [] }
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index]
+    if (entry.length <= PORCELAIN_PATH_OFFSET) continue
+    const code = entry.slice(0, PORCELAIN_PATH_OFFSET - 1)
+    const path = entry.slice(PORCELAIN_PATH_OFFSET)
+    if (code === IGNORED_PORCELAIN_PREFIX) continue
+    if (code === UNTRACKED_PORCELAIN_PREFIX) {
+      changed.untracked.push(path)
+      continue
+    }
+    changed.tracked.push(path)
+    if (PORCELAIN_PAIRED_CODES.has(code[0]) && index + 1 < entries.length) changed.tracked.push(entries[++index])
+  }
+  return changed
+}
+
+export async function listChangedPaths(cwd: string): Promise<ChangedPaths> {
+  const { stdout } = await runGit(['status', '--porcelain=v1', '-z', '--untracked-files=all'], cwd)
+  return parsePorcelainZ(stdout)
 }
 
 export function parseAheadBehind(value: string | null): { ahead: number; behind: number } {
@@ -755,4 +794,16 @@ export async function createPullRequest(
   if (url && number !== null) openPullRequests.set(pullRequestCacheKey(route), { number, url })
   else openPullRequests.delete(pullRequestCacheKey(route))
   return { url, output }
+}
+
+/** The description of a GitHub pull request, read through the GitHub CLI. */
+export async function readPullRequestBody(cwd: string, url: string): Promise<string> {
+  const output = await runCommand('gh', ['pr', 'view', url, '--json', 'body'], cwd)
+  const value = JSON.parse(output) as { body?: unknown }
+  return typeof value.body === 'string' ? value.body : ''
+}
+
+/** Replace the description of a GitHub pull request through the GitHub CLI. */
+export async function updatePullRequestBody(cwd: string, url: string, body: string): Promise<void> {
+  await runCommand('gh', ['pr', 'edit', url, '--body', body], cwd)
 }

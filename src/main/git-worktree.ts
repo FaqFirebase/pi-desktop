@@ -201,3 +201,8 @@ export async function createGitWorktree(options: {
 export async function removeGitWorktree(repoRoot: string, worktreePath: string): Promise<void> {
   await runGit(['worktree', 'remove', worktreePath], repoRoot)
 }
+
+/** Delete a branch only when it is merged (`-d`, never `-D`), so no commit can be lost. */
+export async function deleteMergedBranch(repoRoot: string, branch: string): Promise<void> {
+  await runGit(['branch', '-d', branch], repoRoot)
+}

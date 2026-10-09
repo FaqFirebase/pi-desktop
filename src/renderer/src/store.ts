@@ -60,6 +60,7 @@ import type {
   PiAutoRetryEndEvent,
   PiExtensionUiRequest,
   Workspace,
+  LinkedTaskOptions,
   InstalledPackage,
   InstalledSkill,
   CatalogPackage,
@@ -253,6 +254,12 @@ function workspaceHasLivePi(
 
 // ─── Store Shape ─────────────────────────────────────────────────────────────
 
+/**
+ * The start view picks a repo set (`setId`: the one to select first); the edit
+ * view changes one (`setId` null: a new set).
+ */
+export type LinkedTaskDialogView = { view: 'start'; setId?: string } | { view: 'edit'; setId: string | null }
+
 interface AppState {
   // Pi process
   piStatus: PiProcessStatus
@@ -416,6 +423,8 @@ interface AppState {
   notePickerOpen: boolean
   commandPaletteOpen: boolean
   taskLauncherOpen: boolean
+  /** The linked task dialog on screen, or null when it is closed. */
+  linkedTaskDialog: LinkedTaskDialogView | null
   // Unsent composer text and attachments per workspace id ('' when no
   // workspace is open), so switching projects never carries one project's
   // draft into another.
@@ -572,6 +581,14 @@ interface AppActions {
   /** Create a clean Git worktree and start it as a new independent tab. */
   createWorktreeTab: () => Promise<void>
   /**
+   * Open a linked task from a repo set as a new tab and switch to it. Resolves
+   * false when the editor discard was declined; rejects when the task failed
+   * to start, so the dialog can show why.
+   */
+  createLinkedTaskTab: (options: LinkedTaskOptions) => Promise<boolean>
+  /** Pick a folder and add its repository to the active linked task. */
+  addRepoToLinkedTask: () => Promise<void>
+  /**
    * Open a folder as a workspace (create if needed, switch into it, show Chat).
    * Used by File → Open Project and by drag-dropping a folder onto the window.
    * Resolves false if the editor discard was declined or the switch failed.
@@ -649,6 +666,7 @@ interface AppActions {
   setNotePickerOpen: (open: boolean) => void
   setCommandPalette: (open: boolean) => void
   setTaskLauncherOpen: (open: boolean) => void
+  setLinkedTaskDialog: (view: LinkedTaskDialogView | null) => void
   requestModelSelectorOpen: () => void
   startNoteFromText: (text: string) => void
   clearNoteDraft: () => void
@@ -1061,6 +1079,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   notePickerOpen: false,
   commandPaletteOpen: false,
   taskLauncherOpen: false,
+  linkedTaskDialog: null,
   composerDrafts: {},
   saveComposerDraft: (workspaceId, draft) => set((state) => {
     // The composer saves on unmount and on workspace change, which also fires
@@ -2849,6 +2868,33 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
+  createLinkedTaskTab: async (options) => {
+    if (!(await get().confirmDiscardEditorChanges())) return false
+    const workspace = await window.piDesktop.linkedTask.create(options)
+    await get().loadWorkspaces()
+    // Repositories whose checkout had uncommitted changes are marked in the repo bar.
+    if (await get().activateWorkspace(workspace.id, { skipDirtyConfirm: true })) get().setCurrentView('chat')
+    return true
+  },
+
+  addRepoToLinkedTask: async () => {
+    const workspace = get().activeWorkspace
+    if (!workspace?.linkedTask) return
+    const path = await window.piDesktop.system.openDialog({ title: t('repoSets.edit.pickFolderTitle') })
+    if (!path) return
+    try {
+      await window.piDesktop.linkedTask.addRepo(workspace.id, path)
+      await get().loadWorkspaces()
+    } catch (err) {
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: t('store.messages.addRepositoryError', { detail: err instanceof Error ? err.message : String(err) }),
+        timestamp: Date.now(),
+      })
+    }
+  },
+
   openFolderAsWorkspace: async (folderPath) => {
     // No trim: leading/trailing spaces are legal in POSIX folder names, and the
     // path arrives verbatim from the OS (drop or dialog), never from typing.
@@ -3058,15 +3104,21 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const workspace = get().workspaces.find((w) => w.id === workspaceId)
     const isWorktree = workspace?.kind === 'worktree'
     const isManagedWorktree = isWorktree && workspace?.managed !== false
+    const linkedTask = workspace?.linkedTask
+    const isTab = isWorktree || !!linkedTask
     const workspaceLabel = workspace?.name ?? workspaceId
     const confirmed = await get().requestConfirm({
-      title: isWorktree ? t('store.confirm.closeTabLabel') : t('store.confirm.removeWorkspaceTitle'),
-      message: isWorktree
+      title: isTab ? t('store.confirm.closeTabLabel') : t('store.confirm.removeWorkspaceTitle'),
+      message: linkedTask
+        ? linkedTask.mode === 'isolated'
+          ? t('store.confirm.closeIsolatedLinkedTaskMessage', { name: workspaceLabel })
+          : t('store.confirm.closeInPlaceLinkedTaskMessage', { name: workspaceLabel })
+        : isWorktree
         ? isManagedWorktree
           ? t('store.confirm.closeManagedWorktreeMessage', { name: workspaceLabel })
           : t('store.confirm.closeUnmanagedWorktreeMessage', { name: workspaceLabel })
         : t('store.confirm.removeWorkspaceMessage', { name: workspaceLabel }),
-      confirmLabel: isWorktree ? t('store.confirm.closeTabLabel') : t('common.remove'),
+      confirmLabel: isTab ? t('store.confirm.closeTabLabel') : t('common.remove'),
       cancelLabel: t('common.cancel'),
       danger: true,
     })
@@ -3082,11 +3134,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       await get().loadWorkspaces()
       get().saveComposerDraft(workspaceId, EMPTY_COMPOSER_DRAFT)
       adoptMainSideActivation(get, set, previousActiveId)
-      if (result.preservedWorktreePath) {
+      if (result.preservedWorktreePaths) {
         get().addMessage({
           id: generateId(),
           role: 'system',
-          content: t('store.messages.tabClosedWorktreePreserved', { path: result.preservedWorktreePath }),
+          content: t('store.messages.tabClosedWorktreePreserved', { path: result.preservedWorktreePaths.join(', ') }),
           timestamp: Date.now(),
         })
       }
@@ -3497,6 +3549,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   setCommandPalette: (open) => set({ commandPaletteOpen: open }),
   setTaskLauncherOpen: (open) => set({ taskLauncherOpen: open }),
+  setLinkedTaskDialog: (view) => set({ linkedTaskDialog: view }),
 
   // The Ctrl/Cmd+Shift+M shortcut. The open state lives in the store (see
   // modelPickerOpen), so a composer remount keeps the picker open.

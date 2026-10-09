@@ -5,6 +5,7 @@
  * The preload bridge validates payloads against these contracts.
  */
 import type { PermissionRule } from '../../resources/permission-rules'
+import type { LinkedTaskMode, RepoRole } from '../../resources/repo-set-map'
 
 // ─── IPC Channel Names ──────────────────────────────────────────────────────
 
@@ -118,6 +119,17 @@ export const IPC_CHANNELS = {
   WORKSPACE_CREATE_TAB: 'workspace:create-tab',
   WORKSPACE_ACTIVITY_GET: 'workspace:activity',
   WORKSPACE_TAKE_PENDING_ACTIVATION: 'workspace:take-pending-activation',
+
+  // Repo sets and linked tasks (one task across several git repositories)
+  REPO_SET_LIST: 'repo-set:list',
+  REPO_SET_SAVE: 'repo-set:save',
+  REPO_SET_DELETE: 'repo-set:delete',
+  REPO_SET_INSPECT_FOLDER: 'repo-set:inspect-folder',
+  LINKED_TASK_CREATE: 'linked-task:create',
+  LINKED_TASK_ADD_REPO: 'linked-task:add-repo',
+  LINKED_TASK_FOCUS_REPO: 'linked-task:focus-repo',
+  LINKED_TASK_STATUS: 'linked-task:status',
+  LINKED_TASK_SHIP: 'linked-task:ship',
 
   // Packages
   PACKAGE_LIST_INSTALLED: 'package:list-installed',
@@ -1376,7 +1388,7 @@ export interface UpdateCheckResult {
 
 // ─── Workspace Types ────────────────────────────────────────────────────────
 
-export type WorkspaceKind = 'folder' | 'worktree'
+export type WorkspaceKind = 'folder' | 'worktree' | 'repoSet'
 
 /** Options for creating an isolated tab from the active Git workspace. */
 export interface WorkspaceTabOptions {
@@ -1393,7 +1405,8 @@ export interface WorkspaceTabOptions {
 /** Result of closing a workspace tab. Dirty worktrees are preserved. */
 export interface WorkspaceRemoveResult {
   worktreeRemoved?: boolean
-  preservedWorktreePath?: string
+  /** Managed worktrees kept on disk because they still hold changes. */
+  preservedWorktreePaths?: string[]
 }
 
 export interface Workspace {
@@ -1417,6 +1430,123 @@ export interface Workspace {
   managed?: boolean
   /** Original task text when the app created or adopted this worktree. */
   taskPrompt?: string
+  /** The repositories of a `repoSet` tab; `path` is its main repository's checkout. */
+  linkedTask?: LinkedTask
+}
+
+// ─── Repo Set Types ─────────────────────────────────────────────────────────
+
+export type { LinkedTaskMode, RepoMapEntry, RepoRole, RepoSetContext } from '../../resources/repo-set-map'
+
+export interface RepoSetMember {
+  /** Display name, unique in the set. */
+  name: string
+  /** Top of the user's own git checkout. */
+  sourcePath: string
+  role: RepoRole
+}
+
+/** A saved group of git repositories a linked task starts from. */
+export interface RepoSet {
+  id: string
+  name: string
+  members: RepoSetMember[]
+  createdAt: number
+  updatedAt: number
+}
+
+/** A new set (no id) or the edited version of a saved one. */
+export interface RepoSetDraft {
+  id?: string
+  name: string
+  members: RepoSetMember[]
+}
+
+/** A picked folder, resolved to the top of its git checkout. */
+export interface RepoFolderInfo {
+  path: string
+  /** Default display name: the checkout's folder name. */
+  name: string
+}
+
+export interface LinkedTaskRepo {
+  name: string
+  role: RepoRole
+  /** The user's own checkout the task started from. */
+  sourcePath: string
+  /** Main repository root, which owns the task's worktree. */
+  repoRoot: string
+  /** The checkout the agent edits: a managed worktree, or `sourcePath` in place. */
+  workPath: string
+  /** Checked-out branch; null for a detached HEAD in place. */
+  branch: string | null
+  /** Commit the worktree started from; absent in place. */
+  baseRef?: string
+  /** The app created the worktree and may remove it when the tab closes. */
+  managed: boolean
+  /** The user's checkout had uncommitted changes that the new worktree does not carry. */
+  sourceWasDirty?: boolean
+}
+
+/** One task across the repositories of a set, owned by a `repoSet` tab. */
+export interface LinkedTask {
+  setId: string
+  setName: string
+  mode: LinkedTaskMode
+  repos: LinkedTaskRepo[]
+}
+
+export interface LinkedTaskOptions {
+  setId: string
+  mode: LinkedTaskMode
+  /** Tab name and branch label; defaults to the set name. */
+  name?: string
+}
+
+/** One row of the repo bar. */
+export interface LinkedRepoStatus {
+  name: string
+  role: RepoRole
+  workPath: string
+  branch: string | null
+  /** False when the checkout was moved or deleted. */
+  exists: boolean
+  /** The diff, file, and git panels show this repository. */
+  focused: boolean
+  /** Changed files, untracked ones included. */
+  changedFiles: number
+  /** Untracked files, which reach a commit only when the user checks them. */
+  newFiles: string[]
+  pullRequestUrl: string | null
+  /** The worktree started from the last commit and left the user's uncommitted changes behind. */
+  sourceWasDirty: boolean
+}
+
+export interface LinkedShipRequest {
+  /** Commit message used in every repository with changes. */
+  message: string
+  /** Pull request title and description used in every repository. */
+  title: string
+  body: string
+  /** Untracked files the user checked, keyed by repository name. */
+  newFiles: Record<string, string[]>
+  /** Ship only these repositories (a retry); absent ships every one. */
+  repos?: string[]
+}
+
+export type LinkedShipStep = 'commit' | 'push' | 'pullRequest' | 'link'
+
+export interface LinkedRepoShipResult {
+  name: string
+  /** `unchanged`: nothing to ship; `missing`: the checkout is gone. */
+  outcome: 'shipped' | 'unchanged' | 'failed' | 'missing'
+  failedStep?: LinkedShipStep
+  error?: string
+  pullRequestUrl: string | null
+}
+
+export interface LinkedShipResult {
+  repos: LinkedRepoShipResult[]
 }
 
 // ─── Notes Types ────────────────────────────────────────────────────────────

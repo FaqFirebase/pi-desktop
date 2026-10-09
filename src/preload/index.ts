@@ -73,6 +73,13 @@ import type {
   SessionRuntimeCloseResult,
   SessionLaunchTaskOptions,
   WorkspaceActivationIntent,
+  LinkedRepoStatus,
+  LinkedShipRequest,
+  LinkedShipResult,
+  LinkedTaskOptions,
+  RepoFolderInfo,
+  RepoSet,
+  RepoSetDraft,
   GitBranchSwitchResult,
   GitConveyorStatus,
   GitCommitMessageRequest,
@@ -206,6 +213,25 @@ interface PiDesktopAPI {
      * window existed (macOS closed-window case). Null when there is none.
      */
     takePendingActivation(): Promise<WorkspaceActivationIntent | null>
+  }
+
+  // Saved groups of git repositories for linked tasks
+  repoSets: {
+    list(): Promise<RepoSet[]>
+    save(draft: RepoSetDraft): Promise<RepoSet>
+    delete(id: string): Promise<void>
+    /** Resolve a picked folder to the top of its git checkout; rejects a non-repository. */
+    inspectFolder(path: string): Promise<RepoFolderInfo>
+  }
+
+  // One task across the repositories of a set (a repo set tab)
+  linkedTask: {
+    create(options: LinkedTaskOptions): Promise<Workspace>
+    addRepo(workspaceId: string, path: string): Promise<Workspace>
+    /** Show this repository in the diff, file, and git panels. */
+    focusRepo(workspaceId: string, name: string): Promise<void>
+    status(workspaceId: string): Promise<LinkedRepoStatus[]>
+    ship(workspaceId: string, request: LinkedShipRequest): Promise<LinkedShipResult>
   }
 
   // Package management
@@ -513,6 +539,21 @@ const api: PiDesktopAPI = {
     createTab: (options) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CREATE_TAB, options),
     getActivity: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_ACTIVITY_GET),
     takePendingActivation: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_TAKE_PENDING_ACTIVATION),
+  },
+
+  repoSets: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.REPO_SET_LIST),
+    save: (draft) => ipcRenderer.invoke(IPC_CHANNELS.REPO_SET_SAVE, draft),
+    delete: (id) => ipcRenderer.invoke(IPC_CHANNELS.REPO_SET_DELETE, id),
+    inspectFolder: (path) => ipcRenderer.invoke(IPC_CHANNELS.REPO_SET_INSPECT_FOLDER, path),
+  },
+
+  linkedTask: {
+    create: (options) => ipcRenderer.invoke(IPC_CHANNELS.LINKED_TASK_CREATE, options),
+    addRepo: (workspaceId, path) => ipcRenderer.invoke(IPC_CHANNELS.LINKED_TASK_ADD_REPO, workspaceId, path),
+    focusRepo: (workspaceId, name) => ipcRenderer.invoke(IPC_CHANNELS.LINKED_TASK_FOCUS_REPO, workspaceId, name),
+    status: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.LINKED_TASK_STATUS, workspaceId),
+    ship: (workspaceId, request) => ipcRenderer.invoke(IPC_CHANNELS.LINKED_TASK_SHIP, workspaceId, request),
   },
 
   packages: {

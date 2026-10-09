@@ -12,6 +12,7 @@ import { registerSettingsHandlers } from './ipc/settings'
 import { registerPermissionRulesHandlers } from './ipc/permission-rules-handlers'
 import { registerThemeHandlers } from './ipc/theme-handlers'
 import { registerWorkspaceHandlers } from './ipc/workspace-handlers'
+import { registerLinkedTaskHandlers } from './ipc/linked-task-handlers'
 import { registerPackageHandlers } from './ipc/package-handlers'
 import { registerSkillsMcpHandlers } from './ipc/skills-mcp-handlers'
 import { registerModelsConfigHandlers } from './ipc/models-config-handlers'
@@ -60,6 +61,7 @@ export function registerIpcHandlers(
   registerPermissionRulesHandlers(ctx)
   registerThemeHandlers()
   registerWorkspaceHandlers(ctx)
+  registerLinkedTaskHandlers(ctx)
   registerPackageHandlers(ctx)
   registerSkillsMcpHandlers(ctx)
   registerModelsConfigHandlers(ctx)

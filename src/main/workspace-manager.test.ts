@@ -4,17 +4,19 @@ import { mkdir, mkdtemp, readFile, writeFile, access } from 'fs/promises'
 import { existsSync } from 'fs'
 import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
-import { join, resolve } from 'path'
+import { basename, join, resolve } from 'path'
 import {
   WHOLE_WORKSPACE_CHANGE_PATH,
   type AgentEngineKind,
+  type RepoSet,
   type PiProcessStatus,
   type PiStartOptions,
   type SessionRuntimeCloseResult,
   type SessionRuntimeInfo,
 } from '../shared/ipc-contracts'
 import { configureGuiDataDir, getGuiDataPath } from './app-data-paths'
-import { isPathWithin } from './path-authorization'
+import { isPathWithin } from '../../resources/path-within'
+import { REPO_MAP_ENV, parseRepoMap } from '../../resources/repo-set-map'
 import { getOmpSessionsRoot, getSessionsRoot } from './pi-paths'
 import { PiRpcManager } from './pi-rpc-manager'
 import { isDisposableSessionFile, MAX_LIVE_SESSION_RUNTIMES, WorkspaceManager } from './workspace-manager'
@@ -72,9 +74,12 @@ function reportsSessionFile(manager: PiRpcManager, sessionPath: string, sessionI
   })
 }
 
+/** Where tests pretend the app ships its agent extensions. */
+const TEST_RESOURCES_DIR = join(tmpdir(), 'pi-desktop-test-resources')
+
 /** Initialize a manager and guarantee its watchers are stopped afterward. */
 async function withManager(fn: (mgr: WorkspaceManager) => Promise<void>): Promise<void> {
-  const mgr = new WorkspaceManager()
+  const mgr = new WorkspaceManager((fileName) => join(TEST_RESOURCES_DIR, fileName))
   await mgr.initialize()
   try {
     await fn(mgr)
@@ -251,7 +256,7 @@ test('creates and removes a clean managed worktree tab', async () => {
 
     const result = await mgr.removeWorkspace(tab.id)
     assert.equal(result.worktreeRemoved, true)
-    assert.equal(result.preservedWorktreePath, undefined)
+    assert.equal(result.preservedWorktreePaths, undefined)
     assert.equal(existsSync(tab.path), false)
 
     await writeFile(join(repo, 'source-dirty.txt'), 'stays in source\\n', 'utf-8')
@@ -883,5 +888,138 @@ test('a workspace names the session runtime its next start reuses, and only once
     const activated = await mgr.activateSession(ws.id, existingPath)
     assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.runtimeId, activated.runtimeId)
     assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.sessionPath, existingPath)
+  })
+})
+
+/** A saved repo set over fresh repositories: `app` is the main one. */
+async function repoSetOf(...names: string[]): Promise<{ set: RepoSet; paths: Record<string, string> }> {
+  const paths: Record<string, string> = {}
+  for (const name of names) {
+    const path = await project()
+    await writeFile(join(path, 'README.md'), `${name}\n`, 'utf-8')
+    gitRepo(path)
+    paths[name] = path
+  }
+  const now = Date.now()
+  const set: RepoSet = {
+    id: 'rs-test',
+    name: 'Shop',
+    members: names.map((name, index) => ({ name, sourcePath: paths[name], role: index === 0 ? 'main' : 'linked' })),
+    createdAt: now,
+    updatedAt: now,
+  }
+  return { set, paths }
+}
+
+function gitOutput(args: string[], cwd: string): string {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf-8' })
+  assert.equal(result.status, 0, result.stderr)
+  return result.stdout.trim()
+}
+
+test('a linked task gets one worktree per repository on one branch, and the agent gets the repo map', async () => {
+  await freshDataDir()
+  const { set, paths } = await repoSetOf('app', 'lib')
+  const docs = await project()
+  await writeFile(join(docs, 'README.md'), 'docs\n', 'utf-8')
+  gitRepo(docs)
+
+  // Work in progress in the user's lib checkout stays there, and lib is marked.
+  await writeFile(join(paths.lib, 'wip.txt'), 'not committed\n', 'utf-8')
+
+  await withManager(async (mgr) => {
+    const task = await mgr.createLinkedTaskWorkspace(set, { setId: set.id, mode: 'isolated', name: 'Rename API' })
+    const [app, lib] = task.linkedTask!.repos
+    assert.equal(task.kind, 'repoSet')
+    assert.equal(app.sourceWasDirty, undefined)
+    assert.equal(lib.sourceWasDirty, true)
+    assert.equal(existsSync(join(lib.workPath, 'wip.txt')), false)
+    assert.equal(task.path, app.workPath, 'the agent starts in the main repository')
+    assert.equal(app.branch, lib.branch)
+    assert.equal(gitOutput(['branch', '--show-current'], app.workPath), app.branch)
+    assert.equal(gitOutput(['branch', '--show-current'], lib.workPath), app.branch)
+    assert.equal(gitOutput(['branch', '--show-current'], paths.app) !== app.branch, true, 'the user checkout keeps its branch')
+
+    // The panels follow the focused repository.
+    assert.equal(mgr.getPanelRoot(task.id), app.workPath)
+    mgr.focusLinkedRepo(task.id, 'lib')
+    assert.equal(mgr.getPanelRoot(task.id), lib.workPath)
+    assert.throws(() => mgr.focusLinkedRepo(task.id, 'nope'), /not in this task/)
+
+    // A repository added during the task gets the same branch and reaches the repo map.
+    const added = await mgr.addRepoToLinkedTask(task.id, docs)
+    const docsRepo = added.linkedTask!.repos[2]
+    assert.equal(docsRepo.role, 'linked')
+    assert.equal(docsRepo.name, basename(docs), 'an added repository takes its folder name')
+    assert.equal(gitOutput(['branch', '--show-current'], docsRepo.workPath), app.branch)
+    await assert.rejects(mgr.addRepoToLinkedTask(task.id, docs), /already in the task/)
+    const mapPath = getGuiDataPath(join('repo-maps', `${task.id}.json`))
+    const map = parseRepoMap(JSON.parse(await readFile(mapPath, 'utf-8')))
+    assert.deepEqual(map?.repos.map((repo) => [repo.name, repo.role, repo.workPath]), [
+      ['app', 'main', app.workPath], ['lib', 'linked', lib.workPath], [docsRepo.name, 'linked', docsRepo.workPath],
+    ])
+
+    // Every agent start of the tab loads the extension and points it at the map.
+    await mgr.setActiveWorkspace(task.id)
+    const { runtime, process: agent } = await liveRuntime(mgr, task.id, 701, 'stopped')
+    await mgr.startSessionRuntime(runtime.runtimeId)
+    const args = agent.lastStartOptions?.args ?? []
+    assert.equal(args[args.indexOf('-e') + 1], join(TEST_RESOURCES_DIR, 'pi-desktop-repo-set.ts'))
+    assert.equal(agent.lastStartOptions?.env?.[REPO_MAP_ENV], mapPath)
+    assert.equal(agent.lastStartOptions?.cwd, app.workPath)
+
+    // A tab of a linked task keeps its folders.
+    await assert.rejects(mgr.changeWorkspacePath(task.id, await project()), /keeps the folders/)
+
+    // The task survives a restart of the app.
+    const reopened = new WorkspaceManager()
+    await reopened.initialize()
+    assert.equal(reopened.getWorkspaces().find((item) => item.id === task.id)?.linkedTask?.repos.length, 3)
+    reopened.stopAll()
+
+    // Closing removes the clean worktrees and keeps the one with changes.
+    await writeFile(join(lib.workPath, 'edit.txt'), 'work in progress\n', 'utf-8')
+    const result = await mgr.removeWorkspace(task.id)
+    assert.deepEqual(result.preservedWorktreePaths, [lib.workPath])
+    assert.equal(existsSync(app.workPath), false)
+    assert.equal(existsSync(docsRepo.workPath), false)
+    assert.equal(existsSync(lib.workPath), true)
+    assert.equal(existsSync(mapPath), false)
+  })
+})
+
+test('a linked task that cannot prepare one repository undoes the worktrees it already made', async () => {
+  await freshDataDir()
+  const { set, paths } = await repoSetOf('app', 'lib')
+  const broken: RepoSet = {
+    ...set,
+    members: [...set.members, { name: 'broken', sourcePath: await project(), role: 'linked' }],
+  }
+
+  await withManager(async (mgr) => {
+    await assert.rejects(mgr.createLinkedTaskWorkspace(broken, { setId: set.id, mode: 'isolated' }), /Could not prepare "broken"/)
+    assert.equal(mgr.getWorkspaces().length, 0)
+    for (const path of [paths.app, paths.lib]) {
+      assert.equal(gitOutput(['worktree', 'list', '--porcelain'], path).split('\n').filter((line) => line.startsWith('worktree ')).length, 1)
+      assert.equal(gitOutput(['branch', '--list', 'pi/*'], path), '', 'the new branch is deleted too')
+    }
+  })
+})
+
+test('an in-place linked task edits the user checkouts and never removes them', async () => {
+  await freshDataDir()
+  const { set, paths } = await repoSetOf('app', 'lib')
+
+  await withManager(async (mgr) => {
+    const task = await mgr.createLinkedTaskWorkspace(set, { setId: set.id, mode: 'inPlace' })
+    assert.equal(task.name, 'Shop', 'the set name is the default task name')
+    assert.equal(task.path, paths.app)
+    assert.deepEqual(task.linkedTask!.repos.map((repo) => [repo.workPath, repo.managed]), [[paths.app, false], [paths.lib, false]])
+    assert.equal(task.linkedTask!.repos[0].branch, gitOutput(['branch', '--show-current'], paths.app))
+
+    const result = await mgr.removeWorkspace(task.id)
+    assert.equal(result.preservedWorktreePaths, undefined)
+    assert.equal(existsSync(paths.app), true)
+    assert.equal(existsSync(paths.lib), true)
   })
 })

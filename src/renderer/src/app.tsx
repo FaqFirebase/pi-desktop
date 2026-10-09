@@ -18,6 +18,8 @@ import { CommandPalette } from './components/command-palette'
 import { ExtensionUiDialog, AppConfirmDialog } from './components/extension-ui-dialog'
 import { ChatToolRail } from './components/chat-tool-rail'
 import { WorkspaceTabs } from './components/workspace-tabs'
+import { RepoBar } from './components/repo-bar'
+import { LinkedTaskDialog } from './components/linked-task-dialog'
 import { WorkflowNavigator } from './components/workflow-navigator'
 import { useContextMenu, buildDefaultContextMenu } from './components/context-menu'
 import { usePiEvents, useMenuActions, useInitialize } from './hooks'
@@ -153,6 +155,7 @@ export function App(): React.JSX.Element {
 
         <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           {showChrome && <WorkspaceTabs />}
+          {showChrome && <RepoBar />}
           <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
               <div className={globalWorkflowOpen ? 'hidden' : 'contents'}>
@@ -182,6 +185,7 @@ export function App(): React.JSX.Element {
       {showChrome && <StatusBar />}
       {showChrome && !globalWorkflowOpen && <WorkflowNavigator />}
       <ExtensionUiDialog />
+      <LinkedTaskDialog />
       <AppConfirmDialog />
       <NotePicker />
       <TaskLauncher />

@@ -13,6 +13,7 @@ Pi Desktop is in alpha, so expect rough edges.
 - Find in the conversation (`Ctrl/Cmd+F`) and a quick switcher (`Ctrl/Cmd+K`) for commands, skills, prompt templates, workspaces, sessions, and files
 - Multiple workspaces with project tabs you can drag to reorder. Each live session runs its own agent process, so a turn keeps running after you switch away. Mission Control and sidebar activity dots show background work, and desktop notifications tell you when a session finishes, fails, or waits for approval
 - New Task starts a fresh session in a project and sends the task right away, optionally in an isolated Git worktree
+- [Linked tasks](#linked-tasks): one task across several Git repositories, shipped as linked pull requests
 - Right-edge tool rail that opens the Review panel, file tree, diff viewer, and terminal
 - Diff viewer with a filter for the files the session touched, per-file discard, and a Git bar with Commit, Commit + Push, Push, and PR (it becomes Open PR #N when the branch has an open pull request). In the Commit dialog, **Suggest message** asks the session's model for a commit message, and new files are committed only if you check them. The status bar has a branch menu to switch branches or create a new one
 - Code, image, PDF, and HTML previews, a CodeMirror 6 editor with Git change markers, and workspace file search
@@ -52,6 +53,18 @@ Pi Desktop speaks Pi's RPC protocol, so it can run either the standard `pi` CLI 
 Each engine keeps its own sessions: Pi writes to `~/.pi/agent/sessions`, OMP to `~/.omp/agent/sessions`. The app reads both, so switching engines never hides your history. When sessions from both appear in one list, each row is tagged `Pi` or `OMP`, and opening one starts the engine that wrote it. Under OMP, package actions use OMP's plugin commands.
 
 If `~/.pi/.env` exists, its variables (provider API keys, for example) are passed to every Pi or OMP process and to the terminal. A variable already set in the environment wins.
+
+## Linked tasks
+
+A linked task lets the agent change several Git repositories together, for example a library and the app that uses it. Start one from **Linked task** on the Home screen, the tab bar, or `/linked-task`.
+
+- A **repo set** is a saved group of repositories with one main repository. The agent starts in the main one and follows its project rules. Make sets in the same dialog or with `/new-repo-set`.
+- **Isolated** (default) gives each repository a new worktree, all on one new branch, so your own checkouts do not change. **In place** edits your checkouts on their current branches.
+- The repo bar under the tabs lists the repositories. Select one to show it in the file tree, diff viewer, and Git bar. **Add repo** (or `/add-repo`) adds a repository while the task runs; the agent sees it on its next turn.
+- **Ship all** commits, pushes, and opens a pull request in each changed repository, then lists the other pull requests in each description. Retry runs only the repositories that failed. It never ships from `main`, `master`, or the remote's default branch.
+- Works with Pi and OMP.
+
+A file edit outside the task's repositories always asks first, even in Trusted mode. Shell commands are not checked for paths: they follow your permission mode and rules like any other command.
 
 ## Permissions
 

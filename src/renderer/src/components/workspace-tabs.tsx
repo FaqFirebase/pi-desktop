@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertCircle, CheckCircle2, FolderOpen, GitBranch, Loader2, MessageSquarePlus, PanelLeft, Plus, Settings, X, XCircle } from 'lucide-react'
+import { AlertCircle, Boxes, CheckCircle2, FolderOpen, GitBranch, Loader2, MessageSquarePlus, PanelLeft, Plus, Settings, X, XCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAppStore } from '../store'
 import { useGlobalWorkflowOpen } from '../hooks'
@@ -40,6 +40,7 @@ export function WorkspaceTabs(): React.JSX.Element {
   const closeSessionTab = useAppStore((state) => state.closeSessionTab)
   const removeWorkspace = useAppStore((state) => state.removeWorkspace)
   const createWorktreeTab = useAppStore((state) => state.createWorktreeTab)
+  const setLinkedTaskDialog = useAppStore((state) => state.setLinkedTaskDialog)
   const createNewSession = useAppStore((state) => state.createNewSession)
   const newSessionShortcut = useAppStore((state) => activeShortcuts(state).newSession)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
@@ -75,6 +76,9 @@ export function WorkspaceTabs(): React.JSX.Element {
         const active = workspace.id === activeWorkspace?.id && !toolsActive
         const activity = workspaceActivity[workspace.id]
         const isWorktree = workspace.kind === 'worktree'
+        const isLinkedTask = workspace.kind === 'repoSet'
+        // Worktree and linked task tabs close; a folder workspace is removed.
+        const isTab = isWorktree || isLinkedTask
         const isWorking = activity?.state === 'working'
         const needsApproval = activity?.state === 'needs-approval'
         const completed = activity?.state === 'completed'
@@ -148,7 +152,9 @@ export function WorkspaceTabs(): React.JSX.Element {
               className="flex min-w-0 flex-1 items-center gap-2 text-left"
               title={`${workspace.path}${workspace.branch ? `\n${workspace.branch}` : ''}`}
             >
-              {isWorktree ? (
+              {isLinkedTask ? (
+                <Boxes size={13} className="shrink-0 text-special" />
+              ) : isWorktree ? (
                 <GitBranch size={13} className="shrink-0 text-special" />
               ) : (
                 <FolderOpen size={13} className="shrink-0 text-dim" />
@@ -169,9 +175,9 @@ export function WorkspaceTabs(): React.JSX.Element {
                   event.stopPropagation()
                 }}
                 className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-all hover:bg-highlight hover:text-primary group-hover:opacity-100"
-                title={isWorktree ? t('store.confirm.closeTabLabel') : t('store.confirm.removeWorkspaceTitle')}
+                title={isTab ? t('store.confirm.closeTabLabel') : t('store.confirm.removeWorkspaceTitle')}
                 aria-label={
-                  isWorktree
+                  isTab
                     ? t('workspaceTabs.closeTabAriaLabel', { name: tabLabel(workspace) })
                     : t('workspaceTabs.removeWorkspaceAriaLabel', { name: tabLabel(workspace) })
                 }
@@ -235,6 +241,15 @@ export function WorkspaceTabs(): React.JSX.Element {
         aria-label={t('workspaceTabs.newIsolatedTabAriaLabel')}
       >
         <Plus size={15} />
+      </button>
+      <button
+        type="button"
+        onClick={() => setLinkedTaskDialog({ view: 'start' })}
+        className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary transition-colors"
+        title={t('workspaceTabs.newLinkedTaskTitle')}
+        aria-label={t('workspaceTabs.newLinkedTaskAriaLabel')}
+      >
+        <Boxes size={15} />
       </button>
     </div>
     {sessionTabs.length > 0 && (

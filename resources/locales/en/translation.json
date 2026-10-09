@@ -179,6 +179,9 @@
     "prompts": "Prompts"
   },
   "commands": {
+    "addRepo": {
+      "description": "Add a repository to this linked task"
+    },
     "clone": {
       "description": "Clone the current branch into a new session"
     },
@@ -188,11 +191,17 @@
     "fork": {
       "description": "Open Branches to fork from a message"
     },
+    "linkedTask": {
+      "description": "Start a linked task across a repo set"
+    },
     "model": {
       "description": "Choose the model"
     },
     "new": {
       "description": "Start a new session"
+    },
+    "newRepoSet": {
+      "description": "Make a repo set: a group of repositories for linked tasks"
     },
     "resume": {
       "description": "Open the Sessions list"
@@ -697,6 +706,7 @@
       "notFound": "Workspace not found: {{workspaceId}}",
       "notFoundPlain": "Workspace not found",
       "pullRequestNotCheckedOut": "The task references a GitHub pull request that is not checked out in a local worktree",
+      "repoSetCannotChangeFolder": "A linked task tab keeps the folders of its repositories; start a new linked task to use other folders",
       "sourceFolderMissing": "Source folder does not exist: {{path}}"
     }
   },
@@ -734,6 +744,10 @@
   },
   "home": {
     "actions": {
+      "linkedTask": {
+        "description": "One task across several repositories",
+        "title": "Linked task"
+      },
       "newSession": {
         "inWorkspace": "In {{project}}",
         "pickFolderFirst": "Pick a folder first"
@@ -1009,6 +1023,112 @@
       "command": "Command:\n{{command}}",
       "target": "Target: {{path}}",
       "title": "Allow {{tool}}?"
+    }
+  },
+  "repoSets": {
+    "bar": {
+      "addRepository": "Add repo",
+      "addRepositoryTitle": "Add a repository to this task",
+      "ariaLabel": "Repositories in this task",
+      "changed_one": "{{count}} change",
+      "changed_other": "{{count}} changes",
+      "clean": "clean",
+      "main": "main",
+      "missing": "folder missing",
+      "openPullRequest": "Open pull request",
+      "openPullRequestAriaLabel": "Open the pull request of {{name}}",
+      "shipAll": "Ship all",
+      "shipAllTitle": "Commit, push, and open a linked pull request in each repository with changes",
+      "sourceWasDirty": "Your own checkout had uncommitted changes. This worktree starts from the last commit, so those changes are not in it."
+    },
+    "dialog": {
+      "closeAriaLabel": "Close"
+    },
+    "edit": {
+      "addRepository": "Add repository",
+      "back": "Back",
+      "delete": "Delete set",
+      "deleteConfirmMessage": "Delete \"{{name}}\"? Open linked tasks keep working, and your repositories do not change.",
+      "deleteConfirmTitle": "Delete repo set?",
+      "editTitle": "Edit repo set",
+      "hint": "Add two or more git repositories and select the main one.",
+      "mainLabel": "Main",
+      "mainTitle": "The agent starts in the main repository and follows its project rules.",
+      "nameLabel": "Set name",
+      "newTitle": "New repo set",
+      "pickFolderTitle": "Choose a git repository",
+      "removeRepositoryAriaLabel": "Remove {{name}}",
+      "repositoriesLabel": "Repositories",
+      "repositoryNameAriaLabel": "Repository name"
+    },
+    "errors": {
+      "alreadyInTask": "This repository is already in the task: {{path}}",
+      "checkoutFailed": "Could not prepare \"{{name}}\" for the task. No repository was changed. {{detail}}",
+      "duplicateFolder": "This folder is in the set two times: {{path}}",
+      "duplicateName": "Two repositories are named \"{{name}}\". Give each one its own name.",
+      "folderMissing": "This folder does not exist: {{path}}",
+      "nameRequired": "Give the set a name.",
+      "notFound": "This repo set no longer exists.",
+      "notGitRepository": "This folder is not in a git repository: {{path}}",
+      "notLinkedTask": "This tab is not a linked task.",
+      "oneMainRepository": "Select one main repository.",
+      "repositoryNameRequired": "Give each repository a name.",
+      "repositoryNotInTask": "\"{{name}}\" is not in this task.",
+      "sameRepository": "\"{{name}}\" is a second checkout of a repository that is already in the set.",
+      "tooFewRepositories": "Add at least {{minimum}} repositories."
+    },
+    "mode": {
+      "inPlace": {
+        "description": "The agent edits your own checkouts on their current branches.",
+        "label": "In place",
+        "short": "In place"
+      },
+      "isolated": {
+        "description": "A new worktree in each repository, all on one new branch. Your checkouts do not change.",
+        "label": "Isolated (recommended)",
+        "short": "Isolated"
+      }
+    },
+    "ship": {
+      "errors": {
+        "agentWorking": "The agent is still working. Ship when it stops.",
+        "onBaseBranch": "The changes are on the base branch {{branch}}. Create another branch first: Ship all opens pull requests and does not push to the base branch."
+      },
+      "intro": "Each repository with changes gets a commit, a push, and a pull request. The pull requests link to each other.",
+      "outcome": {
+        "failed": "Failed at the {{step}} step",
+        "missing": "Folder missing",
+        "shipped": "Shipped",
+        "unchanged": "Nothing to ship"
+      },
+      "repositoriesLabel": "Repositories",
+      "resultsLabel": "Results for each repository",
+      "retry": "Retry failed",
+      "shipping": "Shipping…",
+      "step": {
+        "commit": "commit",
+        "link": "link",
+        "pullRequest": "pull request",
+        "push": "push"
+      },
+      "submit": "Ship all",
+      "title": "Ship all repositories"
+    },
+    "start": {
+      "editSet": "Edit",
+      "editSetAriaLabel": "Edit {{name}}",
+      "empty": "No repo sets yet. Make one to start.",
+      "modeLabel": "Where the agent works",
+      "nameLabel": "Task name",
+      "namePlaceholder": "Uses the set name when empty",
+      "newSet": "New repo set",
+      "repositoryCount_one": "{{count}} repository",
+      "repositoryCount_other": "{{count}} repositories",
+      "setLabel": "Repo set",
+      "starting": "Preparing repositories…",
+      "submit": "Start task",
+      "subtitle": "One task across several git repositories, shipped as linked pull requests.",
+      "title": "New linked task"
     }
   },
   "review": {
@@ -1548,6 +1668,8 @@
       "changeFolderMessage": "Pi has not finished responding in this session. Changing the project folder restarts Pi, which stops it: whatever Pi already wrote to the session is kept, but the rest of the response — including any tool calls still running — is discarded.",
       "cloneAnywayLabel": "Clone anyway",
       "cloneMessage": "Pi has not finished responding in this session. Cloning this branch stops it: whatever Pi already wrote to the session is kept, but the rest of the response — including any tool calls still running — is discarded.",
+      "closeInPlaceLinkedTaskMessage": "Close \"{{name}}\"? Your repositories and their files do not change.",
+      "closeIsolatedLinkedTaskMessage": "Close \"{{name}}\"? Clean worktrees of this task are removed; worktrees with uncommitted changes stay on disk. Branches are kept.",
       "closeManagedWorktreeMessage": "Close \"{{name}}\"? Clean worktrees are removed; tabs with uncommitted changes are preserved on disk.",
       "closeSessionTabMessage": "Pi is still working in this session. Closing the tab stops its runtime; saved messages remain available from Sessions.",
       "closeSessionTabTitle": "Close session tab?",
@@ -1572,6 +1694,7 @@
       "workspaceRulesNoticeTitle": "Workspace permission rules"
     },
     "messages": {
+      "addRepositoryError": "Could not add the repository: {{detail}}",
       "arbiterFailed": "Arbiter failed: {{detail}}",
       "archiveError": "Archive error: {{detail}}",
       "cannotActivateSession": "Cannot activate session",
@@ -1958,6 +2081,8 @@
     "closeTools": "Close tools",
     "newIsolatedTabAriaLabel": "New isolated Git tab",
     "newIsolatedTabTitle": "New isolated Git tab (requires a Git project)",
+    "newLinkedTaskAriaLabel": "New linked task",
+    "newLinkedTaskTitle": "New linked task across several repositories",
     "newSessionAriaLabel": "New session in this project",
     "newSessionFallback": "New session",
     "removeWorkspaceAriaLabel": "Remove {{name}}",

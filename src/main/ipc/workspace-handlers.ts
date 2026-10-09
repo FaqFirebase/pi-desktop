@@ -3,7 +3,8 @@ import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { isString, isObject, isOptionalBoolean, isOptionalString } from './validation'
 import { validateStartOptions, applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
 import { loadAppSettings } from './settings'
-import type { WorkspaceTabOptions } from '../../shared/ipc-contracts'
+import type { AppSettings, Workspace, WorkspaceTabOptions } from '../../shared/ipc-contracts'
+import type { WorkspaceManager } from '../workspace-manager'
 import { isWithinSessionRoots } from '../pi-paths'
 import { existsSync } from 'fs'
 import type { IpcContext } from './context'
@@ -26,6 +27,31 @@ function validateWorkspaceTabOptions(value: unknown): WorkspaceTabOptions {
     ...(isString(value.taskPrompt) ? { taskPrompt: value.taskPrompt } : {}),
     ...(typeof value.startPi === 'boolean' ? { startPi: value.startPi } : {}),
   }
+}
+
+/**
+ * Start a freshly created tab's session runtime without waiting for it, so the
+ * tab and its files are usable before the agent is ready.
+ */
+export function startNewTabInBackground(
+  workspaceManager: WorkspaceManager, workspace: Workspace, settings: AppSettings, forkSessionPath?: string,
+): void {
+  void workspaceManager.startPiForWorkspace(
+    workspace.id,
+    applyPermissionModeToStartOptions(
+      applyResumePreference(
+        {
+          cwd: workspace.path,
+          provider: settings.defaultProvider ?? undefined,
+          model: settings.defaultModel ?? undefined,
+          defaultThinkingLevel: settings.defaultThinkingLevel ?? undefined,
+          forkSessionPath,
+        },
+        settings
+      ),
+      settings
+    )
+  ).catch((error) => appLog.warn('workspaces', 'Background tab Pi start failed', error))
 }
 
 export function registerWorkspaceHandlers(ctx: IpcContext): void {
@@ -110,26 +136,9 @@ export function registerWorkspaceHandlers(ctx: IpcContext): void {
 
     const settings = await loadAppSettings(workspaceManager)
     const workspace = await workspaceManager.createWorktreeWorkspace(options)
-    // Return the new project tab immediately. Its session runtime starts in the
-    // background so the tab/file contents are usable before Pi is ready. A task
-    // launch may explicitly skip this default runtime to avoid two Pi processes
-    // in the freshly-created worktree.
-    if (options.startPi !== false) void workspaceManager.startPiForWorkspace(
-      workspace.id,
-      applyPermissionModeToStartOptions(
-        applyResumePreference(
-          {
-            cwd: workspace.path,
-            provider: settings.defaultProvider ?? undefined,
-            model: settings.defaultModel ?? undefined,
-            defaultThinkingLevel: settings.defaultThinkingLevel ?? undefined,
-            forkSessionPath: options.forkSessionPath,
-          },
-          settings
-        ),
-        settings
-      )
-    ).catch((error) => appLog.warn('workspaces', 'Background worktree Pi start failed', error))
+    // Return the new project tab immediately. A task launch may explicitly skip
+    // this default runtime to avoid two Pi processes in the fresh worktree.
+    if (options.startPi !== false) startNewTabInBackground(workspaceManager, workspace, settings, options.forkSessionPath)
     return workspace
   })
 }

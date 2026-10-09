@@ -508,6 +508,9 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
   const cloneBranch = useAppStore((s) => s.cloneBranch)
   const createNewSession = useAppStore((s) => s.createNewSession)
   const setTaskLauncherOpen = useAppStore((s) => s.setTaskLauncherOpen)
+  const setLinkedTaskDialog = useAppStore((s) => s.setLinkedTaskDialog)
+  const addRepoToLinkedTask = useAppStore((s) => s.addRepoToLinkedTask)
+  const inLinkedTask = useAppStore((s) => !!s.activeWorkspace?.linkedTask)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
   const requestModelSelectorOpen = useAppStore((s) => s.requestModelSelectorOpen)
   const piEngine = useAppStore((s) => s.piEngine)
@@ -526,11 +529,20 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
         description: t('commands.task.description', { agent: agentEngineLabel(piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL }),
         run: () => setTaskLauncherOpen(true),
       },
+      { name: 'linked-task', description: t('commands.linkedTask.description'), run: () => setLinkedTaskDialog({ view: 'start' }) },
+      { name: 'new-repo-set', description: t('commands.newRepoSet.description'), run: () => setLinkedTaskDialog({ view: 'edit', setId: null }) },
+      // Only a linked task tab has repositories to add to.
+      ...(inLinkedTask
+        ? [{ name: 'add-repo', description: t('commands.addRepo.description'), run: () => { void addRepoToLinkedTask() } }]
+        : []),
       { name: 'resume', description: t('commands.resume.description'), run: () => setCurrentView('sessions') },
       { name: 'fork', description: t('commands.fork.description'), run: () => setCurrentView('timeline') },
       { name: 'settings', description: t('commands.settings.description'), run: () => setCurrentView('settings') },
     ],
-    [compactContext, cloneBranch, createNewSession, setTaskLauncherOpen, setCurrentView, requestModelSelectorOpen, piEngine, t]
+    [
+      compactContext, cloneBranch, createNewSession, setTaskLauncherOpen, setLinkedTaskDialog, addRepoToLinkedTask,
+      inLinkedTask, setCurrentView, requestModelSelectorOpen, piEngine, t,
+    ]
   )
 
   const allCommands = useMemo<PiCommand[]>(() => withGuiCommands(commands, builtins), [commands, builtins])

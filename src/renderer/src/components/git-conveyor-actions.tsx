@@ -70,7 +70,7 @@ const GITHUB_WEB_ORIGIN = 'https://github.com'
 /** `git status --porcelain` marks an untracked file with this code in both columns. */
 const UNTRACKED_STATUS = '?'
 // Markdown section headings prefilled in a new pull request description.
-const PULL_REQUEST_BODY_TEMPLATE = '## Summary\n\n## Verification\n'
+export const PULL_REQUEST_BODY_TEMPLATE = '## Summary\n\n## Verification\n'
 const DIALOG_FIELD = 'mt-1 w-full rounded border border-border-strong bg-app px-2 py-1.5 text-sm text-primary outline-none focus:border-focus'
 
 function assertWorkspace(workspaceId: string | undefined): void {

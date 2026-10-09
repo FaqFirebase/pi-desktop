@@ -6,7 +6,6 @@ import type {
   GitConveyorCommitOptions,
   GitConveyorPullRequestOptions,
   GitConveyorStatus,
-  Workspace,
 } from '../../shared/ipc-contracts'
 import {
   assertTrustedSender, isObject, isOptionalBoolean, isOptionalString, isOptionalStringArray, isString,
@@ -22,8 +21,9 @@ import { loadAppSettings } from './settings'
 import type { IpcContext } from './context'
 import { t } from '../../shared/i18n'
 
+/** The repository the git panel shows: in a linked task, the focused one. */
 function activeCwd(ctx: IpcContext): string {
-  const cwd = ctx.workspaceManager.getActiveWorkspace()?.path
+  const cwd = ctx.workspaceManager.getActivePanelRoot()
   if (!cwd) throw new Error(t('errors.workspace.noneActive'))
   return cwd
 }
@@ -47,12 +47,12 @@ async function commitMessageModel(ctx: IpcContext): Promise<CommitMessageModel> 
  * result: Electron logs every rejected handler with a stack trace.
  */
 async function changeBranch(
-  ctx: IpcContext, workspaceId: string, change: (workspace: Workspace) => Promise<GitConveyorStatus>,
+  ctx: IpcContext, workspaceId: string, change: (cwd: string) => Promise<GitConveyorStatus>,
 ): Promise<GitBranchSwitchResult> {
   try {
     const workspace = ctx.workspaceManager.getActiveWorkspace()
     if (!workspace || workspace.id !== workspaceId) throw new GitSwitchRefusal(t('conveyor.errors.workspaceChanged'))
-    const status = await change(workspace)
+    const status = await change(activeCwd(ctx))
     if (ctx.workspaceManager.getActiveWorkspace()?.id === workspaceId) {
       ctx.broadcast(IPC_CHANNELS.EVENT_FILE_CHANGE, { changeType: 'change', relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
     }
@@ -90,11 +90,11 @@ export function registerGitConveyorHandlers(ctx: IpcContext): void {
   ipcMain.handle(IPC_CHANNELS.GIT_SWITCH_BRANCH, async (event, workspaceId: unknown, branch: unknown): Promise<GitBranchSwitchResult> => {
     assertTrustedSender(event)
     if (!isString(workspaceId) || !isString(branch)) throw new Error('workspaceId and branch must be strings')
-    return changeBranch(ctx, workspaceId, async (workspace) => {
+    return changeBranch(ctx, workspaceId, async (cwd) => {
       const active = ctx.workspaceManager.getSessionRuntimes(workspaceId)
         .some((runtime) => runtime.activity === 'working' || runtime.activity === 'needs-approval')
       if (active) throw new GitSwitchRefusal(t('conveyor.branches.agentWorking'))
-      return switchLocalBranch(workspace.path, branch)
+      return switchLocalBranch(cwd, branch)
     })
   })
 
@@ -103,7 +103,7 @@ export function registerGitConveyorHandlers(ctx: IpcContext): void {
   ipcMain.handle(IPC_CHANNELS.GIT_CREATE_BRANCH, async (event, workspaceId: unknown, name: unknown): Promise<GitBranchSwitchResult> => {
     assertTrustedSender(event)
     if (!isString(workspaceId) || !isString(name)) throw new Error('workspaceId and name must be strings')
-    return changeBranch(ctx, workspaceId, (workspace) => createLocalBranch(workspace.path, name))
+    return changeBranch(ctx, workspaceId, (cwd) => createLocalBranch(cwd, name))
   })
 
   ipcMain.handle(IPC_CHANNELS.GIT_CONVEYOR_COMMIT, async (event, input: unknown) => {

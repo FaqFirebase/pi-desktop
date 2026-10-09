@@ -19,6 +19,9 @@
     "../../resources/permission-rules.test.ts",
     "../../resources/permission-prompt-text.ts",
     "../../resources/permission-prompt-text.test.ts",
+    "../../resources/path-within.ts",
+    "../../resources/repo-set-map.ts",
+    "../../resources/repo-set-map.test.ts",
     "../../resources/locales/*/translation.json"
   ]
 }

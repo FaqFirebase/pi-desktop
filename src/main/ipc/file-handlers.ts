@@ -42,7 +42,8 @@ export function registerFileHandlers(ctx: IpcContext): void {
   // open dialog, so it may live outside the workspace).
   ipcMain.handle(IPC_CHANNELS.FILE_READ_ATTACHMENT, async (_event, filePath: unknown) => {
     if (!isString(filePath)) throw new Error('filePath must be a string')
-    const workspaceRoot = workspaceManager.getActiveWorkspace()?.path ?? null
+    // The file panel shows the focused repository of a linked task, so its files attach too.
+    const workspaceRoot = workspaceManager.getActivePanelRoot()
     if (!isAuthorizedAttachmentPath(filePath, { workspaceRoot, approvedPaths: approvedAttachmentPaths })) {
       throw new Error(t('errors.attachments.pathNotPermitted'))
     }

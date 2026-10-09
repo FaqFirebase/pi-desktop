@@ -1,4 +1,3 @@
-import { app } from 'electron'
 import type { AgentEngineKind, PiStartOptions, AppSettings, PermissionMode } from '../../shared/ipc-contracts'
 import { getGuiDataPath } from '../app-data-paths'
 import { workspaceTrustStore } from '../workspace-trust'
@@ -11,13 +10,12 @@ import { engineForBoundSession } from '../pi-paths'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../shared/agent-engine-label'
 import { i18n } from '../../shared/i18n'
 import { typeSafeKeyEnv, typeSafeKeyStore } from '../typesafe-key-store'
+import { agentResourcePath } from '../agent-resources'
 
 const READ_ONLY_TOOLS = 'read,grep,find,ls'
 const OMP_READ_ONLY_TOOLS = 'read,grep,glob'
 
-const PERMISSIONS_EXTENSION_PATH = app.isPackaged
-  ? join(process.resourcesPath, 'resources', 'pi-desktop-permissions.ts')
-  : join(app.getAppPath(), 'resources', 'pi-desktop-permissions.ts')
+const PERMISSIONS_EXTENSION_PATH = agentResourcePath('pi-desktop-permissions.ts')
 
 const LOCALES_DIR_NAME = 'locales'
 // The language files ship next to the extension (resources/ is extraResources).

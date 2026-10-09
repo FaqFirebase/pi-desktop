@@ -45,6 +45,7 @@ test('branch IPC validates inputs and workspace activity, switches explicitly, a
     registerGitConveyorHandlers({
       workspaceManager: {
         getActiveWorkspace: () => ({ id: 'project', path: root }),
+        getActivePanelRoot: () => root,
         getSessionRuntimes: (id: string) => {
           assert.equal(id, 'project')
           return [{ activity }]
@@ -112,6 +113,7 @@ test('new-branch IPC creates from HEAD while an agent works, refuses bad names a
     registerGitConveyorHandlers({
       workspaceManager: {
         getActiveWorkspace: () => ({ id: 'project', path: root }),
+        getActivePanelRoot: () => root,
         getSessionRuntimes: () => [{ activity: 'working' }],
       },
       broadcast: (...args: unknown[]) => events.push(args),

@@ -175,6 +175,9 @@
     "prompts": "提示词"
   },
   "commands": {
+    "addRepo": {
+      "description": "向此关联任务添加一个仓库"
+    },
     "clone": {
       "description": "把当前分支克隆到新会话"
     },
@@ -184,11 +187,17 @@
     "fork": {
       "description": "打开分支视图，从某条消息分叉"
     },
+    "linkedTask": {
+      "description": "基于仓库组启动关联任务"
+    },
     "model": {
       "description": "选择模型"
     },
     "new": {
       "description": "开始新会话"
+    },
+    "newRepoSet": {
+      "description": "创建仓库组：用于关联任务的一组仓库"
     },
     "resume": {
       "description": "打开会话列表"
@@ -685,6 +694,7 @@
       "notFound": "未找到工作区：{{workspaceId}}",
       "notFoundPlain": "未找到工作区",
       "pullRequestNotCheckedOut": "该任务引用了一个尚未检出到本地工作树的 GitHub PR",
+      "repoSetCannotChangeFolder": "关联任务标签页固定使用其仓库文件夹；如需其他文件夹，请启动新的关联任务",
       "sourceFolderMissing": "源文件夹不存在：{{path}}"
     }
   },
@@ -721,6 +731,10 @@
   },
   "home": {
     "actions": {
+      "linkedTask": {
+        "description": "一个任务跨多个仓库",
+        "title": "关联任务"
+      },
       "newSession": {
         "inWorkspace": "在 {{project}} 中",
         "pickFolderFirst": "请先选择文件夹"
@@ -993,6 +1007,110 @@
       "command": "命令：\n{{command}}",
       "target": "目标：{{path}}",
       "title": "允许 {{tool}}？"
+    }
+  },
+  "repoSets": {
+    "bar": {
+      "addRepository": "添加仓库",
+      "addRepositoryTitle": "向此任务添加一个仓库",
+      "ariaLabel": "此任务中的仓库",
+      "changed_other": "{{count}} 处更改",
+      "clean": "无更改",
+      "main": "主",
+      "missing": "文件夹缺失",
+      "openPullRequest": "打开拉取请求",
+      "openPullRequestAriaLabel": "打开 {{name}} 的拉取请求",
+      "shipAll": "全部发布",
+      "shipAllTitle": "在每个有更改的仓库中提交、推送并打开关联的拉取请求",
+      "sourceWasDirty": "你自己的检出有未提交的更改。此工作树从最后一次提交开始，因此不包含这些更改。"
+    },
+    "dialog": {
+      "closeAriaLabel": "关闭"
+    },
+    "edit": {
+      "addRepository": "添加仓库",
+      "back": "返回",
+      "delete": "删除仓库组",
+      "deleteConfirmMessage": "删除“{{name}}”？已打开的关联任务继续工作，你的仓库不会改变。",
+      "deleteConfirmTitle": "删除仓库组？",
+      "editTitle": "编辑仓库组",
+      "hint": "添加两个或更多 Git 仓库，并选择主仓库。",
+      "mainLabel": "主",
+      "mainTitle": "智能体在主仓库中启动，并遵循其项目规则。",
+      "nameLabel": "仓库组名称",
+      "newTitle": "新建仓库组",
+      "pickFolderTitle": "选择一个 Git 仓库",
+      "removeRepositoryAriaLabel": "移除 {{name}}",
+      "repositoriesLabel": "仓库",
+      "repositoryNameAriaLabel": "仓库名称"
+    },
+    "errors": {
+      "alreadyInTask": "此仓库已在任务中：{{path}}",
+      "checkoutFailed": "无法为任务准备“{{name}}”。没有仓库被更改。{{detail}}",
+      "duplicateFolder": "此文件夹在仓库组中出现了两次：{{path}}",
+      "duplicateName": "有两个仓库都叫“{{name}}”。请为每个仓库取不同的名称。",
+      "folderMissing": "此文件夹不存在：{{path}}",
+      "nameRequired": "请为仓库组命名。",
+      "notFound": "此仓库组已不存在。",
+      "notGitRepository": "此文件夹不在 Git 仓库中：{{path}}",
+      "notLinkedTask": "此标签页不是关联任务。",
+      "oneMainRepository": "请选择一个主仓库。",
+      "repositoryNameRequired": "请为每个仓库命名。",
+      "repositoryNotInTask": "“{{name}}”不在此任务中。",
+      "sameRepository": "“{{name}}”是仓库组中已有仓库的另一个检出。",
+      "tooFewRepositories": "请至少添加 {{minimum}} 个仓库。"
+    },
+    "mode": {
+      "inPlace": {
+        "description": "智能体在你自己的检出中、当前分支上直接编辑。",
+        "label": "原地",
+        "short": "原地"
+      },
+      "isolated": {
+        "description": "在每个仓库中新建工作树，全部位于同一个新分支上。你的检出不会改变。",
+        "label": "隔离（推荐）",
+        "short": "隔离"
+      }
+    },
+    "ship": {
+      "errors": {
+        "agentWorking": "智能体仍在工作。请在它停止后再发布。",
+        "onBaseBranch": "更改位于基础分支 {{branch}} 上。请先创建其他分支：全部发布会打开拉取请求，不会推送到基础分支。"
+      },
+      "intro": "每个有更改的仓库都会进行一次提交、一次推送并打开一个拉取请求。这些拉取请求会互相链接。",
+      "outcome": {
+        "failed": "在{{step}}步骤失败",
+        "missing": "文件夹缺失",
+        "shipped": "已发布",
+        "unchanged": "没有可发布的内容"
+      },
+      "repositoriesLabel": "仓库",
+      "resultsLabel": "各仓库的结果",
+      "retry": "重试失败项",
+      "shipping": "正在发布…",
+      "step": {
+        "commit": "提交",
+        "link": "链接",
+        "pullRequest": "拉取请求",
+        "push": "推送"
+      },
+      "submit": "全部发布",
+      "title": "发布所有仓库"
+    },
+    "start": {
+      "editSet": "编辑",
+      "editSetAriaLabel": "编辑 {{name}}",
+      "empty": "还没有仓库组。请先创建一个。",
+      "modeLabel": "智能体的工作位置",
+      "nameLabel": "任务名称",
+      "namePlaceholder": "留空时使用仓库组名称",
+      "newSet": "新建仓库组",
+      "repositoryCount_other": "{{count}} 个仓库",
+      "setLabel": "仓库组",
+      "starting": "正在准备仓库…",
+      "submit": "开始任务",
+      "subtitle": "一个任务跨多个 Git 仓库，以关联的拉取请求发布。",
+      "title": "新建关联任务"
     }
   },
   "review": {
@@ -1518,6 +1636,8 @@
       "changeFolderMessage": "Pi 在此会话中尚未完成响应。更改项目文件夹会重启 Pi，从而中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
       "cloneAnywayLabel": "仍然克隆",
       "cloneMessage": "Pi 在此会话中尚未完成响应。克隆此分支会中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
+      "closeInPlaceLinkedTaskMessage": "关闭“{{name}}”？你的仓库及其文件不会改变。",
+      "closeIsolatedLinkedTaskMessage": "关闭“{{name}}”？此任务的干净工作树将被移除；有未提交更改的工作树会保留在磁盘上。分支会保留。",
       "closeManagedWorktreeMessage": "关闭“{{name}}”？干净的工作树将被移除；有未提交更改的标签页会保留在磁盘上。",
       "closeSessionTabMessage": "Pi 仍在该会话中工作。关闭标签页会停止其运行时；已保存的消息仍可从会话列表查看。",
       "closeSessionTabTitle": "关闭会话标签页？",
@@ -1542,6 +1662,7 @@
       "workspaceRulesNoticeTitle": "工作区权限规则"
     },
     "messages": {
+      "addRepositoryError": "无法添加仓库：{{detail}}",
       "arbiterFailed": "仲裁失败：{{detail}}",
       "archiveError": "归档错误：{{detail}}",
       "cannotActivateSession": "无法激活会话",
@@ -1900,6 +2021,8 @@
     "closeTools": "关闭工具",
     "newIsolatedTabAriaLabel": "新建隔离 Git 标签页",
     "newIsolatedTabTitle": "新建隔离 Git 标签页（需要 Git 项目）",
+    "newLinkedTaskAriaLabel": "新建关联任务",
+    "newLinkedTaskTitle": "新建跨多个仓库的关联任务",
     "newSessionAriaLabel": "在此项目中新建会话",
     "newSessionFallback": "新建会话",
     "removeWorkspaceAriaLabel": "移除 {{name}}",

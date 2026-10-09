@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   Settings as SettingsIcon,
   Play,
+  Boxes,
 } from 'lucide-react'
 import { useAppStore } from '../store'
 import piLogo from '../assets/pi-logo.svg'
@@ -292,6 +293,7 @@ function HomeScreenInfo(): React.JSX.Element {
   const createWorkspace = useAppStore((s) => s.createWorkspace)
   const createNewSession = useAppStore((s) => s.createNewSession)
   const setTaskLauncherOpen = useAppStore((s) => s.setTaskLauncherOpen)
+  const setLinkedTaskDialog = useAppStore((s) => s.setLinkedTaskDialog)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
   const requestChatScrollToBottom = useAppStore((s) => s.requestChatScrollToBottom)
   const [busy, setBusy] = useState(false)
@@ -350,7 +352,7 @@ function HomeScreenInfo(): React.JSX.Element {
           <p className="mt-1 text-sm text-dim">{t('home.subtitle')}</p>
         </div>
 
-        <div className="mb-6 grid gap-3 sm:grid-cols-3">
+        <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <button
             onClick={() => void openFolder()}
             className="flex w-full items-center gap-3 rounded-lg border border-border-strong bg-surface px-4 py-3 text-left transition-colors hover:border-border-strong-hover hover:bg-surface-hover"
@@ -383,6 +385,16 @@ function HomeScreenInfo(): React.JSX.Element {
             <div className="min-w-0">
               <div className="text-sm font-medium text-primary">{t('home.actions.newTask.title')}</div>
               <div className="truncate text-xs text-dim">{t('home.actions.newTask.description', { agent: engineLabel })}</div>
+            </div>
+          </button>
+          <button
+            onClick={() => setLinkedTaskDialog({ view: 'start' })}
+            className="flex w-full items-center gap-3 rounded-lg border border-border bg-surface/50 px-4 py-3 text-left transition-colors hover:border-border-strong hover:bg-surface-hover/60"
+          >
+            <Boxes size={18} className="shrink-0 text-muted" />
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-primary">{t('home.actions.linkedTask.title')}</div>
+              <div className="truncate text-xs text-dim">{t('home.actions.linkedTask.description')}</div>
             </div>
           </button>
         </div>

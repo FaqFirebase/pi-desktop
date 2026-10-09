@@ -16,8 +16,10 @@ import {
   extractUrl,
   getGitConveyorStatus,
   githubRepoFromRemote,
+  listChangedPaths,
   parseAheadBehind,
   parseOpenPullRequest,
+  parsePorcelainZ,
   pullRequestNumberFromUrl,
   pushBranch,
   readCommitDiff,
@@ -877,4 +879,28 @@ test('ExpiringLookupCache shares a load, keeps its answer for the period, and lo
   assert.equal(await cache.get('branch', load), null)
   cache.delete('branch')
   assert.equal(await cache.get('branch', load), 3)
+})
+
+test('parsePorcelainZ keeps spaces, lists both sides of a rename, and skips ignored files', () => {
+  const output = [' M src/a file.ts', 'R  new name.ts', 'old name.ts', '?? notes/new.md', '!! dist/out.js', 'A  added.ts', ''].join('\0')
+  assert.deepEqual(parsePorcelainZ(output), {
+    tracked: ['src/a file.ts', 'new name.ts', 'old name.ts', 'added.ts'],
+    untracked: ['notes/new.md'],
+  })
+  assert.deepEqual(parsePorcelainZ(''), { tracked: [], untracked: [] })
+})
+
+test('listChangedPaths reads tracked and untracked files from a checkout', async () => {
+  const repo = await mkdtemp(join(tmpdir(), 'pi-changed-'))
+  await writeFile(join(repo, 'tracked.txt'), 'one\n', 'utf-8')
+  const git = (args: string[]): void => {
+    const result = spawnSync('git', ['-c', 'user.email=t@example.test', '-c', 'user.name=T', ...args], { cwd: repo, encoding: 'utf-8' })
+    assert.equal(result.status, 0, result.stderr)
+  }
+  git(['init'])
+  git(['add', '.'])
+  git(['commit', '-m', 'initial'])
+  await writeFile(join(repo, 'tracked.txt'), 'two\n', 'utf-8')
+  await writeFile(join(repo, 'brand new.txt'), 'new\n', 'utf-8')
+  assert.deepEqual(await listChangedPaths(repo), { tracked: ['tracked.txt'], untracked: ['brand new.txt'] })
 })

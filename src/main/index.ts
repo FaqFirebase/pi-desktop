@@ -159,7 +159,8 @@ function isAllowedMainWindowNavigation(targetUrl: string): boolean {
 
 /** Whether the active workspace has been trusted by the user (see workspace-trust.ts). */
 function isActiveWorkspaceTrusted(): boolean {
-  const path = workspaceManager?.getActiveWorkspace()?.path
+  // The preview shows files of the panel's folder: in a linked task, the focused repository.
+  const path = workspaceManager?.getActivePanelRoot()
   return path ? workspaceTrustStore.isTrusted(path) : false
 }
 
