@@ -9,12 +9,14 @@ import {
   TAIL_SCAN_BYTES,
   clearSessionMetadataCache,
   inspectSessionContent,
+  isContentRecord,
   isUserMessageRecord,
   readFirstUserMessage,
   readSessionMetadata,
   readSessionMetadataCached,
   sessionHeaderFromLine,
   userMessageText,
+  type SessionContentState,
 } from './session-metadata'
 
 // ─── Fixture builders (mirror the real Pi JSONL record shapes) ────────────────
@@ -57,6 +59,17 @@ const customMessageLine = (content: string): string =>
 const modelChangeLine = (): string =>
   JSON.stringify({ type: 'model_change', id: 'a6', parentId: null, modelId: 'glm-5.2' })
 
+const thinkingLevelChangeLine = (): string =>
+  JSON.stringify({ type: 'thinking_level_change', id: 'a7', parentId: 'a6', thinkingLevel: 'medium' })
+
+/** Bookmark on another entry (`/label`, or an extension's setLabel). */
+const labelLine = (label: string): string =>
+  JSON.stringify({ type: 'label', id: 'l1', parentId: 'a7', targetId: 'a6', label })
+
+/** Extension state (`pi.appendEntry`), which only its extension can interpret. */
+const customEntryLine = (): string =>
+  JSON.stringify({ type: 'custom', customType: 'plan-mode', id: 'c1', parentId: 'a7', data: { steps: ['Read the code'] } })
+
 const sessionInfoLine = (name: string): string =>
   JSON.stringify({ type: 'session_info', id: 'i1', parentId: 'm1', name })
 
@@ -74,6 +87,17 @@ async function withSessionFile<T>(
     clearSessionMetadataCache()
     await rm(dir, { recursive: true, force: true })
   }
+}
+
+/**
+ * Both readers must agree: inspectSessionContent gates the close-time delete,
+ * and readSessionMetadata's contentState decides which rows the list hides.
+ */
+async function assertContentState(lines: string[], expected: SessionContentState): Promise<void> {
+  await withSessionFile(lines, async (path) => {
+    assert.equal(await inspectSessionContent(path), expected, 'inspectSessionContent')
+    assert.equal((await readSessionMetadata(path)).contentState, expected, 'readSessionMetadata')
+  })
 }
 
 // ─── userMessageText ─────────────────────────────────────────────────────────
@@ -136,6 +160,41 @@ test('userMessageText returns null for non-record input', () => {
   assert.equal(userMessageText(null), null)
   assert.equal(userMessageText('a string'), null)
   assert.equal(userMessageText({ type: 'message' }), null)
+})
+
+// ─── isContentRecord ─────────────────────────────────────────────────────────
+
+test('isContentRecord does not count the header or metadata entries', () => {
+  const metadata = [
+    JSON.parse(headerLine()),
+    JSON.parse(modelChangeLine()),
+    JSON.parse(thinkingLevelChangeLine()),
+    JSON.parse(sessionInfoLine('Draft')),
+    JSON.parse(labelLine('start')),
+    // OMP's first-line title slot, and the record it appends on shutdown.
+    { type: 'title', v: 1, title: '' },
+    { type: 'custom', customType: 'session_exit', id: 'x1', parentId: 'a6', data: { reason: 'sigterm' } },
+  ]
+  for (const record of metadata) assert.equal(isContentRecord(record), false, JSON.stringify(record))
+})
+
+test('isContentRecord counts every other record, known or not', () => {
+  const content = [
+    ...['user', 'assistant', 'toolResult', 'bashExecution', 'system'].map((role) =>
+      JSON.parse(messageLine(role, textBlocks('text')))
+    ),
+    JSON.parse(customMessageLine('Subagent run finished')),
+    JSON.parse(customEntryLine()),
+    { type: 'compaction', id: 'k1', parentId: 'm1', summary: 'Earlier work', firstKeptEntryId: 'm1', tokensBefore: 900 },
+    { type: 'branch_summary', id: 'b1', parentId: 'm1', fromId: 'm1', summary: 'Abandoned path' },
+    { type: 'usage', id: 'u1', parentId: 'm1', kind: 'cache_warm', provider: 'anthropic', model: 'claude', usage: {} },
+    { type: 'future_entry', id: 'f1', parentId: 'm1' },
+    {},
+    [],
+    null,
+    'text',
+  ]
+  for (const record of content) assert.equal(isContentRecord(record), true, JSON.stringify(record))
 })
 
 // ─── sessionHeaderFromLine ───────────────────────────────────────────────────
@@ -346,6 +405,69 @@ test('readSessionMetadata returns unknown content for a missing file', async () 
   assert.deepEqual(meta, { header: null, name: null, preview: null, contentState: 'unknown' })
 })
 
+// ─── Content state (empty is what a tab close may delete) ────────────────────
+
+test('a header with only model, thinking-level, name, and label entries is empty', async () => {
+  await assertContentState(
+    [headerLine(), modelChangeLine(), thinkingLevelChangeLine(), sessionInfoLine('Draft'), labelLine('start')],
+    'empty'
+  )
+})
+
+test('a custom message with no user turn is content', async () => {
+  // pi-subagents `/run` records a run as custom messages and writes no user message.
+  await assertContentState([headerLine(), modelChangeLine(), customMessageLine('Subagent run finished')], 'non-empty')
+})
+
+test('an assistant answer with no user turn is content', async () => {
+  // An extension's sendMessage with triggerTurn starts a turn from a custom
+  // message, so the answers that follow have no user message before them.
+  await assertContentState(
+    [headerLine(), modelChangeLine(), messageLine('assistant', textBlocks('Here is the plan'))],
+    'non-empty'
+  )
+})
+
+test('an extension state entry is content', async () => {
+  await assertContentState([headerLine(), modelChangeLine(), customEntryLine()], 'non-empty')
+})
+
+test('an entry type the reader does not know is content', async () => {
+  await assertContentState(
+    [headerLine(), modelChangeLine(), JSON.stringify({ type: 'future_entry', id: 'f1', parentId: 'a6' })],
+    'non-empty'
+  )
+})
+
+test('a malformed line leaves the content unknown', async () => {
+  await assertContentState([headerLine(), modelChangeLine(), '{"type":"custom_message", TRUNCATED'], 'unknown')
+})
+
+test('content that the head range cuts off is still found', async () => {
+  // Larger than head + tail, so readSessionMetadata scans only the head, which
+  // ends inside the custom message, and must fall back to the bounded stream.
+  const runOutput = 'x'.repeat(HEAD_SCAN_BYTES + TAIL_SCAN_BYTES)
+  await assertContentState([headerLine(), modelChangeLine(), customMessageLine(runOutput)], 'non-empty')
+})
+
+test('metadata that runs past the scan budget is unknown, never empty', async () => {
+  const longLabel = labelLine('x'.repeat(HEAD_SCAN_BYTES))
+  const labelCount = Math.ceil(MAX_PREVIEW_SCAN_BYTES / longLabel.length) + 2
+  await assertContentState([headerLine(), ...Array.from({ length: labelCount }, () => longLabel)], 'unknown')
+})
+
+test('a session with content but no user turn has no preview', async () => {
+  // The session list shows such a row. With no name and no preview, the
+  // renderer titles it from the timestamp in its file name (getSessionTitle).
+  await withSessionFile([headerLine(), customMessageLine('Subagent run finished')], async (path) => {
+    const meta = await readSessionMetadata(path)
+    assert.equal(meta.header?.id, SESSION_ID)
+    assert.equal(meta.name, null)
+    assert.equal(meta.preview, null)
+    assert.equal(meta.contentState, 'non-empty')
+  })
+})
+
 // ─── Name resolution (relocated from session-name.test.ts) ───────────────────
 
 test('readSessionMetadata reports no name for an unnamed session', async () => {
@@ -504,5 +626,26 @@ test('session_info outranks the OMP title slot', async () => {
     async (path) => {
       assert.equal((await readSessionMetadata(path)).name, 'Real rename')
     }
+  )
+})
+
+// ─── OMP content state (OMP 18 record shapes) ────────────────────────────────
+
+/** OMP records the model as one `provider/id` string. */
+const ompModelChangeLine = (): string =>
+  JSON.stringify({ type: 'model_change', id: 'm0', parentId: null, model: 'opencode-go/deepseek-v4.1-flash' })
+
+/** The record OMP appends to its session file when it shuts down. */
+const ompSessionExitLine = (): string =>
+  JSON.stringify({ type: 'custom', customType: 'session_exit', id: 'x1', parentId: 'm0', data: { reason: 'sigterm' } })
+
+test('an OMP session that only started and shut down is empty', async () => {
+  await assertContentState([titleLine(''), headerLine(), ompModelChangeLine(), ompSessionExitLine()], 'empty')
+})
+
+test('an OMP answer with no user turn is content', async () => {
+  await assertContentState(
+    [titleLine(''), headerLine(), ompModelChangeLine(), messageLine('assistant', textBlocks('done')), ompSessionExitLine()],
+    'non-empty'
   )
 })

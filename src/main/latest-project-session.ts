@@ -53,7 +53,7 @@ export async function engineProjectSessionDirs(engine: AgentEngineKind, projectP
 /**
  * The session "Resume Last Session" reopens: the most recently written session
  * file in the given project directories (one engine's store). A header-only
- * file (a session that never got a prompt) is skipped, the same rows the
+ * file (a session that holds only metadata) is skipped, the same rows the
  * session list hides.
  */
 export async function findLatestProjectSession(projectDirs: readonly string[]): Promise<string | null> {
