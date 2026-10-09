@@ -51,7 +51,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Pinned, not ubuntu-latest: node-pty's native module is compiled on
+          # the runner, and glibc 2.42+ (Ubuntu 26.04) gives it versioned
+          # cfsetispeed/cfsetospeed symbols, so the AppImage would not start on
+          # distros with an older glibc. Raise this only with that in mind.
+          - os: ubuntu-24.04
             eb_args: '--linux AppImage'
             artifacts: |
               release/*.AppImage
