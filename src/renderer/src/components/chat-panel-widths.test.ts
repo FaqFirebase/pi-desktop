@@ -9,10 +9,14 @@ import {
   MIN_FILE_PANE_WIDTH,
   MIN_SIDE_PANEL_WIDTH,
   MIN_SIDE_PANEL_WIDTH_WITH_EDITOR,
+  PANE_GRID_AREA,
   REVIEW_PANEL_WIDTH,
   clamp,
+  resolvePaneGrid,
   resolvePaneLayout,
   resolveSidePanelMetrics,
+  type PaneGridTemplate,
+  type PanePlacement,
 } from './chat-panel-widths'
 
 const FILE_TREE_ONLY = { showFileTree: true, showEditor: false, showImage: false }
@@ -217,4 +221,110 @@ test('nothing beside the chat column ever needs more than the row', () => {
       }
     }
   }
+})
+
+// ─── One grid holds the chat column and both panes ───────────────────────────
+
+const PLACEMENTS: (PanePlacement | null)[] = [null, 'beside', 'stacked']
+const LAYOUTS = PLACEMENTS.flatMap((sidePanel) => PLACEMENTS.map((review) => ({ sidePanel, review })))
+
+/** The template's area names, row by row. */
+function areaRows(grid: PaneGridTemplate): string[][] {
+  return [...grid.gridTemplateAreas.matchAll(/"([^"]+)"/g)].map(([, row]) => row.split(' '))
+}
+
+/** "minmax(0, 1fr) auto" -> ["minmax(0, 1fr)", "auto"] */
+function tracks(trackList: string): string[] {
+  return trackList.match(/minmax\([^)]*\)|\S+/g) ?? []
+}
+
+/** Each track's share of the free space ("minmax(0, 2fr)" -> 2). */
+function shares(trackList: string): number[] {
+  return tracks(trackList).map((track) => Number(/(\d+)fr\)$/.exec(track)?.[1]))
+}
+
+function openPanes(layout: (typeof LAYOUTS)[number]): [string, PanePlacement][] {
+  const panes: [string, PanePlacement | null][] = [
+    [PANE_GRID_AREA.sidePanel, layout.sidePanel],
+    [PANE_GRID_AREA.review, layout.review],
+  ]
+  return panes.filter((pane): pane is [string, PanePlacement] => pane[1] !== null)
+}
+
+test('every open pane is a cell of the one row grid in every placement', () => {
+  // Regression: a stacked side panel rendered in a container under the chat
+  // column, a beside one directly in the row. Each change of place gave it
+  // another parent, so React mounted it again: the editor in it read the file
+  // from disk again and its unsaved edits were lost. One grid now holds the
+  // chat column and both panes, and only its template moves them.
+  for (const layout of LAYOUTS) {
+    const cells = [...new Set(areaRows(resolvePaneGrid(layout)).flat())].sort()
+    const expected = [PANE_GRID_AREA.chat, ...openPanes(layout).map(([area]) => area)].sort()
+    assert.deepEqual(cells, expected, JSON.stringify(layout))
+  }
+})
+
+test('a beside pane fills a column right of the chat column from top to bottom, in its own width', () => {
+  for (const layout of LAYOUTS) {
+    const grid = resolvePaneGrid(layout)
+    const rows = areaRows(grid)
+    for (const [area] of openPanes(layout).filter(([, placement]) => placement === 'beside')) {
+      const column = rows[0].indexOf(area)
+      assert.ok(column > 0, `${area} in ${JSON.stringify(layout)}`)
+      assert.ok(rows.every((row) => row[column] === area), `${area} in ${JSON.stringify(layout)}`)
+      // An auto track follows the width the pane sets on itself.
+      assert.equal(tracks(grid.gridTemplateColumns)[column], 'auto')
+    }
+  }
+})
+
+test('a stacked pane fills a row under the chat column, across the chat column only', () => {
+  for (const layout of LAYOUTS) {
+    const rows = areaRows(resolvePaneGrid(layout))
+    for (const [area] of openPanes(layout).filter(([, placement]) => placement === 'stacked')) {
+      const row = rows.findIndex((cells) => cells[0] === area)
+      assert.ok(row > 0, `${area} in ${JSON.stringify(layout)}`)
+      // The beside columns go on through this row unchanged.
+      assert.deepEqual(rows[row].slice(1), rows[0].slice(1), `${area} in ${JSON.stringify(layout)}`)
+    }
+  }
+})
+
+test('the chat column keeps the top half over stacked panes, which share the rest evenly', () => {
+  assert.deepEqual(shares(resolvePaneGrid({ sidePanel: null, review: null }).gridTemplateRows), [1])
+  assert.deepEqual(shares(resolvePaneGrid({ sidePanel: 'beside', review: 'beside' }).gridTemplateRows), [1])
+  assert.deepEqual(shares(resolvePaneGrid({ sidePanel: 'stacked', review: 'beside' }).gridTemplateRows), [1, 1])
+  assert.deepEqual(shares(resolvePaneGrid({ sidePanel: 'beside', review: 'stacked' }).gridTemplateRows), [1, 1])
+  assert.deepEqual(shares(resolvePaneGrid({ sidePanel: 'stacked', review: 'stacked' }).gridTemplateRows), [2, 1, 1])
+  for (const layout of LAYOUTS) {
+    // A zero minimum: a pane's content never makes its row taller than its share.
+    assert.ok(tracks(resolvePaneGrid(layout).gridTemplateRows).every((track) => track.startsWith('minmax(0,')))
+  }
+})
+
+test('the chat column keeps its minimum width only while a pane is beside it', () => {
+  for (const layout of LAYOUTS) {
+    const paneBeside = openPanes(layout).some(([, placement]) => placement === 'beside')
+    assert.equal(
+      tracks(resolvePaneGrid(layout).gridTemplateColumns)[0],
+      `minmax(${paneBeside ? MIN_CHAT_COLUMN_WIDTH : 0}px, 1fr)`,
+      JSON.stringify(layout)
+    )
+  }
+})
+
+test('the side panel comes before the review panel, beside or stacked', () => {
+  assert.deepEqual(areaRows(resolvePaneGrid({ sidePanel: 'beside', review: 'beside' })), [
+    [PANE_GRID_AREA.chat, PANE_GRID_AREA.sidePanel, PANE_GRID_AREA.review],
+  ])
+  assert.deepEqual(areaRows(resolvePaneGrid({ sidePanel: 'stacked', review: 'stacked' })), [
+    [PANE_GRID_AREA.chat], [PANE_GRID_AREA.sidePanel], [PANE_GRID_AREA.review],
+  ])
+})
+
+test('at 1400px the side panel keeps the full height beside the chat and the review panel goes under it', () => {
+  assert.deepEqual(areaRows(resolvePaneGrid(resolvePaneLayout(ROW_AT_1400, MIN_SIDE_PANEL_WIDTH, true))), [
+    [PANE_GRID_AREA.chat, PANE_GRID_AREA.sidePanel],
+    [PANE_GRID_AREA.review, PANE_GRID_AREA.sidePanel],
+  ])
 })

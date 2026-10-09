@@ -148,3 +148,55 @@ export function resolvePaneLayout(
     sidePanelRowWidth: rowWidth - (review === 'beside' ? REVIEW_PANEL_WIDTH : 0),
   }
 }
+
+/** The grid area of each cell in the chat row. */
+export const PANE_GRID_AREA = { chat: 'chat', sidePanel: 'side-panel', review: 'review' } as const
+
+/** The chat row's grid template, as React style properties. */
+export interface PaneGridTemplate {
+  gridTemplateColumns: string
+  gridTemplateRows: string
+  gridTemplateAreas: string
+}
+
+/** A beside pane's column follows the width that the pane sets on itself. */
+const BESIDE_PANE_COLUMN = 'auto'
+
+/** Height shares of one stacked pane's row. */
+const STACKED_ROW_SHARES = 1
+
+/**
+ * Place the panes of a layout in the chat row's one grid. The chat panel
+ * renders each pane as a fixed child of that grid, so a change of place
+ * changes only this template and never a pane's parent: React keeps the pane
+ * mounted (the side panel holds the editor's unsaved text).
+ *
+ * A beside pane gets a column right of the chat column from top to bottom,
+ * and the chat column then keeps MIN_CHAT_COLUMN_WIDTH. A stacked pane gets a
+ * row under the chat column, as wide as that column. Over stacked panes the
+ * chat column keeps the top half, and they share the rest evenly. The side
+ * panel comes first in both directions.
+ */
+export function resolvePaneGrid(layout: Pick<PaneLayout, 'sidePanel' | 'review'>): PaneGridTemplate {
+  const panes = [
+    { area: PANE_GRID_AREA.sidePanel, placement: layout.sidePanel },
+    { area: PANE_GRID_AREA.review, placement: layout.review },
+  ]
+  const areasPlaced = (placement: PanePlacement): string[] =>
+    panes.filter((pane) => pane.placement === placement).map((pane) => pane.area)
+  const beside = areasPlaced('beside')
+  const stacked = areasPlaced('stacked')
+  const chatMinWidth = beside.length > 0 ? MIN_CHAT_COLUMN_WIDTH : 0
+  // The shares of all stacked rows together, so the chat row keeps the top
+  // half; with nothing stacked it is the only row.
+  const chatRowShares = Math.max(stacked.length * STACKED_ROW_SHARES, STACKED_ROW_SHARES)
+  const rowShares = [chatRowShares, ...stacked.map(() => STACKED_ROW_SHARES)]
+  return {
+    gridTemplateColumns: [`minmax(${chatMinWidth}px, 1fr)`, ...beside.map(() => BESIDE_PANE_COLUMN)].join(' '),
+    // A zero minimum, so a pane's content cannot make its row taller than its share.
+    gridTemplateRows: rowShares.map((shares) => `minmax(0, ${shares}fr)`).join(' '),
+    gridTemplateAreas: [PANE_GRID_AREA.chat, ...stacked]
+      .map((firstCell) => `"${[firstCell, ...beside].join(' ')}"`)
+      .join(' '),
+  }
+}

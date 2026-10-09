@@ -14,7 +14,9 @@ import {
   MIN_CHAT_COLUMN_WIDTH,
   MIN_EDITOR_PANE_WIDTH,
   MIN_FILE_PANE_WIDTH,
+  PANE_GRID_AREA,
   clamp,
+  resolvePaneGrid,
   resolvePaneLayout,
   resolveSidePanelMetrics,
   sidePanelContentMinWidth,
@@ -173,8 +175,6 @@ export function ChatPanel(): React.JSX.Element {
     // ceiling is the whole column rather than what the column leaves beside it.
     sidePanelStacked ? paneLayout.sidePanelRowWidth + MIN_CHAT_COLUMN_WIDTH : paneLayout.sidePanelRowWidth
   )
-  const paneBesideChat = paneLayout.sidePanel === 'beside' || paneLayout.review === 'beside'
-  const paneUnderChat = sidePanelStacked || paneLayout.review === 'stacked'
 
   // Disk watching is demand-driven: the main process only attaches chokidar
   // while a visible files or diff panel consumes change events. Without this,
@@ -195,11 +195,8 @@ export function ChatPanel(): React.JSX.Element {
 
   const sidePanelPane = showSidePanel ? (
     <div
-      className={clsx(
-        'relative flex bg-app',
-        sidePanelStacked ? 'min-h-0 flex-1 border-t border-border' : 'shrink-0 border-l border-border'
-      )}
-      style={sidePanelStacked ? undefined : { width: sidePanelContentWidth }}
+      className={clsx('relative flex bg-app', sidePanelStacked ? 'border-t border-border' : 'border-l border-border')}
+      style={{ gridArea: PANE_GRID_AREA.sidePanel, width: sidePanelStacked ? undefined : sidePanelContentWidth }}
     >
       {!sidePanelStacked && (
         <ResizeHandle
@@ -285,9 +282,11 @@ export function ChatPanel(): React.JSX.Element {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div ref={panelRowRef} className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Panes beside the column leave it this width; without room they stack under it. */}
-        <div className="chat-center flex flex-1 flex-col overflow-hidden" style={paneBesideChat ? { minWidth: MIN_CHAT_COLUMN_WIDTH } : undefined}>
+      {/* One grid holds the chat column and both panes in every placement. A pane
+          that moves beside or under the chat column keeps its parent and its slot,
+          so React does not mount it again (the editor keeps its unsaved edits). */}
+      <div ref={panelRowRef} className="grid min-h-0 flex-1 overflow-hidden" style={resolvePaneGrid(paneLayout)}>
+        <div className="chat-center flex flex-col overflow-hidden" style={{ gridArea: PANE_GRID_AREA.chat }}>
           <div ref={chatDropZoneRef} className="relative flex min-h-0 flex-1 flex-col">
             {searchOpen && (
               <ChatSearch
@@ -432,16 +431,10 @@ export function ChatPanel(): React.JSX.Element {
               )
             })()}
           </div>
-          {paneUnderChat && (
-            <div className="flex min-h-0 flex-1 flex-col">
-              {sidePanelStacked && sidePanelPane}
-              {paneLayout.review === 'stacked' && <ReviewRail placement="stacked" />}
-            </div>
-          )}
         </div>
 
-        {paneLayout.sidePanel === 'beside' && sidePanelPane}
-        {paneLayout.review === 'beside' && <ReviewRail placement="beside" />}
+        {sidePanelPane}
+        {paneLayout.review !== null && <ReviewRail placement={paneLayout.review} />}
       </div>
 
       {/* Terminal panel */}

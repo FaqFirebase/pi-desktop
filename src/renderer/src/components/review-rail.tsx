@@ -6,7 +6,7 @@ import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/ag
 import { PermissionSelector } from './permission-selector'
 import { formatIpcError } from '../utils/ipc-error'
 import type { GitFileStatus } from '../../../shared/ipc-contracts'
-import { REVIEW_PANEL_WIDTH, type PanePlacement } from './chat-panel-widths'
+import { PANE_GRID_AREA, REVIEW_PANEL_WIDTH, type PanePlacement } from './chat-panel-widths'
 import { clsx } from 'clsx'
 
 interface ChangedFile {
@@ -14,7 +14,11 @@ interface ChangedFile {
   status: GitFileStatus
 }
 
-/** The review panel; the chat panel renders it only while it is open and places it. */
+/**
+ * The review panel; the chat panel renders it only while it is open. It is the
+ * review cell of the chat row's grid in both placements, so a change of place
+ * keeps its state (changed files, scroll position).
+ */
 export function ReviewRail({ placement }: { placement: PanePlacement }): React.JSX.Element {
   const { t } = useTranslation()
   const settings = useAppStore((state) => state.settings)
@@ -67,11 +71,8 @@ export function ReviewRail({ placement }: { placement: PanePlacement }): React.J
 
   return (
     <aside
-      className={clsx(
-        'flex flex-col bg-app',
-        placement === 'beside' ? 'shrink-0 border-l border-border' : 'min-h-0 flex-1 border-t border-border'
-      )}
-      style={placement === 'beside' ? { width: REVIEW_PANEL_WIDTH } : undefined}
+      className={clsx('flex flex-col bg-app', placement === 'beside' ? 'border-l border-border' : 'border-t border-border')}
+      style={{ gridArea: PANE_GRID_AREA.review, width: placement === 'beside' ? REVIEW_PANEL_WIDTH : undefined }}
     >
       <div className="shrink-0 border-b border-border">
         <div className="flex h-8 items-center gap-2 border-b border-border px-4">
