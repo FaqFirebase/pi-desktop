@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
-import { commitAll, listLocalBranches, switchLocalBranch } from './git-conveyor'
+import { GitSwitchRefusal, commitAll, listLocalBranches, switchLocalBranch } from './git-conveyor'
 
 async function withRepo(fn: (repo: string, git: (args: string[]) => string) => Promise<void>): Promise<void> {
   const repo = await mkdtemp(join(tmpdir(), 'pi-branch-switch-'))
@@ -58,6 +58,34 @@ for (const change of ['staged', 'unstaged', 'untracked']) {
     })
   })
 }
+
+test('switching refuses to overwrite an ignored file that the target branch tracks, and names it', async () => {
+  await withRepo(async (repo, git) => {
+    await writeFile(join(repo, 'app.txt'), 'original\n')
+    git(['add', '.'])
+    git(['commit', '-m', 'initial'])
+    const initial = git(['branch', '--show-current'])
+    git(['switch', '--create', 'old-config'])
+    await writeFile(join(repo, '.env'), 'SECRET=committed\n')
+    git(['add', '.env'])
+    git(['commit', '-m', 'track the env file'])
+    git(['switch', initial])
+    await writeFile(join(repo, '.gitignore'), '.env\n')
+    git(['add', '.gitignore'])
+    git(['commit', '-m', 'ignore the env file'])
+    await writeFile(join(repo, '.env'), 'SECRET=local\n')
+    assert.equal(git(['status', '--porcelain']), '', 'the clean check cannot see the ignored file')
+
+    await assert.rejects(switchLocalBranch(repo, 'old-config'), (error: unknown) => {
+      assert.ok(error instanceof GitSwitchRefusal)
+      assert.match(error.message, /old-config would overwrite or delete these local files/)
+      assert.match(error.message, /\n\.env$/)
+      return true
+    })
+    assert.equal(git(['branch', '--show-current']), initial)
+    assert.equal(await readFile(join(repo, '.env'), 'utf8'), 'SECRET=local\n')
+  })
+})
 
 test('only local branches are accepted, including branch/tag collisions and detached HEAD recovery', async () => {
   await withRepo(async (repo, git) => {

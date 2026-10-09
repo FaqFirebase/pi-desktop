@@ -3,7 +3,9 @@ import { createHash } from 'crypto'
 import { tmpdir } from 'os'
 import { isAbsolute, join, relative, resolve, sep } from 'path'
 import { spawn } from 'child_process'
-import { inspectGitRepository, isMissingRepositoryError, runGit } from './git-worktree'
+import {
+  GitCommandError, inspectGitRepository, isMissingRepositoryError, runGit, type GitRepositoryInfo,
+} from './git-worktree'
 import type {
   GitConveyorCommitOptions,
   GitConveyorPullRequestOptions,
@@ -13,6 +15,7 @@ import type {
 } from '../shared/ipc-contracts'
 import { t } from '../shared/i18n'
 import { GIT_COMMIT_MESSAGE_CONFIG } from '../shared/default-settings'
+import { gitDiffArgs } from '../shared/git-diff'
 
 const COMMAND_TIMEOUT_MS = 30_000
 
@@ -99,28 +102,56 @@ export interface ChangedPaths {
   untracked: string[]
 }
 
-/** Rename and copy rows of `--porcelain -z` carry the original path as a second entry. */
+/**
+ * Rename and copy rows of `--porcelain -z` carry the original path as the next
+ * entry, whether the index column holds the R or C (staged) or the working
+ * tree column does (`git add -N` on a moved file).
+ */
 const PORCELAIN_PAIRED_CODES = new Set(['R', 'C'])
 /** `XY ` before the path in every `--porcelain=v1` row. */
 const PORCELAIN_PATH_OFFSET = 3
 const IGNORED_PORCELAIN_PREFIX = '!!'
 
-/** Parse `git status --porcelain=v1 -z`, which never quotes or escapes paths. */
+/** One row of `git status --porcelain=v1 -z`. */
+export interface PorcelainEntry {
+  /** Staged column: a status letter, `?` for an untracked file, or a space. */
+  index: string
+  /** Working-tree column, with the same letters. */
+  worktree: string
+  /** Path from the repository root, never quoted or escaped. */
+  path: string
+  /** Original path of a rename or copy; null for any other row. */
+  originalPath: string | null
+}
+
+/** Rows of `git status --porcelain=v1 -z`, the one status form whose paths are raw. */
+export function parsePorcelainZEntries(output: string): PorcelainEntry[] {
+  const fields = output.split('\0')
+  const entries: PorcelainEntry[] = []
+  for (let field = 0; field < fields.length; field++) {
+    const row = fields[field]
+    if (row.length <= PORCELAIN_PATH_OFFSET) continue
+    const [index, worktree] = row
+    // The original path of a rename or copy is the next field, not a row.
+    const paired = PORCELAIN_PAIRED_CODES.has(index) || PORCELAIN_PAIRED_CODES.has(worktree)
+    const originalPath = paired ? fields[++field] || null : null
+    entries.push({ index, worktree, path: row.slice(PORCELAIN_PATH_OFFSET), originalPath })
+  }
+  return entries
+}
+
+/** Changed paths in `git status --porcelain=v1 -z` output, ignored files left out. */
 export function parsePorcelainZ(output: string): ChangedPaths {
-  const entries = output.split('\0')
   const changed: ChangedPaths = { tracked: [], untracked: [] }
-  for (let index = 0; index < entries.length; index++) {
-    const entry = entries[index]
-    if (entry.length <= PORCELAIN_PATH_OFFSET) continue
-    const code = entry.slice(0, PORCELAIN_PATH_OFFSET - 1)
-    const path = entry.slice(PORCELAIN_PATH_OFFSET)
+  for (const entry of parsePorcelainZEntries(output)) {
+    const code = entry.index + entry.worktree
     if (code === IGNORED_PORCELAIN_PREFIX) continue
     if (code === UNTRACKED_PORCELAIN_PREFIX) {
-      changed.untracked.push(path)
+      changed.untracked.push(entry.path)
       continue
     }
-    changed.tracked.push(path)
-    if (PORCELAIN_PAIRED_CODES.has(code[0]) && index + 1 < entries.length) changed.tracked.push(entries[++index])
+    changed.tracked.push(entry.path)
+    if (entry.originalPath !== null) changed.tracked.push(entry.originalPath)
   }
   return changed
 }
@@ -235,13 +266,19 @@ async function hasPublishedUpstream(cwd: string): Promise<boolean> {
   return runGit(['rev-parse', '--verify', '--quiet', '@{upstream}'], cwd).then(() => true, () => false)
 }
 
-async function defaultBranchForRemote(cwd: string, remote: string | null): Promise<string | null> {
-  if (!remote || remote === '.') return null
+/** The branch the remote's recorded HEAD names (set by a clone or `git remote set-head`), else null. */
+async function recordedDefaultBranch(cwd: string, remote: string): Promise<string | null> {
   const ref = await runGit(['symbolic-ref', '--quiet', '--short', `refs/remotes/${remote}/HEAD`], cwd)
     .then((result) => result.stdout.trim())
     .catch(() => '')
   const prefix = `${remote}/`
-  if (ref.startsWith(prefix)) return ref.slice(prefix.length)
+  return ref.startsWith(prefix) ? ref.slice(prefix.length) : null
+}
+
+async function defaultBranchForRemote(cwd: string, remote: string | null): Promise<string | null> {
+  if (!remote || remote === '.') return null
+  const recorded = await recordedDefaultBranch(cwd, remote)
+  if (recorded) return recorded
   for (const branch of CONVENTIONAL_BASE_BRANCHES) {
     const exists = await runGit(['rev-parse', '--verify', '--quiet', remoteBranchRef(remote, branch)], cwd)
       .then(() => true, () => false)
@@ -252,6 +289,24 @@ async function defaultBranchForRemote(cwd: string, remote: string | null): Promi
 
 function remoteBranchRef(remote: string, branch: string): string {
   return `refs/remotes/${remote}/${branch}`
+}
+
+/**
+ * The upstream Push updates, or null when Push publishes `branch` under its
+ * own name instead. A branch started from the base (`git checkout -b feat
+ * origin/main`) tracks it, and pushing there would land the work on the base
+ * branch. So an upstream with another name than the branch's that is its
+ * remote's recorded default branch, or one of the conventional default names
+ * while none is recorded, is replaced on the next push. A local `main` or
+ * `master` is the main line itself (a clone's `master` renamed to `main`), so
+ * it keeps its upstream.
+ */
+async function pushUpstream(cwd: string, branch: string, upstream: UpstreamConfig | null): Promise<UpstreamConfig | null> {
+  if (!upstream || upstream.branch === branch) return upstream
+  if ((CONVENTIONAL_BASE_BRANCHES as readonly string[]).includes(branch)) return upstream
+  const recorded = await recordedDefaultBranch(cwd, upstream.remote)
+  const bases: readonly string[] = recorded ? [recorded] : CONVENTIONAL_BASE_BRANCHES
+  return bases.includes(upstream.branch) ? null : upstream
 }
 
 /** Commits on HEAD that `remote`/`branch` lacks, or null when that ref is unknown. */
@@ -287,16 +342,17 @@ function isPathWithin(base: string, candidate: string): boolean {
 }
 
 /**
- * Absolute paths of every staged entry. `--relative` is deliberately not used:
- * it drops the paths outside `cwd`, which is exactly the set the workspace
- * guard has to see, so Git reports repository-root paths that are resolved
- * against the worktree root here instead. Git prints that root with symlinks
- * resolved, so the paths are physical and must be compared as such.
+ * Absolute paths of every staged entry. Relative paths are deliberately not
+ * used, and `gitDiffArgs` turns a diff.relative setting off: they drop the
+ * paths outside `cwd`, which is exactly the set the workspace guard has to
+ * see, so Git reports repository-root paths that are resolved against the
+ * worktree root here instead. Git prints that root with symlinks resolved, so
+ * the paths are physical and must be compared as such.
  */
 async function stagedPaths(cwd: string): Promise<string[]> {
   const [worktreeRoot, output] = await Promise.all([
     physicalWorktreeRoot(cwd),
-    runGit(['diff', '--cached', '--name-only', '-z'], cwd).then((result) => result.stdout),
+    runGit(gitDiffArgs('--cached', '--name-only', '-z'), cwd).then((result) => result.stdout),
   ])
   return output.split('\0').filter(Boolean).map((path) => resolve(worktreeRoot, path))
 }
@@ -367,6 +423,9 @@ async function resolveCommittablePaths(
   }
 }
 
+/** Snapshot diff options: full binary content, the stored bytes (no textconv), and no rename pairs. */
+const COMMIT_DIFF_OPTIONS = ['--binary', '--full-index', '--no-textconv', '--no-renames']
+
 /**
  * Diff of the committable paths' working-tree content against HEAD: the exact
  * tree a filtered commit records. A throwaway index keeps the user's index
@@ -381,9 +440,8 @@ async function readSelectedPathsDiff({ worktreeRoot, paths }: SelectedPaths, hea
     await runGit(head ? ['read-tree', head] : ['read-tree', '--empty'], worktreeRoot, env)
     await runGit(['--literal-pathspecs', 'add', '--all', '--', ...paths], worktreeRoot, env)
     const { stdout } = await runGit([
-      '--literal-pathspecs', 'diff', '--cached',
-      '--binary', '--full-index', '--no-ext-diff', '--no-textconv', '--no-renames',
-      '--', ...paths,
+      '--literal-pathspecs',
+      ...gitDiffArgs('--cached', ...COMMIT_DIFF_OPTIONS, '--', ...paths),
     ], worktreeRoot, env)
     return stdout
   } finally {
@@ -427,11 +485,8 @@ export async function readCommitDiff(
     scope = selection.worktreeRoot
   } else {
     const { autoStage, workspaceRoot } = await commitSelection(cwd)
-    diff = (await runGit([
-      'diff', ...(autoStage ? [] : ['--cached']),
-      '--binary', '--full-index', '--no-ext-diff', '--no-textconv', '--no-renames',
-      '--', '.',
-    ], workspaceRoot)).stdout
+    const args = gitDiffArgs(...(autoStage ? [] : ['--cached']), ...COMMIT_DIFF_OPTIONS, '--', '.')
+    diff = (await runGit(args, workspaceRoot)).stdout
     scope = workspaceRoot
   }
   if (!diff) return null
@@ -468,6 +523,8 @@ export async function getGitConveyorStatus(cwd: string): Promise<GitConveyorStat
   })
   if (!repository) return NOT_A_REPOSITORY_STATUS
   const upstream = repository.branch ? await resolveUpstream(cwd, repository.branch) : null
+  // The push confirmation names this target, so it must be the one Push uses.
+  const pushTarget = repository.branch ? await pushUpstream(cwd, repository.branch, upstream) : null
   const published = upstream ? await hasPublishedUpstream(cwd) : false
   const configuredRemote = repository.branch ? await branchRemote(cwd, repository.branch) : null
   const pushRemote = upstream?.remote ?? configuredRemote ?? (await gitConfig(cwd, 'remote.origin.url') ? DEFAULT_PUSH_REMOTE : null)
@@ -491,7 +548,7 @@ export async function getGitConveyorStatus(cwd: string): Promise<GitConveyorStat
     ...parseAheadBehind(counts),
     hasUpstream: published,
     pushRemote,
-    upstreamBranch: upstream?.branch ?? null,
+    upstreamBranch: pushTarget?.branch ?? null,
     baseBranch,
     aheadOfBase: await countCommitsAheadOf(cwd, baseRemote, baseBranch),
     remoteUrl,
@@ -521,15 +578,16 @@ async function pullRequestRoute(cwd: string, branch: string): Promise<PullReques
   ])
   const baseRemote = upstreamRemoteUrl ? 'upstream' : upstream?.remote ?? null
   const headRemote = branchRemoteName ?? upstream?.remote ?? DEFAULT_PUSH_REMOTE
-  const [baseRemoteUrl, headRemoteUrl] = await Promise.all([
+  const [baseRemoteUrl, headRemoteUrl, pushTarget] = await Promise.all([
     remoteUrlFor(cwd, baseRemote),
     remoteUrlFor(cwd, headRemote),
+    pushUpstream(cwd, branch, upstream),
   ])
   return {
     baseRemote,
     baseRepo: githubRepoFromRemote(baseRemoteUrl ?? upstreamRemoteUrl),
     headRepo: githubRepoFromRemote(headRemoteUrl ?? originRemoteUrl),
-    headBranch: upstream?.branch ?? branch,
+    headBranch: pushTarget?.branch ?? branch,
   }
 }
 
@@ -632,6 +690,11 @@ export async function listLocalBranches(cwd: string): Promise<string[]> {
  */
 export class GitSwitchRefusal extends Error {}
 
+/** Exit status of a `git switch` that refused to touch files in its way; fatal errors exit 128. */
+const GIT_SWITCH_REFUSED_EXIT_CODE = 1
+/** Git lists each path in the way on its own line after a tab, in every interface language. */
+const GIT_LISTED_PATH_PREFIX = '\t'
+
 /**
  * Switch a clean worktree without forcing, merging, stashing, or guessing a
  * remote branch. Any change, untracked files included, blocks the switch so
@@ -645,9 +708,39 @@ export async function switchLocalBranch(cwd: string, branch: string): Promise<Gi
   if (operation) throw new GitSwitchRefusal(t('errors.git.operationInProgressSwitch', { operation }))
   // Untracked files refuse the switch too (owner decision): they belong to the
   // branch the user is on, even though git itself would carry them along.
-  if ((await inspectGitRepository(cwd)).status.trim()) throw new GitSwitchRefusal(t('errors.git.commitBeforeSwitch'))
-  await runGit(['switch', '--no-guess', '--', branch], cwd)
+  const repository = await inspectGitRepository(cwd)
+  if (repository.status.trim()) throw new GitSwitchRefusal(t('errors.git.commitBeforeSwitch'))
+  try {
+    // Git overwrites ignored files by default, and the check above cannot see
+    // them: a branch that tracks a file this one ignores (`.env`) would replace
+    // the local copy, and switching back would then delete it.
+    await runGit(['switch', '--no-guess', '--no-overwrite-ignore', '--', branch], cwd)
+  } catch (error) {
+    throw await ignoredFilesRefusal(cwd, branch, repository, error) ?? error
+  }
   return getGitConveyorStatus(cwd)
+}
+
+/**
+ * The refusal to report when Git kept the worktree as it was because files in
+ * the way would be overwritten or deleted. On a worktree that was clean and
+ * still is, those are files Git does not show as changes: ignored files, or
+ * tracked files marked assume-unchanged or skip-worktree. Null for any other
+ * failure, which stays as Git reported it.
+ */
+async function ignoredFilesRefusal(
+  cwd: string, branch: string, before: GitRepositoryInfo, error: unknown,
+): Promise<GitSwitchRefusal | null> {
+  if (!(error instanceof GitCommandError) || error.exitCode !== GIT_SWITCH_REFUSED_EXIT_CODE) return null
+  const files = new Set(error.stderr.split(/\r?\n/)
+    .filter((line) => line.startsWith(GIT_LISTED_PATH_PREFIX))
+    .map((line) => line.slice(GIT_LISTED_PATH_PREFIX.length)))
+  if (files.size === 0) return null
+  const after = await inspectGitRepository(cwd)
+  // A switch that went through before a post-checkout hook failed is no refusal.
+  if (after.branch !== before.branch || after.head !== before.head) return null
+  if (after.status.trim()) return new GitSwitchRefusal(t('errors.git.commitBeforeSwitch'))
+  return new GitSwitchRefusal(t('errors.git.ignoredFilesBlockSwitch', { branch, files: [...files].join('\n') }))
 }
 
 /**
@@ -745,14 +838,15 @@ export async function pushBranch(cwd: string): Promise<GitConveyorStatus> {
   if (countTrackedPorcelainFiles(repository.status) > 0) throw new Error(t('errors.git.commitBeforePush'))
   const operation = await activeGitOperation(cwd)
   if (operation) throw new Error(t('errors.git.operationInProgressPush', { operation }))
-  const upstream = await resolveUpstream(cwd, repository.branch)
+  const upstream = await pushUpstream(cwd, repository.branch, await resolveUpstream(cwd, repository.branch))
   const configuredRemote = await branchRemote(cwd, repository.branch)
   const remote = upstream?.remote ?? configuredRemote ?? DEFAULT_PUSH_REMOTE
   if (remote === '.') throw new Error(t('errors.git.pushUpstreamIsLocal'))
   const branch = upstream?.branch ?? repository.branch
   const args = ['push']
-  // An upstream whose remote branch does not exist (first push of a cloned
-  // empty repository, or a deleted remote branch) is published again.
+  // A branch with no upstream to update becomes the upstream under its own
+  // name. An upstream whose remote branch does not exist (first push of a
+  // cloned empty repository, or a deleted remote branch) is published again.
   if (!upstream || !(await hasPublishedUpstream(cwd))) args.push('--set-upstream')
   args.push(remote, `HEAD:${branch}`)
   await runGit(args, cwd)

@@ -83,8 +83,12 @@ export function runGit(args: readonly string[], cwd: string, env?: NodeJS.Proces
     })
     let stdout = ''
     let stderr = ''
-    child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf8') })
-    child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8') })
+    // Decoded as streams: the bytes of one character in a non-English file
+    // name can arrive in two chunks.
+    child.stdout?.setEncoding('utf8')
+    child.stderr?.setEncoding('utf8')
+    child.stdout?.on('data', (chunk: string) => { stdout += chunk })
+    child.stderr?.on('data', (chunk: string) => { stderr += chunk })
     child.once('error', reject)
     child.once('close', (code) => {
       if (code === 0) {

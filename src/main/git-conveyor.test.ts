@@ -890,6 +890,131 @@ test('parsePorcelainZ keeps spaces, lists both sides of a rename, and skips igno
   assert.deepEqual(parsePorcelainZ(''), { tracked: [], untracked: [] })
 })
 
+test('parsePorcelainZ pairs a rename in the working tree with its old path too', () => {
+  // `git add -N` on the new name of a moved file: Git reports ` R new\0old\0`.
+  assert.deepEqual(parsePorcelainZ([' R new fïle.txt', 'old file.txt', ' M after.txt', ''].join('\0')), {
+    tracked: ['new fïle.txt', 'old file.txt', 'after.txt'],
+    untracked: [],
+  })
+})
+
+test('a diff.relative setting cannot hide staged files outside the workspace from the commit guard', async () => {
+  await withGitRepo(async (repo, git) => {
+    const app = join(repo, 'app')
+    await mkdir(app)
+    await writeFile(join(app, 'a.ts'), 'v0\n', 'utf8')
+    await writeFile(join(repo, '.env'), 'SECRET=v0\n', 'utf8')
+    git(['add', '.'])
+    git(['commit', '-m', 'initial'])
+    await writeFile(join(repo, '.env'), 'SECRET=v1\n', 'utf8')
+    git(['add', '.env'])
+    await writeFile(join(app, 'a.ts'), 'v1\n', 'utf8')
+    git(['config', 'diff.relative', 'true'])
+
+    await assert.rejects(() => commitAll(app, { message: 'must not commit' }), /staged files outside the active workspace/)
+    assert.equal(git(['rev-list', '--count', 'HEAD']), '1')
+    assert.equal(git(['diff', '--cached', '--name-only', '--no-relative']), '.env')
+  })
+})
+
+test('the commit snapshot keeps the diff form the commit message prompt reads, whatever the Git configuration', async () => {
+  await withGitRepo(async (repo, git) => {
+    await writeFile(join(repo, 'app.ts'), 'v0\n', 'utf8')
+    git(['add', '.'])
+    git(['commit', '-m', 'initial'])
+    for (const [key, value] of [
+      ['diff.noprefix', 'true'], ['diff.mnemonicPrefix', 'true'], ['color.ui', 'always'], ['diff.submodule', 'log'],
+    ]) git(['config', key, value])
+    await writeFile(join(repo, 'app.ts'), 'v1\n', 'utf8')
+    for (const snapshot of [await readCommitDiff(repo), await readCommitDiff(repo, ['app.ts'])]) {
+      assert.match(snapshot!.diff, /^diff --git a\/app\.ts b\/app\.ts\n/)
+      assert.equal(snapshot!.diff.includes(String.fromCharCode(0x1b)), false, 'no color codes')
+    }
+  })
+})
+
+/** A repository whose `main` is published to a bare remote that records it as its default branch. */
+async function withPublishedMain(fn: (repo: string, remote: string, git: GitRunner) => Promise<void>): Promise<void> {
+  await withGitRepo(async (repo, git) => {
+    await withPlainFolder(async (remote) => {
+      git(['init', '--bare'], remote)
+      git(['remote', 'add', 'origin', remote])
+      git(['checkout', '-b', 'main'])
+      await writeFile(join(repo, 'app.ts'), 'v0\n', 'utf8')
+      git(['add', 'app.ts'])
+      git(['commit', '-m', 'initial'])
+      git(['push', '--set-upstream', 'origin', 'main'])
+      git(['remote', 'set-head', 'origin', 'main'])
+      await fn(repo, remote, git)
+    })
+  })
+}
+
+test('push never moves the base branch a branch was started from, and publishes the branch under its own name', async () => {
+  await withPublishedMain(async (repo, remote, git) => {
+    const base = git(['rev-parse', 'refs/heads/main'], remote)
+    // What `git checkout -b feat origin/main` sets up with the default branch.autoSetupMerge.
+    git(['checkout', '--track', '-b', 'feat', 'origin/main'])
+    assert.equal(git(['rev-parse', '--abbrev-ref', '@{upstream}']), 'origin/main')
+    git(['commit', '--allow-empty', '-m', 'feature work'])
+
+    const before = await getGitConveyorStatus(repo)
+    assert.equal(before.upstreamBranch, null, 'the push confirmation names origin/feat, not origin/main')
+    const pushed = await pushBranch(repo)
+    assert.equal(git(['rev-parse', 'refs/heads/main'], remote), base)
+    assert.equal(git(['rev-parse', 'refs/heads/feat'], remote), git(['rev-parse', 'HEAD']))
+    assert.equal(git(['rev-parse', '--abbrev-ref', '@{upstream}']), 'origin/feat')
+    assert.equal(pushed.upstreamBranch, 'feat')
+    assert.equal(pushed.ahead, 0)
+    assert.equal(pushed.aheadOfBase, 1)
+  })
+})
+
+test('with no recorded default branch the conventional base names are protected the same way', async () => {
+  await withPublishedMain(async (repo, remote, git) => {
+    git(['remote', 'set-head', 'origin', '--delete'])
+    git(['push', 'origin', 'main:master'])
+    git(['fetch', 'origin'])
+    const master = git(['rev-parse', 'refs/heads/master'], remote)
+    git(['checkout', '--track', '-b', 'feat', 'origin/master'])
+    git(['commit', '--allow-empty', '-m', 'feature work'])
+    await pushBranch(repo)
+    assert.equal(git(['rev-parse', 'refs/heads/master'], remote), master)
+    assert.equal(git(['rev-parse', '--abbrev-ref', '@{upstream}']), 'origin/feat')
+  })
+})
+
+// A clone of a master repository whose local branch was renamed with `git branch -m master main`.
+test('push keeps the base upstream of a local main line under another conventional name', async () => {
+  await withPublishedMain(async (repo, remote, git) => {
+    git(['push', 'origin', 'main:master'])
+    git(['remote', 'set-head', 'origin', 'master'])
+    git(['fetch', 'origin'])
+    git(['branch', '--set-upstream-to=origin/master', 'main'])
+    const remoteMain = git(['rev-parse', 'refs/heads/main'], remote)
+    git(['commit', '--allow-empty', '-m', 'main line work'])
+
+    assert.equal((await getGitConveyorStatus(repo)).upstreamBranch, 'master')
+    await pushBranch(repo)
+    assert.equal(git(['rev-parse', 'refs/heads/master'], remote), git(['rev-parse', 'HEAD']))
+    assert.equal(git(['rev-parse', 'refs/heads/main'], remote), remoteMain, 'no second main line on the remote')
+    assert.equal(git(['rev-parse', '--abbrev-ref', '@{upstream}']), 'origin/master')
+  })
+})
+
+test('push keeps an upstream that is not the base branch, under whatever name it has', async () => {
+  await withPublishedMain(async (repo, remote, git) => {
+    git(['push', 'origin', 'main:release'])
+    git(['fetch', 'origin'])
+    git(['checkout', '--track', '-b', 'hotfix', 'origin/release'])
+    git(['commit', '--allow-empty', '-m', 'hotfix'])
+    assert.equal((await getGitConveyorStatus(repo)).upstreamBranch, 'release')
+    await pushBranch(repo)
+    assert.equal(git(['rev-parse', 'refs/heads/release'], remote), git(['rev-parse', 'HEAD']))
+    assert.equal(git(['rev-parse', '--abbrev-ref', '@{upstream}']), 'origin/release')
+  })
+})
+
 test('listChangedPaths reads tracked and untracked files from a checkout', async () => {
   const repo = await mkdtemp(join(tmpdir(), 'pi-changed-'))
   await writeFile(join(repo, 'tracked.txt'), 'one\n', 'utf-8')

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { test } from 'node:test'
@@ -51,6 +52,21 @@ test('runGit rejects with the exit code and streams of the failed command', asyn
         return true
       }
     )
+  } finally {
+    await rm(folder, { recursive: true, force: true })
+  }
+})
+
+/** Three-byte characters, enough of them to span several pipe reads. */
+const MULTI_BYTE_TEXT = '€'.repeat(100_000)
+
+test('runGit keeps characters whose bytes arrive in different output chunks', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'pi-git-worktree-'))
+  try {
+    assert.equal(spawnSync('git', ['init', '-q'], { cwd: folder }).status, 0)
+    await writeFile(join(folder, 'euro.txt'), MULTI_BYTE_TEXT, 'utf8')
+    const blob = spawnSync('git', ['hash-object', '-w', 'euro.txt'], { cwd: folder, encoding: 'utf8' }).stdout.trim()
+    assert.equal((await runGit(['cat-file', 'blob', blob], folder)).stdout, MULTI_BYTE_TEXT)
   } finally {
     await rm(folder, { recursive: true, force: true })
   }

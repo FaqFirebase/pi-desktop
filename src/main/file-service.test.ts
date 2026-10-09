@@ -12,7 +12,10 @@ import {
   isIgnoredDirName,
   isIgnoredHomeRootDirName,
   isPathInsideWorkspace,
+  isUnlistableEntryError,
 } from './file-service'
+import { commitAll } from './git-conveyor'
+import { gitDiffPaths, splitGitDiff } from '../shared/git-diff'
 import type { FileChangeEvent, FileTreeNode } from '../shared/ipc-contracts'
 import { i18n, tEnglish } from '../shared/i18n'
 import { PSEUDO_LANGUAGE, SOURCE_LANGUAGE } from '../shared/i18n/languages'
@@ -208,6 +211,38 @@ test('a home workspace hides tooling stores only at its root', async () => {
   assert.deepEqual(found.map((hit) => hit.relativePath), ['Projects/app/.cargo/config.toml'])
 })
 
+test('an entry that cannot be listed hides only itself, not the rest of its folder', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'pi-fs-dangling-'))
+  await mkdir(join(dir, 'folder'))
+  for (const name of ['b.txt', 'c.txt']) {
+    await writeFile(join(dir, name), name)
+    await writeFile(join(dir, 'folder', name), name)
+  }
+  try {
+    // Sorted before the files, so its failed stat used to end the listing.
+    await symlink(join(dir, 'missing-target'), join(dir, 'a-dangling'))
+    await symlink(join(dir, 'missing-target'), join(dir, 'folder', 'a-dangling'))
+  } catch (error) {
+    // Windows needs elevation for symlinks; the listing itself stays POSIX-tested.
+    if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error
+    t.skip('creating a symlink requires elevation on this platform')
+    return
+  }
+  const tree = await new FileService(dir, join(dir, 'not-home')).getFileTree()
+  assert.deepEqual(childNames(tree), ['folder', 'b.txt', 'c.txt'])
+  assert.deepEqual(childNames(tree.children!.find((child) => child.name === 'folder')!), ['b.txt', 'c.txt'])
+})
+
+// A stale network or FUSE mount (ENOTCONN, ESTALE), a disk error (EIO) or an
+// odd Windows code must cost one entry, not the whole tree.
+test('any file system error leaves out only its entry; a program error is not hidden', () => {
+  for (const code of ['ENOENT', 'ENOTDIR', 'ELOOP', 'EACCES', 'EPERM', 'EBUSY', 'ENOTCONN', 'ESTALE', 'EIO', 'EINVAL', 'UNKNOWN']) {
+    assert.equal(isUnlistableEntryError(Object.assign(new Error(code), { code })), true, code)
+  }
+  assert.equal(isUnlistableEntryError(new TypeError('a bug')), false)
+  assert.equal(isUnlistableEntryError(null), false)
+})
+
 test('Git config files show in the tree and in search, the .git folder does not', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'pi-fs-git-files-'))
   execFileSync('git', ['init', '-q'], { cwd: dir })
@@ -352,4 +387,115 @@ test('a monorepo subfolder workspace reports its Git prefix and diffs only its o
   assert.doesNotMatch(diff, /root\.ts|tracked\.ts/)
   assert.equal(await service.getStagedDiff(), '')
   assert.match(await service.getFileDiff('src/new.ts'), /pkg\/app\/src\/new\.ts/)
+})
+
+/**
+ * Names Git quotes in a diff header (non-ASCII, `"`, `\`, control
+ * characters), in a status row (space), or that make `a/X b/X` ambiguous
+ * (` b/`). Windows file names cannot hold `"`, `\`, or control characters.
+ */
+const UNUSUAL_NAMES = [
+  'Meeting notes.md', 'grüße.txt', 'x b/y.txt',
+  ...(process.platform === 'win32' ? [] : ['say "hi".txt', 'back\\slash.txt', 'tab\there.txt', 'new\nline.txt', 'bell\u0007.txt']),
+]
+const UNUSUAL_NEW_FILE = 'neue Datei ü.txt'
+
+async function unusualNamesRepo(): Promise<{ dir: string; git: (...args: string[]) => string; service: FileService }> {
+  const dir = await mkdtemp(join(tmpdir(), 'fs-unusual-names-'))
+  const git = (...args: string[]): string =>
+    execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', ...args], { cwd: dir, encoding: 'utf8' })
+  git('init', '-q')
+  // Pinned locally so a global setting cannot turn rename detection off.
+  git('config', 'diff.renames', 'true')
+  git('config', 'status.renames', 'true')
+  await mkdir(join(dir, 'x b'))
+  for (const name of UNUSUAL_NAMES) await writeFile(join(dir, name), 'one\n')
+  git('add', '.')
+  git('commit', '-q', '-m', 'init')
+  for (const name of UNUSUAL_NAMES) await writeFile(join(dir, name), 'one\ntwo\n')
+  await writeFile(join(dir, UNUSUAL_NEW_FILE), 'new\n')
+  return { dir, git, service: new FileService(dir) }
+}
+
+test('status keys and diff paths are the same raw repository paths for any file name', async () => {
+  const { git, service } = await unusualNamesRepo()
+  const status = await service.getGitStatus()
+  assert.deepEqual([...status.keys()].sort(), [...UNUSUAL_NAMES, UNUSUAL_NEW_FILE].sort())
+  assert.deepEqual(status.get(UNUSUAL_NEW_FILE), { index: '?', worktree: '?', isStaged: false })
+  const working = splitGitDiff(await service.getFileDiff()).map(gitDiffPaths)
+  assert.deepEqual(working.map((paths) => paths?.newPath).sort(), [...status.keys()].sort())
+
+  git('mv', 'Meeting notes.md', 'Notizen ü.md')
+  assert.deepEqual(splitGitDiff(await service.getStagedDiff()).map(gitDiffPaths), [
+    { oldPath: 'Meeting notes.md', newPath: 'Notizen ü.md' },
+  ])
+  assert.equal((await service.getGitStatus()).get('Notizen ü.md')?.index, 'R')
+})
+
+test('a commit from the path list of the Diff view takes every file, whatever its name', async () => {
+  const { dir, git, service } = await unusualNamesRepo()
+  const selection = splitGitDiff(await service.getFileDiff())
+    .map((patch) => gitDiffPaths(patch) ?? assert.fail(`no paths read from ${patch.split('\n', 1)[0]}`))
+  const paths = [...new Set(selection.flatMap(({ oldPath, newPath }) => [oldPath, newPath]))]
+  const newFiles = [...(await service.getGitStatus())].filter(([, status]) => status.index === '?').map(([path]) => path)
+  assert.deepEqual(newFiles, [UNUSUAL_NEW_FILE])
+
+  await commitAll(dir, { message: 'unusual names', paths, newFiles })
+  assert.deepEqual(git('show', '--format=', '--name-only', '-z', 'HEAD').split('\0').filter(Boolean).sort(),
+    [...UNUSUAL_NAMES, UNUSUAL_NEW_FILE].sort())
+  assert.equal(git('status', '--porcelain'), '')
+})
+
+test('user Git diff settings do not change the form of the diffs the Diff view reads', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'fs-diff-config-'))
+  const git = (...args: string[]): void => {
+    execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', ...args], { cwd: dir })
+  }
+  git('init', '-q')
+  const workspace = join(dir, 'pkg', 'app')
+  await mkdir(workspace, { recursive: true })
+  await writeFile(join(workspace, 'a.ts'), 'one\n\nthree\n')
+  await writeFile(join(workspace, 'b.ts'), 'b\n')
+  git('add', '.')
+  git('commit', '-q', '-m', 'init')
+  for (const [key, value] of [
+    ['diff.noprefix', 'true'], ['diff.mnemonicPrefix', 'true'], ['diff.relative', 'true'], ['color.ui', 'always'],
+    ['diff.external', 'echo'], ['diff.submodule', 'log'], ['diff.suppressBlankEmpty', 'true'],
+  ]) git('config', key, value)
+  await writeFile(join(workspace, 'a.ts'), 'one\n\nthree\nfour\n')
+  await writeFile(join(workspace, 'b.ts'), 'b changed\n')
+  git('add', 'pkg/app/b.ts')
+  const service = new FileService(workspace)
+
+  const working = await service.getFileDiff()
+  assert.match(working, /^diff --git a\/pkg\/app\/a\.ts b\/pkg\/app\/a\.ts\n/)
+  assert.match(working, /^ one\n \n three\n\+four$/m, 'a blank context line keeps its leading space')
+  const staged = await service.getStagedDiff()
+  assert.match(staged, /^diff --git a\/pkg\/app\/b\.ts b\/pkg\/app\/b\.ts\n/)
+  for (const diff of [working, staged]) assert.equal(diff.includes(ANSI_ESCAPE), false)
+})
+
+const ANSI_ESCAPE = String.fromCharCode(0x1b)
+
+test('a file diff names its file literally, never as a glob', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'fs-literal-path-'))
+  const git = (...args: string[]): void => {
+    execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', ...args], { cwd: dir })
+  }
+  git('init', '-q')
+  for (const name of ['[id].ts', 'd.ts', 'i.ts']) await writeFile(join(dir, name), 'one\n')
+  git('add', '.')
+  git('commit', '-q', '-m', 'init')
+  for (const name of ['[id].ts', 'd.ts', 'i.ts']) await writeFile(join(dir, name), 'two\n')
+  const patches = splitGitDiff(await new FileService(dir).getFileDiff('[id].ts'))
+  assert.deepEqual(patches.map((patch) => gitDiffPaths(patch)?.newPath), ['[id].ts'])
+})
+
+test('a new-file patch quotes its path exactly the way Git does', () => {
+  assert.match(buildNewFileDiff('grüße.txt', 'x\n'), /^diff --git "a\/gr\\303\\274\\303\\237e\.txt" "b\/gr\\303\\274\\303\\237e\.txt"\n/)
+  assert.match(buildNewFileDiff('say "hi".txt', 'x\n'), /^\+\+\+ "b\/say \\"hi\\"\.txt"$/m)
+  assert.match(buildNewFileDiff('plain name.txt', 'x\n'), /^diff --git a\/plain name\.txt b\/plain name\.txt\n/)
+  for (const name of [...UNUSUAL_NAMES, UNUSUAL_NEW_FILE]) {
+    assert.deepEqual(gitDiffPaths(buildNewFileDiff(name, 'x\n')), { oldPath: name, newPath: name }, name)
+  }
 })

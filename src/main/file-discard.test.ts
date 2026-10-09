@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test, type TestContext } from 'node:test'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readlink, writeFile, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FileService } from './file-service'
@@ -82,6 +82,30 @@ test('symlink targets outside the workspace are never discarded', { skip: proces
   await symlink(join(outside, 'secret'), join(path, 'link'))
   await assert.rejects(service.discardFileDiff(splitGitDiff(await service.getFileDiff())))
   assert.equal(await readFile(join(outside, 'secret'), 'utf8'), 'keep\n')
+})
+
+test('discards tracked and new files whose names have spaces or non-English letters', async (t) => {
+  const { path, git, service } = await repo(t)
+  const tracked = ['Meeting notes.md', 'grüße.txt']
+  for (const name of tracked) await writeFile(join(path, name), 'original\n')
+  git('add', '.')
+  git('commit', '-qm', 'unusual names')
+  for (const name of tracked) await writeFile(join(path, name), 'changed\n')
+  await writeFile(join(path, 'neue Datei ü.txt'), 'new\n')
+  await service.discardFileDiff(splitGitDiff(await service.getFileDiff()))
+  for (const name of tracked) assert.equal(await readFile(join(path, name), 'utf8'), 'original\n')
+  await assert.rejects(readFile(join(path, 'neue Datei ü.txt')), { code: 'ENOENT' })
+})
+
+test('a symbolic link whose target changed is refused, not reset', { skip: process.platform === 'win32' }, async (t) => {
+  const { path, git, service } = await repo(t)
+  await symlink('a.txt', join(path, 'link'))
+  git('add', 'link')
+  git('commit', '-qm', 'link')
+  await rm(join(path, 'link'))
+  await symlink('b.txt', join(path, 'link'))
+  await assert.rejects(service.discardFileDiff(splitGitDiff(await service.getFileDiff())), /cannot be discarded here/)
+  assert.equal(await readlink(join(path, 'link')), 'b.txt')
 })
 
 test('a subdirectory workspace cannot discard changes in the parent repo', async (t) => {

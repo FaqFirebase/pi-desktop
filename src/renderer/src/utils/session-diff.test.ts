@@ -11,7 +11,7 @@ function call(name: string, args: unknown, extra = {}): DisplayMessage {
 }
 
 function diff(path: string) {
-  return { oldPath: path, newPath: path, hunks: ['whole file diff'] }
+  return { paths: { oldPath: path, newPath: path }, hunks: ['whole file diff'] }
 }
 
 test('filters edit/write files while retaining their full diff and order', () => {
@@ -48,8 +48,8 @@ test('does not conflate basenames or outside-workspace paths', () => {
 
 test('handles deleted and renamed files using either Git path', () => {
   const files = [
-    { oldPath: 'old.ts', newPath: 'renamed.ts' },
-    { oldPath: 'deleted.ts', newPath: 'deleted.ts' },
+    { paths: { oldPath: 'old.ts', newPath: 'renamed.ts' } },
+    { paths: { oldPath: 'deleted.ts', newPath: 'deleted.ts' } },
     diff('new.ts'),
   ]
   assert.deepEqual(filterSessionDiffFiles(files, [
@@ -57,6 +57,15 @@ test('handles deleted and renamed files using either Git path', () => {
     call('edit', { path: 'deleted.ts' }),
     call('write', { path: 'new.ts' }),
   ], '/project', ''), files)
+})
+
+test('matches names Git quotes, and never a diff whose paths cannot be read', () => {
+  const files = [diff('grüße.txt'), diff('Meeting notes.md'), { paths: null, hunks: ['unreadable name'] }]
+  assert.deepEqual(filterSessionDiffFiles(files, [
+    call('edit', { path: 'grüße.txt' }),
+    call('write', { path: 'Meeting notes.md' }),
+    call('edit', { path: '"a/caf\\351.txt" "b/caf\\351.txt"' }),
+  ], '/project', ''), files.slice(0, 2))
 })
 
 test('ignores malformed calls, failed results and in-progress writes', () => {

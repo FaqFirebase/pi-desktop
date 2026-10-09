@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import type { GitConveyorStatus, LinkedShipRequest, LinkedTaskRepo } from '../shared/ipc-contracts'
 import {
+  GIT_LINKED_SHIP_OPERATIONS,
   LINKED_PULL_REQUESTS_END,
   LINKED_PULL_REQUESTS_START,
   shipLinkedTask,
@@ -238,6 +243,57 @@ test('a retry with the same checked new files does not commit them again', async
   const retry = await shipLinkedTask([repo('app', 'main'), repo('lib')], { ...request, repos: ['app'] }, fake.operations)
   assert.deepEqual(retry.repos.map((item) => [item.name, item.outcome]), [['app', 'shipped']])
   assert.equal(fake.calls.some((call) => call.startsWith('commit')), false, 'the committed file is not committed again')
+})
+
+test('ship all opens a pull request for a branch started from the remote base branch, which it never moves', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'pi-linked-ship-'))
+  try {
+    const remote = join(folder, 'remote.git')
+    const work = join(folder, 'work')
+    const git = (args: string[], cwd = work): string => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf-8' })
+      assert.equal(result.status, 0, result.stderr)
+      return result.stdout.trim()
+    }
+    git(['init', '--bare', remote], folder)
+    git(['init', work], folder)
+    git(['config', 'user.email', 'pi-desktop@example.test'])
+    git(['config', 'user.name', 'Pi Desktop Tests'])
+    git(['checkout', '-b', 'main'])
+    await writeFile(join(work, 'api.ts'), 'v0\n', 'utf8')
+    git(['add', 'api.ts'])
+    git(['commit', '-m', 'initial'])
+    git(['remote', 'add', 'origin', remote])
+    git(['push', '--set-upstream', 'origin', 'main'])
+    git(['remote', 'set-head', 'origin', 'main'])
+    // What `git checkout -b feat origin/main` sets up with the default branch.autoSetupMerge.
+    git(['checkout', '--track', '-b', 'feat', 'origin/main'])
+    await writeFile(join(work, 'api.ts'), 'v1\n', 'utf8')
+    const base = git(['rev-parse', 'refs/heads/main'], remote)
+
+    // Real git for every step; only the GitHub side is stubbed.
+    const onGitHub = (next: GitConveyorStatus): GitConveyorStatus => ({ ...next, pullRequestRepo: 'o/work' })
+    const created: string[] = []
+    const url = 'https://github.com/o/work/pull/7'
+    const operations: LinkedShipOperations = {
+      ...GIT_LINKED_SHIP_OPERATIONS,
+      status: async (cwd) => onGitHub(await GIT_LINKED_SHIP_OPERATIONS.status(cwd)),
+      commit: async (cwd, options) => onGitHub(await GIT_LINKED_SHIP_OPERATIONS.commit(cwd, options)),
+      push: async (cwd) => onGitHub(await GIT_LINKED_SHIP_OPERATIONS.push(cwd)),
+      createPullRequest: async (cwd, options) => {
+        created.push(`${cwd} ${options.title}`)
+        return { url, output: url }
+      },
+    }
+    const result = await shipLinkedTask([{ ...repo('work', 'main'), workPath: work, branch: 'feat', managed: false }], REQUEST, operations)
+
+    assert.deepEqual(result.repos, [{ name: 'work', outcome: 'shipped', pullRequestUrl: url }])
+    assert.deepEqual(created, [`${work} ${REQUEST.title}`])
+    assert.equal(git(['rev-parse', 'refs/heads/main'], remote), base)
+    assert.equal(git(['rev-parse', 'refs/heads/feat'], remote), git(['rev-parse', 'HEAD']))
+  } finally {
+    await rm(folder, { recursive: true, force: true })
+  }
 })
 
 test('with no remote base, changes on main or master are refused too', async () => {

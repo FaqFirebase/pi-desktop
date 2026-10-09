@@ -5,6 +5,7 @@ import { join } from 'path'
 import type { AgentEngineKind, GitCommitMessageError } from '../shared/ipc-contracts'
 import { GIT_COMMIT_MESSAGE_CONFIG } from '../shared/default-settings'
 import { formatUntrustedBlock } from '../shared/untrusted-data'
+import { gitDiffPaths } from '../shared/git-diff'
 import { appLog } from './app-log'
 import { CommitMessageGenerationError } from './commit-message-service'
 import { buildPiInvocation, getPiCliForEngine, type PiRpcManager } from './pi-rpc-manager'
@@ -45,8 +46,9 @@ export function buildCommitMessageArgs(model: CommitMessageModel): string[] {
 
 const BINARY_PATCH_MARKER = '\nGIT binary patch\n'
 
+/** The file a patch changes, exact for any name; the section's first line when no path can be read. */
 function changedPath(section: string): string {
-  return /^diff --git a\/.* b\/(.*)$/m.exec(section)?.[1] ?? section.split('\n', 1)[0]
+  return gitDiffPaths(section)?.newPath ?? section.split('\n', 1)[0]
 }
 
 /** Longest whole-line prefix of `text` that fits in `maxBytes`. */
@@ -68,6 +70,7 @@ function takeLines(text: string, maxBytes: number): string {
  * budget is shared across files so a large first file cannot hide every other change.
  */
 export function summarizeDiffForPrompt(diff: string, maxBytes: number): string {
+  // Not splitGitDiff: text that is not a patch must still reach the prompt.
   const sections = diff.split(/^(?=diff --git )/m).filter((section) => section.trim()).map((section) => {
     const binary = section.indexOf(BINARY_PATCH_MARKER)
     return binary === -1 ? section : `${section.slice(0, binary)}\nBinary file changed\n`

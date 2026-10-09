@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { t } from '../../../shared/i18n'
-import { canDiscardGitPatch, gitDiffPaths, splitGitDiff } from '../../../shared/git-diff'
+import {
+  canDiscardGitPatch, gitDiffHeaderNames, gitDiffPaths, splitGitDiff, type GitDiffPaths,
+} from '../../../shared/git-diff'
 import { clsx } from 'clsx'
 import {
   AlertTriangle,
@@ -37,8 +39,14 @@ interface DiffLine {
 
 interface DiffFileBlock {
   patch: string
-  oldPath: string
-  newPath: string
+  /**
+   * Repository-root paths of both sides, the same strings as the status keys.
+   * Null when Git names a path that cannot be read exactly (not UTF-8): such
+   * a file is shown, but never committed, discarded, or opened by a guess.
+   */
+  paths: GitDiffPaths | null
+  /** The new path, or Git's own header text when the paths cannot be read. */
+  label: string
   isNew: boolean
   isDeleted: boolean
   hunks: DiffLine[][]
@@ -275,16 +283,16 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
           <div className="p-4 space-y-2">
             {visibleFiles.map((file) => (
               <DiffFileEntry
-                key={file.newPath}
+                key={file.label}
                 file={file}
                 gitPrefix={gitPrefix}
-                expanded={expandedFiles.has(file.newPath)}
-                onToggle={() => toggleFile(file.newPath)}
+                expanded={expandedFiles.has(file.label)}
+                onToggle={() => toggleFile(file.label)}
                 onDiscard={() => void discard([file])}
                 discardDisabled={discarding || stagedMode || !canDiscardGitPatch(file.patch)}
                 discardTitle={stagedMode ? t('diff.discard.workingOnly')
                   : !canDiscardGitPatch(file.patch) ? t('diff.discard.unsupported')
-                    : t('diff.discard.file', { path: file.newPath })}
+                    : t('diff.discard.file', { path: file.label })}
               />
             ))}
           </div>
@@ -294,13 +302,15 @@ export function DiffViewer({ onClose }: DiffViewerProps = {}): React.JSX.Element
   )
 }
 
-function diffCommitSelection(files: readonly Pick<DiffFileBlock, 'oldPath' | 'newPath'>[]): GitCommitSelection {
-  return { files: files.length, paths: [...new Set(files.flatMap((file) => [file.oldPath, file.newPath]))] }
+/** What Commit records for the files on screen: both sides of every readable patch. */
+export function diffCommitSelection(files: readonly Pick<DiffFileBlock, 'paths'>[]): GitCommitSelection {
+  const paths = files.flatMap((file) => file.paths ? [file.paths.oldPath, file.paths.newPath] : [])
+  return { files: files.length, paths: [...new Set(paths)] }
 }
 
 export async function discardDiffFiles(
   workspaceId: string,
-  files: Pick<DiffFileBlock, 'oldPath' | 'newPath' | 'patch'>[],
+  files: Pick<DiffFileBlock, 'paths' | 'label' | 'patch'>[],
   gitPrefix: string,
 ): Promise<boolean> {
   const store = useAppStore.getState()
@@ -308,7 +318,7 @@ export async function discardDiffFiles(
   if (store.editorDirty) throw new Error(t('diff.discard.saveEditor'))
   const confirmed = await store.requestConfirm({
     title: t('diff.discard.title', { count: files.length }),
-    message: t('diff.discard.message', { count: files.length, files: files.map((file) => file.newPath).join('\n') }),
+    message: t('diff.discard.message', { count: files.length, files: files.map((file) => file.label).join('\n') }),
     confirmLabel: t('diff.discard.confirm'),
     cancelLabel: t('common.cancel'),
     danger: true,
@@ -319,17 +329,18 @@ export async function discardDiffFiles(
   const current = useAppStore.getState()
   const opened = current.previewTarget?.relativePath
   if (current.activeWorkspace?.id === workspaceId && !current.editorDirty && opened !== undefined
-    && files.some((file) => [file.newPath, file.oldPath].some((path) => workspaceRelativeGitPath(path, gitPrefix) === opened))) {
+    && files.some((file) => file.paths && [file.paths.newPath, file.paths.oldPath]
+      .some((path) => workspaceRelativeGitPath(path, gitPrefix) === opened))) {
     await current.setPreviewTarget(null)
   }
   return true
 }
 
-type OpenableDiffFile = Pick<DiffFileBlock, 'newPath' | 'isDeleted'>
+type OpenableDiffFile = Pick<DiffFileBlock, 'paths' | 'isDeleted'>
 
-/** The file's workspace-relative path, or null when it is deleted or outside the workspace. */
+/** The file's workspace-relative path, or null when it is deleted, unreadable, or outside the workspace. */
 function openableDiffPath(file: OpenableDiffFile, gitPrefix: string): string | null {
-  return file.isDeleted ? null : workspaceRelativeGitPath(file.newPath, gitPrefix)
+  return file.isDeleted || !file.paths ? null : workspaceRelativeGitPath(file.paths.newPath, gitPrefix)
 }
 
 /** Open a diff file in the chat preview; `gitPrefix` maps its repository-root path onto the workspace. */
@@ -379,7 +390,7 @@ function DiffFileEntry({
         >
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           <File size={14} className="shrink-0 text-dim" />
-          <span className="text-xs text-primary truncate">{file.newPath}</span>
+          <span className="text-xs text-primary truncate">{file.label}</span>
           <div className="ml-auto flex items-center gap-2 text-xs">
             {file.isNew && (
               <span className="rounded bg-success-bg px-1.5 py-0.5 text-success">{t('diff.newFileBadge')}</span>
@@ -400,7 +411,7 @@ function DiffFileEntry({
           onClick={onDiscard}
           disabled={discardDisabled}
           title={discardTitle}
-          aria-label={t('diff.discard.file', { path: file.newPath })}
+          aria-label={t('diff.discard.file', { path: file.label })}
           className="mr-2 shrink-0 rounded p-1.5 text-dim transition-colors hover:bg-error-bg hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Undo2 size={14} />
@@ -468,7 +479,7 @@ function DiffHunk({ lines }: { lines: DiffLine[] }): React.JSX.Element {
 
 // ─── Diff Parser ─────────────────────────────────────────────────────────────
 
-function parseDiff(diffText: string): DiffFileBlock[] {
+export function parseDiff(diffText: string): DiffFileBlock[] {
   if (!diffText.trim()) return []
 
   const files: DiffFileBlock[] = []
@@ -477,8 +488,7 @@ function parseDiff(diffText: string): DiffFileBlock[] {
   for (const block of fileBlocks) {
     const lines = block.split('\n')
     const paths = gitDiffPaths(block)
-    const oldPath = paths?.oldPath ?? 'unknown'
-    const newPath = paths?.newPath ?? oldPath
+    const label = paths?.newPath ?? gitDiffHeaderNames(block)
 
     const isNew = lines.some((l) => l.startsWith('new file mode'))
     const isDeleted = lines.some((l) => l.startsWith('deleted file mode'))
@@ -515,7 +525,7 @@ function parseDiff(diffText: string): DiffFileBlock[] {
 
     if (currentHunk.length > 0) hunks.push(currentHunk)
 
-    files.push({ patch: block, oldPath, newPath, isNew, isDeleted, hunks })
+    files.push({ patch: block, paths, label, isNew, isDeleted, hunks })
   }
 
   return files

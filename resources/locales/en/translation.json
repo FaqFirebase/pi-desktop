@@ -529,7 +529,7 @@
       "stale": "The selected changes are no longer current. Refresh the diff and review it again.",
       "title_one": "Discard shown change?",
       "title_other": "Discard shown changes?",
-      "unsupported": "This diff cannot be discarded here. Binary files, symlinks, submodules and escaped paths are not supported.",
+      "unsupported": "This diff cannot be discarded here. Binary files, symlinks, submodules and file names that are not valid UTF-8 are not supported.",
       "workingOnly": "Switch to Working to discard unstaged changes."
     },
     "fileCount_one": "{{count}} file",
@@ -594,6 +594,7 @@
       "commitSelectionOutsideWorkspace": "The files selected to commit must be inside the active workspace",
       "detachedHeadCommit": "Cannot commit from a detached HEAD",
       "detachedHeadPush": "Cannot push from a detached HEAD",
+      "ignoredFilesBlockSwitch": "Switching to {{branch}} would overwrite or delete these local files, which Git does not show as changes. Move them out of the way, then switch again:\n{{files}}",
       "localBranchRequired": "Choose an existing local branch",
       "namedBranchRequired": "A named branch is required to create a pull request",
       "newFileNotCommittable": "{{path}} cannot be committed: it is not a new file in the selected changes, or Git ignores it",

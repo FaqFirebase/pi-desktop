@@ -518,7 +518,7 @@
       "saveEditor": "请先保存或关闭有未保存更改的编辑器。",
       "stale": "所选更改已发生变化。请刷新差异并重新检查。",
       "title_other": "放弃所显示的更改？",
-      "unsupported": "无法在此放弃该差异。不支持二进制文件、符号链接、子模块和转义路径。",
+      "unsupported": "无法在此放弃该差异。不支持二进制文件、符号链接、子模块以及不是有效 UTF-8 的文件名。",
       "workingOnly": "切换到未暂存视图以放弃未暂存更改。"
     },
     "fileCount_other": "{{count}} 个文件",
@@ -582,6 +582,7 @@
       "commitSelectionOutsideWorkspace": "要提交的文件必须位于当前工作区内",
       "detachedHeadCommit": "无法在分离 HEAD 状态下提交",
       "detachedHeadPush": "无法在分离 HEAD 状态下推送",
+      "ignoredFilesBlockSwitch": "切换到 {{branch}} 会覆盖或删除以下本地文件（Git 不会把它们显示为更改）。请先将它们移走，然后再切换：\n{{files}}",
       "localBranchRequired": "请选择一个现有的本地分支",
       "namedBranchRequired": "创建 PR 需要一个具名分支",
       "newFileNotCommittable": "无法提交 {{path}}：它不是所选更改中的新文件，或被 Git 忽略",

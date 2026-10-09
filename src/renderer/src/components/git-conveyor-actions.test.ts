@@ -370,6 +370,20 @@ test('commit + push asks the push confirmation only after the commit, then pushe
   assert.equal(useAppStore.getState().confirmRequest, null)
 })
 
+test('the push confirmation names the branch itself when the status reports no upstream for Push to update', async () => {
+  // A branch started from origin/main: Push publishes it as origin/feat instead.
+  window.piDesktop.git.commit = async () => ({ ...committedStatus, branch: 'feat', upstreamBranch: null })
+  let message: string | undefined
+  const unsubscribe = useAppStore.subscribe((state) => {
+    if (!state.confirmRequest) return
+    unsubscribe()
+    message = state.confirmRequest.message
+    state.resolveConfirm(false)
+  })
+  await commitConveyorChanges('Fix bug', true)
+  assert.equal(message, 'Push feat to origin/feat?')
+})
+
 test('declining the push confirmation keeps the commit and never pushes', async () => {
   answerPushConfirmation(false)
   assert.deepEqual(await commitConveyorChanges('Fix bug', true), { status: committedStatus, pushed: false })

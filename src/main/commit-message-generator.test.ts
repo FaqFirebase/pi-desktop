@@ -163,6 +163,16 @@ test('large diffs share a strict UTF-8 budget across files and mark omitted deta
   assert.match(result, /Diff shortened/)
 })
 
+test('the changed-file list names each file exactly, whatever Git had to quote', () => {
+  const result = summarizeDiffForPrompt(
+    'diff --git a/docs/a b/c.md b/docs/a b/c.md\n+one\n'
+      + 'diff --git "a/gr\\303\\274\\303\\237e.txt" "b/gr\\303\\274\\303\\237e.txt"\n+two\n'
+      + 'diff --git a/old.ts b/new.ts\nsimilarity index 90%\nrename from old.ts\nrename to new.ts\n',
+    1000,
+  )
+  assert.match(result, /^Changed files \(3\):\ndocs\/a b\/c\.md\ngrüße\.txt\nnew\.ts\n/)
+})
+
 test('binary payload is omitted but the changed file and text diffs remain represented', () => {
   const result = summarizeDiffForPrompt('diff --git a/pic.png b/pic.png\nGIT binary patch\nopaque payload\n'
     + 'diff --git a/app.ts b/app.ts\n+fix behavior\n', 1000)

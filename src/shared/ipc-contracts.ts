@@ -335,7 +335,11 @@ export interface GitConveyorStatus {
   hasUpstream: boolean
   /** Remote branch used by the explicit push target, when configured. */
   pushRemote: string | null
-  /** Branch configured as this branch's upstream, when one exists. */
+  /**
+   * Upstream branch that Push updates. Null when Push publishes the branch
+   * under its own name: no upstream, or an upstream that is the remote's base
+   * branch under another name.
+   */
   upstreamBranch: string | null
   /** Default base branch discovered from the upstream remote, when available. */
   baseBranch: string | null
