@@ -25,7 +25,7 @@ import { useContextMenu, buildDefaultContextMenu } from './components/context-me
 import { usePiEvents, useMenuActions, useInitialize } from './hooks'
 import { useFolderDrop } from './hooks/use-folder-drop'
 import { useAppStore } from './store'
-import { handleAppShortcut, handleAppShortcutRelease, releasePushToTalk } from './utils/app-shortcuts'
+import { handleAppShortcut, handleAppShortcutAfterTarget, handleAppShortcutRelease, releasePushToTalk } from './utils/app-shortcuts'
 import { emitVoiceShortcut } from './voice/voice-shortcut'
 import { useEffect } from 'react'
 import { ArrowUpCircle, FolderOpen, PanelLeft, X } from 'lucide-react'
@@ -74,11 +74,14 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     document.addEventListener('keydown', handleAppShortcut, true)
+    // Bubble phase: the code editor and the terminal handle their own keys first.
+    document.addEventListener('keydown', handleAppShortcutAfterTarget)
     document.addEventListener('keyup', handleAppShortcutRelease, true)
     window.addEventListener('blur', releasePushToTalk)
     const unsubscribeVoiceShortcut = window.piDesktop.voice.onShortcut(() => emitVoiceShortcut('toggle'))
     return () => {
       document.removeEventListener('keydown', handleAppShortcut, true)
+      document.removeEventListener('keydown', handleAppShortcutAfterTarget)
       document.removeEventListener('keyup', handleAppShortcutRelease, true)
       window.removeEventListener('blur', releasePushToTalk)
       unsubscribeVoiceShortcut()

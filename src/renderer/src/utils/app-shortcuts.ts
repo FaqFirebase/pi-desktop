@@ -8,8 +8,16 @@ import { requestCommitPushDialog } from './commit-push-shortcut'
 import { adjacentTabIndex, projectTabs, sessionTabs } from './tab-navigation'
 import { emitVoiceShortcut } from '../voice/voice-shortcut'
 
-/** Actions that run once per key press; the voice keys are handled in handleAppShortcut. */
+/** Actions that run once per key press; the voice keys are handled in dispatchAppShortcut. */
 type CommandShortcutAction = Exclude<ShortcutAction, 'pushToTalk' | 'globalDictation'>
+
+/** The document listener that gets the key: before the focused element ('capture') or after it ('bubble'). */
+type ShortcutListenerPhase = 'capture' | 'bubble'
+
+const SHORTCUT_RECORDER_SELECTOR = '[data-shortcut-recorder]'
+// Root elements of the CodeMirror code editor and the xterm terminal.
+const CODE_EDITOR_SELECTOR = '.cm-editor'
+const TERMINAL_SELECTOR = '.xterm'
 
 // The push-to-talk binding while its key is held down, so the matching key-up ends it.
 let heldPushToTalk: string | null = null
@@ -102,9 +110,33 @@ export async function runAppShortcut(action: CommandShortcutAction): Promise<voi
   }
 }
 
-/** Capture before editors/terminals consume app shortcuts, except while recording a new binding. */
-export function handleAppShortcut(event: KeyboardEvent): void {
-  if (event.defaultPrevented || (event.target instanceof Element && event.target.closest('[data-shortcut-recorder]'))) return
+function targetIsWithin(event: KeyboardEvent, selector: string): boolean {
+  return event.target instanceof Element && event.target.closest(selector) !== null
+}
+
+/** Ctrl with no other modifier: the keys that xterm can send to the shell as control characters. */
+function isPlainCtrlChord(event: KeyboardEvent): boolean {
+  return event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey
+}
+
+/**
+ * The listener that runs the shortcut `event` matches. In the code editor, the bubble listener
+ * for every key, so the editor's own commands (indent, find next, fold) keep their keys. In the
+ * terminal, the bubble listener for plain Ctrl chords: xterm sends Ctrl+K, Ctrl+B (the tmux
+ * prefix) or Ctrl+[ (Escape) to the shell and stops the event, and lets a chord it has no
+ * character for (Ctrl+Comma) bubble on. The terminal toggle never waits, so it closes the
+ * terminal from inside it. All other keys, the capture listener.
+ */
+function shortcutPhase(event: KeyboardEvent, action: ShortcutAction): ShortcutListenerPhase {
+  if (targetIsWithin(event, CODE_EDITOR_SELECTOR)) return 'bubble'
+  const terminalKey = action !== 'terminal' && isPlainCtrlChord(event) && targetIsWithin(event, TERMINAL_SELECTOR)
+  return terminalKey ? 'bubble' : 'capture'
+}
+
+/** The one dispatch path of both listeners: each runs only the shortcuts that belong to its phase. */
+function dispatchAppShortcut(event: KeyboardEvent, phase: ShortcutListenerPhase): void {
+  // Already handled (in the bubble phase, also a key that ran a code editor command), or being recorded.
+  if (event.defaultPrevented || targetIsWithin(event, SHORTCUT_RECORDER_SELECTOR)) return
   const state = useAppStore.getState()
   const shortcuts = activeShortcuts(state)
   const platform = window.piDesktop.system.platform
@@ -112,6 +144,7 @@ export function handleAppShortcut(event: KeyboardEvent): void {
   const action = SHORTCUT_ACTIONS.find((candidate) => matchesShortcut(event, shortcuts[candidate], platform))
   // The main process owns the system-wide dictation key.
   if (!action || action === 'globalDictation') return
+  if (shortcutPhase(event, action) !== phase) return
   event.preventDefault()
   event.stopPropagation()
   if (event.repeat) return
@@ -121,6 +154,16 @@ export function handleAppShortcut(event: KeyboardEvent): void {
     return
   }
   void runAppShortcut(action)
+}
+
+/** Capture phase: runs before the composer, inputs and dialogs can take the key. */
+export function handleAppShortcut(event: KeyboardEvent): void {
+  dispatchAppShortcut(event, 'capture')
+}
+
+/** Bubble phase: runs a shortcut that waits for the code editor or the terminal, when they leave its key alone. */
+export function handleAppShortcutAfterTarget(event: KeyboardEvent): void {
+  dispatchAppShortcut(event, 'bubble')
 }
 
 /** Letting go of the push-to-talk key or one of its modifiers ends the recording. */

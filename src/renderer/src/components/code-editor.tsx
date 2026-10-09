@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { basicSetup, EditorView } from 'codemirror'
+import { EditorView } from '@codemirror/view'
 import { syntaxHighlighting } from '@codemirror/language'
 import { getCodeEditorLanguageExtensions } from './code-editor-language'
+import { codeEditorSetup } from './code-editor-setup'
 import { themedHighlightStyle } from './code-editor-highlight'
 import { useAppStore } from '../store'
 import { useAppliedThemeId } from '../hooks'
@@ -103,12 +104,12 @@ export function CodeEditor({
       doc: value,
       parent: containerRef.current,
       extensions: [
-        basicSetup,
+        codeEditorSetup,
         gitGutter,
         ...getCodeEditorLanguageExtensions(filePath),
-        // Must NOT be { fallback: true } — basicSetup registers
-        // defaultHighlightStyle as non-fallback, so a fallback registration
-        // here would lose to its near-grayscale palette.
+        // Must NOT be { fallback: true } — codeEditorSetup already registers
+        // defaultHighlightStyle as the fallback, so a second fallback here
+        // would lose to its near-grayscale palette.
         syntaxHighlighting(themedHighlightStyle),
         EditorView.editable.of(!readOnly),
         EditorView.lineWrapping,
