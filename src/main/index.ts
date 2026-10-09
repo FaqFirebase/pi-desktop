@@ -3,6 +3,8 @@ import { existsSync, mkdirSync } from 'fs'
 import { basename, dirname, join, resolve as resolvePath } from 'path'
 import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
 import { workspaceTrustStore } from './workspace-trust'
+import { PREVIEW_PARTITIONS } from '../shared/preview-partitions'
+import { isBlockedPreviewRequest, previewGuestPreferences } from './preview-guest'
 import { WorkspaceManager } from './workspace-manager'
 import type { WorkspaceTerminals } from './workspace-terminals'
 import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
@@ -50,11 +52,6 @@ const MIN_WINDOW_WIDTH = 800
 const MIN_WINDOW_HEIGHT = 600
 const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL
 const PRELOAD_PATH = join(__dirname, '../preload/index.js')
-// <webview> partitions used by the file preview (see file-tree.tsx). The HTML
-// preview renders untrusted workspace files with scripts and network disabled;
-// the PDF preview needs pdfium (plugins) and is confined to file:// only.
-const HTML_PREVIEW_PARTITION = 'preview'
-const PDF_PREVIEW_PARTITION = 'persist:pdf-preview'
 
 // In dev: resources/ sits at the project root (app.getAppPath()).
 // In packaged: extraResources config copies resources/ into process.resourcesPath/resources/.
@@ -165,19 +162,23 @@ function isActiveWorkspaceTrusted(): boolean {
 }
 
 /**
- * For an untrusted workspace, confine the HTML file-preview guest to local files:
- * block every non-file request on its partition so malicious workspace HTML
- * cannot beacon out or pull remote resources. Combined with scripts-disabled for
- * untrusted previews (see will-attach-webview), this closes the exfiltration path.
- * A trusted workspace's own pages may load resources normally (interactive preview).
+ * For an untrusted workspace, confine both file-preview partitions (HTML and
+ * PDF) to local files: cancel every other request, so malicious workspace files
+ * cannot beacon out or pull remote resources. The PDF partition also refuses
+ * every file that is not a PDF and lets through only the built-in viewer's own
+ * files (see isBlockedPreviewRequest). Combined with scripts-disabled for
+ * untrusted HTML previews (see will-attach-webview), this closes the
+ * exfiltration path. A trusted workspace's own pages may load resources
+ * normally (interactive preview).
  */
 function hardenPreviewSession(): void {
-  session
-    .fromPartition(HTML_PREVIEW_PARTITION)
-    .webRequest.onBeforeRequest((details, callback) => {
-      const blocked = !details.url.startsWith('file://') && !isActiveWorkspaceTrusted()
-      callback({ cancel: blocked })
+  for (const partition of PREVIEW_PARTITIONS) {
+    session.fromPartition(partition).webRequest.onBeforeRequest((details, callback) => {
+      callback({
+        cancel: isBlockedPreviewRequest({ partition, url: details.url, workspaceTrusted: isActiveWorkspaceTrusted() }),
+      })
     })
+  }
 }
 
 function createMainWindow(): BrowserWindow {
@@ -265,10 +266,11 @@ function createMainWindow(): BrowserWindow {
     event.preventDefault()
   })
 
-  // Harden the HTML file-preview <webview> guest before Electron attaches it:
-  // strip any preload/Node access it might request and reject anything that
-  // isn't the local `file://` preview it's meant for. Defense-in-depth against
-  // a renderer XSS trying to attach a guest with elevated webPreferences.
+  // Harden the file-preview <webview> guests (HTML and PDF) before Electron
+  // attaches them: strip any preload/Node access they might request and reject
+  // anything that isn't the local `file://` preview they're meant for.
+  // Defense-in-depth against a renderer XSS trying to attach a guest with
+  // elevated webPreferences.
   window.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     delete webPreferences.preload
     webPreferences.nodeIntegration = false
@@ -278,15 +280,19 @@ function createMainWindow(): BrowserWindow {
     webPreferences.webSecurity = true
     webPreferences.allowRunningInsecureContent = false
 
-    // Only the PDF preview needs pdfium (plugins). For the HTML preview, scripts
-    // run only when the workspace is trusted (interactive preview of your own
-    // project); for an untrusted workspace scripts are disabled so — with sandbox
-    // + webSecurity above and the partition's network block — malicious preview
-    // HTML cannot read other local files or exfiltrate data.
-    const isPdfPreview =
-      params.partition === PDF_PREVIEW_PARTITION || /\.pdf(?:[?#]|$)/i.test(params.src)
-    webPreferences.plugins = isPdfPreview
-    if (!isPdfPreview && !isActiveWorkspaceTrusted()) {
+    // Only the PDF preview (the PDF partition with a src that loads a .pdf file)
+    // gets pdfium (plugins), and it keeps scripts for the viewer. For any other
+    // guest, scripts run only when the workspace is trusted (interactive preview
+    // of your own project); for an untrusted workspace scripts are disabled so —
+    // with sandbox + webSecurity above and the partitions' network block —
+    // malicious preview HTML cannot read other local files or exfiltrate data.
+    const preferences = previewGuestPreferences({
+      partition: params.partition,
+      src: params.src,
+      workspaceTrusted: isActiveWorkspaceTrusted(),
+    })
+    webPreferences.plugins = preferences.plugins
+    if (!preferences.javascript) {
       webPreferences.javascript = false
     }
 
@@ -463,7 +469,7 @@ app.whenReady().then(async () => {
   // Honor PI_DESKTOP_WORKSPACE if set: switch to (or create) the named workspace.
   await applyWorkspaceFromEnv(workspaceManager)
 
-  // Lock the HTML preview partition to local files before any preview can load.
+  // Lock both preview partitions to local files before any preview can load.
   hardenPreviewSession()
 
   // Serve downloaded speech-model files to the renderer. The handler streams

@@ -6,6 +6,8 @@ import { createDebouncedBuffer } from '../utils/debounced-buffer'
 import { createStaleGuard } from '../utils/stale-guard'
 import { toPreviewLoadError, type PreviewLoadError } from '../utils/preview-load-error'
 import type { FileTreeNode, GitFileStatus, FileSearchResult } from '../../../shared/ipc-contracts'
+import { toFileUrl } from '../../../shared/file-url'
+import { HTML_PREVIEW_PARTITION, PDF_PREVIEW_PARTITION } from '../../../shared/preview-partitions'
 import { CodeEditor } from './code-editor'
 import { MarkdownRenderer } from './markdown-renderer'
 import { isImagePath } from './chat-file-link'
@@ -35,12 +37,6 @@ import { isImeComposing } from '../utils/ime-composing'
 const Webview = 'webview' as unknown as React.FC<
   React.HTMLAttributes<HTMLElement> & { src: string; partition?: string; plugins?: boolean }
 >
-
-function toFileUrl(absolutePath: string): string {
-  let p = absolutePath.replace(/\\/g, '/')
-  if (!p.startsWith('/')) p = '/' + p // Windows "C:/…" -> "/C:/…"
-  return encodeURI('file://' + p)
-}
 
 // ─── File Tree ───────────────────────────────────────────────────────────────
 
@@ -710,7 +706,7 @@ export function FilePreview(): React.JSX.Element | null {
             // Ask Chromium's PDF viewer to open with both the thumbnail/bookmark
             // sidebar and the top toolbar hidden, for a clean embedded preview.
             src={`${toFileUrl(path)}#toolbar=0&navpanes=0`}
-            partition="persist:pdf-preview"
+            partition={PDF_PREVIEW_PARTITION}
             plugins
             className="flex-1"
             style={{ display: 'flex', width: '100%', height: '100%', border: 'none' }}
@@ -751,7 +747,7 @@ export function FilePreview(): React.JSX.Element | null {
             <Webview
               key={reloadKey}
               src={toFileUrl(path)}
-              partition="preview"
+              partition={HTML_PREVIEW_PARTITION}
               className="flex-1"
               style={{ display: 'flex', width: '100%', height: '100%', border: 'none' }}
             />
