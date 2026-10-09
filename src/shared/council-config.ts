@@ -226,8 +226,8 @@ export function buildDebatePrompt(
  * Spawn argv for a consultant in read-only mode. Flags verified per CLI.
  *
  * The prompt is NEVER included here: it is delivered to the child over stdin
- * (see defaultSpawnConsultant). On Windows the args pass through cmd.exe (a
- * shell is required to launch the `.cmd` shims), so putting untrusted plan text
+ * (see defaultSpawnConsultant). A Windows `.cmd` shim gets the args through
+ * cmd.exe (a shell is required to launch it), so putting untrusted plan text
  * on the command line would allow shell-metacharacter injection. Keeping only
  * static flags in argv closes that vector.
  */

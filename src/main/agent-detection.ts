@@ -1,10 +1,11 @@
 import { existsSync } from 'fs'
-import { join, delimiter as PATH_DELIMITER } from 'path'
+import { join } from 'path'
 import { spawnSync } from 'child_process'
 import type { CouncilAgentId } from '../shared/council-config'
 import { COUNCIL_AGENT_IDS } from '../shared/council-config'
 import { buildNpmPrefixCommand } from './cmd-escape'
-import { getPiCli } from './pi-rpc-manager'
+import { whichInPath } from './pi-binary-resolution'
+import { getPiCli, RESOLUTION_DEPS } from './pi-rpc-manager'
 
 const IS_WINDOWS = process.platform === 'win32'
 
@@ -48,20 +49,6 @@ export function candidatePaths(id: CouncilAgentId, platform: PlatformInfo): stri
   return out
 }
 
-function whichInPath(name: string): string | null {
-  const pathDirs = (process.env.PATH ?? '').split(PATH_DELIMITER).filter(Boolean)
-  const exts = IS_WINDOWS
-    ? (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').map((e) => e.toLowerCase())
-    : ['']
-  for (const dir of pathDirs) {
-    for (const ext of exts) {
-      const candidate = join(dir, name + ext)
-      if (existsSync(candidate)) return candidate
-    }
-  }
-  return null
-}
-
 function npmGlobalPrefix(): string | null {
   try {
     const command = buildNpmPrefixCommand(IS_WINDOWS)
@@ -86,8 +73,9 @@ function resolveAgent(id: CouncilAgentId): string | null {
     if (configured.found) return configured.script
   }
   const base = AGENT_BINARIES[id]
-  // 1. PATH (respects PATHEXT on Windows)
-  const fromPath = whichInPath(base)
+  // 1. PATH (respects PATHEXT on Windows; skips relative entries, which the
+  //    workspace could supply)
+  const fromPath = whichInPath(RESOLUTION_DEPS, base, process.env.PATH ?? '')
   if (fromPath) return fromPath
   // 2. npm global prefix
   const prefix = npmGlobalPrefix()

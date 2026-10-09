@@ -23,6 +23,11 @@ import { VOICE_PROTOCOL_SCHEME, handleVoiceProtocolRequest } from './voice-proto
 import { getVoiceModelsDir } from './voice-model-store'
 import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
 import { getSettingsPath } from './ipc/settings'
+import { disableCwdExecutableSearch } from './windows-exe-search'
+
+// First, before anything spawns: Windows must never run a program from the
+// working directory (usually the workspace) when it is started by bare name.
+disableCwdExecutableSearch(process.env, process.platform)
 
 // Env var honored on startup: if set, the named directory becomes the active
 // workspace (created on first run, switched to on subsequent runs). The CLI

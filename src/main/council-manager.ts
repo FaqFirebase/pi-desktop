@@ -1,20 +1,22 @@
 import { spawn } from 'child_process'
 import { StringDecoder } from 'string_decoder'
-import type { CouncilAgentId, ConsensusMode, ConsultantResult, CouncilPiEngine } from '../shared/council-config'
+import type { CouncilAgentId, ConsensusMode, ConsultantResult } from '../shared/council-config'
 import {
   buildConsultantPrompt,
   buildConsensusPrompt,
   buildArbiterRevisionPrompt,
   buildDebatePrompt,
   buildConsultantCommand,
+  councilAgentLabel,
   parseClaudeStreamLine,
   parseCodexStreamLine,
   parsePiStreamLine,
 } from '../shared/council-config'
 import { detectAgents } from './agent-detection'
 import { escapeCmdSpawn } from './cmd-escape'
-import { getPiCli } from './pi-rpc-manager'
-import { loadPiDotenv } from './pi-dotenv'
+import { describePiStartFailure, isCmdShim } from './pi-binary-resolution'
+import { buildPiInvocation, buildPiRunEnv, getPiCli, type PiCli } from './pi-rpc-manager'
+import { childProcessEnv } from './windows-exe-search'
 import { t } from '../shared/i18n'
 
 const IS_WINDOWS = process.platform === 'win32'
@@ -133,42 +135,83 @@ export async function runArbiter(
   return deps.spawnConsultant('pi', prompt, cwd, timeoutMs, deps.onProgress)
 }
 
+/** Where a consultant's CLI was found: the engine resolution for Pi, detection for the others. */
+export type ConsultantInstall =
+  | { id: 'pi'; cli: PiCli }
+  | { id: Exclude<CouncilAgentId, 'pi'>; executable: string | null }
+
+/** Everything spawn() needs to start one consultant. */
+export interface ConsultantLaunch {
+  file: string
+  args: string[]
+  /** spawn()'s `shell`: true only for a Windows shim, which needs cmd.exe (see isCmdShim). */
+  shell: boolean
+  env: NodeJS.ProcessEnv
+}
+
 /**
- * The exact program and argv handed to spawn() for one consultant.
+ * How to start one consultant, or the reason it cannot start, in the
+ * interface language. `inheritedEnv` is the app's own environment.
  *
- * The prompt is delivered over stdin, never as a CLI argument. On Windows the
- * args pass through cmd.exe (shell:true is required to launch the `.cmd`
- * shims), so untrusted plan text on the command line would be open to
- * shell-metacharacter injection. All three CLIs read the prompt from stdin.
- * Node performs no quoting with shell:true, so the executable path (which may
- * contain spaces or cmd metacharacters via the user profile directory) and the
- * flags are escaped for the cmd.exe traversal on Windows.
+ * The prompt is delivered over stdin, never as a CLI argument. A shim's args
+ * pass through cmd.exe, so untrusted plan text on the command line would be
+ * open to shell-metacharacter injection. All three CLIs read the prompt from
+ * stdin. Node performs no quoting with shell:true, so the program path (which
+ * may contain spaces or cmd metacharacters via the user profile directory)
+ * and the flags are escaped for the cmd.exe traversal.
+ *
+ * The Pi consultant and the arbiter start like an RPC session: a cli.js runs
+ * under Node, because cmd.exe would open a .js file with its file association.
+ * A consultant that was not found is refused rather than spawned by its bare
+ * name, which Windows would look up in the workspace (the working directory)
+ * before PATH.
  */
-export function buildConsultantSpawn(
-  id: CouncilAgentId,
-  executable: string,
+export function buildConsultantLaunch(
+  install: ConsultantInstall,
   isWindows: boolean,
-  engine: CouncilPiEngine = 'pi',
-): { file: string; args: string[] } {
-  const command = buildConsultantCommand(id, executable, engine)
-  return escapeCmdSpawn(isWindows, command.file, command.args)
+  inheritedEnv: NodeJS.ProcessEnv,
+): ConsultantLaunch | { error: string } {
+  if (install.id === 'pi') {
+    const { cli } = install
+    if (cli.failureReason) return { error: describePiStartFailure(cli.failureReason, t) }
+    const { args } = buildConsultantCommand(install.id, cli.script, cli.kind ?? 'pi')
+    return {
+      ...buildPiInvocation(cli, args),
+      shell: cli.needsShell,
+      // Only the Pi consultant is an agent engine run; ~/.pi/.env is not for other CLIs.
+      env: buildPiRunEnv(cli.needsShell, inheritedEnv),
+    }
+  }
+  if (!install.executable) {
+    return { error: t('errors.council.agentNotFound', { agent: councilAgentLabel(install.id) }) }
+  }
+  const viaCmd = isCmdShim(isWindows, install.executable)
+  const command = buildConsultantCommand(install.id, install.executable)
+  return {
+    ...escapeCmdSpawn(viaCmd, command.file, command.args),
+    shell: viaCmd,
+    env: childProcessEnv(viaCmd, inheritedEnv),
+  }
+}
+
+/** Where the consultant's CLI is installed right now. */
+function installedConsultant(id: CouncilAgentId): ConsultantInstall {
+  if (id === 'pi') return { id, cli: getPiCli() }
+  return { id, executable: detectAgents().find((agent) => agent.id === id)?.path ?? null }
 }
 
 /** Default spawn: run the consultant CLI, stream output, enforce timeout. */
 export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeoutMs, onChunk) =>
   new Promise<SpawnOutcome>((resolve) => {
-    const piCli = id === 'pi' ? getPiCli() : null
-    const { file, args } = buildConsultantSpawn(
-      id,
-      resolveExecutable(id),
-      IS_WINDOWS,
-      piCli?.kind === 'omp' ? 'omp' : 'pi',
-    )
-    const child = spawn(file, args, {
+    const launch = buildConsultantLaunch(installedConsultant(id), IS_WINDOWS, process.env)
+    if ('error' in launch) {
+      resolve({ ok: false, output: '', error: launch.error })
+      return
+    }
+    const child = spawn(launch.file, launch.args, {
       cwd,
-      // Only the Pi consultant is an agent engine run; ~/.pi/.env is not for other CLIs.
-      env: piCli ? { ...loadPiDotenv(), ...process.env } : process.env,
-      shell: IS_WINDOWS,
+      env: launch.env,
+      shell: launch.shell,
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
@@ -256,13 +299,3 @@ export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeout
       }
     })
   })
-
-// Resolve the executable path from agent detection; falls back to the bare id.
-function resolveExecutable(id: CouncilAgentId): string {
-  if (id === 'pi') {
-    const configured = getPiCli()
-    if (configured.found) return configured.script
-  }
-  const found = detectAgents().find((a) => a.id === id)
-  return found?.path ?? id
-}

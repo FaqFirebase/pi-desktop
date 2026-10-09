@@ -564,6 +564,7 @@
       "tooLarge": "Attachment is too large (max {{limit}} MB)"
     },
     "council": {
+      "agentNotFound": "{{agent}} was not found. Install it, or remove it from the council members in Settings.",
       "arbiterFailed": "Arbiter failed",
       "arbiterTimedOut": "Arbiter timed out",
       "notEnoughMembers": "Council needs at least {{min}} agents. Install or enable Pi, Claude, or Codex, or turn the council off.",

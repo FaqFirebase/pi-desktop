@@ -3,13 +3,25 @@ import os from 'os'
 import pty, { type IPty } from 'node-pty'
 import type { TerminalStartOptions, TerminalStartResult } from '../shared/ipc-contracts'
 import { loadPiDotenv } from './pi-dotenv'
+import { childProcessEnv } from './windows-exe-search'
 
 // Classic VT100 grid, used until the renderer reports the fitted size.
 export const DEFAULT_TERMINAL_COLS = 80
 export const DEFAULT_TERMINAL_ROWS = 24
+/** The terminal the PTY emulates, as node-pty names it and $TERM tells the shell. */
+export const TERMINAL_TYPE = 'xterm-256color'
 
 type TerminalDataHandler = (data: string) => void
 type TerminalExitHandler = (event: { exitCode: number; signal?: number }) => void
+
+/**
+ * The shell's environment: ~/.pi/.env under `inherited`. The shell is the
+ * user's own tool, so the app's current-folder search switch stays out of it
+ * (see childProcessEnv).
+ */
+export function buildTerminalEnv(inherited: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  return childProcessEnv(false, { ...loadPiDotenv(), ...inherited, TERM: TERMINAL_TYPE }) as Record<string, string>
+}
 
 export class TerminalService {
   private terminal: IPty | null = null
@@ -25,22 +37,17 @@ export class TerminalService {
 
     const shell = getShell()
     const cwd = getCwd(options.cwd)
-    const env = {
-      ...loadPiDotenv(),
-      ...process.env,
-      TERM: 'xterm-256color',
-    } as Record<string, string>
 
     this.cwd = cwd
     // node-pty's `encoding` option calls setEncoding() under the hood,
     // which Windows (conpty/winpty) does not support and logs a warning
     // for. Only pass it on POSIX platforms.
     const terminal = pty.spawn(shell, [], {
-      name: 'xterm-256color',
+      name: TERMINAL_TYPE,
       cols: options.cols ?? DEFAULT_TERMINAL_COLS,
       rows: options.rows ?? DEFAULT_TERMINAL_ROWS,
       cwd,
-      env,
+      env: buildTerminalEnv(),
       ...(process.platform === 'win32' ? {} : { encoding: 'utf8' }),
     })
     this.terminal = terminal

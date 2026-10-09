@@ -27,6 +27,7 @@ import { StreamingTextTracker } from './streaming-text-tracker'
 import { appLog } from './app-log'
 import { getGuiDataPath } from './app-data-paths'
 import { loadPiDotenv } from './pi-dotenv'
+import { childProcessEnv } from './windows-exe-search'
 import { t, tEnglish } from '../shared/i18n'
 
 /**
@@ -217,7 +218,7 @@ export class RpcFrameDecoder {
 
 // Real filesystem/process access for the resolver in pi-binary-resolution.ts.
 // Kept in one object so the search order stays testable against a fake.
-const RESOLUTION_DEPS: ResolutionDeps = {
+export const RESOLUTION_DEPS: ResolutionDeps = {
   isWindows: IS_WINDOWS,
   env: process.env,
   exists: (path) => existsSync(path),
@@ -259,7 +260,7 @@ function runCapture(command: string, args: string[], options: CaptureOptions): s
       shell: options.shell,
       timeout: options.timeoutMs,
       input: '',
-      env: { ...process.env, PATH: options.pathEnv },
+      env: childProcessEnv(options.shell, { ...process.env, PATH: options.pathEnv }),
     })
     if (result.status !== 0 || !result.stdout) return null
     return result.stdout
@@ -270,44 +271,47 @@ function runCapture(command: string, args: string[], options: CaptureOptions): s
   }
 }
 
+const NODE_COMMAND = 'node'
+const NODE_WINDOWS_EXECUTABLE = 'node.exe'
+/**
+ * What the report and the node-not-found message show when no Node binary
+ * was found. Never spawned: the bare name would make Windows look in the
+ * workspace (the spawn's working directory) before PATH.
+ */
+const NODE_NOT_FOUND_NAME = IS_WINDOWS ? NODE_WINDOWS_EXECUTABLE : NODE_COMMAND
+
 /**
  * Find a Node binary to run the Pi .js script with. Searches NODE env,
- * npm_node_execpath (set when running under npm), Electron's own process,
- * common install paths, and PATH.
+ * npm_node_execpath (set when running under npm), common install paths, and
+ * PATH. Null when none exists, which the start reports as node-not-found.
  */
-function findNodeBinary(): string {
-  if (process.env.NODE && existsSync(process.env.NODE)) return process.env.NODE
-  if (process.env.npm_node_execpath && existsSync(process.env.npm_node_execpath)) {
-    return process.env.npm_node_execpath
-  }
+export function findNodeBinary(deps: ResolutionDeps): string | null {
+  const { env } = deps
+  if (env.NODE && deps.exists(env.NODE)) return env.NODE
+  if (env.npm_node_execpath && deps.exists(env.npm_node_execpath)) return env.npm_node_execpath
 
-  if (IS_WINDOWS) {
-    const programFiles = process.env.ProgramFiles ?? 'C:\\Program Files'
-    const programFilesX86 = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'
-    const localAppData = process.env.LOCALAPPDATA ?? ''
+  if (deps.isWindows) {
+    const programFiles = env.ProgramFiles ?? 'C:\\Program Files'
+    const programFilesX86 = env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'
+    const localAppData = env.LOCALAPPDATA ?? ''
     const candidates = [
       // Pi's install.ps1 puts an auto-installed Node under
       // %LOCALAPPDATA%\pi-node\current\node.exe. Check the symlinked
       // 'current' path first; fall back to the bare pi-node dir for
       // older layouts.
-      localAppData ? join(localAppData, 'pi-node', 'current', 'node.exe') : '',
-      localAppData ? join(localAppData, 'pi-node', 'node.exe') : '',
-      join(programFiles, 'nodejs', 'node.exe'),
-      join(programFilesX86, 'nodejs', 'node.exe'),
-      localAppData ? join(localAppData, 'fnm_multishells', 'node.exe') : '',
+      localAppData ? join(localAppData, 'pi-node', 'current', NODE_WINDOWS_EXECUTABLE) : '',
+      localAppData ? join(localAppData, 'pi-node', NODE_WINDOWS_EXECUTABLE) : '',
+      join(programFiles, 'nodejs', NODE_WINDOWS_EXECUTABLE),
+      join(programFilesX86, 'nodejs', NODE_WINDOWS_EXECUTABLE),
+      localAppData ? join(localAppData, 'fnm_multishells', NODE_WINDOWS_EXECUTABLE) : '',
     ].filter(Boolean)
-    for (const c of candidates) if (existsSync(c)) return c
-    const fromPath = whichInPath(RESOLUTION_DEPS, 'node', process.env.PATH ?? '')
-    if (fromPath) return fromPath
-    return 'node.exe'
+    for (const c of candidates) if (deps.exists(c)) return c
+  } else {
+    for (const c of ['/usr/bin/node', '/usr/local/bin/node', '/opt/homebrew/bin/node']) {
+      if (deps.exists(c)) return c
+    }
   }
-
-  for (const c of ['/usr/bin/node', '/usr/local/bin/node', '/opt/homebrew/bin/node']) {
-    if (existsSync(c)) return c
-  }
-  const fromPath = whichInPath(RESOLUTION_DEPS, 'node', process.env.PATH ?? '')
-  if (fromPath) return fromPath
-  return 'node'
+  return whichInPath(deps, NODE_COMMAND, env.PATH ?? '')
 }
 
 /**
@@ -319,6 +323,7 @@ export interface PiCli {
   /** The selected engine. OMP deliberately keeps the Pi-compatible RPC path. */
   kind?: 'pi' | 'omp'
   script: string
+  /** The Node binary for a cli.js script; only a name to show when nodeFound is false. */
   node: string
   useNode: boolean
   needsShell: boolean
@@ -339,7 +344,8 @@ let cachedResolution: PiResolution | null = null
  * `cachedResolution` — both read the same filesystem state.
  */
 const engineResolutions = new Map<AgentEngineKind, PiResolution>()
-let cachedNodeBinary: string | null = null
+/** findNodeBinary's answer: undefined until the first lookup, null when there is no Node. */
+let cachedNodeBinary: string | null | undefined
 let detectedInstallationsCache: { at: number; value: AgentInstallation[] } | null = null
 /** How long a detection result is served without re-walking the filesystem. */
 const INSTALLATION_CACHE_TTL_MS = 30_000
@@ -356,7 +362,7 @@ export function setPiExecutableOverride(raw: string | undefined | null, engine: 
   configuredEngine = engine
   cachedResolution = null
   engineResolutions.clear()
-  cachedNodeBinary = null
+  cachedNodeBinary = undefined
 }
 
 
@@ -420,32 +426,41 @@ function logResolution(resolution: PiResolution): void {
   console.log('[Pi] Uses node     :', resolution.useNode)
   console.log(
     '[Pi] Node binary   :',
-    node,
-    resolution.useNode ? (existsSync(node) ? '(exists)' : '(MISSING)') : '(unused)'
+    node ?? NODE_NOT_FOUND_NAME,
+    resolution.useNode ? (nodeBinaryExists(node) ? '(exists)' : '(MISSING)') : '(unused)'
   )
   console.log('[Pi] Needs shell   :', resolution.needsShell)
   console.log('─────────────────────────────────────────────────────')
 }
 
-function getNodeBinary(): string {
-  if (cachedNodeBinary === null) cachedNodeBinary = findNodeBinary()
+function getNodeBinary(): string | null {
+  if (cachedNodeBinary === undefined) cachedNodeBinary = findNodeBinary(RESOLUTION_DEPS)
   return cachedNodeBinary
 }
 
-/** Pair a resolution with the Node binary and the failure spawn needs. */
-function toPiCli(resolution: PiResolution, kind: AgentEngineKind): PiCli {
-  const node = getNodeBinary()
-  const nodeFound = !resolution.useNode || existsSync(node)
+/** The cached lookup can outlive the file, so a found binary is checked again. */
+function nodeBinaryExists(node: string | null): node is string {
+  return node !== null && existsSync(node)
+}
+
+/**
+ * Pair a resolution with the Node binary and the failure spawn needs. `node`
+ * is findNodeBinary's answer; null makes a cli.js resolution fail as
+ * node-not-found instead of spawning a bare `node`.
+ */
+export function toPiCli(resolution: PiResolution, kind: AgentEngineKind, node: string | null): PiCli {
+  const nodeFound = !resolution.useNode || nodeBinaryExists(node)
+  const nodeName = node ?? NODE_NOT_FOUND_NAME
   let failureReason: PiStartFailure | null = null
   if (!resolution.found) {
     failureReason = { kind: 'pi-not-found', resolution }
   } else if (!nodeFound) {
-    failureReason = { kind: 'node-not-found', node }
+    failureReason = { kind: 'node-not-found', node: nodeName }
   }
   return {
     kind,
     script: resolution.script,
-    node,
+    node: nodeName,
     useNode: resolution.useNode,
     needsShell: resolution.needsShell,
     found: resolution.found,
@@ -467,7 +482,8 @@ export function getPiCli(): PiCli {
       ? 'omp'
       : configuredEngine === 'pi'
         ? 'pi'
-        : isOmpExecutable(resolution.script) ? 'omp' : 'pi'
+        : isOmpExecutable(resolution.script) ? 'omp' : 'pi',
+    getNodeBinary()
   )
 }
 
@@ -499,12 +515,12 @@ export function getPiCliForEngine(engine: AgentEngineKind): PiCli {
   // A configured override names the OTHER engine's binary, so this engine is
   // auto-detected rather than inheriting a path that is not its own.
   const cached = engineResolutions.get(engine)
-  if (cached) return toPiCli(cached, engine)
+  if (cached) return toPiCli(cached, engine, getNodeBinary())
   const resolution = resolvePiBinary(RESOLUTION_DEPS, null, engine)
   // Only a hit is remembered. Caching "not installed" would keep answering
   // that after the user installs the engine, for the whole run.
   if (resolution.found) engineResolutions.set(engine, resolution)
-  return toPiCli(resolution, engine)
+  return toPiCli(resolution, engine, getNodeBinary())
 }
 
 /**
@@ -597,6 +613,16 @@ export function buildPiInvocation(
   return cli.useNode
     ? escapeCmdSpawn(cli.needsShell, cli.node, [cli.script, ...args])
     : escapeCmdSpawn(cli.needsShell, cli.script, args)
+}
+
+/**
+ * The environment of one Pi or OMP run: ~/.pi/.env under `base`, the app's
+ * own environment by default. `needsShell` is the run's PiCli.needsShell: the
+ * app's current-folder search switch reaches the run only when cmd.exe starts
+ * it (see childProcessEnv).
+ */
+export function buildPiRunEnv(needsShell: boolean, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return childProcessEnv(needsShell, { ...loadPiDotenv(), ...base })
 }
 
 const MAX_PENDING_RESPONSES = 64
@@ -855,7 +881,7 @@ export class PiRpcManager extends EventEmitter {
       cwd: options.cwd,
       // Windows only: redirect TEMP so pi-subagents can mkdir without EPERM on
       // locked %LocalAppData%\Temp trees. POSIX keeps the system temp (OS cleanup).
-      env: { ...loadPiDotenv(), ...process.env, ...buildPiChildEnv(), ...options.env },
+      env: buildPiRunEnv(cli.needsShell, { ...process.env, ...buildPiChildEnv(), ...options.env }),
       // .cmd/.bat/.ps1 shims on Windows can't be invoked directly from
       // spawn — they need the cmd.exe interpreter via shell:true.
       shell: cli.needsShell,

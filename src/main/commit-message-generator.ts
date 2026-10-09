@@ -8,8 +8,7 @@ import { formatUntrustedBlock } from '../shared/untrusted-data'
 import { gitDiffPaths } from '../shared/git-diff'
 import { appLog } from './app-log'
 import { CommitMessageGenerationError } from './commit-message-service'
-import { buildPiInvocation, getPiCliForEngine, type PiRpcManager } from './pi-rpc-manager'
-import { loadPiDotenv } from './pi-dotenv'
+import { buildPiInvocation, buildPiRunEnv, getPiCliForEngine, type PiRpcManager } from './pi-rpc-manager'
 
 export interface CommitMessageModel {
   engine: AgentEngineKind
@@ -202,7 +201,7 @@ function runCommitMessageEngine(
     let settled = false
     const child = spawn(file, args, {
       cwd: options.cwd,
-      env: { ...loadPiDotenv(), ...process.env },
+      env: buildPiRunEnv(options.shell),
       shell: options.shell,
       windowsHide: true,
       detached: process.platform !== 'win32',

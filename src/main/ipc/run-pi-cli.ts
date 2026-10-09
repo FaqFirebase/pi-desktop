@@ -1,8 +1,8 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import type { AgentEngineKind } from '../../shared/ipc-contracts'
-import { buildPiInvocation, getPiCli, getPiCliForEngine } from '../pi-rpc-manager'
-import { loadPiDotenv } from '../pi-dotenv'
+import { buildPiInvocation, buildPiRunEnv, getPiCli, getPiCliForEngine } from '../pi-rpc-manager'
+import { describePiStartFailure } from '../pi-binary-resolution'
 import { t } from '../../shared/i18n'
 
 const execFileAsync = promisify(execFile)
@@ -20,6 +20,12 @@ export async function runPiCli(
 ): Promise<{ success: boolean; output: string }> {
   try {
     const cli = engine ? getPiCliForEngine(engine) : getPiCli()
+    // Nothing was found, so the invocation would be a bare name (`pi.cmd`,
+    // `omp`, `node`), which Windows looks up in the working directory (the
+    // workspace) before PATH. Report the start failure instead.
+    if (cli.failureReason) {
+      return { success: false, output: describePiStartFailure(cli.failureReason, t) }
+    }
     // OMP keeps `install` as a Pi-compatible alias but names removal
     // explicitly. Preserve the package panel's existing contract while routing
     // that verb to OMP's native command. Updates differ per plugin kind under
@@ -35,7 +41,7 @@ export async function runPiCli(
     const { stdout, stderr } = await execFileAsync(invocation.file, invocation.args, {
       cwd,
       timeout,
-      env: { ...loadPiDotenv(), ...process.env },
+      env: buildPiRunEnv(cli.needsShell),
       // Windows .cmd/.bat shims require shell:true to be invoked.
       shell: cli.needsShell,
     })

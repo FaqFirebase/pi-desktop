@@ -552,6 +552,7 @@
       "tooLarge": "附件过大（最大 {{limit}} MB）"
     },
     "council": {
+      "agentNotFound": "未找到 {{agent}}。请安装它，或在设置中将其从委员会成员中移除。",
       "arbiterFailed": "仲裁者失败",
       "arbiterTimedOut": "仲裁者超时",
       "notEnoughMembers": "委员会至少需要 {{min}} 个智能体。请安装或启用 Pi、Claude 或 Codex，或关闭委员会规划。",

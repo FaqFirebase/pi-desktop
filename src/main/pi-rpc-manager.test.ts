@@ -6,16 +6,22 @@ import { dirname, join } from 'node:path'
 import {
   buildPiArgs,
   buildPiInvocation,
+  buildPiRunEnv,
   detectPiInstallations,
+  findNodeBinary,
   PiRpcManager,
+  RESOLUTION_DEPS,
   RpcTimeoutError,
   resolveStartCli,
   RpcFrameDecoder,
   setPiExecutableOverride,
+  toPiCli,
   type PiCli,
 } from './pi-rpc-manager'
+import type { PiResolution, ResolutionDeps } from './pi-binary-resolution'
 import { appLog } from './app-log'
 import { piDotenvPath } from './pi-dotenv'
+import { NO_CWD_EXE_SEARCH_VARIABLE, disableCwdExecutableSearch } from './windows-exe-search'
 import { i18n } from '../shared/i18n'
 import { PSEUDO_LANGUAGE, SOURCE_LANGUAGE } from '../shared/i18n/languages'
 
@@ -328,6 +334,59 @@ test('buildPiInvocation preserves fork startup arguments', () => {
   })
 })
 
+// ─── Node lookup: no bare fallback ───────────────────────────────────────────
+//
+// Pi's cli.js runs with the Node binary found here, and the spawn's working
+// directory is the workspace. A bare `node.exe` fallback would make Windows
+// look in that workspace first, so "not found" has to stay not found.
+
+const WINDOWS_LOCAL_APP_DATA = 'C:\\Users\\tester\\AppData\\Local'
+
+/** Filesystem-only resolver deps: `files` exist and no probe answers. */
+function nodeLookupDeps(isWindows: boolean, env: NodeJS.ProcessEnv, files: string[] = []): ResolutionDeps {
+  const existing = new Set(files)
+  return {
+    isWindows,
+    env,
+    exists: (path) => existing.has(path),
+    isDirectory: () => false,
+    listDir: () => [],
+    capture: () => null,
+  }
+}
+
+test('findNodeBinary reports no Node instead of a bare name the OS would look up in the workspace', () => {
+  assert.equal(findNodeBinary(nodeLookupDeps(true, { LOCALAPPDATA: WINDOWS_LOCAL_APP_DATA, PATH: 'C:\\Windows' })), null)
+  assert.equal(findNodeBinary(nodeLookupDeps(false, { PATH: '/nowhere' })), null)
+})
+
+test('findNodeBinary takes Node from an absolute PATH entry, never from a relative one', () => {
+  const pathDir = 'D:\\node'
+  const deps = nodeLookupDeps(
+    true,
+    { LOCALAPPDATA: WINDOWS_LOCAL_APP_DATA, PATH: ['.', pathDir].join(';'), PATHEXT: '.EXE' },
+    [join('.', 'node.exe'), join(pathDir, 'node.exe')],
+  )
+  assert.equal(findNodeBinary(deps), join(pathDir, 'node.exe'))
+})
+
+test('a cli.js engine with no Node binary fails as node-not-found, so nothing is spawned', () => {
+  const resolution: PiResolution = {
+    script: '/opt/pi/cli.js',
+    useNode: true,
+    needsShell: false,
+    source: 'override',
+    found: true,
+    rejectedOverride: null,
+    pathEnv: '/usr/bin',
+  }
+  const cli = toPiCli(resolution, 'pi', null)
+  assert.equal(cli.nodeFound, false)
+  assert.deepEqual(cli.failureReason, { kind: 'node-not-found', node: cli.node })
+  // An executable that runs directly needs no Node at all.
+  assert.equal(toPiCli({ ...resolution, script: '/opt/pi/pi', useNode: false }, 'pi', null).failureReason, null)
+})
+
 test('buildPiInvocation rejects arguments cmd.exe cannot carry', () => {
   const cli = piCli({ script: String.raw`C:\npm\pi.cmd`, needsShell: true })
   assert.throws(
@@ -368,12 +427,16 @@ const SKIP_ON_WINDOWS = { skip: process.platform === 'win32' ? 'POSIX shebang fi
  *                          after FAKE_PI_READY_DELAY_MS.
  *  - 'never-ready'       — emits frames forever, never answers the probe.
  *  - 'exit'              — exits at once with FAKE_EXIT_CODE.
+ * In every mode, the engine also exits at once with FAKE_EXIT_CODE when it
+ * inherited the variable FAKE_PI_EXIT_IF_ENV names (in any letter case).
  */
 const FAKE_ENGINE_SOURCE = `#!/usr/bin/env node
 const mode = process.env.FAKE_PI_MODE || 'silent'
 const readyDelayMs = Number(process.env.FAKE_PI_READY_DELAY_MS || '0')
+const forbiddenName = (process.env.FAKE_PI_EXIT_IF_ENV || '').toLowerCase()
 const emit = (obj) => process.stdout.write(JSON.stringify(obj) + '\\n')
 if (mode === 'exit') process.exit(${FAKE_EXIT_CODE})
+if (forbiddenName && Object.keys(process.env).some((name) => name.toLowerCase() === forbiddenName)) process.exit(${FAKE_EXIT_CODE})
 if (mode === 'late-ready' || mode === 'never-ready') {
   emit({ type: 'extension_ui_request', id: 'boot', method: 'setStatus', statusKey: 'boot', statusText: 'loading' })
   setInterval(() => emit({ type: 'extension_ui_request', id: 'hb', method: 'setStatus', statusKey: 'hb', statusText: 'busy' }), ${HEARTBEAT_MS})
@@ -487,6 +550,68 @@ test('the Pi child receives variables from the user env file', SKIP_ON_WINDOWS, 
     if (savedHome === undefined) delete process.env.HOME
     else process.env.HOME = savedHome
     rmSync(home, { recursive: true, force: true })
+  }
+})
+
+/**
+ * Run `run` with process.env as Windows startup leaves it for a user who had
+ * not set the current-folder search switch: the app added it. Simulated on
+ * POSIX. A spelling this environment already had is put back afterwards.
+ */
+async function withWindowsStartupEnv(run: () => void | Promise<void>): Promise<void> {
+  const key = NO_CWD_EXE_SEARCH_VARIABLE.toLowerCase()
+  const inherited = Object.entries(process.env).filter(([name]) => name.toLowerCase() === key)
+  for (const [name] of inherited) delete process.env[name]
+  disableCwdExecutableSearch(process.env, 'win32')
+  try {
+    await run()
+  } finally {
+    delete process.env[NO_CWD_EXE_SEARCH_VARIABLE]
+    for (const [name, value] of inherited) process.env[name] = value
+    disableCwdExecutableSearch(process.env, process.platform)
+  }
+}
+
+test('a Pi or OMP run keeps the current-folder search switch only when cmd.exe starts it', () => {
+  const base: NodeJS.ProcessEnv = { Path: 'C:\\Windows\\system32' }
+  disableCwdExecutableSearch(base, 'win32')
+  try {
+    assert.equal(NO_CWD_EXE_SEARCH_VARIABLE in buildPiRunEnv(false, base), false, 'direct launch')
+    assert.equal(NO_CWD_EXE_SEARCH_VARIABLE in buildPiRunEnv(true, base), true, 'cmd.exe shim launch')
+  } finally {
+    disableCwdExecutableSearch({}, process.platform)
+  }
+})
+
+test('a direct Pi start does not hand the current-folder search switch to the engine', SKIP_ON_WINDOWS, async () => {
+  // The engine is the user's tool: its own commands must find programs as
+  // they do outside the app.
+  await withWindowsStartupEnv(() => withFakeEngine(async (manager, env) => {
+    const status = await manager.start({ env })
+    assert.equal(status.status, 'running', status.error ?? '')
+  }, { FAKE_PI_MODE: 'late-ready', FAKE_PI_EXIT_IF_ENV: NO_CWD_EXE_SEARCH_VARIABLE }))
+})
+
+test('an engine probe does not hand the current-folder search switch to the engine', SKIP_ON_WINDOWS, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pi-probe-env-'))
+  const script = join(dir, 'fake-omp')
+  const forbiddenName = JSON.stringify(NO_CWD_EXE_SEARCH_VARIABLE.toLowerCase())
+  writeFileSync(
+    script,
+    `#!/usr/bin/env node\nconsole.log(Object.keys(process.env).filter((name) => name.toLowerCase() === ${forbiddenName}).length)\n`,
+  )
+  chmodSync(script, 0o755)
+  try {
+    await withWindowsStartupEnv(() => {
+      const stdout = RESOLUTION_DEPS.capture(script, [], {
+        shell: false,
+        timeoutMs: TEST_READY_MS,
+        pathEnv: process.env.PATH ?? '',
+      })
+      assert.equal(stdout?.trim(), '0')
+    })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
 })
 

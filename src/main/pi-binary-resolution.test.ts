@@ -16,6 +16,7 @@ import {
   parseShellPath,
   resolvePiBinary,
   versionManagerPrefixes,
+  whichInPath,
 } from './pi-binary-resolution'
 import type { CaptureOptions, ResolutionDeps } from './pi-binary-resolution'
 
@@ -560,6 +561,56 @@ test('resolvePiBinary runs npm with the augmented PATH so version-managed npm is
 test('resolvePiBinary leaves PATH untouched when the shell probe fails', () => {
   const deps = fakeDeps({ env: { HOME: POSIX_HOME, SHELL: '/bin/zsh', PATH: '/usr/bin' } })
   assert.equal(resolvePiBinary(deps, null).pathEnv, '/usr/bin')
+})
+
+// ─── whichInPath: entries that depend on the working directory ───────────────
+//
+// The path whichInPath returns is spawned with the workspace as the working
+// directory, and a relative PATH entry would resolve against that directory.
+
+test('whichInPath skips relative POSIX PATH entries', () => {
+  // `~` is not expanded in PATH, so `~/bin` is relative too.
+  const relativeEntries = ['.', 'node_modules/.bin', '~/bin']
+  const absoluteEntry = '/usr/local/bin'
+  const deps = fakeDeps({ files: [...relativeEntries, absoluteEntry].map((dir) => join(dir, 'node')) })
+  assert.equal(whichInPath(deps, 'node', [...relativeEntries, absoluteEntry].join(':')), join(absoluteEntry, 'node'))
+  assert.equal(whichInPath(deps, 'node', relativeEntries.join(':')), null)
+})
+
+test('whichInPath skips Windows PATH entries that depend on the current folder or drive', () => {
+  // `C:tools` is relative to the current folder of drive C, `\tools` to the
+  // root of the current drive.
+  const relativeEntries = ['.', 'node_modules\\.bin', 'C:tools', '\\tools']
+  const absoluteEntry = 'C:\\Program Files\\nodejs'
+  const deps = fakeDeps({
+    isWindows: true,
+    env: { USERPROFILE: WINDOWS_HOME, PATHEXT: '.EXE' },
+    files: [...relativeEntries, absoluteEntry].map((dir) => join(dir, 'node.exe')),
+  })
+  assert.equal(whichInPath(deps, 'node', [...relativeEntries, absoluteEntry].join(';')), join(absoluteEntry, 'node.exe'))
+  assert.equal(whichInPath(deps, 'node', relativeEntries.join(';')), null)
+})
+
+test('whichInPath accepts drive-letter and UNC PATH entries on Windows', () => {
+  for (const entry of ['d:/tools', '\\\\server\\share\\bin']) {
+    const deps = fakeDeps({ isWindows: true, env: { PATHEXT: '.EXE' }, files: [join(entry, 'node.exe')] })
+    assert.equal(whichInPath(deps, 'node', entry), join(entry, 'node.exe'), entry)
+  }
+})
+
+// Windows (cmd.exe and libuv) drops the quotes around a PATH entry such as "C:\Program Files\nodejs".
+test('whichInPath reads a quoted Windows PATH entry without its quotes', () => {
+  const entry = 'C:\\Program Files\\nodejs'
+  const deps = fakeDeps({ isWindows: true, env: { PATHEXT: '.CMD' }, files: [join(entry, 'pi.cmd')] })
+  assert.equal(whichInPath(deps, 'pi', `"${entry}"`), join(entry, 'pi.cmd'))
+  assert.equal(whichInPath(deps, 'pi', '".\\tools"'), null, 'a quoted relative entry is still relative')
+})
+
+test('resolvePiBinary never takes Pi from a relative PATH entry', () => {
+  const deps = fakeDeps({ env: { HOME: POSIX_HOME, PATH: 'bin' }, files: [join('bin', 'pi')] })
+  const resolution = resolvePiBinary(deps, null)
+  assert.equal(resolution.found, false)
+  assert.equal(resolution.script, PI_FALLBACK_BINARY_POSIX)
 })
 
 // ─── Failure messaging ───────────────────────────────────────────────────────
