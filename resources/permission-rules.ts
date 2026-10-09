@@ -190,6 +190,23 @@ export function decideToolCall(
   return { action: 'allow' }
 }
 
+// Block outranks prompt, and prompt outranks allow.
+const DECISION_STRICTNESS: Record<ToolCallDecision['action'], number> = { allow: 0, prompt: 1, block: 2 }
+
+function stricterDecision(first: ToolCallDecision, second: ToolCallDecision): ToolCallDecision {
+  return DECISION_STRICTNESS[second.action] > DECISION_STRICTNESS[first.action] ? second : first
+}
+
+/**
+ * One decision from the decisions of several rule sets for the same tool
+ * call (a linked task applies the rules of each repository the call names):
+ * any block blocks, with the first block's reason, and any prompt asks.
+ * `decisions` is never empty.
+ */
+export function strictestDecision(decisions: readonly ToolCallDecision[]): ToolCallDecision {
+  return decisions.reduce(stricterDecision)
+}
+
 export function workspaceRulesPath(cwd: string): string {
   return join(cwd, WORKSPACE_RULES_DIR_NAME, PERMISSION_RULES_FILE_NAME)
 }

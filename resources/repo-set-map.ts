@@ -10,8 +10,10 @@
  * Electron, no Pi APIs).
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { isPathWithin } from './path-within'
+import { homedir } from 'node:os'
+import { join, parse, posix, resolve, win32 } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { isPathWithin, resolveRealPath } from './path-within'
 import { getPrimaryInput } from './permission-rules'
 
 /** Environment variable carrying the repo map path into the agent process. */
@@ -117,35 +119,233 @@ export function loadRepoMap(filePath: string): RepoSetContext | null {
   return context
 }
 
+// Path text forms Pi 0.86 (`normalizePath` in utils/paths.js, as its file
+// tools call it) and OMP rewrite before they touch the disk: Unicode spaces
+// become plain spaces, one leading `@` is dropped, `~` and `~/` (also `~\` on
+// Windows) name the home folder, and a `file://` URL names a path.
+const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g
+const PLAIN_SPACE = ' '
+const AT_PREFIX = '@'
+const HOME_PREFIX = '~'
+const FILE_URL_PREFIX = 'file://'
+// Forms the engines may read differently: a URL scheme of two characters or
+// more (one is a drive letter), which Pi reads as a plain name, and on
+// Windows the Git Bash, MSYS, Cygwin, and WSL drive paths (`/c/x`), which Pi
+// maps to a drive.
+const URL_SCHEME = /^[a-z][a-z\d+.-]+:/i
+const WINDOWS_SHELL_DRIVE_PATH = /^[\\/](?:mnt[\\/]|cygdrive[\\/])?[a-z](?:[\\/]|$)/i
+
 /**
- * The repository whose checkout holds `path` (relative paths resolve against
- * `cwd`, the agent's working directory). The deepest checkout wins, so a
- * worktree nested under another repository's folder still maps to itself.
+ * The path a file tool uses for `text`, after the engine expands its own
+ * prefixes; relative text stays relative to the agent's working directory.
+ * Null for a form whose meaning is not known for both engines (`~user`, a
+ * second `@`, another URL scheme, a Windows shell drive path), which callers
+ * treat as outside.
  */
-export function repoForPath(context: RepoSetContext, path: string, cwd: string): RepoMapEntry | null {
-  const absolute = resolve(cwd, path)
-  let best: RepoMapEntry | null = null
-  for (const repo of context.repos) {
-    if (!isPathWithin(repo.workPath, absolute)) continue
-    if (!best || resolve(repo.workPath).length > resolve(best.workPath).length) best = repo
+export function expandAgentPath(text: string, platform: NodeJS.Platform = process.platform, home: string = homedir()): string | null {
+  const windows = platform === 'win32'
+  let path = text.replace(UNICODE_SPACES, PLAIN_SPACE)
+  if (path.startsWith(AT_PREFIX)) path = path.slice(AT_PREFIX.length)
+  if (path.startsWith(AT_PREFIX)) return null
+  if (windows && WINDOWS_SHELL_DRIVE_PATH.test(path)) return null
+  if (path === HOME_PREFIX) return home
+  if (path.startsWith(HOME_PREFIX)) {
+    const separator = path.charAt(HOME_PREFIX.length)
+    if (separator !== posix.sep && !(windows && separator === win32.sep)) return null
+    return (windows ? win32 : posix).join(home, path.slice(HOME_PREFIX.length + separator.length))
+  }
+  if (path.startsWith(FILE_URL_PREFIX)) return fileUrlPath(path, windows)
+  return URL_SCHEME.test(path) ? null : path
+}
+
+function fileUrlPath(url: string, windows: boolean): string | null {
+  try {
+    return fileURLToPath(url, { windows })
+  } catch (error) {
+    // Not a usable file URL (a host on POSIX, an encoded separator): the
+    // engine cannot write to it either.
+    if (error instanceof TypeError) return null
+    throw error
+  }
+}
+
+// Glob syntax of the pattern libraries the engines use: wildcards, classes,
+// brace and extglob groups, negation.
+const GLOB_SYNTAX = /[*?[\]{}()!]/
+const GROUP_OPENERS = '{('
+const GROUP_CLOSERS = '})'
+const PARENT_FOLDER = '..'
+const PATH_SEPARATORS = process.platform === 'win32' ? '\\/' : '/'
+
+/**
+ * The folder every match of the glob `pattern` stays in: the pattern up to
+ * the segment with its first glob character (all of it when it has none).
+ * Null when a match can leave that folder: a `..` in the glob part, or a
+ * separator inside a brace or extglob group, whose alternatives may name any
+ * folder.
+ */
+function globBase(pattern: string): string | null {
+  const firstGlob = pattern.search(GLOB_SYNTAX)
+  if (firstGlob === -1) return pattern
+  const root = parse(pattern).root
+  if (firstGlob < root.length) return null
+  let cut = firstGlob
+  while (cut > root.length && !PATH_SEPARATORS.includes(pattern.charAt(cut - 1))) cut--
+  const globPart = pattern.slice(cut)
+  if (globPart.includes(PARENT_FOLDER)) return null
+  let depth = 0
+  for (const char of globPart) {
+    if (GROUP_OPENERS.includes(char)) depth++
+    else if (GROUP_CLOSERS.includes(char)) depth = Math.max(0, depth - 1)
+    else if (depth > 0 && PATH_SEPARATORS.includes(char)) return null
+  }
+  return pattern.slice(0, cut)
+}
+
+interface RealCheckout {
+  repo: RepoMapEntry
+  /** The checkout's real path, so a symlinked folder on the way to it still compares equal. */
+  root: string
+}
+
+// One entry per map load: loadRepoMap returns the same context object until
+// the file changes, so each checkout's real path is looked up once.
+const realCheckoutsCache = new WeakMap<RepoSetContext, RealCheckout[]>()
+
+/** The checkouts with their real paths. One whose real path is unknown holds no path, so writes into it ask. */
+function realCheckouts(context: RepoSetContext): RealCheckout[] {
+  let checkouts = realCheckoutsCache.get(context)
+  if (!checkouts) {
+    checkouts = context.repos.flatMap((repo) => {
+      const root = resolveRealPath(resolve(repo.workPath))
+      return root === null ? [] : [{ repo, root }]
+    })
+    realCheckoutsCache.set(context, checkouts)
+  }
+  return checkouts
+}
+
+/**
+ * The checkout that holds the real path `real`. The deepest checkout wins, so
+ * a worktree nested under another repository's folder still maps to itself.
+ */
+function checkoutHolding(checkouts: readonly RealCheckout[], real: string | null): RealCheckout | null {
+  if (real === null) return null
+  let best: RealCheckout | null = null
+  for (const checkout of checkouts) {
+    if (!isPathWithin(checkout.root, real)) continue
+    if (!best || checkout.root.length > best.root.length) best = checkout
   }
   return best
 }
 
-/** Tools whose `path` input names a file they create or change (Pi and OMP). */
+/** The checkouts nested under the real folder `real`. */
+function checkoutsUnder(checkouts: readonly RealCheckout[], real: string | null): RealCheckout[] {
+  return real === null ? [] : checkouts.filter((checkout) => isPathWithin(real, checkout.root))
+}
+
+function realPathFrom(cwd: string, path: string | null): string | null {
+  return path === null ? null : resolveRealPath(resolve(cwd, path))
+}
+
+/** Tools that create or change the files their path fields name (Pi and OMP). */
 const FILE_WRITE_TOOLS = new Set(['edit', 'write', 'ast_edit'])
+/** Write tools whose path fields may hold glob patterns (OMP `ast_edit`). */
+const GLOB_PATH_TOOLS = new Set(['ast_edit'])
+// Fields that name files in the write shapes of Pi and OMP: `path` (one
+// file), `paths` (OMP `ast_edit` and multi-file edits), and `rename` (the new
+// name in an OMP patch edit). OMP patch edits also carry them per entry of
+// `edits`.
+const PATH_FIELD = 'path'
+const PATH_LIST_FIELD = 'paths'
+const RENAME_FIELD = 'rename'
+const EDITS_FIELD = 'edits'
+
+/** Add the paths that `fields` names; false when one of those fields holds something other than text. */
+function addNamedPaths(fields: Record<string, unknown>, paths: string[]): boolean {
+  for (const name of [PATH_FIELD, RENAME_FIELD]) {
+    const value = fields[name]
+    if (value === undefined || value === null) continue
+    if (typeof value !== 'string') return false
+    paths.push(value)
+  }
+  const list = fields[PATH_LIST_FIELD]
+  if (list === undefined || list === null) return true
+  if (!Array.isArray(list) || !list.every((entry) => typeof entry === 'string')) return false
+  paths.push(...list)
+  return true
+}
 
 /**
- * A file write that lands outside every checkout of the task. It is never
- * blocked, only routed to the normal approval prompt, so the user decides.
- * Shell commands are not inspected for paths on purpose (owner decision,
- * 2026-10-09): parsing them gives false prompts, and the permission mode and
- * rules already govern them.
+ * The path texts a tool call names. For a file write: `path`, each `paths`
+ * entry, and `rename`, also in each `edits` entry. For any other tool: its
+ * `path`, the input the permission rules match (see getPrimaryInput). Null
+ * when a field of a write holds something other than text, so its files
+ * cannot be known.
  */
-export function isWriteOutsideRepoSet(context: RepoSetContext, toolName: string, input: unknown, cwd: string): boolean {
-  if (!FILE_WRITE_TOOLS.has(toolName)) return false
-  const primary = getPrimaryInput(toolName, input)
-  return primary.kind === 'path' && repoForPath(context, primary.value, cwd) === null
+export function toolCallPaths(toolName: string, input: unknown): string[] | null {
+  if (!FILE_WRITE_TOOLS.has(toolName)) {
+    const primary = getPrimaryInput(toolName, input)
+    return primary.kind === 'path' ? [primary.value] : []
+  }
+  if (!isRecord(input)) return []
+  const paths: string[] = []
+  if (!addNamedPaths(input, paths)) return null
+  const edits = input[EDITS_FIELD]
+  if (edits === undefined || edits === null) return paths
+  if (!Array.isArray(edits)) return null
+  for (const edit of edits) {
+    if (isRecord(edit) && !addNamedPaths(edit, paths)) return null
+  }
+  return paths
+}
+
+/** Where one tool call acts in a linked task. */
+export interface RepoSetToolCall {
+  /**
+   * The checkout of each path the call names, each checkout once; null for a
+   * path outside every checkout. Empty when the call names no path, or when
+   * its path fields cannot be read.
+   */
+  repos: (RepoMapEntry | null)[]
+  /**
+   * A file write that may land outside every checkout: a path outside them,
+   * a path whose real location is not known, or no path to check.
+   */
+  leavesRepoSet: boolean
+}
+
+/**
+ * Where a tool call acts in a linked task. Each path is read the way the
+ * engine reads it (see expandAgentPath), resolved against `cwd` (the agent's
+ * working directory), and compared by real path: a symlink that leads out of
+ * a checkout counts as outside, and a checkout reached through a symlinked
+ * folder still holds its relative paths. A glob of `ast_edit` also reaches
+ * every checkout nested under its folder.
+ *
+ * A write outside the set is never blocked here, only routed to the normal
+ * approval prompt, so the user decides. Shell commands are not inspected for
+ * paths on purpose (owner decision, 2026-10-09): parsing them gives false
+ * prompts, and the permission mode and rules already govern them.
+ */
+export function locateToolCall(context: RepoSetContext, toolName: string, input: unknown, cwd: string): RepoSetToolCall {
+  const checkouts = realCheckouts(context)
+  const paths = toolCallPaths(toolName, input)
+  const repos = new Set<RepoMapEntry | null>()
+  let outside = paths === null || paths.length === 0
+  for (const text of paths ?? []) {
+    const expanded = expandAgentPath(text)
+    const holders = [checkoutHolding(checkouts, realPathFrom(cwd, expanded))]
+    if (GLOB_PATH_TOOLS.has(toolName)) {
+      const base = realPathFrom(cwd, expanded === null ? null : globBase(expanded))
+      holders.push(checkoutHolding(checkouts, base), ...checkoutsUnder(checkouts, base))
+    }
+    for (const holder of holders) {
+      repos.add(holder?.repo ?? null)
+      if (!holder) outside = true
+    }
+  }
+  return { repos: [...repos], leavesRepoSet: FILE_WRITE_TOOLS.has(toolName) && outside }
 }
 
 function describeRepo(repo: RepoMapEntry, hasAgentsFile: (path: string) => boolean): string {

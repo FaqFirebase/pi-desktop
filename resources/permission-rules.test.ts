@@ -11,6 +11,7 @@ import {
   getPrimaryInput,
   evaluateRules,
   decideToolCall,
+  strictestDecision,
   workspaceRulesPath,
   loadEffectiveRules,
   clearRulesCache,
@@ -203,6 +204,18 @@ describe('decideToolCall', () => {
     assert.deepEqual(decideToolCall('ask-commands', [], 'edit', { path: 'a' }, 'linux'), { action: 'allow' })
     assert.deepEqual(decideToolCall('trusted', [], 'bash', { command: 'x' }, 'linux'), { action: 'allow' })
     assert.deepEqual(decideToolCall(undefined, [], 'bash', { command: 'x' }, 'linux'), { action: 'allow' })
+  })
+})
+
+describe('strictestDecision', () => {
+  const allow = { action: 'allow' } as const
+  const prompt = { action: 'prompt' } as const
+  const block = (reason: string) => ({ action: 'block', reason }) as const
+
+  it('blocks when any decision blocks, with the first reason, and asks when any asks', () => {
+    assert.deepEqual(strictestDecision([allow]), allow)
+    assert.deepEqual(strictestDecision([allow, prompt, allow]), prompt)
+    assert.deepEqual(strictestDecision([prompt, block('first'), allow, block('second')]), block('first'))
   })
 })
 
