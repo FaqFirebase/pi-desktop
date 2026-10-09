@@ -698,6 +698,251 @@ test('a live runtime never loses its session file to another runtime', async () 
   })
 })
 
+// ─── A New Task's prompt ─────────────────────────────────────────────────────
+// A launched task shows as working before its prompt goes out, and only a turn
+// end clears that. These answers start no turn.
+
+const NO_KEY = 'No API key found for anthropic.'
+const PROMPT_ACCEPTED = { type: 'response', command: 'prompt', success: true }
+
+/** A launched task's runtime whose engine answers each command with `answer`. */
+async function launchedTask(
+  mgr: WorkspaceManager,
+  answer: (command: Record<string, unknown>, manager: PiRpcManager) => unknown
+): Promise<{ runtimeId: string; manager: PiRpcManager; commands: string[] }> {
+  const workspace = await mgr.createWorkspace('Alpha', await project())
+  const { runtime } = await liveRuntime(mgr, workspace.id, 9400)
+  const manager = mgr.getActivePiManager()!
+  const commands: string[] = []
+  manager.sendCommand = async (command) => {
+    commands.push(String(command.type))
+    return answer(command, manager) as Awaited<ReturnType<PiRpcManager['sendCommand']>>
+  }
+  mgr.setSessionRuntimeActivity(runtime.runtimeId, 'working')
+  return { runtimeId: runtime.runtimeId, manager, commands }
+}
+
+function stateAnswer(isStreaming: boolean): unknown {
+  return { type: 'response', command: 'get_state', success: true, data: { isStreaming } }
+}
+
+test('a task prompt the engine refuses fails the task and keeps the reason for its chat', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, () => ({ type: 'response', command: 'prompt', success: false, error: NO_KEY }))
+    const seen: SessionRuntimeInfo[] = []
+    mgr.onSessionRuntime((runtime) => seen.push(runtime))
+
+    await mgr.promptSessionRuntime(task.runtimeId, 'fix the bug')
+
+    const settled = mgr.getSessionRuntime(task.runtimeId)
+    assert.equal(settled?.activity, 'failed', 'a refused prompt must not stay working')
+    assert.equal(settled?.promptRefusal, NO_KEY)
+    assert.equal(seen.at(-1)?.promptRefusal, NO_KEY, 'the renderer is told why')
+    assert.deepEqual(task.commands, ['prompt'])
+  })
+})
+
+test('a refusal without a reason still fails the task', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, () => ({ type: 'response', command: 'prompt', success: false }))
+
+    await mgr.promptSessionRuntime(task.runtimeId, 'fix the bug')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'failed')
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.promptRefusal, '')
+  })
+})
+
+// Pi runs an extension command before it answers and starts no turn for it.
+test('a task prompt that runs no turn completes the task', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, (command) => command.type === 'prompt' ? PROMPT_ACCEPTED : stateAnswer(false))
+
+    await mgr.promptSessionRuntime(task.runtimeId, '/status')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'completed')
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.promptRefusal, undefined)
+    assert.deepEqual(task.commands, ['prompt', 'get_state'])
+  })
+})
+
+test('a task prompt whose turn runs stays working until the turn ends', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, (command) => command.type === 'prompt' ? PROMPT_ACCEPTED : stateAnswer(true))
+
+    await mgr.promptSessionRuntime(task.runtimeId, 'fix the bug')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'working')
+    task.manager.emit('agent_end', { type: 'agent_end', messages: [] })
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'completed')
+  })
+})
+
+test('a turn that started before the answer settles the task by itself', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, (command, manager) => {
+      if (command.type !== 'prompt') return stateAnswer(false)
+      manager.emit('agent_start', { type: 'agent_start' })
+      return PROMPT_ACCEPTED
+    })
+
+    await mgr.promptSessionRuntime(task.runtimeId, '/review')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'working')
+    assert.deepEqual(task.commands, ['prompt'], 'a turn that started needs no state check')
+  })
+})
+
+test('a turn that starts while the state is read is not settled by the read', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, (command, manager) => {
+      if (command.type === 'prompt') return PROMPT_ACCEPTED
+      manager.emit('agent_start', { type: 'agent_start' })
+      return stateAnswer(false)
+    })
+
+    await mgr.promptSessionRuntime(task.runtimeId, '/review')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'working')
+  })
+})
+
+test('an OMP local command completes the task without a state check', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, () => ({ ...PROMPT_ACCEPTED, data: { agentInvoked: false } }))
+
+    await mgr.promptSessionRuntime(task.runtimeId, '/context')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'completed')
+    assert.deepEqual(task.commands, ['prompt'])
+  })
+})
+
+// OMP answers a prompt when it admits it, and reports how the prompt ended in
+// a prompt_result event: a refusal after admission (no model, no API key), an
+// extension command that ran no turn, or a turn's end.
+
+/** A launched task on OMP. */
+async function launchedOmpTask(
+  mgr: WorkspaceManager,
+  answer: (command: Record<string, unknown>, manager: PiRpcManager) => unknown
+): Promise<{ runtimeId: string; manager: PiRpcManager; commands: string[] }> {
+  const task = await launchedTask(mgr, answer)
+  task.manager.getEngineKind = () => 'omp'
+  return task
+}
+
+const OMP_REFUSED_AFTER_ADMISSION = {
+  type: 'prompt_result', id: 'prompt-1', agentInvoked: false, status: 'error', error: { message: NO_KEY, retryable: false },
+}
+const OMP_COMMAND_FINISHED = { type: 'prompt_result', id: 'prompt-1', agentInvoked: false, status: 'completed' }
+
+test('an OMP task refused after admission fails with the reason of its prompt_result', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedOmpTask(mgr, () => PROMPT_ACCEPTED)
+
+    await mgr.promptSessionRuntime(task.runtimeId, 'fix the bug')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'working', 'OMP reports the outcome later')
+    assert.deepEqual(task.commands, ['prompt'], 'OMP reports the outcome, so no state check')
+    task.manager.emit('prompt_result', OMP_REFUSED_AFTER_ADMISSION)
+    const settled = mgr.getSessionRuntime(task.runtimeId)
+    assert.equal(settled?.activity, 'failed', 'a refused task must not stay working')
+    assert.equal(settled?.promptRefusal, NO_KEY)
+  })
+})
+
+test('an OMP prompt_result that comes before the prompt answer settles the task', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedOmpTask(mgr, (command, manager) => {
+      if (command.type === 'prompt') manager.emit('prompt_result', OMP_REFUSED_AFTER_ADMISSION)
+      return PROMPT_ACCEPTED
+    })
+
+    await mgr.promptSessionRuntime(task.runtimeId, 'fix the bug')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'failed', 'the later answer does not undo the refusal')
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.promptRefusal, NO_KEY)
+  })
+})
+
+test('an OMP extension command completes the task when its prompt_result says so, not before', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedOmpTask(mgr, (command) => command.type === 'prompt' ? PROMPT_ACCEPTED : stateAnswer(false))
+
+    await mgr.promptSessionRuntime(task.runtimeId, '/review')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'working', 'the command still runs after admission')
+    task.manager.emit('prompt_result', OMP_COMMAND_FINISHED)
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'completed')
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.promptRefusal, undefined)
+  })
+})
+
+test('an OMP prompt_result after a turn leaves the task to that turn', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedOmpTask(mgr, () => PROMPT_ACCEPTED)
+    await mgr.promptSessionRuntime(task.runtimeId, 'fix the bug')
+
+    task.manager.emit('agent_start', { type: 'agent_start' })
+    task.manager.emit('agent_end', { type: 'agent_end', messages: [] })
+    task.manager.emit('prompt_result', { ...OMP_REFUSED_AFTER_ADMISSION, agentInvoked: true })
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'completed')
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.promptRefusal, undefined, 'a turn ran, so nothing was refused')
+  })
+})
+
+test('a prompt_result of a prompt that is not a task prompt changes nothing', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedOmpTask(mgr, () => PROMPT_ACCEPTED)
+
+    task.manager.emit('prompt_result', OMP_REFUSED_AFTER_ADMISSION)
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'working')
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.promptRefusal, undefined)
+  })
+})
+
+test('a turn after a refused task prompt clears the refusal', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, () => ({ type: 'response', command: 'prompt', success: false, error: NO_KEY }))
+    await mgr.promptSessionRuntime(task.runtimeId, 'fix the bug')
+
+    task.manager.emit('agent_start', { type: 'agent_start' })
+
+    const runtime = mgr.getSessionRuntime(task.runtimeId)
+    assert.equal(runtime?.activity, 'working')
+    assert.equal(runtime?.promptRefusal, undefined, 'the chat has moved on from the refused prompt')
+  })
+})
+
 test('load recovers from .bak when the live workspaces file is corrupted', async () => {
   await freshDataDir()
   const proj = await project()

@@ -108,6 +108,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     if (!isObject(input) || !isString(input.workspaceId) || !isString(input.prompt) || !input.prompt.trim()) {
       throw new Error('workspaceId and a non-empty prompt are required')
     }
+    const prompt = input.prompt
     const workspace = workspaceManager.getWorkspaces().find((item) => item.id === input.workspaceId)
     if (!workspace) throw new Error(t('errors.workspace.notFoundPlain'))
     const runtime = await workspaceManager.createNewSessionRuntime(workspace.id)
@@ -116,12 +117,10 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     workspaceManager.setSessionRuntimeActivity(runtime.runtimeId, 'working')
     // Keep the prompt attached to this runtime. It must not go through the
     // renderer's active-manager shortcut because the user can switch away
-    // before Pi finishes starting.
+    // before Pi finishes starting. The engine's answer settles the working
+    // state when the prompt runs no turn.
     void startRuntime(runtime)
-      .then(() => workspaceManager.sendCommandToSessionRuntime(runtime.runtimeId, {
-        type: 'prompt',
-        message: input.prompt,
-      }))
+      .then(() => workspaceManager.promptSessionRuntime(runtime.runtimeId, prompt))
       .catch(() => workspaceManager.setSessionRuntimeActivity(runtime.runtimeId, 'failed'))
     return runtime
   })

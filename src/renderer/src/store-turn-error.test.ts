@@ -1,12 +1,35 @@
 import { test, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import type { PiRpcEvent } from '../../shared/ipc-contracts'
+import type { PiRpcEvent, Workspace } from '../../shared/ipc-contracts'
 
-// The store only touches window.piDesktop inside actions these tests don't
-// exercise, but the bridge must exist before the module body runs.
+// Prompts and steers the store sent, in order, and the state reads it made.
+const calls: string[] = []
+const ACCEPTED = { type: 'response', command: 'prompt', success: true }
+// What the stubbed engine answers to a prompt and to get_state.
+let promptAnswer: () => Promise<unknown> = async () => ACCEPTED
+let stateAnswer: () => Promise<unknown> = async () => ({ success: true, data: { isStreaming: false } })
+
 const piDesktopStub = {
   pi: {
     getStatus: async () => ({ status: 'stopped' as const, pid: null, error: null }),
+  },
+  commands: {
+    prompt: async (message: string) => {
+      calls.push(`prompt:${message}`)
+      return promptAnswer()
+    },
+    steer: async (message: string) => {
+      calls.push(`steer:${message}`)
+      return { type: 'response', command: 'steer', success: true }
+    },
+  },
+  session: {
+    getState: async () => {
+      calls.push('getState')
+      return stateAnswer()
+    },
+    getStats: async () => ({ success: true, data: null }),
+    list: async () => [],
   },
 }
 
@@ -19,12 +42,19 @@ before(async () => {
 })
 
 beforeEach(() => {
+  calls.length = 0
+  promptAnswer = async () => ACCEPTED
+  stateAnswer = async () => ({ success: true, data: { isStreaming: false } })
   useAppStore.setState({
     messages: [],
     timelineEvents: [],
     streamingContent: '',
     streamingThinking: '',
     streamingToolCalls: new Map(),
+    isStreaming: false,
+    piStatus: 'running',
+    piEngine: 'pi',
+    activeWorkspace: null,
   })
 })
 
@@ -148,9 +178,177 @@ test('message_end with stopReason error records a failed timeline event', () => 
 })
 
 test('an OMP local command answered in the prompt response ends the wait for a turn', async () => {
-  const { promptRanWithoutAgent } = await import('./store')
-  assert.equal(promptRanWithoutAgent({ type: 'response', command: 'prompt', success: true, data: { agentInvoked: false } }), true)
-  assert.equal(promptRanWithoutAgent({ type: 'response', command: 'prompt', success: true, data: { agentInvoked: true } }), false)
-  assert.equal(promptRanWithoutAgent({ type: 'response', command: 'prompt', success: true }), false)
-  assert.equal(promptRanWithoutAgent(null), false)
+  promptAnswer = async () => ({ ...ACCEPTED, data: { agentInvoked: false } })
+
+  await useAppStore.getState().sendPrompt('/context')
+
+  assert.equal(useAppStore.getState().isStreaming, false)
+  assert.deepEqual(systemMessages(), [])
+})
+
+// ─── Prompts that run no turn ────────────────────────────────────────────────
+
+const NO_KEY = 'No API key found for anthropic.'
+
+function refused(error?: string): Record<string, unknown> {
+  return { type: 'response', command: 'prompt', success: false, ...(error === undefined ? {} : { error }) }
+}
+
+function promptResultError(message: string): PiRpcEvent {
+  return { type: 'prompt_result', agentInvoked: false, status: 'error', error: { message } } as PiRpcEvent
+}
+
+function sentAs(): string[] {
+  return calls.filter((call) => call.startsWith('prompt:') || call.startsWith('steer:'))
+}
+
+// Pi answers a failed preflight (no API key, an expired login, no model) with
+// success: false and runs no turn, so no agent_end ever closes the stream.
+test('a prompt the engine refuses ends the turn and says why', async () => {
+  promptAnswer = async () => refused(NO_KEY)
+
+  await useAppStore.getState().sendPrompt('hello')
+
+  assert.equal(useAppStore.getState().isStreaming, false)
+  assert.deepEqual(systemMessages(), [`Error: ${NO_KEY}`])
+  await useAppStore.getState().sendPrompt('hello again')
+  assert.deepEqual(sentAs(), ['prompt:hello', 'prompt:hello again'], 'the next message must not go out as a steer')
+})
+
+test('a refusal without a reason still ends the turn', async () => {
+  promptAnswer = async () => refused()
+
+  await useAppStore.getState().sendPrompt('hello')
+
+  assert.equal(useAppStore.getState().isStreaming, false)
+  assert.deepEqual(systemMessages(), ['Error: Unknown error'])
+})
+
+// Pi runs an extension command, or lets an input handler take the prompt,
+// before it answers: success, and no agent_start or agent_end follows.
+test('an accepted prompt that runs no turn ends the wait for one', async () => {
+  await useAppStore.getState().sendPrompt('/status')
+
+  assert.equal(useAppStore.getState().isStreaming, false)
+  assert.deepEqual(systemMessages(), [])
+})
+
+test('an accepted prompt whose turn runs keeps streaming', async () => {
+  stateAnswer = async () => ({ success: true, data: { isStreaming: true } })
+
+  await useAppStore.getState().sendPrompt('hello')
+
+  assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+test('a turn that started before the answer is left to its own agent_end', async () => {
+  promptAnswer = async () => {
+    useAppStore.getState().handlePiEvent({ type: 'agent_start' })
+    return ACCEPTED
+  }
+
+  await useAppStore.getState().sendPrompt('/review')
+
+  assert.equal(useAppStore.getState().isStreaming, true, 'a state read that says idle must not end a turn that ran')
+  useAppStore.getState().handlePiEvent({ type: 'agent_end', messages: [] })
+  assert.equal(useAppStore.getState().isStreaming, false)
+})
+
+test('a turn that starts while the state is read is not ended by the read', async () => {
+  // agent_start reads the state again; the turn starts during the first read.
+  let reads = 0
+  stateAnswer = async () => {
+    reads += 1
+    if (reads === 1) useAppStore.getState().handlePiEvent({ type: 'agent_start' })
+    return { success: true, data: { isStreaming: false } }
+  }
+
+  await useAppStore.getState().sendPrompt('/review')
+
+  assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+test('an unreadable state leaves the turn to the engine events', async () => {
+  stateAnswer = async () => null
+
+  await useAppStore.getState().sendPrompt('hello')
+
+  assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+test('an answer that arrives after the user left the chat leaves the new chat alone', async () => {
+  const before: Workspace = { id: 'ws-a', name: 'a', path: '/tmp/a', createdAt: 0, lastActiveAt: 0, color: '#000' }
+  useAppStore.setState({ activeWorkspace: before })
+  let answer!: (response: unknown) => void
+  promptAnswer = () => new Promise((resolve) => { answer = resolve })
+
+  const sending = useAppStore.getState().sendPrompt('hello')
+  // The user opened another project, whose turn is running.
+  useAppStore.setState({ activeWorkspace: { ...before, id: 'ws-b' }, messages: [], isStreaming: true })
+  answer(refused(NO_KEY))
+  await sending
+
+  assert.equal(useAppStore.getState().isStreaming, true)
+  assert.deepEqual(systemMessages(), [])
+})
+
+// OMP answers a prompt when it admits it and reports how the prompt ended in
+// a prompt_result event: a model or API key check that fails after admission,
+// or an extension command that runs after the answer.
+const OMP_COMMAND_FINISHED = { type: 'prompt_result', agentInvoked: false, status: 'completed' } as PiRpcEvent
+
+test('an OMP prompt refused after admission ends the turn when its prompt_result says why', async () => {
+  useAppStore.setState({ piEngine: 'omp' })
+
+  await useAppStore.getState().sendPrompt('hello')
+  assert.equal(useAppStore.getState().isStreaming, true, 'admitted: the outcome comes later')
+  useAppStore.getState().handlePiEvent(promptResultError(NO_KEY))
+
+  assert.equal(useAppStore.getState().isStreaming, false)
+  assert.deepEqual(systemMessages(), [`Error: ${NO_KEY}`])
+})
+
+test('an OMP extension command keeps the turn open until its prompt_result, with no state read', async () => {
+  useAppStore.setState({ piEngine: 'omp' })
+
+  await useAppStore.getState().sendPrompt('/review')
+
+  assert.equal(useAppStore.getState().isStreaming, true, 'the command still runs after OMP answered')
+  assert.equal(calls.includes('getState'), false, 'OMP idles while a command runs, so a state read would end it early')
+  useAppStore.getState().handlePiEvent(OMP_COMMAND_FINISHED)
+  assert.equal(useAppStore.getState().isStreaming, false)
+  assert.deepEqual(systemMessages(), [])
+})
+
+// The user stopped the command and sent a new prompt, whose turn is running
+// when the command's own report comes in.
+test('a late OMP prompt_result for an earlier prompt leaves a newer turn alone', async () => {
+  useAppStore.setState({ piEngine: 'omp' })
+  await useAppStore.getState().sendPrompt('/review')
+  useAppStore.setState({ isStreaming: false })
+  await useAppStore.getState().sendPrompt('hello')
+  useAppStore.getState().handlePiEvent({ type: 'agent_start' })
+  useAppStore.setState({ streamingContent: 'partial answer' })
+
+  useAppStore.getState().handlePiEvent(OMP_COMMAND_FINISHED)
+
+  assert.equal(useAppStore.getState().isStreaming, true)
+  assert.equal(useAppStore.getState().streamingContent, 'partial answer')
+})
+
+// OMP reports one refusal twice, as an error response and as a prompt_result,
+// in either order.
+test('an OMP refusal reported twice shows its reason once, in either order', async () => {
+  promptAnswer = async () => refused(NO_KEY)
+  await useAppStore.getState().sendPrompt('hello')
+  useAppStore.getState().handlePiEvent(promptResultError(NO_KEY))
+  assert.deepEqual(systemMessages(), [`Error: ${NO_KEY}`])
+
+  useAppStore.setState({ messages: [] })
+  promptAnswer = async () => {
+    useAppStore.getState().handlePiEvent(promptResultError(NO_KEY))
+    return refused(NO_KEY)
+  }
+  await useAppStore.getState().sendPrompt('hello')
+  assert.deepEqual(systemMessages(), [`Error: ${NO_KEY}`])
 })

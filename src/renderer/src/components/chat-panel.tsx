@@ -1,4 +1,4 @@
-import { useAppStore } from '../store'
+import { sidePanelHidesPreview, useAppStore } from '../store'
 import { agentEngineLabel } from '../../../shared/agent-engine-label'
 import { PI_DESKTOP_PRODUCT_NAME } from '../../../shared/product-name'
 import { ChatInput } from './chat-input'
@@ -146,7 +146,7 @@ export function ChatPanel(): React.JSX.Element {
   const showSidePanel = sidePanel !== null || previewTarget !== null
   const showFileTree = sidePanel === 'files'
   // The diff and the Tasks panel take the whole side slot; previews wait behind them.
-  const previewAllowed = sidePanel !== 'diff' && sidePanel !== 'tasks'
+  const previewAllowed = !sidePanelHidesPreview(sidePanel)
   const showImage = previewTarget?.kind === 'image' && previewAllowed
   const showEditor = previewTarget?.kind === 'code' && previewAllowed
   const showDiff = sidePanel === 'diff'

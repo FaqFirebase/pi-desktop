@@ -277,6 +277,13 @@ export interface SessionRuntimeInfo extends PiStatus {
   active: boolean
   /** Main emitted marker telling the renderer to remove this closed tab. */
   closed?: boolean
+  /**
+   * The engine's reason (empty when it gave none) for refusing the prompt main
+   * sent to start this New Task. The refused prompt never reaches the session
+   * history, so the renderer shows this in the task's chat. Cleared once a
+   * turn runs.
+   */
+  promptRefusal?: string
 }
 
 export interface SessionRuntimeCloseResult {
@@ -780,11 +787,64 @@ export interface PiCommandOutputEvent {
   text: string
 }
 
-/** Completion signal for an accepted prompt that did not invoke the agent. */
+/**
+ * OMP's completion signal for a prompt. With `agentInvoked` false no turn ran:
+ * a local command finished, or the prompt failed with `error`.
+ */
 export interface PiPromptResultEvent {
   type: 'prompt_result'
   id?: string
   agentInvoked: boolean
+  status?: 'completed' | 'aborted' | 'error'
+  error?: { message: string }
+}
+
+/**
+ * The engine's answer to a prompt it refused, or null when it took it. Pi and
+ * OMP answer a failed preflight (no API key, an expired login, no model) with
+ * `success: false` and the reason, and run no turn for it.
+ */
+export function promptRefusal(response: unknown): { reason: string } | null {
+  const answer = response as { success?: unknown; error?: unknown } | null
+  if (answer?.success !== false) return null
+  return { reason: typeof answer.error === 'string' ? answer.error : '' }
+}
+
+/**
+ * True for a prompt response that says the agent was not invoked: OMP ran a
+ * local command. Pi and OMP answer an agent prompt without `agentInvoked`.
+ */
+export function promptRanWithoutAgent(response: unknown): boolean {
+  const data = (response as { data?: { agentInvoked?: unknown } } | null)?.data
+  return data?.agentInvoked === false
+}
+
+/**
+ * True when a get_state response says no agent run is going. An accepted
+ * prompt's answer does not say whether a run follows: Pi runs an extension
+ * command, or lets an input handler take the prompt, and answers success with
+ * no run at all.
+ */
+export function reportsNoAgentRun(stateResponse: unknown): boolean {
+  const answer = stateResponse as { success?: unknown; data?: { isStreaming?: unknown } | null } | null
+  return answer?.success === true && answer.data?.isStreaming === false
+}
+
+/**
+ * True for an engine that reports how each prompt ended in a prompt_result
+ * event (OMP). It answers a prompt as soon as it admits it, before an
+ * extension command runs or a later model or API key check fails, so that
+ * event, not a get_state read, settles a prompt that ran no turn. It comes
+ * after a turn's agent_end, so one that comes before any agent_start ended a
+ * prompt that ran no turn.
+ */
+export function reportsPromptOutcome(engine: AgentEngineKind): boolean {
+  return engine === 'omp'
+}
+
+/** The refusal a prompt_result reports, or null for a prompt that ended without one. */
+export function promptResultRefusal(event: PiPromptResultEvent): { reason: string } | null {
+  return event.status === 'error' ? { reason: event.error?.message ?? '' } : null
 }
 
 /** OMP config changes that should cause the renderer to re-read get_state. */
@@ -1211,6 +1271,13 @@ export interface PermissionRulesWorkspaceStatus {
 
 /** A concrete engine. `auto` is a preference, never something that is running. */
 export type AgentEngineKind = 'pi' | 'omp'
+
+const AGENT_ENGINE_KINDS = { pi: true, omp: true } as const satisfies Record<AgentEngineKind, true>
+
+/** Payload check for an engine named over IPC. */
+export function isAgentEngineKind(value: unknown): value is AgentEngineKind {
+  return typeof value === 'string' && Object.hasOwn(AGENT_ENGINE_KINDS, value)
+}
 
 export type AgentEngine = 'auto' | AgentEngineKind
 

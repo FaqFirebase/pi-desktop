@@ -1718,6 +1718,7 @@
       "installedPackage": "Installed {{spec}}. Restart Pi to load it.",
       "installFailed": "Install failed",
       "modelError": "Model error: {{detail}}",
+      "modelsFileNotLoaded": "The models file has not loaded yet. Try again.",
       "newIsolatedTabError": "New isolated tab error: {{detail}}",
       "newSessionError": "New session error: {{detail}}",
       "notAFolder": "Cannot open as project — not a folder: {{path}}",

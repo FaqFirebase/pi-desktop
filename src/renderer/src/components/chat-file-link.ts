@@ -1,4 +1,4 @@
-import { useAppStore, type PreviewTarget } from '../store'
+import { sidePanelHidesPreview, useAppStore, type PreviewTarget } from '../store'
 
 // Image extensions the viewer can render. png/jpg/jpeg/gif/webp/avif/bmp/ico
 // arrive as base64 from readAttachment; svg comes back as text and is rendered
@@ -73,9 +73,9 @@ export function looksLikeFilePath(text: string): boolean {
 
 /**
  * Show a file in the chat view's preview pane (images in the image viewer,
- * other files in the code editor). The diff pane shares that slot, so it makes
- * way, and the full-page diff view returns to chat. Resolves false when a
- * dirty editor declines the change.
+ * other files in the code editor). A side panel that takes the whole slot
+ * (the diff or the Tasks panel) makes way, and the full-page diff view returns
+ * to chat. Resolves false when a dirty editor declines the change.
  */
 export async function openFilePreview(file: Omit<PreviewTarget, 'kind'>): Promise<boolean> {
   const opened = await useAppStore.getState().setPreviewTarget({
@@ -83,9 +83,9 @@ export async function openFilePreview(file: Omit<PreviewTarget, 'kind'>): Promis
     ...file,
   })
   if (!opened) return false
-  // Re-read the state: the diff pane may have opened during the confirm.
+  // Re-read the state: such a panel may have opened during the confirm.
   const current = useAppStore.getState()
-  if (current.chatSidePanel === 'diff') await current.setChatSidePanel(null)
+  if (sidePanelHidesPreview(current.chatSidePanel)) await current.setChatSidePanel(null)
   if (current.currentView !== 'chat') current.setCurrentView('chat')
   return true
 }

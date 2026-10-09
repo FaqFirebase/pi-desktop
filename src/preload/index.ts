@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
+  AgentEngineKind,
   PiRpcEvent,
   PiStartOptions,
   PiStatus,
@@ -245,10 +246,11 @@ interface PiDesktopAPI {
     fetchCatalog(query?: string): Promise<CatalogPackage[]>
   }
 
-  // Models config (read/write ~/.pi/agent/models.json)
+  // Custom models config: the active engine's models file
   models: {
     read(): Promise<ModelsReadResult>
-    write(config: ModelsConfig): Promise<{ success: boolean; error?: string }>
+    /** Writes the models file of `engine`: the one the editor read, whatever runs now. */
+    write(config: ModelsConfig, engine: AgentEngineKind): Promise<{ success: boolean; error?: string }>
   }
 
   council: {
@@ -568,7 +570,7 @@ const api: PiDesktopAPI = {
 
   models: {
     read: () => ipcRenderer.invoke(IPC_CHANNELS.MODELS_READ),
-    write: (config) => ipcRenderer.invoke(IPC_CHANNELS.MODELS_WRITE, config),
+    write: (config, engine) => ipcRenderer.invoke(IPC_CHANNELS.MODELS_WRITE, config, engine),
   },
 
   council: {

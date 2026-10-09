@@ -8,6 +8,7 @@ import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrd
 import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
 import { isStoppedAnswer } from '../../shared/stopped-answer'
 import { stripAnsi } from './utils/strip-ansi'
+import { createStaleGuard } from './utils/stale-guard'
 import { splitClaudeCliMarkers } from './claude-cli-markers'
 import { markUnansweredToolCallsRunning, settleRunningToolCall } from './reattached-tool-calls'
 import type { PiCommand } from '../../shared/pi-command'
@@ -83,6 +84,10 @@ import type {
   SessionDeleteResult,
   ModelsFileInfo,
   ModelInfo,
+  PiPromptResultEvent,
+} from '../../shared/ipc-contracts'
+import {
+  promptRanWithoutAgent, promptRefusal, promptResultRefusal, reportsNoAgentRun, reportsPromptOutcome,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -99,6 +104,18 @@ export interface PreviewTarget {
   name: string
   path: string
   relativePath?: string
+}
+
+/** A secondary view in the chat's side slot. */
+export type ChatSidePanel = 'files' | 'diff' | 'tasks'
+
+/**
+ * Whether a side panel takes the whole side slot. The chat then shows no file
+ * preview beside it, so opening it unmounts the editor and its unsaved buffer.
+ * The layout and the actions that open a panel read this one rule.
+ */
+export function sidePanelHidesPreview(panel: ChatSidePanel | null): boolean {
+  return panel === 'diff' || panel === 'tasks'
 }
 
 // ─── Composer Draft ──────────────────────────────────────────────────────────
@@ -321,10 +338,10 @@ interface AppState {
   // session/workspace from Home). In-app session switches leave it untouched so
   // the chat restores each session's remembered scroll position instead.
   chatScrollBottomNonce: number
-  // Chat side panel: which secondary view (file tree or diff) is open in
-  // the chat workspace. Lifted into the store so it survives navigating
+  // Chat side panel: which secondary view (file tree, diff, or Tasks) is open
+  // in the chat workspace. Lifted into the store so it survives navigating
   // away from chat (e.g. into Settings) and back.
-  chatSidePanel: 'files' | 'diff' | 'tasks' | null
+  chatSidePanel: ChatSidePanel | null
   sidebarOpen: boolean
   terminalOpen: boolean
   reviewOpen: boolean
@@ -385,11 +402,16 @@ interface AppState {
   // Skills
   installedSkills: InstalledSkill[]
 
-  // Custom models config (~/.pi/agent/models.json)
+  // Custom models config: the models file of the engine in use
   customModels: ModelsConfig | null
   customModelsError: string | null
-  /** Engine and file main resolved for the custom-models editor. */
+  /** Engine and file main resolved for the custom-models editor; Save writes this file. */
   customModelsFile: ModelsFileInfo | null
+  /**
+   * The custom-models editor holds edits it has not saved. They keep the file
+   * they were made on: a change of engine reloads the editor only without them.
+   */
+  customModelsEdited: boolean
 
   // Council run UI state (null when no council run is active)
   councilRun: CouncilRunState | null
@@ -402,7 +424,8 @@ interface AppState {
 
   // Mirror of the editor pane's unsaved-changes state. The buffer itself is
   // component-local; this flag is what lets store actions that would destroy
-  // it (new preview target, diff pane, workspace switch) ask first.
+  // it (new preview target, a side panel that hides it, workspace switch) ask
+  // first.
   editorDirty: boolean
 
   // File search
@@ -535,8 +558,9 @@ interface AppActions {
   openWorkflowRunsForWorkspace: (workspaceId: string | null) => void
   refreshWorkflowRuns: () => Promise<void>
   requestChatScrollToBottom: () => void
-  // Resolves false when a dirty-editor discard was declined (diff pane only).
-  setChatSidePanel: (panel: AppState['chatSidePanel']) => Promise<boolean>
+  // Resolves false when a dirty-editor discard was declined (only a panel
+  // that hides the preview asks).
+  setChatSidePanel: (panel: ChatSidePanel | null) => Promise<boolean>
   toggleSidebar: () => void
   toggleTerminal: () => void
   toggleReview: () => void
@@ -602,10 +626,6 @@ interface AppActions {
    * new-session view in between.
    */
   activateWorkspace: (workspaceId: string, options?: { awaitingSession?: boolean; skipDirtyConfirm?: boolean }) => Promise<boolean>
-  switchWorkspace: (
-    workspaceId: string,
-    options?: { skipSessionLoad?: boolean }
-  ) => Promise<boolean>
   removeWorkspace: (workspaceId: string) => Promise<void>
   renameWorkspace: (workspaceId: string, name: string) => Promise<void>
   changeWorkspaceFolder: (workspaceId: string, newPath: string) => Promise<void>
@@ -630,6 +650,7 @@ interface AppActions {
   // Custom models config
   loadCustomModels: () => Promise<void>
   saveCustomModels: (edited: ModelsConfig) => Promise<{ ok: boolean; errors?: string[] }>
+  setCustomModelsEdited: (edited: boolean) => void
 
   // File preview. Resolves false when a dirty-editor discard was declined and
   // the target was left unchanged.
@@ -770,18 +791,70 @@ function enqueueAttachBackfill(get: () => AppState & AppActions): Promise<void> 
 }
 
 /**
- * True for a prompt response that says the agent was not invoked: OMP ran a
- * local command. Pi and OMP answer an agent prompt without `agentInvoked`.
+ * Agent runs the chat on screen saw start. A prompt reads it before it is sent,
+ * so its answer can tell whether a run followed it.
  */
-export function promptRanWithoutAgent(response: unknown): boolean {
-  const data = (response as { data?: { agentInvoked?: unknown } } | null)?.data
-  return data?.agentInvoked === false
+let agentRunStarts = 0
+
+/**
+ * The prompt this window sent last: the chat it went to (its
+ * sessionLoadGeneration) and agentRunStarts when it went out. A prompt_result
+ * settles that prompt only while no turn has started since, because OMP
+ * reports a turn's prompt after the turn's own agent_end: a late report for an
+ * earlier prompt must not end a newer turn.
+ */
+let latestPrompt: { generation: number; runsAtSend: number } | null = null
+
+/** The chat text for a prompt the engine refused, which may come with no reason. */
+function refusalText(reason: string): string {
+  return t('store.messages.error', { detail: reason || t('store.messages.unknownError') })
 }
 
-/** A prompt that ran no agent turn: stop waiting for one. */
-function endTurnWithoutAgent(set: ZustandSet, get: () => AppState & AppActions): void {
-  set({ isStreaming: false })
+/**
+ * A prompt that ran no agent turn: stop waiting for one. A refused prompt
+ * shows the engine's reason. OMP reports one refusal twice, as an error
+ * response and as a prompt_result, in either order, so only the signal that
+ * still finds the turn open shows it.
+ */
+function endTurnWithoutAgent(set: ZustandSet, get: () => AppState & AppActions, refusal?: string): void {
+  if (refusal !== undefined && get().isStreaming) {
+    get().addMessage({ id: generateId(), role: 'system', content: refusalText(refusal), timestamp: Date.now() })
+  }
+  set(idleTurnState())
   void get().refreshSessionState()
+}
+
+/**
+ * Pi answers a prompt that an extension command or an input handler took with
+ * success, and starts no run for it: no agent_start or agent_end will come.
+ * The engine's state tells whether a run is going.
+ */
+async function endTurnUnlessRunning(
+  set: ZustandSet,
+  get: () => AppState & AppActions,
+  isCurrent: () => boolean,
+  runsAtSend: number
+): Promise<void> {
+  const state = await window.piDesktop.session.getState()
+  if (isCurrent() && agentRunStarts === runsAtSend && reportsNoAgentRun(state)) endTurnWithoutAgent(set, get)
+}
+
+// Keeps the refusal line's React key stable across history loads.
+const PROMPT_REFUSAL_ID_SUFFIX = '-prompt-refusal'
+
+/**
+ * `messages` with the line that tells why the engine refused the prompt of a
+ * New Task (see SessionRuntimeInfo.promptRefusal). The refused prompt is not
+ * in the session history, so each history load of that chat adds it again.
+ */
+function withPromptRefusal(messages: DisplayMessage[], runtime: SessionRuntimeInfo | undefined): DisplayMessage[] {
+  if (runtime?.promptRefusal === undefined) return messages
+  return [...messages, {
+    id: `${runtime.runtimeId}${PROMPT_REFUSAL_ID_SUFFIX}`,
+    role: 'system',
+    content: refusalText(runtime.promptRefusal),
+    timestamp: Date.now(),
+  }]
 }
 
 /** The title a session shows in the list: its name, else a preview of its first prompt. */
@@ -802,7 +875,7 @@ let sessionListRefreshTimer: ReturnType<typeof setTimeout> | null = null
  * Adopt an active-workspace change the main process made on its own: creating a
  * workspace whose path is already registered activates the existing one, as does
  * creating the very first workspace, and removing the active one promotes
- * another. None of those go through switchWorkspace, so the renderer has to
+ * another. None of those go through activateWorkspace, so the renderer has to
  * resync the extension-UI surfaces here or a prompt held for the workspace now
  * on screen stays invisible — the badge counts other workspaces only — and its
  * Pi turn blocks forever.
@@ -819,10 +892,13 @@ function adoptMainSideActivation(
   const active = get().activeWorkspace
   if (active?.id === previousActiveId) return
 
-  // The preview and chat belong to the workspace that just disappeared or was
-  // activated by main. Reset them before attaching the replacement manager;
-  // otherwise closing the active tab leaves the old conversation on screen.
+  // The preview, the chat, and an unsaved workspace-rules draft belong to the
+  // workspace that just disappeared or was activated by main. Reset them
+  // before attaching the replacement manager; otherwise closing the active tab
+  // leaves the old conversation on screen, and Save writes the draft into the
+  // promoted workspace's rules file.
   sessionLoadGeneration += 1
+  get().setPermissionRulesDraft('workspace', null)
   set({
     extensionUiRequest: null,
     previewTarget: null,
@@ -841,7 +917,7 @@ function adoptMainSideActivation(
 
   void window.piDesktop.ui.flushPendingPrompts(active.id)
   // A main-side activation is used by workspace removal and first-workspace
-  // creation, neither of which goes through switchWorkspace's normal Pi start.
+  // creation, neither of which goes through activateWorkspace's session open.
   // Start the promoted workspace when there was a previous active workspace;
   // the first-workspace open flow starts it through its regular switch path.
   if (previousActiveId !== null) {
@@ -986,6 +1062,9 @@ async function runPackageMutation(
 // update finished would otherwise overwrite the fresh one with stale versions.
 let latestPackageUpdateCheck = 0
 
+// Engine changes can start reads of two models files at once; the last one wins.
+const customModelsLoads = createStaleGuard()
+
 export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Initial State ────────────────────────────────────────────────────
 
@@ -1061,6 +1140,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   customModels: null,
   customModelsError: null,
   customModelsFile: null,
+  customModelsEdited: false,
   councilRun: null,
 
   previewTarget: null,
@@ -1289,10 +1369,24 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         // Record the text actually sent (plan mode wraps it), not the text
         // displayed — Pi's message_start echo carries the sent form.
         recordLocalEcho(prompt)
+        const gen = sessionLoadGeneration
+        const workspaceId = get().activeWorkspace?.id
+        // The answer belongs to the chat the prompt was sent from.
+        const isCurrent = (): boolean => gen === sessionLoadGeneration && workspaceId === get().activeWorkspace?.id
+        const runsAtSend = agentRunStarts
+        // Set before the prompt goes out: OMP can report the outcome before its answer.
+        latestPrompt = { generation: gen, runsAtSend }
         const response = await window.piDesktop.commands.prompt(prompt, options)
-        // OMP answers a local slash command (`/context`) in the response itself
-        // and starts no turn, so no agent_end will end the stream.
-        if (promptRanWithoutAgent(response)) endTurnWithoutAgent(set, get)
+        if (!isCurrent()) return
+        // None of these answers starts a turn, so no agent_end will end the stream.
+        const refusal = promptRefusal(response)
+        if (refusal) endTurnWithoutAgent(set, get, refusal.reason)
+        // OMP answers a local slash command (`/context`) in the response itself.
+        else if (promptRanWithoutAgent(response)) endTurnWithoutAgent(set, get)
+        // OMP's prompt_result settles a prompt that runs no turn (see the event below).
+        else if (agentRunStarts === runsAtSend && !reportsPromptOutcome(get().piEngine)) {
+          await endTurnUnlessRunning(set, get, isCurrent, runsAtSend)
+        }
       }
     } catch (err) {
       get().addMessage({
@@ -1830,7 +1924,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           })
           // Back in a turn that is still running: its unanswered tools are running.
           const reattached = get().isStreaming && get().reattachedMidTurn
-          set({ messages: reattached ? markUnansweredToolCallsRunning(messages) : messages, sessionLoading: false })
+          set({
+            messages: withPromptRefusal(
+              reattached ? markUnansweredToolCallsRunning(messages) : messages,
+              runtimeId ? get().sessionRuntimes[runtimeId] : undefined
+            ),
+            sessionLoading: false,
+          })
         } else {
           set({ sessionLoading: false })
         }
@@ -2199,10 +2299,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   requestChatScrollToBottom: () =>
     set((state) => ({ chatScrollBottomNonce: state.chatScrollBottomNonce + 1 })),
   setChatSidePanel: async (panel) => {
-    // Only opening the diff destroys the editor buffer: chat-panel renders the
-    // editor pane only while the side panel is not 'diff', so this unmounts a
-    // dirty FilePreview. Every other panel leaves the editor mounted.
-    if (panel === 'diff') {
+    // A panel that hides the preview unmounts a dirty FilePreview, so it asks
+    // first. The file tree leaves the editor mounted beside it.
+    if (sidePanelHidesPreview(panel)) {
       if (!(await get().confirmDiscardEditorChanges())) return false
       set({ chatSidePanel: panel, editorDirty: false })
       return true
@@ -2379,6 +2478,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         break
 
       case 'agent_start': {
+        agentRunStarts += 1
         // A fresh turn means real stream context from its first byte — any
         // pending mid-turn-attach backfill was already handled at agent_end.
         set({ isStreaming: true, reattachedMidTurn: false })
@@ -2509,9 +2609,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         break
       }
 
-      case 'prompt_result':
-        if (!(event as { agentInvoked?: unknown }).agentInvoked) endTurnWithoutAgent(set, get)
+      case 'prompt_result': {
+        // Before any turn started for it, the prompt ran none: a refusal after
+        // admission (its error reaches no message_end), a finished command, or a stop.
+        if (latestPrompt?.generation === sessionLoadGeneration && latestPrompt.runsAtSend === agentRunStarts) {
+          endTurnWithoutAgent(set, get, promptResultRefusal(event as PiPromptResultEvent)?.reason)
+        }
         break
+      }
 
       case 'subagent_lifecycle':
         set((state) => ({ subagentTasks: applyOmpLifecycle(state.subagentTasks, event.payload) }))
@@ -2658,6 +2763,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   handleSessionRuntime: (runtime) => {
     const expectedRuntimeId = get().activeSessionRuntimeId
+    const refusalArrived = runtime.promptRefusal !== undefined &&
+      runtime.promptRefusal !== get().sessionRuntimes[runtime.runtimeId]?.promptRefusal
     if (runtime.closed) {
       set((current) => {
         const { [runtime.runtimeId]: _closed, ...remaining } = current.sessionRuntimes
@@ -2697,6 +2804,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         set({ isStreaming: true, reattachedMidTurn: true })
       } else if (!working && current.reattachedMidTurn) {
         set({ isStreaming: false, reattachedMidTurn: false })
+        void enqueueAttachBackfill(get)
+      } else if (refusalArrived) {
+        // The refusal of a task prompt shows with the chat's history.
         void enqueueAttachBackfill(get)
       }
     }
@@ -2810,7 +2920,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   createWorkspace: async (name, path) => {
     // Main activates an existing workspace on a duplicate path — inside the
     // create call, with none of the switch teardown. Route the duplicate
-    // through switchWorkspace instead, so every caller gets the dirty-editor
+    // through activateWorkspace instead, so every caller gets the dirty-editor
     // ask, the chat clear, and the status resync; the already-active duplicate
     // needs nothing at all.
     const duplicate = get().workspaces.find((w) => pathsEqual(w.path, path))
@@ -2921,8 +3031,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       }
       // An already-registered folder must NOT go through createWorkspace:
       // main's create activates a duplicate path immediately, before
-      // switchWorkspace can raise the still-working confirm — declining it
-      // would then leave main and the chat pane on different workspaces.
+      // activateWorkspace can ask about unsaved editor changes — declining
+      // then would leave main and the chat pane on different workspaces.
       // Only a genuinely new path gets created (main leaves the active
       // workspace alone then, except for the very first workspace, where
       // there is no prior state for the confirm to protect).
@@ -2955,6 +3065,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (!options?.skipDirtyConfirm && !(await get().confirmDiscardEditorChanges())) return false
     try {
       const workspace = await window.piDesktop.workspace.setActive(workspaceId)
+      // The switch has committed. An unsaved workspace-rules draft belongs to
+      // the workspace being left: drop it before the next workspace shows, or
+      // Settings loads it as that workspace's rules and Save writes it there.
+      get().setPermissionRulesDraft('workspace', null)
       sessionLoadGeneration += 1
       get().clearMessages()
       // Decide from the runtime snapshots the main process already pushed —
@@ -3001,102 +3115,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         timestamp: Date.now(),
       })
       return false
-    }
-  },
-
-  switchWorkspace: async (workspaceId, options) => {
-    const skipSessionLoad = options?.skipSessionLoad === true
-    // Whether setActive committed on the main side. Gates the finally-flush:
-    // flushing on a declined gate or a failed setActive would target a
-    // workspace the user never actually switched to.
-    let switchCommitted = false
-    try {
-      // Workspace switches are safe: the old workspace's Pi process keeps
-      // running and the activity tracker continues to observe it. Only the
-      // editor buffer needs a confirmation because it cannot follow the path.
-      // The editor buffer belongs to the workspace being left, and the new
-      // workspace's file service refuses paths outside its root — unsaved
-      // edits would be stranded unsaveable. Ask before committing the switch.
-      if (!(await get().confirmDiscardEditorChanges())) return false
-      const workspace = await window.piDesktop.workspace.setActive(workspaceId)
-      switchCommitted = true
-      // The dialog on screen belongs to the workspace being left. Clear it
-      // WITHOUT answering: main retains the request and re-broadcasts it on
-      // switch-back, while a synthesized deny would hard-block the asking
-      // tool. Must happen only after setActive succeeds — on a failed switch
-      // the dialog still belongs on screen. The preview closes for the same
-      // reason: its file lives in the old workspace.
-      set({ extensionUiRequest: null, previewTarget: null, editorDirty: false })
-      // The switch has committed on the main side as of this point — an
-      // unsaved workspace-rules draft belongs to the workspace being left, so
-      // discard it now rather than at the end of this chain. Doing it here
-      // (before any of the awaits below) means it can't be skipped by a later
-      // throw in this chain, and the settings panel's own activeWorkspace-change
-      // effect can never observe a stale draft under the new workspace.
-      get().setPermissionRulesDraft('workspace', null)
-      get().clearMessages()
-      sessionLoadGeneration += 1
-      // Render the target workspace immediately from pushed runtime snapshots,
-      // then reconcile status + workspace list in one parallel roundtrip.
-      const live = workspaceHasLivePi(get().sessionRuntimes, workspace.id)
-      set((state) => ({
-        workspaces: state.workspaces.some((item) => item.id === workspace.id)
-          ? state.workspaces.map((item) => item.id === workspace.id ? workspace : item)
-          : [...state.workspaces, workspace],
-        activeWorkspace: workspace,
-        piStatus: live ? 'running' : 'stopped',
-        piPid: null,
-        piError: null,
-        sessionLoading: live && !skipSessionLoad,
-      }))
-      const [status] = await Promise.all([
-        window.piDesktop.pi.getStatus(),
-        get().loadWorkspaces(),
-      ])
-      set({ piStatus: status.status, piStartupPhase: status.startupPhase ?? null, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
-      // Session list refresh only — navigation never spawns a process.
-      scheduleSessionListRefresh(get)
-      if (!skipSessionLoad && get().piStatus === 'running') {
-        await get().reloadActiveSession({ refreshList: false })
-        // A turn may already be running here (that is what the sidebar dot
-        // advertised). The reload above only shows persisted messages, so
-        // without this the chat looks idle while Pi is mid-response. Show the
-        // working indicator and mark the attach so the next turn boundary
-        // backfills from the session (the stream buffers missed the prefix).
-        const activity = Object.values(get().sessionRuntimes).find((runtime) => runtime.active && runtime.workspaceId === workspaceId)?.activity
-        if (activity === 'working' || activity === 'needs-approval') {
-          set({ isStreaming: true, reattachedMidTurn: true })
-        }
-      } else if (get().piStatus !== 'running') {
-        // Idle workspace: the empty new-session view renders instantly. No
-        // spinner, no process — Pi starts when the first prompt is sent.
-        set({ sessionState: null, sessionStats: null, sessionLoading: false })
-      } else {
-        // Stats only. Refreshing sessionState here races the follow-up
-        // switchSession this flow contracts for: when the refresh lands
-        // first, the fast path sees its target "already active" over the
-        // chat this switch just cleared — an empty screen and a dead click.
-        // That switchSession's reload refreshes state and stats anyway.
-        void get().refreshSessionStats()
-      }
-      await get().maybeWarnWorkspacePermissionRules()
-      return true
-    } catch (err) {
-      get().addMessage({
-        id: generateId(),
-        role: 'system',
-        content: t('store.messages.switchWorkspaceError', { detail: err instanceof Error ? err.message : String(err) }),
-        timestamp: Date.now(),
-      })
-      return false
-    } finally {
-      // Replay any blocking prompt main holds for the new workspace. In
-      // `finally` because every post-commit await above can reject and the
-      // held prompt must still surface; main no-ops the flush unless the
-      // workspace is active when it executes.
-      if (switchCommitted) {
-        void window.piDesktop.ui.flushPendingPrompts(workspaceId)
-      }
     }
   },
 
@@ -3292,14 +3310,20 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   loadCustomModels: async () => {
+    const isLatest = customModelsLoads.begin()
+    // A newer read wins, and edits begun during this one keep the file they
+    // were made on. Every load starts without unsaved edits.
+    const isWanted = (): boolean => isLatest() && !get().customModelsEdited
     try {
       const result = await window.piDesktop.models.read()
+      if (!isWanted()) return
       if ('error' in result) {
         set({ customModels: null, customModelsError: result.error, customModelsFile: result.location })
-      } else {
+      } else if (!isSameModelsFile(get(), result.config, result.location)) {
         set({ customModels: result.config, customModelsError: null, customModelsFile: result.location })
       }
     } catch (err) {
+      if (!isWanted()) return
       set({ customModels: null, customModelsError: err instanceof Error ? err.message : String(err), customModelsFile: null })
     }
   },
@@ -3307,12 +3331,21 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   saveCustomModels: async (edited) => {
     const errors = validateModelsConfig(edited)
     if (errors.length > 0) return { ok: false, errors }
+    // The edits belong to the file the editor shows, so the save names its
+    // engine; main must not pick the engine in use again.
+    const loaded = get().customModelsFile
+    if (!loaded) return { ok: false, errors: [t('store.messages.modelsFileNotLoaded')] }
     const original = get().customModels ?? { providers: {} }
     const merged = mergeModelsConfig(original, edited)
-    const result = await window.piDesktop.models.write(merged)
+    const result = await window.piDesktop.models.write(merged, loaded.engine)
     if (!result.success) return { ok: false, errors: [result.error ?? t('store.messages.writeFailed')] }
+    set({ customModelsEdited: false })
     await get().loadCustomModels()
     return { ok: true }
+  },
+
+  setCustomModelsEdited: (edited) => {
+    if (get().customModelsEdited !== edited) set({ customModelsEdited: edited })
   },
 
   setPreviewTarget: async (target) => {
@@ -3608,6 +3641,42 @@ useAppStore.subscribe((state) => {
   if ((state.composerFocusRequested || state.modelPickerOpen) && state.currentView !== 'chat') {
     useAppStore.setState({ composerFocusRequested: false, modelPickerOpen: false })
   }
+})
+
+/**
+ * What main reads to pick the engine whose models file it serves (see
+ * activeEngineKind there): the active workspace and session runtime, the
+ * engine that runtime runs, and the engine setting.
+ */
+/**
+ * The store already holds this models file with this content. Every chat
+ * bubble reads customModels for model names, so a reload that finds the same
+ * file keeps the same object and renders nothing again.
+ */
+function isSameModelsFile(state: AppState, config: ModelsConfig, location: ModelsFileInfo): boolean {
+  return state.customModelsError === null
+    && state.customModelsFile?.file === location.file
+    && JSON.stringify(state.customModels) === JSON.stringify(config)
+}
+
+function modelsEngineInputs(state: AppState): readonly unknown[] {
+  return [
+    state.activeWorkspace?.id,
+    state.activeSessionRuntimeId,
+    state.piEngine,
+    state.settings?.piEngine,
+    state.settings?.piExecutablePath,
+  ]
+}
+
+// The custom-models editor shows the models file of the engine in use, and
+// Save writes the file it shows. When that engine may have changed, read the
+// file again so the rows and labels follow it; unsaved edits keep their file.
+useAppStore.subscribe((state, prev) => {
+  if (state.customModelsEdited) return
+  const inputs = modelsEngineInputs(state)
+  const before = modelsEngineInputs(prev)
+  if (inputs.some((input, index) => input !== before[index])) void state.loadCustomModels()
 })
 
 // ─── Event Handlers ──────────────────────────────────────────────────────────

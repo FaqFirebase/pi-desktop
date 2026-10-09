@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useAppStore } from './store'
+import { useAppStore, type ChatSidePanel } from './store'
 import { getAppliedThemeId, subscribeAppliedTheme } from './utils/theme'
 import { DEFAULT_SETTINGS } from '../../shared/default-settings'
 import { withGuiCommands, type GuiCommand, type PiCommand } from '../../shared/pi-command'
@@ -179,7 +179,7 @@ export function useChatVisible(): boolean {
  * diff pane while the chat is visible, or the Diff view. The main process
  * watches the workspace only while this holds.
  */
-export function isFileWatchDemanded(scope: ChatVisibilityScope & { chatSidePanel: 'files' | 'diff' | 'tasks' | null }): boolean {
+export function isFileWatchDemanded(scope: ChatVisibilityScope & { chatSidePanel: ChatSidePanel | null }): boolean {
   if (isGlobalWorkflowOpen(scope)) return false
   if (scope.currentView === 'diff') return true
   // The Tasks panel reads no workspace files, so it does not demand the watcher.

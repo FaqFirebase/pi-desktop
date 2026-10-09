@@ -5,7 +5,13 @@ import { PiRpcManager } from './pi-rpc-manager'
 import { FileService } from './file-service'
 import {
   WHOLE_WORKSPACE_CHANGE_PATH,
+  promptRanWithoutAgent,
+  promptRefusal,
+  promptResultRefusal,
+  reportsNoAgentRun,
+  reportsPromptOutcome,
   type FileChangeEvent,
+  type PiPromptResultEvent,
   type LinkedRepoStatus,
   type LinkedTaskOptions,
   type LinkedTaskRepo,
@@ -111,6 +117,14 @@ interface SessionRuntimeEntry {
    * isDisposableSessionFile.
    */
   appCreated: boolean
+  /** Agent runs this runtime's engine started, so a prompt can tell whether one followed it. */
+  agentRunStarts: number
+  /**
+   * agentRunStarts when a task prompt went to an engine that reports how each
+   * prompt ended (OMP); null otherwise. Its prompt_result settles the task when
+   * no turn started (see promptSessionRuntime).
+   */
+  runlessPromptRuns: number | null
 }
 
 /**
@@ -412,8 +426,18 @@ export class WorkspaceManager {
       entry.info = { ...entry.info, ...manager.getStatus() }
       this.emitSessionRuntime(entry)
     })
-    manager.on('agent_start', () => this.emitRuntimeActivity(entry, 'working'))
+    manager.on('agent_start', () => {
+      entry.agentRunStarts += 1
+      // A turn ran, so a refusal of the prompt before it no longer describes the chat.
+      const { promptRefusal: _settled, ...info } = entry.info
+      entry.info = info
+      this.emitRuntimeActivity(entry, 'working')
+    })
     manager.on('agent_end', () => this.emitRuntimeActivity(entry, 'completed'))
+    // OMP's report on a task prompt that ran no turn: refused after admission, or a command that finished.
+    manager.on('prompt_result', (event: PiPromptResultEvent) => {
+      if (entry.runlessPromptRuns === entry.agentRunStarts) this.settleRunlessPrompt(entry, promptResultRefusal(event)?.reason)
+    })
     manager.on('extension_ui_request', (event: { method?: string }) => {
       if (event.method === 'select' || event.method === 'confirm' || event.method === 'input' || event.method === 'editor') {
         this.emitRuntimeActivity(entry, 'needs-approval')
@@ -443,6 +467,8 @@ export class WorkspaceManager {
       // spawn for it. A tab opened ON a file adopts a conversation that was
       // already there, which this app never gets to discard.
       appCreated: sessionPath === null,
+      agentRunStarts: 0,
+      runlessPromptRuns: null,
       info: {
         runtimeId,
         workspaceId,
@@ -749,11 +775,52 @@ export class WorkspaceManager {
     }
   }
 
-  sendCommandToSessionRuntime(runtimeId: string, command: Record<string, unknown>): Promise<unknown> {
+  /**
+   * Send the prompt a New Task starts with. The task shows as working until a
+   * turn ends it, so an answer that starts no turn settles it here: a refused
+   * prompt (no API key, an expired login, no model) fails the task and keeps
+   * the engine's reason for its chat; a prompt that ran without an agent run,
+   * such as an extension or a local command, completes it.
+   */
+  async promptSessionRuntime(runtimeId: string, message: string): Promise<void> {
     const entry = this.sessionRuntimes.get(runtimeId)
-    if (!entry) return Promise.reject(new Error(t('errors.session.runtimeNotFound', { runtimeId })))
+    if (!entry) throw new Error(t('errors.session.runtimeNotFound', { runtimeId }))
     this.touchRuntime(entry)
-    return entry.manager.sendCommand(command)
+    const runsAtSend = entry.agentRunStarts
+    // A closed tab is gone from the renderer; a snapshot of it would bring it back.
+    const isOpen = (): boolean => this.sessionRuntimes.get(runtimeId) === entry
+    // Armed before the prompt goes out: OMP can report the outcome before its answer.
+    const reportsOutcome = reportsPromptOutcome(entry.manager.getEngineKind())
+    if (reportsOutcome) entry.runlessPromptRuns = runsAtSend
+    const response = await entry.manager.sendCommand({ type: 'prompt', message })
+    // Gone, or already settled by its prompt_result.
+    if (!isOpen() || (reportsOutcome && entry.runlessPromptRuns === null)) return
+    const refusal = promptRefusal(response)
+    if (refusal) return this.settleRunlessPrompt(entry, refusal.reason)
+    // A turn that started ends the task with its own agent_end.
+    if (entry.agentRunStarts !== runsAtSend) return
+    if (promptRanWithoutAgent(response)) return this.settleRunlessPrompt(entry)
+    // Its prompt_result settles a prompt that runs no turn.
+    if (reportsOutcome) return
+    const state = await entry.manager.sendCommand({ type: 'get_state' })
+    if (!isOpen() || entry.agentRunStarts !== runsAtSend || !reportsNoAgentRun(state)) return
+    this.settleRunlessPrompt(entry)
+  }
+
+  /**
+   * A task prompt that ran no turn: a refusal fails the task and keeps the
+   * engine's reason for its chat; anything else (an extension or a local
+   * command) completes it.
+   */
+  private settleRunlessPrompt(entry: SessionRuntimeEntry, refusal?: string): void {
+    entry.runlessPromptRuns = null
+    if (refusal === undefined) {
+      this.emitRuntimeActivity(entry, 'completed')
+      return
+    }
+    entry.info = { ...entry.info, activity: 'failed', promptRefusal: refusal }
+    this.touchRuntime(entry)
+    this.emitSessionRuntime(entry)
   }
 
   async initialize(): Promise<void> {

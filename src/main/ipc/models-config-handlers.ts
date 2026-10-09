@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import type { AgentEngineKind, ModelsFileInfo, ModelsReadFailure, ModelsReadResult } from '../../shared/ipc-contracts'
-import { IPC_CHANNELS } from '../../shared/ipc-contracts'
+import { IPC_CHANNELS, isAgentEngineKind } from '../../shared/ipc-contracts'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import {
@@ -64,11 +64,17 @@ export function registerModelsConfigHandlers(ctx: IpcContext): void {
     return readModelsConfigFile(activeEngineKind(workspaceManager))
   })
 
-  ipcMain.handle(IPC_CHANNELS.MODELS_WRITE, async (_event, config: unknown): Promise<{ success: boolean; error?: string }> => {
+  ipcMain.handle(IPC_CHANNELS.MODELS_WRITE, async (_event, config: unknown, engine: unknown): Promise<{ success: boolean; error?: string }> => {
     if (!isModelsConfig(config)) {
       return { success: false, error: 'Invalid models config' }
     }
-    const location = modelsFileLocation(activeEngineKind(workspaceManager))
+    // The editor names the engine whose file it read. The engine in use can
+    // change while the editor is open, and resolving it again here would put
+    // one engine's providers into the other's file.
+    if (!isAgentEngineKind(engine)) {
+      return { success: false, error: 'Invalid models engine' }
+    }
+    const location = modelsFileLocation(engine)
     try {
       if (!existsSync(location.dir)) await mkdir(location.dir, { recursive: true })
       await writeFile(location.file, serializeModelsFile(config, location.format), 'utf-8')

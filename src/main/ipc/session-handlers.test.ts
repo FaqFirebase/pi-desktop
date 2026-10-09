@@ -51,6 +51,55 @@ test('new sessions receive the persisted model and reasoning preference', async 
   }
 })
 
+test('a task prompt goes to its own runtime after startup, and a failed send fails the task', async () => {
+  const require = createRequire(import.meta.url)
+  const electronPath = require.resolve('electron')
+  require('electron')
+  const electronModule = require.cache[electronPath]!
+  const originalExports = electronModule.exports
+  handlers.clear()
+  electronModule.exports = {
+    ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler) },
+    app: { isPackaged: false, getAppPath: () => process.cwd() },
+  }
+  const root = await mkdtemp(join(tmpdir(), 'pi-task-'))
+  configureGuiDataDir(root)
+  try {
+    const { registerSessionHandlers } = await import('./session-handlers')
+    const runtime = { runtimeId: 'task', workspaceId: 'workspace' }
+    const steps: string[] = []
+    let failed!: () => void
+    const settled = new Promise<void>((resolve) => { failed = resolve })
+    registerSessionHandlers({
+      workspaceManager: {
+        getActiveWorkspace: () => ({ id: 'workspace', path: root }),
+        getWorkspaces: () => [{ id: 'workspace', path: root }],
+        createNewSessionRuntime: async () => runtime,
+        startSessionRuntime: async () => { steps.push('start') },
+        // The workspace manager settles the task from the engine's answer.
+        promptSessionRuntime: async (runtimeId: string, message: string) => {
+          steps.push(`prompt:${runtimeId}:${message}`)
+          throw new Error('Pi process is not running')
+        },
+        setSessionRuntimeActivity: (runtimeId: string, activity: string) => {
+          steps.push(`activity:${runtimeId}:${activity}`)
+          if (activity === 'failed') failed()
+        },
+      },
+    } as unknown as IpcContext)
+
+    assert.equal(
+      await handlers.get(IPC_CHANNELS.SESSION_LAUNCH_TASK)!(null, { workspaceId: 'workspace', prompt: 'fix the bug' }),
+      runtime
+    )
+    await settled
+    assert.deepEqual(steps, ['activity:task:working', 'start', 'prompt:task:fix the bug', 'activity:task:failed'])
+  } finally {
+    electronModule.exports = originalExports
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('switching back to an unpersisted live session reuses its runtime', async () => {
   const require = createRequire(import.meta.url)
   const electronPath = require.resolve('electron')

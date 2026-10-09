@@ -55,6 +55,7 @@ export function CustomModelsEditor(): React.JSX.Element {
   const customModelsError = useAppStore((s) => s.customModelsError)
   const loadCustomModels = useAppStore((s) => s.loadCustomModels)
   const saveCustomModels = useAppStore((s) => s.saveCustomModels)
+  const setCustomModelsEdited = useAppStore((s) => s.setCustomModelsEdited)
   const restartPi = useAppStore((s) => s.restartPi)
   // Main resolves which engine and file the editor targets; the labels show
   // exactly that so they can never name a file the save does not touch.
@@ -69,15 +70,20 @@ export function CustomModelsEditor(): React.JSX.Element {
 
   useEffect(() => {
     loadCustomModels()
-  }, [loadCustomModels])
+    // Unsaved rows go with the editor; the store may follow the engine again.
+    return () => setCustomModelsEdited(false)
+  }, [loadCustomModels, setCustomModelsEdited])
 
+  // A load replaces the rows, so they match the file again.
   useEffect(() => {
     setRows(configToRows(customModels))
-  }, [customModels])
+    setCustomModelsEdited(false)
+  }, [customModels, setCustomModelsEdited])
 
   const update = (next: ProviderRow[]): void => {
     setRows(next)
     setSaved(false)
+    setCustomModelsEdited(true)
   }
 
   const addProvider = (): void =>

@@ -1686,6 +1686,7 @@
       "installedPackage": "已安装 {{spec}}。重启 Pi 以加载它。",
       "installFailed": "安装失败",
       "modelError": "模型错误：{{detail}}",
+      "modelsFileNotLoaded": "模型文件尚未加载，请重试。",
       "newIsolatedTabError": "新建隔离标签页错误：{{detail}}",
       "newSessionError": "新建会话错误：{{detail}}",
       "notAFolder": "无法作为项目打开 — 不是文件夹：{{path}}",
