@@ -200,7 +200,7 @@ chmod +x Pi-Desktop-*.AppImage
 
 Download the `.dmg` (Apple Silicon / arm64) from [Releases](https://github.com/FaqFirebase/pi-desktop/releases), open it, and drag **Pi Desktop** to Applications.
 
-Builds are **not signed or notarized** yet. macOS quarantines the unsigned download, and on first launch Gatekeeper shows this dialog (this is macOS's wording, not our advice):
+Builds are **ad-hoc signed, without an Apple-issued certificate, and not notarized**. macOS can quarantine the download, and on first launch Gatekeeper shows this dialog (this is macOS's wording, not our advice):
 
 > Pi Desktop is damaged and can't be opened. You should move it to the Trash.
 
@@ -215,6 +215,8 @@ Then open the app normally. You only need to do this once.
 > If macOS instead says the app **"cannot be opened because Apple cannot check it for malicious software,"** you can allow it without Terminal: open **System Settings > Privacy & Security**, scroll to the **Security** section, click **Open Anyway** next to the Pi Desktop notice, and confirm with Touch ID or your password.
 
 > To skip the unsigned-app warnings, build from source. Gatekeeper does not block a build you compile yourself, so there is no quarantine flag to clear. See [Build it yourself: Linux / macOS](#linux--macos) below.
+
+Local-network model providers also depend on macOS Local Network permission. The app declares why it needs that access and the release build signs it with Pi Desktop's own bundle identifier. Allow access when prompted, or check **System Settings > Privacy & Security > Local Network**. Apple's [TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy) explains how permission applies to agent and terminal child processes; it recommends an Apple-issued signing identity for reliable permission tracking across builds. Ad-hoc signing does not provide that publisher identity or notarization.
 
 ### Windows
 
