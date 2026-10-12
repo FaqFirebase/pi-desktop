@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Mic, Square, Loader2 } from 'lucide-react'
 import { useAppStore } from '../store'
-import { useVoiceDictation, type VoiceDictationHandlers } from '../voice/use-voice-dictation'
+import type { VoiceDictation } from '../voice/use-voice-dictation'
 import { VOICE_NEEDS_GPU_ERROR } from '../voice/voice-worker-protocol'
 import { onVoiceShortcut, type VoiceShortcutCommand } from '../voice/voice-shortcut'
 
@@ -12,18 +12,18 @@ import { onVoiceShortcut, type VoiceShortcutCommand } from '../voice/voice-short
  * to stop sooner). The push-to-talk key records while held, and the
  * system-wide dictation key acts like a click. When no model is installed yet,
  * the button and both keys open Settings where the user picks one. It never
- * sends the message.
+ * sends the message. The composer owns `dictation`, so sending can stop it.
  */
 export function VoiceMicButton({
-  handlers,
+  dictation,
   disabled,
 }: {
-  handlers: VoiceDictationHandlers
+  dictation: VoiceDictation
   disabled: boolean
 }): React.JSX.Element {
   const { t } = useTranslation()
   const setCurrentView = useAppStore((s) => s.setCurrentView)
-  const { phase, ready, error, toggle, hold, release } = useVoiceDictation(handlers)
+  const { phase, ready, error, toggle, hold, release } = dictation
 
   const runShortcut = (command: VoiceShortcutCommand) => {
     // A release always goes through, so a recording never outlives its key.

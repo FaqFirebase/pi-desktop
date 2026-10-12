@@ -10,6 +10,7 @@ import { CommandResults } from './command-results'
 import { SubagentProgress } from './subagent-progress'
 import { ModelSelector } from './model-selector'
 import { VoiceMicButton } from './voice-mic-button'
+import { useVoiceDictation } from '../voice/use-voice-dictation'
 import { applyInterim } from '../../../shared/voice-composer'
 import { ThinkingLevelSelector } from './thinking-level-selector'
 import { CornerDownLeft, Square, Paperclip, X, FileText, StickyNote, Users, Search, AlertCircle } from 'lucide-react'
@@ -159,16 +160,58 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     setAttachments((prev) => (prev.some((a) => a.path === next.path) ? prev : [...prev, next]))
   }, [])
 
+  // Live voice dictation writes a running transcript into the composer. The
+  // textarea is uncontrolled, so track the insertion point (anchor) and the
+  // length of the interim text, and rewrite that region as speech arrives.
+  const voiceAnchor = useRef(0)
+  const voiceInterimLen = useRef(0)
+  const voiceHandlers = useMemo(
+    () => ({
+      onStart: () => {
+        const ta = textareaRef.current
+        voiceAnchor.current = ta?.selectionStart ?? ta?.value.length ?? 0
+        voiceInterimLen.current = 0
+      },
+      onInterim: (text: string) => {
+        const ta = textareaRef.current
+        if (!ta) return
+        const r = applyInterim(ta.value, voiceAnchor.current, voiceInterimLen.current, text)
+        ta.value = r.value
+        voiceInterimLen.current = r.interimLength
+        ta.focus()
+        ta.setSelectionRange(r.caret, r.caret)
+        resizeTextarea(ta)
+        historyIndex.current = NO_RECALLED_PROMPT
+      },
+      onFinal: (text: string) => {
+        const ta = textareaRef.current
+        if (!ta) return
+        const r = applyInterim(ta.value, voiceAnchor.current, voiceInterimLen.current, text)
+        ta.value = r.value
+        voiceInterimLen.current = 0
+        ta.focus()
+        ta.setSelectionRange(r.caret, r.caret)
+        resizeTextarea(ta)
+        historyIndex.current = NO_RECALLED_PROMPT
+      },
+    }),
+    [resizeTextarea]
+  )
+  const dictation = useVoiceDictation(voiceHandlers)
+  const { cancel: cancelDictation } = dictation
+
   // Clear the composer and collapse it back to the idle height. The textarea is
   // uncontrolled and auto-grows in onInput, so clearing the value alone leaves it
-  // at its expanded height until the next keystroke.
+  // at its expanded height until the next keystroke. A running dictation stops
+  // here too, or its late text would come back into the cleared composer.
   const resetComposer = useCallback(() => {
     const ta = textareaRef.current
     if (!ta) return
+    cancelDictation()
     ta.value = ''
     ta.style.height = `${MIN_INPUT_HEIGHT}px`
     setSlashToken(null)
-  }, [])
+  }, [cancelDictation])
 
   // @-file mention autocomplete. `mention` is the token being typed (null when
   // inactive); `mentionResults` are the workspace files matching it and
@@ -193,14 +236,16 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     setMention(null)
     setMentionResults([])
 
-    // Capture the element and owner before a workspace switch or unmount.
+    // Capture the element and owner before a workspace switch or unmount. A
+    // running dictation stops, so its late text cannot land in the next draft.
     return () => {
+      cancelDictation()
       useAppStore.getState().saveComposerDraft(workspaceId, {
         text: composerDraftText(ta.value, historyIndex.current, draft.current),
         attachments: attachmentsRef.current,
       })
     }
-  }, [workspaceId, resizeTextarea])
+  }, [workspaceId, resizeTextarea, cancelDictation])
 
   // Search the workspace for the active mention query (debounced). An empty
   // query yields no results, so the popup stays hidden until the user types.
@@ -354,44 +399,6 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
       resizeTextarea(ta)
       ta.setSelectionRange(text.length, text.length)
     },
-    [resizeTextarea]
-  )
-
-  // Live voice dictation writes a running transcript into the composer. The
-  // textarea is uncontrolled, so track the insertion point (anchor) and the
-  // length of the interim text, and rewrite that region as speech arrives.
-  const voiceAnchor = useRef(0)
-  const voiceInterimLen = useRef(0)
-  const voiceHandlers = useMemo(
-    () => ({
-      onStart: () => {
-        const ta = textareaRef.current
-        voiceAnchor.current = ta?.selectionStart ?? ta?.value.length ?? 0
-        voiceInterimLen.current = 0
-      },
-      onInterim: (text: string) => {
-        const ta = textareaRef.current
-        if (!ta) return
-        const r = applyInterim(ta.value, voiceAnchor.current, voiceInterimLen.current, text)
-        ta.value = r.value
-        voiceInterimLen.current = r.interimLength
-        ta.focus()
-        ta.setSelectionRange(r.caret, r.caret)
-        resizeTextarea(ta)
-        historyIndex.current = NO_RECALLED_PROMPT
-      },
-      onFinal: (text: string) => {
-        const ta = textareaRef.current
-        if (!ta) return
-        const r = applyInterim(ta.value, voiceAnchor.current, voiceInterimLen.current, text)
-        ta.value = r.value
-        voiceInterimLen.current = 0
-        ta.focus()
-        ta.setSelectionRange(r.caret, r.caret)
-        resizeTextarea(ta)
-        historyIndex.current = NO_RECALLED_PROMPT
-      },
-    }),
     [resizeTextarea]
   )
 
@@ -863,7 +870,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
           >
             <Paperclip size={15} />
           </button>
-          <VoiceMicButton handlers={voiceHandlers} disabled={isDisabled} />
+          <VoiceMicButton dictation={dictation} disabled={isDisabled} />
           <button
             onClick={() => setNotePickerOpen(true)}
             className="hover:bg-highlight-strong flex items-center justify-center rounded-md p-1.5 text-dim hover:text-secondary transition-colors"
