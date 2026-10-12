@@ -146,6 +146,9 @@
       "category": "public.app-category.developer-tools",
       "icon": "resources/icons/Icon.icon",
       "darkModeSupport": true,
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "Pi Desktop connects to AI providers and development services on your local network."
+      },
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "artifactName": "Pi-Desktop-${version}-${os}-${arch}.${ext}"
