@@ -15,6 +15,7 @@ Pi Desktop is in alpha, so expect rough edges.
 - New Task starts a fresh session in a project and sends the task right away, optionally in an isolated Git worktree
 - [Linked tasks](#linked-tasks): one task across several Git repositories, shipped as linked pull requests
 - Right-edge tool rail that opens the Review panel, file tree, diff viewer, and terminal
+- Subagents panel with a live, read-only transcript for each subagent the chat starts (OMP, or Pi with pi-subagents)
 - Diff viewer with a filter for the files the session touched, per-file discard, and a Git bar with Commit, Commit + Push, Push, and PR (it becomes Open PR #N when the branch has an open pull request). In the Commit dialog, **Suggest message** asks the session's model for a commit message, and new files are committed only if you check them. The status bar has a branch menu to switch branches or create a new one
 - Code, image, PDF, and HTML previews, a CodeMirror 6 editor with Git change markers, and workspace file search
 - Resizable terminal, one per workspace
