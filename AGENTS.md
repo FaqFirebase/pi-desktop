@@ -69,7 +69,7 @@ src/
 │   ├── file-url.ts               # file:// URLs for local paths, every segment percent-encoded (drive and UNC paths)
 │   ├── preview-partitions.ts     # File-preview <webview> partition names, the ones main hardens
 │   ├── repo-set-draft.ts         # Repo set editing: unique names; the first repository is the main one
-│   ├── subagent-task.ts          # Subagent rows for the Tasks panel, rail badge and composer strip: parsers and reducers
+│   ├── subagent-task.ts          # Subagent rows for the Subagents panel, rail badge and composer strip: parsers and reducers
 │   ├── untrusted-data.ts         # Wrap file/agent text as a labeled untrusted-data block
 │   ├── agent-engine-label.ts     # Display names for the Pi/OMP engines (every surface reads this one map)
 │   ├── product-name.ts           # "Pi Desktop" display name (a named constant, never a translation key)
@@ -182,7 +182,7 @@ src/
         ├── message-grouping.ts   # Tool-name labels and message grouping
         ├── reattached-tool-calls.ts # Mark unfinished tool calls as running when a view returns mid-turn
         ├── claude-cli-markers.ts # Parse pi-claude-cli tool markers into tool cards
-        ├── subagent-transcript-view.ts # What the Tasks panel's transcript view shows
+        ├── subagent-transcript-view.ts # What the Subagents panel's transcript view shows
         ├── hooks/use-subagent-transcript.ts # Keep a subagent's transcript live while it runs and the chat is on screen
         ├── theme/engine.ts       # Apply a resolved theme to the document
         ├── themes/               # Built-in theme JSON files
@@ -227,7 +227,7 @@ src/
             ├── composer-draft.ts  # Composer draft kept apart from recalled prompts
             ├── model-selector.tsx # Composer model picker (searchable, keyboard-driven)
             ├── subagent-progress.tsx # Compact live subagent strip on the composer
-            ├── subagent-panel.tsx # Right-side Tasks panel: the chat's subagents and one live transcript
+            ├── subagent-panel.tsx # Right-side Subagents panel: the chat's subagents and one live transcript
             ├── subagent-task-row.tsx # One subagent row with its status icon
             ├── voice-mic-button.tsx # Composer mic button for voice dictation
             ├── chat-code-highlight.ts # Fenced-code syntax highlighting -> HTML
