@@ -1,20 +1,27 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
   buildPiArgs,
   buildPiInvocation,
+  buildPiRunEnv,
   detectPiInstallations,
+  findNodeBinary,
   PiRpcManager,
+  RESOLUTION_DEPS,
   RpcTimeoutError,
   resolveStartCli,
   RpcFrameDecoder,
   setPiExecutableOverride,
+  toPiCli,
   type PiCli,
 } from './pi-rpc-manager'
+import type { PiResolution, ResolutionDeps } from './pi-binary-resolution'
 import { appLog } from './app-log'
+import { piDotenvPath } from './pi-dotenv'
+import { NO_CWD_EXE_SEARCH_VARIABLE, disableCwdExecutableSearch } from './windows-exe-search'
 import { i18n } from '../shared/i18n'
 import { PSEUDO_LANGUAGE, SOURCE_LANGUAGE } from '../shared/i18n/languages'
 
@@ -73,6 +80,30 @@ function decodeAll(frames: Array<Record<string, unknown>>): object | undefined {
 function responsePayload(size: number, filler: string): string {
   return JSON.stringify({ type: 'response', command: 'get_messages', success: true, data: filler.repeat(size) })
 }
+
+test('fresh sessions launch with the remembered model and reasoning', () => {
+  assert.deepEqual(buildPiArgs({
+    provider: 'test', model: 'test-model', defaultThinkingLevel: 'high', continueSession: false,
+  }), ['--mode', 'rpc', '--provider', 'test', '--model', 'test-model', '--thinking', 'high'])
+  assert.equal(buildPiArgs({}).includes('--thinking'), false)
+  assert.ok(buildPiArgs({ defaultThinkingLevel: 'off' }).includes('off'))
+})
+
+test('remembered reasoning never overrides a resumed or forked session', () => {
+  for (const binding of [
+    { sessionPath: '/sessions/existing.jsonl' },
+    { forkSessionPath: '/sessions/parent.jsonl' },
+    { continueSession: true },
+  ]) {
+    assert.equal(buildPiArgs({ defaultThinkingLevel: 'high', ...binding }).includes('--thinking'), false)
+  }
+})
+
+test('explicit thinking arguments override the saved preference', () => {
+  for (const args of [['--thinking', 'low'], ['--thinking=low']]) {
+    assert.deepEqual(buildPiArgs({ defaultThinkingLevel: 'high', args }), ['--mode', 'rpc', ...args])
+  }
+})
 
 test('RpcFrameDecoder reassembles a lossless OMP protocol-v2 frame', () => {
   const frames = chunkFrames('rpc-test', responsePayload(1_100_000, 'x'))
@@ -303,6 +334,59 @@ test('buildPiInvocation preserves fork startup arguments', () => {
   })
 })
 
+// ─── Node lookup: no bare fallback ───────────────────────────────────────────
+//
+// Pi's cli.js runs with the Node binary found here, and the spawn's working
+// directory is the workspace. A bare `node.exe` fallback would make Windows
+// look in that workspace first, so "not found" has to stay not found.
+
+const WINDOWS_LOCAL_APP_DATA = 'C:\\Users\\tester\\AppData\\Local'
+
+/** Filesystem-only resolver deps: `files` exist and no probe answers. */
+function nodeLookupDeps(isWindows: boolean, env: NodeJS.ProcessEnv, files: string[] = []): ResolutionDeps {
+  const existing = new Set(files)
+  return {
+    isWindows,
+    env,
+    exists: (path) => existing.has(path),
+    isDirectory: () => false,
+    listDir: () => [],
+    capture: () => null,
+  }
+}
+
+test('findNodeBinary reports no Node instead of a bare name the OS would look up in the workspace', () => {
+  assert.equal(findNodeBinary(nodeLookupDeps(true, { LOCALAPPDATA: WINDOWS_LOCAL_APP_DATA, PATH: 'C:\\Windows' })), null)
+  assert.equal(findNodeBinary(nodeLookupDeps(false, { PATH: '/nowhere' })), null)
+})
+
+test('findNodeBinary takes Node from an absolute PATH entry, never from a relative one', () => {
+  const pathDir = 'D:\\node'
+  const deps = nodeLookupDeps(
+    true,
+    { LOCALAPPDATA: WINDOWS_LOCAL_APP_DATA, PATH: ['.', pathDir].join(';'), PATHEXT: '.EXE' },
+    [join('.', 'node.exe'), join(pathDir, 'node.exe')],
+  )
+  assert.equal(findNodeBinary(deps), join(pathDir, 'node.exe'))
+})
+
+test('a cli.js engine with no Node binary fails as node-not-found, so nothing is spawned', () => {
+  const resolution: PiResolution = {
+    script: '/opt/pi/cli.js',
+    useNode: true,
+    needsShell: false,
+    source: 'override',
+    found: true,
+    rejectedOverride: null,
+    pathEnv: '/usr/bin',
+  }
+  const cli = toPiCli(resolution, 'pi', null)
+  assert.equal(cli.nodeFound, false)
+  assert.deepEqual(cli.failureReason, { kind: 'node-not-found', node: cli.node })
+  // An executable that runs directly needs no Node at all.
+  assert.equal(toPiCli({ ...resolution, script: '/opt/pi/pi', useNode: false }, 'pi', null).failureReason, null)
+})
+
 test('buildPiInvocation rejects arguments cmd.exe cannot carry', () => {
   const cli = piCli({ script: String.raw`C:\npm\pi.cmd`, needsShell: true })
   assert.throws(
@@ -314,42 +398,51 @@ test('buildPiInvocation rejects arguments cmd.exe cannot carry', () => {
   assert.deepEqual(buildPiInvocation(piCli(), ['--session', 'a\nb']).args, ['--session', 'a\nb'])
 })
 
-// ─── Startup deadline behavior (issue #58) ──────────────────────────────────
+// ─── Startup deadline behavior (issues #58, #98) ────────────────────────────
 //
-// The engine runs every extension session_start hook before it reads stdin, so
-// a hook that waits on a local model server keeps the readiness probe
-// unanswered for tens of seconds while the process is demonstrably alive.
-// The deadline is therefore two-staged: a short cap while stdout is silent
-// (dead spawn / broken pipe), a long cap once stdout has shown life.
+// Pi's RPC mode prints nothing until it answers the readiness probe, and the
+// engine runs every extension session_start hook before it reads stdin. So a
+// healthy Pi can stay unready for tens of seconds, with or without output.
+// Every process that is still running gets the one long deadline; a process
+// that dies ends the attempt at once through its exit event.
 
-/** Fast test caps — real values are 20s / 120s. */
-const TEST_SILENCE_MS = 400
-const TEST_ENGINE_BUSY_MS = 2_000
+/** Fast test timings — real values are 20s / 120s. */
+const TEST_WAITING_NOTICE_MS = 400
+const TEST_READY_MS = 2_000
 /** Probe id the manager correlates on; fixed by the wire protocol. */
 const PROBE_ID = '__startup_probe__'
-/** Fixture heartbeat: proves liveness well within the silence cap. */
+/** Fixture heartbeat: proves liveness well within the notice delay. */
 const HEARTBEAT_MS = 100
-/** Late-ready fixture answers between the two caps. */
+/** Late-ready fixtures answer between the notice delay and the deadline. */
 const LATE_READY_DELAY_MS = 900
+const FAKE_EXIT_CODE = 7
 const SKIP_ON_WINDOWS = { skip: process.platform === 'win32' ? 'POSIX shebang fixture' : false }
 
 /**
  * A stand-in engine. Modes via FAKE_PI_MODE:
- *  - 'silent'     — stays alive, never writes stdout.
- *  - 'late-ready' — emits frames immediately, answers the probe only after
- *                   FAKE_PI_READY_DELAY_MS.
- *  - 'never-ready' — emits frames forever, never answers the probe.
+ *  - 'silent'            — stays alive, never writes stdout.
+ *  - 'silent-late-ready' — writes nothing until it answers the probe after
+ *                          FAKE_PI_READY_DELAY_MS.
+ *  - 'late-ready'        — emits frames immediately, answers the probe only
+ *                          after FAKE_PI_READY_DELAY_MS.
+ *  - 'never-ready'       — emits frames forever, never answers the probe.
+ *  - 'exit'              — exits at once with FAKE_EXIT_CODE.
+ * In every mode, the engine also exits at once with FAKE_EXIT_CODE when it
+ * inherited the variable FAKE_PI_EXIT_IF_ENV names (in any letter case).
  */
 const FAKE_ENGINE_SOURCE = `#!/usr/bin/env node
 const mode = process.env.FAKE_PI_MODE || 'silent'
 const readyDelayMs = Number(process.env.FAKE_PI_READY_DELAY_MS || '0')
+const forbiddenName = (process.env.FAKE_PI_EXIT_IF_ENV || '').toLowerCase()
 const emit = (obj) => process.stdout.write(JSON.stringify(obj) + '\\n')
-if (mode !== 'silent') {
+if (mode === 'exit') process.exit(${FAKE_EXIT_CODE})
+if (forbiddenName && Object.keys(process.env).some((name) => name.toLowerCase() === forbiddenName)) process.exit(${FAKE_EXIT_CODE})
+if (mode === 'late-ready' || mode === 'never-ready') {
   emit({ type: 'extension_ui_request', id: 'boot', method: 'setStatus', statusKey: 'boot', statusText: 'loading' })
   setInterval(() => emit({ type: 'extension_ui_request', id: 'hb', method: 'setStatus', statusKey: 'hb', statusText: 'busy' }), ${HEARTBEAT_MS})
-  if (mode === 'late-ready') {
-    setTimeout(() => emit({ id: '${PROBE_ID}', type: 'response', command: 'get_state', success: true }), readyDelayMs)
-  }
+}
+if (mode === 'late-ready' || mode === 'silent-late-ready') {
+  setTimeout(() => emit({ id: '${PROBE_ID}', type: 'response', command: 'get_state', success: true }), readyDelayMs)
 }
 process.stdin.resume()
 `
@@ -363,7 +456,7 @@ async function withFakeEngine(
   writeFileSync(script, FAKE_ENGINE_SOURCE)
   chmodSync(script, 0o755)
   setPiExecutableOverride(script, 'pi')
-  const manager = new PiRpcManager({ silenceMs: TEST_SILENCE_MS, engineBusyMs: TEST_ENGINE_BUSY_MS })
+  const manager = new PiRpcManager({ waitingNoticeMs: TEST_WAITING_NOTICE_MS, readyMs: TEST_READY_MS })
   try {
     await run(manager, env)
   } finally {
@@ -375,54 +468,151 @@ async function withFakeEngine(
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-test('startup keeps waiting past the silence cap while Pi is emitting output', SKIP_ON_WINDOWS, async () => {
-  await withFakeEngine(async (manager, env) => {
-    const phases: string[] = []
-    manager.on('startup-phase', (phase: string) => phases.push(phase))
+/** Starts Pi, checks the waiting notice between the two timings, and expects ready. */
+async function assertReadyAfterWaitingNotice(manager: PiRpcManager, env: Record<string, string>): Promise<void> {
+  const phases: string[] = []
+  manager.on('startup-phase', (phase: string) => phases.push(phase))
 
-    const started = manager.start({ env })
-    // Between the caps: the silence deadline has passed, readiness has not
-    // arrived, and stdout activity must have switched the manager to waiting.
-    await delay(TEST_SILENCE_MS + 200)
-    assert.equal(manager.getStatus().status, 'starting', 'still starting between the caps')
-    assert.equal(manager.getStatus().startupPhase, 'waiting-on-engine')
-    assert.deepEqual(phases, ['waiting-on-engine'], 'the phase flip is announced once')
+  const started = manager.start({ env })
+  await delay(TEST_WAITING_NOTICE_MS + 200)
+  assert.equal(manager.getStatus().status, 'starting', 'still starting after the notice delay')
+  assert.equal(manager.getStatus().startupPhase, 'waiting-on-engine')
+  assert.deepEqual(phases, ['waiting-on-engine'], 'the phase flip is announced once')
 
-    const status = await started
-    assert.equal(status.status, 'running', 'a late probe response still means ready')
-    assert.equal(status.startupPhase, undefined, 'phase reporting ends with startup')
-  }, { FAKE_PI_MODE: 'late-ready', FAKE_PI_READY_DELAY_MS: String(LATE_READY_DELAY_MS) })
+  const status = await started
+  assert.equal(status.status, 'running', 'a late probe response still means ready')
+  assert.equal(status.startupPhase, undefined, 'phase reporting ends with startup')
+}
+
+test('startup keeps waiting past the notice delay while Pi is emitting output', SKIP_ON_WINDOWS, async () => {
+  await withFakeEngine(
+    assertReadyAfterWaitingNotice,
+    { FAKE_PI_MODE: 'late-ready', FAKE_PI_READY_DELAY_MS: String(LATE_READY_DELAY_MS) },
+  )
 })
 
-test('a silent Pi still fails fast at the silence cap', SKIP_ON_WINDOWS, async () => {
+test('startup keeps waiting past the notice delay while a running Pi stays silent', SKIP_ON_WINDOWS, async () => {
+  await withFakeEngine(
+    assertReadyAfterWaitingNotice,
+    { FAKE_PI_MODE: 'silent-late-ready', FAKE_PI_READY_DELAY_MS: String(LATE_READY_DELAY_MS) },
+  )
+})
+
+test('a silent never-ready Pi fails at the deadline with a no-output error', SKIP_ON_WINDOWS, async () => {
   await withFakeEngine(async (manager, env) => {
     const startedAt = Date.now()
     const status = await manager.start({ env })
     assert.equal(status.status, 'error')
-    assert.match(status.error ?? '', /produced no output within 0\.4s/)
+    assert.ok(Date.now() - startedAt >= TEST_READY_MS, 'the full deadline is granted before giving up')
+    assert.match(status.error ?? '', /produced no output within 2s/)
     // The old message asserted two specific causes that misdiagnosed issue
     // #58 for days; the error must not name them any more.
     assert.doesNotMatch(status.error ?? '', /shell:true|waiting on input/)
-    assert.ok(
-      Date.now() - startedAt < TEST_ENGINE_BUSY_MS,
-      'silence must not inherit the long engine-busy cap',
-    )
+    assert.equal(status.startupPhase, undefined, 'phase reporting ends with startup')
   }, { FAKE_PI_MODE: 'silent' })
 })
 
-test('a chatty but never-ready Pi fails at the engine-busy cap with an engine-busy error', SKIP_ON_WINDOWS, async () => {
+test('a chatty but never-ready Pi fails at the deadline with an engine-busy error', SKIP_ON_WINDOWS, async () => {
   await withFakeEngine(async (manager, env) => {
     const startedAt = Date.now()
     const status = await manager.start({ env })
     assert.equal(status.status, 'error')
-    assert.ok(
-      Date.now() - startedAt >= TEST_ENGINE_BUSY_MS - HEARTBEAT_MS,
-      'the full engine-busy cap is granted before giving up',
-    )
+    assert.ok(Date.now() - startedAt >= TEST_READY_MS, 'the full deadline is granted before giving up')
     assert.match(status.error ?? '', /did not become ready within 2s/)
     assert.match(status.error ?? '', /model server/, 'the message points at the real cause class')
     assert.equal(status.startupPhase, undefined, 'phase reporting ends with startup')
   }, { FAKE_PI_MODE: 'never-ready' })
+})
+
+test('a Pi that exits before ready fails fast without waiting for the deadline', SKIP_ON_WINDOWS, async () => {
+  await withFakeEngine(async (manager, env) => {
+    const startedAt = Date.now()
+    const status = await manager.start({ env })
+    assert.equal(status.status, 'error')
+    assert.match(status.error ?? '', new RegExp(`exited with code ${FAKE_EXIT_CODE} before becoming ready`))
+    assert.ok(Date.now() - startedAt < TEST_READY_MS, 'a dead process must not inherit the deadline')
+  }, { FAKE_PI_MODE: 'exit' })
+})
+
+test('the Pi child receives variables from the user env file', SKIP_ON_WINDOWS, async () => {
+  const home = mkdtempSync(join(tmpdir(), 'pi-dotenv-home-'))
+  const savedHome = process.env.HOME
+  try {
+    mkdirSync(dirname(piDotenvPath(home)))
+    writeFileSync(piDotenvPath(home), 'FAKE_PI_MODE=late-ready\n')
+    process.env.HOME = home
+    await withFakeEngine(async (manager, env) => {
+      // Without the env file the fake engine stays silent and fails the start.
+      const status = await manager.start({ env })
+      assert.equal(status.status, 'running')
+    }, {})
+  } finally {
+    if (savedHome === undefined) delete process.env.HOME
+    else process.env.HOME = savedHome
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+/**
+ * Run `run` with process.env as Windows startup leaves it for a user who had
+ * not set the current-folder search switch: the app added it. Simulated on
+ * POSIX. A spelling this environment already had is put back afterwards.
+ */
+async function withWindowsStartupEnv(run: () => void | Promise<void>): Promise<void> {
+  const key = NO_CWD_EXE_SEARCH_VARIABLE.toLowerCase()
+  const inherited = Object.entries(process.env).filter(([name]) => name.toLowerCase() === key)
+  for (const [name] of inherited) delete process.env[name]
+  disableCwdExecutableSearch(process.env, 'win32')
+  try {
+    await run()
+  } finally {
+    delete process.env[NO_CWD_EXE_SEARCH_VARIABLE]
+    for (const [name, value] of inherited) process.env[name] = value
+    disableCwdExecutableSearch(process.env, process.platform)
+  }
+}
+
+test('a Pi or OMP run keeps the current-folder search switch only when cmd.exe starts it', () => {
+  const base: NodeJS.ProcessEnv = { Path: 'C:\\Windows\\system32' }
+  disableCwdExecutableSearch(base, 'win32')
+  try {
+    assert.equal(NO_CWD_EXE_SEARCH_VARIABLE in buildPiRunEnv(false, base), false, 'direct launch')
+    assert.equal(NO_CWD_EXE_SEARCH_VARIABLE in buildPiRunEnv(true, base), true, 'cmd.exe shim launch')
+  } finally {
+    disableCwdExecutableSearch({}, process.platform)
+  }
+})
+
+test('a direct Pi start does not hand the current-folder search switch to the engine', SKIP_ON_WINDOWS, async () => {
+  // The engine is the user's tool: its own commands must find programs as
+  // they do outside the app.
+  await withWindowsStartupEnv(() => withFakeEngine(async (manager, env) => {
+    const status = await manager.start({ env })
+    assert.equal(status.status, 'running', status.error ?? '')
+  }, { FAKE_PI_MODE: 'late-ready', FAKE_PI_EXIT_IF_ENV: NO_CWD_EXE_SEARCH_VARIABLE }))
+})
+
+test('an engine probe does not hand the current-folder search switch to the engine', SKIP_ON_WINDOWS, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pi-probe-env-'))
+  const script = join(dir, 'fake-omp')
+  const forbiddenName = JSON.stringify(NO_CWD_EXE_SEARCH_VARIABLE.toLowerCase())
+  writeFileSync(
+    script,
+    `#!/usr/bin/env node\nconsole.log(Object.keys(process.env).filter((name) => name.toLowerCase() === ${forbiddenName}).length)\n`,
+  )
+  chmodSync(script, 0o755)
+  try {
+    await withWindowsStartupEnv(() => {
+      const stdout = RESOLUTION_DEPS.capture(script, [], {
+        shell: false,
+        timeoutMs: TEST_READY_MS,
+        pathEnv: process.env.PATH ?? '',
+      })
+      assert.equal(stdout?.trim(), '0')
+    })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('detectPiInstallations serves a cached scan until a rescan forces a fresh one', () => {

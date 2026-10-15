@@ -126,10 +126,58 @@ function contentText(content: unknown): string {
   return parts.join(' ').trim()
 }
 
+/**
+ * Entry types that hold no conversation: the header, the model and thinking
+ * level (Pi writes both when it creates a session, before any prompt), a name
+ * (`session_info`, or OMP's first-line `title` slot), and a bookmark on another
+ * entry (`label`).
+ *
+ * Pi also writes `usage` (a paid cache-warm call) and `custom` (extension state
+ * that only its extension can interpret). They are left out on purpose: neither
+ * is provably metadata, and a session that holds one must not be deleted as
+ * empty. The one `custom` record known to be metadata is OMP's shutdown record
+ * (below).
+ */
+const METADATA_ENTRY_TYPES: ReadonlySet<string> = new Set([
+  'session',
+  'model_change',
+  'thinking_level_change',
+  'session_info',
+  'title',
+  'label',
+])
+
+/**
+ * Entry type of extension state records (`pi.appendEntry`). OMP writes its own
+ * lifecycle records with it too.
+ */
+const CUSTOM_ENTRY_TYPE = 'custom'
+
+/**
+ * `customType` of the `custom` record OMP appends to its own session file on
+ * shutdown. It holds only the exit reason, so a session that was opened and
+ * closed with nothing in it stays empty.
+ */
+const OMP_SESSION_EXIT_CUSTOM_TYPE = 'session_exit'
+
+/**
+ * Whether a parsed record makes its session more than a header. Only the
+ * metadata entries above do not: a message of any role, a custom message,
+ * extension state, a summary, and any record this reader does not recognize all
+ * count, so a format change can make a session look non-empty, never empty.
+ */
+export function isContentRecord(record: unknown): boolean {
+  if (typeof record !== 'object' || record === null) return true
+  const { type, customType } = record as { type?: unknown; customType?: unknown }
+  if (type === CUSTOM_ENTRY_TYPE) return customType !== OMP_SESSION_EXIT_CUSTOM_TYPE
+  return typeof type !== 'string' || !METADATA_ENTRY_TYPES.has(type)
+}
+
 interface RangeScan {
   header: SessionHeader | null
   text: string | null
-  hasUserMessage: boolean
+  /** The range held a record that isContentRecord counts. */
+  hasContent: boolean
   parseFailure: boolean
   /** `undefined` when the range held no session_info record at all. */
   name: string | null | undefined
@@ -159,6 +207,7 @@ function scanLines(lines: readonly string[], options: ScanOptions = {}): RangeSc
   let header: SessionHeader | null = null
   let text: string | null = null
   let hasUserMessage = false
+  let hasContent = false
   let parseFailure = false
   let name: string | null | undefined = undefined
   let titleName: string | null | undefined = undefined
@@ -196,9 +245,9 @@ function scanLines(lines: readonly string[], options: ScanOptions = {}): RangeSc
       }
     }
 
-    // A user message with image-only content is still a real conversation.
-    // Keep that fact separate from the text preview, which intentionally omits
-    // image payloads.
+    // Parsing ends at the first user turn: it supplies the preview, and as
+    // content it already settles the content state. An image-only turn ends it
+    // too, with no preview text, because the preview omits image payloads.
     if (!hasUserMessage) {
       let record: unknown
       try {
@@ -207,6 +256,7 @@ function scanLines(lines: readonly string[], options: ScanOptions = {}): RangeSc
         parseFailure = true
         continue
       }
+      if (isContentRecord(record)) hasContent = true
       if (isUserMessageRecord(record)) {
         hasUserMessage = true
         text = userMessageText(record)
@@ -216,7 +266,7 @@ function scanLines(lines: readonly string[], options: ScanOptions = {}): RangeSc
     if (!wantName && header !== null && hasUserMessage) break
   }
 
-  return { header, text, hasUserMessage, parseFailure, name, titleName }
+  return { header, text, hasContent, parseFailure, name, titleName }
 }
 
 /**
@@ -290,7 +340,8 @@ async function streamFirstUserMessage(filePath: string): Promise<string | null> 
 }
 
 /**
- * Classify whether a session is provably header-only.
+ * Classify whether a session is provably header-only: a header plus, at most,
+ * records that isContentRecord does not count.
  *
  * This deliberately returns `unknown` for unreadable, malformed, or
  * over-budget files. Callers may hide an unknown row, but must never delete it.
@@ -317,7 +368,7 @@ export async function inspectSessionContent(filePath: string): Promise<SessionCo
         rl.close()
         return 'unknown'
       }
-      if (isUserMessageRecord(record)) {
+      if (isContentRecord(record)) {
         rl.close()
         return 'non-empty'
       }
@@ -485,7 +536,7 @@ export async function readSessionMetadata(filePath: string): Promise<SessionMeta
   }
 
   const text = scan.text ?? (headTruncated ? await streamFirstUserMessage(filePath) : null)
-  const contentState = scan.hasUserMessage
+  const contentState = scan.hasContent
     ? 'non-empty'
     : sawWholeFile
       ? scan.header && !scan.parseFailure ? 'empty' : 'unknown'

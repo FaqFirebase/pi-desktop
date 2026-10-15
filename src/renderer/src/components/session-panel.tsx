@@ -200,10 +200,13 @@ export function SessionPanel(): React.JSX.Element {
         {/* Current workspace indicator */}
         {activeWorkspace && (
           <div className="mb-4 flex items-center gap-2 rounded-lg bg-surface border border-border px-4 py-2">
-            <FolderTree size={14} className="text-dim" />
-            <span className="text-xs text-muted">{t('sessions.currentWorkspaceLabel')}</span>
-            <span className="text-sm text-primary font-medium">{activeWorkspace.name}</span>
-            <span className="text-xs text-dim truncate">{activeWorkspace.path}</span>
+            <FolderTree size={14} className="shrink-0 text-dim" />
+            <span className="shrink-0 whitespace-nowrap text-xs text-muted">{t('sessions.currentWorkspaceLabel')}</span>
+            {/* The name keeps one line: it truncates before the path, which gives way first. */}
+            <span className="min-w-0 max-w-[50%] shrink truncate whitespace-nowrap text-sm text-primary font-medium" title={activeWorkspace.name}>
+              {activeWorkspace.name}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-xs text-dim" title={activeWorkspace.path}>{activeWorkspace.path}</span>
           </div>
         )}
 

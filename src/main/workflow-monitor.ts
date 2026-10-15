@@ -5,6 +5,7 @@ import { basename, join, resolve } from 'path'
 import { pathGroupKey } from '../shared/path-compare'
 import { appLog } from './app-log'
 import { pathsEqual, sanitizePath } from './session-paths'
+import { parseSessionLines } from './session-jsonl'
 import type {
   WorkflowAgentDetail,
   WorkflowAgentSummary,
@@ -826,24 +827,16 @@ async function readPersistedSession(filePath: string): Promise<PersistedSessionM
     return null
   }
 
-  let lines: string[]
+  let content: string
   try {
-    lines = (await readFile(filePath, 'utf8')).split(/\r?\n/)
+    content = await readFile(filePath, 'utf8')
   } catch {
     return null
   }
-  const entries: UnknownRecord[] = []
+  const entries = parseSessionLines(content)
   let sessionName: string | undefined
-  for (const line of lines) {
-    if (!line.trim()) continue
-    try {
-      const value: unknown = JSON.parse(line)
-      if (!isRecord(value)) continue
-      if (value.type === 'session_info') sessionName = stringValue(value.name)
-      entries.push(value)
-    } catch {
-      // A live session can end with a partial JSONL line; keep the readable prefix.
-    }
+  for (const entry of entries) {
+    if (entry.type === 'session_info') sessionName = stringValue(entry.name)
   }
   const value = sessionName ? { ...sessionTranscript(entries), sessionName } : null
   cachePersistedSession(filePath, file, value)

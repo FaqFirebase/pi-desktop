@@ -1,12 +1,19 @@
 import { watch, type FSWatcher } from 'chokidar'
 import { readdir, stat, readFile, writeFile, realpath } from 'fs/promises'
+import type { Dirent } from 'fs'
 import { join, extname, basename, resolve, relative, isAbsolute, sep, dirname } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { homedir } from 'os'
 import { describeWriteError } from './fs-errors'
 import { appLog } from './app-log'
-import type { FileChangeEvent } from '../shared/ipc-contracts'
+import { WHOLE_WORKSPACE_CHANGE_PATH, type FileChangeEvent } from '../shared/ipc-contracts'
+import { watchGitHead } from './git-head-watcher'
+import { parsePorcelainZEntries } from './git-conveyor'
+import {
+  GIT_DIFF_NEW_SIDE, GIT_DIFF_OLD_SIDE, canDiscardGitPatch, gitDiffArgs, gitDiffPaths, quoteGitPath, splitGitDiff,
+  workspaceRelativeGitPath,
+} from '../shared/git-diff'
 import { i18n, t, tEnglish, type Translate } from '../shared/i18n'
 
 const execFileAsync = promisify(execFile)
@@ -25,6 +32,24 @@ const WORKSPACE_ESCAPE_KEYS = {
 const NOT_GIT_REPO_RE = /not a git repository/i
 // Bare repos: rev-parse succeeds but status/diff refuse to run.
 const NO_WORK_TREE_RE = /must be run in a work tree/i
+
+/** Status column of a `git status --porcelain` row: unchanged, or an untracked file. */
+const STATUS_UNCHANGED = ' '
+const STATUS_UNTRACKED = '?'
+
+/** `git diff` reads paths as names, never as globs: `[id].tsx` is one file. */
+const LITERAL_PATHSPECS = '--literal-pathspecs'
+
+/**
+ * A file system error (it carries an errno code) on one entry of a folder, or
+ * on the folder itself: a dangling symlink, an entry deleted since the folder
+ * was read, one this user may not read, a locked file (Windows EBUSY), or a
+ * stale network or FUSE mount (ENOTCONN, ESTALE, EIO). It costs that entry
+ * only. Any other error is a bug and propagates.
+ */
+export function isUnlistableEntryError(error: unknown): boolean {
+  return typeof (error as NodeJS.ErrnoException | null)?.code === 'string'
+}
 
 /**
  * True for git errors that just mean "no git information here": the workspace
@@ -212,28 +237,36 @@ export interface SearchResult {
   snippet?: string
 }
 
+/** A new-file patch with its path quoted as Git quotes it, so `git apply` and `gitDiffPaths` read it back exactly. */
 export function buildNewFileDiff(relativePath: string, content: string): string {
-  const lines = content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n')
+  const lines = content === '' ? [] : (content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n'))
   const hunkSize = lines.length
+  const oldPath = quoteGitPath(GIT_DIFF_OLD_SIDE + relativePath)
+  const newPath = quoteGitPath(GIT_DIFF_NEW_SIDE + relativePath)
 
   return [
-    `diff --git a/${relativePath} b/${relativePath}`,
+    `diff --git ${oldPath} ${newPath}`,
     'new file mode 100644',
     'index 0000000..0000000',
-    '--- /dev/null',
-    `+++ b/${relativePath}`,
-    `@@ -0,0 +1,${hunkSize} @@`,
-    ...lines.map((line) => `+${line}`),
+    ...(hunkSize ? [
+      '--- /dev/null',
+      `+++ ${newPath}`,
+      `@@ -0,0 +1,${hunkSize} @@`,
+      ...lines.map((line) => `+${line}`),
+      ...(content.endsWith('\n') ? [] : ['\\ No newline at end of file']),
+    ] : []),
     '',
   ].join('\n')
 }
 
 export class FileService {
   private watcher: FSWatcher | null = null
+  private stopGitHeadWatch: (() => void) | null = null
   private workspacePath: string
   private readonly isHomeWorkspace: boolean
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
   private pendingChange: FileChangeEvent | null = null
+  private discardingDiff = false
 
   constructor(workspacePath: string, homePath: string = homedir()) {
     this.workspacePath = workspacePath
@@ -313,34 +346,24 @@ export class FileService {
   }
 
   /**
-   * Get git status for the workspace. Empty for non-repos and machines
+   * Get git status for the workspace, keyed by the raw repository-root path
+   * (a rename by its new path): the same strings `gitDiffPaths` reads from a
+   * diff, whatever the file name holds. Empty for non-repos and machines
    * without git; throws on real git failures so callers can surface them.
    */
   async getGitStatus(): Promise<Map<string, GitFileStatus>> {
     const statusMap = new Map<string, GitFileStatus>()
 
     try {
-      const { stdout } = await execFileAsync('git', ['status', '--porcelain=v1', '-u'], {
+      // Without -z, Git quotes a name with a space or a non-ASCII letter.
+      const { stdout } = await execFileAsync('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
         cwd: this.workspacePath,
         timeout: 10_000,
         maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
       })
 
-      for (const line of stdout.split('\n')) {
-        if (line.length < 4) continue
-
-        const indexStatus = line[0]
-        const worktreeStatus = line[1]
-        const filePath = line.slice(3).trim()
-
-        // Handle renamed files (R old -> new)
-        const cleanPath = filePath.includes(' -> ') ? filePath.split(' -> ')[1] : filePath
-
-        statusMap.set(cleanPath, {
-          index: indexStatus,
-          worktree: worktreeStatus,
-          isStaged: indexStatus !== ' ' && indexStatus !== '?',
-        })
+      for (const { index, worktree, path } of parsePorcelainZEntries(stdout)) {
+        statusMap.set(path, { index, worktree, isStaged: index !== STATUS_UNCHANGED && index !== STATUS_UNTRACKED })
       }
     } catch (err) {
       if (!isBenignGitError(err) && (await this.probeGitRepo()) !== 'outside') {
@@ -398,13 +421,14 @@ export class FileService {
   }
 
   /**
-   * Get a diff for a specific file. Empty for non-repos and machines without
-   * git; throws on real git failures so callers can surface them.
+   * Get a diff for a specific file, or for the whole workspace (never the rest
+   * of a monorepo). Empty for non-repos and machines without git; throws on
+   * real git failures so callers can surface them.
    */
   async getFileDiff(filePath?: string): Promise<string> {
     try {
-      const args = ['diff']
-      if (filePath) args.push(filePath)
+      // The stored content, not a textconv rendering: discard applies these patches in reverse.
+      const args = [LITERAL_PATHSPECS, ...gitDiffArgs('--no-textconv', '--', filePath ?? '.')]
       const { stdout } = await execFileAsync('git', args, {
         cwd: this.workspacePath,
         timeout: 10_000,
@@ -418,17 +442,85 @@ export class FileService {
     }
   }
 
+  /** Reverse only patches the user reviewed; never touch the index or commits. */
+  async discardFileDiff(patches: string[]): Promise<void> {
+    if (this.discardingDiff) throw new Error(t('diff.discard.busy'))
+    this.discardingDiff = true
+    try {
+      if (!patches.length || new Set(patches).size !== patches.length) {
+        throw new Error(t('diff.discard.stale'))
+      }
+      const current = new Set(splitGitDiff(await this.getFileDiff()))
+      if (patches.some((patch) => !current.has(patch))) throw new Error(t('diff.discard.stale'))
+      const { stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], { cwd: this.workspacePath })
+      const root = await realpath(stdout.trim())
+      const workspaceRoot = await realpath(this.workspacePath)
+      for (const patch of patches) {
+        if (!canDiscardGitPatch(patch)) throw new Error(t('diff.discard.unsupported'))
+        const paths = gitDiffPaths(patch)!
+        for (const path of [paths.oldPath, paths.newPath]) {
+          if (isAbsolute(path) || path.split(/[\\/]/).some((part) => part === '..' || part.toLowerCase() === '.git')) {
+            throw new Error(t('diff.discard.unsupported'))
+          }
+          await this.resolveInsideWorkspace(relative(workspaceRoot, resolve(root, path)), 'write')
+        }
+      }
+      const patch = patches.join('')
+      // Git preflights the entire batch without --reject; it does not apply a
+      // subset when another selected patch cannot be reversed.
+      await this.applyReversePatch(root, patch, true)
+      await this.applyReversePatch(root, patch, false)
+    } finally {
+      this.discardingDiff = false
+    }
+  }
+
+  private applyReversePatch(cwd: string, patch: string, check: boolean): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const child = execFile('git', ['apply', '--reverse', ...(check ? ['--check'] : []), '--whitespace=nowarn', '-'], {
+        cwd,
+        timeout: 10_000,
+        maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
+      }, (error) => {
+        if (error) reject(new Error(t('diff.discard.failed')))
+        else resolve()
+      })
+      // An early Git rejection can close stdin before the patch is written.
+      child.stdin!.on('error', () => {})
+      child.stdin!.end(patch)
+    })
+  }
+
+  /**
+   * The workspace's directory inside its repository (`pkg/app/`, '' at the
+   * root or outside a repository). Git diff and status paths start from the
+   * repository root, so this maps them onto workspace paths.
+   */
+  async getGitPrefix(): Promise<string> {
+    try {
+      const { stdout } = await execFileAsync('git', ['rev-parse', '--show-prefix'], {
+        cwd: this.workspacePath,
+        timeout: 5_000,
+      })
+      return stdout.trim()
+    } catch (err) {
+      if (isBenignGitError(err) || (await this.probeGitRepo()) === 'outside') return ''
+      throw this.describeAndLogGitError('rev-parse', err)
+    }
+  }
+
+  /** Untracked files inside the workspace, as new-file patches with repository-root paths. */
   private async getUntrackedFileDiff(filePath?: string): Promise<string> {
-    const statusMap = await this.getGitStatus()
+    const [statusMap, prefix] = await Promise.all([this.getGitStatus(), this.getGitPrefix()])
     const untrackedPaths = [...statusMap.entries()]
-      .filter(([, status]) => status.index === '?' && status.worktree === '?')
-      .map(([path]) => path)
-      .filter((path) => !filePath || path === filePath)
+      .filter(([, status]) => status.index === STATUS_UNTRACKED && status.worktree === STATUS_UNTRACKED)
+      .map(([path]) => ({ path, relativePath: workspaceRelativeGitPath(path, prefix) }))
+      .filter(({ relativePath }) => !relativePath.startsWith('../') && (!filePath || relativePath === filePath))
 
     const diffs: string[] = []
-    for (const path of untrackedPaths) {
+    for (const { path, relativePath } of untrackedPaths) {
       try {
-        const content = await readFile(join(this.workspacePath, path), 'utf-8')
+        const content = await readFile(join(this.workspacePath, relativePath), 'utf-8')
         diffs.push(buildNewFileDiff(path, content))
       } catch {
         // Skip unreadable or binary-like untracked files.
@@ -439,13 +531,12 @@ export class FileService {
   }
 
   /**
-   * Get the staged diff. Empty for non-repos and machines without git;
+   * Get the staged diff of a file or of the workspace. Empty for non-repos and machines without git;
    * throws on real git failures so callers can surface them.
    */
   async getStagedDiff(filePath?: string): Promise<string> {
     try {
-      const args = ['diff', '--cached']
-      if (filePath) args.push(filePath)
+      const args = [LITERAL_PATHSPECS, ...gitDiffArgs('--cached', '--', filePath ?? '.')]
       const { stdout } = await execFileAsync('git', args, {
         cwd: this.workspacePath,
         timeout: 10_000,
@@ -502,6 +593,7 @@ export class FileService {
    * (debounced) when files are added, changed, or removed. Heavy and hidden
    * directories are ignored, and recursion is bounded to `WATCH_DEPTH` so the
    * watcher stays cheap even when the workspace is the user's home directory.
+   * `.git` is skipped; `startGitWatching` covers HEAD and the branches.
    * Idempotent per instance: a second call replaces the previous watcher.
    */
   startWatching(callback: FileChangeCallback): void {
@@ -572,6 +664,25 @@ export class FileService {
     }
   }
 
+  /**
+   * Report a change of HEAD or of the local branches made outside the app (a
+   * terminal, another tool) as a whole-worktree change. Separate from
+   * `startWatching` because the branch shown in the status bar needs it while
+   * no files pane is open; it watches only a few git directories, so it stays
+   * cheap. Idempotent per instance: a second call replaces the previous watch.
+   */
+  startGitWatching(callback: FileChangeCallback): void {
+    this.stopGitWatching()
+    this.stopGitHeadWatch = watchGitHead(this.workspacePath, () => {
+      callback({ changeType: 'change', relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
+    })
+  }
+
+  stopGitWatching(): void {
+    this.stopGitHeadWatch?.()
+    this.stopGitHeadWatch = null
+  }
+
   /** True if any path segment under the workspace is an ignored directory. */
   private isIgnoredPath(absolutePath: string): boolean {
     const rel = relative(this.workspacePath, absolutePath)
@@ -602,26 +713,14 @@ export class FileService {
       const children: FileTreeNode[] = []
 
       if (depth < maxDepth) {
-        try {
-          const items = await readdir(fullPath, { withFileTypes: true })
-
-          // Sort: directories first, then files, both alphabetical
-          const sorted = items
-            .filter((item) => !this.isIgnoredEntry(item.name, depth) && !item.name.startsWith('.git'))
-            .sort((a, b) => {
-              if (a.isDirectory() && !b.isDirectory()) return -1
-              if (!a.isDirectory() && b.isDirectory()) return 1
-              return a.name.localeCompare(b.name)
-            })
-
-          for (const item of sorted) {
-            const childPath = join(fullPath, item.name)
-            const childRelPath = relPath ? `${relPath}/${item.name}` : item.name
-            const child = await this.buildTree(childPath, childRelPath, depth + 1, maxDepth)
-            children.push(child)
+        for (const item of await this.listTreeEntries(fullPath, depth)) {
+          const childRelPath = relPath ? `${relPath}/${item.name}` : item.name
+          try {
+            children.push(await this.buildTree(join(fullPath, item.name), childRelPath, depth + 1, maxDepth))
+          } catch (error) {
+            // Only this entry is left out; the rest of its folder still lists.
+            if (!isUnlistableEntryError(error)) throw error
           }
-        } catch {
-          // Permission denied or similar
         }
       }
 
@@ -629,6 +728,24 @@ export class FileService {
     }
 
     return { name, path: fullPath, relativePath: relPath, type: 'file' }
+  }
+
+  /** A folder's entries in tree order (directories first, then files, both alphabetical); none when it cannot be read. */
+  private async listTreeEntries(folder: string, depth: number): Promise<Dirent[]> {
+    let items: Dirent[]
+    try {
+      items = await readdir(folder, { withFileTypes: true })
+    } catch (error) {
+      if (isUnlistableEntryError(error)) return []
+      throw error
+    }
+    return items
+      .filter((item) => !this.isIgnoredEntry(item.name, depth))
+      .sort((a, b) => {
+        if (a.isDirectory() && !b.isDirectory()) return -1
+        if (!a.isDirectory() && b.isDirectory()) return 1
+        return a.name.localeCompare(b.name)
+      })
   }
 
   private async walkFiles(
@@ -641,7 +758,7 @@ export class FileService {
       const depth = relBase ? relBase.split('/').length : WORKSPACE_ROOT_DEPTH
 
       for (const item of items) {
-        if (this.isIgnoredEntry(item.name, depth) || item.name.startsWith('.git')) continue
+        if (this.isIgnoredEntry(item.name, depth)) continue
 
         const fullPath = join(dir, item.name)
         const relPath = relBase ? `${relBase}/${item.name}` : item.name

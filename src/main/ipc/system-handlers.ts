@@ -22,8 +22,17 @@ const SUPPORTS_COMBINED_DIALOG = process.platform === 'darwin'
 
 function dialogProperties(mode: OpenDialogMode): Electron.OpenDialogOptions['properties'] {
   if (mode === 'directory') return ['openDirectory']
-  if (mode === 'either' && SUPPORTS_COMBINED_DIALOG) return ['openFile', 'openDirectory']
+  if (SUPPORTS_COMBINED_DIALOG) return ['openFile', 'openDirectory']
   return ['openFile']
+}
+
+/** Title and filters shared by every renderer-requested dialog. */
+function dialogTextOptions(options: unknown): Pick<Electron.OpenDialogOptions, 'title' | 'filters'> {
+  if (!isObject(options)) return {}
+  return {
+    ...(isString(options.title) && { title: options.title }),
+    ...(Array.isArray(options.filters) && { filters: options.filters as Electron.FileFilter[] }),
+  }
 }
 
 export function registerSystemHandlers(ctx: IpcContext): void {
@@ -33,28 +42,24 @@ export function registerSystemHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC_CHANNELS.SYSTEM_OPEN_DIALOG, async (_event, options?: unknown) => {
     // Default to directory selection for back-compat with workspace pickers.
-    const mode: OpenDialogMode = isObject(options) && (options.mode === 'file' || options.mode === 'either')
-      ? options.mode
-      : 'directory'
-    // Only the explicit attachment mode widens the attachment allowlist; a
-    // path chosen for a settings field is never read back as file content.
-    const pickFile = mode === 'file'
-    const dialogOptions: Electron.OpenDialogOptions = {
-      properties: dialogProperties(mode),
-    }
-    if (isObject(options)) {
-      if (isString(options.title)) dialogOptions.title = options.title
-      if (Array.isArray(options.filters)) {
-        dialogOptions.filters = options.filters as Electron.FileFilter[]
-      }
-    }
-    const result = await dialog.showOpenDialog(dialogOptions)
+    // A path chosen here is never added to the attachment allowlist: a path
+    // picked for a settings field is never read back as file content.
+    const mode: OpenDialogMode = isObject(options) && options.mode === 'either' ? 'either' : 'directory'
+    const result = await dialog.showOpenDialog({ properties: dialogProperties(mode), ...dialogTextOptions(options) })
     if (result.canceled || result.filePaths.length === 0) return null
-    const picked = result.filePaths[0]
-    // Remember file picks so the attachment reader will accept this exact path
-    // even when it lives outside the workspace.
-    if (pickFile) approvedAttachmentPaths.add(resolve(picked))
-    return picked
+    return result.filePaths[0]
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SYSTEM_OPEN_ATTACHMENT_DIALOG, async (_event, options?: unknown) => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      ...dialogTextOptions(options),
+    })
+    if (result.canceled) return []
+    // Remember file picks so the attachment reader will accept these exact
+    // paths even when they live outside the workspace.
+    for (const picked of result.filePaths) approvedAttachmentPaths.add(resolve(picked))
+    return result.filePaths
   })
 
   ipcMain.handle(IPC_CHANNELS.SYSTEM_GET_PATH, async (_event, name: unknown) => {

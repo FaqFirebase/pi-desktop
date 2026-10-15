@@ -29,10 +29,12 @@
     "attach": {
       "allFilesFilter": "All Files",
       "attachFailed": "Could not attach file",
+      "dropHint": "Drop files to attach",
       "imagesFilter": "Images",
       "onlyImagesPasted": "Only images can be pasted into the composer",
       "pasteFailed": "Could not paste image",
       "readImageFailed": "Could not read image data",
+      "reading": "Adding attachments…",
       "unknownMimeType": "unknown",
       "unsupportedImageType": "Unsupported image type ({{mimeType}}). Use PNG, JPEG, GIF, or WebP."
     },
@@ -43,9 +45,7 @@
     "composer": {
       "placeholderIdle": "Ask {{agent}} anything — / for commands",
       "placeholderNotRunning": "{{agent}} agent is not running...",
-      "placeholderSteering": "Type to steer the agent...",
-      "shiftEnterNewline": "Shift+Enter newline",
-      "streaming": "Streaming…"
+      "placeholderSteering": "Type to steer the agent..."
     },
     "council": {
       "planWithCouncil": "Plan with Council",
@@ -79,7 +79,8 @@
     "message": {
       "branchedFrom": "Branched from: \"{{excerpt}}\"",
       "branchFromHere": "Branch from here",
-      "editAndResend": "Edit & resend"
+      "editAndResend": "Edit & resend",
+      "stopped": "Stopped"
     },
     "projectPicker": {
       "noProject": "No project",
@@ -111,9 +112,32 @@
       "ariaLabel": "Stop generating",
       "titleWithShortcut": "Stop (Esc)"
     },
+    "subagentPanel": {
+      "back": "Back to list",
+      "close": "Close",
+      "empty": "No subagents in this chat yet.",
+      "finalOutput": "Final output",
+      "finished": "Finished",
+      "liveViewUnavailable": "Live view not available for this run.",
+      "loading": "Loading…",
+      "progressOnly": "The full transcript shows when this run finishes.",
+      "refreshFailed": "Could not refresh.",
+      "running": "Running",
+      "status": {
+        "done": "Done",
+        "failed": "Failed",
+        "running": "Running",
+        "stopped": "Stopped"
+      },
+      "title": "Subagents",
+      "transcriptUnavailable": "Transcript not available."
+    },
     "subagentProgress": {
       "done_one": "{{count}} subagent done",
       "done_other": "{{count}} subagents done",
+      "finishedWithFailures_one": "{{count}} subagent finished, {{failed}} failed",
+      "finishedWithFailures_other": "{{count}} subagents finished, {{failed}} failed",
+      "openPanel": "Open subagent panel",
       "running_one": "{{count}} subagent running",
       "running_other": "{{count}} subagents running"
     },
@@ -126,6 +150,9 @@
       "diffViewer": "Diff viewer",
       "fileTree": "File tree",
       "reviewPanel": "Review panel",
+      "subagents": "Subagents",
+      "subagentsRunning_one": "Subagents, {{count}} running",
+      "subagentsRunning_other": "Subagents, {{count}} running",
       "terminal": "Terminal"
     },
     "toolCall": {
@@ -152,6 +179,9 @@
     "prompts": "Prompts"
   },
   "commands": {
+    "addRepo": {
+      "description": "Add a repository to this linked task"
+    },
     "clone": {
       "description": "Clone the current branch into a new session"
     },
@@ -161,8 +191,17 @@
     "fork": {
       "description": "Open Branches to fork from a message"
     },
+    "linkedTask": {
+      "description": "Start a linked task across a repo set"
+    },
+    "model": {
+      "description": "Choose the model"
+    },
     "new": {
       "description": "Start a new session"
+    },
+    "newRepoSet": {
+      "description": "Make a repo set: a group of repositories for linked tasks"
     },
     "resume": {
       "description": "Open the Sessions list"
@@ -171,7 +210,7 @@
       "description": "Open Settings"
     },
     "task": {
-      "description": "Launch a task in a new Pi session"
+      "description": "Launch a task in a new {{agent}} session"
     }
   },
   "commandSources": {
@@ -194,7 +233,6 @@
     "dismiss": "Dismiss",
     "export": "Export",
     "global": "Global",
-    "hideSidebar": "Hide sidebar",
     "import": "Import",
     "install": "Install",
     "installed": "Installed",
@@ -252,10 +290,24 @@
     "workflowRuns": "Workflow Runs"
   },
   "conveyor": {
+    "branches": {
+      "agentWorking": "Wait for all agents in this workspace to finish before switching branches.",
+      "createBranch": "Create branch",
+      "description": "Switch the project's local branch without forcing or stashing changes",
+      "label": "Project branch",
+      "nameRequired": "Enter a name for the new branch.",
+      "newBranchHint": "Starts from {{branch}}. Uncommitted changes move to the new branch.",
+      "newBranchOption": "New branch…",
+      "newBranchPlaceholder": "feature/my-change",
+      "newBranchTitle": "New branch",
+      "saveEditor": "Save or revert your editor changes before switching branches."
+    },
     "branchStatusClean": "{{branch}}",
     "branchStatusDirty_one": "{{branch}} · {{count}} changed",
     "branchStatusDirty_other": "{{branch}} · {{count}} changed",
     "commit": "Commit",
+    "commitAndPush": "Commit + Push",
+    "commitAndPushTitle": "Commit changes and push the branch in one step",
     "commitButtonTitle": "Commit staged changes or changes in this workspace",
     "createPrButton": "Create PR",
     "detachedBranch": "detached",
@@ -266,25 +318,48 @@
       "commitMessageLabel": "Commit message",
       "commitTitle": "Commit changes",
       "descriptionLabel": "Description",
+      "newFilesLabel": "New files: check the files to include",
+      "newFilesLeftOut_one": "{{count}} new file will not be committed.",
+      "newFilesLeftOut_other": "{{count}} new files will not be committed.",
       "prTitle": "Create pull request",
       "titleLabel": "Title"
     },
+    "draft": {
+      "engineUnavailable": "The agent executable is unavailable. Check Agent Configuration or write your message manually.",
+      "failed": "Couldn't generate a message. Try Suggest again or write your own.",
+      "generating": "Generating an English commit message…",
+      "suggest": "Suggest message",
+      "suggestTitle": "Send the selected changes to the session model to suggest a commit message",
+      "timedOut": "Message generation timed out. Try Suggest again or write your own."
+    },
     "errors": {
       "branchRequired": "A named branch is required to create a pull request.",
+      "chooseNewFiles": "Check at least one new file to commit.",
       "commitBeforePr": "Commit changes before creating a pull request.",
       "commitBeforePush": "Commit the working tree before pushing.",
       "commitMessageRequired": "Commit message is required.",
+      "committedPushFailed": "Commit {{sha}} was saved locally, but Push did not complete: {{detail}}",
+      "operationInProgress": "Another Git operation is in progress. Wait for it to finish.",
+      "prBaseMissing": "The remote has no base branch yet. Push the base branch first, or run git remote set-head origin --auto.",
+      "prNeedsGitHub": "Pull requests need a GitHub remote. This branch pushes to a remote that is not on GitHub.",
+      "prNothingToMerge": "This branch has no commits that {{base}} lacks, so there is nothing to merge.",
+      "prOnBaseBranch": "You are on the base branch {{base}}. Switch to another branch to create a pull request.",
       "prTitleRequired": "Pull request title is required.",
-      "pushBeforePr": "Push the branch before creating a pull request."
+      "pushBeforePr": "Push the branch before creating a pull request.",
+      "workspaceChanged": "The active workspace changed. The Git operation was stopped."
     },
     "feedback": {
       "branchPushed": "Branch pushed.",
       "committed": "Committed {{sha}}.",
+      "committedAndPushed": "Committed {{sha}} and pushed the branch.",
+      "openLinkTitle": "Open in the browser",
       "prCreated": "Pull request created.",
-      "prCreatedWithUrl": "Pull request created: {{url}}",
       "pushedCommits_one": "Pushed {{count}} commit.",
       "pushedCommits_other": "Pushed {{count}} commits."
     },
+    "openPrButtonLabel": "Open PR #{{number}}",
+    "openPrButtonTitle": "Open pull request #{{number}} of this branch on GitHub",
+    "openRepositoryTitle": "Open the repository on GitHub",
     "prButtonLabel": "PR",
     "prButtonTitle": "Create a pull request with GitHub CLI",
     "push": "Push",
@@ -441,6 +516,22 @@
   "diff": {
     "closeAriaLabel": "Close diff viewer",
     "deletedFileBadge": "DELETED",
+    "discard": {
+      "agentWorking": "Wait for all agents in this project to finish before discarding changes.",
+      "all": "Discard changes in shown files",
+      "busy": "A discard operation is already running.",
+      "confirm": "Reject",
+      "failed": "Git could not discard the selected changes. Refresh the diff and review it again.",
+      "file": "Discard changes in {{path}}",
+      "message_one": "Discard the shown unstaged changes in this file? This includes changes from other sessions in the same file. A new file will be deleted. Staged changes and commits are not affected. This cannot be undone.\n\n{{files}}",
+      "message_other": "Discard the shown unstaged changes in these files? This includes changes from other sessions in the same files. New files will be deleted. Staged changes and commits are not affected. This cannot be undone.\n\n{{files}}",
+      "saveEditor": "Save or close the unsaved editor before discarding changes.",
+      "stale": "The selected changes are no longer current. Refresh the diff and review it again.",
+      "title_one": "Discard shown change?",
+      "title_other": "Discard shown changes?",
+      "unsupported": "This diff cannot be discarded here. Binary files, symlinks, submodules and file names that are not valid UTF-8 are not supported.",
+      "workingOnly": "Switch to Working to discard unstaged changes."
+    },
     "fileCount_one": "{{count}} file",
     "fileCount_other": "{{count}} files",
     "heading": "Diff Viewer",
@@ -448,7 +539,13 @@
     "newFileBadge": "NEW",
     "noChanges": "No changes",
     "noStagedChanges": "No staged changes",
+    "openFile": "Open file",
     "refreshAriaLabel": "Refresh diff",
+    "sessionFilter": {
+      "description": "Filter to files touched by edit/write calls in this chat. Whole-file diffs may include other sessions. Shell and subagent changes may be missing. Turn off to see the whole project. Push always applies to the whole branch.",
+      "label": "Files touched in this session",
+      "noMatches": "No matching changes for this session"
+    },
     "stagedToggle": "Staged",
     "workingToggle": "Working",
     "workingTreeClean": "Working tree is clean"
@@ -462,10 +559,12 @@
   },
   "errors": {
     "attachments": {
+      "notText": "Attachment is not a text file or a supported image",
       "pathNotPermitted": "Attachment path is not permitted",
       "tooLarge": "Attachment is too large (max {{limit}} MB)"
     },
     "council": {
+      "agentNotFound": "{{agent}} was not found. Install it, or remove it from the council members in Settings.",
       "arbiterFailed": "Arbiter failed",
       "arbiterTimedOut": "Arbiter timed out",
       "notEnoughMembers": "Council needs at least {{min}} agents. Install or enable Pi, Claude, or Codex, or turn the council off.",
@@ -483,18 +582,30 @@
       "blockedWrite": "Could not write \"{{path}}\" ({{code}}). On Windows this is usually Controlled Folder Access (Ransomware protection) blocking the change. Either allow Pi Desktop in Windows Security → Virus & threat protection → Ransomware protection → \"Allow an app through Controlled folder access\", or move this project out of Documents/Desktop to an unprotected folder (for example C:\\dev)."
     },
     "git": {
+      "branchExists": "A branch named \"{{name}}\" already exists. Choose it in the branch menu to switch to it",
+      "branchNameInvalid": "\"{{name}}\" is not a valid branch name",
       "commandFailed": "{{command}} failed",
       "commandFailedWithDetail": "{{command}} failed: {{detail}}",
       "commitBeforePullRequest": "Commit the working tree before creating a pull request",
       "commitBeforePush": "Commit the working tree before pushing",
+      "commitBeforeSwitch": "Commit or discard your changes before switching branches",
       "commitMessageRequired": "Commit message is required",
       "commitMessageTooLong": "Commit message must be {{max}} characters or fewer",
+      "commitSelectionEmpty": "No files are selected to commit",
+      "commitSelectionOutsideWorkspace": "The files selected to commit must be inside the active workspace",
       "detachedHeadCommit": "Cannot commit from a detached HEAD",
       "detachedHeadPush": "Cannot push from a detached HEAD",
+      "ignoredFilesBlockSwitch": "Switching to {{branch}} would overwrite or delete these local files, which Git does not show as changes. Move them out of the way, then switch again:\n{{files}}",
+      "localBranchRequired": "Choose an existing local branch",
       "namedBranchRequired": "A named branch is required to create a pull request",
+      "newFileNotCommittable": "{{path}} cannot be committed: it is not a new file in the selected changes, or Git ignores it",
       "noTrackedChanges": "No tracked changes to commit in this workspace. Stage untracked files first to include them.",
       "operationInProgressCommit": "Cannot commit while a Git {{operation}} is in progress",
+      "operationInProgressCreateBranch": "Cannot create a branch while a Git {{operation}} is in progress",
       "operationInProgressPush": "Cannot push while a Git {{operation}} is in progress",
+      "operationInProgressSwitch": "Cannot switch branches while a Git {{operation}} is in progress",
+      "pullRequestBaseMissing": "The remote has no base branch for the pull request. Push the base branch first, or enter a base branch",
+      "pullRequestExists": "Pull request #{{number}} is already open for this branch: {{url}}",
       "pullRequestTitleRequired": "Pull request title is required",
       "pushBeforePullRequest": "Push the branch before creating a pull request",
       "pushUpstreamIsLocal": "Cannot push a branch whose upstream is the local repository",
@@ -597,6 +708,7 @@
       "notFound": "Workspace not found: {{workspaceId}}",
       "notFoundPlain": "Workspace not found",
       "pullRequestNotCheckedOut": "The task references a GitHub pull request that is not checked out in a local worktree",
+      "repoSetCannotChangeFolder": "A linked task tab keeps the folders of its repositories; start a new linked task to use other folders",
       "sourceFolderMissing": "Source folder does not exist: {{path}}"
     }
   },
@@ -634,12 +746,16 @@
   },
   "home": {
     "actions": {
+      "linkedTask": {
+        "description": "One task across several repositories",
+        "title": "Linked task"
+      },
       "newSession": {
         "inWorkspace": "In {{project}}",
         "pickFolderFirst": "Pick a folder first"
       },
       "newTask": {
-        "description": "Start work in a fresh Pi session",
+        "description": "Start work in a fresh {{agent}} session",
         "title": "New Task"
       },
       "openFolder": {
@@ -747,12 +863,13 @@
     },
     "selector": {
       "current": "Current",
+      "currentModelTitle": "{{model}}\n{{hint}}",
       "loadFailed": "Could not load models",
       "noModelsMatch": "No models match",
       "searchPlaceholder": "Search models…",
       "selectModel": "Select model",
-      "selectModelWithShortcut": "Select model (Ctrl+P to cycle when {{agent}} is running)",
-      "startToListModels": "Start Pi to list and change models."
+      "selectModelCycleHint": "Select model (Ctrl+P to cycle when {{agent}} is running)",
+      "selectModelWithShortcut": "Select model ({{shortcut}}, or Ctrl+P to cycle when {{agent}} is running)"
     }
   },
   "notes": {
@@ -852,20 +969,24 @@
   },
   "permissionMode": {
     "ask-commands": {
-      "description": "Pi will ask before running shell commands.",
-      "label": "Ask before commands"
+      "description": "{{agent}} will ask before running shell commands.",
+      "label": "Ask before commands",
+      "shortLabel": "Ask commands"
     },
     "ask-edits": {
-      "description": "Pi will ask before file edits and shell commands that can change files.",
-      "label": "Ask before edits"
+      "description": "{{agent}} will ask before file edits and shell commands that can change files.",
+      "label": "Ask before edits",
+      "shortLabel": "Ask edits"
     },
     "plan-readonly": {
       "description": "Only read/search/list tools are enabled. File edits and shell commands are blocked.",
-      "label": "Plan / Read-only"
+      "label": "Plan / Read-only",
+      "shortLabel": "Read-only"
     },
     "trusted": {
-      "description": "All Pi tools are enabled for workflows you trust.",
-      "label": "Trusted"
+      "description": "All {{agent}} tools are enabled for workflows you trust.",
+      "label": "Trusted",
+      "shortLabel": "Trusted"
     }
   },
   "permissionRules": {
@@ -904,6 +1025,112 @@
       "command": "Command:\n{{command}}",
       "target": "Target: {{path}}",
       "title": "Allow {{tool}}?"
+    }
+  },
+  "repoSets": {
+    "bar": {
+      "addRepository": "Add repo",
+      "addRepositoryTitle": "Add a repository to this task",
+      "ariaLabel": "Repositories in this task",
+      "changed_one": "{{count}} change",
+      "changed_other": "{{count}} changes",
+      "clean": "clean",
+      "main": "main",
+      "missing": "folder missing",
+      "openPullRequest": "Open pull request",
+      "openPullRequestAriaLabel": "Open the pull request of {{name}}",
+      "shipAll": "Ship all",
+      "shipAllTitle": "Commit, push, and open a linked pull request in each repository with changes",
+      "sourceWasDirty": "Your own checkout had uncommitted changes. This worktree starts from the last commit, so those changes are not in it."
+    },
+    "dialog": {
+      "closeAriaLabel": "Close"
+    },
+    "edit": {
+      "addRepository": "Add repository",
+      "back": "Back",
+      "delete": "Delete set",
+      "deleteConfirmMessage": "Delete \"{{name}}\"? Open linked tasks keep working, and your repositories do not change.",
+      "deleteConfirmTitle": "Delete repo set?",
+      "editTitle": "Edit repo set",
+      "hint": "Add two or more git repositories and select the main one.",
+      "mainLabel": "Main",
+      "mainTitle": "The agent starts in the main repository and follows its project rules.",
+      "nameLabel": "Set name",
+      "newTitle": "New repo set",
+      "pickFolderTitle": "Choose a git repository",
+      "removeRepositoryAriaLabel": "Remove {{name}}",
+      "repositoriesLabel": "Repositories",
+      "repositoryNameAriaLabel": "Repository name"
+    },
+    "errors": {
+      "alreadyInTask": "This repository is already in the task: {{path}}",
+      "checkoutFailed": "Could not prepare \"{{name}}\" for the task. No repository was changed. {{detail}}",
+      "duplicateFolder": "This folder is in the set two times: {{path}}",
+      "duplicateName": "Two repositories are named \"{{name}}\". Give each one its own name.",
+      "folderMissing": "This folder does not exist: {{path}}",
+      "nameRequired": "Give the set a name.",
+      "notFound": "This repo set no longer exists.",
+      "notGitRepository": "This folder is not in a git repository: {{path}}",
+      "notLinkedTask": "This tab is not a linked task.",
+      "oneMainRepository": "Select one main repository.",
+      "repositoryNameRequired": "Give each repository a name.",
+      "repositoryNotInTask": "\"{{name}}\" is not in this task.",
+      "sameRepository": "\"{{name}}\" is a second checkout of a repository that is already in the set.",
+      "tooFewRepositories": "Add at least {{minimum}} repositories."
+    },
+    "mode": {
+      "inPlace": {
+        "description": "The agent edits your own checkouts on their current branches.",
+        "label": "In place",
+        "short": "In place"
+      },
+      "isolated": {
+        "description": "A new worktree in each repository, all on one new branch. Your checkouts do not change.",
+        "label": "Isolated (recommended)",
+        "short": "Isolated"
+      }
+    },
+    "ship": {
+      "errors": {
+        "agentWorking": "The agent is still working. Ship when it stops.",
+        "onBaseBranch": "The changes are on the base branch {{branch}}. Create another branch first: Ship all opens pull requests and does not push to the base branch."
+      },
+      "intro": "Each repository with changes gets a commit, a push, and a pull request. The pull requests link to each other.",
+      "outcome": {
+        "failed": "Failed at the {{step}} step",
+        "missing": "Folder missing",
+        "shipped": "Shipped",
+        "unchanged": "Nothing to ship"
+      },
+      "repositoriesLabel": "Repositories",
+      "resultsLabel": "Results for each repository",
+      "retry": "Retry failed",
+      "shipping": "Shipping…",
+      "step": {
+        "commit": "commit",
+        "link": "link",
+        "pullRequest": "pull request",
+        "push": "push"
+      },
+      "submit": "Ship all",
+      "title": "Ship all repositories"
+    },
+    "start": {
+      "editSet": "Edit",
+      "editSetAriaLabel": "Edit {{name}}",
+      "empty": "No repo sets yet. Make one to start.",
+      "modeLabel": "Where the agent works",
+      "nameLabel": "Task name",
+      "namePlaceholder": "Uses the set name when empty",
+      "newSet": "New repo set",
+      "repositoryCount_one": "{{count}} repository",
+      "repositoryCount_other": "{{count}} repositories",
+      "setLabel": "Repo set",
+      "starting": "Preparing repositories…",
+      "submit": "Start task",
+      "subtitle": "One task across several git repositories, shipped as linked pull requests.",
+      "title": "New linked task"
     }
   },
   "review": {
@@ -996,6 +1223,7 @@
       "saved": "Saved!"
     },
     "agentInstallation": {
+      "appliesToNewSessions": "This change applies to new sessions. Open sessions keep the engine they started with.",
       "autoDetectOption": "Auto-detect (Pi first, then OMP)",
       "chooseExecutableTitle": "Choose executable or install directory",
       "customPathOption": "Custom path…",
@@ -1115,6 +1343,31 @@
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "Voice dictation"
     },
+    "shortcuts": {
+      "actionWithShortcut": "{{action}} ({{shortcut}})",
+      "commandPalette": "Command palette",
+      "commitPush": "Review / Commit and push",
+      "description": "Click a shortcut and press a new combination including Cmd or Ctrl. Changes apply immediately; Save keeps them after restart. Session navigation cycles through open sessions in the current project. Other native menu and editor shortcuts stay unchanged. Escape cancels recording. The voice dictation from any app shortcut works while other apps are in front and applies on Save.",
+      "disable": "Disable",
+      "disableAction": "Disable shortcut for {{action}}",
+      "disabled": "Disabled",
+      "duplicate": "{{action}} and {{other}} use the same shortcut. Choose another combination.",
+      "globalDictation": "Voice dictation from any app: press to start or stop",
+      "heading": "Keyboard shortcuts",
+      "inUse": "{{shortcut}} is already used by {{action}}. Choose another combination.",
+      "invalid": "Use Cmd or Ctrl with a letter, number, punctuation key, or F1–F12.",
+      "modelSelector": "Model selector",
+      "nextProject": "Next project",
+      "nextSession": "Next open session",
+      "notes": "Note picker",
+      "pressKeys": "Press a combination…",
+      "previousProject": "Previous project",
+      "previousSession": "Previous open session",
+      "pushToTalk": "Voice dictation: hold to talk",
+      "reserved": "This combination is reserved for a native menu or editor action.",
+      "reset": "Reset shortcuts",
+      "sidebar": "Sidebar"
+    },
     "showThinking": {
       "description": "Display model thinking blocks in responses",
       "label": "Show Thinking"
@@ -1165,6 +1418,11 @@
         "update": "Update to {{version}}"
       }
     },
+    "uiFontFamily": {
+      "description": "Choose a font from the list. A font that is not installed falls back to the system font. Choose Default fonts to restore the defaults. Terminal and code editor are unchanged.",
+      "label": "UI Font",
+      "placeholder": "Default fonts"
+    },
     "uiFontSize": {
       "description": "Chat, panels, and sidebar — not the terminal or code editor",
       "label": "UI Font Size"
@@ -1204,12 +1462,6 @@
       "heading_one": "Archived ({{count}})",
       "heading_other": "Archived ({{count}})"
     },
-    "currentSession": {
-      "heading": "Current Session",
-      "messageCount_one": "{{count}} messages",
-      "messageCount_other": "{{count}} messages",
-      "openTitle": "Open current session in chat · double-click to rename"
-    },
     "header": {
       "closeSidebar": "Close sidebar",
       "homeAriaLabel": "Home",
@@ -1220,7 +1472,7 @@
       "chat": "Chat",
       "missionControl": "Mission Control",
       "missionControlTitle": "All background sessions and workflows",
-      "newTaskTitle": "Start a task in a new Pi session",
+      "newTaskTitle": "Start a task in a new {{agent}} session",
       "sessions": "Sessions",
       "sessionsTitle": "Sessions in this project",
       "timeline": "Timeline",
@@ -1418,6 +1670,8 @@
       "changeFolderMessage": "Pi has not finished responding in this session. Changing the project folder restarts Pi, which stops it: whatever Pi already wrote to the session is kept, but the rest of the response — including any tool calls still running — is discarded.",
       "cloneAnywayLabel": "Clone anyway",
       "cloneMessage": "Pi has not finished responding in this session. Cloning this branch stops it: whatever Pi already wrote to the session is kept, but the rest of the response — including any tool calls still running — is discarded.",
+      "closeInPlaceLinkedTaskMessage": "Close \"{{name}}\"? Your repositories and their files do not change.",
+      "closeIsolatedLinkedTaskMessage": "Close \"{{name}}\"? Clean worktrees of this task are removed; worktrees with uncommitted changes stay on disk. Branches are kept.",
       "closeManagedWorktreeMessage": "Close \"{{name}}\"? Clean worktrees are removed; tabs with uncommitted changes are preserved on disk.",
       "closeSessionTabMessage": "Pi is still working in this session. Closing the tab stops its runtime; saved messages remain available from Sessions.",
       "closeSessionTabTitle": "Close session tab?",
@@ -1442,6 +1696,7 @@
       "workspaceRulesNoticeTitle": "Workspace permission rules"
     },
     "messages": {
+      "addRepositoryError": "Could not add the repository: {{detail}}",
       "arbiterFailed": "Arbiter failed: {{detail}}",
       "archiveError": "Archive error: {{detail}}",
       "cannotActivateSession": "Cannot activate session",
@@ -1456,12 +1711,16 @@
       "createWorkspaceError": "Create workspace error: {{detail}}",
       "defaultTaskLabel": "Task",
       "deleteError": "Delete error: {{detail}}",
+      "editedSessionName": "{{title}} (edited)",
+      "editNotInSession": "The saved session does not contain this message.",
+      "editResendError": "Could not edit and resend the message: {{detail}}",
       "error": "Error: {{detail}}",
       "followUpError": "Follow-up error: {{detail}}",
       "imageFallbackName": "Image {{index}}",
       "installedPackage": "Installed {{spec}}. Restart Pi to load it.",
       "installFailed": "Install failed",
       "modelError": "Model error: {{detail}}",
+      "modelsFileNotLoaded": "The models file has not loaded yet. Try again.",
       "newIsolatedTabError": "New isolated tab error: {{detail}}",
       "newSessionError": "New session error: {{detail}}",
       "notAFolder": "Cannot open as project — not a folder: {{path}}",
@@ -1500,15 +1759,16 @@
     "openProjectFirst": "Open a project first",
     "starting": "Starting…",
     "startTask": "Start task",
-    "subtitle": "Start a fresh Pi session and send the task immediately.",
+    "subtitle": "Start a fresh {{agent}} session and send the task immediately.",
     "task": "Task",
     "taskPlaceholder": "Fix the failing tests, explain the root cause, and prepare the changes for review…"
   },
   "terminal": {
     "clearAriaLabel": "Clear terminal",
     "clearTitle": "Clear",
-    "closeTitle": "Close terminal",
+    "hideTitle": "Hide terminal (the shell keeps running)",
     "maximizeLabel": "Maximize terminal",
+    "restartHint": "Press any key to start a new shell",
     "restoreLabel": "Restore terminal",
     "title": "Terminal"
   },
@@ -1570,9 +1830,8 @@
     }
   },
   "thinking": {
-    "effort": "Effort",
-    "effortWithLevel": "Thinking effort: {{level}}",
-    "modelAwareDepth": "Model-aware thinking depth"
+    "effort": "Thinking effort",
+    "effortWithLevel": "Thinking effort: {{level}}"
   },
   "time": {
     "justNow": "just now"
@@ -1825,9 +2084,10 @@
     "closeTools": "Close tools",
     "newIsolatedTabAriaLabel": "New isolated Git tab",
     "newIsolatedTabTitle": "New isolated Git tab (requires a Git project)",
+    "newLinkedTaskAriaLabel": "New linked task",
+    "newLinkedTaskTitle": "New linked task across several repositories",
     "newSessionAriaLabel": "New session in this project",
     "newSessionFallback": "New session",
-    "newSessionTitle": "New session in this project (Ctrl/Cmd+N)",
     "removeWorkspaceAriaLabel": "Remove {{name}}",
     "sessions": "Sessions",
     "tools": "Tools"

@@ -4,7 +4,7 @@
 
 Issues are monitored on weekdays. Weekend issues are not handled unless urgent (crash on launch, data loss, security).
 
-If your issue is urgent, label it **urgent** and briefly explain why in the description.
+If your issue is urgent, start the title with **URGENT** and briefly explain why in the description.
 
 ## Before opening an issue
 

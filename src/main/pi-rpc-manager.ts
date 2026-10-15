@@ -12,6 +12,7 @@ import type {
   PiStatus,
   PiResponseEvent,
   AgentInstallation,
+  StreamingTextSnapshot,
 } from '../shared/ipc-contracts'
 import type { CaptureOptions, PiEngine, PiResolution, PiStartFailure, ResolutionDeps } from './pi-binary-resolution'
 import {
@@ -22,8 +23,11 @@ import {
   whichInPath,
 } from './pi-binary-resolution'
 import { escapeCmdSpawn } from './cmd-escape'
+import { StreamingTextTracker } from './streaming-text-tracker'
 import { appLog } from './app-log'
 import { getGuiDataPath } from './app-data-paths'
+import { loadPiDotenv } from './pi-dotenv'
+import { childProcessEnv } from './windows-exe-search'
 import { t, tEnglish } from '../shared/i18n'
 
 /**
@@ -48,22 +52,24 @@ const FORK_FLAG = '--fork'
 const CONTINUE_FLAG = '--continue'
 const IS_WINDOWS = process.platform === 'win32'
 const MS_PER_SECOND = 1_000
-// The startup deadline is two-staged (issue #58). Stage 1: while Pi has
-// printed nothing at all, give up quickly — a dead spawn or a broken stdio
-// pipe stays silent forever. Stage 2: once stdout has shown life the process
-// is provably alive and piped, so the deadline stretches: the engine runs
-// every extension session_start hook BEFORE it reads stdin, and a hook that
-// calls a local model server can sit through tens of seconds of prompt
-// prefill while our readiness probe waits unread.
-const STARTUP_SILENCE_TIMEOUT_MS = 20_000
-const STARTUP_ENGINE_BUSY_TIMEOUT_MS = 120_000
+// One startup deadline for every Pi process that is still running. Silence is
+// no proof of death: Pi's RPC mode prints nothing until it answers the
+// readiness probe, so a workspace whose startup is slow stays silent the
+// whole time (issue #98). The engine also runs every extension session_start
+// hook BEFORE it reads stdin, and a hook that calls a local model server can
+// sit through tens of seconds of prompt prefill while the probe waits unread
+// (issue #58). A dead spawn needs no short cap: the 'error' and 'exit' events
+// end the attempt at once. After the notice delay the UI says Pi is still
+// loading, so a long wait does not look like a hang.
+const STARTUP_WAITING_NOTICE_MS = 20_000
+const STARTUP_READY_TIMEOUT_MS = 120_000
 
-/** Startup deadline caps, injectable so tests do not wait out real minutes. */
+/** Startup timings, injectable so tests do not wait out real minutes. */
 export interface PiStartupTimeouts {
-  /** Max wait for the first byte of Pi stdout. */
-  silenceMs: number
-  /** Max wait for readiness once stdout has shown life. */
-  engineBusyMs: number
+  /** Wait before the startup phase flips to 'waiting-on-engine'. */
+  waitingNoticeMs: number
+  /** Max wait for readiness. */
+  readyMs: number
 }
 // Spawn attempts per start(): the initial try plus one retry, used ONLY when Pi
 // crashes before becoming ready (spawn error / early exit) — a transient hiccup
@@ -77,7 +83,7 @@ const STARTUP_MAX_ATTEMPTS = 2
 // the first stdout byte — confirms the request→response loop works and stays
 // robust even if the probe command is renamed (Pi echoes our id on an "unknown
 // command" error too). The probe is resent on this interval in case the first
-// write raced Pi's stdin reader; the two-stage startup deadline (see
+// write raced Pi's stdin reader; the startup deadline (see
 // PiStartupTimeouts above) bounds the wait.
 const STARTUP_PROBE_ID = '__startup_probe__'
 // get_state is the cheapest liveness command: a handful of in-memory session
@@ -212,7 +218,7 @@ export class RpcFrameDecoder {
 
 // Real filesystem/process access for the resolver in pi-binary-resolution.ts.
 // Kept in one object so the search order stays testable against a fake.
-const RESOLUTION_DEPS: ResolutionDeps = {
+export const RESOLUTION_DEPS: ResolutionDeps = {
   isWindows: IS_WINDOWS,
   env: process.env,
   exists: (path) => existsSync(path),
@@ -254,7 +260,7 @@ function runCapture(command: string, args: string[], options: CaptureOptions): s
       shell: options.shell,
       timeout: options.timeoutMs,
       input: '',
-      env: { ...process.env, PATH: options.pathEnv },
+      env: childProcessEnv(options.shell, { ...process.env, PATH: options.pathEnv }),
     })
     if (result.status !== 0 || !result.stdout) return null
     return result.stdout
@@ -265,44 +271,47 @@ function runCapture(command: string, args: string[], options: CaptureOptions): s
   }
 }
 
+const NODE_COMMAND = 'node'
+const NODE_WINDOWS_EXECUTABLE = 'node.exe'
+/**
+ * What the report and the node-not-found message show when no Node binary
+ * was found. Never spawned: the bare name would make Windows look in the
+ * workspace (the spawn's working directory) before PATH.
+ */
+const NODE_NOT_FOUND_NAME = IS_WINDOWS ? NODE_WINDOWS_EXECUTABLE : NODE_COMMAND
+
 /**
  * Find a Node binary to run the Pi .js script with. Searches NODE env,
- * npm_node_execpath (set when running under npm), Electron's own process,
- * common install paths, and PATH.
+ * npm_node_execpath (set when running under npm), common install paths, and
+ * PATH. Null when none exists, which the start reports as node-not-found.
  */
-function findNodeBinary(): string {
-  if (process.env.NODE && existsSync(process.env.NODE)) return process.env.NODE
-  if (process.env.npm_node_execpath && existsSync(process.env.npm_node_execpath)) {
-    return process.env.npm_node_execpath
-  }
+export function findNodeBinary(deps: ResolutionDeps): string | null {
+  const { env } = deps
+  if (env.NODE && deps.exists(env.NODE)) return env.NODE
+  if (env.npm_node_execpath && deps.exists(env.npm_node_execpath)) return env.npm_node_execpath
 
-  if (IS_WINDOWS) {
-    const programFiles = process.env.ProgramFiles ?? 'C:\\Program Files'
-    const programFilesX86 = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'
-    const localAppData = process.env.LOCALAPPDATA ?? ''
+  if (deps.isWindows) {
+    const programFiles = env.ProgramFiles ?? 'C:\\Program Files'
+    const programFilesX86 = env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'
+    const localAppData = env.LOCALAPPDATA ?? ''
     const candidates = [
       // Pi's install.ps1 puts an auto-installed Node under
       // %LOCALAPPDATA%\pi-node\current\node.exe. Check the symlinked
       // 'current' path first; fall back to the bare pi-node dir for
       // older layouts.
-      localAppData ? join(localAppData, 'pi-node', 'current', 'node.exe') : '',
-      localAppData ? join(localAppData, 'pi-node', 'node.exe') : '',
-      join(programFiles, 'nodejs', 'node.exe'),
-      join(programFilesX86, 'nodejs', 'node.exe'),
-      localAppData ? join(localAppData, 'fnm_multishells', 'node.exe') : '',
+      localAppData ? join(localAppData, 'pi-node', 'current', NODE_WINDOWS_EXECUTABLE) : '',
+      localAppData ? join(localAppData, 'pi-node', NODE_WINDOWS_EXECUTABLE) : '',
+      join(programFiles, 'nodejs', NODE_WINDOWS_EXECUTABLE),
+      join(programFilesX86, 'nodejs', NODE_WINDOWS_EXECUTABLE),
+      localAppData ? join(localAppData, 'fnm_multishells', NODE_WINDOWS_EXECUTABLE) : '',
     ].filter(Boolean)
-    for (const c of candidates) if (existsSync(c)) return c
-    const fromPath = whichInPath(RESOLUTION_DEPS, 'node', process.env.PATH ?? '')
-    if (fromPath) return fromPath
-    return 'node.exe'
+    for (const c of candidates) if (deps.exists(c)) return c
+  } else {
+    for (const c of ['/usr/bin/node', '/usr/local/bin/node', '/opt/homebrew/bin/node']) {
+      if (deps.exists(c)) return c
+    }
   }
-
-  for (const c of ['/usr/bin/node', '/usr/local/bin/node', '/opt/homebrew/bin/node']) {
-    if (existsSync(c)) return c
-  }
-  const fromPath = whichInPath(RESOLUTION_DEPS, 'node', process.env.PATH ?? '')
-  if (fromPath) return fromPath
-  return 'node'
+  return whichInPath(deps, NODE_COMMAND, env.PATH ?? '')
 }
 
 /**
@@ -314,6 +323,7 @@ export interface PiCli {
   /** The selected engine. OMP deliberately keeps the Pi-compatible RPC path. */
   kind?: 'pi' | 'omp'
   script: string
+  /** The Node binary for a cli.js script; only a name to show when nodeFound is false. */
   node: string
   useNode: boolean
   needsShell: boolean
@@ -334,7 +344,8 @@ let cachedResolution: PiResolution | null = null
  * `cachedResolution` — both read the same filesystem state.
  */
 const engineResolutions = new Map<AgentEngineKind, PiResolution>()
-let cachedNodeBinary: string | null = null
+/** findNodeBinary's answer: undefined until the first lookup, null when there is no Node. */
+let cachedNodeBinary: string | null | undefined
 let detectedInstallationsCache: { at: number; value: AgentInstallation[] } | null = null
 /** How long a detection result is served without re-walking the filesystem. */
 const INSTALLATION_CACHE_TTL_MS = 30_000
@@ -351,7 +362,7 @@ export function setPiExecutableOverride(raw: string | undefined | null, engine: 
   configuredEngine = engine
   cachedResolution = null
   engineResolutions.clear()
-  cachedNodeBinary = null
+  cachedNodeBinary = undefined
 }
 
 
@@ -415,32 +426,41 @@ function logResolution(resolution: PiResolution): void {
   console.log('[Pi] Uses node     :', resolution.useNode)
   console.log(
     '[Pi] Node binary   :',
-    node,
-    resolution.useNode ? (existsSync(node) ? '(exists)' : '(MISSING)') : '(unused)'
+    node ?? NODE_NOT_FOUND_NAME,
+    resolution.useNode ? (nodeBinaryExists(node) ? '(exists)' : '(MISSING)') : '(unused)'
   )
   console.log('[Pi] Needs shell   :', resolution.needsShell)
   console.log('─────────────────────────────────────────────────────')
 }
 
-function getNodeBinary(): string {
-  if (cachedNodeBinary === null) cachedNodeBinary = findNodeBinary()
+function getNodeBinary(): string | null {
+  if (cachedNodeBinary === undefined) cachedNodeBinary = findNodeBinary(RESOLUTION_DEPS)
   return cachedNodeBinary
 }
 
-/** Pair a resolution with the Node binary and the failure spawn needs. */
-function toPiCli(resolution: PiResolution, kind: AgentEngineKind): PiCli {
-  const node = getNodeBinary()
-  const nodeFound = !resolution.useNode || existsSync(node)
+/** The cached lookup can outlive the file, so a found binary is checked again. */
+function nodeBinaryExists(node: string | null): node is string {
+  return node !== null && existsSync(node)
+}
+
+/**
+ * Pair a resolution with the Node binary and the failure spawn needs. `node`
+ * is findNodeBinary's answer; null makes a cli.js resolution fail as
+ * node-not-found instead of spawning a bare `node`.
+ */
+export function toPiCli(resolution: PiResolution, kind: AgentEngineKind, node: string | null): PiCli {
+  const nodeFound = !resolution.useNode || nodeBinaryExists(node)
+  const nodeName = node ?? NODE_NOT_FOUND_NAME
   let failureReason: PiStartFailure | null = null
   if (!resolution.found) {
     failureReason = { kind: 'pi-not-found', resolution }
   } else if (!nodeFound) {
-    failureReason = { kind: 'node-not-found', node }
+    failureReason = { kind: 'node-not-found', node: nodeName }
   }
   return {
     kind,
     script: resolution.script,
-    node,
+    node: nodeName,
     useNode: resolution.useNode,
     needsShell: resolution.needsShell,
     found: resolution.found,
@@ -462,7 +482,8 @@ export function getPiCli(): PiCli {
       ? 'omp'
       : configuredEngine === 'pi'
         ? 'pi'
-        : isOmpExecutable(resolution.script) ? 'omp' : 'pi'
+        : isOmpExecutable(resolution.script) ? 'omp' : 'pi',
+    getNodeBinary()
   )
 }
 
@@ -494,12 +515,12 @@ export function getPiCliForEngine(engine: AgentEngineKind): PiCli {
   // A configured override names the OTHER engine's binary, so this engine is
   // auto-detected rather than inheriting a path that is not its own.
   const cached = engineResolutions.get(engine)
-  if (cached) return toPiCli(cached, engine)
+  if (cached) return toPiCli(cached, engine, getNodeBinary())
   const resolution = resolvePiBinary(RESOLUTION_DEPS, null, engine)
   // Only a hit is remembered. Caching "not installed" would keep answering
   // that after the user installs the engine, for the whole run.
   if (resolution.found) engineResolutions.set(engine, resolution)
-  return toPiCli(resolution, engine)
+  return toPiCli(resolution, engine, getNodeBinary())
 }
 
 /**
@@ -546,6 +567,15 @@ export function buildPiArgs(options: PiStartOptions): string[] {
     args.push(MODEL_FLAG, options.model)
   }
 
+  if (
+    options.defaultThinkingLevel &&
+    !options.sessionPath && !options.forkSessionPath &&
+    !(options.continueSession && !options.noSession) &&
+    !options.args?.some((arg) => arg === '--thinking' || arg.startsWith('--thinking='))
+  ) {
+    args.push('--thinking', options.defaultThinkingLevel)
+  }
+
   if (options.forkSessionPath) {
     args.push(FORK_FLAG, options.forkSessionPath)
   } else if (options.sessionPath) {
@@ -583,6 +613,16 @@ export function buildPiInvocation(
   return cli.useNode
     ? escapeCmdSpawn(cli.needsShell, cli.node, [cli.script, ...args])
     : escapeCmdSpawn(cli.needsShell, cli.script, args)
+}
+
+/**
+ * The environment of one Pi or OMP run: ~/.pi/.env under `base`, the app's
+ * own environment by default. `needsShell` is the run's PiCli.needsShell: the
+ * app's current-folder search switch reaches the run only when cmd.exe starts
+ * it (see childProcessEnv).
+ */
+export function buildPiRunEnv(needsShell: boolean, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return childProcessEnv(needsShell, { ...loadPiDotenv(), ...base })
 }
 
 const MAX_PENDING_RESPONSES = 64
@@ -667,6 +707,7 @@ export class PiRpcManager extends EventEmitter {
   private nextRequestId = 1
   private decoder = new StringDecoder('utf8')
   private rpcFrameDecoder = new RpcFrameDecoder()
+  private readonly streamingText = new StreamingTextTracker()
   private startInFlight: Promise<PiStatus> | null = null
   private runningEngine: 'pi' | 'omp' | null = null
   private readonly exitWaiters = new Map<ChildProcess, Set<() => void>>()
@@ -679,7 +720,7 @@ export class PiRpcManager extends EventEmitter {
   // deadline guard is status-gated), leaving start() hung forever.
   private abortStartup: (() => void) | null = null
   // Set on the first stdout byte of the current spawn attempt; decides which
-  // startup deadline applies and which timeout error is reported.
+  // timeout error is reported.
   private startupSawOutput = false
   // Non-null only while a spawn attempt is in flight (see PiStartupPhase).
   private startupPhase: PiStartupPhase | null = null
@@ -688,8 +729,8 @@ export class PiRpcManager extends EventEmitter {
   constructor(startupTimeouts?: Partial<PiStartupTimeouts>) {
     super()
     this.startupTimeouts = {
-      silenceMs: startupTimeouts?.silenceMs ?? STARTUP_SILENCE_TIMEOUT_MS,
-      engineBusyMs: startupTimeouts?.engineBusyMs ?? STARTUP_ENGINE_BUSY_TIMEOUT_MS,
+      waitingNoticeMs: startupTimeouts?.waitingNoticeMs ?? STARTUP_WAITING_NOTICE_MS,
+      readyMs: startupTimeouts?.readyMs ?? STARTUP_READY_TIMEOUT_MS,
     }
   }
 
@@ -708,6 +749,11 @@ export class PiRpcManager extends EventEmitter {
       startupPhase: this.startupPhase ?? undefined,
     }
   }
+  /** What the current assistant message has streamed so far. */
+  getStreamingText(): StreamingTextSnapshot {
+    return this.streamingText.snapshot()
+  }
+
   /** Engine identity of the live child, not the currently configured future one. */
   getEngineKind(): AgentEngineKind {
     return this.runningEngine ?? getConfiguredEngineKind()
@@ -805,9 +851,7 @@ export class PiRpcManager extends EventEmitter {
    * message misdiagnosed issue #58 for days).
    */
   private describeStartupTimeout(captured: string): string {
-    const seconds = this.startupSawOutput
-      ? this.startupTimeouts.engineBusyMs / MS_PER_SECOND
-      : this.startupTimeouts.silenceMs / MS_PER_SECOND
+    const seconds = this.startupTimeouts.readyMs / MS_PER_SECOND
     if (this.startupSawOutput) {
       const busy = t('errors.pi.startupTimeoutBusy', { seconds })
       return captured ? t('errors.pi.startupTimeoutBusyWithStderr', { message: busy, detail: captured }) : busy
@@ -822,9 +866,7 @@ export class PiRpcManager extends EventEmitter {
    *  - 'ready'   — the readiness probe's correlated response arrived; status is
    *                now 'running'.
    *  - 'crashed' — spawn error, or the process exited before becoming ready.
-   *  - 'timeout' — no response within the applicable startup deadline:
-   *                silenceMs while stdout stayed silent, engineBusyMs once
-   *                output proved the process alive (see PiStartupTimeouts).
+   *  - 'timeout' — no response within readyMs (see PiStartupTimeouts).
    * It does NOT set the terminal 'error' status — doStart owns that, so it can
    * retry a crash without flipping the UI to 'error' between attempts.
    */
@@ -839,7 +881,7 @@ export class PiRpcManager extends EventEmitter {
       cwd: options.cwd,
       // Windows only: redirect TEMP so pi-subagents can mkdir without EPERM on
       // locked %LocalAppData%\Temp trees. POSIX keeps the system temp (OS cleanup).
-      env: { ...process.env, ...buildPiChildEnv(), ...options.env },
+      env: buildPiRunEnv(cli.needsShell, { ...process.env, ...buildPiChildEnv(), ...options.env }),
       // .cmd/.bat/.ps1 shims on Windows can't be invoked directly from
       // spawn — they need the cmd.exe interpreter via shell:true.
       shell: cli.needsShell,
@@ -871,8 +913,8 @@ export class PiRpcManager extends EventEmitter {
     return new Promise<'ready' | 'crashed' | 'timeout' | 'aborted'>((resolve) => {
       let settled = false
       let probeTimer: NodeJS.Timeout | null = null
-      let silenceTimer: NodeJS.Timeout | null = null
-      let engineBusyTimer: NodeJS.Timeout | null = null
+      let waitingNoticeTimer: NodeJS.Timeout | null = null
+      let readyTimer: NodeJS.Timeout | null = null
       const startedAt = Date.now()
       const finish = (outcome: 'ready' | 'crashed' | 'timeout' | 'aborted'): void => {
         if (settled) return
@@ -884,13 +926,13 @@ export class PiRpcManager extends EventEmitter {
           clearInterval(probeTimer)
           probeTimer = null
         }
-        if (silenceTimer) {
-          clearTimeout(silenceTimer)
-          silenceTimer = null
+        if (waitingNoticeTimer) {
+          clearTimeout(waitingNoticeTimer)
+          waitingNoticeTimer = null
         }
-        if (engineBusyTimer) {
-          clearTimeout(engineBusyTimer)
-          engineBusyTimer = null
+        if (readyTimer) {
+          clearTimeout(readyTimer)
+          readyTimer = null
         }
         resolve(outcome)
       }
@@ -922,6 +964,7 @@ export class PiRpcManager extends EventEmitter {
         if (this.status === 'running') {
           // Exited after becoming ready → normal lifecycle stop.
           this.setStatus('stopped')
+          this.streamingText.reset()
           this.emit('exit', { code, signal })
           this.rejectAllPending(t('errors.pi.processExited'))
           return
@@ -951,30 +994,23 @@ export class PiRpcManager extends EventEmitter {
       sendProbe()
       probeTimer = setInterval(sendProbe, STARTUP_PROBE_INTERVAL_MS)
 
-      // Hard deadline, in two stages. Silent stdout at the silence cap means a
-      // dead spawn or a broken pipe — give up. Output without readiness means
-      // the engine is alive but still binding (its extension session_start
-      // hooks run before it reads stdin, so our probe sits unread while a hook
-      // may wait on a local model server — issue #58): announce the wait and
-      // grant the rest of the engine-busy cap.
-      silenceTimer = setTimeout(() => {
+      // A process that is still running is still binding its session (see
+      // PiStartupTimeouts): announce the wait, then hold to the one deadline.
+      waitingNoticeTimer = setTimeout(() => {
         if (settled || this.status !== 'starting') return
-        if (!this.startupSawOutput) {
-          finish('timeout')
-          return
-        }
         this.startupPhase = 'waiting-on-engine'
         console.log(
-          `[Pi] Alive but not ready after ${this.startupTimeouts.silenceMs}ms; ` +
-            `waiting up to ${this.startupTimeouts.engineBusyMs}ms for the engine`
+          `[Pi] Running but not ready after ${this.startupTimeouts.waitingNoticeMs}ms ` +
+            `(stdout ${this.startupSawOutput ? 'active' : 'silent'}); ` +
+            `waiting up to ${this.startupTimeouts.readyMs}ms for the engine`
         )
         this.emit('startup-phase', this.startupPhase)
-        engineBusyTimer = setTimeout(() => {
-          if (!settled && this.status === 'starting') {
-            finish('timeout')
-          }
-        }, Math.max(0, this.startupTimeouts.engineBusyMs - this.startupTimeouts.silenceMs))
-      }, this.startupTimeouts.silenceMs)
+      }, this.startupTimeouts.waitingNoticeMs)
+      readyTimer = setTimeout(() => {
+        if (!settled && this.status === 'starting') {
+          finish('timeout')
+        }
+      }, this.startupTimeouts.readyMs)
     })
   }
 
@@ -1189,6 +1225,7 @@ export class PiRpcManager extends EventEmitter {
       }
     }
 
+    this.streamingText.observe(event)
     // Emit all events for subscribers
     this.emit('event', event)
     this.emit(event.type, event)

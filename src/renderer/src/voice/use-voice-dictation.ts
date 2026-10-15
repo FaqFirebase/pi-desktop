@@ -31,6 +31,8 @@ interface DictationSession {
   pass: Promise<void> | null
   /** A segment pass failed; the final pass alone retries, once. */
   passFailed: boolean
+  /** The composer was sent or cleared; this recording writes nothing more. */
+  discarded: boolean
 }
 
 function newSession(startedAt: number): DictationSession {
@@ -40,6 +42,7 @@ function newSession(startedAt: number): DictationSession {
     fixedFrame: 0,
     pass: null,
     passFailed: false,
+    discarded: false,
   }
 }
 
@@ -58,13 +61,21 @@ export interface VoiceDictation {
   model: VoiceModel | undefined
   error: string | null
   toggle: () => void
+  /** Push-to-talk key down: start recording, and keep it open while held. */
+  hold: () => void
+  /** Push-to-talk key up: stop a recording that `hold` started. */
+  release: () => void
+  /** The composer was sent or cleared: stop recording and drop text not yet written. */
+  cancel: () => void
 }
 
 /**
  * Drives the microphone button. Each time the speaker pauses, the speech since
  * the previous pause is transcribed once and added to the composer, so no audio
- * is transcribed twice. It auto-stops after a longer silence, transcribes any
- * speech left after the last pause, and never sends.
+ * is transcribed twice. It auto-stops after a longer silence (not while the
+ * push-to-talk key is held), transcribes any speech left after the last pause,
+ * and never sends. When the composer sends or clears its text, `cancel` ends
+ * the recording, so no late text comes back into the emptied composer.
  */
 export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictation {
   const [status, setStatus] = useState<VoiceStatus | null>(null)
@@ -78,6 +89,8 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
   // True while the mic is opening, before phase turns 'recording'; a second
   // click then must not open a second mic that nothing would close.
   const startingRef = useRef(false)
+  // True while the push-to-talk key is down for the current recording.
+  const heldRef = useRef(false)
   const sessionRef = useRef<DictationSession>(newSession(0))
   const handlersRef = useRef(handlers)
   handlersRef.current = handlers
@@ -95,13 +108,18 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
     }
   }
 
-  useEffect(() => {
-    return () => {
-      stoppedRef.current = true
-      clearTimer()
-      recorderRef.current?.cancel()
-    }
+  const cancel = useCallback(() => {
+    sessionRef.current.discarded = true
+    stoppedRef.current = true
+    heldRef.current = false
+    clearTimer()
+    recorderRef.current?.cancel()
+    recorderRef.current = null
+    setPhase('idle')
   }, [])
+
+  // Unmount drops the recording, so a late pass cannot write into the composer.
+  useEffect(() => cancel, [cancel])
 
   useEffect(() => {
     let active = true
@@ -129,6 +147,10 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
       // A segment pass still running fixes its text first, so its audio is not
       // transcribed again below.
       await session.pass
+      if (session.discarded) {
+        recorder.cancel()
+        return
+      }
       if (allSpeechFixed(session.state)) {
         recorder.cancel()
         handlersRef.current.onFinal(session.fixedText)
@@ -136,23 +158,30 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
       }
       const pcm = await recorder.stop(session.fixedFrame)
       const tail = pcm.length > 0 ? await transcribeAudio(pcm, model, status.selectedPrecision) : ''
-      handlersRef.current.onFinal(joinTranscript(session.fixedText, tail))
+      if (!session.discarded) handlersRef.current.onFinal(joinTranscript(session.fixedText, tail))
     } catch (err) {
       console.error('[voice] transcription failed', err)
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setPhase('idle')
+      // After a cancel, the phase belongs to cancel or to a newer recording.
+      if (!session.discarded) setPhase('idle')
     }
   }, [model, status])
 
   const startRecording = useCallback(async () => {
     if (!model || !status || !ready || startingRef.current) return
+    const startedByHold = heldRef.current
     startingRef.current = true
     setError(null)
     stoppedRef.current = false
     try {
       const recorder = new VoiceRecorder()
       await recorder.start()
+      // The composer was sent or cleared, or the hook unmounted, while the mic opened.
+      if (stoppedRef.current) {
+        recorder.cancel()
+        return
+      }
       recorderRef.current = recorder
       handlersRef.current.onStart()
       setPhase('recording')
@@ -180,7 +209,9 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
               session.fixedFrame = toFrame
               // Speech that began after this pass took its audio opens the next segment.
               state.segmentHasSpeech = state.lastVoiceAt > now
-              if (!stoppedRef.current) handlersRef.current.onInterim(session.fixedText)
+              if (!stoppedRef.current && !session.discarded) {
+                handlersRef.current.onInterim(session.fixedText)
+              }
             })
             .catch((err) => {
               // A failed load or run would fail the same way at every pause
@@ -194,11 +225,13 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
             })
         }
 
-        const silentTooLong = state.everSawSpeech && now - state.lastVoiceAt >= SILENCE_HOLD_MS
+        const silentTooLong = !heldRef.current && state.everSawSpeech && now - state.lastVoiceAt >= SILENCE_HOLD_MS
         if (silentTooLong || now - startedAt >= MAX_RECORDING_MS) {
           void finalize()
         }
       }, TICK_MS)
+      // The key came up while the mic was still opening.
+      if (startedByHold && !heldRef.current) void finalize()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setPhase('idle')
@@ -211,9 +244,23 @@ export function useVoiceDictation(handlers: VoiceDictationHandlers): VoiceDictat
     if (phase === 'recording') {
       void finalize()
     } else if (phase === 'idle') {
+      heldRef.current = false
       void startRecording()
     }
   }, [phase, finalize, startRecording])
 
-  return { phase, ready, model, error, toggle }
+  const hold = useCallback(() => {
+    if (phase !== 'idle') return
+    heldRef.current = true
+    void startRecording()
+  }, [phase, startRecording])
+
+  const release = useCallback(() => {
+    if (!heldRef.current) return
+    heldRef.current = false
+    // While the mic is still opening, startRecording stops it once it is open.
+    if (!startingRef.current) void finalize()
+  }, [finalize])
+
+  return { phase, ready, model, error, toggle, hold, release, cancel }
 }

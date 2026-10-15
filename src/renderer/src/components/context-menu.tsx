@@ -15,10 +15,18 @@ import {
   Pencil,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
+import type { Terminal as XTerm } from '@xterm/xterm'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { useAppStore } from '../store'
 import { getSessionTitle } from '../utils/session-title'
 import { t } from '../../../shared/i18n'
+
+/**
+ * Events that close the menu because the user scrolls. A plain `scroll` event
+ * also fires when the app scrolls a box by itself (a live answer following its
+ * newest text), which closed the menu the moment it opened.
+ */
+export const CONTEXT_MENU_USER_SCROLL_EVENTS = ['wheel', 'touchmove'] as const
 
 interface ContextMenuItem {
   id: string
@@ -113,12 +121,18 @@ export function useContextMenu(): {
     }
   }, [state.visible, hide])
 
-  // Close on scroll
+  // Close when the user scrolls
   useEffect(() => {
     if (!state.visible) return
     const handleScroll = () => hide()
-    window.addEventListener('scroll', handleScroll, true)
-    return () => window.removeEventListener('scroll', handleScroll, true)
+    for (const type of CONTEXT_MENU_USER_SCROLL_EVENTS) {
+      window.addEventListener(type, handleScroll, { capture: true, passive: true })
+    }
+    return () => {
+      for (const type of CONTEXT_MENU_USER_SCROLL_EVENTS) {
+        window.removeEventListener(type, handleScroll, { capture: true })
+      }
+    }
   }, [state.visible, hide])
 
   // Move focus into the menu when it opens; restore it to the trigger on close.
@@ -430,6 +444,62 @@ export function buildSessionContextMenu(
   })
 
   return items
+}
+
+/**
+ * Right-click menu for the terminal panel. xterm keeps its own selection and
+ * reads input from a hidden textarea, so the default menu (DOM selection,
+ * textarea value edits) cannot copy from or paste into it.
+ */
+export function buildTerminalContextMenu(terminal: XTerm, showShortcuts: boolean): ContextMenuItem[] {
+  const selectedText = terminal.getSelection()
+  const hasSelection = selectedText.length > 0
+
+  return [
+    {
+      id: 'terminal-copy',
+      label: t('common.copy'),
+      icon: <Copy size={14} />,
+      shortcut: showShortcuts ? t('contextMenu.shortcuts.copy') : undefined,
+      disabled: !hasSelection,
+      action: () => {
+        if (hasSelection) {
+          navigator.clipboard.writeText(selectedText)
+        }
+      },
+    },
+    {
+      id: 'terminal-paste',
+      label: t('common.paste'),
+      icon: <ClipboardPaste size={14} />,
+      shortcut: showShortcuts ? t('contextMenu.shortcuts.paste') : undefined,
+      action: async () => {
+        try {
+          terminal.paste(await navigator.clipboard.readText())
+        } catch {
+          // Clipboard API may be blocked
+        }
+      },
+    },
+    {
+      id: 'divider-terminal-1',
+      label: '',
+      divider: true,
+      action: () => {},
+    },
+    {
+      id: 'terminal-select-all',
+      label: t('common.selectAll'),
+      icon: <TextSelect size={14} />,
+      action: () => terminal.selectAll(),
+    },
+    {
+      id: 'terminal-clear',
+      label: t('terminal.clearAriaLabel'),
+      icon: <Trash2 size={14} />,
+      action: () => terminal.clear(),
+    },
+  ]
 }
 
 export function buildLinkContextMenu(url: string): ContextMenuItem[] {

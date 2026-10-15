@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import {
-  buildConsultantSpawn,
+  buildConsultantLaunch,
   runConsultants,
   runArbiter,
+  type ConsultantLaunch,
   type SpawnConsultant,
 } from './council-manager'
-import { COUNCIL_AGENT_IDS, buildConsultantCommand } from '../shared/council-config'
+import { buildConsultantCommand, councilAgentLabel } from '../shared/council-config'
 import type { CouncilAgentId, ConsultantResult } from '../shared/council-config'
+import type { PiCli } from './pi-rpc-manager'
+import { describePiStartFailure, type PiStartFailure } from './pi-binary-resolution'
+import { NO_CWD_EXE_SEARCH_VARIABLE, disableCwdExecutableSearch } from './windows-exe-search'
+import { t } from '../shared/i18n'
 
 function fakeSpawn(map: Record<string, { ok: boolean; output?: string; error?: string; timedOut?: boolean }>): SpawnConsultant {
   return async (id: CouncilAgentId) => {
@@ -16,46 +21,129 @@ function fakeSpawn(map: Record<string, { ok: boolean; output?: string; error?: s
   }
 }
 
-// --- buildConsultantSpawn: the wire form handed to spawn() on each platform ---
+// --- buildConsultantLaunch: what spawn() gets for each consultant ---
 
-test('buildConsultantSpawn quotes a spaced shim path for the Windows cmd.exe hop', () => {
-  const spawn = buildConsultantSpawn('claude', String.raw`C:\Program Files\nodejs\claude.cmd`, true)
-  assert.equal(spawn.file, String.raw`"C:\Program Files\nodejs\claude.cmd"`)
-  // Every consultant flag is metacharacter-free, so escaping must leave the
-  // args byte-identical — gratuitous quoting would reach the CLI verbatim.
-  assert.deepEqual(spawn.args, [
-    '-p',
-    '--permission-mode',
-    'plan',
-    '--output-format',
-    'stream-json',
-    '--include-partial-messages',
-    '--verbose',
-  ])
-})
+/** Every consultant flag is metacharacter-free, so cmd.exe escaping must leave them byte-identical. */
+const CLAUDE_ARGS = ['-p', '--permission-mode', 'plan', '--output-format', 'stream-json', '--include-partial-messages', '--verbose']
+const PI_ARGS = ['-p', '--mode', 'json', '--no-session', '--exclude-tools', 'bash,edit,write']
+const OMP_ARGS = ['-p', '--mode', 'json', '--no-session', '--tools', 'read,grep,glob']
 
-test('buildConsultantSpawn escapes cmd metacharacters in a Windows shim path', () => {
-  const spawn = buildConsultantSpawn('pi', String.raw`C:\Users\Tom & Jerry\100%\pi.cmd`, true)
-  assert.equal(spawn.file, String.raw`"C:\Users\Tom & Jerry\100"^%"\pi.cmd"`)
-  assert.deepEqual(spawn.args, [
-    '-p',
-    '--mode',
-    'json',
-    '--no-session',
-    '--exclude-tools',
-    'bash,edit,write',
-  ])
-})
-
-test('buildConsultantSpawn passes every agent through byte-identically off Windows', () => {
-  for (const id of COUNCIL_AGENT_IDS) {
-    const executable = `/usr/local/bin/my agents/${id}`
-    const command = buildConsultantCommand(id, executable)
-    assert.deepEqual(buildConsultantSpawn(id, executable, false), {
-      file: executable,
-      args: command.args,
-    }, id)
+/** A resolved engine. needsShell is true only for a Windows shim, and never with useNode. */
+function piCli(overrides: Partial<PiCli> = {}): PiCli {
+  return {
+    kind: 'pi',
+    script: '/usr/local/bin/pi',
+    node: '/usr/bin/node',
+    useNode: false,
+    needsShell: false,
+    found: true,
+    nodeFound: true,
+    failureReason: null,
+    ...overrides,
   }
+}
+
+/** The app environment after Windows startup added the current-folder search switch. */
+function windowsAppEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { Path: String.raw`C:\Windows\system32` }
+  disableCwdExecutableSearch(env, 'win32')
+  return env
+}
+
+// The launch tests change the startup state; leave it as this host's startup does.
+after(() => disableCwdExecutableSearch({}, process.platform))
+
+function launched(result: ConsultantLaunch | { error: string }): ConsultantLaunch {
+  if ('error' in result) assert.fail(`expected a launch, got the refusal: ${result.error}`)
+  return result
+}
+
+/** The spawn() program, argv and shell flag of a launch, without its environment. */
+function command(launch: ConsultantLaunch): { file: string; args: string[]; shell: boolean } {
+  return { file: launch.file, args: launch.args, shell: launch.shell }
+}
+
+test('a Windows .cmd consultant runs through cmd.exe, quoted, and keeps the switch for its shim', () => {
+  const launch = launched(buildConsultantLaunch(
+    { id: 'claude', executable: String.raw`C:\Program Files\nodejs\claude.cmd` },
+    true,
+    windowsAppEnv(),
+  ))
+  assert.deepEqual(command(launch), {
+    file: String.raw`"C:\Program Files\nodejs\claude.cmd"`,
+    args: CLAUDE_ARGS,
+    shell: true,
+  })
+  // cmd.exe resolves the shim's bare `node` with the switch: from PATH, not from the workspace.
+  assert.equal(NO_CWD_EXE_SEARCH_VARIABLE in launch.env, true)
+})
+
+test('a Windows .exe consultant starts directly, without cmd.exe or the switch', () => {
+  const executable = String.raw`C:\Users\Tom Smith\.local\bin\claude.exe`
+  const launch = launched(buildConsultantLaunch({ id: 'claude', executable }, true, windowsAppEnv()))
+  assert.deepEqual(command(launch), { file: executable, args: CLAUDE_ARGS, shell: false })
+  assert.equal(NO_CWD_EXE_SEARCH_VARIABLE in launch.env, false)
+})
+
+test('the Pi consultant and the arbiter run cli.js under Node, never through cmd.exe', () => {
+  // cmd.exe would open a .js file with its file association instead of running Pi.
+  const cli = piCli({
+    script: String.raw`C:\Users\u\AppData\Roaming\npm\node_modules\@earendil-works\pi-coding-agent\dist\cli.js`,
+    node: String.raw`C:\Program Files\nodejs\node.exe`,
+    useNode: true,
+  })
+  const launch = launched(buildConsultantLaunch({ id: 'pi', cli }, true, windowsAppEnv()))
+  assert.deepEqual(command(launch), { file: cli.node, args: [cli.script, ...PI_ARGS], shell: false })
+  assert.equal(NO_CWD_EXE_SEARCH_VARIABLE in launch.env, false)
+})
+
+test('a Pi shim path is escaped for the cmd.exe hop and keeps the switch', () => {
+  const cli = piCli({ script: String.raw`C:\Users\Tom & Jerry\100%\pi.cmd`, needsShell: true })
+  const launch = launched(buildConsultantLaunch({ id: 'pi', cli }, true, windowsAppEnv()))
+  assert.deepEqual(command(launch), {
+    file: String.raw`"C:\Users\Tom & Jerry\100"^%"\pi.cmd"`,
+    args: PI_ARGS,
+    shell: true,
+  })
+  assert.equal(NO_CWD_EXE_SEARCH_VARIABLE in launch.env, true)
+})
+
+test('an OMP engine plans with its native read-only tool allowlist', () => {
+  const cli = piCli({ kind: 'omp', script: String.raw`C:\Users\u\.bun\bin\omp.exe` })
+  const launch = launched(buildConsultantLaunch({ id: 'pi', cli }, true, windowsAppEnv()))
+  assert.deepEqual(command(launch), { file: cli.script, args: OMP_ARGS, shell: false })
+})
+
+test('a consultant that was not found is reported, never spawned by bare name', () => {
+  // Windows looks a bare name up in the working directory, the workspace, first.
+  for (const id of ['claude', 'codex'] as const) {
+    assert.deepEqual(
+      buildConsultantLaunch({ id, executable: null }, true, windowsAppEnv()),
+      { error: t('errors.council.agentNotFound', { agent: councilAgentLabel(id) }) },
+      id,
+    )
+  }
+  const failureReason: PiStartFailure = { kind: 'node-not-found', node: 'node.exe' }
+  assert.deepEqual(
+    buildConsultantLaunch(
+      { id: 'pi', cli: piCli({ useNode: true, nodeFound: false, failureReason }) },
+      true,
+      windowsAppEnv(),
+    ),
+    { error: describePiStartFailure(failureReason, t) },
+  )
+})
+
+test('every consultant passes through byte-identically off Windows', () => {
+  const env: NodeJS.ProcessEnv = { PATH: '/usr/bin' }
+  for (const id of ['claude', 'codex'] as const) {
+    const executable = `/usr/local/bin/my agents/${id}`
+    const launch = launched(buildConsultantLaunch({ id, executable }, false, env))
+    assert.deepEqual(command(launch), { file: executable, args: buildConsultantCommand(id, executable).args, shell: false }, id)
+  }
+  const cli = piCli({ script: '/usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js', useNode: true })
+  const launch = launched(buildConsultantLaunch({ id: 'pi', cli }, false, env))
+  assert.deepEqual(command(launch), { file: cli.node, args: [cli.script, ...PI_ARGS], shell: false })
 })
 
 test('arbiter mode: contributed and errored are labeled', async () => {

@@ -13,8 +13,24 @@
  */
 export const MAX_PREVIEW_CHARS = 120
 
+/**
+ * Longest title an edited copy keeps before its "(edited)" mark. Session rows
+ * and tabs cut long titles at their end, so a full-length title would hide the
+ * mark and the copy would look like the session it came from.
+ */
+export const EDITED_TITLE_MAX_CHARS = 24
+
 /** Marks a preview that was cut short. */
 const ELLIPSIS = '…'
+
+/**
+ * `text` cut to `max` code points with an ellipsis, or unchanged when it fits.
+ * Counting code points keeps a cut from splitting a surrogate pair.
+ */
+export function truncateTitle(text: string, max: number): string {
+  const points = Array.from(text)
+  return points.length <= max ? text : points.slice(0, max).join('') + ELLIPSIS
+}
 
 /**
  * Planning mode prepends a fixed preamble to the user's prompt, so the stored
@@ -48,9 +64,5 @@ export function stripInjectedPreamble(text: string): string {
  */
 export function sessionPreview(text: string): string | null {
   const collapsed = text.replace(/\s+/g, ' ').trim()
-  if (!collapsed) return null
-
-  const points = Array.from(collapsed)
-  if (points.length <= MAX_PREVIEW_CHARS) return collapsed
-  return points.slice(0, MAX_PREVIEW_CHARS).join('') + ELLIPSIS
+  return collapsed ? truncateTitle(collapsed, MAX_PREVIEW_CHARS) : null
 }

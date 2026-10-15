@@ -1,18 +1,21 @@
 import { test, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import type { PiExtensionUiRequest, SessionDeleteResult, SessionListItem, SessionRuntimeInfo, SessionState, Workspace } from '../../shared/ipc-contracts'
+import type {
+  PermissionRule,
+  PiExtensionUiRequest,
+  PiRpcEvent,
+  SessionDeleteResult,
+  SessionListItem,
+  SessionRuntimeInfo,
+  SessionState,
+  Workspace,
+} from '../../shared/ipc-contracts'
 import type { PreviewTarget } from './store'
 
 // Each recorded call is appended to `calls`, so tests can assert both that a
 // session change reached Pi and that nothing reached Pi when it was declined.
 const calls: string[] = []
 let switchResult: { success?: boolean; error?: string } | SessionRuntimeInfo | null = { success: true }
-// Non-null makes the stubbed pi.getStatus reject, simulating a main-side
-// failure AFTER a workspace switch has already committed.
-let getStatusFailure: string | null = null
-// Status the stubbed pi.getStatus reports for the ACTIVE workspace. A live
-// background turn means the target workspace's own process is running.
-let piStatusResult: 'stopped' | 'running' = 'stopped'
 // Non-null makes the stubbed workspace.setActive reject, simulating a switch
 // that never commits on the main side.
 let setActiveFailure: string | null = null
@@ -40,6 +43,8 @@ let sessionStateResult: SessionState | null = null
 // What the stubbed session.delete reports. `replacementSessionPath` mirrors
 // the runtime main promoted while closing the deleted session's tab.
 let sessionDeleteResult: SessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: null }
+// The fork candidates the stubbed session.getForkMessages lists.
+let forkMessagesResult: Array<{ entryId: string; text: string }> = []
 
 // Only sessionFile is read by the code under test; the cast keeps this
 // fixture from churning as SessionState grows fields.
@@ -128,6 +133,7 @@ const piDesktopStub = {
     },
     remove: async (id: string) => {
       calls.push(`removeWorkspace:${id}`)
+      return {}
     },
     changePath: async (id: string, path: string) => {
       calls.push(`changePath:${id}:${path}`)
@@ -147,10 +153,6 @@ const piDesktopStub = {
     },
   },
   pi: {
-    getStatus: async () => {
-      if (getStatusFailure) throw new Error(getStatusFailure)
-      return { status: piStatusResult, pid: piStatusResult === 'running' ? 1 : null, error: null }
-    },
     start: async () => {
       calls.push('pi.start')
       return { status: 'running' as const, pid: 1, error: null }
@@ -184,6 +186,9 @@ const piDesktopStub = {
       calls.push(`editorDirtyMirror:${dirty}:${fileName ?? ''}`)
     },
   },
+  model: {
+    set: async (_provider: string, _modelId: string) => {},
+  },
   commands: {
     abort: async () => {
       calls.push('abort')
@@ -215,6 +220,11 @@ const piDesktopStub = {
       calls.push(`fork:${entryId}`)
       return { success: true }
     },
+    getForkMessages: async () => forkMessagesResult,
+    setName: async (name: string) => {
+      calls.push(`setName:${name}`)
+      return { success: true }
+    },
     clone: async () => {
       calls.push('clone')
       return { success: true }
@@ -226,6 +236,7 @@ const piDesktopStub = {
     getState: async () => ({ success: true, data: sessionStateResult }),
     getStats: async () => ({ success: true, data: null }),
     list: async () => [],
+    resumeTarget: async () => null,
   },
 }
 
@@ -233,6 +244,7 @@ type AppStore = typeof import('./store')['useAppStore']
 let useAppStore: AppStore
 let countPromptsWaitingElsewhere: typeof import('./store')['countPromptsWaitingElsewhere']
 let formatPromptsWaiting: typeof import('./store')['formatPromptsWaiting']
+let sidePanelHidesPreview: typeof import('./store')['sidePanelHidesPreview']
 let openFileFromChat: typeof import('./components/chat-file-link')['openFileFromChat']
 let DIALOG_OVERLAY_Z_INDEX: number
 let NOTIFY_TOAST_Z_INDEX: number
@@ -241,7 +253,7 @@ let NOTIFY_TOAST_Z_INDEX: number
 // to exist before the module body runs — hence the deferred import.
 before(async () => {
   ;(globalThis as unknown as { window: unknown }).window = { piDesktop: piDesktopStub }
-  ;({ useAppStore, countPromptsWaitingElsewhere, formatPromptsWaiting } = await import('./store'))
+  ;({ useAppStore, countPromptsWaitingElsewhere, formatPromptsWaiting, sidePanelHidesPreview } = await import('./store'))
   ;({ openFileFromChat } = await import('./components/chat-file-link'))
   ;({ DIALOG_OVERLAY_Z_INDEX, NOTIFY_TOAST_Z_INDEX } = await import('./components/extension-ui-dialog'))
 })
@@ -298,8 +310,6 @@ beforeEach(() => {
     answerPoll = null
   }
   switchResult = { success: true }
-  getStatusFailure = null
-  piStatusResult = 'stopped'
   setActiveFailure = null
   pendingPromptsSnapshot = {}
   workspaceActivityFailure = null
@@ -310,6 +320,7 @@ beforeEach(() => {
   fileSearchHook = null
   sessionStateResult = null
   sessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: null }
+  forkMessagesResult = []
   useAppStore.setState({
     isStreaming: false,
     streamingContent: '',
@@ -336,6 +347,7 @@ beforeEach(() => {
     previewTarget: null,
     chatSidePanel: null,
     editorDirty: false,
+    permissionRulesDrafts: { global: null, workspace: null },
   })
   // AFTER the state reset: the editor-dirty mirror subscription fires on the
   // reset itself when the previous test left the flag set, and that push
@@ -489,9 +501,33 @@ test('switching sessions clears the local streaming state', async () => {
   assert.deepEqual(state.pendingSteering, [], 'the old queue counters must not carry over')
 })
 
-test('switchSession does not warn when Pi is idle', async () => {
+test('selecting a model requests composer focus after the model is applied', async () => {
+  // The picker lives in the chat composer (a focus request outside chat is
+  // dropped) and applies the model to a running runtime.
+  useAppStore.setState({ currentView: 'chat', piStatus: 'running', composerFocusRequested: false })
+  await useAppStore.getState().setModel('provider', 'model')
+  assert.equal(useAppStore.getState().composerFocusRequested, true)
+})
+
+test('a failed model selection does not request composer focus', async () => {
+  const original = piDesktopStub.model.set
+  piDesktopStub.model.set = async () => { throw new Error('Model unavailable') }
+  // The picker lives in the chat composer (a focus request outside chat is
+  // dropped) and applies the model to a running runtime.
+  useAppStore.setState({ currentView: 'chat', piStatus: 'running', composerFocusRequested: false })
+  try {
+    await useAppStore.getState().setModel('provider', 'model')
+    assert.equal(useAppStore.getState().composerFocusRequested, false)
+  } finally {
+    piDesktopStub.model.set = original
+  }
+})
+
+test('switchSession requests composer focus without warning when Pi is idle', async () => {
+  useAppStore.setState({ composerFocusRequested: false })
   await useAppStore.getState().switchSession(SESSION_PATH)
 
+  assert.equal(useAppStore.getState().composerFocusRequested, true)
   assert.equal(useAppStore.getState().confirmRequest, null)
   assert.equal(calls[0], `switch:${SESSION_PATH}`)
 })
@@ -500,10 +536,12 @@ test('switchSession clears streaming state even when Pi refuses the switch', asy
   enterStreamingState()
   answerConfirm(true)
   switchResult = { success: false, error: 'Pi not running. Start Pi first.' }
+  useAppStore.setState({ composerFocusRequested: false })
 
   await useAppStore.getState().switchSession(SESSION_PATH)
 
   const state = useAppStore.getState()
+  assert.equal(state.composerFocusRequested, false, 'a refused switch must not request focus')
   assert.equal(state.isStreaming, false, 'a refused switch must still leave the composer usable')
   assert.equal(calls.includes('getMessages'), false, 'a refused switch must not reload history')
   assert.equal(
@@ -522,13 +560,14 @@ test('createNewSession starts an independent runtime without warning', async () 
   assert.equal(useAppStore.getState().isStreaming, false)
 })
 
-test('createNewSession opens the new conversation in Chat', async () => {
+test('createNewSession opens the new conversation in Chat and requests composer focus', async () => {
   activeWorkspaceResult = WORKSPACE_ONE
   workspaceListResult = [WORKSPACE_ONE]
   useAppStore.setState({
     activeWorkspace: WORKSPACE_ONE,
     workspaces: [WORKSPACE_ONE],
     currentView: 'sessions',
+    composerFocusRequested: false,
   })
 
   await useAppStore.getState().createNewSession()
@@ -537,6 +576,7 @@ test('createNewSession opens the new conversation in Chat', async () => {
   assert.equal(calls.includes('createNew'), true)
   assert.equal(state.currentView, 'chat')
   assert.equal(state.sessionLoading, false, 'an empty new session should render immediately')
+  assert.equal(state.composerFocusRequested, true)
 })
 
 test('forkFrom is gated by the same warning', async () => {
@@ -549,21 +589,67 @@ test('forkFrom is gated by the same warning', async () => {
   assert.equal(useAppStore.getState().isStreaming, true)
 })
 
+test('edit & resend continues from just before the edited message, then sends the edited text', async () => {
+  useAppStore.setState({
+    piStatus: 'running',
+    messages: [
+      { id: 'u1', role: 'user', content: 'first', timestamp: 0 },
+      { id: 'a1', role: 'assistant', content: 'one', timestamp: 0 },
+      { id: 'u2', role: 'user', content: 'second', timestamp: 0 },
+      { id: 'a2', role: 'assistant', content: 'two', timestamp: 0 },
+    ],
+  })
+  forkMessagesResult = [{ entryId: 'e1', text: 'first' }, { entryId: 'e2', text: 'second' }]
+
+  assert.equal(await useAppStore.getState().editAndResend('u2', 'second, edited'), true)
+
+  const forkAt = calls.indexOf('fork:e2')
+  const nameAt = calls.indexOf('setName:first (edited)')
+  const promptAt = calls.indexOf('prompt:second, edited')
+  assert.ok(forkAt !== -1, 'the session forks at the edited message')
+  assert.ok(nameAt > forkAt, 'the fork gets a title the original does not share')
+  assert.ok(promptAt > nameAt, 'the edited text is sent only after the fork')
+})
+
+test('edit & resend sends nothing when the session does not hold the message', async () => {
+  useAppStore.setState({
+    piStatus: 'running',
+    messages: [{ id: 'u1', role: 'user', content: 'not saved yet', timestamp: 0 }],
+  })
+
+  assert.equal(await useAppStore.getState().editAndResend('u1', 'edited'), false)
+
+  assert.deepEqual(calls, [])
+  const last = useAppStore.getState().messages.at(-1)
+  assert.equal(last?.role, 'system')
+  assert.match(last?.content ?? '', /does not contain this message/)
+})
+
+test('a declined fork warning keeps the edit from being sent', async () => {
+  enterStreamingState()
+  forkMessagesResult = [{ entryId: 'e1', text: 'hello' }]
+  answerConfirm(false)
+
+  assert.equal(await useAppStore.getState().editAndResend('m1', 'edited'), false)
+
+  assert.deepEqual(calls, [])
+})
+
 // Workspace switches are safe because each workspace owns a separate Pi
 // process. Switching tabs must not block on, abort, or warn about the turn that
 // remains active in the background.
-test('switchWorkspace leaves a running Pi in the background without warning', async () => {
+test('activateWorkspace leaves a running Pi in the background without warning', async () => {
   enterStreamingState()
 
-  const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  const proceed = await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
 
   assert.equal(proceed, true)
   assert.equal(calls[0], `setActiveWorkspace:${WORKSPACE_ID}`)
   assert.equal(useAppStore.getState().isStreaming, false)
 })
 
-test('switchWorkspace does not warn when Pi is idle', async () => {
-  const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+test('activateWorkspace does not warn when Pi is idle', async () => {
+  const proceed = await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
 
   assert.equal(proceed, true)
   assert.equal(useAppStore.getState().confirmRequest, null)
@@ -584,7 +670,7 @@ test('cloneBranch is gated by the same warning', async () => {
 test('an accepted workspace switch clears the held dialog without answering it', async () => {
   useAppStore.setState({ extensionUiRequest: EXTENSION_DIALOG })
 
-  const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  const proceed = await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
 
   assert.equal(proceed, true)
   assert.equal(useAppStore.getState().extensionUiRequest, null, 'the old workspace dialog must leave the screen')
@@ -598,7 +684,7 @@ test('an accepted workspace switch clears the held dialog without answering it',
 test('a workspace switch clears the old dialog without answering it', async () => {
   useAppStore.setState({ extensionUiRequest: EXTENSION_DIALOG })
 
-  const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  const proceed = await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
 
   assert.equal(proceed, true)
   assert.equal(useAppStore.getState().extensionUiRequest, null)
@@ -611,7 +697,7 @@ test('a workspace switch clears the old dialog without answering it', async () =
 })
 
 test('a successful workspace switch flushes prompts for the new workspace', async () => {
-  const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  const proceed = await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
 
   assert.equal(proceed, true)
   assert.equal(calls.includes(`flushPendingPrompts:${WORKSPACE_ID}`), true)
@@ -624,7 +710,7 @@ test('a failed setActive keeps the dialog on screen and replays nothing', async 
   setActiveFailure = 'workspace backend gone'
   useAppStore.setState({ extensionUiRequest: EXTENSION_DIALOG })
 
-  const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  const proceed = await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
 
   assert.equal(proceed, false, 'a switch that never committed must report failure')
   assert.equal(
@@ -636,20 +722,6 @@ test('a failed setActive keeps the dialog on screen and replays nothing', async 
     calls.some((c) => c.startsWith('flushPendingPrompts')),
     false,
     'nothing may be replayed for a workspace that never became active'
-  )
-})
-
-test('the flush still runs when a step after the committed switch rejects', async () => {
-  getStatusFailure = 'status backend gone'
-
-  const proceed = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
-
-  assert.equal(proceed, false, 'the caller must learn the chain failed')
-  assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_ID}`), true)
-  assert.equal(
-    calls.includes(`flushPendingPrompts:${WORKSPACE_ID}`),
-    true,
-    'the switch committed on the main side, so the held prompt must still be replayed'
   )
 })
 
@@ -737,8 +809,8 @@ test('removing the workspace flushes prompts only when a new one is promoted', a
 
 // Regression: main activates the existing workspace when a create names a path
 // it already knows (and when it creates the very first workspace). The renderer
-// never routed that through switchWorkspace, so without adopting the change the
-// newly-active workspace's held prompt stays invisible — the badge hides it
+// never routed that through a workspace switch, so without adopting the change
+// the newly-active workspace's held prompt stays invisible — the badge hides it
 // (it counts other workspaces only) and no dialog is ever broadcast.
 test('a create that main turns into an activation adopts the new workspace', async () => {
   useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, extensionUiRequest: EXTENSION_DIALOG })
@@ -781,8 +853,8 @@ test('a create that leaves the active workspace alone touches neither slot nor p
 })
 
 // Regression: openFolderAsWorkspace must not treat "main activated the target on
-// create" as "we were already on that workspace". Skipping switchWorkspace leaves
-// the previous chat/messages on screen.
+// create" as "we were already on that workspace". Skipping activateWorkspace
+// leaves the previous chat/messages on screen.
 test('openFolderAsWorkspace switches when the dropped folder is an existing other workspace', async () => {
   workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
   activeWorkspaceResult = WORKSPACE_ONE
@@ -800,7 +872,7 @@ test('openFolderAsWorkspace switches when the dropped folder is an existing othe
   assert.equal(
     calls.includes(`setActiveWorkspace:${WORKSPACE_TWO.id}`),
     true,
-    'must route through switchWorkspace so messages and Pi status resync'
+    'must route through activateWorkspace so messages and Pi status resync'
   )
   assert.deepEqual(
     useAppStore.getState().messages,
@@ -830,7 +902,7 @@ test('activating an idle workspace shows the empty view without starting Pi', as
     piStatus: 'running',
   })
 
-  const ok = await useAppStore.getState().switchWorkspace(WORKSPACE_TWO.id)
+  const ok = await useAppStore.getState().activateWorkspace(WORKSPACE_TWO.id)
 
   assert.equal(ok, true)
   const state = useAppStore.getState()
@@ -849,7 +921,7 @@ test('the first prompt lazy-starts an idle workspace', async () => {
     activeWorkspace: WORKSPACE_ONE,
     workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
   })
-  await useAppStore.getState().switchWorkspace(WORKSPACE_TWO.id)
+  await useAppStore.getState().activateWorkspace(WORKSPACE_TWO.id)
   calls.length = 0
 
   await useAppStore.getState().sendPrompt('ship it')
@@ -1125,7 +1197,31 @@ test('accepting the diff-open discards the buffer', async () => {
   assert.equal(useAppStore.getState().editorDirty, false)
 })
 
-test('non-diff panel changes never ask — the editor pane stays mounted', async () => {
+// The Tasks panel takes the whole side slot like the diff, so it unmounts the
+// editor pane too.
+test('opening the Tasks panel over a dirty editor asks first; declining keeps the panel', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true, chatSidePanel: 'files' })
+  answerConfirm(false)
+
+  const ok = await useAppStore.getState().setChatSidePanel('tasks')
+
+  assert.equal(ok, false)
+  assert.equal(useAppStore.getState().chatSidePanel, 'files')
+  assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('accepting the Tasks-open discards the buffer', async () => {
+  useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true, chatSidePanel: null })
+  answerConfirm(true)
+
+  const ok = await useAppStore.getState().setChatSidePanel('tasks')
+
+  assert.equal(ok, true)
+  assert.equal(useAppStore.getState().chatSidePanel, 'tasks')
+  assert.equal(useAppStore.getState().editorDirty, false)
+})
+
+test('the file tree never asks — the editor pane stays mounted beside it', async () => {
   useAppStore.setState({ previewTarget: CODE_FILE, editorDirty: true, chatSidePanel: null })
 
   const ok = await useAppStore.getState().setChatSidePanel('files')
@@ -1135,7 +1231,14 @@ test('non-diff panel changes never ask — the editor pane stays mounted', async
   assert.equal(useAppStore.getState().editorDirty, true)
 })
 
-test('switchWorkspace asks before discarding a dirty editor; declining aborts the switch', async () => {
+test('exactly the diff and the Tasks panel hide the file preview', () => {
+  assert.deepEqual(
+    (['files', 'diff', 'tasks', null] as const).filter((panel) => sidePanelHidesPreview(panel)),
+    ['diff', 'tasks']
+  )
+})
+
+test('activateWorkspace asks before discarding a dirty editor; declining aborts the switch', async () => {
   useAppStore.setState({
     activeWorkspace: WORKSPACE_ONE,
     previewTarget: CODE_FILE,
@@ -1143,7 +1246,7 @@ test('switchWorkspace asks before discarding a dirty editor; declining aborts th
   })
   answerConfirm(false)
 
-  const switched = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  const switched = await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
 
   assert.equal(switched, false)
   assert.equal(
@@ -1163,7 +1266,7 @@ test('accepting the editor discard lets the workspace switch proceed', async () 
   })
   answerConfirm(true)
 
-  const switched = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  const switched = await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
 
   assert.equal(switched, true)
   assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_ID}`), true)
@@ -1175,10 +1278,70 @@ test('a committed workspace switch closes the preview', async () => {
   // file service would refuse to touch it anyway.
   useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, previewTarget: CODE_FILE })
 
-  const switched = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  const switched = await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
 
   assert.equal(switched, true)
   assert.equal(useAppStore.getState().previewTarget, null)
+})
+
+// ─── Workspace rules draft ───────────────────────────────────────────────────
+// The rules editor's This workspace tab is keyed by scope, not by workspace:
+// Save writes the draft into whichever workspace is active, so a draft must
+// never outlive the workspace it was made in.
+
+const DRAFT_RULE: PermissionRule = { action: 'allow', tool: 'bash', match: 'npm test' }
+
+test('a committed workspace switch drops the rules draft before the next workspace shows', async () => {
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    permissionRulesDrafts: { global: [DRAFT_RULE], workspace: [DRAFT_RULE] },
+  })
+  // Settings reloads the workspace rules when the active workspace changes,
+  // and a draft it finds then wins over the next workspace's own file.
+  const draftWhenShown: Array<PermissionRule[] | null> = []
+  const unsubscribe = useAppStore.subscribe((state, prev) => {
+    if (state.activeWorkspace !== prev.activeWorkspace) draftWhenShown.push(state.permissionRulesDrafts.workspace)
+  })
+  try {
+    assert.equal(await useAppStore.getState().activateWorkspace(WORKSPACE_ID), true)
+  } finally {
+    unsubscribe()
+  }
+
+  assert.deepEqual(draftWhenShown, [null])
+  assert.deepEqual(
+    useAppStore.getState().permissionRulesDrafts,
+    { global: [DRAFT_RULE], workspace: null },
+    'the global draft belongs to no workspace and stays'
+  )
+})
+
+test('a switch that never commits keeps the rules draft', async () => {
+  setActiveFailure = 'workspace backend gone'
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    permissionRulesDrafts: { global: null, workspace: [DRAFT_RULE] },
+  })
+
+  assert.equal(await useAppStore.getState().activateWorkspace(WORKSPACE_ID), false)
+
+  assert.deepEqual(useAppStore.getState().permissionRulesDrafts.workspace, [DRAFT_RULE])
+})
+
+test('removing the active workspace drops its rules draft', async () => {
+  workspaceListResult = [WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_TWO
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    permissionRulesDrafts: { global: null, workspace: [DRAFT_RULE] },
+  })
+  answerConfirm(true)
+
+  await useAppStore.getState().removeWorkspace(WORKSPACE_ONE.id)
+
+  assert.equal(useAppStore.getState().activeWorkspace?.id, WORKSPACE_TWO.id)
+  assert.equal(useAppStore.getState().permissionRulesDrafts.workspace, null)
 })
 
 test('a main-side activation adoption closes the preview too', async () => {
@@ -1287,6 +1450,41 @@ test('removing an inactive workspace never asks about the editor', async () => {
   assert.equal(calls.includes(`removeWorkspace:${WORKSPACE_TWO.id}`), true)
   assert.equal(useAppStore.getState().previewTarget?.path, CODE_FILE.path)
   assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+const DRAFT_ONE = { text: 'draft one', attachments: [] }
+const DRAFT_TWO = {
+  text: 'draft two',
+  attachments: [{ kind: 'text' as const, name: 'notes.md', path: '/tmp/notes.md', content: '# Notes' }],
+}
+
+test('removing a workspace drops its composer draft and keeps the others', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE]
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    composerDrafts: { [WORKSPACE_ONE.id]: DRAFT_ONE, [WORKSPACE_TWO.id]: DRAFT_TWO },
+  })
+  answerConfirm(true)
+
+  await useAppStore.getState().removeWorkspace(WORKSPACE_TWO.id)
+
+  assert.deepEqual(useAppStore.getState().composerDrafts, { [WORKSPACE_ONE.id]: DRAFT_ONE })
+})
+
+test('a declined removal keeps the workspace draft', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    composerDrafts: { [WORKSPACE_TWO.id]: DRAFT_TWO },
+  })
+  answerConfirm(false)
+
+  await useAppStore.getState().removeWorkspace(WORKSPACE_TWO.id)
+
+  assert.deepEqual(useAppStore.getState().composerDrafts, { [WORKSPACE_TWO.id]: DRAFT_TWO })
 })
 
 test('creating a duplicate-path workspace asks before activating over a dirty editor', async () => {
@@ -1499,8 +1697,20 @@ test('a chat file link closes a diff pane opened while its search was in flight'
   )
 })
 
-// ─── Cross-workspace session open (skipSessionLoad contract) ─────────────────
-// The sidebar/session-panel flow is: switchWorkspace({skipSessionLoad}) then
+test('a chat file link closes the Tasks panel, which hides the preview like the diff', async () => {
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, chatSidePanel: 'tasks', previewTarget: null, editorDirty: false })
+  fileSearchResults = [
+    { name: 'b.ts', path: '/tmp/one/b.ts', relativePath: 'b.ts', matchType: 'name' },
+  ]
+
+  await openFileFromChat('b.ts')
+
+  assert.equal(useAppStore.getState().previewTarget?.path, '/tmp/one/b.ts')
+  assert.equal(useAppStore.getState().chatSidePanel, null, 'the preview must not open behind the Tasks panel')
+})
+
+// ─── Cross-workspace session open (awaitingSession contract) ─────────────────
+// The sidebar/session-panel flow is: activateWorkspace({awaitingSession}) then
 // switchSession(target). The workspace switch clears the chat; the target is
 // very often the new workspace's remembered active session, so the fast path
 // must not eat the follow-up click.
@@ -1523,8 +1733,9 @@ test('switchSession loads history even when sessionState already names the targe
   )
 })
 
-test('switchSession still skips a reload when the session is already on screen', async () => {
+test('switchSession refocuses without reloading when the session is already on screen', async () => {
   useAppStore.setState({
+    composerFocusRequested: false,
     sessionState: sessionStateWith(SESSION_PATH),
     messages: [{ id: 'm1', role: 'user', content: 'hi', timestamp: 0 }],
     sessionLoading: false,
@@ -1533,6 +1744,42 @@ test('switchSession still skips a reload when the session is already on screen',
   await useAppStore.getState().switchSession(SESSION_PATH)
 
   assert.equal(calls.includes(`switch:${SESSION_PATH}`), false)
+  assert.equal(useAppStore.getState().currentView, 'chat')
+  assert.equal(useAppStore.getState().composerFocusRequested, true)
+})
+
+test('leaving chat drops a pending composer focus request', () => {
+  useAppStore.setState({ currentView: 'chat', composerFocusRequested: true })
+
+  useAppStore.getState().setCurrentView('settings')
+
+  assert.equal(useAppStore.getState().composerFocusRequested, false)
+  useAppStore.getState().setCurrentView('chat')
+  assert.equal(
+    useAppStore.getState().composerFocusRequested,
+    false,
+    'returning to chat later must not steal focus from what the user opened'
+  )
+})
+
+test('the model picker stays open in chat and closes when the user leaves chat', () => {
+  useAppStore.setState({ currentView: 'chat', modelPickerOpen: true })
+  // Starting the runtime from the picker remounts the composer; the open
+  // state lives in the store so the remounted picker is still open.
+  useAppStore.setState({ piStatus: 'running' })
+  assert.equal(useAppStore.getState().modelPickerOpen, true)
+
+  useAppStore.getState().setCurrentView('settings')
+
+  assert.equal(useAppStore.getState().modelPickerOpen, false)
+})
+
+test('a composer focus request raised outside chat is dropped at once', () => {
+  // The unmounting composer hands focus on after the view already changed.
+  useAppStore.setState({ currentView: 'notes' })
+  useAppStore.setState({ composerFocusRequested: true })
+
+  assert.equal(useAppStore.getState().composerFocusRequested, false)
 })
 
 test('the cross-workspace open flow loads the clicked session end to end', async () => {
@@ -1547,7 +1794,7 @@ test('the cross-workspace open flow loads the clicked session end to end', async
   // refresh/fast-path race used to eat the click and leave an empty chat.
   sessionStateResult = sessionStateWith(SESSION_PATH)
 
-  const ok = await useAppStore.getState().switchWorkspace(WORKSPACE_ID, { skipSessionLoad: true })
+  const ok = await useAppStore.getState().activateWorkspace(WORKSPACE_ID, { awaitingSession: true })
   assert.equal(ok, true)
   await useAppStore.getState().switchSession(SESSION_PATH)
 
@@ -1610,12 +1857,13 @@ test('openSessionItem auto-switches to the owning workspace first', async () => 
 function enterWorkspacesWithBackgroundTurn(): void {
   workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
   activeWorkspaceResult = WORKSPACE_ONE
-  // The background turn lives in WORKSPACE_TWO's own process, so main reports
-  // that workspace's manager as running and its activity as working.
-  piStatusResult = 'running'
+  // The background turn lives in WORKSPACE_TWO's own process, so main's
+  // snapshot shows that workspace's active runtime running and working.
+  sessionStateResult = sessionStateWith(SESSION_PATH)
   useAppStore.setState({
     activeWorkspace: WORKSPACE_ONE,
     workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    sessionRuntimes: { rt: runtimeIn(WORKSPACE_TWO, { status: 'running', active: true, activity: 'working' }) },
     workspaceActivity: { [WORKSPACE_ID]: { state: 'working', since: 1 } },
   })
 }
@@ -1659,7 +1907,7 @@ test('openSessionItem creates a workspace for an unknown project path', async ()
 test('switching into a working workspace shows the indicator and marks the attach', async () => {
   enterWorkspacesWithBackgroundTurn()
 
-  const ok = await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  const ok = await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
 
   assert.equal(ok, true)
   const state = useAppStore.getState()
@@ -1669,9 +1917,9 @@ test('switching into a working workspace shows the indicator and marks the attac
 
 test('switching into an idle workspace attaches nothing', async () => {
   enterWorkspacesWithBackgroundTurn()
-  useAppStore.setState({ workspaceActivity: {} })
+  useAppStore.setState({ workspaceActivity: {}, sessionRuntimes: { rt: runtimeIn(WORKSPACE_TWO, { status: 'running', active: true }) } })
 
-  await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
 
   const state = useAppStore.getState()
   assert.equal(state.isStreaming, false)
@@ -1728,7 +1976,9 @@ test('reopening an idle session arms no attach', async () => {
 
 test('agent_end after a mid-turn attach backfills from the session', async () => {
   enterWorkspacesWithBackgroundTurn()
-  await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
+  // The switch hydrates without waiting; let that load settle first.
+  await new Promise((resolve) => setTimeout(resolve, 20))
   const loadsBefore = calls.filter((c) => c === 'getMessages').length
 
   useAppStore.getState().handlePiEvent({ type: 'agent_end', messages: [] })
@@ -1744,14 +1994,16 @@ test('agent_end after a mid-turn attach backfills from the session', async () =>
   )
 })
 
-test('the activity map going quiet after an attach stops the indicator and backfills', async () => {
+test('the active runtime going quiet after an attach stops the indicator and backfills', async () => {
   enterWorkspacesWithBackgroundTurn()
-  await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
+  // The switch hydrates without waiting; let that load settle first.
+  await new Promise((resolve) => setTimeout(resolve, 20))
   const loadsBefore = calls.filter((c) => c === 'getMessages').length
 
   // The turn ended during the switch: its agent_end was filtered while the
-  // manager was not yet active, so only the activity broadcast reports it.
-  useAppStore.getState().handleWorkspaceActivity({})
+  // manager was not yet active, so only the runtime snapshot reports it.
+  useAppStore.getState().handleSessionRuntime(runtimeIn(WORKSPACE_TWO, { status: 'running', active: true, activity: 'completed' }))
   await new Promise((resolve) => setTimeout(resolve, 20))
 
   const state = useAppStore.getState()
@@ -1823,31 +2075,32 @@ test('a background runtime never blocks session navigation with a warning', asyn
   assert.equal(useAppStore.getState().confirmRequest, null)
 })
 
-test('a mid-turn message_end keeps the attach armed and restores the indicator', async () => {
+test('a mid-turn message_end preserves the chat without a history reload', async () => {
   enterWorkspacesWithBackgroundTurn()
-  await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
+  // The switch hydrates without waiting; let that load settle first.
+  await new Promise((resolve) => setTimeout(resolve, 20))
   const loadsBefore = calls.filter((c) => c === 'getMessages').length
 
-  // The in-flight message completes but the TURN continues (tool-using
-  // turns have several messages). The backfill's teardown clears the
-  // indicator; it must come back, and the attach must stay armed so the
-  // kill-gates keep warning and later boundaries keep backfilling.
-  useAppStore.getState().handlePiEvent({ type: 'message_end', message: {} })
+  // The final event already contains the complete body, including the prefix
+  // emitted before attachment. Reloading here would erase the next live chunk.
+  useAppStore.getState().handlePiEvent({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'Full response' }] } })
   await new Promise((resolve) => setTimeout(resolve, 20))
 
   const state = useAppStore.getState()
   assert.equal(state.reattachedMidTurn, true)
   assert.equal(state.isStreaming, true, 'the turn is still running — the UI must not look idle')
-  assert.equal(calls.filter((c) => c === 'getMessages').length, loadsBefore + 1)
+  assert.equal(state.messages.at(-1)?.content, 'Full response')
+  assert.equal(calls.filter((c) => c === 'getMessages').length, loadsBefore)
 })
 
-test('an activity broadcast arms the attach for a renderer that booted mid-turn', async () => {
+test('an active-runtime broadcast arms the attach for a renderer that booted mid-turn', async () => {
   // Ctrl+R mid-turn: the fresh renderer is idle while Pi still streams.
   workspaceListResult = [WORKSPACE_TWO]
   activeWorkspaceResult = WORKSPACE_TWO
   useAppStore.setState({ activeWorkspace: WORKSPACE_TWO, workspaces: [WORKSPACE_TWO] })
 
-  useAppStore.getState().handleWorkspaceActivity({ [WORKSPACE_ID]: { state: 'working', since: 1 } })
+  useAppStore.getState().handleSessionRuntime(runtimeIn(WORKSPACE_TWO, { status: 'running', active: true, activity: 'working', sessionPath: null }))
 
   const state = useAppStore.getState()
   assert.equal(state.isStreaming, true)
@@ -1863,7 +2116,7 @@ test('the boot arm stays out of session-change teardown windows', async () => {
     sessionLoading: true,
   })
 
-  useAppStore.getState().handleWorkspaceActivity({ [WORKSPACE_ID]: { state: 'working', since: 1 } })
+  useAppStore.getState().handleSessionRuntime(runtimeIn(WORKSPACE_TWO, { status: 'running', active: true, activity: 'working', sessionPath: null }))
 
   assert.equal(useAppStore.getState().reattachedMidTurn, false)
 })
@@ -1898,7 +2151,9 @@ test('a live on-screen stream is never re-attached over', async () => {
 
 test('an activity update that still shows working keeps the attach alive', async () => {
   enterWorkspacesWithBackgroundTurn()
-  await useAppStore.getState().switchWorkspace(WORKSPACE_ID)
+  await useAppStore.getState().activateWorkspace(WORKSPACE_ID)
+  // The switch hydrates without waiting; let that load settle first.
+  await new Promise((resolve) => setTimeout(resolve, 20))
   const loadsBefore = calls.filter((c) => c === 'getMessages').length
 
   useAppStore.getState().handleWorkspaceActivity({ [WORKSPACE_ID]: { state: 'working', since: 2 } })
@@ -1908,6 +2163,95 @@ test('an activity update that still shows working keeps the attach alive', async
   assert.equal(state.isStreaming, true)
   assert.equal(state.reattachedMidTurn, true)
   assert.equal(calls.filter((c) => c === 'getMessages').length, loadsBefore)
+})
+
+// ─── A New Task prompt the engine refused ────────────────────────────────────
+// Main sends a New Task's prompt itself, so the renderer learns of a refusal
+// only from the runtime snapshot, and the refused prompt never reaches the
+// session history.
+
+const NO_KEY = 'No API key found for anthropic.'
+
+// The launched task's 'working' snapshot armed the attach, as in launchTask.
+function enterLaunchedTask(): void {
+  workspaceListResult = [WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_TWO
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_TWO,
+    workspaces: [WORKSPACE_TWO],
+    activeSessionRuntimeId: 'rt',
+    piStatus: 'running',
+    isStreaming: true,
+    reattachedMidTurn: true,
+  })
+}
+
+function refusedTask(overrides: Partial<SessionRuntimeInfo> = {}): SessionRuntimeInfo {
+  return runtimeIn(WORKSPACE_TWO, { status: 'running', active: true, activity: 'failed', promptRefusal: NO_KEY, ...overrides })
+}
+
+function chatLines(): Array<[string, string]> {
+  return useAppStore.getState().messages.map((message) => [message.role, message.content])
+}
+
+test('a refused task prompt ends the working view and says why in the task chat', async () => {
+  enterLaunchedTask()
+
+  useAppStore.getState().handleSessionRuntime(refusedTask())
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  const state = useAppStore.getState()
+  assert.equal(state.isStreaming, false, 'no turn runs for a refused prompt')
+  assert.equal(state.reattachedMidTurn, false)
+  assert.deepEqual(chatLines(), [['system', `Error: ${NO_KEY}`]])
+})
+
+test('the refusal stays in the task chat when its history loads again', async () => {
+  enterLaunchedTask()
+  useAppStore.getState().handleSessionRuntime(refusedTask())
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  await useAppStore.getState().reloadActiveSession({ refreshList: false })
+
+  assert.deepEqual(chatLines(), [['system', `Error: ${NO_KEY}`]])
+})
+
+test('a task refused in the background shows why once its chat opens', async () => {
+  workspaceListResult = [WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_TWO
+  useAppStore.setState({ activeWorkspace: WORKSPACE_TWO, workspaces: [WORKSPACE_TWO] })
+  useAppStore.getState().handleSessionRuntime(refusedTask({ active: false }))
+  assert.deepEqual(chatLines(), [], 'the chat on screen belongs to another session')
+
+  switchResult = refusedTask()
+  await useAppStore.getState().switchSession(SESSION_PATH, WORKSPACE_TWO.path)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  assert.deepEqual(chatLines(), [['system', `Error: ${NO_KEY}`]])
+})
+
+// OMP also reports the refusal in a prompt_result event, which can reach the
+// renderer before the snapshot does.
+test('a refusal the chat already shows from OMP is not repeated by the snapshot', async () => {
+  enterLaunchedTask()
+  useAppStore.getState().handlePiEvent({
+    type: 'prompt_result', agentInvoked: false, status: 'error', error: { message: NO_KEY },
+  } as PiRpcEvent)
+
+  useAppStore.getState().handleSessionRuntime(refusedTask())
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  assert.deepEqual(chatLines(), [['system', `Error: ${NO_KEY}`]])
+})
+
+test('a task whose prompt was not refused shows no refusal', async () => {
+  enterLaunchedTask()
+
+  useAppStore.getState().handleSessionRuntime(refusedTask({ activity: 'completed', promptRefusal: undefined }))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  assert.equal(useAppStore.getState().isStreaming, false)
+  assert.deepEqual(chatLines(), [])
 })
 
 // ─── Deleting the session on screen ──────────────────────────────────────────

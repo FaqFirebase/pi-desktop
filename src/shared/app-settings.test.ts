@@ -24,6 +24,14 @@ test('normalizeStoredSettings fills missing keys from the defaults', () => {
   assert.deepEqual(settings, DEFAULT_SETTINGS)
 })
 
+test('UI font names survive settings round trips and are trimmed', () => {
+  const saved = JSON.parse(JSON.stringify({ uiFontFamily: '  Helvetica Neue  ' }))
+  assert.equal(normalizeStoredSettings(saved, LANGUAGES).uiFontFamily, 'Helvetica Neue')
+  for (const uiFontFamily of [null, 42, [], {}]) {
+    assert.equal(normalizeStoredSettings({ uiFontFamily }, LANGUAGES).uiFontFamily, DEFAULT_SETTINGS.uiFontFamily)
+  }
+})
+
 test('chat width defaults to normal and keeps a known value', () => {
   assert.equal(DEFAULT_SETTINGS.chatWidth, 'normal')
   assert.equal(normalizeStoredSettings({ chatWidth: 'full' }, LANGUAGES).chatWidth, 'full')

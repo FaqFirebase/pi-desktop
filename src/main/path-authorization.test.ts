@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { join, resolve } from 'node:path'
-import { isPathWithin, isAuthorizedAttachmentPath } from './path-authorization'
+import { isAuthorizedAttachmentPath } from './path-authorization'
+import { isPathWithin } from '../../resources/path-within'
 
 const ROOT = join('/home', 'alice', 'project')
 

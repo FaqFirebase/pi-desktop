@@ -73,17 +73,22 @@ export interface GitWorktreeEntry {
   bare: boolean
 }
 
-export function runGit(args: readonly string[], cwd: string): Promise<GitCommandResult> {
+export function runGit(args: readonly string[], cwd: string, env?: NodeJS.ProcessEnv): Promise<GitCommandResult> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn('git', [...args], {
       cwd,
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     })
     let stdout = ''
     let stderr = ''
-    child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf8') })
-    child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8') })
+    // Decoded as streams: the bytes of one character in a non-English file
+    // name can arrive in two chunks.
+    child.stdout?.setEncoding('utf8')
+    child.stderr?.setEncoding('utf8')
+    child.stdout?.on('data', (chunk: string) => { stdout += chunk })
+    child.stderr?.on('data', (chunk: string) => { stderr += chunk })
     child.once('error', reject)
     child.once('close', (code) => {
       if (code === 0) {
@@ -152,7 +157,8 @@ export async function inspectGitRepository(cwd: string): Promise<GitRepositoryIn
     // An unborn branch has no HEAD yet, but its worktree is still valid and
     // must be able to reach the first commit through the conveyor.
     gitValue(['rev-parse', '--verify', 'HEAD'], cwd).catch(() => ''),
-    gitValue(['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd).catch(() => null),
+    gitValue(['symbolic-ref', '--quiet', 'HEAD'], cwd)
+      .then((ref) => ref.replace(/^refs\/heads\//, '')).catch(() => null),
     gitValue(['status', '--porcelain=v1', '--untracked-files=all'], cwd),
   ])
 
@@ -198,4 +204,9 @@ export async function createGitWorktree(options: {
 /** Remove only a clean worktree. Git refuses dirty worktrees, preserving edits. */
 export async function removeGitWorktree(repoRoot: string, worktreePath: string): Promise<void> {
   await runGit(['worktree', 'remove', worktreePath], repoRoot)
+}
+
+/** Delete a branch only when it is merged (`-d`, never `-D`), so no commit can be lost. */
+export async function deleteMergedBranch(repoRoot: string, branch: string): Promise<void> {
+  await runGit(['branch', '-d', branch], repoRoot)
 }

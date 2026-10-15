@@ -3,7 +3,7 @@ export const MAX_MESSAGES_FOR_UI = 150
 /** Cap individual text/tool blobs so one bash dump can't freeze paint. */
 export const MAX_CONTENT_CHARS = 80_000
 /** Cap base64 image payloads reloaded from history (drop rather than ship). */
-export const MAX_IMAGE_DATA_CHARS = 200_000
+export const MAX_IMAGE_DATA_CHARS = 2_000_000
 
 /**
  * Shrink a Pi `get_messages` response before IPC. Drops old turns and truncates

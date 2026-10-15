@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { isSubagentTool, subagentAgentName, subagentTaskText } from './store'
+import { isSubagentTool, subagentAgentName, subagentTaskText } from '../../shared/subagent-task'
 
 /**
  * Pi delegates via the `pi-subagents` package (`subagent`, `subagent_wait`);

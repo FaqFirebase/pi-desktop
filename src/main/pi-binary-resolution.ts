@@ -40,6 +40,12 @@ const VERSION_OUTPUT_PATTERN = /\d+\.\d+/
 const WINDOWS_PATH_DELIMITER = ';'
 const POSIX_PATH_DELIMITER = ':'
 const DEFAULT_WINDOWS_PATHEXT = '.COM;.EXE;.BAT;.CMD'
+/**
+ * The Windows PATH entries that name one folder whatever the current folder
+ * is: a drive-letter path (`C:\`) or a UNC path (`\\server\share`). `C:tools`
+ * depends on the current folder of drive C, and `\tools` on the current drive.
+ */
+const WINDOWS_FIXED_PATH_PATTERN = /^(?:[a-z]:[\\/]|[\\/]{2})/i
 const JS_EXTENSION = '.js'
 const SHELL_SCRIPT_PATTERN = /\.(cmd|bat|ps1)$/i
 const VERSION_NUMBER_PATTERN = /\d+/g
@@ -88,6 +94,15 @@ function homeDir(env: NodeJS.ProcessEnv): string {
 
 function pathDelimiterFor(isWindows: boolean): string {
   return isWindows ? WINDOWS_PATH_DELIMITER : POSIX_PATH_DELIMITER
+}
+
+/**
+ * True for a Windows `.cmd`/`.bat`/`.ps1` shim. spawn() cannot start one
+ * directly (Node refuses since CVE-2024-27980), so it goes through cmd.exe
+ * with shell: true.
+ */
+export function isCmdShim(isWindows: boolean, script: string): boolean {
+  return isWindows && SHELL_SCRIPT_PATTERN.test(script)
 }
 
 /**
@@ -313,9 +328,29 @@ function resolveOmpOverride(deps: ResolutionDeps, overridePath: string): string 
   return usableFile(deps, overridePath) ? overridePath : null
 }
 
-/** Search PATH for an executable, honoring PATHEXT on Windows. */
+/** True for a PATH entry that does not depend on the current folder. */
+function isFixedPathEntry(dir: string, isWindows: boolean): boolean {
+  return isWindows ? WINDOWS_FIXED_PATH_PATTERN.test(dir) : posixPath.isAbsolute(dir)
+}
+
+// `"C:\Program Files\nodejs"`: Windows (cmd.exe and libuv) reads a PATH entry
+// without the quotes around it.
+const QUOTED_PATH_ENTRY = /^"(.*)"$/
+
+function unquotedPathEntry(dir: string, isWindows: boolean): string {
+  return isWindows ? dir.replace(QUOTED_PATH_ENTRY, '$1') : dir
+}
+
+/**
+ * Search PATH for an executable, honoring PATHEXT on Windows. Relative
+ * entries are skipped: the result is spawned with the workspace as the
+ * working directory, and a relative entry would resolve against it.
+ */
 export function whichInPath(deps: ResolutionDeps, name: string, pathEnv: string): string | null {
-  const dirs = pathEnv.split(pathDelimiterFor(deps.isWindows)).filter(Boolean)
+  const dirs = pathEnv
+    .split(pathDelimiterFor(deps.isWindows))
+    .map((dir) => unquotedPathEntry(dir, deps.isWindows))
+    .filter((dir) => isFixedPathEntry(dir, deps.isWindows))
   const pathJoin = deps.isWindows ? join : posixPath.join
   const extensions = deps.isWindows
     ? (deps.env.PATHEXT ?? DEFAULT_WINDOWS_PATHEXT).split(';').map((e) => e.toLowerCase())
@@ -414,7 +449,7 @@ function resolveOmpBinary(deps: ResolutionDeps, pathEnv: string): string | null 
 function respondsToVersion(deps: ResolutionDeps, script: string, pathEnv: string): boolean {
   // A .cmd/.ps1 shim only starts through cmd.exe, which quotes nothing itself:
   // escape both tokens exactly as the real spawn path does.
-  const viaCmd = deps.isWindows && SHELL_SCRIPT_PATTERN.test(script)
+  const viaCmd = isCmdShim(deps.isWindows, script)
   const command = escapeCmdSpawn(viaCmd, script, [VERSION_FLAG])
   const stdout = deps.capture(command.file, command.args, {
     shell: viaCmd,
@@ -483,7 +518,7 @@ function finalize(
   return {
     script,
     useNode,
-    needsShell: deps.isWindows && !useNode && SHELL_SCRIPT_PATTERN.test(script),
+    needsShell: !useNode && isCmdShim(deps.isWindows, script),
     source,
     found,
     rejectedOverride,

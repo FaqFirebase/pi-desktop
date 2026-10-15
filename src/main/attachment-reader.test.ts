@@ -3,24 +3,7 @@ import { test } from 'node:test'
 import { mkdtemp, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { imageMimeTypeForPath, readAttachment } from './attachment-reader'
-
-// ─── Extension -> MIME mapping ──────────────────────────────────────────────
-
-test('imageMimeTypeForPath maps supported image extensions case-insensitively', () => {
-  assert.equal(imageMimeTypeForPath('/a/b/shot.png'), 'image/png')
-  assert.equal(imageMimeTypeForPath('/a/b/shot.JPG'), 'image/jpeg')
-  assert.equal(imageMimeTypeForPath('photo.jpeg'), 'image/jpeg')
-  assert.equal(imageMimeTypeForPath('anim.GIF'), 'image/gif')
-  assert.equal(imageMimeTypeForPath('pic.webp'), 'image/webp')
-})
-
-test('imageMimeTypeForPath returns null for non-image and extensionless paths', () => {
-  assert.equal(imageMimeTypeForPath('notes.txt'), null)
-  assert.equal(imageMimeTypeForPath('archive.tar.gz'), null)
-  assert.equal(imageMimeTypeForPath('Makefile'), null)
-  assert.equal(imageMimeTypeForPath('image.svg'), null) // not in Pi's supported set
-})
+import { readAttachment } from './attachment-reader'
 
 // ─── readAttachment ─────────────────────────────────────────────────────────
 
@@ -49,6 +32,14 @@ test('readAttachment returns UTF-8 text for a non-image file', async () => {
   if (result.kind !== 'text') return
   assert.equal(result.name, 'notes.md')
   assert.equal(result.content, '# Hello\nworld')
+})
+
+test('readAttachment rejects a binary non-image file', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pi-attach-bin-'))
+  const file = join(dir, 'document.pdf')
+  await writeFile(file, '%PDF-1.7\n')
+
+  await assert.rejects(() => readAttachment(file), /not a text file/i)
 })
 
 test('readAttachment rejects a missing path', async () => {

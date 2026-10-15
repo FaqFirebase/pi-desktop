@@ -14,8 +14,43 @@
  * and fall back to `desanitizeSessionDir` only for display.
  */
 
+import { isAbsolute, relative } from 'path'
+
 /** Extension of a Pi session file. */
 export const JSONL_EXTENSION = '.jsonl'
+
+/** OMP's directory name for projects under the home directory: this plus the relative path. */
+const OMP_HOME_DIR_PREFIX = '-'
+/** OMP's directory name for projects under the temporary directory: this plus the relative path. */
+const OMP_TMP_DIR_PREFIX = '-tmp'
+const PATH_SEPARATORS = /[\\/:]/g
+
+/** `target` relative to `base`, or null when `target` is outside it ('' for `base` itself). */
+function pathInside(base: string, target: string): string | null {
+  const rel = relative(base, target)
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel)) ? rel : null
+}
+
+function ompPrefixedDirName(prefix: string, rel: string): string {
+  const body = rel.replace(PATH_SEPARATORS, '-')
+  if (!body) return prefix
+  return prefix.endsWith('-') ? `${prefix}${body}` : `${prefix}-${body}`
+}
+
+/**
+ * The directory name OMP 18 gives a project in its session store. Unlike Pi,
+ * OMP names a project inside the home directory `-<relative path>` and one
+ * inside the temporary directory `-tmp-<relative path>`; any other project
+ * gets Pi's `--<path>--` name. All three paths must already be resolved
+ * (symlinks included), as OMP resolves them.
+ */
+export function ompSessionDirName(projectPath: string, homeDir: string, tmpDir: string): string {
+  const inHome = pathInside(homeDir, projectPath)
+  if (inHome !== null) return ompPrefixedDirName(OMP_HOME_DIR_PREFIX, inHome)
+  const inTmp = pathInside(tmpDir, projectPath)
+  if (inTmp !== null) return ompPrefixedDirName(OMP_TMP_DIR_PREFIX, inTmp)
+  return sanitizePath(projectPath)
+}
 
 /** Encode a real filesystem path the same way Pi names its session directory. */
 export function sanitizePath(p: string): string {

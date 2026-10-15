@@ -6,6 +6,7 @@ import { existsSync } from 'fs'
 import type { IpcContext } from './context'
 import { getPiCli } from '../pi-rpc-manager'
 import { listSkills, mergeRpcSkills } from '../skills-discovery'
+import { isPiBuiltInExtensionCommand } from '../../shared/pi-command'
 
 export function registerSkillsMcpHandlers(ctx: IpcContext): void {
   const { workspaceManager } = ctx
@@ -53,7 +54,7 @@ async function fetchCommands(pi: {
       data?: { commands?: unknown[] }
     } | null
     if (response?.success && Array.isArray(response.data?.commands)) {
-      return response.data.commands
+      return response.data.commands.filter((c) => !isPiBuiltInExtensionCommand(c))
     }
     return []
   } catch {

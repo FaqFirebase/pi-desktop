@@ -49,9 +49,11 @@ export function useFolderDrop(): {
 
     const onDragEnter = (e: DragEvent): void => {
       if (!isFileDrag(e.dataTransfer)) return
+      // A nested attachment target claims file drags with preventDefault.
+      const claimed = e.defaultPrevented
       e.preventDefault()
       dragDepth.current += 1
-      setIsDraggingFolder(true)
+      setIsDraggingFolder(!claimed)
     }
 
     const onDragLeave = (): void => {
@@ -63,16 +65,20 @@ export function useFolderDrop(): {
 
     const onDragOver = (e: DragEvent): void => {
       if (!isFileDrag(e.dataTransfer)) return
+      const claimed = e.defaultPrevented
       e.preventDefault()
-      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+      setIsDraggingFolder(!claimed)
+      if (!claimed && e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
     }
 
     const onDrop = (e: DragEvent): void => {
       if (!isFileDrag(e.dataTransfer)) return
+      const claimed = e.defaultPrevented
       e.preventDefault()
-      // Dismiss overlay immediately — do not wait for workspace create/switch.
+      // Clear even for attachment drops, so moving from the window into the
+      // composer cannot leave the global overlay or drag depth stuck.
       clearDrag()
-      if (!e.dataTransfer || openInFlight.current) return
+      if (claimed || !e.dataTransfer || openInFlight.current) return
 
       const candidates = droppedFolderCandidates(e.dataTransfer, (file) =>
         window.piDesktop.system.getPathForFile(file)

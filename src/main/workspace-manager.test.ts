@@ -4,15 +4,19 @@ import { mkdir, mkdtemp, readFile, writeFile, access } from 'fs/promises'
 import { existsSync } from 'fs'
 import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
-import { join, resolve } from 'path'
-import type {
-  PiProcessStatus,
-  PiStartOptions,
-  SessionRuntimeCloseResult,
-  SessionRuntimeInfo,
+import { basename, join, resolve } from 'path'
+import {
+  WHOLE_WORKSPACE_CHANGE_PATH,
+  type AgentEngineKind,
+  type RepoSet,
+  type PiProcessStatus,
+  type PiStartOptions,
+  type SessionRuntimeCloseResult,
+  type SessionRuntimeInfo,
 } from '../shared/ipc-contracts'
 import { configureGuiDataDir, getGuiDataPath } from './app-data-paths'
-import { isPathWithin } from './path-authorization'
+import { isPathWithin } from '../../resources/path-within'
+import { REPO_MAP_ENV, parseRepoMap } from '../../resources/repo-set-map'
 import { getOmpSessionsRoot, getSessionsRoot } from './pi-paths'
 import { PiRpcManager } from './pi-rpc-manager'
 import { isDisposableSessionFile, MAX_LIVE_SESSION_RUNTIMES, WorkspaceManager } from './workspace-manager'
@@ -70,9 +74,12 @@ function reportsSessionFile(manager: PiRpcManager, sessionPath: string, sessionI
   })
 }
 
+/** Where tests pretend the app ships its agent extensions. */
+const TEST_RESOURCES_DIR = join(tmpdir(), 'pi-desktop-test-resources')
+
 /** Initialize a manager and guarantee its watchers are stopped afterward. */
 async function withManager(fn: (mgr: WorkspaceManager) => Promise<void>): Promise<void> {
-  const mgr = new WorkspaceManager()
+  const mgr = new WorkspaceManager((fileName) => join(TEST_RESOURCES_DIR, fileName))
   await mgr.initialize()
   try {
     await fn(mgr)
@@ -249,7 +256,7 @@ test('creates and removes a clean managed worktree tab', async () => {
 
     const result = await mgr.removeWorkspace(tab.id)
     assert.equal(result.worktreeRemoved, true)
-    assert.equal(result.preservedWorktreePath, undefined)
+    assert.equal(result.preservedWorktreePaths, undefined)
     assert.equal(existsSync(tab.path), false)
 
     await writeFile(join(repo, 'source-dirty.txt'), 'stays in source\\n', 'utf-8')
@@ -438,6 +445,36 @@ test('a session starts on the engine that owns its store, not the configured def
       const freshProcess = fakePiProcess(freshManager, 603, 'stopped')
       await mgr.startSessionRuntime(fresh.runtimeId)
       assert.equal(freshProcess.lastStartOptions?.engine, undefined)
+    })
+  })
+})
+
+test('an OMP session subscribes to subagent progress when it starts; a Pi session does not', async () => {
+  await freshDataDir()
+
+  await withSessionStores(async (roots) => {
+    await withManager(async (mgr) => {
+      const workspace = await mgr.createWorkspace('Alpha', await project())
+      const cases: Array<{ engine: AgentEngineKind; file: string; pid: number }> = [
+        { engine: 'omp', file: 'omp.jsonl', pid: 611 },
+        { engine: 'pi', file: 'pi.jsonl', pid: 612 },
+      ]
+      for (const { engine, file, pid } of cases) {
+        const path = await storedSession(engine === 'omp' ? roots.omp : roots.pi, file, { type: 'session', id: engine })
+        const runtime = await mgr.activateSession(workspace.id, path)
+        const manager = mgr.getActivePiManager()
+        assert.ok(manager)
+        fakePiProcess(manager, pid, 'stopped')
+        const sent: Array<Record<string, unknown>> = []
+        manager.getEngineKind = () => engine
+        manager.sendCommand = async (command) => {
+          sent.push(command)
+          return null
+        }
+        await mgr.startSessionRuntime(runtime.runtimeId, { sessionPath: path })
+        const subscribed = sent.some((command) => command.type === 'set_subagent_subscription' && command.level === 'progress')
+        assert.equal(subscribed, engine === 'omp', engine)
+      }
     })
   })
 })
@@ -661,6 +698,251 @@ test('a live runtime never loses its session file to another runtime', async () 
   })
 })
 
+// ─── A New Task's prompt ─────────────────────────────────────────────────────
+// A launched task shows as working before its prompt goes out, and only a turn
+// end clears that. These answers start no turn.
+
+const NO_KEY = 'No API key found for anthropic.'
+const PROMPT_ACCEPTED = { type: 'response', command: 'prompt', success: true }
+
+/** A launched task's runtime whose engine answers each command with `answer`. */
+async function launchedTask(
+  mgr: WorkspaceManager,
+  answer: (command: Record<string, unknown>, manager: PiRpcManager) => unknown
+): Promise<{ runtimeId: string; manager: PiRpcManager; commands: string[] }> {
+  const workspace = await mgr.createWorkspace('Alpha', await project())
+  const { runtime } = await liveRuntime(mgr, workspace.id, 9400)
+  const manager = mgr.getActivePiManager()!
+  const commands: string[] = []
+  manager.sendCommand = async (command) => {
+    commands.push(String(command.type))
+    return answer(command, manager) as Awaited<ReturnType<PiRpcManager['sendCommand']>>
+  }
+  mgr.setSessionRuntimeActivity(runtime.runtimeId, 'working')
+  return { runtimeId: runtime.runtimeId, manager, commands }
+}
+
+function stateAnswer(isStreaming: boolean): unknown {
+  return { type: 'response', command: 'get_state', success: true, data: { isStreaming } }
+}
+
+test('a task prompt the engine refuses fails the task and keeps the reason for its chat', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, () => ({ type: 'response', command: 'prompt', success: false, error: NO_KEY }))
+    const seen: SessionRuntimeInfo[] = []
+    mgr.onSessionRuntime((runtime) => seen.push(runtime))
+
+    await mgr.promptSessionRuntime(task.runtimeId, 'fix the bug')
+
+    const settled = mgr.getSessionRuntime(task.runtimeId)
+    assert.equal(settled?.activity, 'failed', 'a refused prompt must not stay working')
+    assert.equal(settled?.promptRefusal, NO_KEY)
+    assert.equal(seen.at(-1)?.promptRefusal, NO_KEY, 'the renderer is told why')
+    assert.deepEqual(task.commands, ['prompt'])
+  })
+})
+
+test('a refusal without a reason still fails the task', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, () => ({ type: 'response', command: 'prompt', success: false }))
+
+    await mgr.promptSessionRuntime(task.runtimeId, 'fix the bug')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'failed')
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.promptRefusal, '')
+  })
+})
+
+// Pi runs an extension command before it answers and starts no turn for it.
+test('a task prompt that runs no turn completes the task', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, (command) => command.type === 'prompt' ? PROMPT_ACCEPTED : stateAnswer(false))
+
+    await mgr.promptSessionRuntime(task.runtimeId, '/status')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'completed')
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.promptRefusal, undefined)
+    assert.deepEqual(task.commands, ['prompt', 'get_state'])
+  })
+})
+
+test('a task prompt whose turn runs stays working until the turn ends', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, (command) => command.type === 'prompt' ? PROMPT_ACCEPTED : stateAnswer(true))
+
+    await mgr.promptSessionRuntime(task.runtimeId, 'fix the bug')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'working')
+    task.manager.emit('agent_end', { type: 'agent_end', messages: [] })
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'completed')
+  })
+})
+
+test('a turn that started before the answer settles the task by itself', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, (command, manager) => {
+      if (command.type !== 'prompt') return stateAnswer(false)
+      manager.emit('agent_start', { type: 'agent_start' })
+      return PROMPT_ACCEPTED
+    })
+
+    await mgr.promptSessionRuntime(task.runtimeId, '/review')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'working')
+    assert.deepEqual(task.commands, ['prompt'], 'a turn that started needs no state check')
+  })
+})
+
+test('a turn that starts while the state is read is not settled by the read', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, (command, manager) => {
+      if (command.type === 'prompt') return PROMPT_ACCEPTED
+      manager.emit('agent_start', { type: 'agent_start' })
+      return stateAnswer(false)
+    })
+
+    await mgr.promptSessionRuntime(task.runtimeId, '/review')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'working')
+  })
+})
+
+test('an OMP local command completes the task without a state check', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, () => ({ ...PROMPT_ACCEPTED, data: { agentInvoked: false } }))
+
+    await mgr.promptSessionRuntime(task.runtimeId, '/context')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'completed')
+    assert.deepEqual(task.commands, ['prompt'])
+  })
+})
+
+// OMP answers a prompt when it admits it, and reports how the prompt ended in
+// a prompt_result event: a refusal after admission (no model, no API key), an
+// extension command that ran no turn, or a turn's end.
+
+/** A launched task on OMP. */
+async function launchedOmpTask(
+  mgr: WorkspaceManager,
+  answer: (command: Record<string, unknown>, manager: PiRpcManager) => unknown
+): Promise<{ runtimeId: string; manager: PiRpcManager; commands: string[] }> {
+  const task = await launchedTask(mgr, answer)
+  task.manager.getEngineKind = () => 'omp'
+  return task
+}
+
+const OMP_REFUSED_AFTER_ADMISSION = {
+  type: 'prompt_result', id: 'prompt-1', agentInvoked: false, status: 'error', error: { message: NO_KEY, retryable: false },
+}
+const OMP_COMMAND_FINISHED = { type: 'prompt_result', id: 'prompt-1', agentInvoked: false, status: 'completed' }
+
+test('an OMP task refused after admission fails with the reason of its prompt_result', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedOmpTask(mgr, () => PROMPT_ACCEPTED)
+
+    await mgr.promptSessionRuntime(task.runtimeId, 'fix the bug')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'working', 'OMP reports the outcome later')
+    assert.deepEqual(task.commands, ['prompt'], 'OMP reports the outcome, so no state check')
+    task.manager.emit('prompt_result', OMP_REFUSED_AFTER_ADMISSION)
+    const settled = mgr.getSessionRuntime(task.runtimeId)
+    assert.equal(settled?.activity, 'failed', 'a refused task must not stay working')
+    assert.equal(settled?.promptRefusal, NO_KEY)
+  })
+})
+
+test('an OMP prompt_result that comes before the prompt answer settles the task', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedOmpTask(mgr, (command, manager) => {
+      if (command.type === 'prompt') manager.emit('prompt_result', OMP_REFUSED_AFTER_ADMISSION)
+      return PROMPT_ACCEPTED
+    })
+
+    await mgr.promptSessionRuntime(task.runtimeId, 'fix the bug')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'failed', 'the later answer does not undo the refusal')
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.promptRefusal, NO_KEY)
+  })
+})
+
+test('an OMP extension command completes the task when its prompt_result says so, not before', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedOmpTask(mgr, (command) => command.type === 'prompt' ? PROMPT_ACCEPTED : stateAnswer(false))
+
+    await mgr.promptSessionRuntime(task.runtimeId, '/review')
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'working', 'the command still runs after admission')
+    task.manager.emit('prompt_result', OMP_COMMAND_FINISHED)
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'completed')
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.promptRefusal, undefined)
+  })
+})
+
+test('an OMP prompt_result after a turn leaves the task to that turn', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedOmpTask(mgr, () => PROMPT_ACCEPTED)
+    await mgr.promptSessionRuntime(task.runtimeId, 'fix the bug')
+
+    task.manager.emit('agent_start', { type: 'agent_start' })
+    task.manager.emit('agent_end', { type: 'agent_end', messages: [] })
+    task.manager.emit('prompt_result', { ...OMP_REFUSED_AFTER_ADMISSION, agentInvoked: true })
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'completed')
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.promptRefusal, undefined, 'a turn ran, so nothing was refused')
+  })
+})
+
+test('a prompt_result of a prompt that is not a task prompt changes nothing', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedOmpTask(mgr, () => PROMPT_ACCEPTED)
+
+    task.manager.emit('prompt_result', OMP_REFUSED_AFTER_ADMISSION)
+
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'working')
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.promptRefusal, undefined)
+  })
+})
+
+test('a turn after a refused task prompt clears the refusal', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, () => ({ type: 'response', command: 'prompt', success: false, error: NO_KEY }))
+    await mgr.promptSessionRuntime(task.runtimeId, 'fix the bug')
+
+    task.manager.emit('agent_start', { type: 'agent_start' })
+
+    const runtime = mgr.getSessionRuntime(task.runtimeId)
+    assert.equal(runtime?.activity, 'working')
+    assert.equal(runtime?.promptRefusal, undefined, 'the chat has moved on from the refused prompt')
+  })
+})
+
 test('load recovers from .bak when the live workspaces file is corrupted', async () => {
   await freshDataDir()
   const proj = await project()
@@ -762,6 +1044,33 @@ test('workspace switches stay watcher-free while nothing is demanded', async () 
   })
 })
 
+/** Time the git watcher needs to resolve the git directory and start. */
+const GIT_WATCH_START_MS = 500
+/** Upper bound for a branch change to be reported: the debounce plus watcher start-up. */
+const GIT_CHANGE_REPORT_WITHIN_MS = 2_000
+
+test('a branch created outside the app is reported for the active workspace without file watch demand', async () => {
+  await freshDataDir()
+  const repo = await project()
+  await writeFile(join(repo, 'README.md'), '# app\n')
+  const git = gitRepo(repo)
+
+  await withManager(async (mgr) => {
+    const changes: string[] = []
+    mgr.onFileChange((event) => changes.push(event.relativePath))
+    await mgr.createWorkspace('Alpha', repo)
+    assert.equal(mgr.getWatchedWorkspaceId(), null, 'no disk watcher without demand')
+
+    await new Promise((resolveWait) => setTimeout(resolveWait, GIT_WATCH_START_MS))
+    git(['branch', 'from-terminal'])
+    const started = Date.now()
+    while (changes.length === 0 && Date.now() - started < GIT_CHANGE_REPORT_WITHIN_MS) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 50))
+    }
+    assert.deepEqual(changes, [WHOLE_WORKSPACE_CHANGE_PATH])
+  })
+})
+
 test('demand set before any workspace attaches on first activation', async () => {
   await freshDataDir()
 
@@ -806,5 +1115,156 @@ test('stopAll stops the watcher', async () => {
 
     mgr.stopAll()
     assert.equal(mgr.getWatchedWorkspaceId(), null, 'quit must leave no watcher attached')
+  })
+})
+
+test('a workspace names the session runtime its next start reuses, and only once it has one', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const ws = await mgr.createWorkspace('Alpha', await project())
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id), null, 'the per-workspace fallback manager is not a session runtime')
+    const fresh = await mgr.createNewSessionRuntime(ws.id)
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.runtimeId, fresh.runtimeId)
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.sessionPath, null)
+
+    const existingPath = join(await project(), 'session.jsonl')
+    await writeFile(existingPath, '{}\n', 'utf-8')
+    const activated = await mgr.activateSession(ws.id, existingPath)
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.runtimeId, activated.runtimeId)
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.sessionPath, existingPath)
+  })
+})
+
+/** A saved repo set over fresh repositories: `app` is the main one. */
+async function repoSetOf(...names: string[]): Promise<{ set: RepoSet; paths: Record<string, string> }> {
+  const paths: Record<string, string> = {}
+  for (const name of names) {
+    const path = await project()
+    await writeFile(join(path, 'README.md'), `${name}\n`, 'utf-8')
+    gitRepo(path)
+    paths[name] = path
+  }
+  const now = Date.now()
+  const set: RepoSet = {
+    id: 'rs-test',
+    name: 'Shop',
+    members: names.map((name, index) => ({ name, sourcePath: paths[name], role: index === 0 ? 'main' : 'linked' })),
+    createdAt: now,
+    updatedAt: now,
+  }
+  return { set, paths }
+}
+
+function gitOutput(args: string[], cwd: string): string {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf-8' })
+  assert.equal(result.status, 0, result.stderr)
+  return result.stdout.trim()
+}
+
+test('a linked task gets one worktree per repository on one branch, and the agent gets the repo map', async () => {
+  await freshDataDir()
+  const { set, paths } = await repoSetOf('app', 'lib')
+  const docs = await project()
+  await writeFile(join(docs, 'README.md'), 'docs\n', 'utf-8')
+  gitRepo(docs)
+
+  // Work in progress in the user's lib checkout stays there, and lib is marked.
+  await writeFile(join(paths.lib, 'wip.txt'), 'not committed\n', 'utf-8')
+
+  await withManager(async (mgr) => {
+    const task = await mgr.createLinkedTaskWorkspace(set, { setId: set.id, mode: 'isolated', name: 'Rename API' })
+    const [app, lib] = task.linkedTask!.repos
+    assert.equal(task.kind, 'repoSet')
+    assert.equal(app.sourceWasDirty, undefined)
+    assert.equal(lib.sourceWasDirty, true)
+    assert.equal(existsSync(join(lib.workPath, 'wip.txt')), false)
+    assert.equal(task.path, app.workPath, 'the agent starts in the main repository')
+    assert.equal(app.branch, lib.branch)
+    assert.equal(gitOutput(['branch', '--show-current'], app.workPath), app.branch)
+    assert.equal(gitOutput(['branch', '--show-current'], lib.workPath), app.branch)
+    assert.equal(gitOutput(['branch', '--show-current'], paths.app) !== app.branch, true, 'the user checkout keeps its branch')
+
+    // The panels follow the focused repository.
+    assert.equal(mgr.getPanelRoot(task.id), app.workPath)
+    mgr.focusLinkedRepo(task.id, 'lib')
+    assert.equal(mgr.getPanelRoot(task.id), lib.workPath)
+    assert.throws(() => mgr.focusLinkedRepo(task.id, 'nope'), /not in this task/)
+
+    // A repository added during the task gets the same branch and reaches the repo map.
+    const added = await mgr.addRepoToLinkedTask(task.id, docs)
+    const docsRepo = added.linkedTask!.repos[2]
+    assert.equal(docsRepo.role, 'linked')
+    assert.equal(docsRepo.name, basename(docs), 'an added repository takes its folder name')
+    assert.equal(gitOutput(['branch', '--show-current'], docsRepo.workPath), app.branch)
+    await assert.rejects(mgr.addRepoToLinkedTask(task.id, docs), /already in the task/)
+    const mapPath = getGuiDataPath(join('repo-maps', `${task.id}.json`))
+    const map = parseRepoMap(JSON.parse(await readFile(mapPath, 'utf-8')))
+    assert.deepEqual(map?.repos.map((repo) => [repo.name, repo.role, repo.workPath]), [
+      ['app', 'main', app.workPath], ['lib', 'linked', lib.workPath], [docsRepo.name, 'linked', docsRepo.workPath],
+    ])
+
+    // Every agent start of the tab loads the extension and points it at the map.
+    await mgr.setActiveWorkspace(task.id)
+    const { runtime, process: agent } = await liveRuntime(mgr, task.id, 701, 'stopped')
+    await mgr.startSessionRuntime(runtime.runtimeId)
+    const args = agent.lastStartOptions?.args ?? []
+    assert.equal(args[args.indexOf('-e') + 1], join(TEST_RESOURCES_DIR, 'pi-desktop-repo-set.ts'))
+    assert.equal(agent.lastStartOptions?.env?.[REPO_MAP_ENV], mapPath)
+    assert.equal(agent.lastStartOptions?.cwd, app.workPath)
+
+    // A tab of a linked task keeps its folders.
+    await assert.rejects(mgr.changeWorkspacePath(task.id, await project()), /keeps the folders/)
+
+    // The task survives a restart of the app.
+    const reopened = new WorkspaceManager()
+    await reopened.initialize()
+    assert.equal(reopened.getWorkspaces().find((item) => item.id === task.id)?.linkedTask?.repos.length, 3)
+    reopened.stopAll()
+
+    // Closing removes the clean worktrees and keeps the one with changes.
+    await writeFile(join(lib.workPath, 'edit.txt'), 'work in progress\n', 'utf-8')
+    const result = await mgr.removeWorkspace(task.id)
+    assert.deepEqual(result.preservedWorktreePaths, [lib.workPath])
+    assert.equal(existsSync(app.workPath), false)
+    assert.equal(existsSync(docsRepo.workPath), false)
+    assert.equal(existsSync(lib.workPath), true)
+    assert.equal(existsSync(mapPath), false)
+  })
+})
+
+test('a linked task that cannot prepare one repository undoes the worktrees it already made', async () => {
+  await freshDataDir()
+  const { set, paths } = await repoSetOf('app', 'lib')
+  const broken: RepoSet = {
+    ...set,
+    members: [...set.members, { name: 'broken', sourcePath: await project(), role: 'linked' }],
+  }
+
+  await withManager(async (mgr) => {
+    await assert.rejects(mgr.createLinkedTaskWorkspace(broken, { setId: set.id, mode: 'isolated' }), /Could not prepare "broken"/)
+    assert.equal(mgr.getWorkspaces().length, 0)
+    for (const path of [paths.app, paths.lib]) {
+      assert.equal(gitOutput(['worktree', 'list', '--porcelain'], path).split('\n').filter((line) => line.startsWith('worktree ')).length, 1)
+      assert.equal(gitOutput(['branch', '--list', 'pi/*'], path), '', 'the new branch is deleted too')
+    }
+  })
+})
+
+test('an in-place linked task edits the user checkouts and never removes them', async () => {
+  await freshDataDir()
+  const { set, paths } = await repoSetOf('app', 'lib')
+
+  await withManager(async (mgr) => {
+    const task = await mgr.createLinkedTaskWorkspace(set, { setId: set.id, mode: 'inPlace' })
+    assert.equal(task.name, 'Shop', 'the set name is the default task name')
+    assert.equal(task.path, paths.app)
+    assert.deepEqual(task.linkedTask!.repos.map((repo) => [repo.workPath, repo.managed]), [[paths.app, false], [paths.lib, false]])
+    assert.equal(task.linkedTask!.repos[0].branch, gitOutput(['branch', '--show-current'], paths.app))
+
+    const result = await mgr.removeWorkspace(task.id)
+    assert.equal(result.preservedWorktreePaths, undefined)
+    assert.equal(existsSync(paths.app), true)
+    assert.equal(existsSync(paths.lib), true)
   })
 })

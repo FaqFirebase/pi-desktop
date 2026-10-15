@@ -1,10 +1,14 @@
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, globalShortcut } from 'electron'
 import { PiRpcManager } from '../pi-rpc-manager'
 import { WorkspaceManager } from '../workspace-manager'
 import { SessionTagManager } from '../session-tags'
 import { ArchivedSessionsManager } from '../archived-sessions'
 import { TerminalService } from '../terminal-service'
+import { WorkspaceTerminals } from '../workspace-terminals'
 import { NotesManager } from '../notes-manager'
+import { GlobalDictationShortcut } from '../global-dictation-shortcut'
+import { IPC_CHANNELS } from '../../shared/ipc-contracts'
+import { appLog } from '../app-log'
 
 export interface IpcContext {
   workspaceManager: WorkspaceManager
@@ -14,13 +18,15 @@ export interface IpcContext {
   tagManager: SessionTagManager
   archivedSessions: ArchivedSessionsManager
   notesManager: NotesManager
-  terminalService: TerminalService
+  terminalService: WorkspaceTerminals
+  globalDictationShortcut: GlobalDictationShortcut
 }
 
 export function createIpcContext(workspaceManager: WorkspaceManager): IpcContext {
   const tagManager = new SessionTagManager()
   const archivedSessions = new ArchivedSessionsManager()
-  const terminalService = new TerminalService()
+  const terminalService = new WorkspaceTerminals(() => new TerminalService())
+  workspaceManager.onWorkspaceRemoved((workspaceId) => terminalService.stop(workspaceId))
   const notesManager = new NotesManager()
 
   // Absolute paths the user explicitly picked via the native open dialog. The
@@ -45,6 +51,12 @@ export function createIpcContext(workspaceManager: WorkspaceManager): IpcContext
     }
   }
 
+  const globalDictationShortcut = new GlobalDictationShortcut(
+    globalShortcut,
+    () => broadcast(IPC_CHANNELS.EVENT_VOICE_SHORTCUT, null),
+    (accelerator) => appLog.warn('voice', `Could not register the system-wide dictation shortcut ${accelerator}; another app may use it`),
+  )
+
   return {
     workspaceManager,
     broadcast,
@@ -54,5 +66,6 @@ export function createIpcContext(workspaceManager: WorkspaceManager): IpcContext
     archivedSessions,
     notesManager,
     terminalService,
+    globalDictationShortcut,
   }
 }

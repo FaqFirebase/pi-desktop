@@ -11,10 +11,13 @@ import {
 } from '../session-paths'
 import { pathGroupKey as workspaceMatchKey, pathsEqual } from '../../shared/path-compare'
 import { readSessionMetadataCached } from '../session-metadata'
+import { engineProjectSessionDirs, findLatestProjectSession } from '../latest-project-session'
+import { getConfiguredEngineKind } from '../pi-rpc-manager'
 import { readForkPointsCached } from '../omp-fork-points'
 import { mapWithConcurrency } from '../map-concurrent'
 import { readSessionLineage } from '../session-lineage-reader'
 import { trimGetMessagesResponse } from '../get-messages-trim'
+import { withStoppedAnswers } from '../omp-stopped-answers'
 import { activityStatsStore } from '../activity-stats'
 import type { SessionDeleteResult, SessionListItem, SessionRuntimeCloseResult, SessionRuntimeInfo } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
@@ -81,6 +84,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       ...(sessionPath ? { sessionPath } : {}),
       provider: settings.defaultProvider ?? undefined,
       model: settings.defaultModel ?? undefined,
+      defaultThinkingLevel: settings.defaultThinkingLevel ?? undefined,
     }
     await workspaceManager.startSessionRuntime(runtime.runtimeId, applyPermissionModeToStartOptions(
       sessionPath ? applyResumePreference(options, settings) : options,
@@ -104,6 +108,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     if (!isObject(input) || !isString(input.workspaceId) || !isString(input.prompt) || !input.prompt.trim()) {
       throw new Error('workspaceId and a non-empty prompt are required')
     }
+    const prompt = input.prompt
     const workspace = workspaceManager.getWorkspaces().find((item) => item.id === input.workspaceId)
     if (!workspace) throw new Error(t('errors.workspace.notFoundPlain'))
     const runtime = await workspaceManager.createNewSessionRuntime(workspace.id)
@@ -112,25 +117,29 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     workspaceManager.setSessionRuntimeActivity(runtime.runtimeId, 'working')
     // Keep the prompt attached to this runtime. It must not go through the
     // renderer's active-manager shortcut because the user can switch away
-    // before Pi finishes starting.
+    // before Pi finishes starting. The engine's answer settles the working
+    // state when the prompt runs no turn.
     void startRuntime(runtime)
-      .then(() => workspaceManager.sendCommandToSessionRuntime(runtime.runtimeId, {
-        type: 'prompt',
-        message: input.prompt,
-      }))
+      .then(() => workspaceManager.promptSessionRuntime(runtime.runtimeId, prompt))
       .catch(() => workspaceManager.setSessionRuntimeActivity(runtime.runtimeId, 'failed'))
     return runtime
   })
 
   const activateSession = async (sessionPath: string, cwd?: string): Promise<SessionRuntimeInfo> => {
-    if (!isWithinSessionRoots(sessionPath) || !existsSync(sessionPath)) {
+    // Pi may report a new session's path before persisting its first turn.
+    // A live runtime can be reactivated without reopening that file.
+    const existing = workspaceManager.getSessionRuntimeForPath(sessionPath)
+    const isLive = existing?.status === 'running' || existing?.status === 'starting'
+    if (!isWithinSessionRoots(sessionPath) || (!isLive && !existsSync(sessionPath))) {
       throw new Error(t('errors.session.pathMustExist', { field: 'sessionPath' }))
     }
     const workspace = workspaceManager.getActiveWorkspace()
     if (!workspace) throw new Error(t('errors.workspace.noneActive'))
     if (cwd && !pathsEqual(workspace.path, cwd)) throw new Error(t('errors.session.projectMismatch'))
     const runtime = await workspaceManager.activateSession(workspace.id, sessionPath)
-    if (runtime.status !== 'running') void startRuntime(runtime, sessionPath).catch(() => undefined)
+    if (runtime.status !== 'running' && runtime.status !== 'starting') {
+      void startRuntime(runtime, sessionPath).catch(() => undefined)
+    }
     return runtime
   }
 
@@ -204,6 +213,25 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     return listAllSessions(isString(cwd) ? cwd : ws?.path ?? process.cwd())
   })
 
+  // The session the renderer shows for a project whose runtime is not live, so
+  // the chat matches what any start then continues.
+  ipcMain.handle(IPC_CHANNELS.SESSION_RESUME_TARGET, async (_event, cwd: unknown): Promise<string | null> => {
+    if (!isString(cwd)) throw new Error('cwd must be a string')
+    const workspace = workspaceManager.getWorkspaces().find((item) => pathsEqual(item.path, cwd))
+    if (!workspace) return null
+    // A start reopens the project's current runtime, so its session wins even
+    // over a newer file (another tab's). One not persisted yet is a new
+    // session: the empty chat is already right.
+    const current = workspaceManager.getWorkspaceSessionRuntime(workspace.id)
+    if (current) return current.sessionPath
+    // Otherwise the newest session of the engine the user selected. Session
+    // tabs are live runtimes, one agent process each, and are not kept across
+    // a restart: only this one session starts again.
+    const settings = await loadAppSettings(workspaceManager)
+    if (!settings.resumeLastSession) return null
+    return findLatestProjectSession(await engineProjectSessionDirs(getConfiguredEngineKind(), workspace.path))
+  })
+
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_STATE, async () => {
     const pi = workspaceManager.getActivePiManager()
     if (!pi || pi.getStatus().status !== 'running') return null
@@ -214,8 +242,11 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     const pi = workspaceManager.getActivePiManager()
     if (!pi || pi.getStatus().status !== 'running') return null
     const response = await pi.sendCommand({ type: 'get_messages' })
+    // OMP leaves stopped answers out of a session it loaded from disk.
+    const sessionPath = pi.getEngineKind() === 'omp' ? workspaceManager.sessionPathFor(pi) : null
+    const complete = sessionPath ? await withStoppedAnswers(response, sessionPath) : response
     // Bound IPC payload size so multi‑MB histories don't freeze the renderer.
-    return trimGetMessagesResponse(response)
+    return trimGetMessagesResponse(complete)
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_STATS, async () => {
@@ -247,6 +278,11 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     // The renderer expects the bare candidate list, not the RPC envelope.
     const data = (response as { data?: { messages?: unknown } } | null)?.data
     return Array.isArray(data?.messages) ? data.messages : []
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_GET_STREAMING_TEXT, async () => {
+    const pi = workspaceManager.getActivePiManager()
+    return pi ? pi.getStreamingText() : null
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, async (event, sessionPath: unknown): Promise<SessionDeleteResult> => {

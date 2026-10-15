@@ -6,9 +6,9 @@ import { useAppStore } from '../store'
 import { useCommandCatalog } from '../hooks'
 import { CommandResults } from './command-results'
 import {
-  BUILTIN_SOURCE,
   filterCommands,
   groupCommands,
+  guiCommandFor,
   invocationToken,
   type PiCommand,
 } from '../../../shared/pi-command'
@@ -154,10 +154,10 @@ export function CommandPalette(): React.JSX.Element | null {
         } else {
           void openFile(entry.result)
         }
-      } else if (entry.source === BUILTIN_SOURCE) {
-        builtins.find((b) => b.name === entry.name)?.run()
       } else {
-        insertPrompt(invocationToken(entry.name, entry.source))
+        const guiCommand = guiCommandFor(entry, builtins)
+        if (guiCommand) guiCommand.run()
+        else insertPrompt(invocationToken(entry.name, entry.source))
       }
     }
     close()

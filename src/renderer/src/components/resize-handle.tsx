@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 
 /**
- * A vertical drag handle that reports horizontal movement as a delta.
+ * A drag handle that reports movement along the requested axis as a delta.
  *
  * Shared by the chat panel's split panes and the sidebar. Reports deltas rather
  * than absolute positions so a caller can apply its own sign and clamping without
@@ -10,7 +10,9 @@ import { useTranslation } from 'react-i18next'
 export function ResizeHandle({
   onResize,
   onResizeEnd,
+  axis = 'x',
 }: {
+  axis?: 'x' | 'y'
   onResize: (delta: number) => void
   /** Fires once when the drag ends — for callers that persist the final size. */
   onResizeEnd?: () => void
@@ -18,13 +20,14 @@ export function ResizeHandle({
   const { t } = useTranslation()
   const handleMouseDown = (event: React.MouseEvent) => {
     event.preventDefault()
-    document.body.style.cursor = 'col-resize'
+    document.body.style.cursor = axis === 'x' ? 'col-resize' : 'row-resize'
     document.body.style.userSelect = 'none'
-    let lastX = event.clientX
+    let lastPosition = axis === 'x' ? event.clientX : event.clientY
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      onResize(moveEvent.clientX - lastX)
-      lastX = moveEvent.clientX
+      const position = axis === 'x' ? moveEvent.clientX : moveEvent.clientY
+      onResize(position - lastPosition)
+      lastPosition = position
     }
 
     const handleMouseUp = () => {
@@ -42,10 +45,14 @@ export function ResizeHandle({
   return (
     <div
       onMouseDown={handleMouseDown}
-      className="group flex w-2 shrink-0 cursor-col-resize items-stretch justify-center bg-app transition-colors hover:bg-surface-hover"
+      className={`relative z-20 shrink-0 ${axis === 'x' ? 'w-0' : 'h-0'}`}
       title={t('app.resizeHandle.title')}
     >
-      <div className="w-px bg-transparent transition-colors group-hover:bg-accent" />
+      <div className={axis === 'x'
+        ? 'group absolute inset-y-0 -left-1 flex w-2 cursor-col-resize justify-center'
+        : 'group absolute inset-x-0 -top-1 flex h-2 cursor-row-resize items-center'}>
+        <div className={`${axis === 'x' ? 'w-px' : 'h-px w-full'} bg-transparent transition-colors group-hover:bg-accent`} />
+      </div>
     </div>
   )
 }

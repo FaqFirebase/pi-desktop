@@ -1,5 +1,5 @@
 import { join } from 'path'
-import { isPathWithin } from './path-authorization'
+import { isPathWithin } from '../../resources/path-within'
 import type { AgentEngineKind } from '../shared/ipc-contracts'
 
 /**

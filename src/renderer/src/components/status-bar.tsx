@@ -1,18 +1,16 @@
-import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore, countPromptsWaitingElsewhere, formatPromptsWaiting } from '../store'
 import { agentEngineLabel } from '../../../shared/agent-engine-label'
 import { clsx } from 'clsx'
+import { ProjectBranchSelector } from './project-branch-selector'
 import {
   PanelLeft,
-  PanelLeftClose,
   Terminal,
   DollarSign,
   Layers,
   Minimize2,
   Settings,
   Loader2,
-  GitBranch,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
 
@@ -51,30 +49,6 @@ export function StatusBar(): React.JSX.Element {
     activeWorkspace?.id ?? null
   )
 
-  // Current git branch of the active workspace. Refreshed when the workspace
-  // changes and when the window regains focus (branch switches outside the app).
-  const [gitBranch, setGitBranch] = useState<string | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    const load = (): void => {
-      window.piDesktop.files
-        .getGitBranch()
-        .then((b) => {
-          if (!cancelled) setGitBranch(b)
-        })
-        .catch(() => {
-          if (!cancelled) setGitBranch(null)
-        })
-    }
-    load()
-    const onFocus = (): void => load()
-    window.addEventListener('focus', onFocus)
-    return () => {
-      cancelled = true
-      window.removeEventListener('focus', onFocus)
-    }
-  }, [activeWorkspace?.id])
-
   return (
     <div className="flex h-7 items-center justify-between border-t border-border bg-app px-3 text-xs">
       {/* Left section */}
@@ -102,12 +76,7 @@ export function StatusBar(): React.JSX.Element {
         </div>
 
         {/* Git branch of the active workspace */}
-        {gitBranch && (
-          <div className="flex items-center gap-1 text-dim" title={t('statusBar.gitBranch', { branch: gitBranch })}>
-            <GitBranch size={11} />
-            <span>{gitBranch}</span>
-          </div>
-        )}
+        {activeWorkspace && <ProjectBranchSelector key={activeWorkspace.id} workspaceId={activeWorkspace.id} />}
 
         {/* Streaming indicator */}
         {isStreaming && (
@@ -213,15 +182,16 @@ export function StatusBar(): React.JSX.Element {
           </div>
         )}
 
-        {/* Toggle sidebar */}
-        <button
-          onClick={toggleSidebar}
-          className="rounded p-0.5 text-dim hover:text-secondary transition-colors"
-          title={sidebarOpen ? t('common.hideSidebar') : t('common.showSidebar')}
-          aria-label={sidebarOpen ? t('common.hideSidebar') : t('common.showSidebar')}
-        >
-          {sidebarOpen ? <PanelLeftClose size={12} /> : <PanelLeft size={12} />}
-        </button>
+        {!sidebarOpen && (
+          <button
+            onClick={toggleSidebar}
+            className="rounded p-0.5 text-dim hover:text-secondary transition-colors"
+            title={t('common.showSidebar')}
+            aria-label={t('common.showSidebar')}
+          >
+            <PanelLeft size={12} />
+          </button>
+        )}
 
         {/* Toggle terminal */}
         <button

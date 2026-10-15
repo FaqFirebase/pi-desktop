@@ -4,11 +4,11 @@ This guide covers bug reports, feature requests, and the pull request workflow.
 
 ## Architecture reference: `AGENTS.md`
 
-[`AGENTS.md`](AGENTS.md) is the canonical reference for the project's architecture, module layout, data-storage locations, distribution model, and delivery standards. Read it before making non-trivial changes; it is kept more current and more detailed than the summary in this guide.
+[`AGENTS.md`](AGENTS.md) is the main reference for the project's architecture, module layout, data storage, distribution, and delivery standards. Read it before you make non-trivial changes. It has more detail than the summary in this guide.
 
 ### For AI coding agents
 
-If you use an AI coding agent (Claude Code, Codex, Kilo, Cursor, etc.) to work on this repository, the agent must read and follow [`AGENTS.md`](AGENTS.md), in particular its Final Delivery Checklist, before proposing or committing changes. Most agents load a file named `AGENTS.md` automatically; if yours does not, point it at the file explicitly at the start of a session.
+If you use an AI coding agent (Claude Code, Codex, Kilo, Cursor, and so on) on this repository, the agent must read and follow [`AGENTS.md`](AGENTS.md), especially its final delivery checklist, before it proposes or commits changes. Most agents load a file named `AGENTS.md` automatically. If yours does not, point it at the file at the start of a session.
 
 At minimum, an agent's work must:
 
@@ -22,7 +22,7 @@ At minimum, an agent's work must:
 
 **Before your first contribution can be merged, you must agree to the [Contributor License Agreement (CLA)](CLA.md).**
 
-The CLA confirms you have the right to contribute the code, grants the project a license to use your contribution, protects against patent claims, and defines trademark boundaries.
+The CLA confirms that you have the right to contribute the code, grants the project a copyright and patent license for your contribution, and limits use of the project's trademarks.
 
 By submitting a pull request, you acknowledge that you have read and agree to the CLA.
 
@@ -48,8 +48,8 @@ By submitting a pull request, you acknowledge that you have read and agree to th
 
 This repository uses two long-lived branches:
 
-- `master` holds public-facing docs only (`README.md`, `AGENTS.md`, `LICENSE`, `CLA.md`, `CONTRIBUTING.md`, `.gitignore`). Do not target PRs here.
-- `Dev` holds all application source and is where active development happens. **Target your pull requests against `Dev`.**
+- `Dev` is where development happens. **Target your pull requests against `Dev`.**
+- `master` is the release branch. `Dev` is merged into it for each release. Do not target PRs here.
 
 Steps:
 
@@ -61,7 +61,7 @@ Steps:
    git checkout -b feature/my-feature
    ```
 3. Make your changes following the coding standards below
-4. Test your changes thoroughly
+4. Test your changes (see Testing below)
 5. Commit with a clear message:
    ```bash
    git commit -m "feat: add my feature"
@@ -132,7 +132,7 @@ docs(readme): update installation instructions
 
 ### Code style
 
-Conventions, not enforced by ESLint (the lint step checks the recommended rule sets, React hooks, unused vars, and semantic colors):
+These conventions are not enforced by ESLint (the lint step checks the recommended rule sets, React hooks, unused variables, and semantic colors):
 
 - 2-space indentation
 - Single quotes for strings
@@ -147,7 +147,7 @@ Interface text lives in `resources/locales/<code>/translation.json`. English (`e
 To add a language:
 
 1. Copy `resources/locales/en/translation.json` to `resources/locales/<code>/translation.json`. Use a BCP 47 code such as `de`, `pt-BR`, or `zh-Hans`.
-2. Translate the values. Do not change keys, `{{placeholders}}`, `<tags>`, or the product names Pi Desktop, Pi, and OMP. Leave a value empty if you are not sure; the app shows English for it.
+2. Translate the values. Do not change keys, `{{placeholders}}`, `<tags>`, or the product names Pi Desktop, Pi, and OMP. If you are not sure of a value, leave it empty; the app shows English for it.
 3. Set `language.nativeName` to the language's own name, for example `Deutsch`.
 4. Add the file to `src/shared/i18n/resources.ts` (one import and one entry).
 5. Run `npm run lint` and the unit tests, then open a pull request. The CLA applies to translations.
@@ -156,13 +156,13 @@ To try a language, pick it in Settings > Appearance > Language.
 
 When you add interface text in code, use a key with `t()` and run `npx i18next-cli extract` to add the key to every language file. Then write the English text in `resources/locales/en/translation.json`.
 
-To find text that is not translated, start the app with the test language enabled:
+To find text that is not translated, start the app with the test language turned on:
 
 ```bash
 PI_DESKTOP_PSEUDO_LANGUAGE=1 npm run dev
 ```
 
-Pick the bracketed entry (`[Éñĝļîšĥ ~~~]`) in Settings > Appearance > Language and save. Every translated string then shows accented letters inside brackets, longer than English. Plain English text on screen was not translated, unless it is data such as file names, model names, or chat content.
+Pick the bracketed entry (`[Éñĝļîšĥ ~~~]`) in Settings > Appearance > Language and save. Every translated string then shows accented letters inside brackets and is longer than English. Plain English text on screen is not translated, unless it is data such as file names, model names, or chat content.
 
 ## Testing
 
@@ -222,12 +222,12 @@ src/
         └── components/        # React components
 ```
 
-This is a guide, not a full listing. `AGENTS.md` carries the complete module map.
+This is a guide, not a full listing. `AGENTS.md` has the full module map.
 
 ## Getting help
 
-Report problems on [GitHub Issues](https://github.com/FaqFirebase/pi-desktop/issues) and ask questions in [GitHub Discussions](https://github.com/FaqFirebase/pi-desktop/discussions). For documentation, read [README.md](README.md) for an overview and the source under `src/` for implementation details.
+Report problems in [GitHub Issues](https://github.com/FaqFirebase/pi-desktop/issues) and ask questions in [GitHub Discussions](https://github.com/FaqFirebase/pi-desktop/discussions). [README.md](README.md) gives an overview, and the source under `src/` has the implementation details.
 
 ## License
 
-By contributing to this project, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE).
+By contributing to this project, you agree that your contributions are licensed under the [Apache License 2.0](LICENSE).

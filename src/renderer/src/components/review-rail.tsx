@@ -6,15 +6,21 @@ import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/ag
 import { PermissionSelector } from './permission-selector'
 import { formatIpcError } from '../utils/ipc-error'
 import type { GitFileStatus } from '../../../shared/ipc-contracts'
+import { PANE_GRID_AREA, REVIEW_PANEL_WIDTH, type PanePlacement } from './chat-panel-widths'
+import { clsx } from 'clsx'
 
 interface ChangedFile {
   path: string
   status: GitFileStatus
 }
 
-export function ReviewRail(): React.JSX.Element | null {
+/**
+ * The review panel; the chat panel renders it only while it is open. It is the
+ * review cell of the chat row's grid in both placements, so a change of place
+ * keeps its state (changed files, scroll position).
+ */
+export function ReviewRail({ placement }: { placement: PanePlacement }): React.JSX.Element {
   const { t } = useTranslation()
-  const reviewOpen = useAppStore((state) => state.reviewOpen)
   const settings = useAppStore((state) => state.settings)
   const setPermissionMode = useAppStore((state) => state.setPermissionMode)
   const pendingSteering = useAppStore((state) => state.pendingSteering)
@@ -63,16 +69,17 @@ export function ReviewRail(): React.JSX.Element | null {
     }
   }, [activeWorkspace?.id, messages.length, isStreaming])
 
-  if (!reviewOpen) return null
-
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-border bg-app">
-      <div className="border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
+    <aside
+      className={clsx('flex flex-col bg-app', placement === 'beside' ? 'border-l border-border' : 'border-t border-border')}
+      style={{ gridArea: PANE_GRID_AREA.review, width: placement === 'beside' ? REVIEW_PANEL_WIDTH : undefined }}
+    >
+      <div className="shrink-0 border-b border-border">
+        <div className="flex h-8 items-center gap-2 border-b border-border px-4">
           <ShieldCheck size={16} className="text-success" />
           <h2 className="text-sm font-semibold text-primary">{t('review.heading')}</h2>
         </div>
-        <p className="mt-1 text-xs leading-5 text-dim">
+        <p className="px-4 py-2 text-xs leading-5 text-dim">
           {t('review.subtitle', { agent: engineLabel })}
         </p>
       </div>

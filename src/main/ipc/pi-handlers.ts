@@ -33,6 +33,7 @@ export function registerPiHandlers(ctx: IpcContext): void {
       cwd,
       provider: opts.provider ?? settings.defaultProvider ?? undefined,
       model: opts.model ?? settings.defaultModel ?? undefined,
+      defaultThinkingLevel: settings.defaultThinkingLevel ?? undefined,
     }
     await workspaceManager.startPiForWorkspace(
       activeWs.id,

@@ -5,6 +5,7 @@
  * The preload bridge validates payloads against these contracts.
  */
 import type { PermissionRule } from '../../resources/permission-rules'
+import type { LinkedTaskMode, RepoRole } from '../../resources/repo-set-map'
 
 // ─── IPC Channel Names ──────────────────────────────────────────────────────
 
@@ -34,12 +35,14 @@ export const IPC_CHANNELS = {
   SESSION_CLONE: 'session:clone',
   SESSION_LIST: 'session:list',
   SESSION_LIST_ALL: 'session:list-all',
+  SESSION_RESUME_TARGET: 'session:resume-target',
   SESSION_GET_STATE: 'session:get-state',
   SESSION_GET_MESSAGES: 'session:get-messages',
   SESSION_GET_STATS: 'session:get-stats',
   SESSION_SET_NAME: 'session:set-name',
   SESSION_EXPORT_HTML: 'session:export-html',
   SESSION_GET_FORK_MESSAGES: 'session:get-fork-messages',
+  SESSION_GET_STREAMING_TEXT: 'session:get-streaming-text',
   SESSION_DELETE: 'session:delete',
   SESSION_ARCHIVE: 'session:archive',
   SESSION_UNARCHIVE: 'session:unarchive',
@@ -79,6 +82,7 @@ export const IPC_CHANNELS = {
 
   // System
   SYSTEM_OPEN_DIALOG: 'system:open-dialog',
+  SYSTEM_OPEN_ATTACHMENT_DIALOG: 'system:open-attachment-dialog',
   SYSTEM_GET_PATH: 'system:get-path',
   SYSTEM_PATH_KIND: 'system:path-kind',
   SYSTEM_OPEN_EXTERNAL: 'system:open-external',
@@ -93,6 +97,10 @@ export const IPC_CHANNELS = {
   WORKFLOW_GET_RUN: 'workflow:get-run',
   WORKFLOW_CONTROL: 'workflow:control',
   WORKFLOW_SET_PERSISTENCE: 'workflow:set-persistence',
+
+  // Subagent panel
+  SUBAGENT_LIST: 'subagent:list',
+  SUBAGENT_GET_TRANSCRIPT: 'subagent:get-transcript',
 
   // Diagnostics
   DIAGNOSTICS_GET: 'diagnostics:get',
@@ -111,6 +119,17 @@ export const IPC_CHANNELS = {
   WORKSPACE_CREATE_TAB: 'workspace:create-tab',
   WORKSPACE_ACTIVITY_GET: 'workspace:activity',
   WORKSPACE_TAKE_PENDING_ACTIVATION: 'workspace:take-pending-activation',
+
+  // Repo sets and linked tasks (one task across several git repositories)
+  REPO_SET_LIST: 'repo-set:list',
+  REPO_SET_SAVE: 'repo-set:save',
+  REPO_SET_DELETE: 'repo-set:delete',
+  REPO_SET_INSPECT_FOLDER: 'repo-set:inspect-folder',
+  LINKED_TASK_CREATE: 'linked-task:create',
+  LINKED_TASK_ADD_REPO: 'linked-task:add-repo',
+  LINKED_TASK_FOCUS_REPO: 'linked-task:focus-repo',
+  LINKED_TASK_STATUS: 'linked-task:status',
+  LINKED_TASK_SHIP: 'linked-task:ship',
 
   // Packages
   PACKAGE_LIST_INSTALLED: 'package:list-installed',
@@ -144,10 +163,16 @@ export const IPC_CHANNELS = {
   FILE_WRITE: 'file:write',
   FILE_DIFF: 'file:diff',
   FILE_STAGED_DIFF: 'file:staged-diff',
+  FILE_DISCARD_DIFF: 'file:discard-diff',
   FILE_WATCH_DEMAND: 'file:watch-demand',
   GIT_STATUS: 'git:status',
   GIT_BRANCH: 'git:branch',
+  GIT_PREFIX: 'git:prefix',
   GIT_CONVEYOR_STATUS: 'git:conveyor-status',
+  GIT_COMMIT_MESSAGE_GENERATE: 'git:commit-message-generate',
+  GIT_LOCAL_BRANCHES: 'git:local-branches',
+  GIT_SWITCH_BRANCH: 'git:switch-branch',
+  GIT_CREATE_BRANCH: 'git:create-branch',
   GIT_CONVEYOR_COMMIT: 'git:conveyor-commit',
   GIT_CONVEYOR_PUSH: 'git:conveyor-push',
   GIT_CONVEYOR_CREATE_PR: 'git:conveyor-create-pr',
@@ -197,6 +222,7 @@ export const IPC_CHANNELS = {
   EVENT_TERMINAL_EXIT: 'event:terminal-exit',
   EVENT_COUNCIL_PROGRESS: 'event:council-progress',
   EVENT_VOICE_PROGRESS: 'event:voice-progress',
+  EVENT_VOICE_SHORTCUT: 'event:voice-shortcut',
 
   // Voice dictation
   VOICE_STATUS: 'voice:status',
@@ -218,10 +244,10 @@ export const IPC_CHANNELS = {
 export type PiProcessStatus = 'stopped' | 'starting' | 'running' | 'error'
 
 /**
- * Where a 'starting' runtime is in its startup: 'spawning' until the first
- * stdout byte proves the process is alive, 'waiting-on-engine' once the
- * silence deadline passed with output flowing but readiness still pending —
- * typically an extension startup hook waiting on a local model server.
+ * Where a 'starting' runtime is in its startup: 'spawning' at first,
+ * 'waiting-on-engine' once the notice delay passed with the process still
+ * running but readiness still pending — a slow workspace startup, or an
+ * extension startup hook waiting on a local model server.
  */
 export type PiStartupPhase = 'spawning' | 'waiting-on-engine'
 
@@ -251,6 +277,13 @@ export interface SessionRuntimeInfo extends PiStatus {
   active: boolean
   /** Main emitted marker telling the renderer to remove this closed tab. */
   closed?: boolean
+  /**
+   * The engine's reason (empty when it gave none) for refusing the prompt main
+   * sent to start this New Task. The refused prompt never reaches the session
+   * history, so the renderer shows this in the task's chat. Cleared once a
+   * turn runs.
+   */
+  promptRefusal?: string
 }
 
 export interface SessionRuntimeCloseResult {
@@ -278,25 +311,82 @@ export interface SessionLaunchTaskOptions {
   isolated?: boolean
 }
 
+/** A branch switch or creation lands with the new status, or is refused with a reason for the user. */
+export type GitBranchSwitchResult = { ok: true; status: GitConveyorStatus } | { ok: false; error: string }
+
 export interface GitConveyorStatus {
   branch: string | null
   head: string
   lastCommitMessage: string | null
+  /** Every changed row, untracked files included. */
   dirtyFiles: number
+  /**
+   * Staged or unstaged changes to tracked files. Untracked files never reach a
+   * commit on their own, so only these block a push or a pull request.
+   */
+  dirtyTrackedFiles: number
   ahead: number
   behind: number
+  /**
+   * The configured upstream exists as a remote-tracking branch. False for a
+   * branch never pushed, a clone of an empty repository, or a remote branch
+   * that was deleted: Push publishes it again.
+   */
   hasUpstream: boolean
   /** Remote branch used by the explicit push target, when configured. */
   pushRemote: string | null
-  /** Branch configured as this branch's upstream, when one exists. */
+  /**
+   * Upstream branch that Push updates. Null when Push publishes the branch
+   * under its own name: no upstream, or an upstream that is the remote's base
+   * branch under another name.
+   */
   upstreamBranch: string | null
   /** Default base branch discovered from the upstream remote, when available. */
   baseBranch: string | null
+  /** Commits on HEAD that the remote base branch lacks; null when the base is unknown. */
+  aheadOfBase: number | null
   remoteUrl: string | null
+  /** GitHub `owner/name` a pull request targets; null when that remote is not on GitHub. */
+  pullRequestRepo: string | null
+  /** The open pull request from this branch, when GitHub reports one. */
+  openPullRequest: GitOpenPullRequest | null
+}
+
+export interface GitOpenPullRequest {
+  number: number
+  url: string
+}
+
+/** Both fields null: the commit selection has nothing to describe. */
+export interface GitCommitMessageSuggestion {
+  message: string | null
+  error: GitCommitMessageError | null
+}
+
+export type GitCommitMessageError = 'generation-failed' | 'timed-out' | 'engine-unavailable'
+
+export interface GitCommitMessageRequest {
+  /** Generate again even when this diff already has a suggestion. */
+  force: boolean
+  /** Describe only these repository-root-relative paths (the filtered Diff Viewer). */
+  paths?: string[]
+  /** Untracked files among `paths` the user chose to commit; the others stay out. */
+  newFiles?: string[]
 }
 
 export interface GitConveyorCommitOptions {
   message: string
+  /**
+   * Commit only these repository-root-relative paths; untracked ones stay out
+   * unless listed in `newFiles`.
+   * Omitted: commit the staged index, or auto-stage tracked changes.
+   */
+  paths?: string[]
+  /**
+   * Untracked files among `paths` the user checked in the Commit dialog. They
+   * are added and committed; ignored files and directories are refused.
+   */
+  newFiles?: string[]
 }
 
 export interface GitConveyorPullRequestOptions {
@@ -316,11 +406,14 @@ export interface PiStartOptions {
   cwd?: string
   model?: string
   provider?: string
+  /** Saved effort for fresh sessions only; never overrides a resumed session. */
+  defaultThinkingLevel?: string
   sessionPath?: string
   noSession?: boolean
   // When true (and neither sessionPath, forkSessionPath nor noSession is set),
   // Pi is launched with --continue so it resumes the most recent session for
-  // the cwd instead of creating a fresh one.
+  // the cwd instead of creating a fresh one. Left unset, the Resume Last
+  // Session setting decides; an explicit false always starts a fresh session.
   continueSession?: boolean
   // Start a new session by forking this existing Pi session file. The new
   // session is created in the supplied cwd.
@@ -350,7 +443,13 @@ export interface TerminalStartResult {
   cwd: string
 }
 
+export interface TerminalDataEvent {
+  workspaceId: string
+  data: string
+}
+
 export interface TerminalExitEvent {
+  workspaceId: string
   exitCode: number
   signal?: number
 }
@@ -366,6 +465,12 @@ export interface PiAgentEndEvent {
   messages: unknown[]
 }
 
+/** The text and thinking of the assistant message a Pi process is streaming, so far. */
+export interface StreamingTextSnapshot {
+  content: string
+  thinking: string
+}
+
 export interface PiMessageUpdateEvent {
   type: 'message_update'
   message: Record<string, unknown>
@@ -373,6 +478,12 @@ export interface PiMessageUpdateEvent {
     type: string
     contentIndex?: number
     delta?: string
+    /**
+     * Where a text or thinking delta starts in its message's text of that
+     * kind. Main stamps it (Pi sends none), so a view that attached in the
+     * middle of a message can tell a gap from the next delta.
+     */
+    offset?: number
     partial?: Record<string, unknown>
     content?: string
     thinking?: string
@@ -680,11 +791,64 @@ export interface PiCommandOutputEvent {
   text: string
 }
 
-/** Completion signal for an accepted prompt that did not invoke the agent. */
+/**
+ * OMP's completion signal for a prompt. With `agentInvoked` false no turn ran:
+ * a local command finished, or the prompt failed with `error`.
+ */
 export interface PiPromptResultEvent {
   type: 'prompt_result'
   id?: string
   agentInvoked: boolean
+  status?: 'completed' | 'aborted' | 'error'
+  error?: { message: string }
+}
+
+/**
+ * The engine's answer to a prompt it refused, or null when it took it. Pi and
+ * OMP answer a failed preflight (no API key, an expired login, no model) with
+ * `success: false` and the reason, and run no turn for it.
+ */
+export function promptRefusal(response: unknown): { reason: string } | null {
+  const answer = response as { success?: unknown; error?: unknown } | null
+  if (answer?.success !== false) return null
+  return { reason: typeof answer.error === 'string' ? answer.error : '' }
+}
+
+/**
+ * True for a prompt response that says the agent was not invoked: OMP ran a
+ * local command. Pi and OMP answer an agent prompt without `agentInvoked`.
+ */
+export function promptRanWithoutAgent(response: unknown): boolean {
+  const data = (response as { data?: { agentInvoked?: unknown } } | null)?.data
+  return data?.agentInvoked === false
+}
+
+/**
+ * True when a get_state response says no agent run is going. An accepted
+ * prompt's answer does not say whether a run follows: Pi runs an extension
+ * command, or lets an input handler take the prompt, and answers success with
+ * no run at all.
+ */
+export function reportsNoAgentRun(stateResponse: unknown): boolean {
+  const answer = stateResponse as { success?: unknown; data?: { isStreaming?: unknown } | null } | null
+  return answer?.success === true && answer.data?.isStreaming === false
+}
+
+/**
+ * True for an engine that reports how each prompt ended in a prompt_result
+ * event (OMP). It answers a prompt as soon as it admits it, before an
+ * extension command runs or a later model or API key check fails, so that
+ * event, not a get_state read, settles a prompt that ran no turn. It comes
+ * after a turn's agent_end, so one that comes before any agent_start ended a
+ * prompt that ran no turn.
+ */
+export function reportsPromptOutcome(engine: AgentEngineKind): boolean {
+  return engine === 'omp'
+}
+
+/** The refusal a prompt_result reports, or null for a prompt that ended without one. */
+export function promptResultRefusal(event: PiPromptResultEvent): { reason: string } | null {
+  return event.status === 'error' ? { reason: event.error?.message ?? '' } : null
 }
 
 /** OMP config changes that should cause the renderer to re-read get_state. */
@@ -692,6 +856,18 @@ export interface PiConfigUpdateEvent {
   type: 'config_update'
   model?: unknown
   thinkingLevel?: string
+}
+
+/** OMP subagent start/finish, pushed after `set_subagent_subscription`. */
+export interface PiSubagentLifecycleEvent {
+  type: 'subagent_lifecycle'
+  payload: unknown
+}
+
+/** OMP subagent progress, pushed at subscription level `progress`. */
+export interface PiSubagentProgressEvent {
+  type: 'subagent_progress'
+  payload: unknown
 }
 
 export type PiRpcEvent =
@@ -720,6 +896,8 @@ export type PiRpcEvent =
   | PiCommandOutputEvent
   | PiPromptResultEvent
   | PiConfigUpdateEvent
+  | PiSubagentLifecycleEvent
+  | PiSubagentProgressEvent
 
 // ─── Model Types ────────────────────────────────────────────────────────────
 
@@ -891,9 +1069,12 @@ export type AttachmentReadResult =
 /** Options for the native open dialog. Defaults to picking a directory. */
 export interface OpenDialogOptions {
   title?: string
-  mode?: 'file' | 'directory' | 'either'
+  mode?: 'directory' | 'either'
   filters?: Array<{ name: string; extensions: string[] }>
 }
+
+/** Options for the composer's multi-file attachment picker. */
+export type OpenAttachmentDialogOptions = Pick<OpenDialogOptions, 'title' | 'filters'>
 
 /** Result of SYSTEM_PATH_KIND (drag-drop folder open). */
 export interface PathKindResult {
@@ -1095,6 +1276,13 @@ export interface PermissionRulesWorkspaceStatus {
 /** A concrete engine. `auto` is a preference, never something that is running. */
 export type AgentEngineKind = 'pi' | 'omp'
 
+const AGENT_ENGINE_KINDS = { pi: true, omp: true } as const satisfies Record<AgentEngineKind, true>
+
+/** Payload check for an engine named over IPC. */
+export function isAgentEngineKind(value: unknown): value is AgentEngineKind {
+  return typeof value === 'string' && Object.hasOwn(AGENT_ENGINE_KINDS, value)
+}
+
 export type AgentEngine = 'auto' | AgentEngineKind
 
 export interface AgentInstallation {
@@ -1117,6 +1305,7 @@ export interface AgentDetectionOptions {
 }
 
 export interface AppSettings {
+  shortcuts: import('./keyboard-shortcuts').KeyboardShortcuts
   piExecutablePath: string
   /** Explicit engine identity; auto preserves legacy Pi/OMP detection. */
   piEngine: AgentEngine
@@ -1129,9 +1318,12 @@ export interface AppSettings {
   systemDarkTheme: string
   defaultModel: string | null
   defaultProvider: string | null
+  defaultThinkingLevel: string | null
   defaultCwd: string | null
   // UI font size in px (chat, panels, sidebar). Applied to the document root.
   fontSize: number
+  // Installed font family for UI and chat; empty keeps the built-in fonts.
+  uiFontFamily: string
   // Terminal (xterm) font size in px — independent of the UI font size.
   terminalFontSize: number
   // Code editor (CodeMirror) font size in px — independent of the UI font size.
@@ -1267,7 +1459,7 @@ export interface UpdateCheckResult {
 
 // ─── Workspace Types ────────────────────────────────────────────────────────
 
-export type WorkspaceKind = 'folder' | 'worktree'
+export type WorkspaceKind = 'folder' | 'worktree' | 'repoSet'
 
 /** Options for creating an isolated tab from the active Git workspace. */
 export interface WorkspaceTabOptions {
@@ -1284,7 +1476,8 @@ export interface WorkspaceTabOptions {
 /** Result of closing a workspace tab. Dirty worktrees are preserved. */
 export interface WorkspaceRemoveResult {
   worktreeRemoved?: boolean
-  preservedWorktreePath?: string
+  /** Managed worktrees kept on disk because they still hold changes. */
+  preservedWorktreePaths?: string[]
 }
 
 export interface Workspace {
@@ -1308,6 +1501,123 @@ export interface Workspace {
   managed?: boolean
   /** Original task text when the app created or adopted this worktree. */
   taskPrompt?: string
+  /** The repositories of a `repoSet` tab; `path` is its main repository's checkout. */
+  linkedTask?: LinkedTask
+}
+
+// ─── Repo Set Types ─────────────────────────────────────────────────────────
+
+export type { LinkedTaskMode, RepoMapEntry, RepoRole, RepoSetContext } from '../../resources/repo-set-map'
+
+export interface RepoSetMember {
+  /** Display name, unique in the set. */
+  name: string
+  /** Top of the user's own git checkout. */
+  sourcePath: string
+  role: RepoRole
+}
+
+/** A saved group of git repositories a linked task starts from. */
+export interface RepoSet {
+  id: string
+  name: string
+  members: RepoSetMember[]
+  createdAt: number
+  updatedAt: number
+}
+
+/** A new set (no id) or the edited version of a saved one. */
+export interface RepoSetDraft {
+  id?: string
+  name: string
+  members: RepoSetMember[]
+}
+
+/** A picked folder, resolved to the top of its git checkout. */
+export interface RepoFolderInfo {
+  path: string
+  /** Default display name: the checkout's folder name. */
+  name: string
+}
+
+export interface LinkedTaskRepo {
+  name: string
+  role: RepoRole
+  /** The user's own checkout the task started from. */
+  sourcePath: string
+  /** Main repository root, which owns the task's worktree. */
+  repoRoot: string
+  /** The checkout the agent edits: a managed worktree, or `sourcePath` in place. */
+  workPath: string
+  /** Checked-out branch; null for a detached HEAD in place. */
+  branch: string | null
+  /** Commit the worktree started from; absent in place. */
+  baseRef?: string
+  /** The app created the worktree and may remove it when the tab closes. */
+  managed: boolean
+  /** The user's checkout had uncommitted changes that the new worktree does not carry. */
+  sourceWasDirty?: boolean
+}
+
+/** One task across the repositories of a set, owned by a `repoSet` tab. */
+export interface LinkedTask {
+  setId: string
+  setName: string
+  mode: LinkedTaskMode
+  repos: LinkedTaskRepo[]
+}
+
+export interface LinkedTaskOptions {
+  setId: string
+  mode: LinkedTaskMode
+  /** Tab name and branch label; defaults to the set name. */
+  name?: string
+}
+
+/** One row of the repo bar. */
+export interface LinkedRepoStatus {
+  name: string
+  role: RepoRole
+  workPath: string
+  branch: string | null
+  /** False when the checkout was moved or deleted. */
+  exists: boolean
+  /** The diff, file, and git panels show this repository. */
+  focused: boolean
+  /** Changed files, untracked ones included. */
+  changedFiles: number
+  /** Untracked files, which reach a commit only when the user checks them. */
+  newFiles: string[]
+  pullRequestUrl: string | null
+  /** The worktree started from the last commit and left the user's uncommitted changes behind. */
+  sourceWasDirty: boolean
+}
+
+export interface LinkedShipRequest {
+  /** Commit message used in every repository with changes. */
+  message: string
+  /** Pull request title and description used in every repository. */
+  title: string
+  body: string
+  /** Untracked files the user checked, keyed by repository name. */
+  newFiles: Record<string, string[]>
+  /** Ship only these repositories (a retry); absent ships every one. */
+  repos?: string[]
+}
+
+export type LinkedShipStep = 'commit' | 'push' | 'pullRequest' | 'link'
+
+export interface LinkedRepoShipResult {
+  name: string
+  /** `unchanged`: nothing to ship; `missing`: the checkout is gone. */
+  outcome: 'shipped' | 'unchanged' | 'failed' | 'missing'
+  failedStep?: LinkedShipStep
+  error?: string
+  pullRequestUrl: string | null
+}
+
+export interface LinkedShipResult {
+  repos: LinkedRepoShipResult[]
 }
 
 // ─── Notes Types ────────────────────────────────────────────────────────────
@@ -1582,6 +1892,9 @@ export interface FileChangeEvent {
   changeType: 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir'
   relativePath: string
 }
+
+/** `relativePath` of a FileChangeEvent that replaced the whole worktree, such as a branch switch. */
+export const WHOLE_WORKSPACE_CHANGE_PATH = '.'
 
 export interface DiffHunk {
   oldStart: number

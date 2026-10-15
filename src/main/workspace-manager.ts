@@ -1,21 +1,33 @@
-import { dirname, basename, resolve } from 'path'
-import { readFile, writeFile, mkdir, rename, copyFile } from 'fs/promises'
+import { dirname, basename, join, resolve } from 'path'
+import { readFile, writeFile, mkdir, rename, copyFile, rm } from 'fs/promises'
 import { existsSync } from 'fs'
 import { PiRpcManager } from './pi-rpc-manager'
 import { FileService } from './file-service'
-import type {
-  FileChangeEvent,
-  PiStartOptions,
-  WorkspaceRemoveResult,
-  WorkspaceTabOptions,
-  SessionRuntimeInfo,
-  SessionRuntimeActivity,
-  SessionRuntimeCloseResult,
+import {
+  WHOLE_WORKSPACE_CHANGE_PATH,
+  promptRanWithoutAgent,
+  promptRefusal,
+  promptResultRefusal,
+  reportsNoAgentRun,
+  reportsPromptOutcome,
+  type FileChangeEvent,
+  type PiPromptResultEvent,
+  type LinkedRepoStatus,
+  type LinkedTaskOptions,
+  type LinkedTaskRepo,
+  type PiStartOptions,
+  type RepoSet,
+  type Workspace,
+  type WorkspaceRemoveResult,
+  type WorkspaceTabOptions,
+  type SessionRuntimeInfo,
+  type SessionRuntimeActivity,
+  type SessionRuntimeCloseResult,
 } from '../shared/ipc-contracts'
 import { getGuiDataPath } from './app-data-paths'
 import { engineForBoundSession, isWithinSessionRoots } from './pi-paths'
 import { pathsEqual, pathGroupKey } from './session-paths'
-import { isPathWithin } from './path-authorization'
+import { isPathWithin } from '../../resources/path-within'
 import { appLog } from './app-log'
 import { inspectSessionContent } from './session-metadata'
 import {
@@ -31,6 +43,14 @@ import {
 } from './git-worktree'
 import { extractGitHubPullRequestUrl, resolvePullRequestHeadBranch } from './git-conveyor'
 import { t, tEnglish } from '../shared/i18n'
+import { OMP_SUBAGENT_SUBSCRIPTION_LEVEL } from '../shared/subagent-task'
+import { REPO_MAP_ENV, serializeRepoMap } from '../../resources/repo-set-map'
+import { agentResourcePath } from './agent-resources'
+import { workspaceTrustStore } from './workspace-trust'
+import { inspectRepoFolder } from './repo-sets'
+import { checkoutForLinkedTask, checkoutLinkedTask, removeLinkedTaskCheckouts } from './linked-worktrees'
+import { readLinkedRepoStatuses } from './linked-task-status'
+import { uniqueRepoName } from '../shared/repo-set-draft'
 
 /**
  * Manages project workspaces and their independent Pi session runtimes.
@@ -59,24 +79,10 @@ const MANAGED_WORKTREES_DIR = 'worktrees'
  */
 export const MAX_LIVE_SESSION_RUNTIMES = 6
 
-export interface Workspace {
-  id: string
-  name: string
-  path: string
-  createdAt: number
-  lastActiveAt: number
-  color: string
-  /** Optional on disk for backward compatibility with older workspace files. */
-  kind?: 'folder' | 'worktree'
-  repoRoot?: string
-  branch?: string
-  baseRef?: string
-  sourceWasDirty?: boolean
-  /** False for an existing user worktree adopted by the app; never delete it on close. */
-  managed?: boolean
-  /** Original task text when the app created or adopted this worktree. */
-  taskPrompt?: string
-}
+/** Directory under the GUI data path holding one repo map file per linked task tab. */
+const REPO_MAPS_DIR = 'repo-maps'
+/** The agent extension that tells Pi and OMP which repositories a linked task spans. */
+const REPO_SET_EXTENSION_FILE = 'pi-desktop-repo-set.ts'
 
 interface WorkspaceState {
   workspaces: Workspace[]
@@ -111,6 +117,14 @@ interface SessionRuntimeEntry {
    * isDisposableSessionFile.
    */
   appCreated: boolean
+  /** Agent runs this runtime's engine started, so a prompt can tell whether one followed it. */
+  agentRunStarts: number
+  /**
+   * agentRunStarts when a task prompt went to an engine that reports how each
+   * prompt ended (OMP); null otherwise. Its prompt_result settles the task when
+   * no turn started (see promptSessionRuntime).
+   */
+  runlessPromptRuns: number | null
 }
 
 /**
@@ -167,6 +181,9 @@ export class WorkspaceManager {
   private activeWorkspaceListeners: ActiveWorkspaceListener[] = []
   private fileChangeListeners: FileChangeListener[] = []
   private workspaceRemovedListeners: WorkspaceRemovedListener[] = []
+  // Repository of a repo set tab the diff, file, and git panels show, by
+  // name. In memory only: a reopened app shows the main repository again.
+  private focusedRepoByWorkspace = new Map<string, string>()
   // The workspace whose FileService currently has an active disk watcher.
   // Only the active workspace is watched, mirroring how Pi events are
   // forwarded for the active workspace only — and only while the renderer
@@ -176,8 +193,16 @@ export class WorkspaceManager {
   // focus refresh keep it fresh.
   private watchingWorkspaceId: string | null = null
   private fileWatchDemanded = false
+  // The workspace whose FileService watches HEAD and the branches. This is
+  // always the active workspace, with or without demand: the status-bar
+  // branch menu is on screen whenever a workspace is open.
+  private gitWatchingWorkspaceId: string | null = null
 
-  constructor() {
+  /**
+   * @param resolveAgentResource finds an agent extension the app ships; tests
+   * pass their own, so the manager never needs Electron to run.
+   */
+  constructor(private readonly resolveAgentResource: (fileName: string) => string = agentResourcePath) {
     this.configPath = getGuiDataPath(WORKSPACES_FILE)
   }
 
@@ -215,10 +240,12 @@ export class WorkspaceManager {
   /**
    * Ensure the disk watcher is attached to the active workspace's FileService
    * (and detached from any previously-watched one) — but only while the
-   * renderer demands change events. Called on startup, on every
+   * renderer demands change events. The git watcher follows the active
+   * workspace with or without demand. Called on startup, on every
    * active-workspace change, and when demand flips.
    */
   private updateActiveWatcher(): void {
+    this.updateGitWatcher()
     const target = this.fileWatchDemanded ? this.activeWorkspaceId : null
     if (this.watchingWorkspaceId === target) return
 
@@ -231,6 +258,19 @@ export class WorkspaceManager {
       this.fileServices
         .get(target)
         ?.startWatching((event) => this.emitFileChange(event))
+    }
+  }
+
+  private updateGitWatcher(): void {
+    if (this.gitWatchingWorkspaceId === this.activeWorkspaceId) return
+    if (this.gitWatchingWorkspaceId) {
+      this.fileServices.get(this.gitWatchingWorkspaceId)?.stopGitWatching()
+    }
+    this.gitWatchingWorkspaceId = this.activeWorkspaceId
+    if (this.activeWorkspaceId) {
+      this.fileServices
+        .get(this.activeWorkspaceId)
+        ?.startGitWatching((event) => this.emitFileChange(event))
     }
   }
 
@@ -386,8 +426,18 @@ export class WorkspaceManager {
       entry.info = { ...entry.info, ...manager.getStatus() }
       this.emitSessionRuntime(entry)
     })
-    manager.on('agent_start', () => this.emitRuntimeActivity(entry, 'working'))
+    manager.on('agent_start', () => {
+      entry.agentRunStarts += 1
+      // A turn ran, so a refusal of the prompt before it no longer describes the chat.
+      const { promptRefusal: _settled, ...info } = entry.info
+      entry.info = info
+      this.emitRuntimeActivity(entry, 'working')
+    })
     manager.on('agent_end', () => this.emitRuntimeActivity(entry, 'completed'))
+    // OMP's report on a task prompt that ran no turn: refused after admission, or a command that finished.
+    manager.on('prompt_result', (event: PiPromptResultEvent) => {
+      if (entry.runlessPromptRuns === entry.agentRunStarts) this.settleRunlessPrompt(entry, promptResultRefusal(event)?.reason)
+    })
     manager.on('extension_ui_request', (event: { method?: string }) => {
       if (event.method === 'select' || event.method === 'confirm' || event.method === 'input' || event.method === 'editor') {
         this.emitRuntimeActivity(entry, 'needs-approval')
@@ -417,6 +467,8 @@ export class WorkspaceManager {
       // spawn for it. A tab opened ON a file adopts a conversation that was
       // already there, which this app never gets to discard.
       appCreated: sessionPath === null,
+      agentRunStarts: 0,
+      runlessPromptRuns: null,
       info: {
         runtimeId,
         workspaceId,
@@ -491,6 +543,13 @@ export class WorkspaceManager {
   getActiveSessionRuntime(): SessionRuntimeInfo | null {
     if (!this.activeRuntimeId) return null
     const entry = this.sessionRuntimes.get(this.activeRuntimeId)
+    return entry ? this.snapshotRuntime(entry) : null
+  }
+
+  /** The runtime a start for this workspace reuses (see startPiForWorkspace), if it has one. */
+  getWorkspaceSessionRuntime(workspaceId: string): SessionRuntimeInfo | null {
+    const runtimeId = this.activeRuntimeByWorkspace.get(workspaceId)
+    const entry = runtimeId ? this.sessionRuntimes.get(runtimeId) : undefined
     return entry ? this.snapshotRuntime(entry) : null
   }
 
@@ -580,6 +639,12 @@ export class WorkspaceManager {
     // can resume it. An engine the caller named explicitly still wins.
     const ownerEngine = engineForBoundSession(startOptions)
     if (!startOptions.engine && ownerEngine) startOptions.engine = ownerEngine
+    // Every start path converges here, so a linked task always hands the
+    // agent its repositories, whichever engine runs it.
+    if (workspace.linkedTask) {
+      startOptions.args = [...(startOptions.args ?? []), '-e', this.resolveAgentResource(REPO_SET_EXTENSION_FILE)]
+      startOptions.env = { ...startOptions.env, [REPO_MAP_ENV]: await this.writeRepoMap(workspace) }
+    }
     // Re-activating an evicted tab spawns a process again, so the budget has to
     // hold here too; an already-live runtime spawns nothing and needs no room.
     if (!this.isRuntimeLive(entry)) this.enforceLiveRuntimeBudget(runtimeId)
@@ -589,6 +654,13 @@ export class WorkspaceManager {
     // emit the now-detached entry after the closed marker was broadcast.
     if (this.sessionRuntimes.get(runtimeId) !== entry) {
       return { ...entry.info, ...entry.manager.getStatus(), active: false, closed: true }
+    }
+    // OMP pushes subagent lifecycle and progress only after this; an OMP build
+    // without the command answers with an error, which is ignored here.
+    if (entry.manager.getEngineKind() === 'omp') {
+      await entry.manager
+        .sendCommand({ type: 'set_subagent_subscription', level: OMP_SUBAGENT_SUBSCRIPTION_LEVEL })
+        .catch(() => null)
     }
     const response = await entry.manager.sendCommand({ type: 'get_state' }).catch(() => null)
     if (this.sessionRuntimes.get(runtimeId) !== entry) {
@@ -703,11 +775,52 @@ export class WorkspaceManager {
     }
   }
 
-  sendCommandToSessionRuntime(runtimeId: string, command: Record<string, unknown>): Promise<unknown> {
+  /**
+   * Send the prompt a New Task starts with. The task shows as working until a
+   * turn ends it, so an answer that starts no turn settles it here: a refused
+   * prompt (no API key, an expired login, no model) fails the task and keeps
+   * the engine's reason for its chat; a prompt that ran without an agent run,
+   * such as an extension or a local command, completes it.
+   */
+  async promptSessionRuntime(runtimeId: string, message: string): Promise<void> {
     const entry = this.sessionRuntimes.get(runtimeId)
-    if (!entry) return Promise.reject(new Error(t('errors.session.runtimeNotFound', { runtimeId })))
+    if (!entry) throw new Error(t('errors.session.runtimeNotFound', { runtimeId }))
     this.touchRuntime(entry)
-    return entry.manager.sendCommand(command)
+    const runsAtSend = entry.agentRunStarts
+    // A closed tab is gone from the renderer; a snapshot of it would bring it back.
+    const isOpen = (): boolean => this.sessionRuntimes.get(runtimeId) === entry
+    // Armed before the prompt goes out: OMP can report the outcome before its answer.
+    const reportsOutcome = reportsPromptOutcome(entry.manager.getEngineKind())
+    if (reportsOutcome) entry.runlessPromptRuns = runsAtSend
+    const response = await entry.manager.sendCommand({ type: 'prompt', message })
+    // Gone, or already settled by its prompt_result.
+    if (!isOpen() || (reportsOutcome && entry.runlessPromptRuns === null)) return
+    const refusal = promptRefusal(response)
+    if (refusal) return this.settleRunlessPrompt(entry, refusal.reason)
+    // A turn that started ends the task with its own agent_end.
+    if (entry.agentRunStarts !== runsAtSend) return
+    if (promptRanWithoutAgent(response)) return this.settleRunlessPrompt(entry)
+    // Its prompt_result settles a prompt that runs no turn.
+    if (reportsOutcome) return
+    const state = await entry.manager.sendCommand({ type: 'get_state' })
+    if (!isOpen() || entry.agentRunStarts !== runsAtSend || !reportsNoAgentRun(state)) return
+    this.settleRunlessPrompt(entry)
+  }
+
+  /**
+   * A task prompt that ran no turn: a refusal fails the task and keeps the
+   * engine's reason for its chat; anything else (an extension or a local
+   * command) completes it.
+   */
+  private settleRunlessPrompt(entry: SessionRuntimeEntry, refusal?: string): void {
+    entry.runlessPromptRuns = null
+    if (refusal === undefined) {
+      this.emitRuntimeActivity(entry, 'completed')
+      return
+    }
+    entry.info = { ...entry.info, activity: 'failed', promptRefusal: refusal }
+    this.touchRuntime(entry)
+    this.emitSessionRuntime(entry)
   }
 
   async initialize(): Promise<void> {
@@ -845,7 +958,7 @@ export class WorkspaceManager {
     if (index === -1) throw new Error(t('errors.workspace.notFound', { workspaceId }))
     const workspace = this.workspaces[index]
     let worktreeRemoved: boolean | undefined
-    let preservedWorktreePath: string | undefined
+    const preservedWorktreePaths: string[] = []
 
     // Stop Pi process and file watcher for this workspace before touching a
     // managed worktree. Git refuses dirty worktree removal, which is exactly
@@ -866,6 +979,7 @@ export class WorkspaceManager {
     const fileService = this.fileServices.get(workspaceId)
     if (fileService) {
       fileService.stopWatching()
+      fileService.stopGitWatching()
       this.fileServices.delete(workspaceId)
     }
     if (workspace.kind === 'worktree' && workspace.managed !== false && workspace.repoRoot) {
@@ -874,12 +988,18 @@ export class WorkspaceManager {
         worktreeRemoved = true
       } catch (err) {
         // Keep dirty/missing worktrees on disk instead of forcing deletion.
-        preservedWorktreePath = workspace.path
+        preservedWorktreePaths.push(workspace.path)
         const detail = err instanceof GitCommandError
           ? describeGitFailure(err.args, err.stdout, err.stderr, tEnglish)
           : err
         appLog.warn('workspaces', 'Preserved managed worktree while closing tab', detail)
       }
+    }
+    if (workspace.linkedTask) {
+      preservedWorktreePaths.push(...await removeLinkedTaskCheckouts(workspace.linkedTask.repos))
+      worktreeRemoved = workspace.linkedTask.repos.some((repo) => repo.managed && !preservedWorktreePaths.includes(repo.workPath))
+      this.focusedRepoByWorkspace.delete(workspaceId)
+      await rm(this.repoMapPath(workspaceId), { force: true })
     }
 
     this.workspaces.splice(index, 1)
@@ -903,7 +1023,7 @@ export class WorkspaceManager {
     for (const listener of this.workspaceRemovedListeners) {
       listener(workspaceId)
     }
-    return { worktreeRemoved, preservedWorktreePath }
+    return { worktreeRemoved, ...(preservedWorktreePaths.length > 0 ? { preservedWorktreePaths } : {}) }
   }
 
   async renameWorkspace(workspaceId: string, name: string): Promise<void> {
@@ -926,6 +1046,9 @@ export class WorkspaceManager {
     if (workspace.kind === 'worktree') {
       throw new Error(t('errors.workspace.managedWorktreeCannotChangeFolder'))
     }
+    if (workspace.kind === 'repoSet') {
+      throw new Error(t('errors.workspace.repoSetCannotChangeFolder'))
+    }
     if (!existsSync(newPath)) throw new Error(t('errors.workspace.folderMissing', { path: newPath }))
 
     workspace.path = newPath
@@ -938,11 +1061,13 @@ export class WorkspaceManager {
     }
     const oldFs = this.fileServices.get(workspaceId)
     oldFs?.stopWatching()
+    oldFs?.stopGitWatching()
     this.fileServices.set(workspaceId, new FileService(newPath))
     await this.saveWorkspaces()
     // Re-arm the watcher if this is the active workspace.
     if (this.activeWorkspaceId === workspaceId) {
       this.watchingWorkspaceId = null
+      this.gitWatchingWorkspaceId = null
       this.updateActiveWatcher()
     }
   }
@@ -1114,6 +1239,155 @@ export class WorkspaceManager {
     return workspace
   }
 
+  /**
+   * Open a linked task from a saved repo set as a new `repoSet` tab: one
+   * checkout per repository (new worktrees on one shared branch, or the
+   * user's own checkouts in place). The agent starts in the main repository.
+   * Like a worktree tab, the tab is not activated here.
+   */
+  async createLinkedTaskWorkspace(set: RepoSet, options: LinkedTaskOptions): Promise<Workspace> {
+    const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const name = options.name?.trim() || set.name
+    const repos = await checkoutLinkedTask(set.members, {
+      mode: options.mode,
+      taskId: id,
+      branch: worktreeBranchName(name, id),
+      worktreesDir: getGuiDataPath(MANAGED_WORKTREES_DIR),
+    })
+    const main = repos.find((repo) => repo.role === 'main')!
+    const workspace: Workspace = {
+      id,
+      name,
+      path: main.workPath,
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+      color: WORKSPACE_COLORS[this.nextColorIndex % WORKSPACE_COLORS.length],
+      kind: 'repoSet',
+      linkedTask: { setId: set.id, setName: set.name, mode: options.mode, repos },
+    }
+    this.nextColorIndex++
+    this.workspaces.push(workspace)
+    const piManager = new PiRpcManager()
+    this.piManagers.set(workspace.id, piManager)
+    this.wirePiManager(piManager)
+    this.fileServices.set(workspace.id, new FileService(main.workPath))
+    await this.saveWorkspaces()
+    return workspace
+  }
+
+  private linkedTaskWorkspace(workspaceId: string): Workspace & { linkedTask: NonNullable<Workspace['linkedTask']> } {
+    const workspace = this.workspaces.find((item) => item.id === workspaceId)
+    if (!workspace) throw new Error(t('errors.workspace.notFound', { workspaceId }))
+    if (!workspace.linkedTask) throw new Error(t('repoSets.errors.notLinkedTask'))
+    return workspace as Workspace & { linkedTask: NonNullable<Workspace['linkedTask']> }
+  }
+
+  /**
+   * Add a repository to a running linked task. It gets a checkout the same
+   * way the others did, and the repo map is rewritten so the agent sees it
+   * on its next turn. The saved repo set does not change.
+   */
+  async addRepoToLinkedTask(workspaceId: string, folderPath: string): Promise<Workspace> {
+    const workspace = this.linkedTaskWorkspace(workspaceId)
+    const task = workspace.linkedTask
+    const folder = await inspectRepoFolder(folderPath)
+    const { repoRoot } = await inspectGitRepository(folder.path)
+    if (task.repos.some((repo) => pathsEqual(resolve(repo.repoRoot), resolve(repoRoot)))) {
+      throw new Error(t('repoSets.errors.alreadyInTask', { path: folder.path }))
+    }
+    const main = task.repos.find((repo) => repo.role === 'main')!
+    const repo = await checkoutForLinkedTask(
+      { name: uniqueRepoName(folder.name, task.repos.map((item) => item.name)), sourcePath: folder.path, role: 'linked' },
+      {
+        mode: task.mode,
+        taskId: workspace.id,
+        branch: main.branch ?? worktreeBranchName(workspace.name, workspace.id),
+        worktreesDir: getGuiDataPath(MANAGED_WORKTREES_DIR),
+      },
+    )
+    task.repos = [...task.repos, repo]
+    await this.saveWorkspaces()
+    await this.writeRepoMap(workspace)
+    return workspace
+  }
+
+  private focusedRepo(workspace: Workspace): LinkedTaskRepo | null {
+    const repos = workspace.linkedTask?.repos
+    if (!repos) return null
+    const name = this.focusedRepoByWorkspace.get(workspace.id)
+    return repos.find((repo) => repo.name === name) ?? repos.find((repo) => repo.role === 'main') ?? null
+  }
+
+  /**
+   * Show one repository of a linked task in the diff, file, and git panels.
+   * Those panels read the workspace's FileService and git folder, so this
+   * swaps both and tells every view that the whole tree changed.
+   */
+  focusLinkedRepo(workspaceId: string, name: string): void {
+    const workspace = this.linkedTaskWorkspace(workspaceId)
+    const repo = workspace.linkedTask.repos.find((item) => item.name === name)
+    if (!repo) throw new Error(t('repoSets.errors.repositoryNotInTask', { name }))
+    if (this.focusedRepo(workspace)?.name === name) return
+    this.focusedRepoByWorkspace.set(workspaceId, name)
+    const previous = this.fileServices.get(workspaceId)
+    previous?.stopWatching()
+    previous?.stopGitWatching()
+    this.fileServices.set(workspaceId, new FileService(repo.workPath))
+    if (this.activeWorkspaceId === workspaceId) {
+      this.watchingWorkspaceId = null
+      this.gitWatchingWorkspaceId = null
+      this.updateActiveWatcher()
+      this.emitFileChange({ changeType: 'change', relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
+    }
+  }
+
+  /**
+   * The folder the file, diff, and git panels show: the focused repository
+   * of a linked task, else the workspace folder.
+   */
+  getPanelRoot(workspaceId: string): string | null {
+    const workspace = this.workspaces.find((item) => item.id === workspaceId)
+    if (!workspace) return null
+    return this.focusedRepo(workspace)?.workPath ?? workspace.path
+  }
+
+  getActivePanelRoot(): string | null {
+    return this.activeWorkspaceId ? this.getPanelRoot(this.activeWorkspaceId) : null
+  }
+
+  async getLinkedTaskStatus(workspaceId: string): Promise<LinkedRepoStatus[]> {
+    const workspace = this.linkedTaskWorkspace(workspaceId)
+    return readLinkedRepoStatuses(workspace.linkedTask.repos, this.focusedRepo(workspace)?.name ?? '')
+  }
+
+  private repoMapPath(workspaceId: string): string {
+    return getGuiDataPath(join(REPO_MAPS_DIR, `${workspaceId}.json`))
+  }
+
+  /**
+   * Write the task's repo map for the agent extensions, with the current
+   * trust of every checkout. Atomic, so an agent turn never reads half a file.
+   */
+  private async writeRepoMap(workspace: Workspace): Promise<string> {
+    const task = workspace.linkedTask!
+    const path = this.repoMapPath(workspace.id)
+    await mkdir(dirname(path), { recursive: true })
+    const tmpPath = `${path}.tmp`
+    await writeFile(tmpPath, serializeRepoMap({
+      setName: task.setName,
+      mode: task.mode,
+      repos: task.repos.map((repo) => ({
+        name: repo.name,
+        role: repo.role,
+        workPath: repo.workPath,
+        branch: repo.branch,
+        trusted: workspaceTrustStore.isTrusted(repo.workPath),
+      })),
+    }), 'utf-8')
+    await rename(tmpPath, path)
+    return path
+  }
+
   async startPiForWorkspace(workspaceId: string, options?: PiStartOptions): Promise<void> {
     const workspace = this.workspaces.find((w) => w.id === workspaceId)
     if (!workspace) throw new Error(t('errors.workspace.notFound', { workspaceId }))
@@ -1142,8 +1416,12 @@ export class WorkspaceManager {
   stopAll(): void {
     for (const [, manager] of this.piManagers) manager.stop()
     for (const [, entry] of this.sessionRuntimes) entry.manager.stop()
-    for (const [, fs] of this.fileServices) fs.stopWatching()
+    for (const [, fs] of this.fileServices) {
+      fs.stopWatching()
+      fs.stopGitWatching()
+    }
     this.watchingWorkspaceId = null
+    this.gitWatchingWorkspaceId = null
     this.fileWatchDemanded = false
     this.piManagers.clear()
     this.sessionRuntimes.clear()

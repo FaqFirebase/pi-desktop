@@ -1,19 +1,5 @@
-import { isAbsolute, relative, resolve } from 'path'
-
-/**
- * True when `candidate` resolves to `root` itself or a path nested inside it.
- * Uses a lexical `relative` comparison (resolving `..` first) so parent-traversal
- * escapes and sibling directories that merely share the root's string prefix
- * (e.g. `/a/project-secrets` vs `/a/project`) are rejected. Platform path rules
- * (case-insensitivity, separators, cross-drive on Windows) come from `path`.
- */
-export function isPathWithin(root: string, candidate: string): boolean {
-  const resolvedRoot = resolve(root)
-  const resolvedCandidate = resolve(candidate)
-  if (resolvedCandidate === resolvedRoot) return true
-  const rel = relative(resolvedRoot, resolvedCandidate)
-  return rel.length > 0 && !rel.startsWith('..') && !isAbsolute(rel)
-}
+import { resolve } from 'path'
+import { isPathWithin } from '../../resources/path-within'
 
 /**
  * Authorize a path for the attachment reader. A path is allowed only if the user

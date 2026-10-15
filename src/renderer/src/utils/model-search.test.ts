@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { ModelInfo } from '../../../shared/ipc-contracts'
-import { filterModels, normalizeModelSearchText } from './model-search'
+import { filterModels, normalizeModelSearchText, sortModelsByRecency } from './model-search'
 
 function model(partial: Pick<ModelInfo, 'id' | 'name' | 'provider'> & Partial<ModelInfo>): ModelInfo {
   return {
@@ -60,4 +60,15 @@ test('filterModels matches provider or short id fragments', () => {
 
 test('filterModels requires every token (AND)', () => {
   assert.equal(filterModels(models, 'claude openai').length, 0)
+})
+
+test('sortModelsByRecency puts recently used models first and keeps the rest in order', () => {
+  const list = [
+    model({ id: 'a', name: 'A', provider: 'p' }),
+    model({ id: 'b', name: 'B', provider: 'p' }),
+    model({ id: 'c', name: 'C', provider: 'p' }),
+    model({ id: 'd', name: 'D', provider: 'p' }),
+  ]
+  const sorted = sortModelsByRecency(list, { 'p/c': 10, 'p/d': 20 })
+  assert.deepEqual(sorted.map((m) => m.id), ['d', 'c', 'a', 'b'])
 })
