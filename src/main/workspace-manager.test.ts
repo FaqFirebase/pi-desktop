@@ -536,6 +536,38 @@ test('a closed tab is only disposable when this run created its session file', a
   })
 })
 
+test('a restart before the first answer starts a new session, not a missing or older one', async () => {
+  await freshDataDir()
+
+  await withSessionStores(async (roots) => {
+    await withManager(async (mgr) => {
+      const workspace = await mgr.createWorkspace('Alpha', await project())
+      const runtime = await mgr.createNewSessionRuntime(workspace.id)
+      const manager = mgr.getActivePiManager()
+      assert.ok(manager)
+      const process = fakePiProcess(manager, 801, 'stopped')
+      // The engine names the session file at once but writes it only after
+      // its first answer. Nothing was sent, so the file is not on disk.
+      const unwritten = join(roots.omp, '--tmp-app--', 'not-written-yet.jsonl')
+      reportsSessionFile(manager, unwritten, 'not-written-yet')
+      await mgr.startSessionRuntime(runtime.runtimeId)
+      assert.equal(existsSync(unwritten), false)
+
+      // A permission mode change restarts with the resume preference applied.
+      // OMP refuses a --session file that does not exist, and --continue would
+      // open an earlier conversation in this empty tab.
+      await mgr.startSessionRuntime(runtime.runtimeId, { continueSession: true })
+      assert.equal(process.lastStartOptions?.sessionPath, undefined)
+      assert.notEqual(process.lastStartOptions?.continueSession, true)
+
+      // Once the file exists, a restart re-opens it as before.
+      await storedSession(roots.omp, 'not-written-yet.jsonl', { type: 'session', id: 'not-written-yet' })
+      await mgr.startSessionRuntime(runtime.runtimeId, { continueSession: true })
+      assert.equal(process.lastStartOptions?.sessionPath, unwritten)
+    })
+  })
+})
+
 test('the auto-delete guard refuses a file it cannot prove is a throwaway', async () => {
   await withSessionStores(async (roots) => {
     const inStore = await storedSession(roots.pi, 'guard.jsonl', { type: 'session', id: 'guard' })

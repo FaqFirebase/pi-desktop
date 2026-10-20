@@ -627,12 +627,17 @@ export class WorkspaceManager {
       // (see buildPiArgs) and the runtime re-opens what it created.
       (options.continueSession === true && entry.info.sessionPath === null)
     if (bindsExistingFile) entry.appCreated = false
+    // The engine names a new session's file at once but writes it only after
+    // its first answer. A restart before then (a permission mode change)
+    // starts a new session: OMP refuses a --session file that does not exist,
+    // and --continue would open an earlier conversation in this empty tab.
+    const ownPath = options.sessionPath || options.forkSessionPath ? null : entry.info.sessionPath
+    const ownFileWritten = ownPath !== null && existsSync(ownPath)
     const startOptions: PiStartOptions = {
       cwd: workspace.path,
-      ...(entry.info.sessionPath && !options.sessionPath && !options.forkSessionPath
-        ? { sessionPath: entry.info.sessionPath }
-        : {}),
+      ...(ownPath !== null && ownFileWritten ? { sessionPath: ownPath } : {}),
       ...options,
+      ...(ownPath !== null && !ownFileWritten ? { continueSession: false } : {}),
     }
     // Start the engine that owns the session file rather than the configured
     // default: the stores are separate, so only the engine that wrote a session
