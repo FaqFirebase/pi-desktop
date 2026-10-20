@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { MarkdownRenderer } from './markdown-renderer'
 import { toolLabel, toolCallLabel, toolCallStatusLabel } from '../message-grouping'
 import { splitClaudeCliMarkers } from '../claude-cli-markers'
+import { mayBeNextStepsCall } from '../next-steps'
 import { toolCallIconFor } from './tool-call-icon'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
@@ -32,6 +33,12 @@ export function StreamingBubble({ content: rawContent, thinking, toolCalls }: St
   const { content, toolCalls: markerCalls } = useMemo(
     () => splitClaudeCliMarkers(rawContent, provider, true),
     [rawContent, provider]
+  )
+  // Suggested next steps appear as buttons once the turn ends, never as a live
+  // call, also while the call's arguments are still streaming in.
+  const visibleToolCalls = useMemo(
+    () => Array.from(toolCalls.entries()).filter(([, tc]) => !mayBeNextStepsCall({ name: tc.name, arguments: tc.args })),
+    [toolCalls]
   )
   const thinkingEnabled = useAppStore(
     (state) => state.settingsDraft.showThinking ?? state.settings?.showThinking ?? DEFAULT_SETTINGS.showThinking
@@ -75,9 +82,9 @@ export function StreamingBubble({ content: rawContent, thinking, toolCalls }: St
             </div>
           )}
 
-          {toolCalls.size > 0 && (
+          {visibleToolCalls.length > 0 && (
             <div className="mb-2 space-y-1">
-              {Array.from(toolCalls.entries()).map(([id, tc]) => {
+              {visibleToolCalls.map(([id, tc]) => {
                 const Icon = toolCallIconFor(tc.name)
                 return (
                   <div
@@ -147,7 +154,7 @@ export function StreamingBubble({ content: rawContent, thinking, toolCalls }: St
             </div>
           )}
 
-          {!content && (!thinking || !thinkingEnabled) && toolCalls.size === 0 && markerCalls.length === 0 && (
+          {!content && (!thinking || !thinkingEnabled) && visibleToolCalls.length === 0 && markerCalls.length === 0 && (
             <div className="flex h-7 items-center gap-2 text-sm text-dim">
               <Loader2 size={12} className="animate-spin" />
               {thinking ? t('common.thinking') : t('chat.waitingForResponse')}

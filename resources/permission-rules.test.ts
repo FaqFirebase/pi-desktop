@@ -3,6 +3,7 @@ import { describe, it, beforeEach } from 'node:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { NEXT_STEPS_DEVICE_PATH } from './next-steps'
 import {
   PERMISSION_RULES_VERSION,
   WORKSPACE_RULES_DIR_NAME,
@@ -204,6 +205,16 @@ describe('decideToolCall', () => {
     assert.deepEqual(decideToolCall('ask-commands', [], 'edit', { path: 'a' }, 'linux'), { action: 'allow' })
     assert.deepEqual(decideToolCall('trusted', [], 'bash', { command: 'x' }, 'linux'), { action: 'allow' })
     assert.deepEqual(decideToolCall(undefined, [], 'bash', { command: 'x' }, 'linux'), { action: 'allow' })
+  })
+
+  it('lets OMP write next steps to their tool device without a prompt or a write rule', () => {
+    const denyWrites = [{ action: 'deny' as const, tool: 'write' }]
+    const deviceWrite = { path: NEXT_STEPS_DEVICE_PATH, content: '{"steps":[]}' }
+    for (const mode of ['ask-edits', 'plan-readonly', 'trusted']) {
+      assert.deepEqual(decideToolCall(mode, denyWrites, 'write', deviceWrite, 'linux'), { action: 'allow' })
+    }
+    assert.deepEqual(decideToolCall('ask-edits', [], 'write', { path: 'xd://other_tool', content: '{}' }, 'linux'), { action: 'prompt' })
+    assert.equal(decideToolCall('ask-edits', denyWrites, 'write', { path: 'notes.md', content: '' }, 'linux').action, 'block')
   })
 })
 

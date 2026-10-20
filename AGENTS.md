@@ -180,6 +180,9 @@ src/
         ├── i18n.ts               # Boot language, language picker options, apply the language setting
         ├── message-parsing.ts    # Pi messages -> display messages
         ├── message-grouping.ts   # Tool-name labels and message grouping
+        ├── next-steps.ts         # Hide next-steps calls from the chat; the latest turn's suggested steps
+        ├── send-queue.ts         # Messages sent while the agent works, per workspace; the store sends the oldest at turn end
+        ├── turn-activity.ts      # Running-turn elapsed time and the "no event for 30 s" stall rule
         ├── reattached-tool-calls.ts # Mark unfinished tool calls as running when a view returns mid-turn
         ├── claude-cli-markers.ts # Parse pi-claude-cli tool markers into tool cards
         ├── subagent-transcript-view.ts # What the Subagents panel's transcript view shows
@@ -193,6 +196,7 @@ src/
         │   ├── commit-push-shortcut.ts # Review / Commit and push shortcut flow
         │   ├── tab-navigation.ts # Project/session tab order and next/previous tab
         │   ├── planning-prompt.ts # Plan/read-only prompt wrapper
+        │   ├── compose-prompt.ts # Typed text + staged files -> prompt (text files inlined as data, images as blocks)
         │   ├── ipc-error.ts      # Strip Electron's remote-method prefix from IPC errors
         │   ├── quick-switcher.ts # Token filters for the palette's workspace/session/file sections
         │   ├── rank-file-results.ts # Basename-tiered ranking for file search hits
@@ -237,6 +241,9 @@ src/
             ├── council-panels.tsx # Council planning live cards + gate
             ├── message-bubble.tsx # Messages with edit/branch/copy/export
             ├── streaming-bubble.tsx # Live streaming indicator
+            ├── next-steps-bar.tsx # Suggested next steps under the reply; a click fills the composer
+            ├── send-queue-list.tsx # Queued messages on the composer: Send now, Edit, Remove; shows when the queue is paused
+            ├── turn-activity-line.tsx # "Working · 1m12s" while a turn runs; a stall warning with Stop
             ├── markdown-renderer.tsx # Markdown + syntax highlight
             ├── code-editor.tsx    # CodeMirror 6 editor
             ├── code-editor-language.ts   # Language detection
@@ -293,6 +300,9 @@ src/
 resources/
 ├── pi-desktop-permissions.ts     # Pi extension that enforces permission modes and rules
 ├── pi-desktop-repo-set.ts        # Pi extension that tells the agent the repositories of a linked task
+├── pi-desktop-next-steps.ts      # Pi extension: the suggest_next_steps tool and the rule for when to call it
+├── next-steps.ts                 # Next-steps tool contract and step parsing (both call forms), shared by the extension, main, and renderer
+├── system-prompt.ts              # Append to the system prompt in the shape each engine uses
 ├── repo-set-map.ts               # Linked task repo map; the target paths of a tool call, expanded the way Pi does
 ├── path-within.ts                # Path containment and real-path resolution, shared by the extensions and main
 ├── permission-rules.ts           # Rules engine shared by the extension and the main process
@@ -579,12 +589,13 @@ npm run package       # Create installer
 The agent runs in RPC mode as a subprocess; one `PiRpcManager` is kept for each live session runtime. The binary is `pi` or `omp`, depending on the session's engine (see Engines above):
 
 ```
-pi --mode rpc [--no-session] [--provider <name>] [--model <id>] [--thinking <level>] [--fork <session-file> | --session <session-file> | --continue] [--tools <list>] [-e <pi-desktop-permissions.ts>] [-e <pi-desktop-repo-set.ts>]
+pi --mode rpc [--no-session] [--provider <name>] [--model <id>] [--thinking <level>] [--fork <session-file> | --session <session-file> | --continue] [--tools <list>] [-e <pi-desktop-permissions.ts>] [-e <pi-desktop-next-steps.ts>] [-e <pi-desktop-repo-set.ts>]
 ```
 
 - `buildPiArgs` in `pi-rpc-manager.ts` builds the argv. `--thinking` carries the default thinking level for a new session only. `--continue` resumes the latest session when Resume Last Session is on
 - `--tools` is added in Plan / Read-only mode with the engine's read-only tools. `-e` loads the bundled permissions extension whenever it exists on disk (`ipc/pi-start-options.ts`)
 - The extension reads its settings from `PI_DESKTOP_*` environment variables (mode, agent label, language, rules path, workspace trust)
+- While Suggest Next Steps is on, `-e` also loads `pi-desktop-next-steps.ts`, and Plan / Read-only mode adds `suggest_next_steps` to `--tools`. The agent may end a turn with up to three steps; the chat hides the call and shows the steps as buttons that fill the composer. With its `tools.xdev` setting on, OMP sends the call as a `write` to `xd://suggest_next_steps`: the chat reads that form too, and the permission and linked-task checks treat it as no file write (`resources/next-steps.ts`)
 - A linked task's runtime also loads `pi-desktop-repo-set.ts` and gets `PI_DESKTOP_REPO_MAP_PATH`, its repo map under `<GUI data dir>/repo-maps/` (`WorkspaceManager.startSessionRuntime`)
 - No `--session-dir` is added; each engine uses its own default store. A caller-supplied `--session-dir` in extra args still wins
 

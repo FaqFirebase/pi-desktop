@@ -455,10 +455,13 @@ export function isAbortShortcut(event: { key: string; defaultPrevented: boolean 
 }
 
 /**
- * Keyboard shortcut handler for the chat input.
+ * Keyboard shortcut handler for the chat input. Enter sends (the composer
+ * queues it while the agent works); Ctrl/Cmd+Enter sends now, into a running
+ * turn too.
  */
 export function useChatKeyboard(
   onSend: (message: string) => void,
+  onSendNow: (message: string) => void,
   onAbort: () => void,
   inputRef: React.RefObject<HTMLTextAreaElement | null>
 ): void {
@@ -478,7 +481,8 @@ export function useChatKeyboard(
         e.preventDefault()
         const value = inputRef.current?.value.trim()
         if (value) {
-          onSend(value)
+          if (e.ctrlKey || e.metaKey) onSendNow(value)
+          else onSend(value)
           if (inputRef.current) inputRef.current.value = ''
         }
       }
@@ -486,7 +490,7 @@ export function useChatKeyboard(
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isStreaming, onSend, onAbort, inputRef])
+  }, [isStreaming, onSend, onSendNow, onAbort, inputRef])
 }
 
 /** A Pi built-in that maps to a GUI action rather than being inserted as text. */

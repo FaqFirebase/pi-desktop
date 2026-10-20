@@ -4,6 +4,7 @@ import { workspaceTrustStore } from '../workspace-trust'
 import { join, dirname } from 'path'
 import { existsSync } from 'fs'
 import { PERMISSION_RULES_FILE_NAME } from '../../../resources/permission-rules'
+import { NEXT_STEPS_EXTENSION_FILE, NEXT_STEPS_TOOL_NAME } from '../../../resources/next-steps'
 import { isString, isObject, isOptionalString, isOptionalBoolean, isOptionalStringArray } from './validation'
 import { getPiCli } from '../pi-rpc-manager'
 import { engineForBoundSession } from '../pi-paths'
@@ -16,6 +17,7 @@ const READ_ONLY_TOOLS = 'read,grep,find,ls'
 const OMP_READ_ONLY_TOOLS = 'read,grep,glob'
 
 const PERMISSIONS_EXTENSION_PATH = agentResourcePath('pi-desktop-permissions.ts')
+const NEXT_STEPS_EXTENSION_PATH = agentResourcePath(NEXT_STEPS_EXTENSION_FILE)
 
 const LOCALES_DIR_NAME = 'locales'
 // The language files ship next to the extension (resources/ is extraResources).
@@ -85,7 +87,10 @@ export function applyPermissionModeToStartOptions(
   settings: AppSettings
 ): PiStartOptions {
   const engine = engineForStartOptions(options)
-  const toolList = toolsForPermissionMode(settings.permissionMode, engine)
+  const suggestsNextSteps = settings.suggestNextSteps && existsSync(NEXT_STEPS_EXTENSION_PATH)
+  const modeTools = toolsForPermissionMode(settings.permissionMode, engine)
+  // Plan mode names every tool the agent may use; suggesting steps changes nothing.
+  const toolList = modeTools && suggestsNextSteps ? `${modeTools},${NEXT_STEPS_TOOL_NAME}` : modeTools
   const args = toolList
     ? [...removeToolArgs(options.args ?? []), '--tools', toolList]
     : [...(options.args ?? [])]
@@ -93,6 +98,7 @@ export function applyPermissionModeToStartOptions(
   if (existsSync(PERMISSIONS_EXTENSION_PATH)) {
     args.push('-e', PERMISSIONS_EXTENSION_PATH)
   }
+  if (suggestsNextSteps) args.push('-e', NEXT_STEPS_EXTENSION_PATH)
 
   return {
     ...options,

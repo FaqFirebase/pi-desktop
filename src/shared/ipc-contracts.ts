@@ -1363,6 +1363,10 @@ export interface AppSettings {
   // Show OS desktop notifications when a turn finishes, fails, or waits for
   // approval in a workspace the user is not currently looking at.
   desktopNotifications: boolean
+  // Let the agent end a turn with up to three suggested next steps (gaps,
+  // missing tests, unverified work), shown as buttons under the reply.
+  // Applies to agents started after the change.
+  suggestNextSteps: boolean
   // Interface language: 'system' (follow the OS language list) or a bundled
   // language code. Unknown values reset to 'system' on load.
   language: string

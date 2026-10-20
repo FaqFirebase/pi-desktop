@@ -26,6 +26,12 @@
     }
   },
   "chat": {
+    "activity": {
+      "stalled": "No reply from the model for {{silent}}. The provider may be slow.",
+      "stop": "Stop",
+      "working": "Working…",
+      "workingFor": "Working · {{elapsed}}"
+    },
     "attach": {
       "allFilesFilter": "All Files",
       "attachFailed": "Could not attach file",
@@ -45,7 +51,7 @@
     "composer": {
       "placeholderIdle": "Ask {{agent}} anything — / for commands",
       "placeholderNotRunning": "{{agent}} agent is not running...",
-      "placeholderSteering": "Type to steer the agent..."
+      "placeholderQueue": "Type to queue a message — Ctrl+Enter sends it now"
     },
     "council": {
       "planWithCouncil": "Plan with Council",
@@ -82,6 +88,9 @@
       "editAndResend": "Edit & resend",
       "stopped": "Stopped"
     },
+    "nextSteps": {
+      "title": "Suggested next steps"
+    },
     "projectPicker": {
       "noProject": "No project",
       "noProjectHomeDirectory": "No project — home directory",
@@ -106,6 +115,18 @@
     "sendButton": {
       "ariaLabel": "Send message",
       "titleWithShortcut": "Send (Enter)"
+    },
+    "sendQueue": {
+      "count_one": "{{count}} queued",
+      "count_other": "{{count}} queued",
+      "edit": "Edit",
+      "files_one": "{{count}} file",
+      "files_other": "{{count}} files",
+      "held": "Paused. Your next message, or Send now, starts it again",
+      "next": "Sends when the agent finishes",
+      "sendNow": "Send now",
+      "sendNowHint": "Send this message into the running turn now",
+      "title": "Queued messages"
     },
     "startingAgent": "Starting agent…",
     "stopButton": {
@@ -1371,6 +1392,10 @@
     "showThinking": {
       "description": "Display model thinking blocks in responses",
       "label": "Show Thinking"
+    },
+    "suggestNextSteps": {
+      "description": "At the end of a turn, {{agent}} can suggest up to three next steps, such as missing tests or work it could not check. Click a step to put it in the message box. Applies to sessions that start after you save.",
+      "label": "Suggest Next Steps"
     },
     "terminalFontSize": {
       "description": "Font size for the terminal panel",

@@ -24,6 +24,8 @@ import {
 import { ReviewRail } from './review-rail'
 
 import { groupToolMessages, prepareChatMessages } from '../message-grouping'
+import { latestNextSteps } from '../next-steps'
+import { NextStepsBar } from './next-steps-bar'
 import { NowContext } from '../utils/relative-time'
 import { FileTree, FileSearch, FilePreview } from './file-tree'
 import { ImageViewer } from './image-viewer'
@@ -134,6 +136,7 @@ export function ChatPanel(): React.JSX.Element {
     () => groupToolMessages(prepareChatMessages(messages), t, isStreaming),
     [messages, t, isStreaming]
   )
+  const nextSteps = useMemo(() => latestNextSteps(messages), [messages])
 
   const handleRetry = useCallback(async (messageId: string) => {
     // Read from the store so this callback stays referentially stable, keeping
@@ -381,6 +384,7 @@ export function ChatPanel(): React.JSX.Element {
                               />
                             )
                           )}
+                          {!isStreaming && <NextStepsBar steps={nextSteps} />}
                           {isStreaming && (
                             <StreamingBubble
                               content={streamingContent}

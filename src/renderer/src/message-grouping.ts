@@ -1,4 +1,5 @@
 import type { DisplayMessage } from './store'
+import { withoutNextStepsCalls } from './next-steps'
 // Aliased: every helper below takes its translator as a parameter named `t`
 // (shadowing this import inside the function body) so `i18next-cli`'s
 // static extractor — which looks for calls on an identifier named `t` —
@@ -356,13 +357,16 @@ export function splitReadTruncationNote(content: string): { code: string; note: 
 
 /**
  * Prepare the raw message list for rendering:
+ *  - hide next-steps calls and their results (see next-steps.ts)
  *  - enrich each toolResult with the paired call's toolName + operated-on toolFile
  *  - fold edit/write results into the call badge (drop the separate success pill)
  *  - split prose+tools so tool calls can join an adjacent tool run for grouping
  *
  * Pure; reuses message objects when nothing changed so memoized bubbles stay stable.
  */
-export function prepareChatMessages(messages: DisplayMessage[]): DisplayMessage[] {
+export function prepareChatMessages(allMessages: DisplayMessage[]): DisplayMessage[] {
+  // Suggested next steps render as buttons under the reply, not as tool calls.
+  const messages = withoutNextStepsCalls(allMessages)
   const calls = new Map<string, { name: string; file: string | null; arguments: string; shared: boolean }>()
   for (const m of messages) {
     if (m.role === 'assistant' && m.toolCalls) {

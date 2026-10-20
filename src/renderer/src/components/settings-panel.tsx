@@ -133,6 +133,7 @@ export function SettingsPanel(): React.JSX.Element {
   const [showThinking, setShowThinking] = useState(draft0.showThinking ?? settings?.showThinking ?? DEFAULT_SETTINGS.showThinking)
   const [autoScroll, setAutoScroll] = useState(draft0.autoScroll ?? settings?.autoScroll ?? DEFAULT_SETTINGS.autoScroll)
   const [desktopNotifications, setDesktopNotifications] = useState(draft0.desktopNotifications ?? settings?.desktopNotifications ?? DEFAULT_SETTINGS.desktopNotifications)
+  const [suggestNextSteps, setSuggestNextSteps] = useState(draft0.suggestNextSteps ?? settings?.suggestNextSteps ?? DEFAULT_SETTINGS.suggestNextSteps)
   const [resumeLastSession, setResumeLastSession] = useState(draft0.resumeLastSession ?? settings?.resumeLastSession ?? DEFAULT_SETTINGS.resumeLastSession)
   const [openToHomeOnLaunch, setOpenToHomeOnLaunch] = useState(draft0.openToHomeOnLaunch ?? settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch)
   const [runOnStartup, setRunOnStartup] = useState(draft0.runOnStartup ?? settings?.runOnStartup ?? DEFAULT_SETTINGS.runOnStartup)
@@ -318,6 +319,7 @@ export function SettingsPanel(): React.JSX.Element {
     setShowThinking(draft.showThinking ?? settings.showThinking)
     setAutoScroll(draft.autoScroll ?? settings.autoScroll)
     setDesktopNotifications(draft.desktopNotifications ?? settings.desktopNotifications)
+    setSuggestNextSteps(draft.suggestNextSteps ?? settings.suggestNextSteps)
     setResumeLastSession(draft.resumeLastSession ?? settings.resumeLastSession)
     setOpenToHomeOnLaunch(draft.openToHomeOnLaunch ?? settings.openToHomeOnLaunch)
     setRunOnStartup(draft.runOnStartup ?? settings.runOnStartup)
@@ -575,6 +577,7 @@ export function SettingsPanel(): React.JSX.Element {
       showThinking,
       autoScroll,
       desktopNotifications,
+      suggestNextSteps,
       resumeLastSession,
       openToHomeOnLaunch,
       runOnStartup,
@@ -647,6 +650,7 @@ export function SettingsPanel(): React.JSX.Element {
       showThinking: DEFAULT_SETTINGS.showThinking,
       autoScroll: DEFAULT_SETTINGS.autoScroll,
       desktopNotifications: DEFAULT_SETTINGS.desktopNotifications,
+      suggestNextSteps: DEFAULT_SETTINGS.suggestNextSteps,
       resumeLastSession: DEFAULT_SETTINGS.resumeLastSession,
       openToHomeOnLaunch: DEFAULT_SETTINGS.openToHomeOnLaunch,
       runOnStartup: DEFAULT_SETTINGS.runOnStartup,
@@ -670,6 +674,7 @@ export function SettingsPanel(): React.JSX.Element {
     setShowThinking(defaults.showThinking!)
     setAutoScroll(defaults.autoScroll!)
     setDesktopNotifications(defaults.desktopNotifications!)
+    setSuggestNextSteps(defaults.suggestNextSteps!)
     setResumeLastSession(defaults.resumeLastSession!)
     setOpenToHomeOnLaunch(defaults.openToHomeOnLaunch!)
     setRunOnStartup(defaults.runOnStartup!)
@@ -1076,6 +1081,13 @@ export function SettingsPanel(): React.JSX.Element {
             description={t('settings.desktopNotifications.description')}
           >
             <Toggle checked={desktopNotifications} onChange={(v) => { setDesktopNotifications(v); setSettingsDraft({ desktopNotifications: v }) }} />
+          </SettingsRow>
+
+          <SettingsRow
+            label={t('settings.suggestNextSteps.label')}
+            description={t('settings.suggestNextSteps.description', { agent: runningEngineLabel })}
+          >
+            <Toggle checked={suggestNextSteps} onChange={(v) => { setSuggestNextSteps(v); setSettingsDraft({ suggestNextSteps: v }) }} />
           </SettingsRow>
 
           <SettingsRow
