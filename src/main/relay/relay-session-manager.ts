@@ -135,7 +135,18 @@ export class RelaySessionManager extends EventEmitter {
     const reply = await this.request(
       { type: 'pair_request', id: '', token: input.token, device_name: defaultDeviceName() },
       { peer: input.targetPubkey, room: input.roomId },
-    )
+    ).catch((error: unknown) => {
+      // A silent drop is the usual symptom of the two machines sitting on
+      // DIFFERENT relays: the relay never had this peer, so it discards the
+      // frame instead of replying. Say that, because the bare timeout reads
+      // like an expired link and sends people to re-run /remote-pi pair.
+      if (error instanceof Error && error.message.includes('did not answer')) {
+        throw new Error(
+          `${error.message}. The other machine is not on this relay — check that both machines use the same relay URL (it is not carried in the pairing link).`,
+        )
+      }
+      throw error
+    })
 
     if (reply.type === 'pair_error') {
       const detail = reply.message ?? reply.code

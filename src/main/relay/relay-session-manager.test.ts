@@ -98,6 +98,19 @@ test('pairing sends the token to the Pi and persists the agent only after pair_o
   assert.equal(subject.getState().status, 'paired')
 })
 
+test('a silently dropped pairing attempt blames the relay URL, not the link', async () => {
+  // Two machines on different relays look like an expired link: the relay
+  // never had the peer, so it drops the frame instead of replying and all we
+  // see is a timeout. Point at the relay.
+  const subject = manager(new ScriptedTransport())
+
+  await assert.rejects(
+    () =>
+      subject.pair({ token: 'abc12345', targetPubkey: PI_PUBKEY, agentName: 'macbook', roomId: null }),
+    /both machines use the same relay URL/,
+  )
+})
+
 test('a rejected pairing surfaces the Pi error and leaves the desktop unpaired', async () => {
   const transport = new ScriptedTransport()
   const subject = manager(transport, { initialAgent: null })
