@@ -1347,6 +1347,34 @@
       "scopeTabListAriaLabel": "Permission rules scope",
       "workspaceScopeTab": "This workspace"
     },
+    "relay": {
+      "connection": {
+        "connected": "Connected to the relay",
+        "connecting": "Connecting",
+        "error": "Connection failed",
+        "idle": "Not connected",
+        "paired": "Paired and connected"
+      },
+      "intro": "Drive a Pi running on another machine over your self-hosted relay. The other machine runs /remote-pi pair to print a link. Pi Desktop never sees the relay password.",
+      "pair": {
+        "description": "Pair once per Pi. The pairing link is single-use and expires.",
+        "howTo": "On the other machine, run /remote-pi pair and paste the remotepi:// link it prints.",
+        "label": "Paired Pi",
+        "pair": "Pair",
+        "success": "Paired. Any sessions the Pi has open appear below.",
+        "unpair": "Unpair"
+      },
+      "sessions": {
+        "empty": "The paired Pi has no sessions open right now.",
+        "label": "Sessions on the paired Pi",
+        "refresh": "Refresh"
+      },
+      "url": {
+        "description": "The relay both machines connect to, for example http://192.168.1.223:3000. Setting a URL enables the relay on this desktop.",
+        "label": "Relay URL",
+        "save": "Save"
+      }
+    },
     "resumeLastSession": {
       "description": "When opening a workspace, continue its most recent session instead of starting a new one",
       "label": "Resume Last Session"
@@ -1361,6 +1389,7 @@
       "behavior": "Behavior",
       "customModels": "Custom Models",
       "multiAgentCouncilPlanning": "Multi-Agent Council Planning",
+      "remoteRelay": "Remote Pi Relay",
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "Voice dictation"
     },

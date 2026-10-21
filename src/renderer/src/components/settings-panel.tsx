@@ -22,6 +22,7 @@ import { VoiceSettings } from './voice-settings'
 import { ShortcutSettings } from './shortcut-settings'
 import { shortcutProblem } from '../../../shared/keyboard-shortcuts'
 import { TypeSafeSettings } from './typesafe-settings'
+import { RelaySettings } from './relay-settings'
 import { Settings, Save, RotateCcw, FolderOpen, RefreshCw, Check, ChevronDown } from 'lucide-react'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { activeShortcuts } from '../utils/app-shortcuts'
@@ -1129,6 +1130,10 @@ export function SettingsPanel(): React.JSX.Element {
 
         <SettingsSection title={t('settings.sections.typesafe')}>
           <TypeSafeSettings />
+        </SettingsSection>
+
+        <SettingsSection title={t('settings.sections.remoteRelay')}>
+          <RelaySettings />
         </SettingsSection>
 
         {/* Multi-Agent Council Planning */}

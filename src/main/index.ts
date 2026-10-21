@@ -8,6 +8,7 @@ import { isBlockedPreviewRequest, previewGuestPreferences } from './preview-gues
 import { WorkspaceManager } from './workspace-manager'
 import type { WorkspaceTerminals } from './workspace-terminals'
 import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
+import type { RelaySessionBridge } from './relay/relay-bridge'
 import { setPiExecutableOverride, cleanupPiChildTempDir } from './pi-rpc-manager'
 import { applyLanguageSetting } from './i18n'
 import { i18n, t } from '../shared/i18n'
@@ -76,6 +77,7 @@ function getAppIconPath(): string {
 
 let workspaceManager: WorkspaceManager | null = null
 let workspaceTerminals: WorkspaceTerminals | null = null
+let relayBridge: RelaySessionBridge | null = null
 
 // The single main window, tracked so the tray, single-instance relaunch, and
 // macOS dock-activate can all bring it back. `isQuitting` distinguishes a real
@@ -496,10 +498,15 @@ app.whenReady().then(async () => {
   // lazy closure — mainWindow is created later and the notification wiring
   // only dereferences it at event time. showMainWindow recreates the window
   // when a notification is clicked after a full close (macOS).
-  workspaceTerminals = registerIpcHandlers(workspaceManager, {
+  const ipc = registerIpcHandlers(workspaceManager, {
     getWindow: () => mainWindow,
     showWindow: showMainWindow,
   }, getAppIconPath())
+  workspaceTerminals = ipc.terminals
+  relayBridge = ipc.relay
+  // The relay only dials when a url and keypair are already stored, so this is
+  // a no-op on a default install.
+  void ipc.relay.start()
 
   // The renderer mirrors its editor-dirty flag on every transition; the
   // quit/close/reload guards below read the cached value.
@@ -595,6 +602,10 @@ app.on('will-quit', (event) => {
   activityStatsStore.flushSync()
   appLog.flushSync()
   workspaceTerminals?.stopAll()
+  // Drop the relay socket so the Pi on the other end sees us leave the room
+  // now, rather than after its own keepalive timeout.
+  relayBridge?.dispose()
+  relayBridge = null
   // Windows: GUI-owned Pi TEMP does not get OS cleanup — wipe on quit.
   cleanupPiChildTempDir()
 })

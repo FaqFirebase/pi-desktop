@@ -59,4 +59,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   voiceModel: null,
   voicePrecision: 'int8',
   voiceDevice: 'auto',
+  relay: {
+    enabled: false,
+    url: null,
+    pairedAgent: null,
+  },
 }

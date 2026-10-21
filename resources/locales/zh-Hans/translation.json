@@ -1320,6 +1320,34 @@
       "scopeTabListAriaLabel": "权限规则范围",
       "workspaceScopeTab": "此工作区"
     },
+    "relay": {
+      "connection": {
+        "connected": "已连接中继",
+        "connecting": "连接中",
+        "error": "连接失败",
+        "idle": "未连接",
+        "paired": "已配对并连接"
+      },
+      "intro": "通过你自建的中继，直接操作另一台机器上的 Pi。那台机器运行 /remote-pi pair 并打印配对链接。Pi Desktop 不接触中继密码。",
+      "pair": {
+        "description": "每台 Pi 只需配对一次。配对链接一次性使用，并且会过期。",
+        "howTo": "在另一台机器上运行 /remote-pi pair，粘贴它打印的 remotepi:// 链接。",
+        "label": "已配对 Pi",
+        "pair": "配对",
+        "success": "已配对。该 Pi 当前打开的会话会显示在下方。",
+        "unpair": "解除配对"
+      },
+      "sessions": {
+        "empty": "已配对的 Pi 当前没有打开的会话。",
+        "label": "已配对 Pi 上的会话",
+        "refresh": "刷新"
+      },
+      "url": {
+        "description": "两台机器都连接的中继，例如 http://192.168.1.223:3000。设置地址后，本机的远程中继即启用。",
+        "label": "中继地址",
+        "save": "保存"
+      }
+    },
     "resumeLastSession": {
       "description": "打开工作区时，继续其最近的会话而不是新建会话",
       "label": "恢复上次会话"
@@ -1334,6 +1362,7 @@
       "behavior": "行为",
       "customModels": "自定义模型",
       "multiAgentCouncilPlanning": "多智能体委员会规划",
+      "remoteRelay": "远程 Pi 中继",
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "语音听写"
     },

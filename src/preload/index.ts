@@ -40,6 +40,8 @@ import type {
   CouncilProgressEvent,
   VoiceStatus,
   TypeSafeStatus,
+  PairedRelayAgent,
+  RelayStatus,
   TypeSafeSaveKeyResult,
   VoiceInstallRequest,
   VoiceProgressEvent,
@@ -90,6 +92,7 @@ import type {
   GitConveyorPullRequestResult,
   I18nEnvironment,
 } from '../shared/ipc-contracts'
+import type { RelayRoomInfo } from '../shared/relay-protocol'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import type { SubagentListResult, SubagentTranscriptRef, SubagentTranscriptResult } from '../shared/subagent-task'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -280,6 +283,20 @@ interface PiDesktopAPI {
     clearKey(): Promise<TypeSafeStatus>
     installSkill(): Promise<TypeSafeStatus>
     removeSkill(): Promise<TypeSafeStatus>
+  }
+
+  // Remote-pi relay: browse and drive a Pi running on another machine. Every
+  // channel is inert until a pairing link has been accepted.
+  relay: {
+    status(): Promise<RelayStatus>
+    setUrl(url: string | null): Promise<RelayStatus>
+    pair(pairingUri: string): Promise<PairedRelayAgent>
+    unpair(): Promise<RelayStatus>
+    listRooms(): Promise<RelayRoomInfo[]>
+    syncSession(): Promise<unknown>
+    sendPrompt(text: string): Promise<{ ok: true }>
+    cancel(): Promise<{ ok: true }>
+    onStatus(callback: (status: RelayStatus) => void): () => void
   }
 
   // Skills, Commands, MCP, Tags
@@ -599,6 +616,22 @@ const api: PiDesktopAPI = {
       const handler = () => callback()
       ipcRenderer.on(IPC_CHANNELS.EVENT_VOICE_SHORTCUT, handler)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.EVENT_VOICE_SHORTCUT, handler)
+    },
+  },
+
+  relay: {
+    status: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_STATUS),
+    setUrl: (url: string | null) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SET_URL, url),
+    pair: (pairingUri: string) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_PAIR, pairingUri),
+    unpair: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_UNPAIR),
+    listRooms: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_LIST_ROOMS),
+    syncSession: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SYNC_SESSION),
+    sendPrompt: (text: string) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SEND_PROMPT, text),
+    cancel: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_CANCEL),
+    onStatus: (callback: (status: RelayStatus) => void) => {
+      const listener = (_event: unknown, status: RelayStatus): void => callback(status)
+      ipcRenderer.on(IPC_CHANNELS.EVENT_RELAY_STATUS, listener)
+      return () => { ipcRenderer.removeListener(IPC_CHANNELS.EVENT_RELAY_STATUS, listener) }
     },
   },
 

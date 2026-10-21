@@ -145,6 +145,17 @@ export const IPC_CHANNELS = {
   COMMANDS_LIST: 'commands:list',
   MCP_SERVERS_LIST: 'mcp:servers-list',
 
+  // Remote-pi relay: pairing, session browsing, and live control of a Pi on
+  // another machine. Every channel is inert until `relay:pair` succeeds.
+  RELAY_STATUS: 'relay:status',
+  RELAY_SET_URL: 'relay:set-url',
+  RELAY_PAIR: 'relay:pair',
+  RELAY_UNPAIR: 'relay:unpair',
+  RELAY_LIST_ROOMS: 'relay:list-rooms',
+  RELAY_SYNC_SESSION: 'relay:sync-session',
+  RELAY_SEND_PROMPT: 'relay:send-prompt',
+  RELAY_CANCEL: 'relay:cancel',
+
   // Models config
   MODELS_READ: 'models:read',
   MODELS_WRITE: 'models:write',
@@ -216,6 +227,8 @@ export const IPC_CHANNELS = {
   EVENT_PENDING_PROMPTS: 'event:pending-prompts',
   EVENT_WORKSPACE_ACTIVITY: 'event:workspace-activity',
   EVENT_SESSION_RUNTIME: 'event:session-runtime',
+  /** Relay connection state and paired-Pi roster changes. */
+  EVENT_RELAY_STATUS: 'event:relay-status',
   EVENT_ACTIVATE_WORKSPACE: 'event:activate-workspace',
   EVENT_FILE_CHANGE: 'event:file-change',
   EVENT_TERMINAL_DATA: 'event:terminal-data',
@@ -1383,6 +1396,47 @@ export interface AppSettings {
   // 'gpu'. It picks which precision Settings downloads. Unknown values reset
   // to 'auto' on load.
   voiceDevice: VoiceDevice
+  // Remote-pi relay connection. Off unless the user pastes a pairing link;
+  // nothing is dialled on a default install.
+  relay: RelaySettings
+}
+
+// ─── Remote-pi Relay Types ──────────────────────────────────────────────────
+
+/**
+ * Connection settings for the remote-pi relay, shared by main and renderer.
+ *
+ * `paired` is derived from whether a keypair exists on disk, not from this
+ * record: the private key is the credential and it never travels through IPC.
+ */
+export interface RelaySettings {
+  enabled: boolean
+  /** http(s) relay endpoint, or null when the user has not set one. */
+  url: string | null
+  /** The Pi this desktop is paired with, as shown in the Relay panel. */
+  pairedAgent: PairedRelayAgent | null
+}
+
+export type RelayConnectionStatus = 'idle' | 'connecting' | 'connected' | 'paired' | 'error'
+
+/** What the Relay panel renders: stored settings plus live connection state. */
+export interface RelayStatus {
+  settings: RelaySettings
+  connection: {
+    status: RelayConnectionStatus
+    detail?: string
+    rooms: import('./relay-protocol').RelayRoomInfo[]
+    agent: PairedRelayAgent | null
+  }
+}
+
+/** The Pi on the other end of a successful pairing. */
+export interface PairedRelayAgent {
+  /** Canonical base64 Ed25519 public key; this is the Pi's peer id. */
+  pubkey: string
+  /** Agent name the Pi reported, for display only. */
+  agentName: string
+  pairedAt: string
 }
 
 // ─── Voice Dictation Types ──────────────────────────────────────────────────

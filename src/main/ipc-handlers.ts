@@ -28,6 +28,9 @@ import { registerVoiceHandlers } from './ipc/voice-handlers'
 import { registerTypeSafeHandlers } from './ipc/typesafe-handlers'
 import { registerWorkflowHandlers } from './ipc/workflow-handlers'
 import { registerSubagentHandlers } from './ipc/subagent-handlers'
+import { registerRelayHandlers } from './ipc/relay-handlers'
+import { createRelayBridge } from './relay/relay-wiring'
+import type { RelaySessionBridge } from './relay/relay-bridge'
 import { wireWorkspaceActivity, type WindowControls } from './ipc/workspace-activity-wiring'
 import type { WorkspaceTerminals } from './workspace-terminals'
 
@@ -44,7 +47,7 @@ export function registerIpcHandlers(
   workspaceManager: WorkspaceManager,
   windowControls: WindowControls = { getWindow: () => null, showWindow: () => {} },
   iconPath = '',
-): WorkspaceTerminals {
+): { terminals: WorkspaceTerminals; relay: RelaySessionBridge } {
   const ctx = createIpcContext(workspaceManager)
 
   // Session runtime snapshots are separate from workspace activity: several
@@ -78,6 +81,12 @@ export function registerIpcHandlers(
   registerVoiceHandlers(ctx)
   registerTypeSafeHandlers()
 
+  // Remote-pi relay. The bridge owns the socket's lifetime, so it is returned
+  // to the app: quitting has to close it, and startup has to call `start`.
+  const relay = createRelayBridge(workspaceManager)
+  registerRelayHandlers(relay)
+  relay.onStatusChange((status) => ctx.broadcast(IPC_CHANNELS.EVENT_RELAY_STATUS, status))
+
   // ─── Extension UI Responses and Pi Event Forwarding ─────────────────────
 
   // Cross-workspace activity map + desktop notifications. Wired before the
@@ -106,5 +115,5 @@ export function registerIpcHandlers(
     ctx.broadcast(IPC_CHANNELS.EVENT_FILE_CHANGE, event)
   })
 
-  return ctx.terminalService
+  return { terminals: ctx.terminalService, relay }
 }

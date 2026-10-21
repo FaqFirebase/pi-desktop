@@ -1,0 +1,89 @@
+/**
+ * Produces the concrete relay dependencies for the running app.
+ *
+ * Everything impure lives here so the bridge and the session manager stay
+ * testable: this module is the only place that touches Electron's paths, the
+ * settings file, and the socket.
+ */
+import { app } from 'electron'
+import type { AppSettings, PairedRelayAgent } from '../../shared/ipc-contracts'
+import { appLog } from '../app-log'
+import { loadAppSettings, saveAppSettings } from '../ipc/settings'
+import type { WorkspaceManager } from '../workspace-manager'
+import { RelaySessionBridge, type RelayPeerIdentity, type RelayPeerPersistence, type RelaySettingsStore } from './relay-bridge'
+import { RelayClientTransport } from './relay-client-transport'
+import { generateRelayKeypair } from './identity'
+import { readRelayPeer, writeRelayPeer } from './relay-peer-store'
+import { RelaySessionManager } from './relay-session-manager'
+
+/** Settings access for the bridge, going through the app's own settings file. */
+class ElectronSettingsStore implements RelaySettingsStore {
+  constructor(private readonly workspaceManager: WorkspaceManager) {}
+
+  read(): Promise<AppSettings> {
+    return loadAppSettings(this.workspaceManager)
+  }
+
+  async write(patch: Partial<AppSettings>): Promise<void> {
+    await saveAppSettings(patch)
+  }
+}
+
+/**
+ * Keypair persistence, minting on first use.
+ *
+ * `ensure` is deliberately not `load`: the key IS this desktop's peer identity,
+ * so it has to exist before a pairing token can be presented, and it must never
+ * be regenerated once the Pi has recorded it.
+ */
+class FileRelayPeerPersistence implements RelayPeerPersistence {
+  constructor(private readonly userDataDir: string) {}
+
+  async ensure(): Promise<RelayPeerIdentity> {
+    const existing = await readRelayPeer(this.userDataDir)
+    if (existing) return { keypair: existing.keypair, agent: toAgent(existing.target) }
+
+    const record = { keypair: generateRelayKeypair(), target: null }
+    await writeRelayPeer(this.userDataDir, record)
+    appLog.info('relay', 'Created this desktop\'s relay keypair')
+    return { keypair: record.keypair, agent: null }
+  }
+
+  async save(agent: PairedRelayAgent | null): Promise<void> {
+    const existing = await readRelayPeer(this.userDataDir)
+    if (!existing) {
+      // Saving a pairing without a keypair would create one with the wrong
+      // identity, so mint first and keep the pair consistent.
+      const minted = await this.ensure()
+      await writeRelayPeer(this.userDataDir, { keypair: minted.keypair, target: agent ? toTarget(agent) : null })
+      return
+    }
+    await writeRelayPeer(this.userDataDir, { keypair: existing.keypair, target: agent ? toTarget(agent) : null })
+  }
+}
+
+/** The stored record keeps roomId; the renderer-facing shape does not need it. */
+function toAgent(target: { pubkey: string; agentName: string; pairedAt: string } | null): PairedRelayAgent | null {
+  if (!target) return null
+  return { pubkey: target.pubkey, agentName: target.agentName, pairedAt: target.pairedAt }
+}
+
+function toTarget(agent: PairedRelayAgent) {
+  return { pubkey: agent.pubkey, agentName: agent.agentName, roomId: null, pairedAt: agent.pairedAt }
+}
+
+/** Builds the bridge the IPC handlers and the app lifecycle share. */
+export function createRelayBridge(workspaceManager: WorkspaceManager): RelaySessionBridge {
+  return new RelaySessionBridge({
+    settings: new ElectronSettingsStore(workspaceManager),
+    peers: new FileRelayPeerPersistence(app.getPath('userData')),
+    createManager: async (relayUrl, keypair, agent) => {
+      const transport = new RelayClientTransport(relayUrl, keypair)
+      // Pairing is persisted by the bridge after the manager reports success, so
+      // the manager gets no callback of its own and cannot write a credential the
+      // bridge has not seen.
+      return new RelaySessionManager({ transport, initialAgent: agent })
+    },
+    disposeManager: (manager) => manager.disconnect(),
+  })
+}
