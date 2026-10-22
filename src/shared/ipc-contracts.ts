@@ -157,6 +157,10 @@ export const IPC_CHANNELS = {
   RELAY_SYNC_SESSION: 'relay:sync-session',
   RELAY_SEND_PROMPT: 'relay:send-prompt',
   RELAY_CANCEL: 'relay:cancel',
+  /** Lists the paired Pi's sessions as ordinary session rows, badged remote. */
+  RELAY_SESSIONS: 'relay:sessions',
+  /** Binds the chat view to one remote session and hydrates its transcript. */
+  RELAY_OPEN_SESSION: 'relay:open-session',
 
   // Models config
   MODELS_READ: 'models:read',
@@ -231,6 +235,13 @@ export const IPC_CHANNELS = {
   EVENT_SESSION_RUNTIME: 'event:session-runtime',
   /** Relay connection state and paired-Pi roster changes. */
   EVENT_RELAY_STATUS: 'event:relay-status',
+  /**
+   * Live frames from the paired Pi (chunks, tool calls, history replies).
+   *
+   * The relay socket is a single stream, so these are multiplexed to whichever
+   * chat view is currently driving the remote session and filtered there by room.
+   */
+  EVENT_RELAY_FRAME: 'event:relay-frame',
   EVENT_ACTIVATE_WORKSPACE: 'event:activate-workspace',
   EVENT_FILE_CHANGE: 'event:file-change',
   EVENT_TERMINAL_DATA: 'event:terminal-data',
@@ -1000,6 +1011,25 @@ export interface SessionListItem {
   messageCount: number
   projectPath: string
   projectName: string
+  /**
+   * Set when this session lives on another machine and is driven over the relay.
+   *
+   * A remote session is otherwise an ordinary row: it lists, opens and takes
+   * prompts exactly like a local one. This field exists only so the UI can badge
+   * it and so the open/send paths know which transport to use — never so callers
+   * have to branch on remote-ness to do normal work.
+   */
+  remote?: RemoteSessionRef
+}
+
+/** Where a remote session lives: the paired Pi and the room inside it. */
+export interface RemoteSessionRef {
+  /** The Pi's peer id on the relay; stable across restarts. */
+  peer: string
+  /** The Pi's room for this session; changes when the session is reopened. */
+  roomId: string
+  /** Machine name the Pi reported, for display. */
+  hostname?: string
 }
 
 // Used by the heatmap grid helper (buildWeeks / intensityLevel).
@@ -1437,6 +1467,40 @@ export interface DetectedRelay {
   url: string
   /** Where it came from, so the panel can say why it is suggesting it. */
   source: 'env' | 'config'
+}
+
+/**
+ * One remote session, ready to be merged into the sidebar's session list.
+ *
+ * Deliberately shaped like a `SessionListItem` so the renderer can render both
+ * from one list. `session` is that row; `ref` is what the open channel needs.
+ */
+export interface RemoteSessionRow {
+  session: SessionListItem
+  ref: RemoteSessionRef
+}
+
+/** What opening a remote session returns: its transcript, already normalised. */
+export interface RelayOpenResult {
+  ref: RemoteSessionRef
+  sessionName: string
+  /** Pi's reported start time, so the two sides can detect a Pi restart. */
+  sessionStartedAt: number
+  /** True when the Pi truncated history to its sync limit. */
+  truncated: boolean
+  events: import('./relay-protocol').RelaySessionEvent[]
+}
+
+/**
+ * A live frame from the paired Pi, tagged with the room it belongs to.
+ *
+ * Tagging matters because the relay shares one socket: a chunk for a session the
+ * user is not looking at must be dropped rather than appended to the open
+ * transcript.
+ */
+export interface RelayFrameEvent {
+  roomId: string
+  frame: import('./relay-protocol').RelayServerMessage
 }
 
 /** The Pi on the other end of a successful pairing. */

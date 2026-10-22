@@ -8,6 +8,7 @@ import { composePrompt } from './utils/compose-prompt'
 import { firstQueued, withQueued, withoutQueued, withoutWorkspaceQueue, type SendQueues } from './send-queue'
 import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
 import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
+import { relayEventsToDisplayMessages } from './relay-transcript'
 import { isStoppedAnswer } from '../../shared/stopped-answer'
 import { stripAnsi } from './utils/strip-ansi'
 import { createStaleGuard } from './utils/stale-guard'
@@ -50,6 +51,9 @@ import type {
   SessionState,
   SessionStats,
   SessionListItem,
+  RemoteSessionRef,
+  RemoteSessionRow,
+  RelayFrameEvent,
   AppSettings,
   PiMessageStartEvent,
   PiMessageUpdateEvent,
@@ -539,6 +543,14 @@ interface AppActions {
   setSubagentTaskStatus: (id: string, status: SubagentTaskStatus) => void
   refreshSessionStats: () => Promise<void>
   refreshSessionList: () => Promise<void>
+  /** Appends the paired Pi's sessions to the list; no-op when unpaired. */
+  refreshRemoteSessions: () => Promise<void>
+  /** Opens a session on another machine into the ordinary chat view. */
+  openRemoteSession: (ref: RemoteSessionRef) => Promise<void>
+  /** True when the chat is currently showing a remote session. */
+  activeRemoteRef: RemoteSessionRef | null
+  /** Applies one live frame from the paired Pi to the open chat. */
+  handleRelayFrame: (event: RelayFrameEvent) => void
   setSessionName: (name: string) => Promise<void>
   loadForkMessages: () => Promise<void>
   /** True once the session continues from just before the entry. */
@@ -1143,6 +1155,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   sessionState: null,
   sessionStats: null,
   sessionList: [],
+  // Which remote session the chat view is bound to, if any. Null means the chat
+  // is showing a local session (or nothing), which is the unchanged default.
+  activeRemoteRef: null,
   sessionRuntimes: {},
   activeSessionRuntimeId: null,
   forkMessages: [],
@@ -1396,6 +1411,27 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Prompts ──────────────────────────────────────────────────────────
 
   sendPrompt: async (message, options) => {
+    // A remote session is driven over the relay, not the local Pi process. The
+    // bubble, the turn state and the streaming UI are the same; only the send
+    // differs, so nothing else in the composer has to know which it is on.
+    const remote = get().activeRemoteRef
+    if (remote) {
+      get().addMessage({ id: generateId(), role: 'user', content: message, timestamp: Date.now() })
+      set({ isStreaming: true, streamingContent: '', streamingThinking: '', streamingToolCalls: new Map() })
+      try {
+        await window.piDesktop.relay.sendPrompt(message)
+      } catch (err) {
+        set({ isStreaming: false })
+        get().addMessage({
+          id: generateId(),
+          role: 'system',
+          content: t('store.messages.sendError', { detail: err instanceof Error ? err.message : String(err) }),
+          timestamp: Date.now(),
+        })
+      }
+      return
+    }
+
     const trimmed = message.trim().toLowerCase()
     if (trimmed === '/workflow' || trimmed === '/workflows') {
       // Route through the action so a session-scoped filter can never leak
@@ -2166,6 +2202,67 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         sessionListRefreshQueued = false
         void get().refreshSessionList()
       }
+    }
+    // Remote sessions are appended AFTER the local list settles. They are not
+    // files on this disk and their enumeration can take a round trip to the
+    // relay, so failing or stalling there must never hide the local sessions.
+    void get().refreshRemoteSessions()
+  },
+
+  /**
+   * Appends the paired Pi's sessions to the local list.
+   *
+   * Kept separate from `refreshSessionList` so a relay that is idle, unpaired,
+   * or slow cannot delay or break local listing. The rows are ordinary
+   * `SessionListItem`s carrying a `remote` marker, so the sidebar renders one
+   * list and the user sees remote sessions in the same place as local ones.
+   */
+  refreshRemoteSessions: async () => {
+    let rows: RemoteSessionRow[]
+    try {
+      rows = await window.piDesktop.relay.sessions()
+    } catch {
+      // An unpaired or unreachable Pi contributes no rows, and that must not
+      // strip the local list; only the previously fetched remote rows drop out.
+      rows = []
+    }
+    const remote = rows.map((row) => row.session)
+    set((state) => ({
+      sessionList: [...state.sessionList.filter((item) => !item.remote), ...remote],
+    }))
+  },
+
+  openRemoteSession: async (ref) => {
+    if (!ref) return
+    const gen = ++sessionLoadGeneration
+    set({
+      currentView: 'chat',
+      sessionLoading: true,
+      sessionState: null,
+      sessionStats: null,
+      activeSessionRuntimeId: null,
+      extensionUiRequest: null,
+      activeRemoteRef: ref,
+    })
+    get().clearMessages()
+    try {
+      const result = await window.piDesktop.relay.openSession(ref)
+      if (gen !== sessionLoadGeneration) return
+      set({
+        sessionLoading: false,
+        activeRemoteRef: result.ref,
+        messages: relayEventsToDisplayMessages(result.events),
+        composerFocusRequested: true,
+      })
+    } catch (err) {
+      if (gen !== sessionLoadGeneration) return
+      set({ sessionLoading: false, ...idleTurnState() })
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: t('store.messages.switchSessionError', { detail: err instanceof Error ? err.message : String(err) }),
+        timestamp: Date.now(),
+      })
     }
   },
 
@@ -3709,7 +3806,106 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       set({ lineage: [] })
     }
   },
+
+  // ─── Relay ───────────────────────────────────────────────────────────
+
+  /**
+   * Applies one live frame from the paired Pi to the open chat.
+   *
+   * Frames are tagged with a room, and the relay multiplexes every session of
+   * the peer onto one socket, so a frame for a room the user is not viewing is
+   * dropped rather than appended — otherwise a background session would type
+   * into the transcript on screen.
+   */
+  handleRelayFrame: (event) => {
+    const active = get().activeRemoteRef
+    if (!active) return
+    if (event.roomId && active.roomId && event.roomId !== active.roomId) return
+    const frame = event.frame
+
+    switch (frame.type) {
+      case 'agent_chunk': {
+        const delta = typeof frame.delta === 'string' ? frame.delta : ''
+        if (!delta) return
+        // Streams into the same field the local path uses, so the chat needs no
+        // knowledge of which machine produced it.
+        set((state) => ({
+          isStreaming: true,
+          streamingContent: state.streamingContent + delta,
+        }))
+        return
+      }
+
+      case 'agent_done': {
+        const text = get().streamingContent
+        if (text) {
+          get().addMessage({ id: generateId(), role: 'assistant', content: text, timestamp: Date.now() })
+        }
+        set({ isStreaming: false, streamingContent: '', streamingThinking: '', streamingToolCalls: new Map() })
+        return
+      }
+
+      case 'user_input': {
+        // A prompt sent from another device (or the phone) on this session.
+        const text = typeof frame.text === 'string' ? frame.text : ''
+        if (!text) return
+        get().addMessage({ id: generateId(), role: 'user', content: text, timestamp: Date.now() })
+        return
+      }
+
+      case 'tool_request': {
+        const callId = typeof frame.tool_call_id === 'string' ? frame.tool_call_id : generateId()
+        const name = typeof frame.tool === 'string' ? frame.tool : 'tool'
+        // Unserialisable args still render the call; `{}` is honest about it.
+        const args = stringifyRelayResult(frame.args ?? {})
+        get().addMessage({
+          id: generateId(),
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+          toolCalls: [{ id: callId, name, arguments: args, isExecuting: true }],
+        })
+        return
+      }
+
+      case 'tool_result': {
+        // Tool output has no bubble of its own locally; it settles the call that
+        // asked for it, so find that call and update it in place.
+        const callId = typeof frame.tool_call_id === 'string' ? frame.tool_call_id : ''
+        if (!callId) return
+        const result = stringifyRelayResult(frame.result)
+        const isError = frame.is_error === true
+        set((state) => ({
+          messages: state.messages.map((message) => {
+            if (!message.toolCalls?.some((candidate) => candidate.id === callId)) return message
+            return {
+              ...message,
+              toolCalls: message.toolCalls.map((candidate) =>
+                candidate.id === callId ? { ...candidate, result, isError, isExecuting: false } : candidate,
+              ),
+            }
+          }),
+        }))
+        return
+      }
+
+      default:
+        // queued_message_state, error, pong and anything newer: nothing to draw.
+        return
+    }
+  },
 }))
+
+/** Renders a relay tool result for display; non-strings keep their structure. */
+function stringifyRelayResult(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value === undefined || value === null) return ''
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
 
 // Mirror editor-dirty transitions to main, which guards quit, window close,
 // and reload behind a discard confirmation — teardown outruns any

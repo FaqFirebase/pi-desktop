@@ -86,6 +86,9 @@ export function registerIpcHandlers(
   const relay = createRelayBridge(workspaceManager)
   registerRelayHandlers(relay)
   relay.onStatusChange((status) => ctx.broadcast(IPC_CHANNELS.EVENT_RELAY_STATUS, status))
+  // Live frames are what make a remote session behave like a local one; without
+  // this the chat would only ever show the snapshot taken when it was opened.
+  relay.onFrame((event) => ctx.broadcast(IPC_CHANNELS.EVENT_RELAY_FRAME, event))
 
   // ─── Extension UI Responses and Pi Event Forwarding ─────────────────────
 

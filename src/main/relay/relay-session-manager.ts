@@ -78,6 +78,20 @@ export class RelaySessionManager extends EventEmitter {
     return () => this.off('change', listener)
   }
 
+  /**
+   * Reports frames that are not a reply to one of our requests.
+   *
+   * These are the live ones — `agent_chunk`, `tool_request`, `session_history`
+   * pushed unprompted — and `meta` carries the room so a caller can tell which
+   * session a chunk belongs to. Typed here rather than left as a bare EventEmitter
+   * event so the bridge cannot subscribe to the wrong name and silently see
+   * nothing.
+   */
+  onMessage(listener: (message: RelayServerMessage, meta: { peer: string; room: string }) => void): () => void {
+    this.on('message', listener)
+    return () => this.off('message', listener)
+  }
+
   private wireTransport(): void {
     const events: RelayTransportEvents = {
       onMessage: (message, meta) => this.handleMessage(message, meta),

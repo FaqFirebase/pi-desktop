@@ -92,7 +92,7 @@ import type {
   GitConveyorPullRequestResult,
   I18nEnvironment,
 } from '../shared/ipc-contracts'
-import type { DetectedRelay } from '../shared/ipc-contracts'
+import type { DetectedRelay, RelayFrameEvent, RelayOpenResult, RemoteSessionRef, RemoteSessionRow } from '../shared/ipc-contracts'
 import type { RelayRoomInfo } from '../shared/relay-protocol'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import type { SubagentListResult, SubagentTranscriptRef, SubagentTranscriptResult } from '../shared/subagent-task'
@@ -296,11 +296,16 @@ interface PiDesktopAPI {
     unpair(): Promise<RelayStatus>
     listRooms(): Promise<RelayRoomInfo[]>
     selectRoom(roomId: string): Promise<RelayStatus>
+    /** The paired Pi's sessions, shaped as ordinary session rows. */
+    sessions(): Promise<RemoteSessionRow[]>
+    /** Binds the chat view to one remote session and returns its transcript. */
+    openSession(target: RemoteSessionRef): Promise<RelayOpenResult>
     syncSession(): Promise<unknown>
     sendPrompt(text: string): Promise<{ ok: true }>
     cancel(): Promise<{ ok: true }>
     onStatus(callback: (status: RelayStatus) => void): () => void
-  }
+    onFrame(callback: (frame: RelayFrameEvent) => void): () => void
+  },
 
   // Skills, Commands, MCP, Tags
   skills: {
@@ -630,6 +635,8 @@ const api: PiDesktopAPI = {
     unpair: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_UNPAIR),
     listRooms: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_LIST_ROOMS),
     selectRoom: (roomId: string) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SELECT_ROOM, roomId),
+    sessions: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SESSIONS),
+    openSession: (target: RemoteSessionRef) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_OPEN_SESSION, target),
     syncSession: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SYNC_SESSION),
     sendPrompt: (text: string) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SEND_PROMPT, text),
     cancel: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_CANCEL),
@@ -637,6 +644,11 @@ const api: PiDesktopAPI = {
       const listener = (_event: unknown, status: RelayStatus): void => callback(status)
       ipcRenderer.on(IPC_CHANNELS.EVENT_RELAY_STATUS, listener)
       return () => { ipcRenderer.removeListener(IPC_CHANNELS.EVENT_RELAY_STATUS, listener) }
+    },
+    onFrame: (callback: (frame: RelayFrameEvent) => void) => {
+      const listener = (_event: unknown, frame: RelayFrameEvent): void => callback(frame)
+      ipcRenderer.on(IPC_CHANNELS.EVENT_RELAY_FRAME, listener)
+      return () => { ipcRenderer.removeListener(IPC_CHANNELS.EVENT_RELAY_FRAME, listener) }
     },
   },
 

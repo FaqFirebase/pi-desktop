@@ -997,6 +997,21 @@ function StoppedNotice({ className }: { className: string }): React.JSX.Element 
 // ─── System Message ──────────────────────────────────────────────────────────
 
 function SystemMessage({ message }: { message: DisplayMessage }): React.JSX.Element {
+  // Extension messages can carry several lines of preformatted text — the pairing
+  // QR code is the case that matters. Rendering those in the one-line pill
+  // collapses all the whitespace and destroys the code, so block content gets a
+  // left-aligned monospace panel instead.
+  const isBlock = message.content.includes('\n')
+  if (isBlock) {
+    return (
+      <div className="mb-4 flex justify-center animate-fade-in">
+        <pre className="max-w-full overflow-x-auto whitespace-pre rounded-lg bg-surface px-3 py-2 text-left font-mono text-xs leading-tight text-dim">
+          {message.content}
+        </pre>
+      </div>
+    )
+  }
+
   return (
     <div className="mb-4 flex justify-center animate-fade-in">
       <div className="rounded-full bg-surface px-3 py-1 text-xs text-dim">

@@ -51,7 +51,8 @@
     "composer": {
       "placeholderIdle": "Ask {{agent}} anything — / for commands",
       "placeholderNotRunning": "{{agent}} agent is not running...",
-      "placeholderQueue": "Type to queue a message — Ctrl+Enter sends it now"
+      "placeholderQueue": "Type to queue a message — Ctrl+Enter sends it now",
+      "placeholderRemote": "Ask the session on {{name}} anything — / for commands"
     },
     "council": {
       "planWithCouncil": "Plan with Council",
@@ -1791,6 +1792,7 @@
       "removeWorkspaceError": "Remove workspace error: {{detail}}",
       "retrying": "Retrying (attempt {{attempt}}/{{maxAttempts}}): {{detail}}",
       "reusedWorktree": "Found the related existing Git worktree and continued the task there.",
+      "sendError": "Could not send to the remote session: {{detail}}",
       "steerError": "Steer error: {{detail}}",
       "switchSessionError": "Switch session error: {{detail}}",
       "switchWorkspaceError": "Switch workspace error: {{detail}}",

@@ -505,7 +505,10 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
 
   // A stopped agent stays typable: the first send lazy-starts Pi/OMP.
   // Only transient/error states block input.
-  const isDisabled = piStatus === 'starting' || piStatus === 'error'
+  // A remote session is served by the Pi on the other machine, so this process
+  // being stopped or failing says nothing about whether prompts can be sent.
+  const activeRemoteRef = useAppStore((state) => state.activeRemoteRef)
+  const isDisabled = !activeRemoteRef && (piStatus === 'starting' || piStatus === 'error')
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current
@@ -755,11 +758,13 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
         <textarea
           ref={textareaRef}
           placeholder={
-            isDisabled
-              ? t('chat.composer.placeholderNotRunning', { agent: engineLabel })
-              : isStreaming
-                ? t('chat.composer.placeholderQueue')
-                : t('chat.composer.placeholderIdle', { agent: engineLabel })
+            activeRemoteRef
+              ? t('chat.composer.placeholderRemote', { name: activeRemoteRef.hostname || 'remote' })
+              : isDisabled
+                ? t('chat.composer.placeholderNotRunning', { agent: engineLabel })
+                : isStreaming
+                  ? t('chat.composer.placeholderQueue')
+                  : t('chat.composer.placeholderIdle', { agent: engineLabel })
           }
           disabled={isDisabled}
           rows={1}

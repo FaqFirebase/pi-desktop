@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
-import type { DetectedRelay, PairedRelayAgent } from '../../shared/ipc-contracts'
+import type { DetectedRelay, PairedRelayAgent, RelayOpenResult, RemoteSessionRef } from '../../shared/ipc-contracts'
 import { normalizeRelayUrl, parsePairingUri } from '../../shared/relay-protocol'
 import { assertTrustedSender } from './validation'
 import { appLog } from '../app-log'
@@ -69,6 +69,27 @@ export function registerRelayHandlers(bridge: RelaySessionBridge): void {
     return bridge.listRooms()
   })
 
+  ipcMain.handle(IPC_CHANNELS.RELAY_SESSIONS, async (event) => {
+    assertTrustedSender(event)
+    try {
+      return await bridge.sessions()
+    } catch (error) {
+      logRelayFailure('session listing', error)
+      throw error
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.RELAY_OPEN_SESSION, async (event, input: unknown): Promise<RelayOpenResult> => {
+    assertTrustedSender(event)
+    if (!isRemoteSessionRef(input)) throw new Error('A remote session reference is required')
+    try {
+      return await bridge.openSession(input)
+    } catch (error) {
+      logRelayFailure('session open', error)
+      throw error
+    }
+  })
+
   ipcMain.handle(IPC_CHANNELS.RELAY_SELECT_ROOM, async (event, roomId: unknown) => {
     assertTrustedSender(event)
     if (typeof roomId !== 'string' || roomId.length === 0) {
@@ -101,8 +122,26 @@ export function registerRelayHandlers(bridge: RelaySessionBridge): void {
   })
 }
 
-/** Reports a relay failure without leaking pairing material into the log. */
-export function logRelayFailure(action: string, error: unknown): void {
+/** Reports a relay failure without leaking pairing material into the log. */export function logRelayFailure(action: string, error: unknown): void {
   const message = error instanceof Error ? error.message : String(error)
   appLog.warn('relay', `Relay action failed: ${action}`, message)
+}
+
+/**
+ * Validates a `RemoteSessionRef` that arrived over IPC.
+ *
+ * The renderer supplies this, so it is untrusted input even though the UI builds
+ * it itself: a malformed ref would otherwise reach the socket as an addressing
+ * attempt on a room that does not belong to the paired peer.
+ */
+function isRemoteSessionRef(value: unknown): value is RemoteSessionRef {
+  if (typeof value !== 'object' || value === null) return false
+  const ref = value as Partial<RemoteSessionRef>
+  return (
+    typeof ref.peer === 'string' &&
+    ref.peer.length > 0 &&
+    typeof ref.roomId === 'string' &&
+    ref.roomId.length > 0 &&
+    (ref.hostname === undefined || typeof ref.hostname === 'string')
+  )
 }

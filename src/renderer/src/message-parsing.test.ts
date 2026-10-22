@@ -91,3 +91,41 @@ test('a reloaded answer the user stopped keeps its stopped mark', () => {
   const finished = parseAgentMessage({ role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: 'All' }] })
   assert.equal(finished?.stopped, undefined)
 })
+
+test('renders a displayed extension message as system text', () => {
+  // /remote-pi pair emits the QR this way: a custom_message record with a plain
+  // string body and no role.
+  const parsed = parseAgentMessage({
+    type: 'custom_message',
+    customType: 'remote-pi:pair-code',
+    content: 'Scan to pair:\n\nXXXX',
+    display: true,
+    timestamp: 1,
+  })
+  assert.equal(parsed?.role, 'system')
+  assert.equal(parsed?.content, 'Scan to pair:\n\nXXXX')
+})
+
+test('drops extension messages that opt out of display', () => {
+  // relay-state and name-assigned records are bookkeeping; showing them would
+  // bury the chat in status noise.
+  const hidden = parseAgentMessage({
+    type: 'custom_message',
+    customType: 'remote-pi:relay-state',
+    content: 'connected',
+    display: false,
+    timestamp: 1,
+  })
+  assert.equal(hidden, null)
+})
+
+test('drops an extension message with an empty body', () => {
+  const blank = parseAgentMessage({
+    type: 'custom_message',
+    customType: 'remote-pi:name-assigned',
+    content: '   \n ',
+    display: true,
+    timestamp: 1,
+  })
+  assert.equal(blank, null)
+})

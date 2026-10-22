@@ -20,10 +20,14 @@ export function usePiEvents(): void {
   const handleWorkspaceActivity = useAppStore((state) => state.handleWorkspaceActivity)
   const handleSessionRuntime = useAppStore((state) => state.handleSessionRuntime)
   const recoverPendingPrompts = useAppStore((state) => state.recoverPendingPrompts)
+  const handleRelayFrame = useAppStore((state) => state.handleRelayFrame)
 
   useEffect(() => {
     // Subscribe to Pi events (status changes arrive here too, as 'status_change').
     const unsubscribeEvent = window.piDesktop.onEvent(handlePiEvent)
+    // Live output from a Pi on another machine. Frames carry the room they
+    // belong to; the store drops anything not on screen.
+    const unsubscribeRelay = window.piDesktop.relay.onFrame(handleRelayFrame)
     const unsubscribeCounts = window.piDesktop.onPendingPrompts(handlePendingPromptCounts)
     const unsubscribeActivity = window.piDesktop.onWorkspaceActivity(handleWorkspaceActivity)
     const unsubscribeSessionRuntime = window.piDesktop.onSessionRuntime(handleSessionRuntime)
@@ -82,12 +86,13 @@ export function usePiEvents(): void {
 
     return () => {
       unsubscribeEvent()
+      unsubscribeRelay()
       unsubscribeCounts()
       unsubscribeActivity()
       unsubscribeSessionRuntime()
       unsubscribeActivate()
     }
-  }, [handlePiEvent, handlePendingPromptCounts, handleWorkspaceActivity, handleSessionRuntime, recoverPendingPrompts])
+  }, [handlePiEvent, handleRelayFrame, handlePendingPromptCounts, handleWorkspaceActivity, handleSessionRuntime, recoverPendingPrompts])
 }
 
 /**

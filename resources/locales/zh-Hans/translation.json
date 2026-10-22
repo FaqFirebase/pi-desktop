@@ -51,7 +51,8 @@
     "composer": {
       "placeholderIdle": "向 {{agent}} 提问 — 输入 / 使用命令",
       "placeholderNotRunning": "{{agent}} 智能体未在运行…",
-      "placeholderQueue": "输入消息以加入队列 — Ctrl+Enter 立即发送"
+      "placeholderQueue": "输入消息以加入队列 — Ctrl+Enter 立即发送",
+      "placeholderRemote": "向 {{name}} 上的会话提问 — 输入 / 使用命令"
     },
     "council": {
       "planWithCouncil": "使用委员会规划",
@@ -1757,6 +1758,7 @@
       "removeWorkspaceError": "移除工作区错误：{{detail}}",
       "retrying": "正在重试（第 {{attempt}}/{{maxAttempts}} 次）：{{detail}}",
       "reusedWorktree": "找到了相关的现有 Git 工作树，并在那里继续任务。",
+      "sendError": "无法发送到远程会话：{{detail}}",
       "steerError": "引导错误：{{detail}}",
       "switchSessionError": "切换会话错误：{{detail}}",
       "switchWorkspaceError": "切换工作区错误：{{detail}}",

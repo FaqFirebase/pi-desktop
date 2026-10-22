@@ -159,6 +159,24 @@ export function parseAgentMessage(msg: unknown): DisplayMessage | null {
     }
   }
 
+  // Extension-emitted messages arrive as `custom_message` records with a
+  // `customType` and a plain string body; they have no `role` at all, so they
+  // were being dropped and their content never reached the chat panel. The
+  // pairing QR code is the visible casualty: `/remote-pi pair` sends it this way,
+  // and it is the only way to pair without the phone camera.
+  if (m.type === 'custom_message' && typeof m.customType === 'string') {
+    const content = typeof m.content === 'string' ? m.content : ''
+    // `display: false` is the extension saying this record is bookkeeping rather
+    // than a message for the user; honouring it keeps relay-state chatter out.
+    if (m.display === false || content.trim().length === 0) return null
+    return {
+      id: String(m.id ?? generateFallbackId()),
+      role: 'system',
+      content,
+      timestamp: parseTimestamp(m.timestamp),
+    }
+  }
+
   if (role === 'toolResult') {
     const content = Array.isArray(m.content) ? m.content : []
     const text = content

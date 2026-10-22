@@ -38,7 +38,7 @@ import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import { resolveRunSessionId } from '../utils/workflow-runs'
 import { useGlobalWorkflowOpen } from '../hooks'
 import { clampSidebarWidth, resolveSidebarWidth } from '../../../shared/sidebar-width'
-import type { RelayStatus, SessionListItem } from '../../../shared/ipc-contracts'
+import type { RemoteSessionRef, RemoteSessionRow, RelayStatus, SessionListItem } from '../../../shared/ipc-contracts'
 import { isImeComposing } from '../utils/ime-composing'
 
 /** Views reachable from the sidebar's Tools group. */
@@ -90,20 +90,63 @@ export function Sidebar(): React.JSX.Element {
 
   const [archivedOpen, setArchivedOpen] = useState(false)
 
-  // Sessions on other machines, from the relay. They are not files on this disk,
-  // so they cannot come from `sessionList`; the relay is the only source.
+  // Sessions on other machines, driven over the relay. They are not files on
+  // this disk, so they cannot come from `sessionList`; the relay is the only
+  // source. `remoteSessions` are the openable rows, `rooms` are what the panel's
+  // room dropdown shows.
   const [remote, setRemote] = useState<RelayStatus | null>(null)
+  const [remoteSessions, setRemoteSessions] = useState<RemoteSessionRow[]>([])
   const [remoteOpen, setRemoteOpen] = useState(true)
+  const openRemoteSession = useAppStore((state) => state.openRemoteSession)
+  const activeRemoteRef = useAppStore((state) => state.activeRemoteRef)
 
   useEffect(() => {
     void window.piDesktop.relay.status().then(setRemote)
     return window.piDesktop.relay.onStatus(setRemote)
   }, [])
 
+  // The openable session rows, which is what this section is for. Fetched
+  // alongside the roster rather than instead of it: the rooms drive the panel's
+  // selector, the rows drive navigation.
+  const pairedPubkey = remote?.settings.pairedAgent?.pubkey
+  useEffect(() => {
+    if (!pairedPubkey) return
+    void window.piDesktop.relay
+      .sessions()
+      .then(setRemoteSessions)
+      .catch(() => {
+        // No session open on the other end, or it is on a different relay. An
+        // empty remote section is the honest representation here.
+      })
+    void window.piDesktop.relay
+      .listRooms()
+      .then((rooms) => setRemote((prev) => (prev ? { ...prev, connection: { ...prev.connection, rooms } } : prev)))
+      .catch(() => {
+        // Covered by the empty-state above.
+      })
+  }, [pairedPubkey])
+
   // A room list of zero means either no pairing or no session open on the other
   // end; both should render nothing rather than an empty section that looks
   // broken.
   const remoteRooms = remote?.connection.rooms ?? []
+  // Prefer the session rows: they carry a title and are clickable. Fall back to
+  // raw rooms so a Pi that has rooms but no session metadata still shows.
+  const remoteEntries: Array<{ key: string; label: string; title: string; roomId: string; ref?: RemoteSessionRef }> =
+    remoteSessions.length > 0
+      ? remoteSessions.map(({ session, ref }) => ({
+          key: `${ref.peer}:${ref.roomId}`,
+          label: session.name || session.path || ref.roomId,
+          title: session.path || ref.roomId,
+          roomId: ref.roomId,
+          ref,
+        }))
+      : remoteRooms.map((room) => ({
+          key: room.room_id,
+          label: room.name,
+          title: room.cwd,
+          roomId: room.room_id,
+        }))
 
   // The live width during a drag. Kept local so dragging never writes
   // settings.json; the draft outlives the drag so the row does not jump while the
@@ -648,7 +691,7 @@ export function Sidebar(): React.JSX.Element {
 
       {/* Sessions on other machines, driven over the relay. They are not files
           on this disk, so they cannot appear in Recent above. */}
-      {remoteRooms.length > 0 && (
+      {remoteEntries.length > 0 && (
         <div className="shrink-0 border-t border-border px-2 py-1">
           <button
             onClick={() => setRemoteOpen((open) => !open)}
@@ -663,17 +706,26 @@ export function Sidebar(): React.JSX.Element {
             <span className="min-w-0 flex-1 truncate text-left">
               {t('sidebar.remote.heading', { name: remote?.settings.pairedAgent?.agentName || 'remote' })}
             </span>
-            <span className="shrink-0 text-[10px] text-faint">{remoteRooms.length}</span>
+            <span className="shrink-0 text-[10px] text-faint">{remoteEntries.length}</span>
           </button>
           {remoteOpen && (
             <div className="max-h-48 overflow-y-auto pb-1">
-              {remoteRooms.map((room) => {
-                const selected = room.room_id === remote?.settings.pairedAgent?.roomId
+              {remoteEntries.map((entry) => {
+                const selected = activeRemoteRef?.roomId === entry.roomId
                 return (
                   <button
-                    key={room.room_id}
-                    onClick={() => void window.piDesktop.relay.selectRoom(room.room_id)}
-                    title={room.cwd}
+                    key={entry.key}
+                    onClick={() => {
+                      // A row with a ref opens the transcript; a bare room has no
+                      // session metadata to open, so it only points the panel at
+                      // the right session.
+                      if (entry.ref) {
+                        void openRemoteSession(entry.ref)
+                      } else {
+                        void window.piDesktop.relay.selectRoom(entry.roomId)
+                      }
+                    }}
+                    title={entry.title}
                     className={clsx(
                       'flex w-full items-center gap-2 rounded px-2 py-1.5 pl-6 text-left text-sm transition-colors',
                       selected
@@ -682,7 +734,7 @@ export function Sidebar(): React.JSX.Element {
                     )}
                   >
                     <MessageSquare size={12} className="shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">{room.name}</span>
+                    <span className="min-w-0 flex-1 truncate">{entry.label}</span>
                     {selected && <Check size={12} className="shrink-0 text-accent-fg" />}
                   </button>
                 )
