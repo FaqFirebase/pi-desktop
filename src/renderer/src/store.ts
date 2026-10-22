@@ -855,7 +855,7 @@ let latestPrompt: { generation: number; runsAtSend: number } | null = null
  */
 async function continueInterruptedTurn(
   sessionPath: string,
-  isCurrent: () => boolean,
+  workspaceId: string,
   get: () => AppState & AppActions,
 ): Promise<void> {
   if (resumedTurnsHandled.has(sessionPath)) return
@@ -874,7 +874,9 @@ async function continueInterruptedTurn(
     prompt: settings?.resumeInterruptedTurnPrompt,
     alreadyHandled: false,
   })
-  if (!prompt || !isCurrent()) return
+  // The prompt belongs to the chat it was decided for: if the user has since
+  // opened another workspace, sending it here would type into the wrong session.
+  if (!prompt || get().activeWorkspace?.id !== workspaceId) return
 
   await get().sendPrompt(prompt).catch(() => undefined)
 }
@@ -1380,7 +1382,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         return false
       }
       await get().switchSession(sessionPath, workspace.path)
-      await continueInterruptedTurn(sessionPath, isCurrent, get)
+      // switchSession bumps the load generation, so the guard above is stale by
+      // design here; continueInterruptedTurn re-checks that the chat still shows
+      // the session it is about to continue.
+      await continueInterruptedTurn(sessionPath, workspace.id, get)
       return true
     }
     const lookup = open()
