@@ -802,6 +802,14 @@ let pendingLastSessionOpen: Promise<boolean> | null = null
  * same session again (a start, a workspace switch) must not re-send the prompt.
  */
 const resumedTurnsHandled = new Set<string>()
+/**
+ * Resumed sessions waiting for the open to finish before they are continued.
+ *
+ * Queued rather than run inline because the continuation sends a prompt, and a
+ * prompt starts the agent, and starting waits for `pendingLastSessionOpen` — which
+ * is the very promise the inline call would be running inside.
+ */
+const resumedTurnCandidates: { sessionPath: string; workspaceId: string }[] = []
 
 // Attach backfills ride the same pipeline as session switches so their
 // get_messages can never run concurrently with a switch's (each response is a
@@ -838,6 +846,17 @@ let agentRunStarts = 0
  * earlier prompt must not end a newer turn.
  */
 let latestPrompt: { generation: number; runsAtSend: number } | null = null
+
+/**
+ * Continues the sessions a finished `openLastSession` queued.
+ *
+ * Runs after `pendingLastSessionOpen` has been cleared, so the prompt these send
+ * can start the agent without waiting on the open that queued them.
+ */
+async function flushResumedTurnCandidates(get: () => AppState & AppActions): Promise<void> {
+  const pending = resumedTurnCandidates.splice(0, resumedTurnCandidates.length)
+  for (const candidate of pending) await continueInterruptedTurn(candidate.sessionPath, candidate.workspaceId, get)
+}
 
 /**
  * Offers to carry on a resumed session whose last turn the app's own closing cut
@@ -1396,19 +1415,24 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         return false
       }
       await get().switchSession(sessionPath, workspace.path)
-      // switchSession bumps the load generation, so the guard above is stale by
-      // design here; continueInterruptedTurn re-checks that the chat still shows
-      // the session it is about to continue.
-      await continueInterruptedTurn(sessionPath, workspace.id, get)
+      // After the swap, not inside the lookup promise: `startPi` waits on
+      // `pendingLastSessionOpen`, and the continuation's own `sendPrompt` starts
+      // the agent, so continuing from inside would wait on itself forever.
+      resumedTurnCandidates.push({ sessionPath, workspaceId: workspace.id })
       return true
     }
     const lookup = open()
     pendingLastSessionOpen = lookup
+    let opened: boolean
     try {
-      return await lookup
+      opened = await lookup
     } finally {
       if (pendingLastSessionOpen === lookup) pendingLastSessionOpen = null
     }
+    // After the guard is released, not before: the continuation sends a prompt,
+    // and a prompt that starts the agent waits on `pendingLastSessionOpen`.
+    if (opened) await flushResumedTurnCandidates(get)
+    return opened
   },
 
   stopPi: async () => {
