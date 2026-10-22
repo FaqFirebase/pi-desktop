@@ -1776,6 +1776,7 @@
       "compactionAborted": "Compaction aborted.",
       "contextCompacted": "Context compacted.",
       "continueInterruptedTurnError": "Could not continue the interrupted turn: {{detail}}",
+      "continueInterruptedTurnNotReady": "The resumed session did not finish loading, so the interrupted turn was not continued. Send a message to carry on.",
       "councilFailed": "Council failed: {{detail}}",
       "councilNoQuorum": "No consultant produced a plan (all timed out or errored). Council aborted.",
       "createWorkspaceError": "Create workspace error: {{detail}}",

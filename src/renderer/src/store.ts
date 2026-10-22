@@ -859,6 +859,35 @@ async function flushResumedTurnCandidates(get: () => AppState & AppActions): Pro
 }
 
 /**
+ * How long to wait for the resumed session to report a model before giving up.
+ *
+ * A restored session reports no model until the engine has loaded it, and a
+ * prompt sent before that point can be refused. Bounded so a model that never
+ * arrives leaves the user with their session rather than a pending send.
+ */
+export const CONTINUATION_READY_TIMEOUT_MS = 30_000
+
+/**
+ * Resolves once the active session reports a model, or after `timeoutMs`.
+ *
+ * Returns whether it actually became ready, so the caller can decide between
+ * sending and telling the user why nothing was sent.
+ */
+async function waitForSessionReady(
+  get: () => AppState & AppActions,
+  isStillCurrent: () => boolean,
+  timeoutMs: number = CONTINUATION_READY_TIMEOUT_MS,
+): Promise<boolean> {
+  const started = Date.now()
+  for (;;) {
+    if (!isStillCurrent()) return false
+    if (get().sessionState?.model) return true
+    if (Date.now() - started >= timeoutMs) return false
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+}
+
+/**
  * Offers to carry on a resumed session whose last turn the app's own closing cut
  * short.
  *
@@ -896,6 +925,23 @@ async function continueInterruptedTurn(
   // The prompt belongs to the chat it was decided for: if the user has since
   // opened another workspace, sending it here would type into the wrong session.
   if (!prompt || get().activeWorkspace?.id !== workspaceId) return
+
+  // Start the agent first, then wait for the restored session to load its model.
+  // The order matters: a session reports its model only once the engine is up, so
+  // waiting before starting would wait for something the wait itself prevented.
+  if (get().piStatus !== 'running') {
+    await get().startPi()
+  }
+  const ready = await waitForSessionReady(get, () => get().activeWorkspace?.id === workspaceId)
+  if (!ready) {
+    get().addMessage({
+      id: generateId(),
+      role: 'system',
+      content: t('store.messages.continueInterruptedTurnNotReady'),
+      timestamp: Date.now(),
+    })
+    return
+  }
 
   try {
     await get().sendPrompt(prompt)
