@@ -1741,6 +1741,7 @@
       "compactingContext": "正在压缩上下文（{{reason}}）…",
       "compactionAborted": "已中止压缩。",
       "contextCompacted": "上下文已压缩。",
+      "continueInterruptedTurnError": "无法继续中断的回合：{{detail}}",
       "councilFailed": "委员会失败：{{detail}}",
       "councilNoQuorum": "没有顾问产出计划（全部超时或出错）。委员会已中止。",
       "createWorkspaceError": "创建工作区错误：{{detail}}",

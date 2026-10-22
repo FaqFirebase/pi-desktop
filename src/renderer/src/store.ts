@@ -878,7 +878,21 @@ async function continueInterruptedTurn(
   // opened another workspace, sending it here would type into the wrong session.
   if (!prompt || get().activeWorkspace?.id !== workspaceId) return
 
-  await get().sendPrompt(prompt).catch(() => undefined)
+  try {
+    await get().sendPrompt(prompt)
+  } catch (err) {
+    // Surfaced rather than swallowed: a continuation that fails silently is
+    // indistinguishable from one that never ran, which is how this went
+    // unnoticed once already.
+    get().addMessage({
+      id: generateId(),
+      role: 'system',
+      content: t('store.messages.continueInterruptedTurnError', {
+        detail: err instanceof Error ? err.message : String(err),
+      }),
+      timestamp: Date.now(),
+    })
+  }
 }
 
 /** The chat text for a prompt the engine refused, which may come with no reason. */
