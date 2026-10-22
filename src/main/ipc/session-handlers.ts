@@ -20,6 +20,7 @@ import { trimGetMessagesResponse } from '../get-messages-trim'
 import { withStoppedAnswers } from '../omp-stopped-answers'
 import { activityStatsStore } from '../activity-stats'
 import { detectInterruptedTurn } from '../interrupted-turn-reader'
+import { appLog } from '../app-log'
 import type { InterruptedReason } from '../../shared/interrupted-turn'
 import type { SessionDeleteResult, SessionListItem, SessionRuntimeCloseResult, SessionRuntimeInfo } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
@@ -238,10 +239,23 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   // argument, and a session file is the only thing this handler should touch.
   ipcMain.handle(IPC_CHANNELS.SESSION_INTERRUPTION, async (_event, sessionPath: unknown): Promise<InterruptedReason | null> => {
     if (!isString(sessionPath)) throw new Error('sessionPath must be a string')
-    if (!isWithinSessionRoots(sessionPath)) return null
+    if (!isWithinSessionRoots(sessionPath)) {
+      appLog.warn('continue', 'Interruption check refused a path outside the session roots', sessionPath)
+      return null
+    }
     const settings = await loadAppSettings(workspaceManager)
-    if (!settings.resumeInterruptedTurn) return null
-    const { reason } = await detectInterruptedTurn(sessionPath)
+    if (!settings.resumeInterruptedTurn) {
+      appLog.info('continue', 'Interruption check skipped: setting disabled', sessionPath)
+      return null
+    }
+    const { reason, windowTruncated } = await detectInterruptedTurn(sessionPath)
+    // Logged either way: "no continuation appeared" is the symptom of a wrong
+    // verdict here, and the verdict is otherwise invisible after a restart.
+    appLog.info(
+      'continue',
+      reason ? 'Session ended mid-turn: ' + reason : 'Session ended cleanly; nothing to continue',
+      `${sessionPath} (tail window truncated: ${windowTruncated})`,
+    )
     return reason
   })
 
