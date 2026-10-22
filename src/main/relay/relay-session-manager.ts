@@ -129,9 +129,12 @@ export class RelaySessionManager extends EventEmitter {
    * authentication of both keys is NOT a substitute for this step.
    */
   async pair(input: { token: string; targetPubkey: string; agentName: string; roomId: string | null }): Promise<PairedRelayAgent> {
-    const agent: PairedRelayAgent = {
+    // The room is not known until the Pi answers: a pairing link carries the
+    // peer, not which of its rooms to use.
+    const provisional: PairedRelayAgent = {
       pubkey: input.targetPubkey,
       agentName: input.agentName,
+      roomId: input.roomId,
       pairedAt: new Date().toISOString(),
     }
 
@@ -161,6 +164,16 @@ export class RelaySessionManager extends EventEmitter {
       const detail = reply.message ?? reply.code
       this.patch({ status: 'error', detail })
       throw new Error(detail)
+    }
+
+    // `pair_ok` names the room this Pi is in. Without it every later frame goes
+    // out addressed to `(peer, '')`, which the relay drops on the floor because
+    // it looks the pair up exactly.
+    const accepted = reply.type === 'pair_ok' ? reply : null
+    const agent: PairedRelayAgent = {
+      ...provisional,
+      agentName: accepted?.session_name ?? provisional.agentName,
+      roomId: accepted?.room_id ?? provisional.roomId,
     }
 
     await this.options.onPaired?.(agent)
@@ -245,10 +258,29 @@ export class RelaySessionManager extends EventEmitter {
     }
   }
 
+  /**
+   * Points this desktop at one of the Pi's rooms.
+   *
+   * A Pi can run several sessions from the same folder (remote-pi names them
+   * `open-shaders` and `open-shaders#2`), and the relay addresses frames by the
+   * exact `(peer, room)` pair. Without a choice here, prompts would have no
+   * target whenever a Pi has more than one room open.
+   */
+  async selectRoom(roomId: string): Promise<PairedRelayAgent> {
+    const agent = this.state.agent
+    if (!agent) throw new Error('This desktop is not paired with a Pi yet')
+    const known = this.state.rooms.some((room) => room.room_id === roomId)
+    if (!known) throw new Error('That session is no longer open on the paired Pi')
+    const selected: PairedRelayAgent = { ...agent, roomId }
+    this.patch({ agent: selected })
+    await this.options.onPaired?.(selected)
+    return selected
+  }
+
   private requirePaired(): RelayTarget {
     const agent = this.state.agent
     if (!agent) throw new Error('This desktop is not paired with a Pi yet')
-    return { peer: agent.pubkey, room: null }
+    return { peer: agent.pubkey, room: agent.roomId }
   }
 
   private nextRequestId(): string {
@@ -281,6 +313,27 @@ export class RelaySessionManager extends EventEmitter {
     })
   }
 
+  /**
+   * Fills in a missing room id from the roster.
+   *
+   * A pairing made before `pair_ok`'s room was persisted leaves this desktop
+   * addressing `(peer, '')`, which the relay drops silently. Rather than make
+   * the user pair again, adopt the room the Pi is actually advertising. Only
+   * done once, and only when the roster offers exactly one candidate, so a Pi
+   * running several sessions is never guessed at.
+   */
+  private adoptRoomFromRoster(): void {
+    const agent = this.state.agent
+    if (!agent || agent.roomId) return
+    const rooms = this.state.rooms
+    if (rooms.length !== 1) return
+    const roomId = rooms[0]?.room_id
+    if (!roomId) return
+    const repaired: PairedRelayAgent = { ...agent, roomId }
+    this.patch({ agent: repaired })
+    void this.options.onPaired?.(repaired)
+  }
+
   private handleMessage(message: RelayInboundMessage, meta: { peer: string; room: string }): void {
     // Ignore traffic from any peer that is not the Pi we paired with: the relay
     // shares one socket across peers keyed by pubkey.
@@ -296,6 +349,7 @@ export class RelaySessionManager extends EventEmitter {
       this.rosterReplies.add(meta.peer)
       this.rosterRequests.delete(meta.peer)
       this.rosterWaiter?.()
+      this.adoptRoomFromRoster()
       return
     }
 

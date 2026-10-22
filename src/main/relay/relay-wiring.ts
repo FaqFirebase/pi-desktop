@@ -62,14 +62,13 @@ class FileRelayPeerPersistence implements RelayPeerPersistence {
   }
 }
 
-/** The stored record keeps roomId; the renderer-facing shape does not need it. */
-function toAgent(target: { pubkey: string; agentName: string; pairedAt: string } | null): PairedRelayAgent | null {
+function toAgent(target: { pubkey: string; agentName: string; roomId: string | null; pairedAt: string } | null): PairedRelayAgent | null {
   if (!target) return null
-  return { pubkey: target.pubkey, agentName: target.agentName, pairedAt: target.pairedAt }
+  return { pubkey: target.pubkey, agentName: target.agentName, roomId: target.roomId, pairedAt: target.pairedAt }
 }
 
 function toTarget(agent: PairedRelayAgent) {
-  return { pubkey: agent.pubkey, agentName: agent.agentName, roomId: null, pairedAt: agent.pairedAt }
+  return { pubkey: agent.pubkey, agentName: agent.agentName, roomId: agent.roomId, pairedAt: agent.pairedAt }
 }
 
 /** Builds the bridge the IPC handlers and the app lifecycle share. */

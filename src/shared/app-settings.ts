@@ -74,6 +74,9 @@ function normalizePairedAgent(value: unknown): PairedRelayAgent | null {
   return {
     pubkey: candidate.pubkey,
     agentName: typeof candidate.agentName === 'string' ? candidate.agentName : '',
+    // Preserved across restarts: the relay addresses by (peer, room), so losing
+    // this would leave every frame unroutable until the next pairing.
+    roomId: typeof candidate.roomId === 'string' && candidate.roomId.length > 0 ? candidate.roomId : null,
     pairedAt: candidate.pairedAt,
   }
 }

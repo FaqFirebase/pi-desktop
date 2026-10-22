@@ -69,6 +69,14 @@ export function registerRelayHandlers(bridge: RelaySessionBridge): void {
     return bridge.listRooms()
   })
 
+  ipcMain.handle(IPC_CHANNELS.RELAY_SELECT_ROOM, async (event, roomId: unknown) => {
+    assertTrustedSender(event)
+    if (typeof roomId !== 'string' || roomId.length === 0) {
+      throw new Error('A session id is required')
+    }
+    return bridge.selectRoom(roomId)
+  })
+
   ipcMain.handle(IPC_CHANNELS.RELAY_SYNC_SESSION, async (event) => {
     assertTrustedSender(event)
     try {

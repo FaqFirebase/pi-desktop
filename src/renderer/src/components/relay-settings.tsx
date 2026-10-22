@@ -10,7 +10,7 @@ const BUTTON_CLASS =
 const FIELD_CLASS =
   'w-full rounded-md border border-border bg-surface px-2 py-1 font-mono text-xs text-primary outline-none focus:border-border-strong'
 
-type BusyAction = 'url' | 'pair' | 'unpair' | 'rooms'
+type BusyAction = 'url' | 'pair' | 'unpair' | 'rooms' | 'select'
 
 /**
  * Remote Pi relay settings: point this desktop at a relay, pair with a Pi on
@@ -77,6 +77,16 @@ export function RelaySettings(): React.JSX.Element {
   const unpair = useCallback(
     () => run('unpair', () => window.piDesktop.relay.unpair()),
     [run],
+  )
+
+  const selectRoom = useCallback(
+    (roomId: string) =>
+      run('select', async () => {
+        await window.piDesktop.relay.selectRoom(roomId)
+        setNotice(t('settings.relay.sessions.selected'))
+        return window.piDesktop.relay.status()
+      }),
+    [run, t],
   )
 
   const refreshRooms = useCallback(
@@ -200,12 +210,25 @@ export function RelaySettings(): React.JSX.Element {
             <div className="text-xs text-dim">{t('settings.relay.sessions.empty')}</div>
           ) : (
             <ul className="divide-y divide-border rounded-md border border-border">
-              {connection.rooms.map((room) => (
-                <li key={room.room_id} className="flex items-center justify-between gap-2 px-2 py-1">
-                  <span className="text-xs text-primary">{room.name}</span>
-                  <span className="truncate font-mono text-[10px] text-dim">{room.cwd}</span>
-                </li>
-              ))}
+              {connection.rooms.map((room) => {
+                // The relay addresses frames by (peer, room), so a Pi running two
+                // sessions needs one of them chosen before prompts have a target.
+                const active = connection.agent?.roomId === room.room_id
+                return (
+                  <li key={room.room_id} className="flex items-center justify-between gap-2 px-2 py-1">
+                    <button
+                      type="button"
+                      className={`flex items-center gap-1 text-xs ${active ? 'text-success' : 'text-primary hover:text-secondary'}`}
+                      onClick={() => void selectRoom(room.room_id)}
+                      disabled={busy !== null || active}
+                    >
+                      {active && <Check className="h-3 w-3" />}
+                      {room.name}
+                    </button>
+                    <span className="truncate font-mono text-[10px] text-dim">{room.cwd}</span>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>

@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { RelaySessionManager } from './relay-session-manager'
 import type { RelayTarget, RelayTransport, RelayTransportEvents, RelayTransportState } from './relay-transport'
 import type { RelayClientMessage, RelayControlRequest, RelayServerMessage } from '../../shared/relay-protocol'
+import type { PairedRelayAgent } from '../../shared/ipc-contracts'
 
 const PI_PUBKEY = 'nJvBiqtqL1vZZNa0WpBynaj7EeNfq/g5fauzA516IcM='
 const OTHER_PUBKEY = 'Zm9yZWlnbi1waS1wdWJsaWMta2V5LXRoYXQtaXMtb3V0c2lkZQ=='
@@ -59,7 +60,7 @@ class ScriptedTransport implements RelayTransport {
   }
 }
 
-const PAIRED = { pubkey: PI_PUBKEY, agentName: 'macbook', pairedAt: '2026-10-18T00:00:00.000Z' }
+const PAIRED: PairedRelayAgent = { pubkey: PI_PUBKEY, agentName: 'macbook', roomId: 'room-abc', pairedAt: '2026-10-18T00:00:00.000Z' }
 const ROOM = { room_id: '9NsvFIsyNlTH', name: 'macbook', cwd: '/Users/alandtse/open-shaders' }
 
 function manager(

@@ -43,6 +43,7 @@ export interface RelayManagerLike {
   disconnect(): void
   pair(input: PairingUri): Promise<PairedRelayAgent>
   listRooms(): Promise<RelayRoomInfo[]>
+  selectRoom(roomId: string): Promise<PairedRelayAgent>
   syncSession(): Promise<unknown>
   sendPrompt(text: string): Promise<void>
   cancel(): Promise<void>
@@ -118,6 +119,13 @@ export class RelaySessionBridge {
 
   async listRooms(): Promise<RelayRoomInfo[]> {
     return this.requireManager().listRooms()
+  }
+
+  /** Chooses which of the paired Pi's rooms this desktop drives. */
+  async selectRoom(roomId: string): Promise<RelayStatus> {
+    await this.requireManager().selectRoom(roomId)
+    this.emitStatus()
+    return this.getStatus()
   }
 
   async syncSession(): Promise<unknown> {

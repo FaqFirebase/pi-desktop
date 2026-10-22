@@ -6,7 +6,7 @@ import type { RelayRoomInfo } from '../../shared/relay-protocol'
 import { RelaySessionBridge, type RelayManagerLike } from './relay-bridge'
 import type { RelayManagerState } from './relay-session-manager'
 
-const AGENT: PairedRelayAgent = { pubkey: 'nJvBiqtqL1vZZNa0WpBynaj7EeNfq/g5fauzA516IcM=', agentName: 'macbook', pairedAt: '2026-10-18T00:00:00.000Z' }
+const AGENT: PairedRelayAgent = { pubkey: 'nJvBiqtqL1vZZNa0WpBynaj7EeNfq/g5fauzA516IcM=', agentName: 'macbook', roomId: 'room-abc', pairedAt: '2026-10-18T00:00:00.000Z' }
 const ROOM: RelayRoomInfo = { cwd: '/Users/a/project', name: 'project', room_id: 'abc' }
 
 class FakeManager implements RelayManagerLike {
@@ -29,6 +29,10 @@ class FakeManager implements RelayManagerLike {
   }
   async listRooms(): Promise<RelayRoomInfo[]> {
     return [ROOM]
+  }
+  async selectRoom(roomId: string): Promise<PairedRelayAgent> {
+    this.state = { ...this.state, agent: { ...AGENT, roomId } }
+    return { ...AGENT, roomId }
   }
   async syncSession(): Promise<unknown> {
     return { events: { type: 'session_history', events: [] } }

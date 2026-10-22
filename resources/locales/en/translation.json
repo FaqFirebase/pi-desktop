@@ -1367,7 +1367,8 @@
       "sessions": {
         "empty": "The paired Pi has no sessions open right now.",
         "label": "Sessions on the paired Pi",
-        "refresh": "Refresh"
+        "refresh": "Refresh",
+        "selected": "Driving this session"
       },
       "url": {
         "description": "The relay both machines connect to, for example http://192.168.1.223:3000. Setting a URL enables the relay on this desktop.",

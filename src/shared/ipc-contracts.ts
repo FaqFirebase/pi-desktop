@@ -153,6 +153,7 @@ export const IPC_CHANNELS = {
   RELAY_PAIR: 'relay:pair',
   RELAY_UNPAIR: 'relay:unpair',
   RELAY_LIST_ROOMS: 'relay:list-rooms',
+  RELAY_SELECT_ROOM: 'relay:select-room',
   RELAY_SYNC_SESSION: 'relay:sync-session',
   RELAY_SEND_PROMPT: 'relay:send-prompt',
   RELAY_CANCEL: 'relay:cancel',
@@ -1444,6 +1445,15 @@ export interface PairedRelayAgent {
   pubkey: string
   /** Agent name the Pi reported, for display only. */
   agentName: string
+  /**
+   * The room this Pi is running in, as reported by `pair_ok`.
+   *
+   * Required for addressing: the relay keys delivery on the exact
+   * `(peer, room)` pair and silently drops anything else, so a frame sent with
+   * no room never reaches a Pi that is running in one. Null only for an older
+   * Pi that did not report a room.
+   */
+  roomId: string | null
   pairedAt: string
 }
 

@@ -295,6 +295,7 @@ interface PiDesktopAPI {
     pair(pairingUri: string): Promise<PairedRelayAgent>
     unpair(): Promise<RelayStatus>
     listRooms(): Promise<RelayRoomInfo[]>
+    selectRoom(roomId: string): Promise<RelayStatus>
     syncSession(): Promise<unknown>
     sendPrompt(text: string): Promise<{ ok: true }>
     cancel(): Promise<{ ok: true }>
@@ -628,6 +629,7 @@ const api: PiDesktopAPI = {
     pair: (pairingUri: string) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_PAIR, pairingUri),
     unpair: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_UNPAIR),
     listRooms: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_LIST_ROOMS),
+    selectRoom: (roomId: string) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SELECT_ROOM, roomId),
     syncSession: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SYNC_SESSION),
     sendPrompt: (text: string) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SEND_PROMPT, text),
     cancel: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_CANCEL),
