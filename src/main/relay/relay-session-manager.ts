@@ -324,11 +324,17 @@ export class RelaySessionManager extends EventEmitter {
    */
   private adoptRoomFromRoster(): void {
     const agent = this.state.agent
-    if (!agent || agent.roomId) return
+    if (!agent) return
     const rooms = this.state.rooms
+    // Only when there is exactly one candidate: with several sessions open the
+    // choice is the user's, and guessing would drive the wrong one.
     if (rooms.length !== 1) return
     const roomId = rooms[0]?.room_id
     if (!roomId) return
+    // Also re-adopt when the stored room has gone away. A Pi restarted, or the
+    // session we were driving was closed, leaves a stale id that the relay
+    // silently drops; the Pi having exactly one room makes that the right one.
+    if (agent.roomId === roomId) return
     const repaired: PairedRelayAgent = { ...agent, roomId }
     this.patch({ agent: repaired })
     void this.options.onPaired?.(repaired)

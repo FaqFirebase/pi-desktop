@@ -219,6 +219,59 @@ test('listing rooms fails loudly when the Paired Pi never answers', async () => 
   await assert.rejects(() => subject.listRooms(), /did not report its sessions/)
 })
 
+test('a roster with exactly one room replaces a stale stored room', async () => {
+  // A Pi restart or a closed session leaves an id the relay silently drops.
+  // With one room advertised there is no ambiguity about which to use.
+  const transport = new ScriptedTransport()
+  const saved: PairedRelayAgent[] = []
+  const subject = manager(transport, { onPaired: (agent) => void saved.push(agent) })
+  await subject.connect()
+
+  // PAIRED carries room-abc; the Pi now advertises a different room.
+  transport.deliver({ type: 'rooms', peer: PI_PUBKEY, rooms: [ROOM] } as never)
+
+  assert.equal(subject.getState().agent?.roomId, ROOM.room_id)
+  assert.equal(saved.at(-1)?.roomId, ROOM.room_id, 'the repaired room must be persisted')
+})
+
+test('a roster with several rooms never guesses which one to drive', async () => {
+  const transport = new ScriptedTransport()
+  const saved: PairedRelayAgent[] = []
+  const subject = manager(transport, { onPaired: (agent) => void saved.push(agent) })
+  await subject.connect()
+
+  const other = { ...ROOM, room_id: 'room-other', name: 'other' }
+  transport.deliver({ type: 'rooms', peer: PI_PUBKEY, rooms: [ROOM, other] } as never)
+
+  assert.equal(subject.getState().agent?.roomId, 'room-abc', 'the stored choice must survive')
+  assert.equal(saved.length, 0, 'nothing may be persisted without a user choice')
+})
+
+test('selecting a room addresses that room and persists the choice', async () => {
+  const transport = new ScriptedTransport()
+  const saved: PairedRelayAgent[] = []
+  const subject = manager(transport, { onPaired: (agent) => void saved.push(agent) })
+  await subject.connect()
+
+  // Only an advertised room may be selected: the relay would drop anything else.
+  await assert.rejects(() => subject.selectRoom('room-not-open'), /no longer open/)
+
+  transport.deliver({ type: 'rooms', peer: PI_PUBKEY, rooms: [ROOM] } as never)
+  const selected = await subject.selectRoom(ROOM.room_id)
+
+  assert.equal(selected.roomId, ROOM.room_id)
+  assert.equal(subject.getState().agent?.roomId, ROOM.room_id)
+  assert.equal(saved.at(-1)?.roomId, ROOM.room_id)
+
+  // Frames must now be addressed to the chosen room, not just the peer.
+  transport.sent.length = 0
+  // No reply is delivered, so this rejects on its own timer: swallow it here or
+  // it surfaces as asynchronous activity after the test ends.
+  void subject.syncSession().catch(() => {})
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(transport.sent.at(-1)?.target.room, ROOM.room_id)
+})
+
 test('every action refuses to run before pairing', async () => {
   const transport = new ScriptedTransport()
   const subject = manager(transport, { initialAgent: null })
