@@ -1916,6 +1916,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           sessionState: null,
           sessionStats: null,
           activeSessionRuntimeId: null,
+          // Moving to a local session ends the relay binding. Without this the
+          // composer would keep routing prompts to the other machine while the
+          // transcript on screen belongs to a session on this one.
+          activeRemoteRef: null,
           // The dialog belongs to the runtime being left. Main retains its
           // origin and replays it when the user switches back.
           extensionUiRequest: null,
