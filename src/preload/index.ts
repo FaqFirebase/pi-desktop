@@ -92,6 +92,7 @@ import type {
   GitConveyorPullRequestResult,
   I18nEnvironment,
 } from '../shared/ipc-contracts'
+import type { DetectedRelay } from '../shared/ipc-contracts'
 import type { RelayRoomInfo } from '../shared/relay-protocol'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import type { SubagentListResult, SubagentTranscriptRef, SubagentTranscriptResult } from '../shared/subagent-task'
@@ -289,6 +290,7 @@ interface PiDesktopAPI {
   // channel is inert until a pairing link has been accepted.
   relay: {
     status(): Promise<RelayStatus>
+    detectUrl(): Promise<DetectedRelay | null>
     setUrl(url: string | null): Promise<RelayStatus>
     pair(pairingUri: string): Promise<PairedRelayAgent>
     unpair(): Promise<RelayStatus>
@@ -621,6 +623,7 @@ const api: PiDesktopAPI = {
 
   relay: {
     status: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_STATUS),
+    detectUrl: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_DETECT_URL),
     setUrl: (url: string | null) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SET_URL, url),
     pair: (pairingUri: string) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_PAIR, pairingUri),
     unpair: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_UNPAIR),

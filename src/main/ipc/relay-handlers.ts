@@ -1,10 +1,11 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
-import type { PairedRelayAgent } from '../../shared/ipc-contracts'
+import type { DetectedRelay, PairedRelayAgent } from '../../shared/ipc-contracts'
 import { normalizeRelayUrl, parsePairingUri } from '../../shared/relay-protocol'
 import { assertTrustedSender } from './validation'
 import { appLog } from '../app-log'
 import type { RelaySessionBridge } from '../relay/relay-bridge'
+import { detectRelayUrl } from '../relay/relay-url-detection'
 
 /**
  * Remote-pi relay channels.
@@ -17,6 +18,19 @@ export function registerRelayHandlers(bridge: RelaySessionBridge): void {
   ipcMain.handle(IPC_CHANNELS.RELAY_STATUS, async (event) => {
     assertTrustedSender(event)
     return bridge.getStatus()
+  })
+
+  // Detection is read-only and advisory: it reports what the Pi on this machine
+  // already uses. It never writes, so opening Settings cannot reconfigure a
+  // relay the user has not chosen here.
+  ipcMain.handle(IPC_CHANNELS.RELAY_DETECT_URL, async (event): Promise<DetectedRelay | null> => {
+    assertTrustedSender(event)
+    try {
+      return await detectRelayUrl()
+    } catch (error) {
+      logRelayFailure('detect the relay URL', error)
+      return null
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.RELAY_SET_URL, async (event, input: unknown) => {

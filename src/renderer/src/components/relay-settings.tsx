@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, Link2, Loader2, RefreshCw, Unlink, X } from 'lucide-react'
-import type { RelayStatus } from '../../../shared/ipc-contracts'
+import type { DetectedRelay, RelayStatus } from '../../../shared/ipc-contracts'
 import { formatIpcError } from '../utils/ipc-error'
 import { relayConnectionLabel } from '../utils/relay-connection-label'
 
@@ -24,6 +24,7 @@ export function RelaySettings(): React.JSX.Element {
   const [busy, setBusy] = useState<BusyAction | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [detected, setDetected] = useState<DetectedRelay | null>(null)
 
   useEffect(() => {
     void window.piDesktop.relay.status().then((next) => {
@@ -33,6 +34,12 @@ export function RelaySettings(): React.JSX.Element {
   }, [])
 
   useEffect(() => window.piDesktop.relay.onStatus(setStatus), [])
+
+  // Offer what the Pi on this machine already uses. Detection never writes, so
+  // opening Settings cannot repoint a relay the user did not choose here.
+  useEffect(() => {
+    void window.piDesktop.relay.detectUrl().then(setDetected)
+  }, [])
 
   const run = useCallback(async (action: BusyAction, work: () => Promise<RelayStatus | null>) => {
     setError(null)
@@ -117,6 +124,15 @@ export function RelaySettings(): React.JSX.Element {
             {t('settings.relay.url.save')}
           </button>
         </div>
+        {detected && detected.url !== settings.url && (
+          <button
+            type="button"
+            className="self-start text-left text-xs text-accent hover:underline"
+            onClick={() => setUrlDraft(detected.url)}
+          >
+            {t('settings.relay.url.detected', { url: detected.url })}
+          </button>
+        )}
         <div className="flex items-center gap-1 text-xs">
           <span
             aria-hidden

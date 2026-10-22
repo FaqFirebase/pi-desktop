@@ -139,12 +139,11 @@ test('client authenticates with hello then a signature over the relay nonce', as
   assert.equal(auth.sig, signChallenge(keypair, relay.issuedNonce()))
 })
 
-test('client reports an error state when the relay rejects the hello', async () => {
+test('a rejected hello fails connect and leaves the client in an error state', async () => {
   const relay = await startFakeRelay({ rejectHello: { code: 'unknown_pubkey', message: 'not paired' } })
-  const { client } = await connectClient(relay)
-
-  await waitForState(client, 'error')
-  assert.equal(client.getState(), 'error')
+  // connect resolves only once authenticated, so a rejection must surface as a
+  // rejected promise rather than an error state nobody checked.
+  await assert.rejects(() => connectClient(relay), /unknown_pubkey/)
 })
 
 test('client surfaces relay frames other than the challenge to onFrame', async () => {
@@ -152,6 +151,9 @@ test('client surfaces relay frames other than the challenge to onFrame', async (
   const { client, frames } = await connectClient(relay)
   await waitForState(client, 'connected')
 
+  // connect() resolves the moment auth is sent, so the relay's post-auth push
+  // can still be in flight. Wait for it rather than sampling the array.
+  await waitForCount(() => frames.filter((raw) => raw.includes('presence')).length, 1)
   const types = frames.map((raw) => (JSON.parse(raw) as { type: string }).type)
   assert.ok(types.includes('challenge'))
   assert.ok(types.includes('presence'))
@@ -178,6 +180,10 @@ test('close returns the client to idle and stops reconnecting', async () => {
   const { client } = await connectClient(relay)
   await waitForState(client, 'connected')
 
+  // Let the auth frame reach the relay first: sampling immediately raced the
+  // send and made a late auth frame look like a reconnect.
+  await waitForCount(() => relay.received.length, 2)
+
   client.close()
   assert.equal(client.getState(), 'idle')
 
@@ -192,6 +198,9 @@ test('a dropped connection is retried on the same client and re-authenticated', 
   const { client } = await connectClient(relay, keypair)
   await waitForState(client, 'connected')
 
+  // connect() resolves when auth is SENT, so dropping now would kill that frame
+  // in flight and the relay would legitimately see only one auth in total.
+  await waitForCount(() => relay.received.length, 2)
   const handshakesBefore = relay.received.filter((raw) => raw.includes('"hello"')).length
   assert.equal(handshakesBefore, 1)
 

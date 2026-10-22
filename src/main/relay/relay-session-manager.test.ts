@@ -60,6 +60,7 @@ class ScriptedTransport implements RelayTransport {
 }
 
 const PAIRED = { pubkey: PI_PUBKEY, agentName: 'macbook', pairedAt: '2026-10-18T00:00:00.000Z' }
+const ROOM = { room_id: '9NsvFIsyNlTH', name: 'macbook', cwd: '/Users/alandtse/open-shaders' }
 
 function manager(
   transport: ScriptedTransport,
@@ -191,16 +192,30 @@ test('connecting subscribes to the paired Pi roster so pushes arrive at all', as
   assert.equal(transport.control.length, 2, 'a reconnect must re-subscribe')
 })
 
-test('listing rooms asks the relay rather than pinging the Pi', async () => {
+test('listing rooms asks the relay and waits for the roster reply', async () => {
   const transport = new ScriptedTransport()
   const subject = manager(transport)
   await subject.connect()
   transport.control.length = 0
 
-  await subject.listRooms()
-
+  const listing = subject.listRooms()
+  await new Promise((resolve) => setImmediate(resolve))
   assert.deepEqual(transport.control, [{ type: 'rooms_check', peers: [PI_PUBKEY] }])
   assert.equal(transport.sent.length, 0, 'a ping answers with pong, which carries no roster')
+
+  // The roster arrives as its own `rooms` frame; without it the call must not
+  // resolve, which is the bug this covers: the panel used to show a stale list.
+  transport.deliver({ type: 'rooms', peer: PI_PUBKEY, rooms: [ROOM] } as never)
+
+  assert.deepEqual(await listing, [ROOM])
+})
+
+test('listing rooms fails loudly when the Paired Pi never answers', async () => {
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+
+  await assert.rejects(() => subject.listRooms(), /did not report its sessions/)
 })
 
 test('every action refuses to run before pairing', async () => {

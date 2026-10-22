@@ -34,6 +34,8 @@ export class RelayClient {
   private reconnectAttempt = 0
   private closedByCaller = false
   private state: RelayConnectionState = 'idle'
+  /** Settles once the current connection is authenticated, or rejects if it fails. */
+  private settleAuth: { resolve: () => void; reject: (error: Error) => void } | null = null
 
   constructor(
     private readonly relayUrl: string,
@@ -45,9 +47,35 @@ export class RelayClient {
     return this.state
   }
 
+  /**
+   * Opens the socket and resolves once it is AUTHENTICATED.
+   *
+   * Resolving on the socket 'open' event is not enough: the relay rejects every
+   * frame sent before auth, so a caller that immediately sends a control frame
+   * would silently lose it. Reconnects go through `openSocket` without a waiter.
+   */
   async connect(): Promise<void> {
     this.closedByCaller = false
+    // The promise is captured locally: auth can settle while `openSocket` is
+    // still awaiting, and clearing the field there would make this return a
+    // resolved value for a connection that actually failed.
+    const settled = new Promise<void>((resolve, reject) => {
+      this.settleAuth = { resolve, reject }
+    })
     await this.openSocket()
+    return settled
+  }
+
+  /** Marks the current connection authenticated and releases any `connect` waiter. */
+  private markAuthenticated(): void {
+    this.settleAuth?.resolve()
+    this.settleAuth = null
+  }
+
+  /** Fails the pending `connect`, if any, so a caller does not hang on a dead socket. */
+  private failAuth(error: Error): void {
+    this.settleAuth?.reject(error)
+    this.settleAuth = null
   }
 
   close(): void {
@@ -114,6 +142,7 @@ export class RelayClient {
         return
       }
       this.setState('error', 'relay connection closed')
+      this.failAuth(new Error('relay connection closed'))
       this.scheduleReconnect()
     })
   }
@@ -125,6 +154,7 @@ export class RelayClient {
     const challengeRaw = await this.nextControlFrame(socket, ['challenge', 'error'])
     if (!challengeRaw) {
       this.setState('error', 'relay did not answer the hello')
+      this.failAuth(new Error('relay did not answer the hello'))
       socket.close()
       return
     }
@@ -132,6 +162,7 @@ export class RelayClient {
     if (challenge.type !== 'challenge' || typeof challenge.nonce !== 'string') {
       const detail = challenge.code ?? challenge.message ?? 'unexpected relay reply'
       this.setState('error', `relay rejected the hello: ${detail}`)
+      this.failAuth(new Error(`relay rejected the hello: ${detail}`))
       socket.close()
       return
     }
@@ -139,6 +170,7 @@ export class RelayClient {
     socket.send(JSON.stringify({ type: 'auth', sig: signChallenge(this.keypair, challenge.nonce) }))
     this.reconnectAttempt = 0
     this.setState('connected')
+    this.markAuthenticated()
   }
 
   /**

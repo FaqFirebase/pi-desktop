@@ -48,6 +48,11 @@ export class RelaySessionManager extends EventEmitter {
   private readonly pending = new Map<string, PendingRequest>()
   private requestCounter = 0
   private readonly requestTimeoutMs: number
+  /** Peers we asked for a roster from and have not heard back about yet. */
+  private readonly rosterRequests = new Set<string>()
+  /** Peers whose roster arrived since the last `listRooms` call. */
+  private readonly rosterReplies = new Set<string>()
+  private rosterWaiter: (() => void) | null = null
 
   constructor(private readonly options: RelayManagerOptions) {
     super()
@@ -132,6 +137,10 @@ export class RelaySessionManager extends EventEmitter {
 
     await this.ensureConnected()
 
+    // Subscribe before pairing: the Pi announces its rooms as soon as it accepts,
+    // and a subscription made afterwards would miss that first announcement.
+    this.options.transport.sendControl({ type: 'subscribe_rooms', peers: [input.targetPubkey] })
+
     const reply = await this.request(
       { type: 'pair_request', id: '', token: input.token, device_name: defaultDeviceName() },
       { peer: input.targetPubkey, room: input.roomId },
@@ -159,17 +168,54 @@ export class RelaySessionManager extends EventEmitter {
     return agent
   }
 
-  /** Asks the paired Pi which sessions it currently has open. */
+  /**
+   * Asks the paired Pi which sessions it currently have open.
+   *
+   * The relay answers with a separate `rooms` frame, so this waits for it
+   * instead of returning whatever the last push happened to leave. A Pi that is
+   * not connected to this relay never produces a frame, so the wait is bounded.
+   */
   async listRooms(): Promise<RelayRoomInfo[]> {
     const target = this.requirePaired()
     await this.ensureConnected()
-    // The relay answers `rooms_check` with one `rooms` frame per requested peer.
-    // Pinging the Pi instead returns a `pong` that carries no roster, so the
-    // list would stay whatever the last push happened to leave.
+
+    this.rosterReplies.delete(target.peer)
+    this.rosterRequests.add(target.peer)
     if (!this.options.transport.sendControl({ type: 'rooms_check', peers: [target.peer] })) {
+      this.rosterRequests.delete(target.peer)
       throw new Error('The relay connection is not open')
     }
+
+    await this.waitForRoster(target.peer)
     return this.getState().rooms
+  }
+
+  /** Resolves when `peer`'s roster arrives, or rejects once the timeout lapses. */
+  private waitForRoster(peer: string): Promise<void> {
+    if (this.rosterReplies.has(peer)) {
+      this.clearRosterWait()
+      return Promise.resolve()
+    }
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.clearRosterWait()
+        this.rosterRequests.delete(peer)
+        reject(
+          new Error(
+            `The paired Pi did not report its sessions within ${this.requestTimeoutMs}ms. It may have no session open, or it may be on a different relay.`,
+          ),
+        )
+      }, this.requestTimeoutMs)
+      this.rosterWaiter = () => {
+        clearTimeout(timer)
+        this.clearRosterWait()
+        resolve()
+      }
+    })
+  }
+
+  private clearRosterWait(): void {
+    this.rosterWaiter = null
   }
 
   /** Pulls the live session transcript. */
@@ -245,6 +291,11 @@ export class RelaySessionManager extends EventEmitter {
     // pubkey check rather than trusted because it arrived first.
     if (message.type === 'rooms') {
       this.patch({ rooms: message.rooms ?? [] })
+      // A `rooms_check` reply settles the matching wait; a broadcast also counts,
+      // because either way the roster we now hold is fresh.
+      this.rosterReplies.add(meta.peer)
+      this.rosterRequests.delete(meta.peer)
+      this.rosterWaiter?.()
       return
     }
 

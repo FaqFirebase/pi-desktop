@@ -148,6 +148,7 @@ export const IPC_CHANNELS = {
   // Remote-pi relay: pairing, session browsing, and live control of a Pi on
   // another machine. Every channel is inert until `relay:pair` succeeds.
   RELAY_STATUS: 'relay:status',
+  RELAY_DETECT_URL: 'relay:detect-url',
   RELAY_SET_URL: 'relay:set-url',
   RELAY_PAIR: 'relay:pair',
   RELAY_UNPAIR: 'relay:unpair',
@@ -1428,6 +1429,13 @@ export interface RelayStatus {
     rooms: import('./relay-protocol').RelayRoomInfo[]
     agent: PairedRelayAgent | null
   }
+}
+
+/** A relay URL found on this machine, offered so the user need not retype it. */
+export interface DetectedRelay {
+  url: string
+  /** Where it came from, so the panel can say why it is suggesting it. */
+  source: 'env' | 'config'
 }
 
 /** The Pi on the other end of a successful pairing. */

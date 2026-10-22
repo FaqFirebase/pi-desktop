@@ -1371,6 +1371,7 @@
       },
       "url": {
         "description": "The relay both machines connect to, for example http://192.168.1.223:3000. Setting a URL enables the relay on this desktop.",
+        "detected": "Use the relay this machine already uses: {{url}}",
         "label": "Relay URL",
         "save": "Save"
       }
