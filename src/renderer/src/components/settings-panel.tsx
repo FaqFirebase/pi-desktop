@@ -136,6 +136,12 @@ export function SettingsPanel(): React.JSX.Element {
   const [desktopNotifications, setDesktopNotifications] = useState(draft0.desktopNotifications ?? settings?.desktopNotifications ?? DEFAULT_SETTINGS.desktopNotifications)
   const [suggestNextSteps, setSuggestNextSteps] = useState(draft0.suggestNextSteps ?? settings?.suggestNextSteps ?? DEFAULT_SETTINGS.suggestNextSteps)
   const [resumeLastSession, setResumeLastSession] = useState(draft0.resumeLastSession ?? settings?.resumeLastSession ?? DEFAULT_SETTINGS.resumeLastSession)
+  const [resumeInterruptedTurn, setResumeInterruptedTurn] = useState(
+    draft0.resumeInterruptedTurn ?? settings?.resumeInterruptedTurn ?? DEFAULT_SETTINGS.resumeInterruptedTurn,
+  )
+  const [resumeInterruptedTurnPrompt, setResumeInterruptedTurnPrompt] = useState(
+    draft0.resumeInterruptedTurnPrompt ?? settings?.resumeInterruptedTurnPrompt ?? DEFAULT_SETTINGS.resumeInterruptedTurnPrompt,
+  )
   const [openToHomeOnLaunch, setOpenToHomeOnLaunch] = useState(draft0.openToHomeOnLaunch ?? settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch)
   const [runOnStartup, setRunOnStartup] = useState(draft0.runOnStartup ?? settings?.runOnStartup ?? DEFAULT_SETTINGS.runOnStartup)
   const [minimizeToTrayOnClose, setMinimizeToTrayOnClose] = useState(draft0.minimizeToTrayOnClose ?? settings?.minimizeToTrayOnClose ?? DEFAULT_SETTINGS.minimizeToTrayOnClose)
@@ -322,6 +328,8 @@ export function SettingsPanel(): React.JSX.Element {
     setDesktopNotifications(draft.desktopNotifications ?? settings.desktopNotifications)
     setSuggestNextSteps(draft.suggestNextSteps ?? settings.suggestNextSteps)
     setResumeLastSession(draft.resumeLastSession ?? settings.resumeLastSession)
+    setResumeInterruptedTurn(draft.resumeInterruptedTurn ?? settings.resumeInterruptedTurn)
+    setResumeInterruptedTurnPrompt(draft.resumeInterruptedTurnPrompt ?? settings.resumeInterruptedTurnPrompt)
     setOpenToHomeOnLaunch(draft.openToHomeOnLaunch ?? settings.openToHomeOnLaunch)
     setRunOnStartup(draft.runOnStartup ?? settings.runOnStartup)
     setMinimizeToTrayOnClose(draft.minimizeToTrayOnClose ?? settings.minimizeToTrayOnClose)
@@ -580,6 +588,8 @@ export function SettingsPanel(): React.JSX.Element {
       desktopNotifications,
       suggestNextSteps,
       resumeLastSession,
+      resumeInterruptedTurn,
+      resumeInterruptedTurnPrompt,
       openToHomeOnLaunch,
       runOnStartup,
       minimizeToTrayOnClose,
@@ -653,6 +663,8 @@ export function SettingsPanel(): React.JSX.Element {
       desktopNotifications: DEFAULT_SETTINGS.desktopNotifications,
       suggestNextSteps: DEFAULT_SETTINGS.suggestNextSteps,
       resumeLastSession: DEFAULT_SETTINGS.resumeLastSession,
+      resumeInterruptedTurn: DEFAULT_SETTINGS.resumeInterruptedTurn,
+      resumeInterruptedTurnPrompt: DEFAULT_SETTINGS.resumeInterruptedTurnPrompt,
       openToHomeOnLaunch: DEFAULT_SETTINGS.openToHomeOnLaunch,
       runOnStartup: DEFAULT_SETTINGS.runOnStartup,
       minimizeToTrayOnClose: DEFAULT_SETTINGS.minimizeToTrayOnClose,
@@ -677,6 +689,8 @@ export function SettingsPanel(): React.JSX.Element {
     setDesktopNotifications(defaults.desktopNotifications!)
     setSuggestNextSteps(defaults.suggestNextSteps!)
     setResumeLastSession(defaults.resumeLastSession!)
+    setResumeInterruptedTurn(defaults.resumeInterruptedTurn!)
+    setResumeInterruptedTurnPrompt(defaults.resumeInterruptedTurnPrompt!)
     setOpenToHomeOnLaunch(defaults.openToHomeOnLaunch!)
     setRunOnStartup(defaults.runOnStartup!)
     setMinimizeToTrayOnClose(defaults.minimizeToTrayOnClose!)
@@ -1104,6 +1118,37 @@ export function SettingsPanel(): React.JSX.Element {
           >
             <Toggle checked={resumeLastSession} onChange={(v) => { setResumeLastSession(v); setSettingsDraft({ resumeLastSession: v }) }} />
           </SettingsRow>
+
+          {/* Only meaningful while sessions resume at all: a session that is not
+              reopened cannot be continued. */}
+          {resumeLastSession && (
+            <>
+              <SettingsRow
+                label={t('settings.resumeInterruptedTurn.label')}
+                description={t('settings.resumeInterruptedTurn.description')}
+              >
+                <Toggle
+                  checked={resumeInterruptedTurn}
+                  onChange={(v) => { setResumeInterruptedTurn(v); setSettingsDraft({ resumeInterruptedTurn: v }) }}
+                />
+              </SettingsRow>
+              {resumeInterruptedTurn && (
+                <SettingsRow
+                  label={t('settings.resumeInterruptedTurnPrompt.label')}
+                  description={t('settings.resumeInterruptedTurnPrompt.description')}
+                >
+                  <input
+                    type="text"
+                    value={resumeInterruptedTurnPrompt}
+                    onChange={(e) => { setResumeInterruptedTurnPrompt(e.target.value); setSettingsDraft({ resumeInterruptedTurnPrompt: e.target.value }) }}
+                    placeholder={DEFAULT_SETTINGS.resumeInterruptedTurnPrompt}
+                    aria-label={t('settings.resumeInterruptedTurnPrompt.label')}
+                    className="w-56 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary focus:border-focus focus:outline-none"
+                  />
+                </SettingsRow>
+              )}
+            </>
+          )}
 
           <SettingsRow
             label={t('settings.runOnStartup.label')}

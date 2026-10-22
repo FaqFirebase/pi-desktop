@@ -1378,6 +1378,14 @@
         "save": "Save"
       }
     },
+    "resumeInterruptedTurn": {
+      "description": "When the app closed mid-turn, send a prompt to the resumed session so it carries on. Turns you stopped yourself are never continued.",
+      "label": "Continue an interrupted turn"
+    },
+    "resumeInterruptedTurnPrompt": {
+      "description": "Sent once after an interrupted turn is restored. \"continue\" asks the agent to pick up where it left off.",
+      "label": "Continuation prompt"
+    },
     "resumeLastSession": {
       "description": "When opening a workspace, continue its most recent session instead of starting a new one",
       "label": "Resume Last Session"

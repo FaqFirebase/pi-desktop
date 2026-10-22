@@ -19,6 +19,8 @@ import { readSessionLineage } from '../session-lineage-reader'
 import { trimGetMessagesResponse } from '../get-messages-trim'
 import { withStoppedAnswers } from '../omp-stopped-answers'
 import { activityStatsStore } from '../activity-stats'
+import { detectInterruptedTurn } from '../interrupted-turn-reader'
+import type { InterruptedReason } from '../../shared/interrupted-turn'
 import type { SessionDeleteResult, SessionListItem, SessionRuntimeCloseResult, SessionRuntimeInfo } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { readdir, stat, unlink } from 'fs/promises'
@@ -230,6 +232,17 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     const settings = await loadAppSettings(workspaceManager)
     if (!settings.resumeLastSession) return null
     return findLatestProjectSession(await engineProjectSessionDirs(getConfiguredEngineKind(), workspace.path))
+  })
+
+  // Only paths inside a session root are read: the renderer supplies this
+  // argument, and a session file is the only thing this handler should touch.
+  ipcMain.handle(IPC_CHANNELS.SESSION_INTERRUPTION, async (_event, sessionPath: unknown): Promise<InterruptedReason | null> => {
+    if (!isString(sessionPath)) throw new Error('sessionPath must be a string')
+    if (!isWithinSessionRoots(sessionPath)) return null
+    const settings = await loadAppSettings(workspaceManager)
+    if (!settings.resumeInterruptedTurn) return null
+    const { reason } = await detectInterruptedTurn(sessionPath)
+    return reason
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_STATE, async () => {

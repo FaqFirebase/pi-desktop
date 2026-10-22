@@ -1,4 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+
+import type { InterruptedReason } from '../shared/interrupted-turn'
 import type {
   AgentEngineKind,
   PiRpcEvent,
@@ -133,6 +135,11 @@ interface PiDesktopAPI {
     listAll(cwd?: string): Promise<SessionListItem[]>
     /** The session any start would continue for a registered project; null means a new session. */
     resumeTarget(cwd: string): Promise<string | null>
+    /**
+     * Why the given session ended unfinished, or null when it ended cleanly.
+     * Used once after resume to decide whether to offer a continuation.
+     */
+    interruption(sessionPath: string): Promise<InterruptedReason | null>
     getState(): Promise<unknown>
     getMessages(): Promise<unknown>
     getStats(): Promise<unknown>
@@ -495,6 +502,7 @@ const api: PiDesktopAPI = {
     list: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST, cwd),
     listAll: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_ALL, cwd),
     resumeTarget: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RESUME_TARGET, cwd),
+    interruption: (sessionPath) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_INTERRUPTION, sessionPath),
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_STATE),
     getMessages: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_MESSAGES),
     getStats: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_STATS),

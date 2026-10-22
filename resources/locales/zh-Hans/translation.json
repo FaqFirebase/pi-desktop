@@ -1351,6 +1351,14 @@
         "save": "保存"
       }
     },
+    "resumeInterruptedTurn": {
+      "description": "当应用在回合中途关闭时，向恢复的会话发送一条提示词让它继续。你主动停止的回合永远不会被继续。",
+      "label": "继续中断的回合"
+    },
+    "resumeInterruptedTurnPrompt": {
+      "description": "在恢复中断的回合后发送一次。\"continue\" 表示让代理从断点继续。",
+      "label": "继续提示词"
+    },
     "resumeLastSession": {
       "description": "打开工作区时，继续其最近的会话而不是新建会话",
       "label": "恢复上次会话"

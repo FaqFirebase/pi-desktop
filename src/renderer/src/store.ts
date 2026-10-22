@@ -15,6 +15,8 @@ import { createStaleGuard } from './utils/stale-guard'
 import { splitClaudeCliMarkers } from './claude-cli-markers'
 import { markUnansweredToolCallsRunning, settleRunningToolCall } from './reattached-tool-calls'
 import type { PiCommand } from '../../shared/pi-command'
+import type { InterruptedReason } from '../../shared/interrupted-turn'
+import { continuationPrompt } from '../../shared/interrupted-turn'
 import { forkPointForUserMessage, normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
 import { clampSidebarWidth } from '../../shared/sidebar-width'
@@ -794,6 +796,12 @@ let switchPipeline: Promise<void> = Promise.resolve()
 // The last-session lookup a start must wait for, so a send or a model-picker
 // open during the lookup joins the resumed session instead of racing it.
 let pendingLastSessionOpen: Promise<boolean> | null = null
+/**
+ * Sessions this app has already considered continuing, so a resumption is sent
+ * at most once per session per app run. Keyed by session id because opening the
+ * same session again (a start, a workspace switch) must not re-send the prompt.
+ */
+const resumedTurnsHandled = new Set<string>()
 
 // Attach backfills ride the same pipeline as session switches so their
 // get_messages can never run concurrently with a switch's (each response is a
@@ -830,6 +838,46 @@ let agentRunStarts = 0
  * earlier prompt must not end a newer turn.
  */
 let latestPrompt: { generation: number; runsAtSend: number } | null = null
+
+/**
+ * Offers to carry on a resumed session whose last turn the app's own closing cut
+ * short.
+ *
+ * Three conditions keep this from firing when it should not: the session must
+ * have ended mid-turn (main classifies the file, and a turn the user stopped
+ * classifies as finished), the setting must be on, and this session must not have
+ * been considered already in this app run — opening the same session again, which
+ * a start or a workspace switch does, must not send a second prompt.
+ *
+ * The send is deliberately not awaited against the resumed transcript: the
+ * prompt goes through the ordinary `sendPrompt` path, so it renders, streams and
+ * errors exactly like one the user typed.
+ */
+async function continueInterruptedTurn(
+  sessionPath: string,
+  isCurrent: () => boolean,
+  get: () => AppState & AppActions,
+): Promise<void> {
+  if (resumedTurnsHandled.has(sessionPath)) return
+  resumedTurnsHandled.add(sessionPath)
+
+  const { settings } = get()
+  let reason: InterruptedReason | null
+  try {
+    reason = await window.piDesktop.session.interruption(sessionPath)
+  } catch {
+    return
+  }
+  const prompt = continuationPrompt({
+    reason,
+    enabled: Boolean(settings?.resumeInterruptedTurn),
+    prompt: settings?.resumeInterruptedTurnPrompt,
+    alreadyHandled: false,
+  })
+  if (!prompt || !isCurrent()) return
+
+  await get().sendPrompt(prompt).catch(() => undefined)
+}
 
 /** The chat text for a prompt the engine refused, which may come with no reason. */
 function refusalText(reason: string): string {
@@ -1332,6 +1380,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         return false
       }
       await get().switchSession(sessionPath, workspace.path)
+      await continueInterruptedTurn(sessionPath, isCurrent, get)
       return true
     }
     const lookup = open()

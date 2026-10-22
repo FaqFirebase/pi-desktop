@@ -36,6 +36,8 @@ export const IPC_CHANNELS = {
   SESSION_LIST: 'session:list',
   SESSION_LIST_ALL: 'session:list-all',
   SESSION_RESUME_TARGET: 'session:resume-target',
+  // Why the session returned by SESSION_RESUME_TARGET ended unfinished, if it did.
+  SESSION_INTERRUPTION: 'session:interruption',
   SESSION_GET_STATE: 'session:get-state',
   SESSION_GET_MESSAGES: 'session:get-messages',
   SESSION_GET_STATS: 'session:get-stats',
@@ -1385,6 +1387,11 @@ export interface AppSettings {
   // Resume the most recent session for the workspace on launch (via Pi's
   // --continue) instead of starting a fresh session.
   resumeLastSession: boolean
+  // Send `resumeInterruptedTurnPrompt` to a resumed session whose last turn was
+  // left unfinished by the app closing. Turns the user stopped are never resumed.
+  resumeInterruptedTurn: boolean
+  /** Prompt sent when a resumed session is found mid-turn. */
+  resumeInterruptedTurnPrompt: string
   // Project paths whose session group is collapsed in the Sessions panel.
   // Persisted so the collapsed/expanded layout survives navigation and restarts.
   collapsedSessionGroups: string[]

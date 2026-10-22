@@ -45,6 +45,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   permissionMode: 'ask-edits',
   permissionRulesAckWorkspaces: [],
   resumeLastSession: true,
+  // Ask the resumed session to carry on when its last turn was cut off by the
+  // process ending, rather than by the agent finishing or the user stopping it.
+  resumeInterruptedTurn: true,
+  resumeInterruptedTurnPrompt: 'continue',
   collapsedSessionGroups: [],
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   openToHomeOnLaunch: true,
