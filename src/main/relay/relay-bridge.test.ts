@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { DEFAULT_SETTINGS } from '../../shared/default-settings'
-import type { AppSettings, PairedRelayAgent } from '../../shared/ipc-contracts'
+import type { AppSettings, PairedRelayAgent, RelayStatus } from '../../shared/ipc-contracts'
 import type { RelayRoomInfo } from '../../shared/relay-protocol'
 import { RelaySessionBridge, type RelayManagerLike } from './relay-bridge'
 import type { RelayManagerState } from './relay-session-manager'
@@ -14,7 +14,22 @@ class FakeManager implements RelayManagerLike {
   disconnected = false
   sent: string[] = []
   state: RelayManagerState = { status: 'idle', rooms: [], agent: null }
+  private readonly changeListeners = new Set<(state: RelayManagerState) => void>()
 
+  onChange(listener: (state: RelayManagerState) => void): () => void {
+    this.changeListeners.add(listener)
+    return () => this.changeListeners.delete(listener)
+  }
+
+  listenerCount(): number {
+    return this.changeListeners.size
+  }
+
+  /** Test hook: emit a change as the real manager does on a roster push. */
+  emitChange(next: Partial<RelayManagerState>): void {
+    this.state = { ...this.state, ...next }
+    for (const listener of this.changeListeners) listener(this.state)
+  }
   async connect(): Promise<void> {
     this.connected = true
     this.state = { ...this.state, status: 'connected' }
@@ -242,4 +257,35 @@ test('status never carries the keypair or a pairing token', async () => {
   const serialized = JSON.stringify(await subject.bridge.getStatus())
   assert.equal(serialized.includes('privateKeyPem'), false)
   assert.equal(serialized.includes('token'), false)
+})
+
+test('a roster push reaching the manager is forwarded to status listeners', async () => {
+  // The panel redraws from pushed status. Without this the session list only
+  // updates if the user happens to re-open Settings after the roster arrives.
+  const subject = harness({ relay: { enabled: true, url: 'http://a:3000', pairedAgent: AGENT } })
+  const seen: RelayStatus[] = []
+  subject.bridge.onStatusChange((status) => seen.push(status))
+  await subject.bridge.start()
+
+  const manager = subject.managers[0]!
+  const room = { room_id: 'room-live', name: 'open-shaders', cwd: '/Users/a/project' }
+  manager.emitChange({ status: 'paired', rooms: [room] })
+
+  for (let i = 0; i < 100 && !seen.some((s) => s.connection.rooms.length === 1); i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  const latest = seen.at(-1)!
+  assert.equal(latest.connection.rooms[0]?.room_id, 'room-live')
+})
+
+test('the manager subscription is dropped when the manager is replaced', async () => {
+  // Two live managers would each push status and the roster would flap between
+  // their room sets, which is the same failure as running two sockets.
+  const subject = harness({ relay: { enabled: true, url: 'http://a:3000', pairedAgent: AGENT } })
+  await subject.bridge.start()
+  const first = subject.managers[0]!
+
+  await subject.bridge.setUrl('http://b:3000')
+  const before = first.listenerCount()
+  assert.equal(before, 0, 'the replaced manager must have no listeners left')
 })

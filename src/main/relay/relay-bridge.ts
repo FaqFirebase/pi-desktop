@@ -48,10 +48,13 @@ export interface RelayManagerLike {
   sendPrompt(text: string): Promise<void>
   cancel(): Promise<void>
   getState(): RelayManagerState
+  /** Reports every internal state change, including roster pushes and room adoption. */
+  onChange(listener: (state: RelayManagerState) => void): () => void
 }
 
 export class RelaySessionBridge {
   private manager: RelayManagerLike | null = null
+  private unsubscribeManager: (() => void) | null = null
   private readonly listeners = new Set<(status: RelayStatus) => void>()
 
   constructor(
@@ -66,6 +69,14 @@ export class RelaySessionBridge {
       ) => Promise<RelayManagerLike | null>
       /** Drops the live manager, e.g. after the url changes. */
       disposeManager?: (manager: RelayManagerLike) => void
+      /**
+       * Persists a pairing the manager adopted rather than the user making it.
+       *
+       * A Pi that restarts advertises a new room id, and the manager repairs its
+       * own state from the roster; without this the repair lives only in memory
+       * and the next launch addresses the dead room again.
+       */
+      persistAgent?: (agent: PairedRelayAgent) => Promise<void>
     },
   ) {}
 
@@ -148,6 +159,8 @@ export class RelaySessionBridge {
   }
 
   dispose(): void {
+    this.unsubscribeManager?.()
+    this.unsubscribeManager = null
     if (this.manager) this.deps.disposeManager?.(this.manager)
     this.manager = null
     this.listeners.clear()
@@ -155,6 +168,8 @@ export class RelaySessionBridge {
 
   private async rebuild(): Promise<void> {
     if (this.manager) {
+      this.unsubscribeManager?.()
+      this.unsubscribeManager = null
       this.deps.disposeManager?.(this.manager)
       this.manager = null
     }
@@ -184,6 +199,14 @@ export class RelaySessionBridge {
       return
     }
     this.manager = manager
+    // Without this the renderer only sees state at the moment it asks, so a
+    // roster push or a room adoption never reaches the panel.
+    this.unsubscribeManager?.()
+    this.unsubscribeManager = manager.onChange((state) => {
+      for (const listener of this.listeners) {
+        void this.getStatus().then((status) => listener({ ...status, connection: state }))
+      }
+    })
     try {
       await manager.connect()
     } catch (error) {

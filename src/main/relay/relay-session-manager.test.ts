@@ -65,12 +65,17 @@ const ROOM = { room_id: '9NsvFIsyNlTH', name: 'macbook', cwd: '/Users/alandtse/o
 
 function manager(
   transport: ScriptedTransport,
-  overrides: Partial<{ initialAgent: typeof PAIRED | null; onPaired: (agent: typeof PAIRED) => void }> = {},
+  overrides: Partial<{
+    initialAgent: typeof PAIRED | null
+    onPaired: (agent: typeof PAIRED) => void
+    onAdopted: (agent: typeof PAIRED) => void
+  }> = {},
 ) {
   return new RelaySessionManager({
     transport,
     initialAgent: overrides.initialAgent === undefined ? PAIRED : overrides.initialAgent,
     onPaired: overrides.onPaired,
+    onAdopted: overrides.onAdopted,
     requestTimeoutMs: 200,
   })
 }
@@ -186,11 +191,16 @@ test('connecting subscribes to the paired Pi roster so pushes arrive at all', as
   const subject = manager(transport)
   await subject.connect()
 
-  assert.deepEqual(transport.control, [{ type: 'subscribe_rooms', peers: [PI_PUBKEY] }])
+  assert.deepEqual(transport.control, [
+    { type: 'subscribe_rooms', peers: [PI_PUBKEY] },
+    // A subscription only registers interest; the relay pushes nothing until a
+    // session starts or stops, so the current roster must be asked for too.
+    { type: 'rooms_check', peers: [PI_PUBKEY] },
+  ])
 
   transport.setState('error', 'link dropped')
   transport.setState('connected')
-  assert.equal(transport.control.length, 2, 'a reconnect must re-subscribe')
+  assert.equal(transport.control.length, 4, 'a reconnect must re-subscribe and re-check')
 })
 
 test('listing rooms asks the relay and waits for the roster reply', async () => {
@@ -224,7 +234,7 @@ test('a roster with exactly one room replaces a stale stored room', async () => 
   // With one room advertised there is no ambiguity about which to use.
   const transport = new ScriptedTransport()
   const saved: PairedRelayAgent[] = []
-  const subject = manager(transport, { onPaired: (agent) => void saved.push(agent) })
+  const subject = manager(transport, { onAdopted: (agent) => void saved.push(agent) })
   await subject.connect()
 
   // PAIRED carries room-abc; the Pi now advertises a different room.
@@ -237,7 +247,7 @@ test('a roster with exactly one room replaces a stale stored room', async () => 
 test('a roster with several rooms never guesses which one to drive', async () => {
   const transport = new ScriptedTransport()
   const saved: PairedRelayAgent[] = []
-  const subject = manager(transport, { onPaired: (agent) => void saved.push(agent) })
+  const subject = manager(transport, { onAdopted: (agent) => void saved.push(agent) })
   await subject.connect()
 
   const other = { ...ROOM, room_id: 'room-other', name: 'other' }

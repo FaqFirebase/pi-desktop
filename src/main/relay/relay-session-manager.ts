@@ -25,6 +25,13 @@ export interface RelayManagerOptions {
   initialAgent?: PairedRelayAgent | null
   /** Persists a successful pairing; awaited so a crash cannot lose the credential. */
   onPaired?: (agent: PairedRelayAgent) => Promise<void> | void
+  /**
+   * Persists a room the manager adopted from the roster.
+   *
+   * Separate from `onPaired` so the bridge can tell a user-initiated pairing,
+   * which it has already saved, from a repair it did not ask for.
+   */
+  onAdopted?: (agent: PairedRelayAgent) => Promise<void> | void
   requestTimeoutMs?: number
 }
 
@@ -65,6 +72,12 @@ export class RelaySessionManager extends EventEmitter {
     return { ...this.state, rooms: [...this.state.rooms] }
   }
 
+  /** Notifies on every internal state change; returns an unsubscribe function. */
+  onChange(listener: (state: RelayManagerState) => void): () => void {
+    this.on('change', listener)
+    return () => this.off('change', listener)
+  }
+
   private wireTransport(): void {
     const events: RelayTransportEvents = {
       onMessage: (message, meta) => this.handleMessage(message, meta),
@@ -94,6 +107,10 @@ export class RelaySessionManager extends EventEmitter {
     const agent = this.state.agent
     if (!agent) return
     this.options.transport.sendControl({ type: 'subscribe_rooms', peers: [agent.pubkey] })
+    // Subscribing only registers interest; the relay pushes the CURRENT roster
+    // to nobody, so without this check the list stays empty until some session
+    // happens to start or stop. It also feeds room adoption on startup.
+    this.options.transport.sendControl({ type: 'rooms_check', peers: [agent.pubkey] })
   }
 
   private patch(partial: Partial<RelayManagerState>): void {
@@ -337,7 +354,7 @@ export class RelaySessionManager extends EventEmitter {
     if (agent.roomId === roomId) return
     const repaired: PairedRelayAgent = { ...agent, roomId }
     this.patch({ agent: repaired })
-    void this.options.onPaired?.(repaired)
+    void this.options.onAdopted?.(repaired)
   }
 
   private handleMessage(message: RelayInboundMessage, meta: { peer: string; room: string }): void {

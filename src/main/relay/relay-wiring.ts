@@ -73,15 +73,24 @@ function toTarget(agent: PairedRelayAgent) {
 
 /** Builds the bridge the IPC handlers and the app lifecycle share. */
 export function createRelayBridge(workspaceManager: WorkspaceManager): RelaySessionBridge {
+  const settings = new ElectronSettingsStore(workspaceManager)
+  const peers = new FileRelayPeerPersistence(app.getPath('userData'))
   return new RelaySessionBridge({
-    settings: new ElectronSettingsStore(workspaceManager),
-    peers: new FileRelayPeerPersistence(app.getPath('userData')),
+    settings,
+    peers,
     createManager: async (relayUrl, keypair, agent) => {
       const transport = new RelayClientTransport(relayUrl, keypair)
-      // Pairing is persisted by the bridge after the manager reports success, so
-      // the manager gets no callback of its own and cannot write a credential the
-      // bridge has not seen.
-      return new RelaySessionManager({ transport, initialAgent: agent })
+      return new RelaySessionManager({
+        transport,
+        initialAgent: agent,
+        // A room repaired from the roster must outlive the process, or the next
+        // launch addresses the room that just died.
+        onAdopted: async (adopted) => {
+          await peers.save(adopted)
+          const current = await settings.read()
+          await settings.write({ relay: { ...current.relay, pairedAgent: adopted } })
+        },
+      })
     },
     disposeManager: (manager) => manager.disconnect(),
   })
