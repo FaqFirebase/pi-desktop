@@ -1560,6 +1560,10 @@
       "startOneNow": "Start one now",
       "viewAll": "View all"
     },
+    "remote": {
+      "heading": "Remote · {{name}}",
+      "headingTitle": "Sessions on the paired machine"
+    },
     "sessionNamePlaceholder": "Session name",
     "sessionRow": {
       "tooltipActive": "{{title}}\n\nClick to open · double-click to rename · right-click for actions",

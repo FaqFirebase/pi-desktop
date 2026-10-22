@@ -1531,6 +1531,10 @@
       "startOneNow": "立即开始一个",
       "viewAll": "查看全部"
     },
+    "remote": {
+      "heading": "远程 · {{name}}",
+      "headingTitle": "已配对机器上的会话"
+    },
     "sessionNamePlaceholder": "会话名称",
     "sessionRow": {
       "tooltipActive": "{{title}}\n\n点击打开 · 双击重命名 · 右键查看操作",
