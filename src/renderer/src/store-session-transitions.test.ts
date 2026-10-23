@@ -202,6 +202,10 @@ const piDesktopStub = {
       calls.push(`relayPrompt:${text}`)
       return { ok: true }
     },
+    cancel: async () => {
+      calls.push('relayCancel')
+      return { ok: true }
+    },
   },
   commands: {
     abort: async () => {
@@ -2607,4 +2611,27 @@ test('a turn cancelled on the other machine stops the stream here too', async ()
   })
 
   assert.equal(useAppStore.getState().isStreaming, false)
+})
+
+test('Stop on a remote turn cancels the remote Pi, not the local one', async () => {
+  // Aborting locally would leave the other machine still generating, and the
+  // local Pi is not involved in a remote turn at all.
+  useAppStore.setState({ activeRemoteRef: { peer: 'PEERKEY', roomId: 'ROOMID' }, isStreaming: true })
+  calls.length = 0
+
+  await useAppStore.getState().abort()
+
+  assert.equal(calls.includes('relayCancel'), true, 'must cancel over the relay')
+  assert.equal(calls.includes('abort'), false, 'must not abort the local Pi')
+  assert.equal(useAppStore.getState().isStreaming, false)
+})
+
+test('Stop on a local turn still aborts the local Pi', async () => {
+  useAppStore.setState({ activeRemoteRef: null, isStreaming: true })
+  calls.length = 0
+
+  await useAppStore.getState().abort()
+
+  assert.equal(calls.includes('abort'), true)
+  assert.equal(calls.includes('relayCancel'), false, 'a local turn must not touch the relay')
 })

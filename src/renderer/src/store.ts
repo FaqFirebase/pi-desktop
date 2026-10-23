@@ -1804,6 +1804,18 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   abort: async () => {
     // The user stopped this turn: its end must not send the next queued message.
     holdSendQueue(set, get)
+    const remote = get().activeRemoteRef
+    if (remote) {
+      // A remote turn runs on the other machine, so stopping the local Pi would
+      // leave it generating. The local Pi is not even involved in this turn.
+      try {
+        await window.piDesktop.relay.cancel()
+      } catch {
+        // The connection may already be gone; the turn is over either way.
+      }
+      set({ isStreaming: false })
+      return
+    }
     try {
       await window.piDesktop.commands.abort()
       set({ isStreaming: false })
