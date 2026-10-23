@@ -58,6 +58,11 @@ export function interruptionReason(messages: readonly SessionTailMessage[]): Int
   // A prompt that never got any reply: the agent was killed before answering.
   if (last.role === 'user') return 'no-reply'
 
+  // A tool that finished but produced no answer: the turn was between steps when
+  // the process ended. Pi only stops on `toolUse` in the middle of a turn, so a
+  // trailing result always means an answer was still owed.
+  if (last.role === 'toolResult') return 'tool-call-unanswered'
+
   if (last.role !== 'assistant') return null
 
   switch (last.stopReason) {

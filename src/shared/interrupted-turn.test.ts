@@ -26,11 +26,11 @@ test('a tool call with no result means the process died mid-turn', () => {
   )
 })
 
-test('a tool call that was answered is a finished step, not an interruption', () => {
+test('a tool call that was answered is still a finished turn when an answer follows', () => {
   // Pi stops with `toolUse` between every step of a multi-step turn, so the
-  // reason alone cannot mean "interrupted"; the missing result is the signal.
+  // reason alone cannot mean "interrupted"; the turn must also end there.
   assert.equal(
-    interruptionReason([{ role: 'user' }, assistant('toolUse', ['call_1']), result('call_1')]),
+    interruptionReason([{ role: 'user' }, assistant('toolUse', ['call_1']), result('call_1'), assistant('stop')]),
     null,
   )
 })
@@ -126,4 +126,21 @@ test('an empty or whitespace prompt sends nothing rather than an empty message',
 
 test('a custom prompt is sent trimmed', () => {
   assert.equal(continuationPrompt({ enabled: true, prompt: '  keep going  ', alreadyHandled: false, reason: 'no-reply' }), 'keep going')
+})
+
+test('a tool that finished with no answer after it is an interruption', () => {
+  // Pi stops on `toolUse` only mid-turn, so a run ending on a result was still
+  // owed an answer when the process died. This is what a restart looks like.
+  assert.equal(
+    interruptionReason([{ role: 'user' }, assistant('toolUse', ['call_1']), result('call_1')]),
+    'tool-call-unanswered',
+  )
+})
+
+test('a result trailing an aborted answer is still not resumed', () => {
+  // The user stopped the turn; a result landing afterwards does not reopen it.
+  assert.equal(
+    interruptionReason([{ role: 'user' }, assistant('aborted', ['call_1']), result('call_1')]),
+    'tool-call-unanswered',
+  )
 })
