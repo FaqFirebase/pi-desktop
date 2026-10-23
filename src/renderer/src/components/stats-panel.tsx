@@ -7,7 +7,9 @@ import type {
   ActivityStatsDay,
   ActivityModelUsage,
 } from '../../../shared/ipc-contracts'
+import { cacheTokenUsage, totalTokenUsage } from '../../../shared/token-usage'
 import { buildWeeks, intensityLevel, type IntensityLevel } from '../utils/heatmap-grid'
+import { formatCompact } from '../utils/format-compact'
 
 type Tab = 'overview' | 'models'
 
@@ -60,13 +62,6 @@ const MODEL_DOT_COLORS = [
 /** Display label for a model: its models.json name, or the raw id as fallback. */
 function modelLabel(usage: ActivityModelUsage): string {
   return usage.name ?? usage.model
-}
-
-/** Compact token/count formatting: 6600000 → "6.6M", 847200 → "847.2k". */
-function formatCompact(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
-  return String(n)
 }
 
 /** 23 → "11 PM", 0 → "12 AM" (in `language`'s hour convention). */
@@ -234,14 +229,14 @@ function ModelLegend({
   modelColor: Map<string, string>
 }): React.JSX.Element {
   const { t } = useTranslation()
-  const grandTotal = models.reduce((s, m) => s + m.input + m.output, 0)
+  const grandTotal = models.reduce((s, m) => s + totalTokenUsage(m), 0)
   if (models.length === 0) {
     return <div className="py-4 text-center text-xs text-faint">{t('stats.modelLegend.empty')}</div>
   }
   return (
     <div className="space-y-1.5">
       {models.map((m) => {
-        const total = m.input + m.output
+        const total = totalTokenUsage(m)
         const pct = grandTotal > 0 ? (total / grandTotal) * 100 : 0
         return (
           <div key={m.model} className="flex items-center gap-2 text-xs">
@@ -253,7 +248,11 @@ function ModelLegend({
             />
             <span className="min-w-0 flex-1 truncate text-secondary">{modelLabel(m)}</span>
             <span className="shrink-0 tabular-nums text-dim">
-              {t('stats.modelLegend.tokenBreakdown', { input: formatCompact(m.input), output: formatCompact(m.output) })}
+              {t('stats.modelLegend.tokenBreakdown', {
+                input: formatCompact(m.input),
+                output: formatCompact(m.output),
+                cache: formatCompact(cacheTokenUsage(m)),
+              })}
             </span>
             <span className="w-12 shrink-0 text-right tabular-nums text-muted">{pct.toFixed(1)}%</span>
           </div>

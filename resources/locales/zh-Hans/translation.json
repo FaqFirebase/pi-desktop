@@ -1541,7 +1541,7 @@
     },
     "modelLegend": {
       "empty": "此范围内没有模型使用记录。",
-      "tokenBreakdown": "{{input}} 输入 · {{output}} 输出"
+      "tokenBreakdown": "{{input}} 输入 · {{output}} 输出 · {{cache}} 缓存"
     },
     "overview": {
       "activeDaysLabel": "活跃天数",

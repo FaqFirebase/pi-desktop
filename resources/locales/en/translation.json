@@ -1571,7 +1571,7 @@
     },
     "modelLegend": {
       "empty": "No model usage in this range.",
-      "tokenBreakdown": "{{input}} in · {{output}} out"
+      "tokenBreakdown": "{{input}} in · {{output}} out · {{cache}} cache"
     },
     "overview": {
       "activeDaysLabel": "Active days",
