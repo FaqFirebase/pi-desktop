@@ -308,7 +308,7 @@ interface PiDesktopAPI {
     /** Binds the chat view to one remote session and returns its transcript. */
     openSession(target: RemoteSessionRef): Promise<RelayOpenResult>
     syncSession(): Promise<unknown>
-    sendPrompt(text: string, options?: { images?: WireImage[] }): Promise<{ ok: true }>
+    sendPrompt(text: string, options?: { images?: WireImage[]; steer?: boolean }): Promise<{ ok: true }>
     cancel(): Promise<{ ok: true }>
     /**
      * Answers an interactive prompt the paired Pi is blocked on. The request id
@@ -660,7 +660,7 @@ const api: PiDesktopAPI = {
     sessions: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SESSIONS),
     openSession: (target: RemoteSessionRef) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_OPEN_SESSION, target),
     syncSession: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SYNC_SESSION),
-    sendPrompt: (text: string, options?: { images?: WireImage[] }) =>
+    sendPrompt: (text: string, options?: { images?: WireImage[]; steer?: boolean }) =>
       ipcRenderer.invoke(IPC_CHANNELS.RELAY_SEND_PROMPT, text, options),
     cancel: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_CANCEL),
     respondExtensionUi: (requestId: string, response: RelayExtensionUiResponseBody) =>

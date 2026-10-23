@@ -1583,13 +1583,19 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     // differs, so nothing else in the composer has to know which it is on.
     const remote = get().activeRemoteRef
     if (remote) {
+      // A prompt sent while a turn is streaming is injected into that turn rather
+      // than queued behind it: the user is interrupting, not lining up. Read the
+      // flag before this block marks the turn streaming.
+      const steer = get().isStreaming
       get().addMessage({ id: generateId(), role: 'user', content: message, timestamp: Date.now() })
       set({ isStreaming: true, streamingContent: '', streamingThinking: '', streamingToolCalls: new Map() })
       try {
-        await window.piDesktop.relay.sendPrompt(
-          message,
-          options?.images?.length ? { images: options.images.map((image) => ({ data: image.data, mime: image.mimeType })) } : undefined,
-        )
+        await window.piDesktop.relay.sendPrompt(message, {
+          ...(options?.images?.length
+            ? { images: options.images.map((image) => ({ data: image.data, mime: image.mimeType })) }
+            : {}),
+          ...(steer ? { steer: true } : {}),
+        })
       } catch (err) {
         set({ isStreaming: false })
         get().addMessage({
