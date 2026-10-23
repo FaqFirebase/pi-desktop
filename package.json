@@ -1,6 +1,6 @@
 {
   "name": "pi-desktop",
-  "version": "0.2.1-alpha",
+  "version": "0.2.2-alpha",
   "description": "Desktop GUI for the Pi and oh-my-pi coding agents",
   "main": "out/main/index.js",
   "desktopName": "pi-desktop.desktop",
