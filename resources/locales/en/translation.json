@@ -67,6 +67,9 @@
       "waitingOnEngine": "{{agent}} is up — waiting for the engine to finish loading. Local models can take a while…"
     },
     "extensionUi": {
+      "askCustomPlaceholder": "Type your own answer",
+      "askRequired": "Answer the required questions to continue",
+      "askSubmit": "Submit answers",
       "editFallbackTitle": "Edit",
       "hideForNowWithShortcut": "Hide for now ({{shortcut}})",
       "inputFallbackTitle": "Input",

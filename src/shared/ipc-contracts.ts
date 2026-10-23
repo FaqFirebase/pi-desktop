@@ -612,6 +612,8 @@ export interface PiResponseEvent {
 }
 
 // Extension UI events
+import type { RelayAskEnrichment } from './relay-protocol'
+
 export interface PiExtensionUiRequest {
   type: 'extension_ui_request'
   id: string
@@ -622,6 +624,15 @@ export interface PiExtensionUiRequest {
   placeholder?: string
   prefill?: string
   notifyType?: 'info' | 'warning' | 'error'
+  /**
+   * pi-ask's full flow, present only on prompts relayed from a paired Pi.
+   *
+   * `options` above holds just the FIRST question's labels for clients that can
+   * only render the SDK's flat select. A flow with several questions, a
+   * multi-select, or previews is only answerable through this envelope; the
+   * answering client submits structured answers instead of one string.
+   */
+  ask?: RelayAskEnrichment
   statusKey?: string
   statusText?: string
   widgetKey?: string

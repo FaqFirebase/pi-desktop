@@ -67,6 +67,9 @@
       "waitingOnEngine": "{{agent}} 已启动 — 正在等待引擎完成加载。本地模型可能需要一些时间…"
     },
     "extensionUi": {
+      "askCustomPlaceholder": "输入你自己的答案",
+      "askRequired": "请回答必填问题以继续",
+      "askSubmit": "提交答案",
       "editFallbackTitle": "编辑",
       "hideForNowWithShortcut": "暂时隐藏（{{shortcut}}）",
       "inputFallbackTitle": "输入",

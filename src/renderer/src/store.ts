@@ -623,6 +623,21 @@ interface AppActions {
 
   // Extension UI
   respondExtensionUi: (id: string, response: Record<string, unknown>) => void
+  /**
+   * Submits a whole pi-ask flow in one response.
+   *
+   * pi-ask resolves a flow only when every question is answered, so this is the
+   * path that must be used for anything the degraded single-select cannot
+   * express: several questions, multi-select, or previews. Answers use
+   * pi-ask's own camelCase keys because the Pi forwards them unchanged.
+   */
+  respondAskFlow: (
+    id: string,
+    answers: Record<string, { values?: string[]; customText?: string; note?: string; optionNotes?: Record<string, string> }>,
+    mode?: 'submit' | 'elaborate',
+  ) => void
+  /** Cancels a whole pi-ask flow, which pi-ask records as an explicit refusal. */
+  cancelAskFlow: (id: string) => void
   dismissExtensionUi: () => void
   dismissExtensionNotify: () => void
 
@@ -3118,6 +3133,66 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     set({ extensionUiRequest: null })
   },
 
+  respondAskFlow: (id, answers, mode = 'submit') => {
+    const { extensionUiRequest, remotePromptIds } = get()
+    if (!extensionUiRequest || extensionUiRequest.id !== id) return
+    const flowId = extensionUiRequest.ask?.flow_id
+    if (!flowId) {
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: t('store.messages.respondError', { detail: 'this prompt has no pi-ask flow' }),
+        timestamp: Date.now(),
+      })
+      return
+    }
+    // Only a remote flow is answerable here: the local TUI owns its own dialog,
+    // and a second submitter would race it for the single response pi-ask accepts.
+    if (!remotePromptIds[id]) return
+    void window.piDesktop.relay
+      .respondExtensionUi(id, { ask: { flow_id: flowId, kind: 'answer', mode, answers } })
+      .catch((error: unknown) => {
+        get().addMessage({
+          id: generateId(),
+          role: 'system',
+          content: t('store.messages.respondError', {
+            detail: error instanceof Error ? error.message : String(error),
+          }),
+          timestamp: Date.now(),
+        })
+      })
+    set((state) => {
+      const next = { ...state.remotePromptIds }
+      delete next[id]
+      return { extensionUiRequest: null, remotePromptIds: next }
+    })
+  },
+
+  cancelAskFlow: (id) => {
+    const { extensionUiRequest, remotePromptIds } = get()
+    if (!extensionUiRequest || extensionUiRequest.id !== id) return
+    const flowId = extensionUiRequest.ask?.flow_id
+    if (flowId && remotePromptIds[id]) {
+      void window.piDesktop.relay
+        .respondExtensionUi(id, { ask: { flow_id: flowId, kind: 'cancel' } })
+        .catch((error: unknown) => {
+          get().addMessage({
+            id: generateId(),
+            role: 'system',
+            content: t('store.messages.respondError', {
+              detail: error instanceof Error ? error.message : String(error),
+            }),
+            timestamp: Date.now(),
+          })
+        })
+    }
+    set((state) => {
+      const next = { ...state.remotePromptIds }
+      delete next[id]
+      return { extensionUiRequest: null, remotePromptIds: next }
+    })
+  },
+
   dismissExtensionUi: () => {
     const { extensionUiRequest, remotePromptIds } = get()
     if (extensionUiRequest) {
@@ -4073,6 +4148,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           options: frame.method === 'select' ? frame.options : undefined,
           placeholder: frame.method === 'input' ? frame.placeholder : undefined,
           prefill: frame.method === 'editor' ? frame.prefill : undefined,
+          ask: frame.ask,
         },
         // A remote prompt is answered over the relay, so the answer path has to
         // know which one this is. The id alone is not enough: a local request

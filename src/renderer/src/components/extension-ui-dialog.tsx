@@ -9,6 +9,7 @@ import {
   splitPromptText,
 } from './extension-ui-dialog-helpers'
 import { isImeComposing } from '../utils/ime-composing'
+import { AskFlowDialog } from './ask-flow-dialog'
 
 // Stacking tiers for the two extension-UI surfaces, which can be on screen at
 // the same time. The toast MUST outrank the dialog's full-screen backdrop: at
@@ -24,9 +25,12 @@ const NOTIFY_TOAST_TIMEOUT_MS = 5000
 const KEY_LISTENER_OPTIONS: AddEventListenerOptions = { capture: true }
 
 export function ExtensionUiDialog(): React.JSX.Element | null {
+  const { t } = useTranslation()
   const request = useAppStore((state) => state.extensionUiRequest)
   const notify = useAppStore((state) => state.extensionNotify)
   const respondExtensionUi = useAppStore((state) => state.respondExtensionUi)
+  const respondAskFlow = useAppStore((state) => state.respondAskFlow)
+  const cancelAskFlow = useAppStore((state) => state.cancelAskFlow)
   const dismissExtensionUi = useAppStore((state) => state.dismissExtensionUi)
   const dismissExtensionNotify = useAppStore((state) => state.dismissExtensionNotify)
 
@@ -72,6 +76,27 @@ export function ExtensionUiDialog(): React.JSX.Element | null {
   const dialog = ((): React.JSX.Element | null => {
     if (!request) return null
     const frame = { onCancel: dismissExtensionUi, onHide: hide, hidden }
+    // A pi-ask flow carries every question in one request and accepts exactly one
+    // structured answer. Rendering it as the flat select would answer only the
+    // first question, which pi-ask rejects as a partial flow.
+    if (request.ask) {
+      return (
+        <DialogOverlay hidden={hidden} onBackdropClick={hide}>
+          <DialogBox
+            prompt={request.ask.title ?? request.title ?? t('chat.extensionUi.selectFallbackTitle')}
+            onCancel={() => cancelAskFlow(request.id)}
+            onHide={hide}
+            wide
+          >
+            <AskFlowDialog
+              ask={request.ask}
+              onSubmit={(answers) => respondAskFlow(request.id, answers)}
+              onCancel={() => cancelAskFlow(request.id)}
+            />
+          </DialogBox>
+        </DialogOverlay>
+      )
+    }
     switch (request.method) {
       case 'select':
         return (
