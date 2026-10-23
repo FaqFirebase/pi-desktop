@@ -4040,8 +4040,45 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         return
       }
 
+      case 'error': {
+        // The Pi reports a provider failure from `message_end` and still sends
+        // `agent_done` afterwards from `agent_end`, so dropping this frame would
+        // turn a failed turn into an empty reply with no explanation.
+        const detail = typeof frame.message === 'string' && frame.message ? frame.message : ''
+        get().addMessage({
+          id: generateId(),
+          role: 'system',
+          content: t('store.messages.error', {
+            detail: detail || t('store.messages.unknownError'),
+          }),
+          timestamp: Date.now(),
+        })
+        set({ isStreaming: false, streamingContent: '', streamingThinking: '', streamingToolCalls: new Map() })
+        return
+      }
+
+      case 'compaction': {
+        // Context was compacted on the other machine: the transcript survives but
+        // its earlier turns are no longer in the context window.
+        get().addMessage({
+          id: generateId(),
+          role: 'system',
+          content: t('store.messages.contextCompacted'),
+          timestamp: Date.now(),
+        })
+        return
+      }
+
+      case 'cancelled': {
+        // A turn was stopped on the other end (from the phone, or the Pi's TUI).
+        set({ isStreaming: false, streamingContent: '' })
+        return
+      }
+
       default:
-        // queued_message_state, error, pong and anything newer: nothing to draw.
+        // queued_message_state, steer_consumed, pong, action_ok/error and
+        // models_list carry no chat content; bye is a teardown signal the relay
+        // bridge turns into a connection state change, not a transcript row.
         return
     }
   },

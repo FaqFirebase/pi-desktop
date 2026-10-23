@@ -2556,3 +2556,55 @@ test('a failed remote send is reported in the chat and ends the turn', async () 
     piDesktopStub.relay.sendPrompt = original
   }
 })
+
+test('an error frame from the remote turn is shown instead of a silent empty reply', async () => {
+  // The Pi broadcasts `error` from message_end and still sends `agent_done` from
+  // agent_end, so ignoring the error frame turned a failed turn into an empty
+  // assistant reply with no explanation.
+  useAppStore.setState({
+    activeRemoteRef: { peer: 'PEERKEY', roomId: 'ROOMID' },
+    messages: [],
+    streamingContent: '',
+    isStreaming: true,
+  })
+
+  useAppStore.getState().handleRelayFrame({
+    roomId: 'ROOMID',
+    frame: { type: 'error', code: 'provider_error', message: 'Provider error' },
+  })
+  useAppStore.getState().handleRelayFrame({ roomId: 'ROOMID', frame: { type: 'agent_done' } })
+
+  const state = useAppStore.getState()
+  const system = state.messages.filter((m) => m.role === 'system')
+  assert.equal(system.length, 1, 'the failure must be visible in the chat')
+  assert.match(system[0]?.content ?? '', /Provider error/)
+  assert.equal(state.isStreaming, false)
+  // agent_done had no text to commit, so no empty assistant bubble is left behind.
+  assert.equal(state.messages.some((m) => m.role === 'assistant'), false)
+})
+
+test('a compaction on the remote session is reported in the chat', async () => {
+  useAppStore.setState({ activeRemoteRef: { peer: 'PEERKEY', roomId: 'ROOMID' }, messages: [] })
+
+  useAppStore.getState().handleRelayFrame({
+    roomId: 'ROOMID',
+    frame: { type: 'compaction', summary: 'earlier turns', tokens_before: 90000 },
+  })
+
+  assert.equal(useAppStore.getState().messages.at(-1)?.role, 'system')
+})
+
+test('a turn cancelled on the other machine stops the stream here too', async () => {
+  useAppStore.setState({
+    activeRemoteRef: { peer: 'PEERKEY', roomId: 'ROOMID' },
+    streamingContent: 'half an answer',
+    isStreaming: true,
+  })
+
+  useAppStore.getState().handleRelayFrame({
+    roomId: 'ROOMID',
+    frame: { type: 'cancelled', in_reply_to: 'REQ', target_id: 'ROOMID' },
+  })
+
+  assert.equal(useAppStore.getState().isStreaming, false)
+})

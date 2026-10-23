@@ -62,13 +62,27 @@ export type RelayServerMessage =
   | { type: 'pair_error'; in_reply_to?: string; code: string; message?: string }
   | { type: 'session_history'; in_reply_to?: string; events: RelaySessionEvent[]; eos?: boolean; truncated?: boolean }
   | { type: 'user_input'; id?: string; text: string }
+  // Echo of a `user_message` this peer sent. The Pi broadcasts it to every attached
+  // owner so each client renders the same timeline; this desktop draws the bubble
+  // optimistically on send, so the echo is deliberately not drawn again.
+  | { type: 'user_message'; id?: string; text: string; images?: unknown[] }
   | { type: 'agent_chunk'; in_reply_to?: string; delta: string }
   | { type: 'agent_done'; in_reply_to?: string }
+  | { type: 'agent_message'; in_reply_to?: string; text: string }
+  // Pushed after a context compaction, live and replayed on history re-sync.
+  | { type: 'compaction'; summary?: string; tokens_before?: number; ts?: number }
   | { type: 'tool_request'; tool_call_id?: string; tool: string; args?: unknown }
   | { type: 'tool_result'; tool_call_id?: string; tool?: string; result?: unknown; is_error?: boolean }
   | { type: 'queued_message_state'; pending?: unknown[] }
+  | { type: 'steer_consumed'; id?: string }
   | { type: 'error'; code: string; message?: string }
+  | { type: 'cancelled'; in_reply_to?: string; target_id?: string }
   | { type: 'pong'; id?: string }
+  // Sent when the Pi tears the pairing channel down; a reconnect is required.
+  | { type: 'bye'; reason?: string }
+  | { type: 'action_ok'; in_reply_to?: string; action?: string }
+  | { type: 'action_error'; in_reply_to?: string; action?: string; error?: string }
+  | { type: 'models_list'; in_reply_to?: string; models?: unknown[]; current?: unknown }
 
 /**
  * A relay-level roster push, not a Pi frame.
