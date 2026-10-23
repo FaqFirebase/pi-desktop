@@ -1885,6 +1885,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Session ──────────────────────────────────────────────────────────
 
   createNewSession: async () => {
+    // A remote session's "new" is the paired Pi's, not this machine's: asking the
+    // local Pi would open a blank local session and silently leave the relay one
+    // running. The Pi resets its own view and broadcasts a replacement history.
+    if (get().activeRemoteRef) {
+      await get().runRemoteAction('session_new')
+      return
+    }
     const gen = ++sessionLoadGeneration
     try {
       // A new session owns a new Pi process. Never stop or warn about the
