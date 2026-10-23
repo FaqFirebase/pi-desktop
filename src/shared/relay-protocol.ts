@@ -166,7 +166,7 @@ export interface WireModel {
 export type RelayClientMessage =
   | { type: 'pair_request'; id: string; token: string; device_name: string }
   | { type: 'session_sync'; id: string }
-  | { type: 'user_message'; id: string; text: string }
+  | { type: 'user_message'; id: string; text: string; images?: WireImage[]; streaming_behavior?: StreamingBehavior }
   | { type: 'cancel'; id: string; target_id: string }
   | { type: 'ping'; id: string }
   | { type: 'session_new'; id: string }

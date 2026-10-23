@@ -14,6 +14,7 @@ import type {
   RelayRoomInfo,
   RelayActionName,
   RelayServerMessage,
+  WireImage,
   WireModel,
 } from '../../shared/relay-protocol'
 import type { RelayTarget, RelayTransport, RelayTransportEvents, RelayTransportState } from './relay-transport'
@@ -339,14 +340,17 @@ export class RelaySessionManager extends EventEmitter {
   }
 
   /** Sends a prompt. The turn streams back as `agent_chunk` frames. */
-  async sendPrompt(text: string, options?: { steer?: boolean }): Promise<void> {
+  async sendPrompt(text: string, options?: { steer?: boolean; images?: WireImage[] }): Promise<void> {
     const target = this.requirePaired()
     await this.ensureConnected()
     const id = this.nextRequestId()
-    const message: RelayClientMessage = { type: 'user_message', id, text }
+    const message: Extract<RelayClientMessage, { type: 'user_message' }> = { type: 'user_message', id, text }
+    // Images ride on the same frame as the text (Plan/30); the Pi emits previews
+    // and maps each to SDK image content before the model sees it.
+    if (options?.images && options.images.length > 0) message.images = options.images
     // `steer` injects the text into the turn already running instead of queueing
     // it behind that turn, which is what a user typing mid-stream expects.
-    if (options?.steer) (message as { streaming_behavior?: 'steer' }).streaming_behavior = 'steer'
+    if (options?.steer) message.streaming_behavior = 'steer'
     const sent = this.options.transport.send(message, target)
     if (!sent) throw new Error('The relay connection is not open')
     // Kept so  can name the message it stops.

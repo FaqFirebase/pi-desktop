@@ -95,7 +95,7 @@ import type {
   I18nEnvironment,
 } from '../shared/ipc-contracts'
 import type { DetectedRelay, RelayFrameEvent, RelayOpenResult, RemoteSessionRef, RemoteSessionRow } from '../shared/ipc-contracts'
-import type { RelayActionName, RelayExtensionUiResponseBody, RelayRoomInfo, WireModel } from '../shared/relay-protocol'
+import type { RelayActionName, RelayExtensionUiResponseBody, RelayRoomInfo, WireImage, WireModel } from '../shared/relay-protocol'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import type { SubagentListResult, SubagentTranscriptRef, SubagentTranscriptResult } from '../shared/subagent-task'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -308,7 +308,7 @@ interface PiDesktopAPI {
     /** Binds the chat view to one remote session and returns its transcript. */
     openSession(target: RemoteSessionRef): Promise<RelayOpenResult>
     syncSession(): Promise<unknown>
-    sendPrompt(text: string): Promise<{ ok: true }>
+    sendPrompt(text: string, options?: { images?: WireImage[] }): Promise<{ ok: true }>
     cancel(): Promise<{ ok: true }>
     /**
      * Answers an interactive prompt the paired Pi is blocked on. The request id
@@ -660,7 +660,8 @@ const api: PiDesktopAPI = {
     sessions: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SESSIONS),
     openSession: (target: RemoteSessionRef) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_OPEN_SESSION, target),
     syncSession: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SYNC_SESSION),
-    sendPrompt: (text: string) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SEND_PROMPT, text),
+    sendPrompt: (text: string, options?: { images?: WireImage[] }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.RELAY_SEND_PROMPT, text, options),
     cancel: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_CANCEL),
     respondExtensionUi: (requestId: string, response: RelayExtensionUiResponseBody) =>
       ipcRenderer.invoke(IPC_CHANNELS.RELAY_RESPOND_EXTENSION_UI, requestId, response),

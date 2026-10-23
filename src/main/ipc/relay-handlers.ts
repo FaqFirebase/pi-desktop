@@ -114,10 +114,10 @@ export function registerRelayHandlers(bridge: RelaySessionBridge): void {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.RELAY_SEND_PROMPT, async (event, text: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.RELAY_SEND_PROMPT, async (event, text: unknown, options: unknown) => {
     assertTrustedSender(event)
     if (typeof text !== 'string' || !text.trim()) throw new Error('A prompt cannot be empty')
-    await bridge.sendPrompt(text)
+    await bridge.sendPrompt(text, validatePromptOptions(options))
     return { ok: true as const }
   })
 
@@ -151,6 +151,29 @@ export function registerRelayHandlers(bridge: RelaySessionBridge): void {
     assertTrustedSender(event)
     return bridge.listModels()
   })
+}
+
+/**
+ * Narrows a prompt's optional images.
+ *
+ * Base64 image bytes are the one large payload this channel carries, so a
+ * malformed entry is refused here rather than shipped to the other machine and
+ * failing inside the Pi where the error is far from the user.
+ */
+function validatePromptOptions(raw: unknown): { images?: { data: string; mime: string }[] } {
+  if (raw === undefined || raw === null) return {}
+  if (typeof raw !== 'object') throw new Error('Prompt options must be an object')
+  const input = raw as { images?: unknown }
+  if (input.images === undefined) return {}
+  if (!Array.isArray(input.images)) throw new Error('Prompt images must be a list')
+  const images = input.images.map((entry, index) => {
+    if (!entry || typeof entry !== 'object') throw new Error(`Prompt image ${index} must be an object`)
+    const image = entry as { data?: unknown; mime?: unknown }
+    if (typeof image.data !== 'string' || !image.data) throw new Error(`Prompt image ${index} has no data`)
+    if (typeof image.mime !== 'string' || !image.mime) throw new Error(`Prompt image ${index} has no mime type`)
+    return { data: image.data, mime: image.mime }
+  })
+  return images.length > 0 ? { images } : {}
 }
 
 /** Rejects an action name the Pi has no handler for, instead of timing out on it. */

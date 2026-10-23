@@ -1586,7 +1586,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       get().addMessage({ id: generateId(), role: 'user', content: message, timestamp: Date.now() })
       set({ isStreaming: true, streamingContent: '', streamingThinking: '', streamingToolCalls: new Map() })
       try {
-        await window.piDesktop.relay.sendPrompt(message)
+        await window.piDesktop.relay.sendPrompt(
+          message,
+          options?.images?.length ? { images: options.images.map((image) => ({ data: image.data, mime: image.mimeType })) } : undefined,
+        )
       } catch (err) {
         set({ isStreaming: false })
         get().addMessage({

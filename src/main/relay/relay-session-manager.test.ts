@@ -489,3 +489,26 @@ test('a successful action resolves without inventing a reply', async () => {
   await pending
   assert.equal((transport.lastSent?.message as { type: string }).type, 'session_compact')
 })
+
+test('images ride on the prompt frame so the Pi can attach them', async () => {
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+
+  await subject.sendPrompt('what is this?', { images: [{ data: 'aGVsbG8=', mime: 'image/png' }] })
+  const sent = transport.lastSent
+  assert.ok(sent)
+  const images = (sent.message as { images?: { data: string; mime: string }[] }).images
+  assert.equal(images?.length, 1)
+  assert.equal(images?.[0].mime, 'image/png')
+})
+
+test('a text-only prompt carries no images key at all', async () => {
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+
+  await subject.sendPrompt('no pictures')
+  // The Pi branches on presence, so an empty array would take the image path.
+  assert.equal('images' in (transport.lastSent?.message as object), false)
+})

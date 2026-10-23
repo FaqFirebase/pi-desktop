@@ -13,6 +13,7 @@ import type {
   RelayRoomInfo,
   RelayServerMessage,
   RelaySessionEvent,
+  WireImage,
   WireModel,
 } from '../../shared/relay-protocol'
 import { appLog } from '../app-log'
@@ -53,7 +54,7 @@ export interface RelayManagerLike {
   listRooms(): Promise<RelayRoomInfo[]>
   selectRoom(roomId: string): Promise<PairedRelayAgent>
   syncSession(): Promise<unknown>
-  sendPrompt(text: string, options?: { steer?: boolean }): Promise<void>
+  sendPrompt(text: string, options?: { steer?: boolean; images?: WireImage[] }): Promise<void>
   cancel(): Promise<void>
   runAction?(action: string, payload?: { provider?: string; modelId?: string; level?: string }): Promise<void>
   listModels?(): Promise<{ models: WireModel[]; current?: WireModel }>
@@ -216,7 +217,7 @@ export class RelaySessionBridge {
     }
   }
 
-  async sendPrompt(text: string, options?: { steer?: boolean }): Promise<void> {
+  async sendPrompt(text: string, options?: { steer?: boolean; images?: WireImage[] }): Promise<void> {
     await this.requireManager().sendPrompt(text, options)
   }
 
