@@ -2589,6 +2589,25 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   listModels: async () => {
+    // With a remote session open the catalog belongs to the other machine; the
+    // local list would offer models that Pi cannot run. Mapped into the same
+    // ModelInfo shape so the picker renders either source identically.
+    if (get().activeRemoteRef) {
+      const remote = await get().listRemoteModels()
+      return remote.map((model) => ({
+        id: model.id,
+        name: model.name || model.id,
+        api: 'relay',
+        provider: model.provider,
+        baseUrl: '',
+        reasoning: model.reasoning === true,
+        input: ['text'],
+        thinking: { efforts: [] },
+        contextWindow: model.context_window ?? 0,
+        maxTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      }))
+    }
     const gen = sessionLoadGeneration
     const workspaceId = get().activeWorkspace?.id
     const isCurrent = (): boolean => gen === sessionLoadGeneration && workspaceId === get().activeWorkspace?.id
