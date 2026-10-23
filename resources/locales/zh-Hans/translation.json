@@ -1546,10 +1546,10 @@
     },
     "sessionNamePlaceholder": "会话名称",
     "sessionRow": {
-      "tooltipActive": "{{title}}\n\n点击打开 · 双击重命名 · 右键查看操作",
-      "tooltipInactive": "{{title}}\n\n点击打开 · 右键查看操作",
       "remoteBadge": "{{host}} 上的会话",
-      "remoteFallback": "远程"
+      "remoteFallback": "远程",
+      "tooltipActive": "{{title}}\n\n点击打开 · 双击重命名 · 右键查看操作",
+      "tooltipInactive": "{{title}}\n\n点击打开 · 右键查看操作"
     },
     "tools": {
       "allWorkflows": "全部工作流",
@@ -1768,6 +1768,7 @@
       "removedPackage": "已移除 {{spec}}",
       "removePackageFailed": "移除失败",
       "removeWorkspaceError": "移除工作区错误：{{detail}}",
+      "respondError": "无法回答远程提示：{{detail}}",
       "retrying": "正在重试（第 {{attempt}}/{{maxAttempts}} 次）：{{detail}}",
       "reusedWorktree": "找到了相关的现有 Git 工作树，并在那里继续任务。",
       "sendError": "无法发送到远程会话：{{detail}}",

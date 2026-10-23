@@ -369,6 +369,14 @@ interface AppState {
   // request it delivers here and replays it on demand (flushPendingPrompts),
   // so clearing this slot never loses the prompt.
   extensionUiRequest: PiExtensionUiRequest | null
+  /**
+   * Remote request ids this desktop is answering over the relay.
+   *
+   * Keyed by request id and valued by the room it came from. The dialog slot is
+   * shared with the local Pi, so the answer path needs to know which transport
+   * a visible prompt belongs to.
+   */
+  remotePromptIds: Record<string, string>
   // Fire-and-forget notify toast. Its own slot so a toast can never clobber
   // an unanswered blocking dialog (and vice versa); both can be on screen.
   extensionNotify: PiExtensionUiRequest | null
@@ -1322,6 +1330,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   extensionUiRequest: null,
   extensionNotify: null,
+  remotePromptIds: {},
   pendingPromptCounts: {},
   workspaceActivity: {},
   workflowRuns: [],
@@ -3069,8 +3078,36 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   respondExtensionUi: (id, response) => {
-    const { extensionUiRequest } = get()
+    const { extensionUiRequest, remotePromptIds } = get()
     if (!extensionUiRequest || extensionUiRequest.id !== id) return
+
+    // A remote prompt is answered over the relay, never through the local ui
+    // channel: the local id namespace belongs to this machine's Pi and a stray
+    // answer there would resolve an unrelated turn.
+    if (remotePromptIds[id]) {
+      const payload =
+        extensionUiRequest.method === 'confirm'
+          ? { confirmed: !!response.confirmed }
+          : { value: String(response.value ?? '') }
+      void window.piDesktop.relay
+        .respondExtensionUi(id, payload as never)
+        .catch((error: unknown) => {
+          get().addMessage({
+            id: generateId(),
+            role: 'system',
+            content: t('store.messages.respondError', {
+              detail: error instanceof Error ? error.message : String(error),
+            }),
+            timestamp: Date.now(),
+          })
+        })
+      set((state) => {
+        const next = { ...state.remotePromptIds }
+        delete next[id]
+        return { extensionUiRequest: null, remotePromptIds: next }
+      })
+      return
+    }
 
     if (extensionUiRequest.method === 'confirm') {
       window.piDesktop.ui.respondConfirm(id, !!response.confirmed)
@@ -3082,8 +3119,31 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   dismissExtensionUi: () => {
-    const { extensionUiRequest } = get()
+    const { extensionUiRequest, remotePromptIds } = get()
     if (extensionUiRequest) {
+      if (remotePromptIds[extensionUiRequest.id]) {
+        // Cancelling a remote prompt must say so explicitly: an empty
+        // value would be read as a real answer and the turn would proceed on
+        // input the user never gave.
+        void window.piDesktop.relay
+          .respondExtensionUi(extensionUiRequest.id, { cancelled: true })
+          .catch((error: unknown) => {
+            get().addMessage({
+              id: generateId(),
+              role: 'system',
+              content: t('store.messages.respondError', {
+                detail: error instanceof Error ? error.message : String(error),
+              }),
+              timestamp: Date.now(),
+            })
+          })
+        set((state) => {
+          const next = { ...state.remotePromptIds }
+          delete next[extensionUiRequest.id]
+          return { extensionUiRequest: null, remotePromptIds: next }
+        })
+        return
+      }
       if (extensionUiRequest.method === 'confirm') {
         window.piDesktop.ui.respondConfirm(extensionUiRequest.id, false)
       } else {
@@ -3985,6 +4045,42 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (!active) return
     if (event.roomId && active.roomId && event.roomId !== active.roomId) return
     const frame = event.frame
+
+    if (frame.type === 'extension_ui_request') {
+      // The paired Pi blocks on `ask_user` until exactly one answer arrives, so
+      // this prompt must reach the same dialog the local path uses. `notify` is
+      // fire-and-forget and belongs in the toast slot, never the blocking one.
+      // The wire speaks snake_case; the dialog state is typed in camelCase.
+      if (frame.method === 'notify') {
+        set({
+          extensionNotify: {
+            type: 'extension_ui_request',
+            id: frame.id,
+            method: 'notify',
+            message: frame.message,
+            notifyType: frame.notify_type,
+          },
+        })
+        return
+      }
+      set({
+        extensionUiRequest: {
+          type: 'extension_ui_request',
+          id: frame.id,
+          method: frame.method,
+          title: frame.title,
+          message: frame.method === 'confirm' ? frame.message : undefined,
+          options: frame.method === 'select' ? frame.options : undefined,
+          placeholder: frame.method === 'input' ? frame.placeholder : undefined,
+          prefill: frame.method === 'editor' ? frame.prefill : undefined,
+        },
+        // A remote prompt is answered over the relay, so the answer path has to
+        // know which one this is. The id alone is not enough: a local request
+        // with the same id must not be answered over the relay.
+        remotePromptIds: { ...get().remotePromptIds, [frame.id]: active.roomId },
+      })
+      return
+    }
 
     switch (frame.type) {
       case 'agent_chunk': {

@@ -1575,10 +1575,10 @@
     },
     "sessionNamePlaceholder": "Session name",
     "sessionRow": {
-      "tooltipActive": "{{title}}\n\nClick to open · double-click to rename · right-click for actions",
-      "tooltipInactive": "{{title}}\n\nClick to open · right-click for actions",
       "remoteBadge": "Session on {{host}}",
-      "remoteFallback": "Remote"
+      "remoteFallback": "Remote",
+      "tooltipActive": "{{title}}\n\nClick to open · double-click to rename · right-click for actions",
+      "tooltipInactive": "{{title}}\n\nClick to open · right-click for actions"
     },
     "tools": {
       "allWorkflows": "All Workflows",
@@ -1802,6 +1802,7 @@
       "removedPackage": "Removed {{spec}}",
       "removePackageFailed": "Remove failed",
       "removeWorkspaceError": "Remove workspace error: {{detail}}",
+      "respondError": "Could not answer the remote prompt: {{detail}}",
       "retrying": "Retrying (attempt {{attempt}}/{{maxAttempts}}): {{detail}}",
       "reusedWorktree": "Found the related existing Git worktree and continued the task there.",
       "sendError": "Could not send to the remote session: {{detail}}",

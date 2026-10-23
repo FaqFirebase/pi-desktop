@@ -6,7 +6,14 @@
  */
 import { EventEmitter } from 'node:events'
 import type { PairedRelayAgent } from '../../shared/ipc-contracts'
-import type { RelayClientMessage, RelayInboundMessage, RelayRoomInfo, RelayServerMessage } from '../../shared/relay-protocol'
+import type {
+  RelayClientMessage,
+  RelayExtensionUiResponse,
+  RelayExtensionUiResponseBody,
+  RelayInboundMessage,
+  RelayRoomInfo,
+  RelayServerMessage,
+} from '../../shared/relay-protocol'
 import type { RelayTarget, RelayTransport, RelayTransportEvents, RelayTransportState } from './relay-transport'
 
 export type RelayManagerStatus = 'idle' | 'connecting' | 'connected' | 'paired' | 'error'
@@ -300,6 +307,25 @@ export class RelaySessionManager extends EventEmitter {
     await this.ensureConnected()
     const id = this.nextRequestId()
     if (!this.options.transport.send({ type: 'cancel', id }, target)) {
+      throw new Error('The relay connection is not open')
+    }
+  }
+
+  /**
+   * Answers an interactive prompt the paired Pi is blocked on.
+   *
+   * The Pi sends `extension_ui_request` for `ask_user` and waits for exactly one
+   * response keyed by that request id. There is no retry: a turn left unanswered
+   * holds until pi-ask's 10-minute flow TTL expires and then reports failure, so
+   * a dropped response is a lost turn rather than a prompt to resend.
+   */
+  async respondExtensionUi(requestId: string, response: RelayExtensionUiResponseBody): Promise<void> {
+    const id = typeof requestId === 'string' ? requestId.trim() : ''
+    if (!id) throw new Error('An interactive response needs the request id it answers')
+    const target = this.requirePaired()
+    await this.ensureConnected()
+    const message = { ...response, type: 'extension_ui_response', id } as RelayExtensionUiResponse
+    if (!this.options.transport.send(message, target)) {
       throw new Error('The relay connection is not open')
     }
   }

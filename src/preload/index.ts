@@ -95,7 +95,7 @@ import type {
   I18nEnvironment,
 } from '../shared/ipc-contracts'
 import type { DetectedRelay, RelayFrameEvent, RelayOpenResult, RemoteSessionRef, RemoteSessionRow } from '../shared/ipc-contracts'
-import type { RelayRoomInfo } from '../shared/relay-protocol'
+import type { RelayExtensionUiResponseBody, RelayRoomInfo } from '../shared/relay-protocol'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import type { SubagentListResult, SubagentTranscriptRef, SubagentTranscriptResult } from '../shared/subagent-task'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -310,6 +310,15 @@ interface PiDesktopAPI {
     syncSession(): Promise<unknown>
     sendPrompt(text: string): Promise<{ ok: true }>
     cancel(): Promise<{ ok: true }>
+    /**
+     * Answers an interactive prompt the paired Pi is blocked on. The request id
+     * is the one the Pi sent; send exactly the discriminated fields for that
+     * prompt's method, or `ask` for a rich pi-ask flow.
+     */
+    respondExtensionUi(
+      requestId: string,
+      response: RelayExtensionUiResponseBody,
+    ): Promise<{ ok: true }>
     onStatus(callback: (status: RelayStatus) => void): () => void
     onFrame(callback: (frame: RelayFrameEvent) => void): () => void
   },
@@ -648,6 +657,8 @@ const api: PiDesktopAPI = {
     syncSession: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SYNC_SESSION),
     sendPrompt: (text: string) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_SEND_PROMPT, text),
     cancel: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_CANCEL),
+    respondExtensionUi: (requestId: string, response: RelayExtensionUiResponseBody) =>
+      ipcRenderer.invoke(IPC_CHANNELS.RELAY_RESPOND_EXTENSION_UI, requestId, response),
     onStatus: (callback: (status: RelayStatus) => void) => {
       const listener = (_event: unknown, status: RelayStatus): void => callback(status)
       ipcRenderer.on(IPC_CHANNELS.EVENT_RELAY_STATUS, listener)

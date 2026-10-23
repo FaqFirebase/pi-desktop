@@ -289,6 +289,7 @@ test('every action refuses to run before pairing', async () => {
   await assert.rejects(() => subject.syncSession(), /not paired/)
   await assert.rejects(() => subject.sendPrompt('hi'), /not paired/)
   await assert.rejects(() => subject.cancel(), /not paired/)
+  await assert.rejects(() => subject.respondExtensionUi('req-1', { value: 'x' }), /not paired/)
 })
 
 test('a prompt is sent to the paired Pi with a fresh correlation id', async () => {
@@ -389,4 +390,43 @@ test('a meta push updates the session it names and is ignored for unknown ones',
   const rooms = await subject.listRooms()
   assert.equal(rooms.length, 1, 'an unknown room must not be invented')
   assert.equal(rooms[0]?.working, true)
+})
+
+test('an interactive answer reuses the request id the Pi is blocked on', async () => {
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+
+  await subject.respondExtensionUi('ext-42', { value: 'yes' })
+  const sent = transport.lastSent
+  assert.ok(sent)
+  // The id is the Pi's, not one of ours: it correlates the answer with the
+  // prompt, and a fresh id would be dropped and strand the turn until its TTL.
+  assert.equal((sent.message as { id: string }).id, 'ext-42')
+  assert.equal(sent.message.type, 'extension_ui_response')
+  assert.equal((sent.message as { value: string }).value, 'yes')
+  assert.equal(sent.target.peer, PI_PUBKEY)
+})
+
+test('a cancelled interactive answer says cancelled instead of sending an empty value', async () => {
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+
+  await subject.respondExtensionUi(' ext-7 ', { cancelled: true })
+  const sent = transport.lastSent
+  assert.ok(sent)
+  // Surrounding whitespace is trimmed: the id must match byte-for-byte.
+  assert.equal((sent.message as { id: string }).id, 'ext-7')
+  assert.equal((sent.message as { cancelled: boolean }).cancelled, true)
+  assert.equal((sent.message as { value?: string }).value, undefined)
+})
+
+test('an interactive answer without a request id is refused rather than sent', async () => {
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+
+  await assert.rejects(() => subject.respondExtensionUi('   ', { value: 'x' }), /request id/)
+  assert.equal(transport.lastSent, undefined)
 })

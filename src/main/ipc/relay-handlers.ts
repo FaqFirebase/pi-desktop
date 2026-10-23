@@ -2,6 +2,11 @@ import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import type { DetectedRelay, PairedRelayAgent, RelayOpenResult, RemoteSessionRef } from '../../shared/ipc-contracts'
 import { normalizeRelayUrl, parsePairingUri } from '../../shared/relay-protocol'
+import type {
+  RelayAskAnswer,
+  RelayAskResponseEnrichment,
+  RelayExtensionUiResponseBody,
+} from '../../shared/relay-protocol'
 import { assertTrustedSender } from './validation'
 import { appLog } from '../app-log'
 import type { RelaySessionBridge } from '../relay/relay-bridge'
@@ -120,6 +125,74 @@ export function registerRelayHandlers(bridge: RelaySessionBridge): void {
     await bridge.cancel()
     return { ok: true as const }
   })
+
+  ipcMain.handle(
+    IPC_CHANNELS.RELAY_RESPOND_EXTENSION_UI,
+    async (event, requestId: unknown, response: unknown) => {
+      assertTrustedSender(event)
+      if (typeof requestId !== 'string' || !requestId.trim()) {
+        throw new Error('An interactive response needs the request id it answers')
+      }
+      const validated = validateExtensionUiResponse(response)
+      await bridge.respondExtensionUi(requestId.trim(), validated)
+      return { ok: true as const }
+    },
+  )
+}
+
+/**
+ * Validates an interactive response that arrived over IPC.
+ *
+ * The renderer builds this itself, but it is the one payload that answers a
+ * blocking prompt on the other machine, so a malformed shape must be rejected
+ * here rather than sent: the Pi routes on the discriminator and a frame with the
+ * wrong one is silently dropped, which would leave the turn waiting out its
+ * full TTL.
+ */
+function validateExtensionUiResponse(raw: unknown): RelayExtensionUiResponseBody {
+  if (!raw || typeof raw !== 'object') throw new Error('An interactive response must be an object')
+  const input = raw as Record<string, unknown>
+
+  if (input.ask !== undefined) {
+    return { ask: validateAskResponse(input.ask) }
+  }
+  if (input.cancelled === true) return { cancelled: true }
+  if (typeof input.confirmed === 'boolean') return { confirmed: input.confirmed }
+  if (typeof input.value === 'string') return { value: input.value }
+  throw new Error('An interactive response needs a value, a confirmed flag, a cancel, or an ask envelope')
+}
+
+/** Narrows the rich pi-ask answer, which the Pi forwards to pi-ask verbatim. */
+function validateAskResponse(raw: unknown): RelayAskResponseEnrichment {
+  if (!raw || typeof raw !== 'object') throw new Error('An ask response must be an object')
+  const input = raw as Record<string, unknown>
+  const flowId = typeof input.flow_id === 'string' ? input.flow_id.trim() : ''
+  if (!flowId) throw new Error('An ask response needs the flow_id it answers')
+
+  if (input.kind === 'cancel') return { flow_id: flowId, kind: 'cancel' }
+  if (input.kind !== 'answer') throw new Error('An ask response must be an answer or a cancel')
+
+  const answers = input.answers
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
+    throw new Error('An ask answer needs an answers object')
+  }
+  const validated: Record<string, RelayAskAnswer> = {}
+  for (const [questionId, value] of Object.entries(answers as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue
+    const entry = value as Record<string, unknown>
+    const answer: RelayAskAnswer = {}
+    if (Array.isArray(entry.values)) answer.values = entry.values.map(String)
+    if (typeof entry.customText === 'string') answer.customText = entry.customText
+    if (typeof entry.note === 'string') answer.note = entry.note
+    if (entry.optionNotes && typeof entry.optionNotes === 'object') {
+      answer.optionNotes = Object.fromEntries(
+        Object.entries(entry.optionNotes as Record<string, unknown>).map(([key, text]) => [key, String(text)]),
+      )
+    }
+    validated[questionId] = answer
+  }
+  const mode = input.mode === 'elaborate' ? 'elaborate' : input.mode === 'submit' ? 'submit' : undefined
+  return mode ? { flow_id: flowId, kind: 'answer', mode, answers: validated } : { flow_id: flowId, kind: 'answer', answers: validated }
 }
 
 /** Reports a relay failure without leaking pairing material into the log. */export function logRelayFailure(action: string, error: unknown): void {

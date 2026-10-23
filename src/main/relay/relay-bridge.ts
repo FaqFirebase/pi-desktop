@@ -6,7 +6,13 @@
  * user pair" and "is the socket up" from being two competing sources of truth.
  */
 import type { AppSettings, PairedRelayAgent, RelayFrameEvent, RelayOpenResult, RelayStatus, RemoteSessionRef, RemoteSessionRow, SessionListItem } from '../../shared/ipc-contracts'
-import type { PairingUri, RelayRoomInfo, RelayServerMessage, RelaySessionEvent } from '../../shared/relay-protocol'
+import type {
+  PairingUri,
+  RelayExtensionUiResponseBody,
+  RelayRoomInfo,
+  RelayServerMessage,
+  RelaySessionEvent,
+} from '../../shared/relay-protocol'
 import { appLog } from '../app-log'
 import type { RelayKeypair } from './identity'
 import type { RelayManagerState } from './relay-session-manager'
@@ -47,6 +53,8 @@ export interface RelayManagerLike {
   syncSession(): Promise<unknown>
   sendPrompt(text: string): Promise<void>
   cancel(): Promise<void>
+  /** Optional so a manager fake that predates interactive prompts still fits. */
+  respondExtensionUi?(requestId: string, response: RelayExtensionUiResponseBody): Promise<void>
   getState(): RelayManagerState
   /** Reports every internal state change, including roster pushes and room adoption. */
   onChange(listener: (state: RelayManagerState) => void): () => void
@@ -210,6 +218,20 @@ export class RelaySessionBridge {
 
   async cancel(): Promise<void> {
     await this.requireManager().cancel()
+  }
+
+  async respondExtensionUi(
+    requestId: string,
+    response: RelayExtensionUiResponseBody,
+  ): Promise<void> {
+    const manager = this.requireManager()
+    // Optional in the interface so a manager built before this channel existed
+    // still satisfies it; a missing implementation is a clear error rather than
+    // a silent no-op that would strand the remote turn.
+    if (!manager.respondExtensionUi) {
+      throw new Error('This relay connection cannot answer interactive prompts')
+    }
+    await manager.respondExtensionUi(requestId, response)
   }
 
   /** Called once at startup: connect only if the user has already configured a relay. */

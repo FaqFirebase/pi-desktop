@@ -48,6 +48,89 @@ export interface RelayRoomInfo {
   started_at?: number
 }
 
+/** One option in a pi-ask question. `freeform` allows a typed answer. */
+export interface RelayAskOption {
+  value: string
+  label: string
+  description?: string
+  preview?: string
+  freeform?: boolean
+}
+
+/** One question inside a pi-ask flow. */
+export interface RelayAskQuestion {
+  id: string
+  label: string
+  prompt: string
+  type: 'single' | 'multi' | 'preview'
+  required: boolean
+  presentedType?: 'single' | 'multi' | 'preview'
+  requestedType?: 'single' | 'multi' | 'preview'
+  options: RelayAskOption[]
+}
+
+/**
+ * pi-ask enrichment on an `extension_ui_request`.
+ *
+ * One flow carries every question it will ask, and is answered in a single
+ * submit. Keys inside `answers` mirror pi-ask's own camelCase schema verbatim
+ * (unlike the snake_case frame-level fields) so the Pi can forward a response
+ * without a remap pass.
+ */
+export interface RelayAskEnrichment {
+  flow_id: string
+  tool_call_id: string | null
+  source: string
+  title: string | null
+  questions: RelayAskQuestion[]
+}
+
+/** One question's answered parts, as pi-ask records them. */
+export interface RelayAskAnswer {
+  values?: string[]
+  customText?: string
+  note?: string
+  optionNotes?: Record<string, string>
+}
+
+/** The structured answer that supersedes value/confirmed/cancelled. */
+export type RelayAskResponseEnrichment =
+  | { flow_id: string; kind: 'answer'; mode?: 'submit' | 'elaborate'; answers: Record<string, RelayAskAnswer> }
+  | { flow_id: string; kind: 'cancel' }
+
+/** Interactive extension prompt pushed by the Pi (mirrors the SDK's RPC contract). */
+export type RelayExtensionUiRequest =
+  | { type: 'extension_ui_request'; id: string; method: 'select'; title: string; options: string[]; ask?: RelayAskEnrichment }
+  | { type: 'extension_ui_request'; id: string; method: 'confirm'; title: string; message: string; ask?: RelayAskEnrichment }
+  | { type: 'extension_ui_request'; id: string; method: 'input'; title: string; placeholder?: string; ask?: RelayAskEnrichment }
+  | { type: 'extension_ui_request'; id: string; method: 'editor'; title: string; prefill?: string; ask?: RelayAskEnrichment }
+  | { type: 'extension_ui_request'; id: string; method: 'notify'; message: string; notify_type?: 'info' | 'warning' | 'error' }
+
+/**
+ * Answer to an `extension_ui_request`.
+ *
+ * A client that rendered the rich pi-ask flow submits ONLY `ask` (the structured
+ * answers supersede the discriminator); a client that rendered the degraded SDK
+ * prompt sends `value`/`confirmed`/`cancelled` and the Pi maps the label back to
+ * an option value.
+ */
+export type RelayExtensionUiResponse =
+  | { type: 'extension_ui_response'; id: string; value: string; ask?: RelayAskResponseEnrichment }
+  | { type: 'extension_ui_response'; id: string; confirmed: boolean; ask?: RelayAskResponseEnrichment }
+  | { type: 'extension_ui_response'; id: string; cancelled: true; ask?: RelayAskResponseEnrichment }
+  | { type: 'extension_ui_response'; id: string; ask: RelayAskResponseEnrichment }
+
+/**
+ * `Omit` that distributes over a union.
+ *
+ * Plain `Omit<Union, K>` collapses to the keys COMMON to every member, which
+ * would erase the discriminators that make each response meaningful.
+ */
+export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
+
+/** The parts of a response a client supplies; the transport adds type and id. */
+export type RelayExtensionUiResponseBody = DistributiveOmit<RelayExtensionUiResponse, 'type' | 'id'>
+
 /** Requests the desktop sends to a paired Pi. */
 export type RelayClientMessage =
   | { type: 'pair_request'; id: string; token: string; device_name: string }
@@ -55,6 +138,7 @@ export type RelayClientMessage =
   | { type: 'user_message'; id: string; text: string }
   | { type: 'cancel'; id: string }
   | { type: 'ping'; id: string }
+  | RelayExtensionUiResponse
 
 /** Frames the Pi pushes to an attached peer. */
 export type RelayServerMessage =
@@ -83,6 +167,7 @@ export type RelayServerMessage =
   | { type: 'action_ok'; in_reply_to?: string; action?: string }
   | { type: 'action_error'; in_reply_to?: string; action?: string; error?: string }
   | { type: 'models_list'; in_reply_to?: string; models?: unknown[]; current?: unknown }
+  | RelayExtensionUiRequest
 
 /**
  * A relay-level roster push, not a Pi frame.
