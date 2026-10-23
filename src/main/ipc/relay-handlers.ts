@@ -5,6 +5,7 @@ import { normalizeRelayUrl, parsePairingUri } from '../../shared/relay-protocol'
 import type {
   RelayAskAnswer,
   RelayAskResponseEnrichment,
+  RelayActionName,
   RelayExtensionUiResponseBody,
 } from '../../shared/relay-protocol'
 import { assertTrustedSender } from './validation'
@@ -138,6 +139,44 @@ export function registerRelayHandlers(bridge: RelaySessionBridge): void {
       return { ok: true as const }
     },
   )
+
+  ipcMain.handle(IPC_CHANNELS.RELAY_ACTION, async (event, name: unknown, payload: unknown) => {
+    assertTrustedSender(event)
+    const action = validateActionName(name)
+    await bridge.runAction(action, validateActionPayload(payload))
+    return { ok: true as const }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.RELAY_LIST_MODELS, async (event) => {
+    assertTrustedSender(event)
+    return bridge.listModels()
+  })
+}
+
+/** Rejects an action name the Pi has no handler for, instead of timing out on it. */
+function validateActionName(raw: unknown): RelayActionName {
+  if (raw === 'session_new' || raw === 'session_compact' || raw === 'model_set' || raw === 'thinking_set') {
+    return raw
+  }
+  throw new Error(`Unsupported remote action: ${String(raw)}`)
+}
+
+/**
+ * Narrows an action payload.
+ *
+ * The Pi takes a structured payload rather than a string to parse, so an action
+ * with missing fields would be accepted and then fail on the far side; rejecting
+ * it here keeps the error next to the caller.
+ */
+function validateActionPayload(raw: unknown): { provider?: string; modelId?: string; level?: string } {
+  if (raw === undefined || raw === null) return {}
+  if (typeof raw !== 'object') throw new Error('An action payload must be an object')
+  const input = raw as Record<string, unknown>
+  const payload: { provider?: string; modelId?: string; level?: string } = {}
+  if (typeof input.provider === 'string') payload.provider = input.provider
+  if (typeof input.modelId === 'string') payload.modelId = input.modelId
+  if (typeof input.level === 'string') payload.level = input.level
+  return payload
 }
 
 /**

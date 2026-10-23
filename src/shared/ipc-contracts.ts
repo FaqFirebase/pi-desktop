@@ -160,6 +160,8 @@ export const IPC_CHANNELS = {
   RELAY_SEND_PROMPT: 'relay:send-prompt',
   RELAY_CANCEL: 'relay:cancel',
   RELAY_RESPOND_EXTENSION_UI: 'relay:respond-extension-ui',
+  RELAY_ACTION: 'relay:action',
+  RELAY_LIST_MODELS: 'relay:list-models',
   /** Lists the paired Pi's sessions as ordinary session rows, badged remote. */
   RELAY_SESSIONS: 'relay:sessions',
   /** Binds the chat view to one remote session and hydrates its transcript. */

@@ -12,7 +12,9 @@ import type {
   RelayExtensionUiResponseBody,
   RelayInboundMessage,
   RelayRoomInfo,
+  RelayActionName,
   RelayServerMessage,
+  WireModel,
 } from '../../shared/relay-protocol'
 import type { RelayTarget, RelayTransport, RelayTransportEvents, RelayTransportState } from './relay-transport'
 
@@ -61,6 +63,8 @@ export class RelaySessionManager extends EventEmitter {
   private state: RelayManagerState
   private readonly pending = new Map<string, PendingRequest>()
   private requestCounter = 0
+  /** The id of the most recent prompt, which  names as its target. */
+  private lastPromptId: string | null = null
   private readonly requestTimeoutMs: number
   /** Peers we asked for a roster from and have not heard back about yet. */
   private readonly rosterRequests = new Set<string>()
@@ -293,20 +297,72 @@ export class RelaySessionManager extends EventEmitter {
     return { events: reply as RelayServerMessage & { type: 'session_history' } }
   }
 
+  /**
+   * Runs a typed action on the paired Pi.
+   *
+   * The Pi answers every action with `action_ok` or `action_error` naming the
+   * action, so failures surface as errors here instead of being silent. Anything
+   * the action changes (new history, a compaction notice, a model broadcast) still
+   * arrives through the normal frame channels.
+   */
+  async runAction(
+    action: RelayActionName,
+    payload: { provider?: string; modelId?: string; level?: string } = {},
+  ): Promise<void> {
+    const target = this.requirePaired()
+    await this.ensureConnected()
+    const template: RelayClientMessage =
+      action === 'model_set'
+        ? { type: 'model_set', id: '', provider: payload.provider ?? '', model_id: payload.modelId ?? '' }
+        : action === 'thinking_set'
+          ? { type: 'thinking_set', id: '', level: payload.level ?? '' }
+          : { type: action, id: '' }
+
+    const reply = await this.request(template, target)
+    if (reply.type === 'action_error') {
+      throw new Error(typeof reply.error === 'string' ? reply.error : `The Pi refused ${action}`)
+    }
+  }
+
+  /** Asks the paired Pi for its model catalog. */
+  async listModels(): Promise<{ models: WireModel[]; current?: WireModel }> {
+    const target = this.requirePaired()
+    await this.ensureConnected()
+    const reply = await this.request({ type: 'list_models', id: '' }, target)
+    if (reply.type !== 'models_list') {
+      throw new Error('The paired Pi did not return a model list')
+    }
+    return {
+      models: Array.isArray(reply.models) ? (reply.models as WireModel[]) : [],
+      current: reply.current as WireModel | undefined,
+    }
+  }
+
   /** Sends a prompt. The turn streams back as `agent_chunk` frames. */
-  async sendPrompt(text: string): Promise<void> {
+  async sendPrompt(text: string, options?: { steer?: boolean }): Promise<void> {
     const target = this.requirePaired()
     await this.ensureConnected()
     const id = this.nextRequestId()
-    const sent = this.options.transport.send({ type: 'user_message', id, text }, target)
+    const message: RelayClientMessage = { type: 'user_message', id, text }
+    // `steer` injects the text into the turn already running instead of queueing
+    // it behind that turn, which is what a user typing mid-stream expects.
+    if (options?.steer) (message as { streaming_behavior?: 'steer' }).streaming_behavior = 'steer'
+    const sent = this.options.transport.send(message, target)
     if (!sent) throw new Error('The relay connection is not open')
+    // Kept so  can name the message it stops.
+    this.lastPromptId = id
   }
 
   async cancel(): Promise<void> {
     const target = this.requirePaired()
     await this.ensureConnected()
+    // `cancel` names the message it stops. The Pi aborts whatever turn is running
+    // and echoes this id back in `cancelled`, so a stale value is harmless for the
+    // abort itself but would mislabel the ack; a prompt with no id is still a
+    // legal cancel, so send an empty marker rather than refusing to stop.
+    const targetId = this.lastPromptId ?? ''
     const id = this.nextRequestId()
-    if (!this.options.transport.send({ type: 'cancel', id }, target)) {
+    if (!this.options.transport.send({ type: 'cancel', id, target_id: targetId }, target)) {
       throw new Error('The relay connection is not open')
     }
   }

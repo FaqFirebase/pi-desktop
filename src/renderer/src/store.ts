@@ -1,3 +1,4 @@
+import type { RelayActionName, WireModel } from '../../shared/relay-protocol'
 import { create } from 'zustand'
 import { applyThemeSettings, rememberBootTheme, setUserThemes, watchSystemTheme } from './utils/theme'
 import { applyLanguageSetting } from './i18n'
@@ -631,6 +632,10 @@ interface AppActions {
    * express: several questions, multi-select, or previews. Answers use
    * pi-ask's own camelCase keys because the Pi forwards them unchanged.
    */
+  /** Runs a typed action on the paired Pi, reporting failures in the chat. */
+  runRemoteAction: (name: RelayActionName, payload?: { provider?: string; modelId?: string; level?: string }) => Promise<void>
+  /** The paired Pi model catalog, or an empty list when it cannot be fetched. */
+  listRemoteModels: () => Promise<WireModel[]>
   respondAskFlow: (
     id: string,
     answers: Record<string, { values?: string[]; customText?: string; note?: string; optionNotes?: Record<string, string> }>,
@@ -3131,6 +3136,35 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
 
     set({ extensionUiRequest: null })
+  },
+
+  runRemoteAction: async (name, payload) => {
+    try {
+      await window.piDesktop.relay.action(name, payload)
+      // The action's visible effects (new history, compaction notice, a model
+      // broadcast) arrive as ordinary frames, so nothing is applied here.
+    } catch (error) {
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: t('store.messages.actionError', {
+          action: name,
+          detail: error instanceof Error ? error.message : String(error),
+        }),
+        timestamp: Date.now(),
+      })
+    }
+  },
+
+  listRemoteModels: async () => {
+    try {
+      const result = await window.piDesktop.relay.listModels()
+      return result.models
+    } catch {
+      // An empty list is the honest answer: the picker then shows nothing rather
+      // than a stale catalog from the other machine.
+      return []
+    }
   },
 
   respondAskFlow: (id, answers, mode = 'submit') => {

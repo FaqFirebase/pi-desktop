@@ -1770,6 +1770,7 @@
       "workspaceRulesNoticeTitle": "Workspace permission rules"
     },
     "messages": {
+      "actionError": "Could not {{action}} on the remote session: {{detail}}",
       "addRepositoryError": "Could not add the repository: {{detail}}",
       "arbiterFailed": "Arbiter failed: {{detail}}",
       "archiveError": "Archive error: {{detail}}",

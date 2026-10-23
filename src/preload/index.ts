@@ -95,7 +95,7 @@ import type {
   I18nEnvironment,
 } from '../shared/ipc-contracts'
 import type { DetectedRelay, RelayFrameEvent, RelayOpenResult, RemoteSessionRef, RemoteSessionRow } from '../shared/ipc-contracts'
-import type { RelayExtensionUiResponseBody, RelayRoomInfo } from '../shared/relay-protocol'
+import type { RelayActionName, RelayExtensionUiResponseBody, RelayRoomInfo, WireModel } from '../shared/relay-protocol'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import type { SubagentListResult, SubagentTranscriptRef, SubagentTranscriptResult } from '../shared/subagent-task'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -319,6 +319,11 @@ interface PiDesktopAPI {
       requestId: string,
       response: RelayExtensionUiResponseBody,
     ): Promise<{ ok: true }>
+    action(
+      name: RelayActionName,
+      payload?: { provider?: string; modelId?: string; level?: string },
+    ): Promise<{ ok: true }>
+    listModels(): Promise<{ models: WireModel[]; current?: WireModel }>
     onStatus(callback: (status: RelayStatus) => void): () => void
     onFrame(callback: (frame: RelayFrameEvent) => void): () => void
   },
@@ -659,6 +664,11 @@ const api: PiDesktopAPI = {
     cancel: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_CANCEL),
     respondExtensionUi: (requestId: string, response: RelayExtensionUiResponseBody) =>
       ipcRenderer.invoke(IPC_CHANNELS.RELAY_RESPOND_EXTENSION_UI, requestId, response),
+    /** Runs a typed action (new session, compact, set model, set thinking). */
+    action: (name: RelayActionName, payload?: { provider?: string; modelId?: string; level?: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.RELAY_ACTION, name, payload),
+    /** The paired Pi's model catalog, for the remote model picker. */
+    listModels: () => ipcRenderer.invoke(IPC_CHANNELS.RELAY_LIST_MODELS),
     onStatus: (callback: (status: RelayStatus) => void) => {
       const listener = (_event: unknown, status: RelayStatus): void => callback(status)
       ipcRenderer.on(IPC_CHANNELS.EVENT_RELAY_STATUS, listener)

@@ -8,10 +8,12 @@
 import type { AppSettings, PairedRelayAgent, RelayFrameEvent, RelayOpenResult, RelayStatus, RemoteSessionRef, RemoteSessionRow, SessionListItem } from '../../shared/ipc-contracts'
 import type {
   PairingUri,
+  RelayActionName,
   RelayExtensionUiResponseBody,
   RelayRoomInfo,
   RelayServerMessage,
   RelaySessionEvent,
+  WireModel,
 } from '../../shared/relay-protocol'
 import { appLog } from '../app-log'
 import type { RelayKeypair } from './identity'
@@ -51,8 +53,10 @@ export interface RelayManagerLike {
   listRooms(): Promise<RelayRoomInfo[]>
   selectRoom(roomId: string): Promise<PairedRelayAgent>
   syncSession(): Promise<unknown>
-  sendPrompt(text: string): Promise<void>
+  sendPrompt(text: string, options?: { steer?: boolean }): Promise<void>
   cancel(): Promise<void>
+  runAction?(action: string, payload?: { provider?: string; modelId?: string; level?: string }): Promise<void>
+  listModels?(): Promise<{ models: WireModel[]; current?: WireModel }>
   /** Optional so a manager fake that predates interactive prompts still fits. */
   respondExtensionUi?(requestId: string, response: RelayExtensionUiResponseBody): Promise<void>
   getState(): RelayManagerState
@@ -212,12 +216,31 @@ export class RelaySessionBridge {
     }
   }
 
-  async sendPrompt(text: string): Promise<void> {
-    await this.requireManager().sendPrompt(text)
+  async sendPrompt(text: string, options?: { steer?: boolean }): Promise<void> {
+    await this.requireManager().sendPrompt(text, options)
   }
 
   async cancel(): Promise<void> {
     await this.requireManager().cancel()
+  }
+
+  /**
+   * Runs one typed action on the paired Pi.
+   *
+   * Optional on the manager interface so a fake predating these actions still
+   * fits; a missing implementation is an explicit error rather than a silent
+   * no-op that would look like the action succeeded.
+   */
+  async runAction(action: RelayActionName, payload: { provider?: string; modelId?: string; level?: string } = {}): Promise<void> {
+    const manager = this.requireManager()
+    if (!manager.runAction) throw new Error('This relay connection cannot run remote actions')
+    await manager.runAction(action, payload)
+  }
+
+  async listModels(): Promise<{ models: WireModel[]; current?: WireModel }> {
+    const manager = this.requireManager()
+    if (!manager.listModels) throw new Error('This relay connection cannot list the paired Pi models')
+    return manager.listModels()
   }
 
   async respondExtensionUi(

@@ -430,3 +430,62 @@ test('an interactive answer without a request id is refused rather than sent', a
   await assert.rejects(() => subject.respondExtensionUi('   ', { value: 'x' }), /request id/)
   assert.equal(transport.lastSent, undefined)
 })
+
+test('cancel names the prompt it stops so the Pi can label its ack', async () => {
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+
+  await subject.sendPrompt('long refactor')
+  const promptId = (transport.lastSent?.message as { id: string }).id
+
+  await subject.cancel()
+  const sent = transport.lastSent
+  assert.ok(sent)
+  assert.equal(sent.message.type, 'cancel')
+  // The Pi echoes target_id in `cancelled`; without it the ack names nothing.
+  assert.equal((sent.message as { target_id: string }).target_id, promptId)
+})
+
+test('steering marks the prompt so a busy Pi injects instead of queueing', async () => {
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+
+  await subject.sendPrompt('also check the tests', { steer: true })
+  const sent = transport.lastSent
+  assert.ok(sent)
+  assert.equal((sent.message as { streaming_behavior?: string }).streaming_behavior, 'steer')
+
+  // A plain prompt must not carry the flag, or every prompt would interrupt.
+  await subject.sendPrompt('a normal next turn')
+  assert.equal((transport.lastSent?.message as { streaming_behavior?: string }).streaming_behavior, undefined)
+})
+
+test('a refused action surfaces the Pi reason instead of looking successful', async () => {
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+
+  // The Pi answers a typed action with action_ok or action_error keyed by our id.
+  const pending = subject.runAction('model_set', { provider: 'ollama', modelId: 'nope' })
+  await new Promise((resolve) => setImmediate(resolve))
+  const requestId = (transport.lastSent?.message as { id: string }).id
+  transport.deliver({ type: 'action_error', in_reply_to: requestId, action: 'model_set', error: 'unknown model' })
+
+  await assert.rejects(() => pending, /unknown model/)
+})
+
+test('a successful action resolves without inventing a reply', async () => {
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+
+  const pending = subject.runAction('session_compact')
+  await new Promise((resolve) => setImmediate(resolve))
+  const requestId = (transport.lastSent?.message as { id: string }).id
+  transport.deliver({ type: 'action_ok', in_reply_to: requestId, action: 'session_compact' })
+
+  await pending
+  assert.equal((transport.lastSent?.message as { type: string }).type, 'session_compact')
+})

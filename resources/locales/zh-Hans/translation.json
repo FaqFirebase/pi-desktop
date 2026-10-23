@@ -1736,6 +1736,7 @@
       "workspaceRulesNoticeTitle": "工作区权限规则"
     },
     "messages": {
+      "actionError": "无法在远程会话上执行 {{action}}：{{detail}}",
       "addRepositoryError": "无法添加仓库：{{detail}}",
       "arbiterFailed": "仲裁失败：{{detail}}",
       "archiveError": "归档错误：{{detail}}",

@@ -131,13 +131,51 @@ export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omi
 /** The parts of a response a client supplies; the transport adds type and id. */
 export type RelayExtensionUiResponseBody = DistributiveOmit<RelayExtensionUiResponse, 'type' | 'id'>
 
+/**
+ * One inline image attachment on a `user_message`.
+ *
+ * `data` is base64 (compressed app-side) and `mime` its content type; the Pi maps
+ * this to the SDK's image content before handing it to the model.
+ */
+export interface WireImage {
+  data: string
+  mime: string
+}
+
+/**
+ * How a prompt sent mid-turn is handled.
+ *
+ * The only value the Pi accepts is `steer`: the message is injected into the turn
+ * already running instead of queueing behind it. Omitting it queues.
+ */
+export type StreamingBehavior = 'steer'
+
+/** The typed actions a client can run on the paired Pi. */
+export type RelayActionName = 'session_new' | 'session_compact' | 'model_set' | 'thinking_set'
+
+/** One model row in a `models_list` reply. */
+export interface WireModel {
+  id: string
+  name: string
+  provider: string
+  reasoning?: boolean
+  context_window?: number
+}
+
 /** Requests the desktop sends to a paired Pi. */
 export type RelayClientMessage =
   | { type: 'pair_request'; id: string; token: string; device_name: string }
   | { type: 'session_sync'; id: string }
   | { type: 'user_message'; id: string; text: string }
-  | { type: 'cancel'; id: string }
+  | { type: 'cancel'; id: string; target_id: string }
   | { type: 'ping'; id: string }
+  | { type: 'session_new'; id: string }
+  | { type: 'session_compact'; id: string }
+  | { type: 'model_set'; id: string; provider: string; model_id: string }
+  | { type: 'thinking_set'; id: string; level: string }
+  | { type: 'list_models'; id: string }
+  | { type: 'queued_message_set'; id: string; text: string }
+  | { type: 'queued_message_clear'; id: string; target_id?: string }
   | RelayExtensionUiResponse
 
 /** Frames the Pi pushes to an attached peer. */
@@ -149,7 +187,7 @@ export type RelayServerMessage =
   // Echo of a `user_message` this peer sent. The Pi broadcasts it to every attached
   // owner so each client renders the same timeline; this desktop draws the bubble
   // optimistically on send, so the echo is deliberately not drawn again.
-  | { type: 'user_message'; id?: string; text: string; images?: unknown[] }
+  | { type: 'user_message'; id?: string; text: string; images?: WireImage[]; streaming_behavior?: StreamingBehavior }
   | { type: 'agent_chunk'; in_reply_to?: string; delta: string }
   | { type: 'agent_done'; in_reply_to?: string }
   | { type: 'agent_message'; in_reply_to?: string; text: string }
