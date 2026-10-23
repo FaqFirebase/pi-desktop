@@ -2524,6 +2524,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Model ────────────────────────────────────────────────────────────
 
   setModel: async (provider, modelId) => {
+    // A remote session runs the other machine's model; the local picker would
+    // retune this PC's Pi and silently leave the visible turn unchanged.
+    if (get().activeRemoteRef) {
+      await get().runRemoteAction('model_set', { provider, modelId })
+      return
+    }
     try {
       // The runtime stopped after the picker listed: keep the choice for the next start.
       if (get().piStatus !== 'running') {
@@ -2590,6 +2596,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Thinking ─────────────────────────────────────────────────────────
 
   setThinkingLevel: async (level) => {
+    if (get().activeRemoteRef) {
+      // The local slider must not retune a Pi on another machine.
+      await get().runRemoteAction('thinking_set', { level })
+      return
+    }
     try {
       const response = await window.piDesktop.thinking.setLevel(level) as { success?: boolean } | null
       if (!response?.success) return
@@ -2623,6 +2634,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   compactContext: async () => {
+    // Compacting the local Pi while viewing a remote session would shrink the
+    // wrong machine's context and leave the visible transcript untouched.
+    if (get().activeRemoteRef) {
+      await get().runRemoteAction('session_compact')
+      return
+    }
     try {
       await window.piDesktop.session.compact()
       // compaction_start/end events drive the chat system messages; refresh
