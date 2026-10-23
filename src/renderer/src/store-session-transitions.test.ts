@@ -2483,3 +2483,76 @@ test('opening a local row clears the remote binding', async () => {
 
   assert.equal(useAppStore.getState().activeRemoteRef, null)
 })
+
+// ─── a remote turn: send, then stream the reply into the chat view ───────────
+
+test('sendPrompt on a remote session goes over the relay, not the local Pi', async () => {
+  // The local Pi may not even be running; a remote prompt must not start it.
+  useAppStore.setState({ activeRemoteRef: { peer: 'PEERKEY', roomId: 'ROOMID' }, piStatus: 'stopped' })
+  calls.length = 0
+
+  await useAppStore.getState().sendPrompt('hello there')
+
+  assert.equal(calls.includes('relayPrompt:hello there'), true, 'must send over the relay')
+  assert.equal(calls.some((c) => c === 'prompt:hello there' || c === 'startPi'), false, 'must not touch the local Pi')
+})
+
+test('a remote turn streams into the visible transcript', async () => {
+  useAppStore.setState({
+    activeRemoteRef: { peer: 'PEERKEY', roomId: 'ROOMID' },
+    messages: [],
+    streamingContent: '',
+    isStreaming: false,
+  })
+
+  await useAppStore.getState().sendPrompt('what changed?')
+  // The user's own prompt is shown immediately, before the remote replies.
+  const afterSend = useAppStore.getState().messages
+  assert.equal(afterSend.at(-1)?.role, 'user')
+  assert.equal(afterSend.at(-1)?.content, 'what changed?')
+  assert.equal(useAppStore.getState().isStreaming, true)
+
+  useAppStore.getState().handleRelayFrame({ roomId: 'ROOMID', frame: { type: 'agent_chunk', delta: 'ACK' } })
+  assert.equal(useAppStore.getState().streamingContent, 'ACK')
+
+  useAppStore.getState().handleRelayFrame({ roomId: 'ROOMID', frame: { type: 'agent_done' } })
+  const state = useAppStore.getState()
+  assert.equal(state.streamingContent, '', 'the stream buffer is cleared once committed')
+  assert.equal(state.isStreaming, false, 'the turn is over')
+  assert.equal(state.messages.at(-1)?.role, 'assistant')
+  assert.equal(state.messages.at(-1)?.content, 'ACK')
+})
+
+test('frames from another room never reach the visible transcript', async () => {
+  // A second session on the same Mac keeps streaming while this one is shown;
+  // its output must not be typed into the wrong conversation.
+  useAppStore.setState({
+    activeRemoteRef: { peer: 'PEERKEY', roomId: 'ROOMID' },
+    messages: [],
+    streamingContent: '',
+  })
+
+  useAppStore.getState().handleRelayFrame({ roomId: 'OTHERROOM', frame: { type: 'agent_chunk', delta: 'leak' } })
+
+  assert.equal(useAppStore.getState().streamingContent, '')
+  assert.equal(useAppStore.getState().messages.length, 0)
+})
+
+test('a failed remote send is reported in the chat and ends the turn', async () => {
+  const original = piDesktopStub.relay.sendPrompt
+  piDesktopStub.relay.sendPrompt = async () => {
+    throw new Error('relay closed')
+  }
+  try {
+    useAppStore.setState({ activeRemoteRef: { peer: 'PEERKEY', roomId: 'ROOMID' }, messages: [], isStreaming: false })
+
+    await useAppStore.getState().sendPrompt('hello')
+
+    const state = useAppStore.getState()
+    assert.equal(state.isStreaming, false, 'a failed send must not leave the composer streaming')
+    assert.equal(state.messages.at(-1)?.role, 'system')
+    assert.match(state.messages.at(-1)?.content ?? '', /relay closed/)
+  } finally {
+    piDesktopStub.relay.sendPrompt = original
+  }
+})
