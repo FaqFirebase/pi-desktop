@@ -355,12 +355,19 @@ export function Sidebar(): React.JSX.Element {
     options?: { nested?: boolean }
   ): React.JSX.Element => {
     const labels = getSessionRowLabels(session)
+    // A remote row is a session on another machine. It has no local file, so
+    // everything keyed on the path (runs, archive, rename, runtime) is skipped;
+    // its identity is the peer plus the room.
+    const remoteRef = session.remote
+    const rowKey = remoteRef ? `remote:${remoteRef.peer}:${remoteRef.roomId}` : session.path
     // Runs are keyed by Pi's header UUID, never the filename stem (the
     // tags/archive registry key). The stem suffix IS the UUID, so it is a
     // safe fallback when a row's header is unreadable.
     const workflowSessionId = resolveRunSessionId(session.piSessionId, session.sessionId) ?? session.sessionId
     const runtime = Object.values(sessionRuntimes).find((item) => item.sessionPath && pathsEqual(item.sessionPath, session.path))
-    const isActive = sessionState?.sessionFile === session.path || runtime?.runtimeId === activeSessionRuntimeId
+    const isActive = remoteRef
+      ? activeRemoteRef?.peer === remoteRef.peer && activeRemoteRef?.roomId === remoteRef.roomId
+      : sessionState?.sessionFile === session.path || runtime?.runtimeId === activeSessionRuntimeId
     const nested = options?.nested ?? false
     const engineLabel = showEngineTags ? getSessionEngineLabel(session) : null
 
@@ -381,11 +388,11 @@ export function Sidebar(): React.JSX.Element {
     }
 
     return (
-      <div key={session.path} className="group relative">
+      <div key={rowKey} className="group relative">
         <button
           onClick={() => openSession(session)}
-          onDoubleClick={() => { if (isActive) startSessionRename('recent') }}
-          onContextMenu={(e) => handleSessionRightClick(e, session)}
+          onDoubleClick={() => { if (isActive && !remoteRef) startSessionRename('recent') }}
+          onContextMenu={(e) => { if (!remoteRef) handleSessionRightClick(e, session) }}
           // The full title leads, so a preview too long for the current width is
           // still readable on hover.
           title={
@@ -403,7 +410,16 @@ export function Sidebar(): React.JSX.Element {
         >
           <Clock size={12} className="shrink-0" />
           <div className="min-w-0 flex-1">
-            <div className="truncate">{labels.title}</div>
+            <div className="flex items-center gap-1.5">
+              <span className="min-w-0 truncate">{labels.title}</span>
+              {remoteRef && (
+                <Laptop
+                  size={11}
+                  className="shrink-0 text-faint"
+                  aria-label={t('sidebar.sessionRow.remoteBadge', { host: remoteRef.hostname || 'remote' })}
+                />
+              )}
+            </div>
             {/* The title is now the session's name or first message, so the time it
                 displaced moves here. Recent rows are already grouped by workspace,
                 which makes the project name the less useful of the two subtitles —
@@ -411,7 +427,9 @@ export function Sidebar(): React.JSX.Element {
                 The engine leads the line only when both engines are present. */}
             <div className="truncate text-[11px] text-faint">
               {engineLabel && `${engineLabel} · `}
-              {formatRelativeTime(session.lastModified, Date.now())}
+              {remoteRef
+                ? remoteRef.hostname || t('sidebar.sessionRow.remoteFallback')
+                : formatRelativeTime(session.lastModified, Date.now())}
             </div>
           </div>
           {runtime && <SessionRuntimeIndicator runtime={runtime} />}

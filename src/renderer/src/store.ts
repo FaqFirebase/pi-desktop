@@ -2209,6 +2209,15 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   openSessionItem: async (session) => {
+    // A row marked remote lives on another machine: its `path` is a folder on
+    // that machine, so opening it locally would either fail or, worse, match an
+    // unrelated local folder. Its own marker is what distinguishes it — the
+    // project-switch logic below assumes both sides share a filesystem.
+    if (session.remote) {
+      await get().openRemoteSession(session.remote)
+      return
+    }
+
     // Auto-switch workspace if the session is from a different project. Skip
     // the resume+history load — switchSession below loads the target session
     // once. Paths are compared the way main compares them (case-insensitive on

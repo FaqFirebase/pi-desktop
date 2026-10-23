@@ -9,6 +9,7 @@ import type {
   SessionRuntimeInfo,
   SessionState,
   Workspace,
+  RemoteSessionRef,
 } from '../../shared/ipc-contracts'
 import type { PreviewTarget } from './store'
 
@@ -188,6 +189,19 @@ const piDesktopStub = {
   },
   model: {
     set: async (_provider: string, _modelId: string) => {},
+  },
+  // The relay bridge. Only the calls the sidebar path makes are stubbed; each
+  // records into `calls` so a test can prove a remote row never touched Pi.
+  relay: {
+    openSession: async (ref: RemoteSessionRef) => {
+      calls.push(`relayOpen:${ref.peer}:${ref.roomId}`)
+      return { ref, sessionName: 'remote', sessionStartedAt: 0, truncated: false, events: [] }
+    },
+    sessions: async () => [],
+    sendPrompt: async (text: string) => {
+      calls.push(`relayPrompt:${text}`)
+      return { ok: true }
+    },
   },
   commands: {
     abort: async () => {
@@ -2431,4 +2445,41 @@ test('setWorkflowPanelOpen: direct open clears scope, close preserves it', () =>
   useAppStore.getState().setWorkflowPanelOpen(true)
   assert.equal(useAppStore.getState().workflowPanelWorkspaceId, null)
   assert.equal(useAppStore.getState().workflowPanelFilter, null)
+})
+
+// ─── remote rows are opened over the relay, never as local paths ─────────────
+
+test('openSessionItem routes a remote row to the relay instead of the local path', async () => {
+  // A remote row's `path` is a folder on the other machine. Opening it locally
+  // would switch the local Pi to a path that only exists there.
+  workspaceListResult = [WORKSPACE_ONE]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, workspaces: [WORKSPACE_ONE], currentView: 'home' })
+  calls.length = 0
+
+  await useAppStore.getState().openSessionItem({
+    ...sessionItemFor(WORKSPACE_ONE),
+    remote: { peer: 'PEERKEY', roomId: 'ROOMID', hostname: 'macbook' },
+  })
+
+  assert.equal(calls.some((c) => c.startsWith('switch:')), false, 'must not switch the local Pi')
+  assert.equal(calls.includes('relayOpen:PEERKEY:ROOMID'), true, 'must open over the relay')
+  assert.equal(useAppStore.getState().activeRemoteRef?.roomId, 'ROOMID')
+})
+
+test('opening a local row clears the remote binding', async () => {
+  // Otherwise the composer keeps sending over the relay while a local
+  // transcript is on screen.
+  workspaceListResult = [WORKSPACE_ONE]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    activeRemoteRef: { peer: 'PEERKEY', roomId: 'ROOMID' },
+  })
+  calls.length = 0
+
+  await useAppStore.getState().openSessionItem(sessionItemFor(WORKSPACE_ONE))
+
+  assert.equal(useAppStore.getState().activeRemoteRef, null)
 })

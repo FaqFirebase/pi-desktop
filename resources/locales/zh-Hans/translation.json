@@ -1547,7 +1547,9 @@
     "sessionNamePlaceholder": "会话名称",
     "sessionRow": {
       "tooltipActive": "{{title}}\n\n点击打开 · 双击重命名 · 右键查看操作",
-      "tooltipInactive": "{{title}}\n\n点击打开 · 右键查看操作"
+      "tooltipInactive": "{{title}}\n\n点击打开 · 右键查看操作",
+      "remoteBadge": "{{host}} 上的会话",
+      "remoteFallback": "远程"
     },
     "tools": {
       "allWorkflows": "全部工作流",
