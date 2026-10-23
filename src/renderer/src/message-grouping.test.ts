@@ -15,6 +15,7 @@ import {
   type ChatRenderItem,
 } from './message-grouping'
 import type { DisplayMessage } from './message-parsing'
+import { NEXT_STEPS_TOOL_NAME } from '../../../resources/next-steps'
 import { i18n, t } from '../../shared/i18n'
 import { PSEUDO_LANGUAGE, SOURCE_LANGUAGE } from '../../shared/i18n/languages'
 
@@ -292,6 +293,18 @@ test('prepareChatMessages enriches tool results with paired name and file', () =
   const res = out.find((m) => m.id === 'r1-result')
   assert.equal(res?.toolName, 'read_file')
   assert.equal(res?.toolFile, 'src/app/foo.ts')
+})
+
+test('prepareChatMessages hides next-steps calls, so they never join a tool group', () => {
+  const steps = { steps: [{ label: 'Add tests', prompt: 'Add tests.' }] }
+  const out = prepareChatMessages([
+    callTurn('read_file', 'r1', { path: 'src/app/foo.ts' }),
+    resultFor('r1'),
+    callTurn(NEXT_STEPS_TOOL_NAME, 's1', steps),
+    resultFor('s1'),
+  ])
+  assert.deepEqual(out.map((m) => m.id), [out[0].id, 'r1-result'])
+  assert.equal(groupToolMessages(out).some((item) => item.kind === 'toolGroup'), false)
 })
 
 test('splitReadTruncationNote peels off Pi read footer and trailing blanks', () => {

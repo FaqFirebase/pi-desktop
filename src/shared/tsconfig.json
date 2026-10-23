@@ -16,6 +16,10 @@
     "../../resources/path-within.test.ts",
     "../../resources/repo-set-map.ts",
     "../../resources/repo-set-map.test.ts",
+    "../../resources/next-steps.ts",
+    "../../resources/next-steps.test.ts",
+    "../../resources/system-prompt.ts",
+    "../../resources/system-prompt.test.ts",
     "../../resources/locales/*/translation.json"
   ]
 }

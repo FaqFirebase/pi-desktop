@@ -6,10 +6,12 @@
  *   jiti, which resolves this relative TS import at runtime), and
  * - the Electron main process (bundled by electron-vite).
  *
- * Must therefore import only from `node:*` — no Electron, no Pi APIs.
+ * Must therefore import only from `node:*` and other files under resources/ —
+ * no Electron, no Pi APIs.
  */
 import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { isNextStepsDeviceWrite } from './next-steps'
 
 export const PERMISSION_RULES_VERSION = 1
 export const PERMISSION_RULES_FILE_NAME = 'permission-rules.json'
@@ -179,6 +181,8 @@ export function decideToolCall(
   input: unknown,
   platform: string
 ): ToolCallDecision {
+  // Not a file write: OMP decides the tool call it then runs on its own.
+  if (isNextStepsDeviceWrite(toolName, input)) return { action: 'allow' }
   const result = evaluateRules(rules, toolName, input, platform)
   if (result.decision === 'deny') {
     const suffix = result.rule.match === undefined ? '' : ` ${result.rule.match}`

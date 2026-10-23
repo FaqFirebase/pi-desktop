@@ -9,10 +9,11 @@ import {
   existsSync,
 } from 'fs'
 import { basename, dirname, join } from 'path'
-import { getSessionsRoot } from './pi-paths'
+import { getSessionRoots } from './pi-paths'
 import { getConfiguredEngineKind } from './pi-rpc-manager'
 import { parseModelsFile, resolveModelsFile, type ModelsFileFormat } from './models-file'
 import { getGuiDataPath } from './app-data-paths'
+import { addTokenUsage, emptyTokenUsage, totalTokenUsage, type TokenUsage } from '../shared/token-usage'
 import type {
   ActivityStatsResult,
   ActivityRangeStats,
@@ -29,7 +30,11 @@ const RANGE_DAYS: Record<ActivityRangeKey, number> = {
   '7': 7,
 }
 const STORE_FILE_NAME = 'activity-stats.json'
-const STORE_VERSION = 1
+// Version 2 added cache read/write tokens. A store saved by an older version
+// has its retained files re-parsed once so their cache tokens are counted.
+const STORE_VERSION = 2
+// mtime that never matches a real file, so the next scan re-parses the entry.
+const STALE_MTIME_MS = -1
 const JSONL_EXTENSION = '.jsonl'
 const MESSAGE_RECORD_TYPE = 'message'
 const MS_PER_DAY = 86_400_000
@@ -42,7 +47,7 @@ const SAVE_DEBOUNCE_MS = 2000
  */
 interface DayBucket {
   messages: number // all message records that day (user + assistant)
-  models: Record<string, { input: number; output: number }> // assistant token usage by model
+  models: Record<string, TokenUsage> // assistant token usage by model
   hours: Record<string, number> // local hour (0..23, as string) -> message count
 }
 
@@ -61,8 +66,17 @@ interface StoreShape {
   modelNames: Record<string, string>
 }
 
+/** Every retained session pooled into one view of a single day. */
+interface PooledDay {
+  messages: number
+  tokens: number
+  models: Map<string, TokenUsage>
+  hours: number[]
+  sessions: Set<string>
+}
+
 interface StatsStoreDeps {
-  sessionsRoot?: string
+  sessionsRoots?: string[]
   storePath?: string
   modelsConfigPath?: string
 }
@@ -109,7 +123,11 @@ function parseSessionContent(content: string): Record<string, DayBucket> {
     bucket.hours[hourKey] = (bucket.hours[hourKey] ?? 0) + 1
 
     const msg = rec.message as
-      | { role?: unknown; model?: unknown; usage?: { input?: unknown; output?: unknown } }
+      | {
+          role?: unknown
+          model?: unknown
+          usage?: { input?: unknown; output?: unknown; cacheRead?: unknown; cacheWrite?: unknown }
+        }
       | undefined
     if (
       msg &&
@@ -119,12 +137,30 @@ function parseSessionContent(content: string): Record<string, DayBucket> {
       msg.usage &&
       typeof msg.usage === 'object'
     ) {
-      const model = (bucket.models[msg.model] ??= { input: 0, output: 0 })
-      model.input += toFiniteNumber(msg.usage.input)
-      model.output += toFiniteNumber(msg.usage.output)
+      addTokenUsage((bucket.models[msg.model] ??= emptyTokenUsage()), {
+        input: toFiniteNumber(msg.usage.input),
+        output: toFiniteNumber(msg.usage.output),
+        cacheRead: toFiniteNumber(msg.usage.cacheRead),
+        cacheWrite: toFiniteNumber(msg.usage.cacheWrite),
+      })
     }
   }
   return days
+}
+
+/**
+ * Bring an entry saved by an older store version up to the current shape.
+ * Missing cache counts become 0: a deleted session's cache usage was never
+ * kept, so it cannot be recovered. A present file is re-parsed on the next
+ * scan because its mtime is marked stale.
+ */
+function upgradeEntry(entry: SessionEntry): void {
+  entry.mtimeMs = STALE_MTIME_MS
+  for (const bucket of Object.values(entry.days)) {
+    for (const [model, usage] of Object.entries(bucket.models)) {
+      bucket.models[model] = { ...emptyTokenUsage(), ...usage }
+    }
+  }
 }
 
 /** Newest day key present in an entry, or '' if it has no days. */
@@ -137,7 +173,8 @@ function newestDay(entry: SessionEntry): string {
 /**
  * Persisted activity-stats store.
  *
- * The source of truth is Pi's session `.jsonl` files, but this store keeps a
+ * The source of truth is the session `.jsonl` files in every engine's store
+ * (Pi and OMP, the same roots the session browser reads), but this store keeps a
  * per-session reduced aggregate on disk so stats survive session deletion:
  * present files are re-parsed when their mtime changes, files that vanish keep
  * their last-known aggregate. All totals sum over every retained entry.
@@ -149,7 +186,7 @@ function newestDay(entry: SessionEntry): string {
  *  - synchronously on app quit (all sessions touched this run)
  */
 export class ActivityStatsStore {
-  private readonly sessionsRoot?: string
+  private readonly sessionsRoots?: string[]
   private readonly storePathOverride?: string
   private readonly modelsConfigPathOverride?: string
   private resolvedStorePath: string | null = null
@@ -159,13 +196,13 @@ export class ActivityStatsStore {
   private saveTimer: NodeJS.Timeout | null = null
 
   constructor(deps: StatsStoreDeps = {}) {
-    this.sessionsRoot = deps.sessionsRoot
+    this.sessionsRoots = deps.sessionsRoots
     this.storePathOverride = deps.storePath
     this.modelsConfigPathOverride = deps.modelsConfigPath
   }
 
-  private root(): string {
-    return this.sessionsRoot ?? getSessionsRoot()
+  private roots(): string[] {
+    return this.sessionsRoots ?? getSessionRoots()
   }
 
   private modelsFile(): { path: string; format: ModelsFileFormat } {
@@ -202,6 +239,10 @@ export class ActivityStatsStore {
           (parsed as StoreShape).sessions !== null
         ) {
           const p = parsed as StoreShape
+          if (p.version !== STORE_VERSION) {
+            for (const entry of Object.values(p.sessions)) upgradeEntry(entry)
+            this.dirty = true
+          }
           this.store = {
             version: STORE_VERSION,
             sessions: p.sessions,
@@ -253,7 +294,7 @@ export class ActivityStatsStore {
   async refresh(now: Date = new Date()): Promise<void> {
     this.ensureLoaded()
     const files: string[] = []
-    await collectFilesAsync(this.root(), files)
+    for (const root of this.roots()) await collectFilesAsync(root, files)
     for (const file of files) {
       const id = sessionIdFromPath(file)
       let mtimeMs: number
@@ -281,7 +322,7 @@ export class ActivityStatsStore {
   flushSync(now: Date = new Date()): void {
     this.ensureLoaded()
     const files: string[] = []
-    collectFilesSync(this.root(), files)
+    for (const root of this.roots()) collectFilesSync(root, files)
     for (const file of files) {
       const id = sessionIdFromPath(file)
       let mtimeMs: number
@@ -353,13 +394,6 @@ export class ActivityStatsStore {
     const windowStartKey = localDayKey(new Date(todayMidnight.getTime() - (WINDOW_DAYS - 1) * MS_PER_DAY))
 
     // Pool every retained session into one per-day view over the window.
-    interface PooledDay {
-      messages: number
-      tokens: number
-      models: Map<string, { input: number; output: number }>
-      hours: number[]
-      sessions: Set<string>
-    }
     const perDay = new Map<string, PooledDay>()
     const dayOf = (key: string): PooledDay => {
       let d = perDay.get(key)
@@ -377,10 +411,9 @@ export class ActivityStatsStore {
         d.messages += bucket.messages
         d.sessions.add(id)
         for (const [model, usage] of Object.entries(bucket.models)) {
-          d.tokens += usage.input + usage.output
-          const m = d.models.get(model) ?? { input: 0, output: 0 }
-          m.input += usage.input
-          m.output += usage.output
+          d.tokens += totalTokenUsage(usage)
+          const m = d.models.get(model) ?? emptyTokenUsage()
+          addTokenUsage(m, usage)
           d.models.set(model, m)
         }
         for (const [hourKey, count] of Object.entries(bucket.hours)) {
@@ -396,7 +429,7 @@ export class ActivityStatsStore {
       const key = localDayKey(new Date(todayMidnight.getTime() - i * MS_PER_DAY))
       const d = perDay.get(key)
       const tokensByModel: Record<string, number> = {}
-      if (d) for (const [model, u] of d.models) tokensByModel[model] = u.input + u.output
+      if (d) for (const [model, u] of d.models) tokensByModel[model] = totalTokenUsage(u)
       days.push({ date: key, messages: d?.messages ?? 0, tokens: d?.tokens ?? 0, tokensByModel })
     }
 
@@ -409,16 +442,7 @@ export class ActivityStatsStore {
   }
 
   private aggregateRange(
-    perDay: Map<
-      string,
-      {
-        messages: number
-        tokens: number
-        models: Map<string, { input: number; output: number }>
-        hours: number[]
-        sessions: Set<string>
-      }
-    >,
+    perDay: Map<string, PooledDay>,
     todayMidnight: Date,
     rangeDays: number
   ): ActivityRangeStats {
@@ -429,7 +453,7 @@ export class ActivityStatsStore {
     let totalTokens = 0
     let activeDays = 0
     const sessions = new Set<string>()
-    const models = new Map<string, { input: number; output: number }>()
+    const models = new Map<string, TokenUsage>()
     const hours = new Array(24).fill(0)
     const activeDayKeys = new Set<string>()
 
@@ -443,9 +467,8 @@ export class ActivityStatsStore {
       totalTokens += d.tokens
       for (const id of d.sessions) sessions.add(id)
       for (const [model, usage] of d.models) {
-        const m = models.get(model) ?? { input: 0, output: 0 }
-        m.input += usage.input
-        m.output += usage.output
+        const m = models.get(model) ?? emptyTokenUsage()
+        addTokenUsage(m, usage)
         models.set(model, m)
       }
       for (let h = 0; h < 24; h++) hours[h] += d.hours[h]
@@ -465,10 +488,9 @@ export class ActivityStatsStore {
       .map(([model, u]) => ({
         model,
         name: this.store.modelNames[model] ?? null,
-        input: u.input,
-        output: u.output,
+        ...u,
       }))
-      .sort((a, b) => b.input + b.output - (a.input + a.output))
+      .sort((a, b) => totalTokenUsage(b) - totalTokenUsage(a))
 
     const { currentStreak, longestStreak } = computeStreaks(activeDayKeys, todayMidnight, rangeDays)
 

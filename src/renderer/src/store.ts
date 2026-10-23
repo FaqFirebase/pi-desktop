@@ -4,6 +4,8 @@ import { applyLanguageSetting } from './i18n'
 import { applyUiFont } from './utils/ui-font'
 import { t } from '../../shared/i18n'
 import { buildPlanningPrompt } from './utils/planning-prompt'
+import { composePrompt } from './utils/compose-prompt'
+import { firstQueued, withQueued, withoutQueued, withoutWorkspaceQueue, type SendQueues } from './send-queue'
 import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
 import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
 import { isStoppedAnswer } from '../../shared/stopped-answer'
@@ -453,6 +455,18 @@ interface AppState {
   // draft into another.
   composerDrafts: Record<string, ComposerDraft>
   saveComposerDraft: (workspaceId: string, draft: ComposerDraft) => void
+  /** Messages sent while the agent was busy, per workspace (see send-queue.ts). */
+  sendQueues: SendQueues
+  /**
+   * Workspaces whose queue waits for the user: the turn was stopped, refused
+   * or failed, so sending the next message by itself would surprise the user
+   * or fail again. The user's next send releases it.
+   */
+  heldSendQueues: string[]
+  queuePrompt: (workspaceId: string, text: string, attachments: ComposerAttachment[]) => void
+  removeQueuedPrompt: (workspaceId: string, promptId: string) => void
+  /** Send one queued message at once: into the running turn, or as a new prompt when idle. */
+  sendQueuedPromptNow: (workspaceId: string, promptId: string) => Promise<void>
   // Set by the diff shortcuts; the diff viewer or Git actions consume and clear it.
   diffShortcutRequest: 'review' | 'commitPush' | null
   // A prompt queued for insertion into the chat input. The nonce lets the
@@ -822,7 +836,59 @@ function endTurnWithoutAgent(set: ZustandSet, get: () => AppState & AppActions, 
   }
   set(idleTurnState())
   void get().refreshSessionState()
+  settleSendQueue(set, get, refusal !== undefined)
 }
+
+// ─── Send Queue ─────────────────────────────────────────────────────────────
+
+function activeWorkspaceId(get: () => AppState & AppActions): string {
+  return get().activeWorkspace?.id ?? ''
+}
+
+function holdSendQueue(set: ZustandSet, get: () => AppState & AppActions): void {
+  const workspaceId = activeWorkspaceId(get)
+  set((state) => state.heldSendQueues.includes(workspaceId) ? state : { heldSendQueues: [...state.heldSendQueues, workspaceId] })
+}
+
+function releaseSendQueue(set: ZustandSet, get: () => AppState & AppActions): void {
+  const workspaceId = activeWorkspaceId(get)
+  set((state) => state.heldSendQueues.includes(workspaceId)
+    ? { heldSendQueues: state.heldSendQueues.filter((id) => id !== workspaceId) }
+    : state)
+}
+
+/**
+ * The active turn is over: send the oldest queued message, unless the turn
+ * failed (then hold the queue: the next one would likely fail too) or the
+ * queue is already held (the user stopped the turn).
+ */
+function settleSendQueue(set: ZustandSet, get: () => AppState & AppActions, failed: boolean): void {
+  if (failed) {
+    holdSendQueue(set, get)
+    return
+  }
+  const workspaceId = activeWorkspaceId(get)
+  if (get().heldSendQueues.includes(workspaceId)) return
+  const next = firstQueued(get().sendQueues, workspaceId)
+  if (next) void get().sendQueuedPromptNow(workspaceId, next.id)
+}
+
+// ─── Turn Activity ──────────────────────────────────────────────────────────
+
+// When the running turn started (or this window attached to it) and when the
+// agent last sent any event. Kept out of the store state: every streamed token
+// updates the second one, and only the ticking activity line reads them.
+let turnStartedAt = 0
+let lastAgentEventAt = 0
+
+/** The running turn's start and the agent's last event, for the activity line. */
+export function turnActivityTimes(): { startedAt: number; lastEventAt: number } {
+  return { startedAt: turnStartedAt, lastEventAt: lastAgentEventAt }
+}
+
+// Whether the last finished assistant message of the running turn carried an
+// error. A later message (an automatic retry that worked) clears it.
+let turnFailed = false
 
 /**
  * Pi answers a prompt that an extension command or an input handler took with
@@ -1171,6 +1237,21 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     else delete composerDrafts[workspaceId]
     return { composerDrafts }
   }),
+  sendQueues: {},
+  heldSendQueues: [],
+  queuePrompt: (workspaceId, text, attachments) =>
+    set((state) => ({ sendQueues: withQueued(state.sendQueues, workspaceId, { id: generateId(), text, attachments }) })),
+  removeQueuedPrompt: (workspaceId, promptId) =>
+    set((state) => ({ sendQueues: withoutQueued(state.sendQueues, workspaceId, promptId) })),
+  sendQueuedPromptNow: async (workspaceId, promptId) => {
+    // sendPrompt reaches the active workspace's agent only.
+    if (workspaceId !== (get().activeWorkspace?.id ?? '')) return
+    const queued = get().sendQueues[workspaceId]?.find((prompt) => prompt.id === promptId)
+    if (!queued) return
+    get().removeQueuedPrompt(workspaceId, promptId)
+    const { message, options } = composePrompt(queued.text, queued.attachments)
+    await get().sendPrompt(message, options)
+  },
   diffShortcutRequest: null,
   pendingInsert: null,
   composerFocusRequested: false,
@@ -1330,6 +1411,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       await get().startPi()
       if (get().piStatus !== 'running') return
     }
+    // The user sends again, so a held queue may go on after this turn.
+    releaseSendQueue(set, get)
 
     const { sessionState, settings } = get()
 
@@ -1545,6 +1628,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   cancelCouncil: () => set({ councilRun: null }),
 
   abort: async () => {
+    // The user stopped this turn: its end must not send the next queued message.
+    holdSendQueue(set, get)
     try {
       await window.piDesktop.commands.abort()
       set({ isStreaming: false })
@@ -2399,6 +2484,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Event Handling ───────────────────────────────────────────────────
 
   handlePiEvent: (event) => {
+    lastAgentEventAt = Date.now()
     if ((event.type === 'message_update' || event.type === 'tool_execution_start' || event.type === 'tool_execution_update') && !get().isStreaming) {
       // An attach can miss agent_start. Live output is stronger evidence than
       // a runtime snapshot that is still loading.
@@ -2455,6 +2541,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         handleTurnComplete(set, endedMessage, false)
         // turn_end re-delivers the same message, so errors surface only here.
         const turnError = turnErrorText(endedMessage)
+        turnFailed = turnError !== null
         if (turnError) {
           get().addMessage({
             id: generateId(),
@@ -2479,6 +2566,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
       case 'agent_start': {
         agentRunStarts += 1
+        turnFailed = false
         // A fresh turn means real stream context from its first byte — any
         // pending mid-turn-attach backfill was already handled at agent_end.
         set({ isStreaming: true, reattachedMidTurn: false })
@@ -2526,6 +2614,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           set({ reattachedMidTurn: false })
           void enqueueAttachBackfill(get)
         }
+        settleSendQueue(set, get, turnFailed)
         break
 
       case 'tool_execution_start':
@@ -3151,6 +3240,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       const result = await window.piDesktop.workspace.remove(workspaceId)
       await get().loadWorkspaces()
       get().saveComposerDraft(workspaceId, EMPTY_COMPOSER_DRAFT)
+      set((state) => ({
+        sendQueues: withoutWorkspaceQueue(state.sendQueues, workspaceId),
+        heldSendQueues: state.heldSendQueues.filter((id) => id !== workspaceId),
+      }))
       adoptMainSideActivation(get, set, previousActiveId)
       if (result.preservedWorktreePaths) {
         get().addMessage({
@@ -3630,6 +3723,15 @@ useAppStore.subscribe((state, prev) => {
     state.editorDirty,
     state.editorDirty ? (state.previewTarget?.name ?? null) : null
   )
+})
+
+// A turn starts the activity clock. Many paths set isStreaming (a send, the
+// engine's agent_start, an external prompt, an attach mid-turn), so a
+// subscription catches every one. The first event counts as the start too.
+useAppStore.subscribe((state, prev) => {
+  if (!state.isStreaming || prev.isStreaming) return
+  turnStartedAt = Date.now()
+  lastAgentEventAt = turnStartedAt
 })
 
 // A composer focus request and an open model picker are only for the chat the

@@ -13,6 +13,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, parse, posix, resolve, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isNextStepsDeviceWrite } from './next-steps'
 import { isPathWithin, resolveRealPath } from './path-within'
 import { getPrimaryInput } from './permission-rules'
 
@@ -329,6 +330,8 @@ export interface RepoSetToolCall {
  * prompts, and the permission mode and rules already govern them.
  */
 export function locateToolCall(context: RepoSetContext, toolName: string, input: unknown, cwd: string): RepoSetToolCall {
+  // Not a file write: the path names an OMP tool device, not a file.
+  if (isNextStepsDeviceWrite(toolName, input)) return { repos: [], leavesRepoSet: false }
   const checkouts = realCheckouts(context)
   const paths = toolCallPaths(toolName, input)
   const repos = new Set<RepoMapEntry | null>()
@@ -397,14 +400,4 @@ export function describeRepoSetChange(previous: RepoSetContext, current: RepoSet
     ...added.map((repo) => `Added: ${repo.name} at ${repo.workPath} (${repo.branch ? `branch ${repo.branch}` : 'detached HEAD'}). Include it in the task from now on.`),
     ...removed.map((repo) => `Removed: ${repo.name} at ${repo.workPath}. Do not edit it any more.`),
   ].join('\n')
-}
-
-/**
- * Append a block to the system prompt a `before_agent_start` handler received.
- * Pi passes one string; OMP passes a list of strings. The result keeps the
- * engine's own shape.
- */
-export function appendToSystemPrompt(systemPrompt: string | readonly string[], block: string): string | string[] {
-  if (typeof systemPrompt === 'string') return `${systemPrompt}\n\n${block}`
-  return [...systemPrompt, block]
 }

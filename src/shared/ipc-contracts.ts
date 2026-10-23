@@ -6,6 +6,7 @@
  */
 import type { PermissionRule } from '../../resources/permission-rules'
 import type { LinkedTaskMode, RepoRole } from '../../resources/repo-set-map'
+import type { TokenUsage } from './token-usage'
 
 // ─── IPC Channel Names ──────────────────────────────────────────────────────
 
@@ -998,26 +999,24 @@ export interface ActivityDay {
 export interface ActivityStatsDay {
   date: string // local calendar day, YYYY-MM-DD
   messages: number // all `type === 'message'` records that day
-  tokens: number // assistant input + output tokens that day (all models)
-  tokensByModel: Record<string, number> // model id -> input + output that day
+  tokens: number // assistant input + output + cache tokens that day (all models)
+  tokensByModel: Record<string, number> // model id -> input + output + cache that day
 }
 
-export interface ActivityModelUsage {
+export interface ActivityModelUsage extends TokenUsage {
   model: string // stable model id (e.g. "claude-opus-4-8", "ornith-1.0-35b@q6_k")
   name: string | null // latest display name from models.json; null → fall back to id
-  input: number
-  output: number
 }
 
 export interface ActivityRangeStats {
   sessions: number // distinct sessions with activity in the range
   messages: number
-  totalTokens: number // input + output across all models
+  totalTokens: number // input + output + cache read + cache write across all models
   activeDays: number
   currentStreak: number // consecutive active days ending today (capped by range)
   longestStreak: number
   peakHour: number | null // busiest local hour 0..23, or null if no activity
-  models: ActivityModelUsage[] // descending by input + output
+  models: ActivityModelUsage[] // descending by total tokens
 }
 
 // Range keys are trailing-day counts: 365 ("1y"), 180 ("6mo"), 90 ("3mo"), 30, 7.
@@ -1363,6 +1362,10 @@ export interface AppSettings {
   // Show OS desktop notifications when a turn finishes, fails, or waits for
   // approval in a workspace the user is not currently looking at.
   desktopNotifications: boolean
+  // Let the agent end a turn with up to three suggested next steps (gaps,
+  // missing tests, unverified work), shown as buttons under the reply.
+  // Applies to agents started after the change.
+  suggestNextSteps: boolean
   // Interface language: 'system' (follow the OS language list) or a bundled
   // language code. Unknown values reset to 'system' on load.
   language: string

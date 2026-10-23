@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { pathToFileURL } from 'node:url'
+import { NEXT_STEPS_DEVICE_PATH } from './next-steps'
 import {
   REPO_MAP_PROMPT_TAG,
-  appendToSystemPrompt,
   describeRepoSetChange,
   expandAgentPath,
   formatRepoMapPrompt,
@@ -186,6 +186,12 @@ test('a glob whose matches can leave its folder leaves the set', () => {
   assert.equal(leavesRepoSet('ast_edit', { ops: AST_OPS, paths: ['/*/hosts'] }), true)
 })
 
+test('OMP writing next steps to their tool device acts on no checkout', () => {
+  const deviceWrite = { path: NEXT_STEPS_DEVICE_PATH, content: '{"steps":[]}' }
+  assert.deepEqual(locateToolCall(CONTEXT, 'write', deviceWrite, APP), { repos: [], leavesRepoSet: false })
+  assert.equal(leavesRepoSet('write', { path: 'xd://other_tool', content: '{}' }), true)
+})
+
 test('a write with no path to check leaves the set; reads and shell commands never do', () => {
   assert.equal(leavesRepoSet('write', { content: 'x' }), true)
   assert.equal(leavesRepoSet('ast_edit', { ops: AST_OPS }), true)
@@ -261,11 +267,6 @@ test('the prompt block lists every repository with its role, path, and branch', 
   const inPlace = formatRepoMapPrompt({ ...CONTEXT, mode: 'inPlace', repos: [{ ...CONTEXT.repos[0], branch: null }] }, () => false)
   assert.match(inPlace, /edited in place/)
   assert.match(inPlace, /detached HEAD/)
-})
-
-test('appendToSystemPrompt keeps the shape each engine uses', () => {
-  assert.equal(appendToSystemPrompt('base', 'block'), 'base\n\nblock')
-  assert.deepEqual(appendToSystemPrompt(['a', 'b'], 'block'), ['a', 'b', 'block'])
 })
 
 test('describeRepoSetChange names added and removed checkouts, and nothing when the list is the same', () => {

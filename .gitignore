@@ -101,6 +101,8 @@ speech-models/
 .pi/
 .pi-desktop/
 .pi-subagents/
+# OMP project-level config — same risk as .pi/ when OMP runs on this repo
+.omp/
 
 # Agent context — local-only memory, architecture notes and plans
 MEMORY.md
@@ -120,6 +122,9 @@ docs/superpowers/
 .openhands/
 .agents/
 .superpowers/
+.gemini/
+.opencode/
+.qwen/
 
 # AI IDEs
 .cursor/

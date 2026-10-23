@@ -2,12 +2,12 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import {
   REPO_MAP_ENV,
   REPO_SET_CHANGE_MESSAGE_TYPE,
-  appendToSystemPrompt,
   describeRepoSetChange,
   formatRepoMapPrompt,
   loadRepoMap,
   type RepoSetContext,
 } from './repo-set-map'
+import { appendToSystemPrompt } from './system-prompt'
 
 // Set by the GUI only when it starts an agent for a linked task (a repo set
 // tab). The file is re-read per turn, so a repository added during the task

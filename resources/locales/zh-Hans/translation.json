@@ -26,6 +26,12 @@
     }
   },
   "chat": {
+    "activity": {
+      "stalled": "模型已有 {{silent}} 没有回复。服务商可能较慢。",
+      "stop": "停止",
+      "working": "正在工作…",
+      "workingFor": "正在工作 · {{elapsed}}"
+    },
     "attach": {
       "allFilesFilter": "所有文件",
       "attachFailed": "无法附加文件",
@@ -45,7 +51,7 @@
     "composer": {
       "placeholderIdle": "向 {{agent}} 提问 — 输入 / 使用命令",
       "placeholderNotRunning": "{{agent}} 智能体未在运行…",
-      "placeholderSteering": "输入以引导智能体…"
+      "placeholderQueue": "输入消息以加入队列 — Ctrl+Enter 立即发送"
     },
     "council": {
       "planWithCouncil": "使用委员会规划",
@@ -82,6 +88,9 @@
       "editAndResend": "编辑并重新发送",
       "stopped": "已停止"
     },
+    "nextSteps": {
+      "title": "建议的后续步骤"
+    },
     "projectPicker": {
       "noProject": "无项目",
       "noProjectHomeDirectory": "无项目 — 主目录",
@@ -106,6 +115,16 @@
     "sendButton": {
       "ariaLabel": "发送消息",
       "titleWithShortcut": "发送（Enter）"
+    },
+    "sendQueue": {
+      "count_other": "{{count}} 条排队中",
+      "edit": "编辑",
+      "files_other": "{{count}} 个文件",
+      "held": "已暂停。你的下一条消息或“立即发送”会让队列继续",
+      "next": "智能体完成后发送",
+      "sendNow": "立即发送",
+      "sendNowHint": "现在把这条消息发送到正在运行的回合中",
+      "title": "排队的消息"
     },
     "startingAgent": "正在启动智能体…",
     "stopButton": {
@@ -1347,6 +1366,10 @@
       "description": "在回复中显示模型思考块",
       "label": "显示思考过程"
     },
+    "suggestNextSteps": {
+      "description": "每轮结束时，{{agent}} 可以建议最多三个后续步骤，例如缺少的测试或它无法检查的工作。点击某个步骤即可将其放入消息框。保存后新开始的会话生效。",
+      "label": "建议后续步骤"
+    },
     "terminalFontSize": {
       "description": "终端面板的字体大小",
       "label": "终端字体大小"
@@ -1518,7 +1541,7 @@
     },
     "modelLegend": {
       "empty": "此范围内没有模型使用记录。",
-      "tokenBreakdown": "{{input}} 输入 · {{output}} 输出"
+      "tokenBreakdown": "{{input}} 输入 · {{output}} 输出 · {{cache}} 缓存"
     },
     "overview": {
       "activeDaysLabel": "活跃天数",

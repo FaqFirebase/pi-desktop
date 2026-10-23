@@ -52,6 +52,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   minimizeToTrayOnClose: false,
   hasSeenTrayHint: false,
   desktopNotifications: true,
+  suggestNextSteps: true,
   language: SYSTEM_LANGUAGE,
   shortcuts: DEFAULT_KEYBOARD_SHORTCUTS,
   council: DEFAULT_COUNCIL_CONFIG,
