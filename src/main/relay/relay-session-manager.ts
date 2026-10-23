@@ -108,6 +108,10 @@ export class RelaySessionManager extends EventEmitter {
       this.patch({ status: this.state.agent ? 'paired' : 'connected', detail })
       return
     }
+    // A dropped connection discards the subscriptions *and* the roster we were
+    // holding for them, so a reply recorded before it must not satisfy a later
+    // `listRooms` with a stale snapshot.
+    this.rosterReplies.clear()
     this.patch({ status: transportState, detail })
   }
 
@@ -150,6 +154,8 @@ export class RelaySessionManager extends EventEmitter {
 
   disconnect(): void {
     this.options.transport.close()
+    // The replies recorded above belonged to the connection just closed.
+    this.rosterReplies.clear()
     this.patch({ status: 'idle' })
   }
 
@@ -223,7 +229,16 @@ export class RelaySessionManager extends EventEmitter {
     const target = this.requirePaired()
     await this.ensureConnected()
 
-    this.rosterReplies.delete(target.peer)
+    // `subscribeToRoster` already asked for the roster when the connection came
+    // up, and the relay suppresses a second identical answer per connection. A
+    // reply that has already landed therefore IS the answer to this question:
+    // spending it and asking again would wait for a frame the relay intends not
+    // to send. Only a connection that has not answered yet costs a fresh ask.
+    if (this.rosterReplies.has(target.peer)) {
+      this.rosterReplies.delete(target.peer)
+      return this.getState().rooms
+    }
+
     this.rosterRequests.add(target.peer)
     if (!this.options.transport.sendControl({ type: 'rooms_check', peers: [target.peer] })) {
       this.rosterRequests.delete(target.peer)
@@ -390,6 +405,33 @@ export class RelaySessionManager extends EventEmitter {
       return
     }
 
+    // A session opening or ending is pushed per session, never as a new roster,
+    // so folding these in is what keeps the list correct after the one initial
+    // `rooms_check` — without it the list only changes on reconnect.
+    if (message.type === 'room_announced') {
+      const announced = toRoomInfo(message)
+      const withoutIt = this.state.rooms.filter((room) => room.room_id !== announced.room_id)
+      this.patch({ rooms: [...withoutIt, announced] })
+      this.adoptRoomFromRoster()
+      return
+    }
+
+    if (message.type === 'room_meta_updated') {
+      // Only sessions we already know about are patched: a meta frame names a
+      // room but carries no cwd or name, so inventing an entry from it would put
+      // a row in the list that the user cannot open.
+      const rooms = this.state.rooms.map((room) =>
+        room.room_id === message.room_id ? { ...room, ...message.meta } : room,
+      )
+      this.patch({ rooms })
+      return
+    }
+
+    if (message.type === 'room_ended') {
+      this.patch({ rooms: this.state.rooms.filter((room) => room.room_id !== message.room_id) })
+      return
+    }
+
     const replyTo = (message as { in_reply_to?: string }).in_reply_to
     if (replyTo) {
       const pending = this.pending.get(replyTo)
@@ -402,6 +444,19 @@ export class RelaySessionManager extends EventEmitter {
     }
 
     this.emit('message', message, meta)
+  }
+}
+
+/** Narrow a lifecycle frame to the session it describes. */
+function toRoomInfo(frame: { room_id: string; name?: string; cwd?: string; model?: string; thinking?: string; working?: boolean; started_at?: number }): RelayRoomInfo {
+  return {
+    room_id: frame.room_id,
+    name: frame.name ?? frame.room_id,
+    cwd: frame.cwd ?? '',
+    model: frame.model,
+    thinking: frame.thinking,
+    working: frame.working,
+    started_at: frame.started_at,
   }
 }
 

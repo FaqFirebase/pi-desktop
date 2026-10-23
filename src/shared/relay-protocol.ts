@@ -83,7 +83,20 @@ export interface RelayRoomsFrame {
 }
 
 /** Everything the desktop may see on the control socket after auth. */
-export type RelayInboundMessage = RelayServerMessage | RelayRoomsFrame
+export type RelayInboundMessage = RelayServerMessage | RelayRoomsFrame | RelayRoomLifecycleFrame
+
+/**
+ * A single-session roster push, sent instead of a fresh `rooms` frame.
+ *
+ * The relay treats a session appearing (or ending) as an event, not as a new
+ * full roster: subscribers get one frame per session. A client that only knows
+ * how to read `rooms` therefore goes stale the moment a session starts or stops,
+ * which is the common case — the Pi opens a session when the user prompts it.
+ */
+export type RelayRoomLifecycleFrame =
+  | ({ type: 'room_announced'; peer: string } & RelayRoomInfo)
+  | { type: 'room_ended'; peer: string; room_id: string; since_ts?: number }
+  | { type: 'room_meta_updated'; peer: string; room_id: string; meta: Partial<RelayRoomInfo> }
 
 /**
  * Relay-level control frames, sent raw rather than wrapped in an envelope.

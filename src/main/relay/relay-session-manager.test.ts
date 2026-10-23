@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { RelaySessionManager } from './relay-session-manager'
 import type { RelayTarget, RelayTransport, RelayTransportEvents, RelayTransportState } from './relay-transport'
-import type { RelayClientMessage, RelayControlRequest, RelayServerMessage } from '../../shared/relay-protocol'
+import type { RelayClientMessage, RelayControlRequest, RelayInboundMessage } from '../../shared/relay-protocol'
 import type { PairedRelayAgent } from '../../shared/ipc-contracts'
 
 const PI_PUBKEY = 'nJvBiqtqL1vZZNa0WpBynaj7EeNfq/g5fauzA516IcM='
@@ -51,7 +51,7 @@ class ScriptedTransport implements RelayTransport {
     this.events?.onStateChange(state, detail)
   }
 
-  deliver(message: RelayServerMessage, peer = PI_PUBKEY): void {
+  deliver(message: RelayInboundMessage, peer = PI_PUBKEY): void {
     this.events?.onMessage(message, { peer, room: '' })
   }
 
@@ -315,4 +315,78 @@ test('reconnecting keeps the paired status instead of dropping to connected', as
 
   transport.setState('connected')
   assert.equal(subject.getState().status, 'paired')
+})
+
+test('listRooms answers from a roster that already arrived instead of asking again', async () => {
+  // The relay suppresses a second identical roster per connection, so asking
+  // again after the connect-time reply landed would wait for a frame it has
+  // already decided not to send — the 15s stall seen in the app.
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+  transport.deliver({ type: 'rooms', peer: PI_PUBKEY, rooms: [ROOM] } )
+
+  const rooms = await subject.listRooms()
+  assert.equal(rooms.length, 1, 'the roster that already arrived is the answer')
+  assert.equal(transport.control.filter((frame) => frame.type === 'rooms_check').length, 1, 'no redundant check')
+})
+
+test('a dropped connection discards rosters recorded for the old one', async () => {
+  // Subscriptions and their snapshots belong to the socket, so a reply recorded
+  // before a drop must not satisfy a later listRooms with a stale snapshot.
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+  transport.deliver({ type: 'rooms', peer: PI_PUBKEY, rooms: [ROOM] } )
+
+  // Drop, then come back with a fresh socket that will never answer.
+  transport.setState('idle')
+  transport.setState('connected')
+  const before = transport.control.filter((frame) => frame.type === 'rooms_check').length
+  await assert.rejects(() => subject.listRooms(), /did not report its sessions/)
+  assert.ok(
+    transport.control.filter((frame) => frame.type === 'rooms_check').length > before,
+    'the new connection must ask again rather than reuse the old snapshot',
+  )
+})
+
+test('a session that opens after the initial roster is added to the list', async () => {
+  // The relay pushes one `room_announced` per session instead of a new roster, so
+  // without folding it in the list would only ever change on reconnect.
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+  transport.deliver({ type: 'rooms', peer: PI_PUBKEY, rooms: [] })
+
+  transport.deliver({ type: 'room_announced', peer: PI_PUBKEY, ...ROOM })
+
+  const rooms = await subject.listRooms()
+  assert.equal(rooms.length, 1)
+  assert.equal(rooms[0]?.room_id, ROOM.room_id)
+})
+
+test('a session that ends is removed from the list', async () => {
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+  transport.deliver({ type: 'rooms', peer: PI_PUBKEY, rooms: [ROOM] })
+
+  transport.deliver({ type: 'room_ended', peer: PI_PUBKEY, room_id: ROOM.room_id })
+
+  const rooms = await subject.listRooms()
+  assert.equal(rooms.length, 0)
+})
+
+test('a meta push updates the session it names and is ignored for unknown ones', async () => {
+  const transport = new ScriptedTransport()
+  const subject = manager(transport)
+  await subject.connect()
+  transport.deliver({ type: 'rooms', peer: PI_PUBKEY, rooms: [ROOM] })
+
+  transport.deliver({ type: 'room_meta_updated', peer: PI_PUBKEY, room_id: ROOM.room_id, meta: { working: true } })
+  transport.deliver({ type: 'room_meta_updated', peer: PI_PUBKEY, room_id: 'not-a-known-room', meta: { working: true } })
+
+  const rooms = await subject.listRooms()
+  assert.equal(rooms.length, 1, 'an unknown room must not be invented')
+  assert.equal(rooms[0]?.working, true)
 })
