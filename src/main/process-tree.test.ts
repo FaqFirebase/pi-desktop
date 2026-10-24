@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawn, spawnSync } from 'child_process'
+import { spawn, spawnSync, type ChildProcess } from 'child_process'
+import { once } from 'node:events'
 import { PiRpcManager } from './pi-rpc-manager'
 
 /**
@@ -31,49 +32,66 @@ function walk(manager: PiRpcManager, root: number): number[] {
   return (manager as unknown as { descendantPids: (pid: number) => number[] }).descendantPids(root)
 }
 
+async function detachedTree(): Promise<{ parent: ChildProcess; child: number }> {
+  const parent = spawn(process.execPath, ['-e', `
+    const child = require('node:child_process').spawn(
+      process.execPath, ['-e', 'process.on("message", () => {})'],
+      { detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] },
+    )
+    child.on('spawn', () => process.send(child.pid))
+    child.on('exit', () => process.send('exited'))
+    process.on('message', () => {})
+  `], { detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] })
+  try {
+    const [pid] = await once(parent, 'message', { signal: AbortSignal.timeout(5000) })
+    assert.equal(typeof pid, 'number')
+    return { parent, child: pid as number }
+  } catch (error) {
+    parent.kill('SIGKILL')
+    throw error
+  }
+}
+
+function killTree(parent: ChildProcess, child: number): void {
+  // Capture the child's PID before stopping its parent: reparenting loses it.
+  try { process.kill(child, 'SIGKILL') } catch { /* gone */ }
+  if (parent.pid) {
+    try { process.kill(-parent.pid, 'SIGKILL') } catch { /* gone */ }
+  }
+}
+
 test('a grandchild in its own process group is still found', { skip: IS_WINDOWS }, async () => {
-  // Parent sleeps; child detaches into a NEW group, exactly like an OMP
-  // subagent. setsid is what makes the group signal miss it.
-  const parent = spawn('sh', ['-c', 'setsid sleep 30 & sleep 30'], { detached: true, stdio: 'ignore' })
+  const { parent, child } = await detachedTree()
   try {
     assert.ok(parent.pid, 'parent must have a pid')
-    await settle(400)
-
-    const found = walk(new PiRpcManager(), parent.pid!)
-    assert.ok(found.length > 0, 'the walk must see the descendants')
-
-    // A plain group kill leaves the detached grandchild behind. That is the bug.
-    const escaped = found.filter((pid) => {
-      const sid = spawnSync('ps', ['-o', 'sid=', '-p', String(pid)], { encoding: 'utf-8' })
-      return sid.status === 0 && sid.stdout.trim() !== '' && Number(sid.stdout.trim()) !== parent.pid
-    })
-    assert.ok(escaped.length > 0, 'at least one descendant must have escaped the parent group')
+    assert.ok(walk(new PiRpcManager(), parent.pid).includes(child))
+    const group = spawnSync('ps', ['-o', 'pgid=', '-p', String(child)], { encoding: 'utf-8' })
+    assert.equal(group.status, 0, group.stderr)
+    assert.equal(Number(group.stdout.trim()), child, 'the descendant owns a separate process group')
+    assert.notEqual(child, parent.pid)
   } finally {
-    try { process.kill(-parent.pid!, 'SIGKILL') } catch { /* gone */ }
-    for (const pid of walk(new PiRpcManager(), parent.pid ?? 0)) {
-      try { process.kill(pid, 'SIGKILL') } catch { /* gone */ }
-    }
+    killTree(parent, child)
   }
 })
 
 test('an escaped descendant is signalled directly and dies', { skip: IS_WINDOWS }, async () => {
-  const parent = spawn('sh', ['-c', 'setsid sleep 30 & sleep 30'], { detached: true, stdio: 'ignore' })
-  assert.ok(parent.pid, 'parent must have a pid')
-  await settle(400)
-
-  const strays = walk(new PiRpcManager(), parent.pid!)
-  assert.ok(strays.length > 0)
-
-  try { process.kill(-parent.pid!, 'SIGTERM') } catch { /* gone */ }
-  for (const pid of strays) {
-    try { process.kill(pid, 'SIGTERM') } catch { /* gone */ }
+  const { parent, child } = await detachedTree()
+  try {
+    assert.ok(parent.pid, 'parent must have a pid')
+    const strays = walk(new PiRpcManager(), parent.pid)
+    assert.ok(strays.includes(child))
+    const childExit = once(parent, 'message', { signal: AbortSignal.timeout(5000) })
+    for (const pid of strays) process.kill(pid, 'SIGTERM')
+    const [message] = await childExit
+    assert.equal(message, 'exited')
+    const parentExit = once(parent, 'exit')
+    process.kill(-parent.pid, 'SIGTERM')
+    await parentExit
+    assert.equal(alive(child), false, 'the detached descendant must not survive')
+    assert.equal(alive(parent.pid), false, 'the agent itself must not survive either')
+  } finally {
+    killTree(parent, child)
   }
-  await settle(600)
-
-  for (const pid of strays) {
-    assert.equal(alive(pid), false, `descendant ${pid} must not survive the kill`)
-  }
-  assert.equal(alive(parent.pid!), false, 'the agent itself must not survive either')
 })
 
 test('a childless process yields no descendants', { skip: IS_WINDOWS }, async () => {
