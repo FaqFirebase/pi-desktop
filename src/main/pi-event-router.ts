@@ -48,19 +48,25 @@ export interface PiEventRouterDeps {
   /** Push a fresh pending-prompt snapshot to the renderer (EVENT_PENDING_PROMPTS). */
   broadcastPendingCounts(counts: PendingPromptCounts): void
   now(): number
+  getQuickChatManager?(): PiRpcManager | null
+  preferQuickChat?(): boolean
+  sendQuickChatEvent?(manager: PiRpcManager, event: PiRpcEvent): void
+  sendQuickChatApproval?(manager: PiRpcManager, request: PiExtensionUiRequest | null): void
 }
 
 export interface PiEventRouter {
   /** Wire a manager's event/status-change/exit emissions into the router. Idempotent. */
   attachManager(manager: PiRpcManager): void
   /** Answer an extension-UI request, routing to its origin manager. */
-  respond(id: string, response: Record<string, unknown>): void
+  respond(id: string, response: Record<string, unknown>, owner?: 'main' | 'quick-chat'): void
   /** (Re-)deliver the workspace's held dialog; no-op unless it is active now. */
   flush(workspaceId: string): void
   /** Snapshot of held prompts; reaps timed-out ones so the figures stay honest. */
   getPendingCounts(): PendingPromptCounts
   /** Re-broadcast counts after an active-workspace change; delivers nothing. */
   handleActiveWorkspaceChanged(): void
+  refreshOwners(): void
+  getQuickChatRequest(): PiExtensionUiRequest | null
 }
 
 export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
@@ -73,6 +79,8 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
   const delivered = new Map<PiRpcManager, QueuedPrompt>()
   // Every blocking dialog's asking manager, until answered or evicted.
   const origins = new Map<string, PiRpcManager>()
+  const owners = new Map<PiRpcManager, 'main' | 'quick-chat'>()
+  const seenBlockingIds = new Set<string>()
   const attached = new WeakSet<PiRpcManager>()
 
   const isBlockingDialog = (event: PiRpcEvent): event is PiExtensionUiRequest =>
@@ -84,6 +92,25 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
   }
 
   const track = (event: PiExtensionUiRequest): QueuedPrompt => ({ event, receivedAt: deps.now() })
+
+  const ownerFor = (manager: PiRpcManager): 'main' | 'quick-chat' | null => {
+    if (manager === deps.getQuickChatManager?.() &&
+      (deps.preferQuickChat?.() || manager !== deps.getActiveManager())) return 'quick-chat'
+    return manager === deps.getActiveManager() ? 'main' : null
+  }
+  const revoke = (manager: PiRpcManager, entry: QueuedPrompt): void => {
+    if (owners.get(manager) === 'quick-chat') deps.sendQuickChatApproval?.(manager, null)
+    else if (owners.get(manager) === 'main') deps.broadcastEvent({ type: 'extension_ui_request', method: 'cancel', id: entry.event.id, targetId: entry.event.id })
+    owners.delete(manager)
+  }
+  const publish = (manager: PiRpcManager, entry: QueuedPrompt): void => {
+    const owner = ownerFor(manager)
+    if (owners.has(manager) && owners.get(manager) !== owner) revoke(manager, entry)
+    if (!owner) return
+    owners.set(manager, owner)
+    if (owner === 'quick-chat') deps.sendQuickChatApproval?.(manager, entry.event)
+    else deps.broadcastEvent(entry.event)
+  }
 
   /**
    * Once the extension-supplied timeout elapses, Pi has auto-resolved the
@@ -110,6 +137,12 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
   }
 
   const getPendingCounts = (): PendingPromptCounts => {
+    for (const [manager, entry] of delivered) {
+      if (!isExpired(entry)) continue
+      revoke(manager, entry)
+      origins.delete(entry.event.id)
+      delivered.delete(manager)
+    }
     const counts: PendingPromptCounts = {}
     for (const [manager, entries] of queues) {
       const live = reapExpired(entries)
@@ -140,7 +173,7 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
     const next = live.shift()
     if (next !== undefined) {
       delivered.set(manager, next)
-      deps.broadcastEvent(next.event)
+      publish(manager, next)
     }
     storeQueue(manager, live)
     return live.length !== entries.length
@@ -154,30 +187,37 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
   }
 
   const handleBlockingDialog = (manager: PiRpcManager, event: PiExtensionUiRequest): void => {
+    if (seenBlockingIds.has(event.id)) return
+    seenBlockingIds.add(event.id)
     origins.set(event.id, manager)
-    const workspaceId = deps.workspaceIdFor(manager)
-    if (workspaceId === null) {
-      // Manager unknown to the workspace registry: there is no queue slot to
-      // hold it under, so deliver directly when active (origin routing above
-      // still answers it) and let the inactive case fall through as a drop.
-      if (manager === deps.getActiveManager()) deps.broadcastEvent(event)
-      return
-    }
-    if (manager === deps.getActiveManager() && !delivered.has(manager)) {
-      delivered.set(manager, track(event))
-      deps.broadcastEvent(event)
-    } else {
-      // Inactive session runtime, or a dialog already on screen: hold for later.
-      enqueue(manager, event)
-    }
+    if (ownerFor(manager) && !delivered.has(manager)) {
+      const entry = track(event)
+      delivered.set(manager, entry)
+      publish(manager, entry)
+    } else enqueue(manager, event)
     emitCounts()
   }
 
   const handleManagerEvent = (manager: PiRpcManager, event: PiRpcEvent): void => {
+    if (event.type === 'extension_ui_request' && event.method === 'cancel' && event.targetId &&
+      origins.get(event.targetId) === manager) {
+      const id = event.targetId
+      origins.delete(id)
+      storeQueue(manager, (queues.get(manager) ?? []).filter((entry) => entry.event.id !== id))
+      const held = delivered.get(manager)
+      if (held?.event.id === id) {
+        revoke(manager, held)
+        delivered.delete(manager)
+      }
+      if (ownerFor(manager)) deliverNext(manager)
+      emitCounts()
+      return
+    }
     if (isBlockingDialog(event)) {
       handleBlockingDialog(manager, event)
       return
     }
+    deps.sendQuickChatEvent?.(manager, event)
     if (manager === deps.getActiveManager()) {
       deps.broadcastEvent(event)
     }
@@ -200,7 +240,10 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
       if (kept.length !== entries.length) storeQueue(manager, kept)
     }
     for (const [manager, entry] of delivered) {
-      if (ownedIds.has(entry.event.id)) delivered.delete(manager)
+      if (ownedIds.has(entry.event.id)) {
+        revoke(manager, entry)
+        delivered.delete(manager)
+      }
     }
     emitCounts()
   }
@@ -212,6 +255,7 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
     attached.add(manager)
     manager.on('event', (event: PiRpcEvent) => handleManagerEvent(manager, event))
     manager.on('status-change', (status: PiProcessStatus) => {
+      deps.sendQuickChatEvent?.(manager, { type: 'status_change', ...manager.getStatus() })
       if (manager === deps.getActiveManager()) {
         deps.broadcastEvent({ type: 'status_change', ...manager.getStatus() })
       }
@@ -221,6 +265,7 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
     // routing it through 'status-change' would re-run evictManager and purge
     // extension UI prompts the still-starting engine already sent.
     manager.on('startup-phase', () => {
+      deps.sendQuickChatEvent?.(manager, { type: 'status_change', ...manager.getStatus() })
       if (manager === deps.getActiveManager()) {
         deps.broadcastEvent({ type: 'status_change', ...manager.getStatus() })
       }
@@ -228,30 +273,30 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
     manager.on('exit', () => evictManager(manager))
   }
 
-  const respond = (id: string, response: Record<string, unknown>): void => {
-    const origin = origins.get(id) ?? null
+  const respond = (id: string, response: Record<string, unknown>, owner: 'main' | 'quick-chat' = 'main'): void => {
+    getPendingCounts()
+    const origin = origins.get(id)
+    const held = origin ? delivered.get(origin) : undefined
+    if (!origin || !held || held.event.id !== id || owners.get(origin) !== owner) return
+    const keys = Object.keys(response)
+    // Cancel is a first-class answer for every blocking method: the engine
+    // resolves select/input/editor to undefined and confirm to false. An
+    // explicit { value: '' } stays a real value submission, so a select cancel
+    // must never be disguised as an empty option.
+    const valid =
+      (keys.length === 1 && keys[0] === 'cancelled' && response.cancelled === true) ||
+      (held.event.method === 'confirm'
+        ? keys.length === 1 && keys[0] === 'confirmed' && typeof response.confirmed === 'boolean'
+        : keys.length === 1 && keys[0] === 'value' &&
+          (typeof response.value === 'string' || response.value === undefined))
+    if (!valid) throw new Error('Invalid extension UI response')
+    if (held.event.method === 'select' && 'value' in response && typeof response.value === 'string' &&
+      !held.event.options?.includes(response.value)) throw new Error('Invalid selection')
     origins.delete(id)
-    // Purge the id everywhere FIRST — regardless of a routing hit — so an
-    // answered request can never linger as a queued or delivered ghost.
-    let purgedManager: PiRpcManager | null = null
-    for (const [manager, entries] of queues) {
-      const kept = entries.filter((entry) => entry.event.id !== id)
-      if (kept.length === entries.length) continue
-      purgedManager = manager
-      storeQueue(manager, kept)
-    }
-    for (const [manager, entry] of delivered) {
-      if (entry.event.id !== id) continue
-      delivered.delete(manager)
-      purgedManager = manager
-    }
-    // Origin miss (notify dismissal, evicted prompt): fall back to the active
-    // manager — Pi ignores unknown ids — or drop when no workspace is active.
-    const target = origin ?? deps.getActiveManager()
-    target?.sendExtensionUiResponse(id, response)
-    if (purgedManager !== null && purgedManager === deps.getActiveManager()) {
-      deliverNext(purgedManager)
-    }
+    revoke(origin, held)
+    delivered.delete(origin)
+    origin.sendExtensionUiResponse(id, response)
+    if (ownerFor(origin)) deliverNext(origin)
     emitCounts()
   }
 
@@ -266,13 +311,14 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
       // Self-healing re-broadcast: rebuilds the renderer slot after a reload,
       // a switch-back, or a same-workspace re-activation. The renderer's
       // id-guard tolerates the duplicate when the dialog is already up.
-      deps.broadcastEvent(held.event)
+      publish(manager, held)
       return
     }
     if (held !== undefined) {
       // The slot's dialog timed out while the workspace was away: releasing it
       // lets the next queued dialog take the slot instead of waiting on an
       // answer Pi would discard.
+      revoke(manager, held)
       delivered.delete(manager)
       origins.delete(held.event.id)
     }
@@ -280,11 +326,30 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
     if (held !== undefined || promoted) emitCounts()
   }
 
+  const refreshOwners = (): void => {
+    getPendingCounts()
+    for (const [manager, entry] of delivered) publish(manager, entry)
+    const active = deps.getActiveManager()
+    const quick = deps.getQuickChatManager?.()
+    if (active && ownerFor(active)) deliverNext(active)
+    if (quick && quick !== active && ownerFor(quick)) deliverNext(quick)
+    emitCounts()
+  }
   return {
     attachManager,
     respond,
     flush,
     getPendingCounts,
-    handleActiveWorkspaceChanged: emitCounts,
+    handleActiveWorkspaceChanged: () => {
+      getPendingCounts()
+      for (const [manager, entry] of delivered) publish(manager, entry)
+      emitCounts()
+    },
+    refreshOwners,
+    getQuickChatRequest: () => {
+      getPendingCounts()
+      const manager = deps.getQuickChatManager?.()
+      return manager && owners.get(manager) === 'quick-chat' ? delivered.get(manager)?.event ?? null : null
+    },
   }
 }

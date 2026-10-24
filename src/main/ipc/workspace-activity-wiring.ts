@@ -36,6 +36,24 @@ export interface WindowControls {
   showWindow(): void
 }
 
+const pendingActivations = new WeakMap<IpcContext, WorkspaceActivationIntent>()
+
+/** Both notification clicks and Quick Chat use the renderer's guarded navigation. */
+export function requestWorkspaceActivation(
+  ctx: IpcContext,
+  windowControls: WindowControls,
+  intent: WorkspaceActivationIntent,
+): void {
+  pendingActivations.set(ctx, intent)
+  windowControls.showWindow()
+  const window = windowControls.getWindow()
+  if (!window || window.isDestroyed()) return
+  if (window.isMinimized()) window.restore()
+  window.show()
+  window.focus()
+  ctx.broadcast(IPC_CHANNELS.EVENT_ACTIVATE_WORKSPACE, intent)
+}
+
 /**
  * Wires the per-workspace activity tracker: feeds it every manager's turn and
  * process signals, broadcasts the derived map to the renderer, registers the
@@ -53,7 +71,6 @@ export function wireWorkspaceActivity(
   const { getWindow, showWindow } = windowControls
   // Activation intent from a notification clicked while no window existed;
   // the freshly created renderer pulls it once its subscriptions are live.
-  let pendingActivation: WorkspaceActivationIntent | null = null
 
   const showNotification = async (
     notification: WorkspaceActivityNotification,
@@ -95,7 +112,7 @@ export function wireWorkspaceActivity(
         ...(notification.sessionPath ? { sessionPath: notification.sessionPath } : {}),
         ...(notification.runtimeId ? { runtimeId: notification.runtimeId } : {}),
       }
-      if (stillExists) pendingActivation = intent
+      if (stillExists) pendingActivations.set(ctx, intent)
       const win = getWindow()
       if (win) {
         if (win.isMinimized()) win.restore()
@@ -170,8 +187,8 @@ export function wireWorkspaceActivity(
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_ACTIVITY_GET, async () => tracker.getMap())
 
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_TAKE_PENDING_ACTIVATION, async () => {
-    const intent = pendingActivation
-    pendingActivation = null
+    const intent = pendingActivations.get(ctx) ?? null
+    pendingActivations.delete(ctx)
     return intent
   })
 

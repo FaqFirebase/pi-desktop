@@ -18,8 +18,9 @@ import { configureGuiDataDir, getGuiDataPath } from './app-data-paths'
 import { isPathWithin } from '../../resources/path-within'
 import { REPO_MAP_ENV, parseRepoMap } from '../../resources/repo-set-map'
 import { getOmpSessionsRoot, getSessionsRoot } from './pi-paths'
-import { PiRpcManager } from './pi-rpc-manager'
+import { PiRpcManager, setPiExecutableOverride } from './pi-rpc-manager'
 import { isDisposableSessionFile, MAX_LIVE_SESSION_RUNTIMES, WorkspaceManager } from './workspace-manager'
+import { getRuntimePermissionMode, forgetRuntimePermissionMode } from './runtime-permission-mode-store'
 
 async function freshDataDir(): Promise<void> {
   configureGuiDataDir(await mkdtemp(join(tmpdir(), 'pi-ws-')))
@@ -218,6 +219,41 @@ test('multiple session runtimes share a project cwd without sharing a Pi process
     assert.equal(activated.sessionPath, existingPath)
     assert.equal(mgr.getSessionRuntimeForPath(existingPath)?.runtimeId, activated.runtimeId)
     assert.equal(mgr.getActiveSessionRuntime()?.runtimeId, activated.runtimeId)
+  })
+})
+
+test('activateRuntime switches the active runtime exactly, never by path', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const ws = await mgr.createWorkspace('Alpha', await project())
+    const first = await mgr.createNewSessionRuntime(ws.id)
+    const filePath = join(await project(), 'session.jsonl')
+    await writeFile(filePath, '{}\n', 'utf-8')
+    await mgr.activateSession(ws.id, filePath)
+    assert.equal(mgr.getActiveSessionRuntime()?.runtimeId, mgr.getSessionRuntimeForPath(filePath)?.runtimeId)
+
+    // Reactivating the FIRST file-less tab must land on it, not on the
+    // workspace's remembered runtime or any path-derived tab.
+    const activated = await mgr.activateRuntime(ws.id, first.runtimeId)
+    assert.equal(activated.runtimeId, first.runtimeId)
+    assert.equal(mgr.getActiveSessionRuntime()?.runtimeId, first.runtimeId)
+    assert.equal(mgr.getWorkspaceSessionRuntime(ws.id)?.runtimeId, first.runtimeId)
+    assert.equal(mgr.getActiveSessionRuntime()?.sessionPath, null, 'a file-less tab stays file-less')
+  })
+})
+
+test('activateRuntime validates the target instead of falling back', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const ws = await mgr.createWorkspace('Alpha', await project())
+    const other = await mgr.createWorkspace('Beta', await project())
+    const runtime = await mgr.createNewSessionRuntime(ws.id)
+    await assert.rejects(() => mgr.activateRuntime(ws.id, 'rt-missing'), /Session runtime not found/)
+    await assert.rejects(() => mgr.activateRuntime(other.id, runtime.runtimeId), /attached to a different workspace runtime/)
+    await assert.rejects(() => mgr.activateRuntime('ws-missing', runtime.runtimeId), /Workspace not found/)
+    assert.equal(mgr.getActiveSessionRuntime()?.runtimeId, runtime.runtimeId, 'failed activation leaves the active pointer alone')
   })
 })
 
@@ -476,6 +512,68 @@ test('an OMP session subscribes to subagent progress when it starts; a Pi sessio
         assert.equal(subscribed, engine === 'omp', engine)
       }
     })
+  })
+})
+
+test('an OMP runtime in the home directory opts into --allow-home; Pi and other folders do not', async () => {
+  await freshDataDir()
+  const home = await mkdtemp(join(tmpdir(), 'pi-home-'))
+  const savedHome = process.env.HOME
+  process.env.HOME = home
+  try {
+    await withManager(async (mgr) => {
+      const homeWorkspace = await mgr.createWorkspace('Home', home, { activate: false })
+      const elsewhere = await mgr.createWorkspace('Elsewhere', await project(), { activate: false })
+
+      // A brand-new task names no engine: the configured default decides, so
+      // the Home guard has to look at the engine that will actually run —
+      // exactly the "No project" first send under a default-OMP install.
+      setPiExecutableOverride(null, 'omp')
+      const cases: Array<{ label: string; workspace: string; engine?: AgentEngineKind; expectFlag: boolean }> = [
+        { label: 'omp in HOME (explicit engine)', workspace: homeWorkspace.id, engine: 'omp', expectFlag: true },
+        { label: 'omp in HOME (configured default)', workspace: homeWorkspace.id, expectFlag: true },
+        { label: 'pi in HOME', workspace: homeWorkspace.id, engine: 'pi', expectFlag: false },
+        { label: 'omp elsewhere', workspace: elsewhere.id, engine: 'omp', expectFlag: false },
+      ]
+      for (const { label, workspace, engine, expectFlag } of cases) {
+        const runtime = await mgr.createNewSessionRuntime(workspace)
+        const manager = mgr.getSessionRuntimeManager(runtime.runtimeId)
+        assert.ok(manager)
+        const process_ = fakePiProcess(manager, 620, 'stopped')
+        await mgr.startSessionRuntime(runtime.runtimeId, engine ? { engine } : {})
+        const args = process_.lastStartOptions?.args ?? []
+        assert.equal(
+          args.includes('--allow-home'), expectFlag,
+          `${label}: --allow-home ${expectFlag ? 'required (session header must keep the home cwd)' : 'must not be injected'}`,
+        )
+        await mgr.closeSessionRuntime(runtime.runtimeId)
+      }
+      setPiExecutableOverride(null, 'auto')
+    })
+  } finally {
+    if (savedHome === undefined) delete process.env.HOME
+    else process.env.HOME = savedHome
+  }
+})
+
+test('every start path records the permission mode the process actually received', async () => {
+  await freshDataDir()
+  await withManager(async (mgr) => {
+    const workspace = await mgr.createWorkspace('Alpha', await project())
+    const runtime = await mgr.createNewSessionRuntime(workspace.id)
+    const manager = mgr.getSessionRuntimeManager(runtime.runtimeId)
+    assert.ok(manager)
+    const process_ = fakePiProcess(manager, 630, 'stopped')
+    assert.equal(getRuntimePermissionMode(runtime.runtimeId), null, 'nothing recorded before any start')
+    // A start through the manager itself (the main window's new-session and
+    // restart paths), not the popup's start helper: the recorded mode comes
+    // from the env the process is spawned with.
+    await mgr.startSessionRuntime(runtime.runtimeId, {
+      env: { PI_DESKTOP_PERMISSION_MODE: 'ask-commands' },
+    })
+    assert.equal(process_.lastStartOptions?.env?.PI_DESKTOP_PERMISSION_MODE, 'ask-commands')
+    assert.equal(getRuntimePermissionMode(runtime.runtimeId), 'ask-commands', 'the convergence point recorded the env mode')
+    forgetRuntimePermissionMode(runtime.runtimeId)
   })
 })
 
@@ -975,6 +1073,48 @@ test('a turn after a refused task prompt clears the refusal', async () => {
   })
 })
 
+test('answering an approval resumes only its runtime after its last pending request', async () => {
+  await freshDataDir()
+  await withManager(async (mgr) => {
+    const task = await launchedTask(mgr, () => PROMPT_ACCEPTED)
+    task.manager.emit('agent_start', { type: 'agent_start' })
+    task.manager.emit('extension_ui_request', { id: 'first', method: 'confirm' })
+    task.manager.emit('extension_ui_request', { id: 'second', method: 'input' })
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'needs-approval')
+
+    task.manager.emit('extension-ui-response', 'unrelated')
+    task.manager.emit('extension-ui-response', 'first')
+    task.manager.emit('extension-ui-response', 'first')
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'needs-approval')
+
+    task.manager.emit('extension-ui-response', 'second')
+    assert.equal(mgr.getSessionRuntime(task.runtimeId)?.activity, 'working')
+  })
+})
+
+test('canceling startup approval restores idle and late answers cannot reopen a finished turn', async () => {
+  await freshDataDir()
+  await withManager(async (mgr) => {
+    const workspace = await mgr.createWorkspace('Alpha', await project())
+    const { runtime } = await liveRuntime(mgr, workspace.id, 9450)
+    const manager = mgr.getSessionRuntimeManager(runtime.runtimeId)!
+    manager.emit('extension_ui_request', { id: 'startup', method: 'select' })
+    assert.equal(mgr.getSessionRuntime(runtime.runtimeId)?.activity, 'needs-approval')
+    manager.emit('extension_ui_request', { method: 'cancel', targetId: 'startup' })
+    assert.equal(mgr.getSessionRuntime(runtime.runtimeId)?.activity, null)
+
+    manager.emit('extension_ui_request', { id: 'turn', method: 'confirm' })
+    manager.emit('agent_start', { type: 'agent_start' })
+    assert.equal(mgr.getSessionRuntime(runtime.runtimeId)?.activity, 'needs-approval')
+    manager.emit('extension-ui-response', 'turn')
+    assert.equal(mgr.getSessionRuntime(runtime.runtimeId)?.activity, 'working')
+    manager.emit('extension_ui_request', { id: 'late', method: 'editor' })
+    manager.emit('agent_end', { type: 'agent_end', messages: [] })
+    manager.emit('extension-ui-response', 'late')
+    assert.equal(mgr.getSessionRuntime(runtime.runtimeId)?.activity, 'completed')
+  })
+})
+
 test('load recovers from .bak when the live workspaces file is corrupted', async () => {
   await freshDataDir()
   const proj = await project()
@@ -1298,5 +1438,127 @@ test('an in-place linked task edits the user checkouts and never removes them', 
     assert.equal(result.preservedWorktreePaths, undefined)
     assert.equal(existsSync(paths.app), true)
     assert.equal(existsSync(paths.lib), true)
+  })
+})
+
+test('background session opening reuses one writer without changing main workspace or runtime', async () => {
+  await freshDataDir()
+  await withManager(async (mgr) => {
+    const alpha = await mgr.createWorkspace('Alpha', await project())
+    const beta = await mgr.createWorkspace('Beta', await project())
+    const main = await mgr.createNewSessionRuntime(beta.id)
+    const sessionPath = join(await project(), 'saved.jsonl')
+    await writeFile(sessionPath, JSON.stringify({ type: 'session', id: 'saved' }) + '\n')
+    const background = mgr.openSessionRuntime(alpha.id, sessionPath)
+    const manager = mgr.getSessionRuntimeManager(background.runtimeId)
+    assert.ok(manager)
+    assert.equal(background.active, false)
+    assert.equal(mgr.getActiveWorkspaceId(), beta.id)
+    assert.equal(mgr.getActiveSessionRuntime()?.runtimeId, main.runtimeId)
+    assert.equal(mgr.getWorkspaceSessionRuntime(alpha.id), null, 'background views do not replace the project main selection')
+    assert.equal(mgr.openSessionRuntime(alpha.id, sessionPath).runtimeId, background.runtimeId)
+    assert.equal(mgr.getSessionRuntimeManager(background.runtimeId), manager)
+    assert.throws(() => mgr.openSessionRuntime(beta.id, sessionPath), /different workspace/)
+  })
+})
+
+test('view references protect empty tabs from pruning but explicit close still invalidates them', async () => {
+  await freshDataDir()
+  await withManager(async (mgr) => {
+    const ws = await mgr.createWorkspace('Project', await project())
+    const sessionPath = join(await project(), 'empty.jsonl')
+    await writeFile(sessionPath, JSON.stringify({ type: 'session', id: 'empty' }) + '\n')
+    const runtime = mgr.openSessionRuntime(ws.id, sessionPath)
+    const release = mgr.retainSessionRuntime(runtime.runtimeId)
+    assert.deepEqual(await mgr.pruneEmptySessionRuntimes(), [])
+    assert.ok(mgr.getSessionRuntime(runtime.runtimeId))
+    const result = await mgr.closeSessionRuntime(runtime.runtimeId)
+    assert.equal(result?.runtimeId, runtime.runtimeId)
+    assert.equal(mgr.getSessionRuntime(runtime.runtimeId), null)
+    release()
+    release()
+    const reopened = mgr.openSessionRuntime(ws.id, sessionPath)
+    const releaseAgain = mgr.retainSessionRuntime(reopened.runtimeId)
+    releaseAgain()
+    assert.equal((await mgr.pruneEmptySessionRuntimes())[0]?.runtimeId, reopened.runtimeId)
+  })
+})
+
+test('a referenced popup runtime remains eligible for idle process eviction and can resume its same file', async () => {
+  await freshDataDir()
+  await withManager(async (mgr) => {
+    const ws = await mgr.createWorkspace('Project', await project())
+    const sessionPath = join(await project(), 'saved.jsonl')
+    await writeFile(sessionPath, JSON.stringify({ type: 'session', id: 'saved' }) + '\n')
+    const runtime = mgr.openSessionRuntime(ws.id, sessionPath)
+    const manager = mgr.getSessionRuntimeManager(runtime.runtimeId)!
+    const process = fakePiProcess(manager, 8000)
+    reportsSessionFile(manager, sessionPath, 'saved')
+    const release = mgr.retainSessionRuntime(runtime.runtimeId)
+    for (let index = 0; index < MAX_LIVE_SESSION_RUNTIMES; index++) {
+      await liveRuntime(mgr, ws.id, 8100 + index)
+    }
+    assert.equal(process.stopped, true, 'a view reference is not a live-process-budget exemption')
+    assert.equal(mgr.getSessionRuntime(runtime.runtimeId)?.sessionPath, sessionPath)
+    const main = mgr.getActiveSessionRuntime()
+    await mgr.startSessionRuntime(runtime.runtimeId)
+    assert.equal(process.starts, 1)
+    assert.equal(process.lastStartOptions?.sessionPath, sessionPath)
+    assert.equal(mgr.getActiveSessionRuntime()?.runtimeId, main?.runtimeId)
+    assert.equal(liveRuntimeCount(mgr), MAX_LIVE_SESSION_RUNTIMES)
+    release()
+  })
+})
+
+test('background project selection preserves an empty main selection and persists without automatic activation', async () => {
+  await freshDataDir()
+  await withManager(async (mgr) => {
+    const path = await project()
+    const workspace = await mgr.createWorkspace('Quick task', path, { activate: false })
+    assert.equal(mgr.getActiveWorkspace(), null)
+    assert.equal(mgr.getActiveSessionRuntime(), null)
+    assert.deepEqual(mgr.getSessionRuntimes(), [])
+    const duplicate = await mgr.createWorkspace('Same folder', path, { activate: false })
+    assert.equal(duplicate.id, workspace.id)
+    assert.equal(mgr.getActiveWorkspace(), null)
+    const persisted = JSON.parse(await readFile(getGuiDataPath('workspaces.json'), 'utf-8'))
+    assert.equal(persisted.activeWorkspaceId, null)
+    assert.deepEqual(persisted.workspaces.map((item: { id: string }) => item.id), [workspace.id])
+  })
+})
+
+test('inactive quick-task creation leaves the main and per-workspace active runtimes unchanged', async () => {
+  await freshDataDir()
+  await withManager(async (mgr) => {
+    const target = await mgr.createWorkspace('Target', await project(), { activate: false })
+    const main = await mgr.createWorkspace('Main', await project())
+    const mainRuntime = await mgr.createNewSessionRuntime(main.id)
+    const first = mgr.createInactiveSessionRuntime(target.id)
+    const second = mgr.createInactiveSessionRuntime(target.id)
+    assert.notEqual(first.runtimeId, second.runtimeId)
+    assert.equal(first.status, 'stopped')
+    assert.equal(first.pid, null)
+    assert.equal(first.sessionPath, null)
+    assert.equal(first.active, false)
+    assert.equal(mgr.getSessionRuntimeManager(first.runtimeId)?.getStatus().status, 'stopped')
+    assert.equal(mgr.getActiveWorkspace()?.id, main.id)
+    assert.equal(mgr.getActiveSessionRuntime()?.runtimeId, mainRuntime.runtimeId)
+    assert.equal(mgr.getWorkspaceSessionRuntime(target.id), null)
+  })
+})
+
+test('allocating an inactive task does not evict a process from a full live-runtime budget', async () => {
+  await freshDataDir()
+  await withManager(async (mgr) => {
+    const workspace = await mgr.createWorkspace('Budget', await project())
+    const live: FakePiProcess[] = []
+    for (let index = 0; index < MAX_LIVE_SESSION_RUNTIMES; index++) {
+      live.push((await liveRuntime(mgr, workspace.id, 19000 + index)).process)
+    }
+    const active = mgr.getActiveSessionRuntime()?.runtimeId
+    mgr.createInactiveSessionRuntime(workspace.id)
+    assert.equal(liveRuntimeCount(mgr), MAX_LIVE_SESSION_RUNTIMES)
+    assert.equal(live.some((process) => process.stopped), false)
+    assert.equal(mgr.getActiveSessionRuntime()?.runtimeId, active)
   })
 })

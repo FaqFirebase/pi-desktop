@@ -3,7 +3,6 @@ import { createExtensionUiRouter, wireExtensionUiIpc } from './extension-ui-ipc'
 import { WorkspaceManager } from './workspace-manager'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { createIpcContext } from './ipc/context'
-import { assertTrustedSender } from './ipc/validation'
 import { registerPiHandlers } from './ipc/pi-handlers'
 import { registerTerminalHandlers } from './ipc/terminal-handlers'
 import { registerSessionHandlers } from './ipc/session-handlers'
@@ -30,6 +29,7 @@ import { registerWorkflowHandlers } from './ipc/workflow-handlers'
 import { registerSubagentHandlers } from './ipc/subagent-handlers'
 import { wireWorkspaceActivity, type WindowControls } from './ipc/workspace-activity-wiring'
 import type { WorkspaceTerminals } from './workspace-terminals'
+import { createQuickChatHandlers } from './ipc/quick-chat-handlers'
 
 export { loadAppSettings, saveAppSettings } from './ipc/settings'
 
@@ -45,7 +45,7 @@ export function registerIpcHandlers(
   windowControls: WindowControls = { getWindow: () => null, showWindow: () => {} },
   iconPath = '',
 ): WorkspaceTerminals {
-  const ctx = createIpcContext(workspaceManager)
+  const ctx = createIpcContext(workspaceManager, windowControls.getWindow)
 
   // Session runtime snapshots are separate from workspace activity: several
   // live Pi processes may share one project cwd.
@@ -83,18 +83,22 @@ export function registerIpcHandlers(
   // Cross-workspace activity map + desktop notifications. Wired before the
   // router so it can observe the router's pending-prompt counts below.
   const workspaceActivity = wireWorkspaceActivity(ctx, windowControls, iconPath)
+  const quickChat = createQuickChatHandlers(ctx, windowControls)
+  const router = createExtensionUiRouter({
+    workspace: workspaceManager,
+    broadcast: ctx.broadcast,
+    onPendingCounts: (counts) => workspaceActivity.handlePendingCounts(counts),
+    quickChat: quickChat.routing,
+  })
+  quickChat.register(router)
 
   // Router construction, the dialog-answer channels, the pending-prompt
   // flush/get pair and the two workspace hooks all live in extension-ui-ipc.ts
   // so they can be tested without Electron.
   wireExtensionUiIpc<IpcMainInvokeEvent>({
     handle: (channel, handler) => ipcMain.handle(channel, handler),
-    assertTrustedSender,
-    router: createExtensionUiRouter({
-      workspace: workspaceManager,
-      broadcast: ctx.broadcast,
-      onPendingCounts: (counts) => workspaceActivity.handlePendingCounts(counts),
-    }),
+    assertTrustedSender: ctx.assertMainSender,
+    router,
     workspace: workspaceManager,
     broadcast: ctx.broadcast,
   })
