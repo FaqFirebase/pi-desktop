@@ -228,7 +228,7 @@ Download the **installer** (`…-win-x64-setup.exe`, recommended) or the **porta
 
 Set a key for **Quick Chat (global)** in **Settings > Keyboard shortcuts** and save. It is off by default and works while Pi Desktop is running. Settings show whether the system accepted the shortcut.
 
-Use it to send a small task from your browser, editor, or another app without changing the project or session open in the main window:
+Quick Chat is a separate floating window that stays above other apps while you use it. Send a small task from your browser or editor without changing the project or session open in Pi Desktop's main window:
 
 - Start a new task in a project, or leave **No project** selected to work from your home directory. An agent starts only when you send.
 - Pick, paste, or drop files and images into the draft. Change the model and thinking level before sending; the selector leaves the task visible and does not resize the window.
@@ -237,11 +237,11 @@ Use it to send a small task from your browser, editor, or another app without ch
 
 Quick Chat uses the same Pi/OMP engines, session history, permission modes, and workspace trust rules as the main window. It does not grant extra permissions. The default remains **Ask before edits**; requests can be allowed or denied in the popup.
 
-The initial window size follows the current display's work area. You can move, resize, or pin it. Escape, an outside click, or the shortcut hides it without stopping work or answering a pending approval. Reopening returns to the selected session; **Stop** explicitly stops that task.
+The initial window size follows the current display's work area. You can move or resize it; **Pin** keeps it visible when you return to another app. When unpinned, an outside click hides it. Escape and the shortcut also hide it without stopping work or answering a pending approval. Reopening returns to the selected session; **Stop** explicitly stops that task.
 
 Enter sends; Shift+Enter adds a line. While a task is running, **Add instruction** steers it rather than creating another queued task. Model and thinking changes are available when the session is idle, or can be prepared before starting a new task.
 
-![Quick Chat with a completed task](docs/screenshots/quick-chat.png)
+![Quick Chat pinned above a browser, showing a real reply while the browser has focus](docs/screenshots/quick-chat.png)
 
 ## Keyboard shortcuts
 
