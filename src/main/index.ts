@@ -17,6 +17,7 @@ import { configureGuiDataDir, getCanonicalUserDataDir, getExternalGuiDataDir, mi
 import { setupTray, setTrayEnabled, isTrayEnabled, isTrayAvailable, destroyTray, notifyFirstHide } from './tray-manager'
 import { shouldHideToTray } from './tray-decision'
 import { createEditorGuard } from './editor-guard'
+import { createAppShutdown } from './app-shutdown'
 import { appLog } from './app-log'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { VOICE_PROTOCOL_SCHEME, handleVoiceProtocolRequest } from './voice-protocol'
@@ -24,6 +25,7 @@ import { getVoiceModelsDir } from './voice-model-store'
 import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
 import { getSettingsPath } from './ipc/settings'
 import { disableCwdExecutableSearch } from './windows-exe-search'
+import { destroyQuickChatWindow, getQuickChatWindow, hideQuickChatWindow, setQuickChatQuittingHandler } from './quick-chat-window'
 
 // First, before anything spawns: Windows must never run a program from the
 // working directory (usually the workspace) when it is started by bare name.
@@ -82,8 +84,6 @@ let workspaceTerminals: WorkspaceTerminals | null = null
 // quit (menu/tray Quit, Cmd-Ctrl+Q) from a window close that should hide to tray.
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
-let shutdownPending: Promise<void> | null = null
-let shutdownComplete = false
 
 // Guards the renderer's unsaved editor buffer against teardown. The renderer
 // mirrors its dirty flag here (ui:editor-dirty-set); quit, non-tray window
@@ -109,8 +109,46 @@ async function confirmEditorDiscard(window: BrowserWindow | null): Promise<boole
   return response === 0
 }
 
+// The quit lifecycle lives in app-shutdown.ts (injected IO, unit-tested):
+// `isQuitting` is the flag the window-close handler and the quick-chat popup
+// read; the wire call below registers the before-quit/will-quit handlers.
+const appShutdown = createAppShutdown({
+  app,
+  isQuitting: () => isQuitting,
+  setQuitting: (value: boolean) => {
+    isQuitting = value
+  },
+  editorGuard,
+  confirmEditorDiscard: (window) => confirmEditorDiscard(window),
+  getMainWindow: () => mainWindow,
+  destroyAuxWindows: () => destroyQuickChatWindow(),
+  stopAll: () => new Promise<void>((resolve) => resolve(workspaceManager?.stopAll())),
+  warnShutdown: (error) => appLog.warn('app', 'Failed to stop workspaces on quit', error),
+  finalizeTeardown: () => {
+    // Release the tray icon so it doesn't linger in the notification area.
+    destroyTray()
+    // Give the system-wide dictation key back to other apps.
+    globalShortcut.unregisterAll()
+    // Synchronous incremental scan + write: captures every session touched this
+    // run before we exit (async I/O isn't guaranteed to finish during shutdown).
+    activityStatsStore.flushSync()
+    appLog.flushSync()
+    workspaceTerminals?.stopAll()
+    // Windows: GUI-owned Pi TEMP does not get OS cleanup — wipe on quit.
+    cleanupPiChildTempDir()
+  },
+})
+appShutdown.wire()
+setQuickChatQuittingHandler(() => appShutdown.isQuitting())
+
 /** Menu Reload / Force Reload: ask a dirty editor first, then reload. */
-async function reloadMainWindowWithGuard(ignoreCache: boolean): Promise<void> {
+async function reloadFocusedWindowWithGuard(ignoreCache: boolean): Promise<void> {
+  const popup = getQuickChatWindow()
+  if (popup?.isFocused()) {
+    if (ignoreCache) popup.webContents.reloadIgnoringCache()
+    else popup.webContents.reload()
+    return
+  }
   const window = mainWindow
   if (!window) return
   if (editorGuard.needsPrompt() && !(await confirmEditorDiscard(window))) return
@@ -254,7 +292,11 @@ function createMainWindow(): BrowserWindow {
   window.webContents.on('render-process-gone', () => editorGuard.reset())
 
   window.on('closed', () => {
-    if (mainWindow === window) mainWindow = null
+    if (mainWindow !== window) return
+    mainWindow = null
+    // Auxiliary hidden windows must not keep Windows/Linux alive after a real
+    // main-window close. Tray hides never reach this event.
+    if (process.platform !== 'darwin') destroyQuickChatWindow()
   })
 
   // Open external links in default browser
@@ -346,7 +388,7 @@ function createApplicationMenu(): void {
           label: t('common.newSession'),
           click: () => {
             const focusedWindow = BrowserWindow.getFocusedWindow()
-            focusedWindow?.webContents.send('menu:new-session')
+            if (focusedWindow === mainWindow) focusedWindow?.webContents.send('menu:new-session')
           },
         },
         {
@@ -354,7 +396,7 @@ function createApplicationMenu(): void {
           accelerator: 'CmdOrCtrl+Shift+N',
           click: () => {
             const focusedWindow = BrowserWindow.getFocusedWindow()
-            focusedWindow?.webContents.send('menu:new-workspace')
+            if (focusedWindow === mainWindow) focusedWindow?.webContents.send('menu:new-workspace')
           },
         },
         {
@@ -362,7 +404,7 @@ function createApplicationMenu(): void {
           accelerator: 'CmdOrCtrl+O',
           click: () => {
             const focusedWindow = BrowserWindow.getFocusedWindow()
-            focusedWindow?.webContents.send('menu:open-project')
+            if (focusedWindow === mainWindow) focusedWindow?.webContents.send('menu:open-project')
           },
         },
         { type: 'separator' },
@@ -391,12 +433,12 @@ function createApplicationMenu(): void {
         {
           label: t('menu.reload'),
           accelerator: 'CmdOrCtrl+R',
-          click: () => void reloadMainWindowWithGuard(false),
+          click: () => void reloadFocusedWindowWithGuard(false),
         },
         {
           label: t('menu.forceReload'),
           accelerator: 'Shift+CmdOrCtrl+R',
-          click: () => void reloadMainWindowWithGuard(true),
+          click: () => void reloadFocusedWindowWithGuard(true),
         },
         { role: 'toggleDevTools', label: t('menu.toggleDevTools') },
         { type: 'separator' },
@@ -420,7 +462,9 @@ function createApplicationMenu(): void {
                 label: t('workspaceTabs.closeSessionTab'),
                 accelerator: 'Command+W',
                 click: () => {
-                  BrowserWindow.getFocusedWindow()?.webContents.send('menu:close-session')
+                  const focused = BrowserWindow.getFocusedWindow()
+                  if (focused === getQuickChatWindow()) hideQuickChatWindow()
+                  else if (focused === mainWindow) focused?.webContents.send('menu:close-session')
                 },
               },
               { role: 'close', label: t('menu.close'), accelerator: 'Shift+Command+W' },
@@ -503,7 +547,8 @@ app.whenReady().then(async () => {
 
   // The renderer mirrors its editor-dirty flag on every transition; the
   // quit/close/reload guards below read the cached value.
-  ipcMain.on(IPC_CHANNELS.UI_EDITOR_DIRTY_SET, (_event, dirty: unknown, fileName: unknown) => {
+  ipcMain.on(IPC_CHANNELS.UI_EDITOR_DIRTY_SET, (event, dirty: unknown, fileName: unknown) => {
+    if (event.sender !== mainWindow?.webContents || !isAllowedMainWindowNavigation(event.senderFrame?.url ?? '')) return
     editorGuard.setDirty(dirty === true, typeof fileName === 'string' ? fileName : null)
   })
 
@@ -550,54 +595,8 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', (event) => {
-  // Gate BEFORE isQuitting is set: quitting destroys the renderer and its
-  // unsaved editor buffer, and a cancelled dialog must leave the tray-hide
-  // behavior (which reads isQuitting) exactly as it was.
-  if (editorGuard.needsPrompt()) {
-    event.preventDefault()
-    void confirmEditorDiscard(mainWindow).then((discard) => {
-      if (discard) {
-        editorGuard.confirmDiscard()
-        app.quit()
-      }
-    })
-    return
-  }
-  // Mark a real quit so the window `close` handler stops hiding to tray and lets
-  // the window actually close. This is the single choke point every quit path
-  // flows through (menu/tray Quit, Cmd-Ctrl+Q).
-  isQuitting = true
-})
-
-// Close the renderer before tearing down the services it can still query.
-app.on('will-quit', (event) => {
-  if (!shutdownComplete) {
-    event.preventDefault()
-    // The executor turns a synchronous stopAll() throw into a rejection, so a
-    // failed teardown is logged and the quit still resumes instead of hanging.
-    shutdownPending ??= new Promise<void>((resolve) => resolve(workspaceManager?.stopAll()))
-      .catch((error) => appLog.warn('app', 'Failed to stop workspaces on quit', error))
-      .then(() => {
-        shutdownComplete = true
-        // Native macOS terminate: is still unwinding during promise microtasks.
-        // Resume on the next turn so it cannot swallow the renewed quit request.
-        setImmediate(() => app.quit())
-      })
-    return
-  }
-  // Release the tray icon so it doesn't linger in the notification area.
-  destroyTray()
-  // Give the system-wide dictation key back to other apps.
-  globalShortcut.unregisterAll()
-  // Synchronous incremental scan + write: captures every session touched this
-  // run before we exit (async I/O isn't guaranteed to finish during shutdown).
-  activityStatsStore.flushSync()
-  appLog.flushSync()
-  workspaceTerminals?.stopAll()
-  // Windows: GUI-owned Pi TEMP does not get OS cleanup — wipe on quit.
-  cleanupPiChildTempDir()
-})
+// The before-quit/will-quit lifecycle (editor guard, quick-chat popup destroy,
+// workspace drain, final teardown) is wired in app-shutdown.ts above.
 
 // Security: prevent new window creation, and stop preview <webview> guests from
 // navigating away from their local file (e.g. a malicious HTML file redirecting

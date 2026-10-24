@@ -4,8 +4,10 @@ import { WorkspaceManager } from '../workspace-manager'
 import { getGuiDataPath } from '../app-data-paths'
 import type { AppSettings } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
+import { QUICK_CHAT_CHANNELS } from '../../shared/quick-chat'
+import { getQuickChatWindow } from '../quick-chat-window'
 import { DEFAULT_SETTINGS } from '../../shared/default-settings'
-import { shortcutProblem } from '../../shared/keyboard-shortcuts'
+import { shortcutAccelerator, shortcutProblem } from '../../shared/keyboard-shortcuts'
 import { availableLanguages } from '../../shared/i18n'
 import { normalizeStoredSettings } from '../../shared/app-settings'
 import { applyLanguageSetting, getI18nEnvironment, isPseudoLanguageEnabled } from '../i18n'
@@ -82,15 +84,19 @@ export async function saveAppSettings(settings: Partial<AppSettings>): Promise<v
 }
 
 export function registerSettingsHandlers(ctx: IpcContext): void {
-  const { workspaceManager, globalDictationShortcut } = ctx
+  const { workspaceManager, globalDictationShortcut, quickChatShortcut } = ctx
 
   // ─── Settings ───────────────────────────────────────────────────────────
 
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_ALL, async () => {
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_ALL, async (event) => {
+    ctx.assertMainSender(event)
     return loadAppSettings(workspaceManager)
   })
 
   ipcMain.handle(IPC_CHANNELS.SETTINGS_SAVE, async (_event, settings: unknown) => {
+    ctx.assertMainSender(_event)
+    // Do not let a late startup read replace a binding just saved by the user.
+    await startupSettingsApplied
     if (!isObject(settings)) throw new Error('settings must be an object')
     await saveAppSettings(settings as Partial<AppSettings>)
     // Reflect a "run on startup" change to the OS immediately (login item on
@@ -114,21 +120,40 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
       applyLanguageSetting(updated.language)
     }
     if ('shortcuts' in settings) {
+      // A swap between the two actions must not fail because the new key is
+      // still held by the other action: free each desired key first, then
+      // register. Unchanged registrations are left untouched.
+      const dictation = updated.shortcuts.globalDictation ? shortcutAccelerator(updated.shortcuts.globalDictation) : null
+      const quickChat = updated.shortcuts.quickChat ? shortcutAccelerator(updated.shortcuts.quickChat) : null
+      if (dictation) quickChatShortcut.releaseKey(dictation)
+      if (quickChat) globalDictationShortcut.releaseKey(quickChat)
       globalDictationShortcut.apply(updated.shortcuts.globalDictation)
+      quickChatShortcut.apply(updated.shortcuts.quickChat)
+    }
+    const quickChatWindow = getQuickChatWindow()
+    if (quickChatWindow && !quickChatWindow.isDestroyed()) {
+      quickChatWindow.webContents.send(QUICK_CHAT_CHANNELS.update, { type: 'settings', settings: updated })
     }
     return updated
   })
 
   ipcMain.handle(IPC_CHANNELS.I18N_GET_ENVIRONMENT, () => getI18nEnvironment())
 
+  ipcMain.handle(IPC_CHANNELS.QUICK_CHAT_SHORTCUT_STATUS, async (event) => {
+    ctx.assertMainSender(event)
+    await startupSettingsApplied
+    return quickChatShortcut.getStatus()
+  })
+
   // Reconcile the OS-level "run on startup" state with the saved preference on
   // launch. Self-healing: repairs a stale Linux autostart Exec path after an
   // app update/move and re-asserts the login item on macOS/Windows. Runs in the
   // background so a failure never blocks handler registration. The saved
-  // system-wide dictation key is bound here too.
-  void loadAppSettings(workspaceManager)
+  // system-wide shortcuts are bound here too.
+  const startupSettingsApplied = loadAppSettings(workspaceManager)
     .then((settings) => {
       globalDictationShortcut.apply(settings.shortcuts.globalDictation)
+      quickChatShortcut.apply(settings.shortcuts.quickChat)
       return applyRunOnStartup(settings.runOnStartup)
     })
     .catch((err) => console.error('[startup] Failed to apply startup settings:', err))

@@ -32,6 +32,7 @@ const VALUE_CHANNELS = [
 ]
 const ALL_CHANNELS = [
   ...RESPONSE_CHANNELS,
+  IPC_CHANNELS.UI_CANCEL_RESPONSE,
   IPC_CHANNELS.UI_PENDING_FLUSH,
   IPC_CHANNELS.UI_PENDING_GET,
 ]
@@ -76,6 +77,8 @@ function recordingRouter(calls: RouterCall[]): PiEventRouter {
     },
     handleActiveWorkspaceChanged: () =>
       calls.push({ method: 'handleActiveWorkspaceChanged', args: [] }),
+    refreshOwners: () => {},
+    getQuickChatRequest: () => null,
   }
 }
 
@@ -140,14 +143,20 @@ test('value-carrying response channels forward the id and value to the router', 
   }
 })
 
-test('the confirm channel forwards a boolean, whatever the renderer sent', async () => {
+test('the cancel channel forwards a first-class cancelled answer', async () => {
   const h = createHarness()
-  await h.invoke(IPC_CHANNELS.UI_CONFIRM_RESPONSE, TRUSTED, REQUEST_ID, 1)
-  await h.invoke(IPC_CHANNELS.UI_CONFIRM_RESPONSE, TRUSTED, REQUEST_ID, undefined)
-  assert.deepEqual(h.routerCalls, [
-    { method: 'respond', args: [REQUEST_ID, { confirmed: true }] },
-    { method: 'respond', args: [REQUEST_ID, { confirmed: false }] },
-  ])
+  await h.invoke(IPC_CHANNELS.UI_CANCEL_RESPONSE, TRUSTED, REQUEST_ID)
+  assert.deepEqual(h.routerCalls, [{ method: 'respond', args: [REQUEST_ID, { cancelled: true }] }])
+  await assert.rejects(h.invoke(IPC_CHANNELS.UI_CANCEL_RESPONSE, TRUSTED, 42), /id must be a string/)
+  assert.deepEqual(h.routerCalls, [{ method: 'respond', args: [REQUEST_ID, { cancelled: true }] }], 'a bad id must not touch the router')
+})
+
+test('the confirm channel accepts only boolean answers', async () => {
+  const h = createHarness()
+  await assert.rejects(h.invoke(IPC_CHANNELS.UI_CONFIRM_RESPONSE, TRUSTED, REQUEST_ID, 1), /Invalid extension UI response/)
+  await assert.rejects(h.invoke(IPC_CHANNELS.UI_CONFIRM_RESPONSE, TRUSTED, REQUEST_ID, undefined), /Invalid extension UI response/)
+  await h.invoke(IPC_CHANNELS.UI_CONFIRM_RESPONSE, TRUSTED, REQUEST_ID, false)
+  assert.deepEqual(h.routerCalls, [{ method: 'respond', args: [REQUEST_ID, { confirmed: false }] }])
 })
 
 test('response channels reject a non-string id without touching the router', async () => {
