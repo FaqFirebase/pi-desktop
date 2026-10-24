@@ -27,7 +27,7 @@ import {
 import { getGuiDataPath } from './app-data-paths'
 import { engineForBoundSession, isWithinSessionRoots } from './pi-paths'
 import { pathsEqual, pathGroupKey } from './session-paths'
-import { isPathWithin } from '../../resources/path-within'
+import { isPathWithin, resolveRealPath } from '../../resources/path-within'
 import { appLog } from './app-log'
 import { inspectSessionContent } from './session-metadata'
 import {
@@ -1119,7 +1119,9 @@ export class WorkspaceManager {
 
   /** Whether a checkout lives inside the worktree root this app owns. */
   private isManagedWorktreePath(path: string): boolean {
-    return isPathWithin(getGuiDataPath(MANAGED_WORKTREES_DIR), path)
+    const root = resolveRealPath(getGuiDataPath(MANAGED_WORKTREES_DIR))
+    const candidate = resolveRealPath(path)
+    return root !== null && candidate !== null && isPathWithin(root, candidate)
   }
 
   /**

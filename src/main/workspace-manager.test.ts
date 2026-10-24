@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdir, mkdtemp, readFile, writeFile, access } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile, access, realpath, symlink } from 'fs/promises'
 import { existsSync } from 'fs'
 import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
@@ -294,7 +294,10 @@ test('reuses the same managed worktree for the same task', async () => {
 })
 
 test('adopts an explicitly named leftover worktree without deleting it on close', async () => {
-  await freshDataDir()
+  const data = await mkdtemp(join(tmpdir(), 'pi-ws-'))
+  const alias = join(await project(), 'gui-data')
+  await symlink(data, alias, 'junction')
+  configureGuiDataDir(alias)
   const repo = await project()
   await writeFile(join(repo, 'README.md'), 'leftover worktree\n', 'utf-8')
   const git = gitRepo(repo)
@@ -310,7 +313,7 @@ test('adopts an explicitly named leftover worktree without deleting it on close'
       taskPrompt: 'Continue work in feature/existing',
     })
 
-    assert.equal(adopted.path.replaceAll('\\', '/'), leftover.replaceAll('\\', '/'))
+    assert.equal(await realpath(adopted.path), await realpath(leftover))
     assert.equal(adopted.branch, 'feature/existing')
     assert.equal(adopted.managed, false)
     const result = await mgr.removeWorkspace(adopted.id)
