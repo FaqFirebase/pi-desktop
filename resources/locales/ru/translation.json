@@ -1,0 +1,2244 @@
+{
+  "activity": {
+    "completed": "Завершено в фоне",
+    "completedInAnotherWorkspace": "Завершено в фоне в другом проекте",
+    "failed": "Остановлено с ошибкой",
+    "failedInAnotherWorkspace": "Остановлено с ошибкой в другом проекте",
+    "working": "Pi работает",
+    "workingInAnotherWorkspace": "Pi работает в другом проекте"
+  },
+  "app": {
+    "dropFolder": {
+      "description": "Открывает папку как проект (при необходимости создаёт рабочую область)",
+      "title": "Перетащите папку, чтобы открыть проект"
+    },
+    "errorBoundary": {
+      "fallback": "Не удалось отобразить содержимое"
+    },
+    "quit": "Выйти из Pi Desktop",
+    "resizeHandle": {
+      "title": "Потяните, чтобы изменить размер"
+    },
+    "updateBanner": {
+      "available": "Доступна Pi Desktop <strong>v{{latestVersion}}</strong> — у вас v{{currentVersion}}.",
+      "dismissAriaLabel": "Скрыть уведомление об обновлении",
+      "downloadButton": "Скачать"
+    }
+  },
+  "chat": {
+    "activity": {
+      "stalled": "Модель не отвечает уже {{silent}}. Возможна задержка у провайдера.",
+      "stop": "Остановить",
+      "working": "В работе…",
+      "workingFor": "В работе · {{elapsed}}"
+    },
+    "attach": {
+      "allFilesFilter": "Все файлы",
+      "attachFailed": "Не удалось прикрепить файл",
+      "dropHint": "Перетащите файлы для прикрепления",
+      "imagesFilter": "Изображения",
+      "onlyImagesPasted": "В поле сообщения можно вставлять только изображения",
+      "pasteFailed": "Не удалось вставить изображение",
+      "readImageFailed": "Не удалось прочитать данные изображения",
+      "reading": "Добавление вложений…",
+      "unknownMimeType": "неизвестен",
+      "unsupportedImageType": "Формат изображения не поддерживается ({{mimeType}}). Используйте PNG, JPEG, GIF или WebP."
+    },
+    "closeFileTree": "Закрыть дерево файлов",
+    "commandPopup": {
+      "selectHint": "↑↓ навигация · Enter/Tab выбрать · Esc закрыть"
+    },
+    "composer": {
+      "placeholderIdle": "Задайте задачу для {{agent}} — / для команд",
+      "placeholderNotRunning": "Агент {{agent}} не запущен…",
+      "placeholderQueue": "Сообщение в очередь — Ctrl+Enter отправит сразу"
+    },
+    "council": {
+      "planWithCouncil": "Планирование с советом",
+      "startEngineFirst": "Запустите Pi/OMP для планирования с советом"
+    },
+    "emptyState": {
+      "chooseProject": "Выберите проект — {{agent}} запустится при отправке.",
+      "pickProject": "Выберите проект и опишите задачу.",
+      "startFailed": "Не удалось запустить {{agent}}. Проверьте настройки.",
+      "starting": "Запуск агента {{agent}}…",
+      "title": "Какую задачу поручить {{agent}}?",
+      "waitingOnEngine": "{{agent}} запущен — ожидаем загрузки движка. Локальным моделям может потребоваться время…"
+    },
+    "extensionUi": {
+      "editFallbackTitle": "Изменить",
+      "hideForNowWithShortcut": "Пока скрыть ({{shortcut}})",
+      "inputFallbackTitle": "Ввод",
+      "notificationFallback": "Уведомление",
+      "selectFallbackTitle": "Выбрать",
+      "showWithShortcut": "Показать ({{shortcut}})",
+      "waitingForAnswer": "Pi ждёт ответа"
+    },
+    "insertNote": {
+      "ariaLabel": "Вставить заметку",
+      "titleWithShortcut": "Вставить заметку (Ctrl+Shift+P)"
+    },
+    "loadingSession": "Загрузка сессии…",
+    "mentionPopup": {
+      "insertHint": "↑↓ навигация · Enter/Tab вставить путь · Esc закрыть"
+    },
+    "message": {
+      "branchedFrom": "Ответвление от: «{{excerpt}}»",
+      "branchFromHere": "Создать ответвление отсюда",
+      "editAndResend": "Изменить и отправить",
+      "stopped": "Остановлено"
+    },
+    "nextSteps": {
+      "title": "Предлагаемые шаги"
+    },
+    "projectPicker": {
+      "noProject": "Без проекта",
+      "noProjectHomeDirectory": "Без проекта — домашняя папка",
+      "openFolder": "Открыть папку…",
+      "yourHomeDirectory": "Ваша домашняя папка"
+    },
+    "reattached": {
+      "responseWillAppear": "Ответ появится здесь сразу после завершения.",
+      "stillWorking": "{{agent}} ещё работает в этой сессии."
+    },
+    "scrollToBottom": "Прокрутить вниз",
+    "search": {
+      "closeWithShortcut": "Закрыть (Esc)",
+      "nextMatch": "Следующее совпадение (Enter)",
+      "placeholder": "Найти на странице",
+      "previousMatch": "Предыдущее совпадение (Shift+Enter)"
+    },
+    "searchWorkspace": {
+      "ariaLabel": "Поиск в проекте",
+      "titleWithShortcut": "Поиск в проекте (Ctrl+Shift+F)"
+    },
+    "sendButton": {
+      "ariaLabel": "Отправить сообщение",
+      "titleWithShortcut": "Отправить (Enter)"
+    },
+    "sendQueue": {
+      "count_one": "В очереди: {{count}}",
+      "count_few": "В очереди: {{count}}",
+      "count_many": "В очереди: {{count}}",
+      "count_other": "В очереди: {{count}}",
+      "edit": "Изменить",
+      "files_one": "{{count}} файл",
+      "files_few": "{{count}} файла",
+      "files_many": "{{count}} файлов",
+      "files_other": "{{count}} файла",
+      "held": "Приостановлено. Отправьте новое сообщение или нажмите «Отправить сейчас»",
+      "next": "Отправится после завершения работы агента",
+      "sendNow": "Отправить сейчас",
+      "sendNowHint": "Отправить сообщение агенту в текущий ход",
+      "title": "Очередь сообщений"
+    },
+    "startingAgent": "Запуск агента…",
+    "stopButton": {
+      "ariaLabel": "Остановить генерацию",
+      "titleWithShortcut": "Остановить (Esc)"
+    },
+    "subagentPanel": {
+      "back": "К списку",
+      "close": "Закрыть",
+      "empty": "В этом чате пока нет субагентов.",
+      "finalOutput": "Итоговый результат",
+      "finished": "Завершено",
+      "liveViewUnavailable": "Просмотр в реальном времени недоступен для этого запуска.",
+      "loading": "Загрузка…",
+      "progressOnly": "Полная история появится после завершения запуска.",
+      "refreshFailed": "Не удалось обновить.",
+      "running": "В работе",
+      "status": {
+        "done": "Готово",
+        "failed": "Ошибка",
+        "running": "В работе",
+        "stopped": "Остановлено"
+      },
+      "title": "Субагенты",
+      "transcriptUnavailable": "История недоступна."
+    },
+    "subagentProgress": {
+      "done_one": "Завершил работу {{count}} субагент",
+      "done_few": "Завершили работу {{count}} субагента",
+      "done_many": "Завершили работу {{count}} субагентов",
+      "done_other": "Завершили работу {{count}} субагента",
+      "finishedWithFailures_one": "Завершил работу {{count}} субагент, с ошибкой: {{failed}}",
+      "finishedWithFailures_few": "Завершили работу {{count}} субагента, с ошибкой: {{failed}}",
+      "finishedWithFailures_many": "Завершили работу {{count}} субагентов, с ошибкой: {{failed}}",
+      "finishedWithFailures_other": "Завершили работу {{count}} субагента, с ошибкой: {{failed}}",
+      "openPanel": "Открыть панель субагентов",
+      "running_one": "Работает {{count}} субагент",
+      "running_few": "Работают {{count}} субагента",
+      "running_many": "Работают {{count}} субагентов",
+      "running_other": "Работают {{count}} субагента"
+    },
+    "svgBlock": {
+      "renderedSvgAlt": "Отображённый SVG",
+      "renderSvg": "Показать SVG",
+      "viewSource": "Исходный код"
+    },
+    "toolbar": {
+      "diffViewer": "Просмотр изменений",
+      "fileTree": "Дерево файлов",
+      "reviewPanel": "Панель проверки",
+      "subagents": "Субагенты",
+      "subagentsRunning_one": "Субагенты, в работе: {{count}}",
+      "subagentsRunning_few": "Субагенты, в работе: {{count}}",
+      "subagentsRunning_many": "Субагенты, в работе: {{count}}",
+      "subagentsRunning_other": "Субагенты, в работе: {{count}}",
+      "terminal": "Терминал"
+    },
+    "toolCall": {
+      "status": {
+        "done": "готово",
+        "error": "ошибка",
+        "running": "в работе"
+      }
+    },
+    "voice": {
+      "errorTitle": "Ошибка диктовки: {{error}}",
+      "needsGpu": "Этой версии модели нужна видеокарта (GPU), но она не найдена. Выберите CPU в разделе «Настройки > Голос», чтобы скачать версию для процессора.",
+      "setUpTitle": "Настроить диктовку в настройках",
+      "startTitle": "Начать диктовку",
+      "stopTitle": "Остановить и вставить текст",
+      "transcribing": "Распознавание речи"
+    },
+    "waitingForResponse": "Ожидание ответа…"
+  },
+  "commandGroups": {
+    "commands": "Команды",
+    "extensions": "Расширения",
+    "other": "Другое",
+    "prompts": "Промпты"
+  },
+  "commands": {
+    "addRepo": {
+      "description": "Добавить репозиторий в связанную задачу"
+    },
+    "clone": {
+      "description": "Клонировать текущую ветку в новую сессию"
+    },
+    "compact": {
+      "description": "Сжать переписку, чтобы освободить контекст"
+    },
+    "fork": {
+      "description": "Открыть «Ветви» для ответвления от сообщения"
+    },
+    "linkedTask": {
+      "description": "Запустить связанную задачу в наборе репозиториев"
+    },
+    "model": {
+      "description": "Выбрать модель"
+    },
+    "new": {
+      "description": "Начать новую сессию"
+    },
+    "newRepoSet": {
+      "description": "Создать набор репозиториев для связанных задач"
+    },
+    "resume": {
+      "description": "Открыть список сессий"
+    },
+    "settings": {
+      "description": "Открыть настройки"
+    },
+    "task": {
+      "description": "Запустить задачу в новой сессии {{agent}}"
+    }
+  },
+  "commandSources": {
+    "builtin": "встроенная",
+    "extension": "расширение",
+    "prompt": "промпт",
+    "skill": "навык"
+  },
+  "common": {
+    "attachFile": "Прикрепить файл",
+    "cancel": "Отмена",
+    "changedFilesHeading": "Изменённые файлы",
+    "close": "Закрыть",
+    "collapse": "Свернуть",
+    "confirm": "Подтвердить",
+    "copied": "Скопировано",
+    "copy": "Копировать",
+    "cut": "Вырезать",
+    "delete": "Удалить",
+    "dismiss": "Скрыть",
+    "export": "Экспорт",
+    "global": "Глобальные",
+    "import": "Импорт",
+    "install": "Установить",
+    "installed": "Установлено",
+    "loading": "Загрузка…",
+    "moreCount_one": "Ещё +{{count}}",
+    "moreCount_few": "Ещё +{{count}}",
+    "moreCount_many": "Ещё +{{count}}",
+    "moreCount_other": "Ещё +{{count}}",
+    "newSession": "Новая сессия",
+    "no": "нет",
+    "noWorkingTreeChanges": "В рабочем дереве нет изменений.",
+    "paste": "Вставить",
+    "project": "Проект",
+    "refresh": "Обновить",
+    "remove": "Удалить",
+    "retry": "Повторить",
+    "save": "Сохранить",
+    "selectAll": "Выделить всё",
+    "send": "Отправить",
+    "settings": "Настройки",
+    "showSidebar": "Показать боковую панель",
+    "skills": "Навыки",
+    "submit": "Отправить",
+    "thinking": "Размышление",
+    "workflowRuns": "Запуски процессов",
+    "yes": "да"
+  },
+  "composer": {
+    "permissionMenu": {
+      "title": "Разрешения"
+    }
+  },
+  "contextMenu": {
+    "addMessageToNotes": "Добавить сообщение в заметки",
+    "addSelectionToNotes": "Добавить выделенное в заметки",
+    "archive": "В архив",
+    "copyAllVisibleText": "Копировать весь видимый текст",
+    "copyCodeBlock": "Копировать блок кода",
+    "copyLink": "Копировать ссылку",
+    "copyMessage": "Копировать сообщение",
+    "copySelection": "Копировать выделенное",
+    "deleteSessionConfirmMessage": "Удалить сессию «{{name}}»?\n\nЕсли установлена системная утилита 'trash', файл попадёт в корзину и его можно будет восстановить. Иначе файл сессии .jsonl будет удалён навсегда.",
+    "deleteSessionConfirmTitle": "Удалить сессию",
+    "deleteSessionLabel": "Удалить…",
+    "openLink": "Открыть ссылку",
+    "openSession": "Открыть сессию",
+    "rename": "Переименовать…",
+    "searchSelection": "Найти выделенное",
+    "shortcuts": {
+      "copy": "Ctrl+C",
+      "copyCodeBlock": "Ctrl+Shift+C",
+      "cut": "Ctrl+X",
+      "paste": "Ctrl+V",
+      "selectAll": "Ctrl+A"
+    },
+    "unarchive": "Из архива",
+    "workflowRuns": "Запуски процессов"
+  },
+  "conveyor": {
+    "branches": {
+      "agentWorking": "Дождитесь завершения всех агентов в проекте, прежде чем переключать ветку.",
+      "createBranch": "Создать ветку",
+      "description": "Переключить локальную ветку проекта без принуждения и откладывания изменений",
+      "label": "Ветка проекта",
+      "nameRequired": "Введите имя новой ветки.",
+      "newBranchHint": "Начинается от {{branch}}. Незакоммиченные изменения перейдут в новую ветку.",
+      "newBranchOption": "Новая ветка…",
+      "newBranchPlaceholder": "feature/my-change",
+      "newBranchTitle": "Новая ветка",
+      "saveEditor": "Сохраните или отмените правки в редакторе перед сменой ветки."
+    },
+    "branchStatusClean": "{{branch}}",
+    "branchStatusDirty_one": "{{branch}} · изменено: {{count}}",
+    "branchStatusDirty_few": "{{branch}} · изменено: {{count}}",
+    "branchStatusDirty_many": "{{branch}} · изменено: {{count}}",
+    "branchStatusDirty_other": "{{branch}} · изменено: {{count}}",
+    "commit": "Коммит",
+    "commitAndPush": "Коммит + отправка",
+    "commitAndPushTitle": "Создать коммит и отправить ветку за один шаг",
+    "commitButtonTitle": "Создать коммит из подготовленных изменений или изменений в проекте",
+    "createPrButton": "Создать PR",
+    "detachedBranch": "без ветки",
+    "dialog": {
+      "baseBranchLabel": "Базовая ветка",
+      "baseBranchPlaceholder": "Пусто — ветка репозитория по умолчанию",
+      "closeAriaLabel": "Закрыть диалог",
+      "commitMessageLabel": "Сообщение коммита",
+      "commitTitle": "Создать коммит",
+      "descriptionLabel": "Описание",
+      "newFilesLabel": "Новые файлы: отметьте нужные",
+      "newFilesLeftOut_one": "{{count}} новый файл не войдёт в коммит.",
+      "newFilesLeftOut_few": "{{count}} новых файла не войдут в коммит.",
+      "newFilesLeftOut_many": "{{count}} новых файлов не войдут в коммит.",
+      "newFilesLeftOut_other": "{{count}} новых файла не войдут в коммит.",
+      "prTitle": "Создать пул-реквест",
+      "titleLabel": "Заголовок"
+    },
+    "draft": {
+      "engineUnavailable": "Исполняемый файл агента недоступен. Проверьте настройки агента или напишите сообщение вручную.",
+      "failed": "Не удалось создать сообщение. Нажмите «Предложить» ещё раз или напишите своё.",
+      "generating": "Создание сообщения коммита на английском…",
+      "suggest": "Предложить сообщение",
+      "suggestTitle": "Отправить выбранные изменения модели сессии для создания сообщения коммита",
+      "timedOut": "Время создания сообщения истекло. Нажмите «Предложить» ещё раз или напишите своё."
+    },
+    "errors": {
+      "branchRequired": "Для пул-реквеста нужна именованная ветка.",
+      "chooseNewFiles": "Отметьте хотя бы один новый файл для коммита.",
+      "commitBeforePr": "Создайте коммит перед созданием пул-реквеста.",
+      "commitBeforePush": "Создайте коммит изменений рабочего дерева перед отправкой.",
+      "commitMessageRequired": "Введите сообщение коммита.",
+      "committedPushFailed": "Коммит {{sha}} сохранён локально, но отправка не завершена: {{detail}}",
+      "operationInProgress": "Выполняется другая операция Git. Дождитесь её завершения.",
+      "prBaseMissing": "На сервере ещё нет базовой ветки. Сначала отправьте её или выполните git remote set-head origin --auto.",
+      "prNeedsGitHub": "Для пул-реквестов нужен удалённый репозиторий GitHub. Эта ветка отправляется на другой сервер.",
+      "prNothingToMerge": "В этой ветке нет коммитов, отсутствующих в {{base}}. Сливать нечего.",
+      "prOnBaseBranch": "Вы на базовой ветке {{base}}. Для пул-реквеста переключитесь на другую ветку.",
+      "prTitleRequired": "Введите заголовок пул-реквеста.",
+      "pushBeforePr": "Отправьте ветку перед созданием пул-реквеста.",
+      "workspaceChanged": "Активный проект изменился. Операция Git остановлена."
+    },
+    "feedback": {
+      "branchPushed": "Ветка отправлена.",
+      "committed": "Создан коммит {{sha}}.",
+      "committedAndPushed": "Создан коммит {{sha}}, ветка отправлена.",
+      "openLinkTitle": "Открыть в браузере",
+      "prCreated": "Пул-реквест создан.",
+      "pushedCommits_one": "Отправлен {{count}} коммит.",
+      "pushedCommits_few": "Отправлено {{count}} коммита.",
+      "pushedCommits_many": "Отправлено {{count}} коммитов.",
+      "pushedCommits_other": "Отправлено {{count}} коммита."
+    },
+    "openPrButtonLabel": "Открыть PR #{{number}}",
+    "openPrButtonTitle": "Открыть пул-реквест #{{number}} этой ветки на GitHub",
+    "openRepositoryTitle": "Открыть репозиторий на GitHub",
+    "prButtonLabel": "PR",
+    "prButtonTitle": "Создать пул-реквест через GitHub CLI",
+    "push": "Отправить",
+    "pushButtonTitle": "Отправить текущую ветку после подтверждения",
+    "pushConfirm": {
+      "branchNameFallback": "текущая ветка",
+      "currentBranchFallback": "текущую ветку",
+      "message": "Отправить {{branch}} в {{target}}?",
+      "remoteFallback": "удалённый репозиторий",
+      "title": "Отправить ветку?"
+    }
+  },
+  "council": {
+    "consensusPlan": {
+      "heading": "Согласованный план",
+      "implementButton": "Реализовать",
+      "reviseButton": "Доработать",
+      "reviseInputPlaceholder": "Что изменить в плане…"
+    },
+    "header": "Планирование с советом — {{phase}}",
+    "phase": {
+      "awaitingApproval": "ожидание одобрения",
+      "consulting": "консультация",
+      "detecting": "обнаружение",
+      "merging": "объединение",
+      "refused": "отказ"
+    },
+    "status": {
+      "contributed": "план готов",
+      "errored": "ошибка",
+      "merging": "объединение…",
+      "readyForReview": "готово к проверке",
+      "streaming": "получение ответа…",
+      "timedOut": "время истекло",
+      "working": "в работе…"
+    }
+  },
+  "customModels": {
+    "addModelButton": "Добавить модель",
+    "addProviderButton": "Добавить провайдера",
+    "apiKeyPlaceholder": "apiKey — значение, $ENV_VAR или !shell-command",
+    "baseUrlPlaceholder": "baseUrl",
+    "capabilityHint": "У импортированных моделей могут быть не отмечены возможности. Для моделей с размышлением включите <reasoning>размышление</reasoning>, для моделей с изображениями — <vision>зрение</vision>. Перезапустите {{engine}} для применения.",
+    "contextWindowLabel": "контекст",
+    "defaultFileName": "файл моделей",
+    "description": "Свои провайдеры и модели в <code>{{path}}</code>. Применяются после перезапуска {{engine}}.",
+    "errors": {
+      "duplicateKeys": "Ключи провайдеров должны быть уникальны",
+      "emptyKey": "У каждого провайдера должен быть непустой ключ",
+      "saveFailed": "Не удалось сохранить"
+    },
+    "loadError": {
+      "message": "Не удалось безопасно загрузить {{fileName}}. Редактирование отключено, чтобы не перезаписать файл."
+    },
+    "maxTokensLabel": "макс.",
+    "modelIdPlaceholder": "ID модели (обязательно)",
+    "modelNamePlaceholder": "название",
+    "providerKeyPlaceholder": "ключ провайдера (например, ollama)",
+    "reasoningLabel": "размышление",
+    "removeModelTitle": "Удалить модель",
+    "removeProviderTitle": "Удалить провайдера",
+    "saveButton": "Сохранить {{fileName}}",
+    "savedRestartButton": "Сохранено — перезапустите {{engine}}",
+    "supportsReasoningEffortLabel": "настройка глубины размышления",
+    "visionLabel": "зрение"
+  },
+  "diagnostics": {
+    "fields": {
+      "appVersion": "Версия приложения",
+      "binaryFound": "Исполняемый файл найден",
+      "chromium": "Chromium",
+      "electron": "Electron",
+      "engineVersion": "Версия {{agent}}",
+      "globalRules": "Глобальные правила",
+      "globalRulesInvalid": "ошибка в файле: {{error}}",
+      "guiDataDir": "Папка данных интерфейса",
+      "mode": "Режим",
+      "needsShell": "Нужна оболочка",
+      "node": "Node",
+      "nodeBinary": "Исполняемый файл Node",
+      "pathEntriesSearched": "Проверенные каталоги PATH",
+      "platform": "Платформа",
+      "rejectedOverride": "Заданный путь пропущен (не существует): {{path}}",
+      "resolutionSource": "Источник пути",
+      "script": "Скрипт",
+      "sessionsRoot": "Папка сессий",
+      "settingsFile": "Файл настроек",
+      "unknownError": "неизвестная ошибка",
+      "unknownVersion": "неизвестна",
+      "workspaceRules": "Правила проекта",
+      "workspaceRulesNone": "нет",
+      "workspaceRulesPresent": "есть",
+      "workspaceRulesPresentWithAllowRules": "есть, содержат разрешающие правила",
+      "workspaceTrust": "Доверие к проекту"
+    },
+    "keyState": {
+      "envMissing": "переменная окружения не задана",
+      "envSet": "переменная окружения задана",
+      "literal": "ключ задан",
+      "none": "нет ключа",
+      "shell": "команда оболочки"
+    },
+    "loadErrorTitle": "Не удалось создать отчёт",
+    "noCustomProviders": "Свои провайдеры не настроены (models.json).",
+    "noRecentErrors": "За этот запуск нет предупреждений и ошибок.",
+    "noWorkspaces": "Нет проектов.",
+    "providerModelCount_one": "{{count}} модель",
+    "providerModelCount_few": "{{count}} модели",
+    "providerModelCount_many": "{{count}} моделей",
+    "providerModelCount_other": "{{count}} модели",
+    "refreshAriaLabel": "Обновить диагностику",
+    "resolutionSource": {
+      "commonLocation": "Стандартная папка установки",
+      "engineInstall": "Папка установки {{agent}}",
+      "fallback": "Резервный путь (не найден)",
+      "npmPrefix": "Глобальный префикс npm",
+      "override": "Заданный путь",
+      "path": "PATH",
+      "versionManager": "Менеджер версий"
+    },
+    "sections": {
+      "application": "Приложение",
+      "binaryTitle": "Исполняемый файл {{agent}}",
+      "permissions": "Разрешения",
+      "providers": "Провайдеры",
+      "recentErrors": "Последние ошибки",
+      "storage": "Хранилище",
+      "workspaces": "Проекты"
+    },
+    "title": "Диагностика",
+    "workspaceNotTrustedBadge": "нет доверия",
+    "workspacePathMissing": "не найдена",
+    "workspaceTrustedBadge": "доверенный"
+  },
+  "dialogs": {
+    "openFolder": {
+      "title": "Открыть папку"
+    },
+    "openProject": {
+      "title": "Открыть проект"
+    },
+    "permissionRules": {
+      "exportTitle": "Экспорт правил разрешений",
+      "fileFilterName": "Правила разрешений",
+      "importTitle": "Импорт правил разрешений"
+    },
+    "selectWorkspaceFolder": {
+      "title": "Выбрать папку проекта"
+    },
+    "theme": {
+      "exportTitle": "Экспорт темы",
+      "fileFilterName": "Тема",
+      "importTitle": "Импорт темы"
+    }
+  },
+  "diff": {
+    "closeAriaLabel": "Закрыть просмотр изменений",
+    "deletedFileBadge": "УДАЛЁН",
+    "discard": {
+      "agentWorking": "Дождитесь завершения всех агентов в проекте перед отменой изменений.",
+      "all": "Отменить изменения в показанных файлах",
+      "busy": "Отмена изменений уже выполняется.",
+      "confirm": "Отклонить",
+      "failed": "Git не смог отменить выбранные изменения. Обновите список изменений и проверьте снова.",
+      "file": "Отменить изменения в {{path}}",
+      "message_one": "Отменить показанные неподготовленные изменения в этом файле? Изменения других сессий в нём тоже будут отменены. Новый файл будет удалён. Подготовленные изменения и коммиты сохранятся. Это действие необратимо.\n\n{{files}}",
+      "message_few": "Отменить показанные неподготовленные изменения в этих файлах? Изменения других сессий в них тоже будут отменены. Новые файлы будут удалены. Подготовленные изменения и коммиты сохранятся. Это действие необратимо.\n\n{{files}}",
+      "message_many": "Отменить показанные неподготовленные изменения в этих файлах? Изменения других сессий в них тоже будут отменены. Новые файлы будут удалены. Подготовленные изменения и коммиты сохранятся. Это действие необратимо.\n\n{{files}}",
+      "message_other": "Отменить показанные неподготовленные изменения в этих файлах? Изменения других сессий в них тоже будут отменены. Новые файлы будут удалены. Подготовленные изменения и коммиты сохранятся. Это действие необратимо.\n\n{{files}}",
+      "saveEditor": "Сохраните или закройте редактор с несохранёнными правками перед отменой изменений.",
+      "stale": "Выбранные изменения устарели. Обновите список изменений и проверьте снова.",
+      "title_one": "Отменить показанное изменение?",
+      "title_few": "Отменить показанные изменения?",
+      "title_many": "Отменить показанные изменения?",
+      "title_other": "Отменить показанные изменения?",
+      "unsupported": "Эти изменения нельзя отменить здесь. Двоичные файлы, символьные ссылки, подмодули и имена файлов не в UTF-8 не поддерживаются.",
+      "workingOnly": "Перейдите в раздел «Рабочие», чтобы отменить неподготовленные изменения."
+    },
+    "fileCount_one": "{{count}} файл",
+    "fileCount_few": "{{count}} файла",
+    "fileCount_many": "{{count}} файлов",
+    "fileCount_other": "{{count}} файла",
+    "heading": "Просмотр изменений",
+    "loadErrorTitle": "Не удалось загрузить изменения",
+    "newFileBadge": "НОВЫЙ",
+    "noChanges": "Нет изменений",
+    "noStagedChanges": "Нет подготовленных изменений",
+    "openFile": "Открыть файл",
+    "refreshAriaLabel": "Обновить изменения",
+    "sessionFilter": {
+      "description": "Показать файлы, затронутые вызовами edit/write в этом чате. Изменения файлов могут включать правки других сессий. Правки из оболочки и от субагентов могут отсутствовать. Отключите фильтр для просмотра всего проекта. Push всегда отправляет всю ветку.",
+      "label": "Файлы, затронутые в этой сессии",
+      "noMatches": "Нет изменений для этой сессии"
+    },
+    "stagedToggle": "Подготовленные",
+    "workingToggle": "Рабочие",
+    "workingTreeClean": "Рабочее дерево чистое"
+  },
+  "editorGuard": {
+    "discard": "Отменить несохранённые изменения?",
+    "discardButton": "Отменить изменения",
+    "discardFile": "Отменить несохранённые изменения в {{fileName}}?",
+    "keepEditing": "Продолжить правку",
+    "title": "Несохранённые изменения"
+  },
+  "errors": {
+    "attachments": {
+      "notText": "Вложение не является текстовым файлом или поддерживаемым изображением",
+      "pathNotPermitted": "Путь вложения не разрешён",
+      "tooLarge": "Вложение слишком большое (макс. {{limit}} МБ)"
+    },
+    "council": {
+      "agentNotFound": "{{agent}} не найден. Установите его или удалите из состава совета в настройках.",
+      "arbiterFailed": "Ошибка арбитра",
+      "arbiterTimedOut": "Время ожидания арбитра истекло",
+      "notEnoughMembers": "Для совета нужно не менее {{min}} агентов. Установите или включите Pi, Claude или Codex либо отключите совет.",
+      "planningDisabled": "Планирование с советом отключено в настройках.",
+      "timeoutNotNumber": "Время ожидания совета должно быть конечным числом",
+      "timeoutRange": "Время ожидания совета должно быть от {{min}} до {{max}} секунд",
+      "unknownConsensusMode": "Неизвестный режим согласования: {{mode}}",
+      "unknownError": "неизвестная ошибка"
+    },
+    "fileService": {
+      "refusedRead": "Чтение за пределами активного проекта запрещено",
+      "refusedWrite": "Запись за пределами активного проекта запрещена"
+    },
+    "fs": {
+      "blockedWrite": "Не удалось записать «{{path}}» ({{code}}). В Windows запись обычно блокирует контролируемый доступ к папкам (защита от программ-вымогателей). Разрешите Pi Desktop в разделе «Безопасность Windows → Защита от вирусов и угроз → Защита от программ-вымогателей → Разрешить работу приложения через контролируемый доступ к папкам» или перенесите проект из папки «Документы»/«Рабочий стол» в незащищённую папку (например, C:\\dev)."
+    },
+    "git": {
+      "branchExists": "Ветка «{{name}}» уже существует. Выберите её в меню веток для перехода",
+      "branchNameInvalid": "Недопустимое имя ветки: «{{name}}»",
+      "commandFailed": "Ошибка {{command}}",
+      "commandFailedWithDetail": "Ошибка {{command}}: {{detail}}",
+      "commitBeforePullRequest": "Создайте коммит изменений рабочего дерева перед созданием пул-реквеста",
+      "commitBeforePush": "Создайте коммит изменений рабочего дерева перед отправкой",
+      "commitBeforeSwitch": "Создайте коммит или отмените изменения перед сменой ветки",
+      "commitMessageRequired": "Введите сообщение коммита",
+      "commitMessageTooLong": "Сообщение коммита должно содержать не более {{max}} символов",
+      "commitSelectionEmpty": "Не выбраны файлы для коммита",
+      "commitSelectionOutsideWorkspace": "Файлы для коммита должны находиться в активном проекте",
+      "detachedHeadCommit": "Нельзя создать коммит при отсоединённом HEAD",
+      "detachedHeadPush": "Нельзя отправить изменения при отсоединённом HEAD",
+      "ignoredFilesBlockSwitch": "Переход на {{branch}} перезапишет или удалит эти локальные файлы, которые Git не показывает как изменения. Переместите их и повторите переход:\n{{files}}",
+      "localBranchRequired": "Выберите существующую локальную ветку",
+      "namedBranchRequired": "Для пул-реквеста нужна именованная ветка",
+      "newFileNotCommittable": "Нельзя включить {{path}} в коммит: файл не является новым в выбранных изменениях или игнорируется Git",
+      "noTrackedChanges": "В проекте нет отслеживаемых изменений для коммита. Сначала добавьте новые файлы в индекс, чтобы включить их.",
+      "operationInProgressCommit": "Нельзя создать коммит во время операции Git {{operation}}",
+      "operationInProgressCreateBranch": "Нельзя создать ветку во время операции Git {{operation}}",
+      "operationInProgressPush": "Нельзя отправить изменения во время операции Git {{operation}}",
+      "operationInProgressSwitch": "Нельзя сменить ветку во время операции Git {{operation}}",
+      "pullRequestBaseMissing": "В удалённом репозитории нет базовой ветки для пул-реквеста. Сначала отправьте её или укажите базовую ветку",
+      "pullRequestExists": "Для этой ветки уже открыт пул-реквест #{{number}}: {{url}}",
+      "pullRequestTitleRequired": "Введите заголовок пул-реквеста",
+      "pushBeforePullRequest": "Отправьте ветку перед созданием пул-реквеста",
+      "pushUpstreamIsLocal": "Нельзя отправить ветку, у которой upstream указывает на локальный репозиторий",
+      "stagedOutsideWorkspace": "В индексе есть подготовленные файлы за пределами активного проекта",
+      "subprocessTimedOut": "Время выполнения {{command}} истекло",
+      "workingTreeClean": "Рабочее дерево чистое"
+    },
+    "models": {
+      "duplicateModelId": "Провайдер «{{key}}»: повторяющийся ID модели «{{id}}»",
+      "fieldNotFiniteNumber": "Провайдер «{{key}}», модель «{{id}}»: {{field}} должно быть конечным числом",
+      "modelMissingId": "Провайдер «{{key}}»: у модели нет ID",
+      "providerKeyEmpty": "Ключ провайдера не должен быть пустым"
+    },
+    "notes": {
+      "bodyRequired": "Введите текст заметки",
+      "notFound": "Заметка не найдена: {{id}}",
+      "titleRequired": "Введите заголовок заметки"
+    },
+    "packages": {
+      "invalidSpec": "Недопустимая спецификация пакета",
+      "listFailed": "Не удалось прочитать список плагинов OMP: {{detail}}",
+      "missingBun": "Для установки и обновления npm-плагинов OMP нужен bun. Установите bun с https://bun.sh и повторите попытку.",
+      "pinnedOrNotFromNpm": "{{spec}} закреплён на версии или установлен не из npm. Обновить его здесь нельзя."
+    },
+    "permissionRules": {
+      "fileTooLarge": "Файл правил слишком большой (лимит {{limit}} байт)"
+    },
+    "pi": {
+      "commandFailedFallback": "Ошибка команды",
+      "commandTimedOut": "Время выполнения команды {{commandType}} истекло через {{timeoutMs}} мс",
+      "configuredPathMissing": "Указанный в {{settingsHint}} путь к Pi не существует:\n  {{path}}\n\nУкажите cli.js Pi (или папку установки) либо очистите поле для автоопределения. Автоопределение тоже ничего не нашло.\n\n{{installHint}}",
+      "crashedBeforeReady": "Pi аварийно завершился до готовности.",
+      "cwdMissing": "Рабочая папка Pi не существует или не является папкой:\n  {{cwd}}",
+      "exitedBeforeReady": "Pi завершился с кодом {{code}} до готовности.",
+      "failedToCreateManager": "Не удалось создать менеджер Pi",
+      "installHint": "Установите Pi командой:\n  {{npmCommand}}\nили OMP командой:\n  {{bunCommand}}",
+      "nodeNotFound": "Исполняемый файл Node не найден по определённому пути:\n  {{node}}\n\nДля запуска Pi через .js нужен Node. Установите Node с https://nodejs.org или задайте путь к нему в переменной окружения NODE.",
+      "noManagerForWorkspace": "Нет менеджера Pi для проекта",
+      "notFound": "Исполняемый файл Pi не найден. Проверены PATH оболочки входа, глобальный префикс npm, менеджеры версий Node (nvm, fnm, volta, asdf, mise, nodenv, n) и стандартные папки установки.\n\n{{installHint}}\n\nУже установлен? Укажите полный путь к cli.js Pi в {{settingsHint}}.",
+      "processExited": "Процесс Pi завершён",
+      "processKilled": "Процесс Pi принудительно завершён",
+      "processNotRunning": "Процесс Pi не запущен",
+      "settingsHint": "Настройки > Настройки агента > Установка агента",
+      "spawnError": "Ошибка запуска: {{detail}}",
+      "startupTimeoutBusy": "Pi запущен, но не стал готов за {{seconds}} с.\n\nPi работал и выдавал вывод, но не ответил на проверку готовности. Обработчики запуска расширений выполняются до чтения команд. Обращение к локальному серверу моделей может задержать запуск на время загрузки модели или обработки большого промпта. Проверьте журналы движка и сервера моделей и повторите попытку.",
+      "startupTimeoutBusyWithStderr": "{{message}}\n\nВывод stderr Pi при запуске:\n{{detail}}",
+      "startupTimeoutSilentNoOutput": "Pi ничего не вывел за {{seconds}} с.\n\nВывод не получен. Найдите точную команду запуска в журнале приложения и попробуйте выполнить `pi --mode rpc` в терминале.",
+      "startupTimeoutSilentWithStderr": "Pi ничего не вывел за {{seconds}} с.\n\nВывод stderr Pi при запуске:\n{{detail}}"
+    },
+    "session": {
+      "alreadyAttached": "Файл сессии уже подключён к работающему процессу",
+      "attachedToDifferentWorkspace": "Сессия уже подключена к процессу другого проекта",
+      "ompNoClone": "Движок OMP не поддерживает клонирование сессии",
+      "pathMustExist": "{{field}} должно указывать на существующий файл сессии Pi",
+      "projectMismatch": "Проект сессии не совпадает с активным проектом",
+      "runtimeNotFound": "Процесс сессии не найден: {{runtimeId}}"
+    },
+    "system": {
+      "externalUrlHttpOnly": "Разрешены только URL http(s)"
+    },
+    "theme": {
+      "downloadFailed": "Не удалось скачать тему: {{status}}",
+      "exportWriteFailed": "Не удалось записать тему в {{path}}",
+      "fileTooLarge": "Файл темы слишком большой (лимит {{limit}} байт)",
+      "galleryIndexDownloadFailed": "Не удалось скачать индекс галереи: {{status}}",
+      "galleryIndexNotArray": "Индекс галереи не является массивом JSON",
+      "hostBlockedIPv4": "Хост URL темы «{{host}}» заблокирован (частный/зарезервированный IPv4-адрес)",
+      "hostBlockedIPv6": "Хост URL темы «{{host}}» заблокирован (частный/зарезервированный IPv6-адрес)",
+      "hostBlockedLocal": "Хост URL темы «{{host}}» заблокирован (локальное/петлевое имя хоста)",
+      "kindInvalid": "Поле kind должно быть \"dark\" или \"light\"",
+      "missingKey": "В {{label}} отсутствует «{{key}}»",
+      "mustBeJsonObject": "Тема должна быть объектом JSON",
+      "mustBeObject": "{{label}} должно быть объектом",
+      "mustUseHttps": "URL темы должен использовать https, получен {{protocol}}",
+      "notValidColor": "{{label}}.{{key}} — недопустимый цвет",
+      "redirectMissingLocation": "У перенаправления URL темы ({{status}}) нет заголовка location",
+      "screenshotDownloadFailed": "Не удалось скачать скриншот: {{status}}",
+      "screenshotPathNotAllowed": "URL скриншота не входит в разрешённые пути галереи",
+      "screenshotTooLarge": "Скриншот слишком большой (лимит {{limit}} байт)",
+      "screenshotTypeMissing": "Формат скриншота не разрешён (content-type: отсутствует)",
+      "screenshotTypeNotAllowed": "Формат скриншота не разрешён (content-type: {{contentType}})",
+      "textFieldInvalid": "{{label}} должно быть непустой строкой длиной не более {{max}} символов",
+      "tooManyRedirects": "Число перенаправлений URL темы превысило {{max}}",
+      "unknownKey": "В {{label}} неизвестный ключ «{{key}}»",
+      "unsupportedSchema": "Неподдерживаемая $schema (ожидается {{expected}})"
+    },
+    "typesafe": {
+      "skillChecksumMismatch": "Контрольная сумма {{file}} не совпала с ожидаемой. Pi Desktop не установил файл.",
+      "skillDownloadFailed": "Не удалось скачать {{file}} (HTTP {{status}}).",
+      "skillInstalledElsewhere": "В {{directory}} уже есть навык TypeSafe, установленный не через Pi Desktop. Pi Desktop не изменял его."
+    },
+    "workflow": {
+      "runNotFound": "Запуск процесса не найден"
+    },
+    "workspace": {
+      "folderMissing": "Папка не существует: {{path}}",
+      "managedWorktreeCannotChangeFolder": "Нельзя сменить папку вкладки управляемого рабочего дерева. Закройте вкладку и создайте новую",
+      "noneActive": "Нет активного проекта",
+      "noSourceForNewTab": "Нет исходного проекта для новой вкладки",
+      "notFound": "Проект не найден: {{workspaceId}}",
+      "notFoundPlain": "Проект не найден",
+      "pullRequestNotCheckedOut": "Задача ссылается на пул-реквест GitHub, который не открыт в локальном рабочем дереве",
+      "repoSetCannotChangeFolder": "Вкладка связанной задачи сохраняет папки репозиториев. Для других папок создайте новую связанную задачу",
+      "sourceFolderMissing": "Исходная папка не существует: {{path}}"
+    }
+  },
+  "files": {
+    "preview": {
+      "closeTitle": "Закрыть редактор",
+      "modifiedBadge": "изменён",
+      "previewViewTitle": "Предпросмотр",
+      "readFailed": "Не удалось прочитать файл",
+      "revertTitle": "Отменить изменения",
+      "savedBadge": "сохранён",
+      "saveFailed": "Не удалось сохранить файл",
+      "saveTitle": "Сохранить файл",
+      "scriptsDisabledNotice": "В предпросмотре этого недоверенного проекта скрипты отключены.",
+      "sourceViewTitle": "Исходный код"
+    },
+    "search": {
+      "contentPlaceholder": "Поиск по содержимому файлов…",
+      "contentToggle": "СОДЕРЖИМОЕ",
+      "escToClose": "Esc — закрыть",
+      "filesToggle": "ФАЙЛЫ",
+      "lineSnippet": "Строка {{line}}: {{snippet}}",
+      "namePlaceholder": "Поиск файлов по имени…",
+      "noResults": "Ничего не найдено",
+      "resultCount_one": "Результатов: {{count}}",
+      "resultCount_few": "Результатов: {{count}}",
+      "resultCount_many": "Результатов: {{count}}",
+      "resultCount_other": "Результатов: {{count}}",
+      "typeToSearch": "Введите текст для поиска…"
+    },
+    "tree": {
+      "folderMissingHint": "Возможно, папка перемещена или удалена. Нажмите правой кнопкой на проект в боковой панели и выберите «Сменить папку…», чтобы указать новый путь.",
+      "folderNotFound": "Папка не найдена",
+      "noWorkspaceHint": "Выберите папку проекта в переключателе проектов на боковой панели.",
+      "noWorkspaceOpen": "Нет открытого проекта"
+    }
+  },
+  "home": {
+    "actions": {
+      "linkedTask": {
+        "description": "Одна задача в нескольких репозиториях",
+        "title": "Связанная задача"
+      },
+      "newSession": {
+        "inWorkspace": "В {{project}}",
+        "pickFolderFirst": "Сначала выберите папку"
+      },
+      "newTask": {
+        "description": "Начать работу в новой сессии {{agent}}",
+        "title": "Новая задача"
+      },
+      "openFolder": {
+        "description": "Выбрать папку проекта для открытия",
+        "title": "Открыть папку"
+      }
+    },
+    "changedFiles": {
+      "moreOpenDiff_one": "Ещё +{{count}} — открыть изменения",
+      "moreOpenDiff_few": "Ещё +{{count}} — открыть изменения",
+      "moreOpenDiff_many": "Ещё +{{count}} — открыть изменения",
+      "moreOpenDiff_other": "Ещё +{{count}} — открыть изменения",
+      "noWorkspace": "Проект не выбран."
+    },
+    "errorBanner": {
+      "checkInstalled": "Проверьте, что {{agent}} установлен и путь к нему указан верно.",
+      "couldntStart": "Не удалось запустить {{agent}}"
+    },
+    "recentSessions": {
+      "empty": "Пока нет сессий.",
+      "title": "Недавние сессии"
+    },
+    "recentWorkspaces": {
+      "empty": "Пока нет проектов.",
+      "last": "последний",
+      "title": "Недавние проекты"
+    },
+    "subtitle": "Откройте проект или продолжите работу."
+  },
+  "imageViewer": {
+    "closeTitle": "Закрыть изображение",
+    "readFailed": "Не удалось прочитать изображение",
+    "unsupportedFile": "Формат изображения не поддерживается"
+  },
+  "language": {
+    "nativeName": "Русский"
+  },
+  "menu": {
+    "actualSize": "Исходный размер",
+    "close": "Закрыть окно",
+    "edit": "Правка",
+    "file": "Файл",
+    "forceReload": "Принудительно перезагрузить",
+    "minimize": "Свернуть",
+    "newWorkspace": "Новый проект…",
+    "openProject": "Открыть проект…",
+    "redo": "Повторить",
+    "reload": "Перезагрузить",
+    "toggleDevTools": "Инструменты разработчика",
+    "toggleFullScreen": "Полноэкранный режим",
+    "undo": "Отменить",
+    "view": "Вид",
+    "window": "Окно",
+    "zoom": "Масштаб",
+    "zoomIn": "Увеличить",
+    "zoomOut": "Уменьшить"
+  },
+  "missionControl": {
+    "controlUnavailable": "управление недоступно",
+    "idle": "{{agent}} бездействует",
+    "liveSessions": "Активные сессии",
+    "needsAttention_one": "Требуют внимания: {{count}}",
+    "needsAttention_few": "Требуют внимания: {{count}}",
+    "needsAttention_many": "Требуют внимания: {{count}}",
+    "needsAttention_other": "Требуют внимания: {{count}}",
+    "newTask": "Новая задача",
+    "noLiveRuntimes": "Пока нет работающих сессий. Запустите задачу, чтобы Pi работал в фоне.",
+    "noWorkflowRuns": "Пока нет запусков процессов.",
+    "open": "Открыть",
+    "openAllWorkflows": "Открыть все процессы",
+    "proceed": "Продолжить",
+    "proceedWithWorkflow": "Продолжить этот процесс",
+    "refreshWorkflowRuns": "Обновить запуски процессов",
+    "resumeFailed": "Не удалось продолжить {{workflow}}: {{reason}}",
+    "resumeFailedGeneric": "Не удалось продолжить {{workflow}}. Откройте запуск для подробностей.",
+    "retryWithWorkflow": "Повторить этот процесс",
+    "review": "Проверить",
+    "runtimeState": {
+      "completed": "завершено",
+      "failed": "ошибка",
+      "idle": "бездействует",
+      "needsApproval": "нужно одобрение",
+      "stopped": "остановлено",
+      "working": "в работе"
+    },
+    "startingSession": "Запуск сессии",
+    "subtitle": "Фоновые сессии и запуски процессов всех проектов.",
+    "title": "Центр управления",
+    "unknownProject": "Неизвестный проект",
+    "workflowActivity": "Активность процессов",
+    "workflowStatus": {
+      "aborted": "прервано",
+      "completed": "завершено",
+      "failed": "ошибка",
+      "paused": "приостановлено",
+      "pending": "ожидание",
+      "running": "в работе",
+      "unknown": "неизвестно"
+    }
+  },
+  "models": {
+    "readFailure": {
+      "invalidJson": "Некорректный JSON в {{file}}: {{detail}}",
+      "invalidJsonNoDetail": "Некорректный JSON в {{file}}",
+      "invalidYaml": "Некорректный YAML в {{file}}: {{detail}}",
+      "invalidYamlNoDetail": "Некорректный YAML в {{file}}",
+      "missingProviders": "Некорректный файл моделей {{file}} (нет \"providers\")",
+      "unreadable": "Не удалось прочитать {{file}}: {{detail}}"
+    },
+    "selector": {
+      "current": "Текущая",
+      "currentModelTitle": "{{model}}\n{{hint}}",
+      "loadFailed": "Не удалось загрузить модели",
+      "noModelsMatch": "Подходящих моделей нет",
+      "searchPlaceholder": "Поиск моделей…",
+      "selectModel": "Выбрать модель",
+      "selectModelCycleHint": "Выбрать модель (Ctrl+P — перебор, когда {{agent}} запущен)",
+      "selectModelWithShortcut": "Выбрать модель ({{shortcut}} или Ctrl+P — перебор, когда {{agent}} запущен)"
+    }
+  },
+  "notes": {
+    "backButton": "Назад",
+    "backTitle": "К заметкам",
+    "deleteNoteTitle": "Удалить заметку",
+    "editNoteTitle": "Изменить заметку",
+    "empty": {
+      "noMatch": "По запросу ничего не найдено.",
+      "noneYet": "Пока нет заметок. Создайте заметку для повторного использования промптов."
+    },
+    "form": {
+      "bodyLabel": "Промпт / команда",
+      "bodyPlaceholder": "Текст промпта или команды для повторного использования…",
+      "editHeading": "Изменить заметку",
+      "saveFailed": "Не удалось сохранить заметку",
+      "saving": "Сохранение…",
+      "scopeLabel": "Область действия",
+      "tagsLabel": "Теги",
+      "tagsPlaceholder": "через пробел или запятую",
+      "thisWorkspaceFallback": "Этот проект",
+      "titleLabel": "Заголовок",
+      "titlePlaceholder": "Например, рефакторинг с тестами"
+    },
+    "insertButton": "Вставить",
+    "insertIntoChatTitle": "Вставить в поле сообщения",
+    "newNoteButton": "Новая заметка",
+    "picker": {
+      "createNote": "Создать заметку",
+      "navigationHint": "↑↓ навигация · Enter вставить · Esc закрыть",
+      "noMatchingNotes": "Подходящих заметок нет",
+      "noSavedNotes": "Пока нет сохранённых заметок.",
+      "notComposeBox": "Здесь выбирают сохранённые заметки для вставки, а не пишут сообщения.",
+      "searchPlaceholder": "Поиск заметок для вставки…"
+    },
+    "scope": {
+      "other": "Другой проект",
+      "workspaceFallback": "Проект"
+    },
+    "searchPlaceholder": "Поиск по заголовку, тексту или тегу…",
+    "title": "Заметки",
+    "viewNoteTitle": "Просмотреть заметку"
+  },
+  "notifications": {
+    "completed": "Pi завершил работу.",
+    "failed": "Pi остановлен с ошибкой.",
+    "needs-approval": "Pi ждёт вашего одобрения.",
+    "withSession": "{{body}} Нажмите, чтобы открыть завершённую сессию."
+  },
+  "packages": {
+    "catalog": {
+      "emptyHint": "Смотрите каталог на <link>pi.dev/packages</link>",
+      "emptyTitle": "Пакеты не найдены",
+      "resultsCap": "Показано {{shown}} из {{total}} — уточните запрос.",
+      "searchPlaceholder": "Поиск пакетов…",
+      "viewRepo": "Открыть репозиторий"
+    },
+    "installBar": {
+      "placeholder": "npm:package-name или git:github.com/user/repo"
+    },
+    "installed": {
+      "checkingUpdates": "Проверка обновлений…",
+      "checkUpdatesButton": "Проверить обновления",
+      "emptyHint": "Выберите пакет в каталоге или установите через поле выше",
+      "emptyTitle": "Нет установленных пакетов",
+      "removeButton": "Удалить пакет",
+      "updateAllButton": "Обновить всё",
+      "updatePackageAria": "Обновить {{name}}",
+      "updatesAvailable_one": "Доступно {{count}} обновление",
+      "updatesAvailable_few": "Доступно {{count}} обновления",
+      "updatesAvailable_many": "Доступно {{count}} обновлений",
+      "updatesAvailable_other": "Доступно {{count}} обновления",
+      "updateToVersion": "Обновить до v{{version}}",
+      "versionUpdateArrow": "v{{from}} → v{{to}}"
+    },
+    "tabs": {
+      "catalog": "Каталог",
+      "installed": "Установленные"
+    },
+    "title": "Пакеты и навыки",
+    "type": {
+      "extension": "расширение",
+      "package": "пакет",
+      "prompt": "промпт",
+      "skill": "навык",
+      "theme": "тема"
+    },
+    "viewOnNpm": "Открыть на npm"
+  },
+  "palette": {
+    "navigationHint": "↑↓ навигация · Enter/Tab выполнить · / только команды · Esc закрыть",
+    "noMatches": "Нет совпадений",
+    "searchPlaceholder": "Поиск команд, проектов, сессий, файлов…",
+    "sections": {
+      "files": "Файлы",
+      "sessions": "Сессии",
+      "workspaces": "Проекты"
+    }
+  },
+  "permissionMode": {
+    "ask-commands": {
+      "description": "{{agent}} будет запрашивать разрешение на команды оболочки.",
+      "label": "Спрашивать перед командами",
+      "shortLabel": "Запрос команд"
+    },
+    "ask-edits": {
+      "description": "{{agent}} будет запрашивать разрешение на правку файлов и команды оболочки, способные менять файлы.",
+      "label": "Спрашивать перед правками",
+      "shortLabel": "Запрос правок"
+    },
+    "plan-readonly": {
+      "description": "Доступны только чтение, поиск и списки. Правка файлов и команды оболочки заблокированы.",
+      "label": "План / Только чтение",
+      "shortLabel": "Только чтение"
+    },
+    "trusted": {
+      "description": "Все инструменты {{agent}} доступны для задач, которым вы доверяете.",
+      "label": "Доверенный",
+      "shortLabel": "Доверенный"
+    }
+  },
+  "permissionRules": {
+    "action": {
+      "allow": "Разрешить",
+      "deny": "Запретить"
+    },
+    "addRuleButton": "Добавить правило",
+    "copyFromGlobalButton": "Копировать глобальные",
+    "copyFromGlobalTitle": "Скопировать глобальные правила в этот проект (заменит список ниже до сохранения)",
+    "exportTitle": "Экспортировать список ниже в файл JSON",
+    "importTitle": "Импортировать правила из JSON (заменит список ниже до сохранения)",
+    "legend": "Запрет всегда приоритетнее разрешения, затем действует выбранный режим. * — подстановочный знак.",
+    "loadErrorMessage": "Файл сохранённых правил некорректен и игнорируется: {{error}}",
+    "noRules": "Правил пока нет — всё определяет выбранный режим.",
+    "patternPlaceholder": "шаблон, например npm test* (пусто = любой ввод)",
+    "removeRuleAria": "Удалить правило {{index}}",
+    "removeRuleTitle": "Удалить правило",
+    "removeWorkspaceRulesButton": "Удалить правила проекта",
+    "removeWorkspaceRulesTitle": "Удалить .pi-desktop/permission-rules.json проекта и вернуть глобальные правила",
+    "revokeTrustButton": "Отозвать доверие",
+    "rowActionAria": "Действие правила {{index}}",
+    "rowPatternAria": "Шаблон правила {{index}}",
+    "rowToolAria": "Инструмент правила {{index}}",
+    "toolPlaceholder": "инструмент (* = любой)",
+    "toolRequiredError": "Правило {{index}}: укажите инструмент (* — любой)",
+    "trustedMessage": "Доверенный проект — разрешающие правила действуют, скрипты в HTML-предпросмотре включены.",
+    "trustWorkspaceButton": "Доверять проекту",
+    "untrustedMessage": "HTML-предпросмотр проекта статичен (скрипты отключены). Разрешите доверие, чтобы включить интерактивный просмотр и разрешающие правила.",
+    "untrustedWithAllowRulesMessage": "Пока проекту нет доверия, его разрешающие правила отключены, а HTML-предпросмотр статичен. Запрещающие правила действуют всегда. Доверяйте только проектам из надёжных источников.",
+    "workspaceOverrideNotice": "У проекта свой файл правил (.pi-desktop/permission-rules.json). Его запреты дополняют глобальные правила; разрешения действуют только при доверии к проекту — см. вкладку «Этот проект»."
+  },
+  "permissions": {
+    "prompt": {
+      "body": "{{agent}} хочет запустить инструмент {{tool}}.",
+      "command": "Команда:\n{{command}}",
+      "target": "Цель: {{path}}",
+      "title": "Разрешить {{tool}}?"
+    }
+  },
+  "repoSets": {
+    "bar": {
+      "addRepository": "Добавить репозиторий",
+      "addRepositoryTitle": "Добавить репозиторий в задачу",
+      "ariaLabel": "Репозитории задачи",
+      "changed_one": "{{count}} изменение",
+      "changed_few": "{{count}} изменения",
+      "changed_many": "{{count}} изменений",
+      "changed_other": "{{count}} изменения",
+      "clean": "чисто",
+      "main": "основной",
+      "missing": "папка не найдена",
+      "openPullRequest": "Открыть пул-реквест",
+      "openPullRequestAriaLabel": "Открыть пул-реквест {{name}}",
+      "shipAll": "Отправить всё",
+      "shipAllTitle": "Создать коммит, отправить и открыть связанный пул-реквест в каждом репозитории с изменениями",
+      "sourceWasDirty": "В исходной копии были незакоммиченные изменения. Это рабочее дерево начинается с последнего коммита и не содержит их."
+    },
+    "dialog": {
+      "closeAriaLabel": "Закрыть"
+    },
+    "edit": {
+      "addRepository": "Добавить репозиторий",
+      "back": "Назад",
+      "delete": "Удалить набор",
+      "deleteConfirmMessage": "Удалить «{{name}}»? Открытые связанные задачи продолжат работать, репозитории не изменятся.",
+      "deleteConfirmTitle": "Удалить набор репозиториев?",
+      "editTitle": "Изменить набор репозиториев",
+      "hint": "Добавьте минимум два Git-репозитория и выберите основной.",
+      "mainLabel": "Основной",
+      "mainTitle": "Агент запускается в основном репозитории и следует его правилам проекта.",
+      "nameLabel": "Название набора",
+      "newTitle": "Новый набор репозиториев",
+      "pickFolderTitle": "Выберите Git-репозиторий",
+      "removeRepositoryAriaLabel": "Удалить {{name}}",
+      "repositoriesLabel": "Репозитории",
+      "repositoryNameAriaLabel": "Название репозитория"
+    },
+    "errors": {
+      "alreadyInTask": "Этот репозиторий уже есть в задаче: {{path}}",
+      "checkoutFailed": "Не удалось подготовить «{{name}}» для задачи. Репозитории не изменены. {{detail}}",
+      "duplicateFolder": "Папка добавлена в набор дважды: {{path}}",
+      "duplicateName": "Два репозитория названы «{{name}}». Задайте уникальные названия.",
+      "folderMissing": "Папка не существует: {{path}}",
+      "nameRequired": "Назовите набор.",
+      "notFound": "Этот набор репозиториев больше не существует.",
+      "notGitRepository": "Папка не входит в Git-репозиторий: {{path}}",
+      "notLinkedTask": "Эта вкладка не является связанной задачей.",
+      "oneMainRepository": "Выберите один основной репозиторий.",
+      "repositoryNameRequired": "Назовите каждый репозиторий.",
+      "repositoryNotInTask": "«{{name}}» не входит в эту задачу.",
+      "sameRepository": "«{{name}}» — вторая рабочая копия репозитория, который уже есть в наборе.",
+      "tooFewRepositories": "Добавьте не менее {{minimum}} репозиториев."
+    },
+    "mode": {
+      "inPlace": {
+        "description": "Агент меняет ваши рабочие копии в их текущих ветках.",
+        "label": "На месте",
+        "short": "На месте"
+      },
+      "isolated": {
+        "description": "Новое рабочее дерево в каждом репозитории, все в одной новой ветке. Ваши рабочие копии не меняются.",
+        "label": "Изолированно (рекомендуется)",
+        "short": "Изолированно"
+      }
+    },
+    "ship": {
+      "errors": {
+        "agentWorking": "Агент ещё работает. Отправьте после его остановки.",
+        "onBaseBranch": "Изменения находятся в базовой ветке {{branch}}. Сначала создайте другую: «Отправить всё» открывает пул-реквесты и не отправляет в базовую ветку."
+      },
+      "intro": "В каждом репозитории с изменениями будет создан коммит, выполнена отправка и открыт пул-реквест. Пул-реквесты будут ссылаться друг на друга.",
+      "outcome": {
+        "failed": "Ошибка на этапе «{{step}}»",
+        "missing": "Папка не найдена",
+        "shipped": "Отправлено",
+        "unchanged": "Нечего отправлять"
+      },
+      "repositoriesLabel": "Репозитории",
+      "resultsLabel": "Результаты по репозиториям",
+      "retry": "Повторить неудачные",
+      "shipping": "Отправка…",
+      "step": {
+        "commit": "коммит",
+        "link": "связывание",
+        "pullRequest": "пул-реквест",
+        "push": "отправка"
+      },
+      "submit": "Отправить всё",
+      "title": "Отправить все репозитории"
+    },
+    "start": {
+      "editSet": "Изменить",
+      "editSetAriaLabel": "Изменить {{name}}",
+      "empty": "Пока нет наборов репозиториев. Создайте первый.",
+      "modeLabel": "Где работает агент",
+      "nameLabel": "Название задачи",
+      "namePlaceholder": "Пусто — название набора",
+      "newSet": "Новый набор репозиториев",
+      "repositoryCount_one": "{{count}} репозиторий",
+      "repositoryCount_few": "{{count}} репозитория",
+      "repositoryCount_many": "{{count}} репозиториев",
+      "repositoryCount_other": "{{count}} репозитория",
+      "setLabel": "Набор репозиториев",
+      "starting": "Подготовка репозиториев…",
+      "submit": "Запустить задачу",
+      "subtitle": "Одна задача в нескольких Git-репозиториях со связанными пул-реквестами.",
+      "title": "Новая связанная задача"
+    }
+  },
+  "review": {
+    "gitStatusUnavailable": "Статус Git недоступен",
+    "heading": "Проверка",
+    "openDiffButton": "Открыть изменения",
+    "openDiffHint": "Просмотреть изменения рабочего дерева.",
+    "pendingApprovals": {
+      "none": "Нет запросов на одобрение.",
+      "queued_one": "Для активной сессии в очереди {{count}} элемент.",
+      "queued_few": "Для активной сессии в очереди {{count}} элемента.",
+      "queued_many": "Для активной сессии в очереди {{count}} элементов.",
+      "queued_other": "Для активной сессии в очереди {{count}} элемента."
+    },
+    "pendingApprovalsHeading": "Ожидают одобрения",
+    "permissionsHeading": "Разрешения",
+    "sessionStatus": {
+      "idle": "{{agent}} бездействует в активной сессии.",
+      "working": "{{agent}} работает в активной сессии."
+    },
+    "sessionStatusHeading": "Статус сессии",
+    "subtitle": "Управляйте действиями {{agent}} перед внесением изменений."
+  },
+  "sessions": {
+    "activeBadge": "активна",
+    "archivedBadge": "в архиве",
+    "archivedToggle": {
+      "hideTitle": "Скрыть архивные сессии",
+      "hidingNone": "Ничего не скрыто",
+      "showTitle": "Показать архивные сессии"
+    },
+    "currentProjectBadge": "текущий",
+    "currentWorkspaceLabel": "Текущий проект:",
+    "deleteConfirm": {
+      "message": "Удалить эту сессию? Если доступен <code>trash</code>, файл попадёт в корзину, иначе будет удалён навсегда."
+    },
+    "deleteEllipsis": "Удалить…",
+    "empty": {
+      "createFirst": "Создайте первую сессию",
+      "noMatch": "Подходящих сессий нет",
+      "noneInProject": "В этом проекте пока нет сессий",
+      "noneYet": "Пока нет сессий",
+      "openProjectToSee": "Откройте проект, чтобы увидеть его сессии"
+    },
+    "engineSession": "Сессия {{engine}}",
+    "header": {
+      "projectCount_one": "{{count}} проект",
+      "projectCount_few": "{{count}} проекта",
+      "projectCount_many": "{{count}} проектов",
+      "projectCount_other": "{{count}} проекта",
+      "sessionCount_one": "{{count}} сессия",
+      "sessionCount_few": "{{count}} сессии",
+      "sessionCount_many": "{{count}} сессий",
+      "sessionCount_other": "{{count}} сессии"
+    },
+    "runtime": {
+      "completed": "{{agent}} завершил работу",
+      "failed": "{{agent}} остановлен с ошибкой",
+      "needsApproval": "{{agent}} ждёт одобрения",
+      "working": "{{agent}} работает"
+    },
+    "scopeToggle": {
+      "allSessions": "Все сессии",
+      "currentOnly": "Только текущий",
+      "showCurrentProjectOnly": "Показать сессии только текущего проекта",
+      "showEveryProject": "Показать сессии всех проектов"
+    },
+    "searchPlaceholder": "Поиск сессий или проектов…",
+    "sessionActions": {
+      "ariaLabel": "Действия с сессией",
+      "title": "Действия с сессией (или правая кнопка мыши по строке)"
+    },
+    "tags": {
+      "add": "Добавить",
+      "addPlaceholder": "Добавить тег…",
+      "addTag": "Добавить тег",
+      "autoTagHint": "Тег задан по контексту чата — добавьте свой, чтобы заменить его",
+      "removeAutoTag": "Удалить автоматический тег {{tag}}",
+      "removeTag": "Удалить тег {{tag}}"
+    },
+    "time": {
+      "days_one": "{{count}} дн. назад",
+      "days_few": "{{count}} дн. назад",
+      "days_many": "{{count}} дн. назад",
+      "days_other": "{{count}} дн. назад",
+      "hours_one": "{{count}} ч. назад",
+      "hours_few": "{{count}} ч. назад",
+      "hours_many": "{{count}} ч. назад",
+      "hours_other": "{{count}} ч. назад",
+      "minutes_one": "{{count}} мин. назад",
+      "minutes_few": "{{count}} мин. назад",
+      "minutes_many": "{{count}} мин. назад",
+      "minutes_other": "{{count}} мин. назад"
+    },
+    "title": "Сессии",
+    "unknownProject": "Неизвестный"
+  },
+  "settings": {
+    "actions": {
+      "reset": "Сбросить настройки",
+      "save": "Сохранить настройки",
+      "saved": "Сохранено!"
+    },
+    "agentInstallation": {
+      "appliesToNewSessions": "Изменение действует для новых сессий. Открытые сессии сохранят свой движок.",
+      "autoDetectOption": "Автоопределение (сначала Pi, затем OMP)",
+      "chooseExecutableTitle": "Выбрать исполняемый файл или папку установки",
+      "customPathOption": "Свой путь…",
+      "description": "Найдите Pi и OMP автоматически, выберите установленный движок или укажите свой путь к исполняемому файлу.",
+      "detectedCount_one": "Найден {{count}} установленный движок",
+      "detectedCount_few": "Найдено {{count}} установленных движка",
+      "detectedCount_many": "Найдено {{count}} установленных движков",
+      "detectedCount_other": "Найдено {{count}} установленных движка",
+      "engineAriaLabel": "Движок агента",
+      "engineAutoOption": "Авто",
+      "installedOption": "{{engine}} — {{path}}",
+      "label": "Установка агента",
+      "noneDetected": "Установленные Pi или OMP пока не найдены",
+      "ompNotFoundOption": "OMP (не найден)",
+      "pathPlaceholder": "Путь к исполняемому файлу, cli.js или папке установки",
+      "rescanTitle": "Повторить поиск агентов",
+      "scanningStatus": "Поиск в стандартных папках установки и PATH…",
+      "selectDialogTitle": "Выберите файл или папку агента"
+    },
+    "autoScroll": {
+      "description": "Автоматически прокручивать к новым сообщениям",
+      "label": "Автопрокрутка"
+    },
+    "chatWidth": {
+      "description": "Максимальная ширина сообщений и поля ввода",
+      "fullOption": "На всю ширину",
+      "label": "Ширина чата",
+      "normalOption": "Обычная"
+    },
+    "codeEditorFontSize": {
+      "description": "Размер шрифта редактора кода и просмотра файлов",
+      "label": "Размер шрифта кода"
+    },
+    "consensusMode": {
+      "arbiterOption": "Объединение арбитром (быстро)",
+      "debateOption": "Один раунд обсуждения (медленнее, стоимость ~×2)",
+      "description": "Как участники совета приходят к согласию",
+      "label": "Режим согласования"
+    },
+    "councilEnabled": {
+      "confirmButton": "Включить",
+      "confirmMessage": "При каждом запуске помимо {{engine}} запускаются Claude и Codex. Это может значительно увеличить расход токенов, кредитов и затраты на API. Включайте, только если готовы к дополнительным расходам.",
+      "confirmTitle": "Включить планирование с советом?",
+      "description": "Запускает Claude/Codex вместе с Pi для планирования задач. Увеличивает расход токенов, кредитов и затраты на API.",
+      "label": "Планирование с советом"
+    },
+    "councilMembers": {
+      "description": "Какие агенты участвуют в планировании с советом",
+      "label": "Участники",
+      "notDetected": "(не найден)"
+    },
+    "councilTimeout": {
+      "description": "Сколько ждать каждого агента ({{min}}–{{max}})",
+      "label": "Время ожидания участника (сек.)"
+    },
+    "customTheme": {
+      "createButton": "Создать тему",
+      "description": "Создать копию текущей темы или изменить свою",
+      "editButton": "Изменить тему",
+      "label": "Своя тема"
+    },
+    "darkTheme": {
+      "description": "Используется при тёмном режиме системы",
+      "label": "Тёмная тема"
+    },
+    "desktopNotifications": {
+      "description": "Уведомлять о завершении Pi, ошибке или запросе одобрения в другом проекте",
+      "label": "Системные уведомления"
+    },
+    "language": {
+      "description": "Язык меню, кнопок и сообщений",
+      "label": "Язык",
+      "labelWithEnglish": "{{label}} ({{english}})",
+      "optionLabel": "{{nativeName}} ({{name}})",
+      "system": "Системный ({{language}})"
+    },
+    "lightTheme": {
+      "description": "Используется при светлом режиме системы",
+      "label": "Светлая тема"
+    },
+    "minimizeToTrayOnClose": {
+      "description": "При закрытии окна оставлять Pi Desktop в системном трее (Windows и Linux)",
+      "label": "Сворачивать в трей при закрытии"
+    },
+    "openToHomeOnLaunch": {
+      "description": "Включено: главный экран со статистикой, недавними проектами и выбором папки. Выключено: пустой чат с полем ввода и выбором проекта.",
+      "label": "Главный экран при запуске"
+    },
+    "permissionMode": {
+      "description": "Режим безопасности действий Pi по умолчанию",
+      "label": "Режим разрешений"
+    },
+    "permissionRules": {
+      "description": "Индивидуальные правила инструментов для выбранного режима",
+      "exportFailed": "Ошибка экспорта",
+      "importFailed": "Ошибка импорта",
+      "label": "Правила разрешений",
+      "removeWorkspaceConfirmMessage": "Удалить .pi-desktop/permission-rules.json этого проекта? Снова будут действовать глобальные правила.",
+      "removeWorkspaceConfirmTitle": "Удалить правила проекта",
+      "saveError_global": "Настройки сохранены, но глобальные правила не сохранены: {{error}}",
+      "saveError_workspace": "Настройки сохранены, но правила проекта не сохранены: {{error}}",
+      "scopeTabListAriaLabel": "Область действия правил",
+      "workspaceScopeTab": "Этот проект"
+    },
+    "resumeLastSession": {
+      "description": "При открытии проекта продолжать последнюю сессию вместо создания новой",
+      "label": "Продолжать последнюю сессию"
+    },
+    "runOnStartup": {
+      "description": "Запускать Pi Desktop при входе в систему (действует в установленных сборках)",
+      "label": "Запускать при входе"
+    },
+    "sections": {
+      "agentConfiguration": "Настройки агента",
+      "appearance": "Оформление",
+      "behavior": "Поведение",
+      "customModels": "Свои модели",
+      "multiAgentCouncilPlanning": "Планирование с несколькими агентами",
+      "typesafe": "TypeSafe Jev",
+      "voiceDictation": "Голосовая диктовка"
+    },
+    "shortcuts": {
+      "actionWithShortcut": "{{action}} ({{shortcut}})",
+      "commandPalette": "Палитра команд",
+      "commitPush": "Проверка / Коммит и отправка",
+      "description": "Нажмите сочетание и задайте новое с Cmd или Ctrl. Изменения действуют сразу; сохранение оставит их после перезапуска. Навигация по сессиям перебирает открытые сессии текущего проекта. Сочетания системного меню и редактора не меняются. Escape отменяет запись. Диктовка из любого приложения работает поверх других окон; её сочетание применяется после сохранения.",
+      "disable": "Отключить",
+      "disableAction": "Отключить сочетание для «{{action}}»",
+      "disabled": "Отключено",
+      "duplicate": "«{{action}}» и «{{other}}» используют одно сочетание. Выберите другое.",
+      "globalDictation": "Диктовка из любого приложения: нажмите для начала или остановки",
+      "heading": "Сочетания клавиш",
+      "inUse": "{{shortcut}} уже используется для «{{action}}». Выберите другое сочетание.",
+      "invalid": "Используйте Cmd или Ctrl с буквой, цифрой, знаком пунктуации или F1–F12.",
+      "modelSelector": "Выбор модели",
+      "nextProject": "Следующий проект",
+      "nextSession": "Следующая открытая сессия",
+      "notes": "Выбор заметки",
+      "pressKeys": "Нажмите сочетание…",
+      "previousProject": "Предыдущий проект",
+      "previousSession": "Предыдущая открытая сессия",
+      "pushToTalk": "Диктовка: удерживайте, чтобы говорить",
+      "reserved": "Это сочетание занято действием системного меню или редактора.",
+      "reset": "Сбросить сочетания",
+      "sidebar": "Боковая панель"
+    },
+    "showThinking": {
+      "description": "Показывать блоки размышления модели в ответах",
+      "label": "Показывать размышления"
+    },
+    "suggestNextSteps": {
+      "description": "В конце хода {{agent}} может предложить до трёх следующих шагов: например, добавить тесты или проверить то, что не удалось. Нажмите шаг, чтобы вставить его в поле сообщения. Действует для сессий, запущенных после сохранения.",
+      "label": "Предлагать следующие шаги"
+    },
+    "terminalFontSize": {
+      "description": "Размер шрифта панели терминала",
+      "label": "Размер шрифта терминала"
+    },
+    "theme": {
+      "deleteConfirmMessage": "Удалить тему «{{themeName}}»? Это действие необратимо.",
+      "deleteConfirmTitle": "Удалить тему",
+      "description": "Цветовая схема приложения",
+      "editNotFoundError": "Не удалось найти текущую тему для редактирования",
+      "exportNotFoundError": "Не удалось найти текущую тему для экспорта",
+      "label": "Тема",
+      "systemOption": "Системная"
+    },
+    "themeActions": {
+      "browseGalleryButton": "Открыть галерею",
+      "description": "Импорт, экспорт или установка темы по URL",
+      "label": "Действия с темой"
+    },
+    "typesafe": {
+      "apiKey": {
+        "environment": "TYPESAFE_API_KEY уже задана в окружении, с которым запущен Pi Desktop. Pi и OMP используют это значение.",
+        "invalid": "Некорректный API-ключ. Вставьте его снова без пробелов.",
+        "label": "API-ключ",
+        "nextSession": "Ключ получат новые сессии. Перезапустите открытую сессию, чтобы передать ей ключ.",
+        "placeholder": "Вставьте API-ключ TypeSafe",
+        "remove": "Удалить ключ",
+        "save": "Сохранить",
+        "saved": "Сохранено. Читать ключ может только ваша учётная запись."
+      },
+      "intro": "Jev — модель TypeSafe для оценки решений. Сохраните API-ключ и установите навык Jev здесь. Pi и OMP будут использовать ключ без повторного запроса. Сам Pi Desktop не обращается к TypeSafe.",
+      "links": {
+        "agentSkill": "Руководство по навыку Jev",
+        "apiKeys": "Получить API-ключ",
+        "introduction": "Документация TypeSafe"
+      },
+      "skill": {
+        "install": "Установить",
+        "installed": "Установлен ({{version}})",
+        "installedElsewhere": "Установлен вне Pi Desktop. Управляйте им через инструмент установки.",
+        "label": "Навык Jev",
+        "location": "Расположение: {{directory}}",
+        "notInstalled": "Не установлен. Обучает Pi и OMP работе с TypeSafe.",
+        "remove": "Удалить навык",
+        "update": "Обновить до {{version}}"
+      }
+    },
+    "uiFontFamily": {
+      "description": "Выберите шрифт из списка. Если он не установлен, используется системный. «Шрифты по умолчанию» восстанавливает исходные шрифты. Терминал и редактор кода не меняются.",
+      "label": "Шрифт интерфейса",
+      "placeholder": "Шрифты по умолчанию"
+    },
+    "uiFontSize": {
+      "description": "Чат, панели и боковая панель — кроме терминала и редактора кода",
+      "label": "Размер шрифта интерфейса"
+    },
+    "voice": {
+      "device": {
+        "auto": "Авто",
+        "cpu": "CPU",
+        "gpu": "GPU"
+      },
+      "downloading": "Скачивание файлов: {{done}} из {{total}}",
+      "englishOnly": "Только английский",
+      "getVersion": "Скачать {{version}}",
+      "gpuUnnamed": "GPU",
+      "install": "Установить",
+      "intro": "Говорите в микрофон, и Pi Desktop преобразует речь в текст на вашем компьютере. Выберите модель для скачивания. Без вашего выбора модели не скачиваются.",
+      "multilingual": "Много языков",
+      "precision": {
+        "fp16": "Версия для GPU (fp16)",
+        "int8": "Версия для CPU (int8)"
+      },
+      "remove": "Удалить",
+      "restartRequired": "Перезапустите Pi Desktop, чтобы применить изменение.",
+      "runOn": "Выполнять на",
+      "runtimeCpu": "Работает на процессоре (CPU) с версией каждой модели для CPU.",
+      "runtimeCpuNoGpu": "Подходящая видеокарта не найдена. Распознавание работает на процессоре (CPU) с версией каждой модели для CPU.",
+      "runtimeGpu": "Работает на видеокарте ({{name}}) с версией каждой модели для GPU.",
+      "selected": "Используется",
+      "sizeMb": "~{{mb}} МБ",
+      "use": "Выбрать"
+    }
+  },
+  "sidebar": {
+    "archived": {
+      "collapseTitle": "Свернуть архивные сессии",
+      "expandTitle": "Развернуть архивные сессии",
+      "heading_one": "В архиве ({{count}})",
+      "heading_few": "В архиве ({{count}})",
+      "heading_many": "В архиве ({{count}})",
+      "heading_other": "В архиве ({{count}})"
+    },
+    "header": {
+      "closeSidebar": "Закрыть боковую панель",
+      "homeAriaLabel": "Главная",
+      "homeTitle": "Главная (Esc — к запуску задач)"
+    },
+    "nav": {
+      "activitySection": "Активность",
+      "chat": "Чат",
+      "missionControl": "Центр управления",
+      "missionControlTitle": "Все фоновые сессии и процессы",
+      "newTaskTitle": "Запустить задачу в новой сессии {{agent}}",
+      "sessions": "Сессии",
+      "sessionsTitle": "Сессии этого проекта",
+      "timeline": "Хронология",
+      "timelineTitleWithProject": "Хронология {{project}}",
+      "workflows": "Рабочие процессы",
+      "workflowsTitleNoProject": "Все запуски процессов (проект не открыт)",
+      "workflowsTitleWithProject": "Запуски процессов в {{project}}",
+      "workspaceSection": "Проект"
+    },
+    "newSessionButton": {
+      "label": "Новая сессия",
+      "openProjectToBegin": "Откройте проект для начала",
+      "shortcutKbd": "Ctrl N",
+      "startsIn": "Запускается в {{project}}",
+      "titleNoProject": "Сначала откройте проект",
+      "titleWithShortcut": "Начать новую сессию в этом проекте (Ctrl/Cmd+N)"
+    },
+    "openProjectFolder": {
+      "ariaLabel": "Открыть папку проекта",
+      "titleWithShortcut": "Открыть папку проекта (Ctrl/Cmd+O)"
+    },
+    "promptsWaitingInOtherWorkspaces_one": "В других проектах ждут ответа запросы Pi: {{count}}",
+    "promptsWaitingInOtherWorkspaces_few": "В других проектах ждут ответа запросы Pi: {{count}}",
+    "promptsWaitingInOtherWorkspaces_many": "В других проектах ждут ответа запросы Pi: {{count}}",
+    "promptsWaitingInOtherWorkspaces_other": "В других проектах ждут ответа запросы Pi: {{count}}",
+    "recentSessions": {
+      "emptyInProject": "В этом проекте пока нет сессий.",
+      "emptyNoProject": "Откройте проект, чтобы увидеть его сессии.",
+      "headingNoProject": "Недавние сессии",
+      "headingWithProject": "Недавние в {{project}}",
+      "startOneNow": "Начать сессию",
+      "viewAll": "Показать все"
+    },
+    "sessionNamePlaceholder": "Название сессии",
+    "sessionRow": {
+      "tooltipActive": "{{title}}\n\nЩелчок — открыть · двойной — переименовать · правой кнопкой — действия",
+      "tooltipInactive": "{{title}}\n\nЩелчок — открыть · правой кнопкой — действия"
+    },
+    "tools": {
+      "allWorkflows": "Все процессы",
+      "allWorkflowsTitle": "Запуски процессов всех проектов",
+      "diagnostics": "Диагностика",
+      "notes": "Заметки",
+      "packages": "Пакеты",
+      "sectionLabel": "Инструменты"
+    },
+    "workflowRunsForSession": "Запуски процессов этой сессии",
+    "workspaceMenu": {
+      "changeFolder": "Сменить папку…",
+      "rename": "Переименовать"
+    },
+    "workspaceSwitcher": {
+      "namePlaceholder": "Название проекта",
+      "noWorkspace": "Нет проекта",
+      "openProjectEllipsis": "Открыть проект…",
+      "triggerTitle": "Щелчок — переключить · двойной — переименовать · правой кнопкой — параметры"
+    }
+  },
+  "skills": {
+    "emptyHint": "Установите пакеты навыков или создайте навыки в .pi/skills/",
+    "emptyOmp": "Навыки не найдены в ~/.omp/agent/skills, ~/.claude/skills или .omp/skills проекта",
+    "emptyPi": "Навыки не найдены в ~/.pi/agent/skills или .pi/skills проекта",
+    "emptyTitle": "Навыки не найдены",
+    "providedByPlugin": "Предоставлен установленным плагином",
+    "refreshAriaLabel": "Обновить навыки",
+    "runButton": "Запустить",
+    "selectPrompt": "Выберите навык для просмотра SKILL.md"
+  },
+  "stats": {
+    "heatmap": {
+      "dayTooltip_one": "{{date}} — сообщений: {{count}}",
+      "dayTooltip_few": "{{date}} — сообщений: {{count}}",
+      "dayTooltip_many": "{{date}} — сообщений: {{count}}",
+      "dayTooltip_other": "{{date}} — сообщений: {{count}}"
+    },
+    "modelLegend": {
+      "empty": "За этот период модели не использовались.",
+      "tokenBreakdown": "{{input}} вход · {{output}} выход · {{cache}} кэш"
+    },
+    "overview": {
+      "activeDaysLabel": "Активных дней",
+      "currentStreakLabel": "Текущая серия",
+      "favoriteModelLabel": "Любимая модель",
+      "longestStreakLabel": "Лучшая серия",
+      "messagesLabel": "Сообщения",
+      "peakHourLabel": "Пиковый час",
+      "sessionsLabel": "Сессии",
+      "streakDays_one": "{{count}} дн.",
+      "streakDays_few": "{{count}} дн.",
+      "streakDays_many": "{{count}} дн.",
+      "streakDays_other": "{{count}} дн.",
+      "totalTokensLabel": "Всего токенов"
+    },
+    "ranges": {
+      "oneYear": "1 г.",
+      "sevenDays": "7 дн.",
+      "sixMonths": "6 мес.",
+      "thirtyDays": "30 дн.",
+      "threeMonths": "3 мес."
+    },
+    "tabs": {
+      "models": "модели",
+      "overview": "обзор"
+    },
+    "tokenChart": {
+      "barTooltip": "{{label}} — токенов: {{tokens}}",
+      "empty": "За этот период токены не использовались."
+    }
+  },
+  "status": {
+    "agentSection": {
+      "title": "Агент {{agent}}"
+    },
+    "compactButton": {
+      "compact": "Сжать контекст",
+      "compacting": "Сжатие…",
+      "title": "Обобщить и сжать переписку для освобождения контекста"
+    },
+    "contextSection": {
+      "title": "Использование контекста"
+    },
+    "errorCopied": "скопировано",
+    "errorCopy": "копировать",
+    "extensionsSection": {
+      "title": "Расширения"
+    },
+    "header": {
+      "title": "Состояние системы"
+    },
+    "mcpSection": {
+      "title": "Серверы MCP"
+    },
+    "noExtensionsOrSkills": "Нет загруженных расширений и навыков",
+    "noMcpServers": "Серверы MCP не настроены",
+    "pidLabel": "(PID: {{pid}})",
+    "processStatus": {
+      "error": "ошибка",
+      "running": "работает",
+      "starting": "запускается",
+      "stopped": "остановлен"
+    },
+    "promptTemplatesSection": {
+      "title": "Шаблоны промптов"
+    },
+    "row": {
+      "cost": "Стоимость",
+      "error": "Ошибка",
+      "messages": "Сообщения",
+      "model": "Модель",
+      "name": "Название",
+      "path": "Путь",
+      "provider": "Провайдер",
+      "session": "Сессия",
+      "status": "Статус",
+      "tokens": "Токены",
+      "usage": "Использование",
+      "window": "Окно"
+    },
+    "scope": {
+      "cli": "cli",
+      "global": "глобальный",
+      "package": "пакет",
+      "project": "проект"
+    },
+    "skillCommandsSection": {
+      "title": "Команды навыков"
+    },
+    "trigger": {
+      "title": "Состояние системы"
+    },
+    "workspaceSection": {
+      "title": "Проект"
+    }
+  },
+  "statusBar": {
+    "compact": "сжать",
+    "compactContextTitle": "Сжать контекст — обобщить переписку для освобождения места",
+    "compacting": "сжатие…",
+    "contextUsage": "Контекст: {{tokens}} / {{contextWindow}} токенов",
+    "followUpQueued_one": "Продолжений в очереди: {{count}}",
+    "followUpQueued_few": "Продолжений в очереди: {{count}}",
+    "followUpQueued_many": "Продолжений в очереди: {{count}}",
+    "followUpQueued_other": "Продолжений в очереди: {{count}}",
+    "gitBranch": "Ветка Git: {{branch}}",
+    "hideTerminal": "Скрыть терминал",
+    "openWorkflowRuns": "Открыть запуски процессов",
+    "piError": "Ошибка {{agent}}",
+    "piRunning": "{{agent}} работает (PID: {{pid}})",
+    "piStarting": "{{agent}} запускается",
+    "piStopped": "{{agent}} остановлен",
+    "showTerminal": "Показать терминал",
+    "steerQueued_one": "Указаний в очереди: {{count}}",
+    "steerQueued_few": "Указаний в очереди: {{count}}",
+    "steerQueued_many": "Указаний в очереди: {{count}}",
+    "steerQueued_other": "Указаний в очереди: {{count}}",
+    "streaming": "получение ответа",
+    "waitingOnPromptElsewhere": "{{agent}} ждёт ответа в другом проекте; переключитесь туда, чтобы ответить",
+    "workflowCount_one": "{{count}} процесс",
+    "workflowCount_few": "{{count}} процесса",
+    "workflowCount_many": "{{count}} процессов",
+    "workflowCount_other": "{{count}} процесса",
+    "workflowsFallback": "процессы"
+  },
+  "store": {
+    "confirm": {
+      "changeAnywayLabel": "Всё равно сменить",
+      "changeFolderMessage": "Pi ещё отвечает в этой сессии. Смена папки проекта перезапустит и остановит его: записанная часть ответа сохранится, остальная часть, включая выполняемые вызовы инструментов, будет отброшена.",
+      "cloneAnywayLabel": "Всё равно клонировать",
+      "cloneMessage": "Pi ещё отвечает в этой сессии. Клонирование ветви остановит его: записанная часть ответа сохранится, остальная часть, включая выполняемые вызовы инструментов, будет отброшена.",
+      "closeInPlaceLinkedTaskMessage": "Закрыть «{{name}}»? Репозитории и их файлы не изменятся.",
+      "closeIsolatedLinkedTaskMessage": "Закрыть «{{name}}»? Чистые рабочие деревья задачи будут удалены; деревья с незакоммиченными изменениями останутся на диске. Ветки сохранятся.",
+      "closeManagedWorktreeMessage": "Закрыть «{{name}}»? Чистые рабочие деревья будут удалены; деревья вкладок с незакоммиченными изменениями останутся на диске.",
+      "closeSessionTabMessage": "Pi ещё работает в этой сессии. Закрытие вкладки остановит её процесс; сохранённые сообщения останутся в разделе «Сессии».",
+      "closeSessionTabTitle": "Закрыть вкладку сессии?",
+      "closeTabLabel": "Закрыть вкладку",
+      "closeUnmanagedWorktreeMessage": "Закрыть «{{name}}»? Это существующее рабочее дерево и его файлы останутся на диске.",
+      "forkAnywayLabel": "Всё равно создать ответвление",
+      "forkMessage": "Pi ещё отвечает в этой сессии. Создание ответвления остановит его: записанная часть ответа сохранится, остальная часть, включая выполняемые вызовы инструментов, будет отброшена.",
+      "keepUntrustedLabel": "Не доверять",
+      "keepWorkingLabel": "Продолжить работу",
+      "newMessage": "Pi ещё отвечает в этой сессии. Новая сессия остановит его: записанная часть ответа сохранится, остальная часть, включая выполняемые вызовы инструментов, будет отброшена.",
+      "okLabel": "OK",
+      "removeWorkspaceMessage": "Убрать «{{name}}» с боковой панели? Процесс Pi будет остановлен; файлы на диске сохранятся.",
+      "removeWorkspaceTitle": "Убрать проект",
+      "startAnywayLabel": "Всё равно запустить",
+      "stillWorkingTitle": "Pi ещё работает",
+      "switchAnywayLabel": "Всё равно переключить",
+      "switchMessage": "Pi ещё отвечает в этой сессии. Открытие другой сессии остановит его: записанная часть ответа сохранится, остальная часть, включая выполняемые вызовы инструментов, будет отброшена.",
+      "trustWorkspaceMessage": "В правилах проекта (.pi-desktop/permission-rules.json) есть разрешения, позволяющие Pi пропускать подтверждения. Они не действуют без доверия к проекту; запреты действуют всегда. Доверяйте только проектам из надёжных источников.",
+      "trustWorkspaceTitle": "Доверять этому проекту?",
+      "workspaceMessage": "Pi ещё отвечает в этой сессии. После переключения он продолжит работу: ответ сохранится и появится при возвращении. Запросы Pi, возникшие в ваше отсутствие, будут показаны, когда вы вернётесь.",
+      "workspaceRulesNoticeMessage": "У проекта свои правила разрешений (.pi-desktop/permission-rules.json). Их запреты ограничивают Pi в этом проекте; в остальном действуют глобальные правила.",
+      "workspaceRulesNoticeTitle": "Правила разрешений проекта"
+    },
+    "messages": {
+      "addRepositoryError": "Не удалось добавить репозиторий: {{detail}}",
+      "arbiterFailed": "Ошибка арбитра: {{detail}}",
+      "archiveError": "Ошибка архивации: {{detail}}",
+      "cannotActivateSession": "Не удалось активировать сессию",
+      "cannotCreateSession": "Не удалось создать сессию",
+      "changeFolderError": "Ошибка смены папки: {{detail}}",
+      "closeSessionError": "Ошибка закрытия сессии: {{detail}}",
+      "compactingContext": "Сжатие контекста ({{reason}})…",
+      "compactionAborted": "Сжатие прервано.",
+      "contextCompacted": "Контекст сжат.",
+      "councilFailed": "Ошибка совета: {{detail}}",
+      "councilNoQuorum": "Ни один консультант не подготовил план (ошибки или время ожидания истекло). Работа совета прервана.",
+      "createWorkspaceError": "Ошибка создания проекта: {{detail}}",
+      "defaultTaskLabel": "Задача",
+      "deleteError": "Ошибка удаления: {{detail}}",
+      "editedSessionName": "{{title}} (изменено)",
+      "editNotInSession": "В сохранённой сессии нет этого сообщения.",
+      "editResendError": "Не удалось изменить и отправить сообщение: {{detail}}",
+      "error": "Ошибка: {{detail}}",
+      "followUpError": "Ошибка продолжения: {{detail}}",
+      "imageFallbackName": "Изображение {{index}}",
+      "installedPackage": "Установлен {{spec}}. Перезапустите Pi для загрузки.",
+      "installFailed": "Ошибка установки",
+      "modelError": "Ошибка модели: {{detail}}",
+      "modelsFileNotLoaded": "Файл моделей ещё не загружен. Повторите попытку.",
+      "newIsolatedTabError": "Ошибка новой изолированной вкладки: {{detail}}",
+      "newSessionError": "Ошибка новой сессии: {{detail}}",
+      "notAFolder": "Нельзя открыть как проект — это не папка: {{path}}",
+      "notGitRepository": "Проект не является Git-репозиторием. Выберите «Новая сессия» для другого чата или откройте Git-проект для изолированной вкладки.",
+      "openFolderError": "Ошибка открытия папки: {{detail}}",
+      "removedPackage": "Удалён {{spec}}",
+      "removePackageFailed": "Ошибка удаления",
+      "removeWorkspaceError": "Ошибка удаления проекта: {{detail}}",
+      "retrying": "Повторная попытка ({{attempt}}/{{maxAttempts}}): {{detail}}",
+      "reusedWorktree": "Найдено подходящее рабочее дерево Git. Задача продолжена в нём.",
+      "steerError": "Ошибка отправки указания: {{detail}}",
+      "switchSessionError": "Ошибка смены сессии: {{detail}}",
+      "switchWorkspaceError": "Ошибка смены проекта: {{detail}}",
+      "tabClosedWorktreePreserved": "Вкладка закрыта, но рабочее дерево с незакоммиченными изменениями сохранено в {{path}}",
+      "tabFromLastCommit": "Эта вкладка начинается с последнего коммита. Незакоммиченные файлы остаются в исходной вкладке.",
+      "taskLaunchError": "Ошибка запуска задачи: {{detail}}",
+      "truncatedHistory_one": "Для быстродействия показаны последние {{count}} из {{total}} сообщений. Более ранние ходы остаются в файле сессии на диске.",
+      "truncatedHistory_few": "Для быстродействия показаны последние {{count}} из {{total}} сообщений. Более ранние ходы остаются в файле сессии на диске.",
+      "truncatedHistory_many": "Для быстродействия показаны последние {{count}} из {{total}} сообщений. Более ранние ходы остаются в файле сессии на диске.",
+      "truncatedHistory_other": "Для быстродействия показаны последние {{count}} из {{total}} сообщений. Более ранние ходы остаются в файле сессии на диске.",
+      "unarchiveError": "Ошибка извлечения из архива: {{detail}}",
+      "unknownError": "Неизвестная ошибка",
+      "updatedAllPackages": "Пакеты обновлены. Перезапустите Pi для загрузки.",
+      "updatedPackage": "Обновлён {{spec}}. Перезапустите Pi для загрузки.",
+      "updatePackageFailed": "Ошибка обновления",
+      "writeFailed": "Ошибка записи"
+    },
+    "promptsWaiting_one": "Ожидают ответа запросы Pi: {{count}}",
+    "promptsWaiting_few": "Ожидают ответа запросы Pi: {{count}}",
+    "promptsWaiting_many": "Ожидают ответа запросы Pi: {{count}}",
+    "promptsWaiting_other": "Ожидают ответа запросы Pi: {{count}}"
+  },
+  "taskLauncher": {
+    "closeAriaLabel": "Закрыть окно запуска задачи",
+    "footerNote": "Задача работает в новой сессии и продолжится в фоне после переключения. Подходящие рабочие деревья PR/задач используются повторно. Ctrl/Cmd+Enter — запуск.",
+    "isolatedWorktree": {
+      "description": "Использует подходящее локальное рабочее дерево PR/задачи или создаёт новое. Исходный проект не меняется.",
+      "label": "Использовать изолированное рабочее дерево Git"
+    },
+    "openProjectFirst": "Сначала откройте проект",
+    "starting": "Запуск…",
+    "startTask": "Запустить задачу",
+    "subtitle": "Начать новую сессию {{agent}} и сразу отправить задачу.",
+    "task": "Задача",
+    "taskPlaceholder": "Исправь падающие тесты, объясни причину и подготовь изменения к проверке…"
+  },
+  "terminal": {
+    "clearAriaLabel": "Очистить терминал",
+    "clearTitle": "Очистить",
+    "hideTitle": "Скрыть терминал (оболочка продолжит работу)",
+    "maximizeLabel": "Развернуть терминал",
+    "restartHint": "Нажмите любую клавишу, чтобы запустить новую оболочку",
+    "restoreLabel": "Восстановить размер терминала",
+    "title": "Терминал"
+  },
+  "themes": {
+    "builtin": {
+      "breeze-claudius": "Breeze Claudius",
+      "breeze-dark": "Breeze Dark",
+      "breeze-light": "Breeze Light",
+      "dark": "Тёмная",
+      "gruvbox": "Gruvbox",
+      "light": "Светлая",
+      "nord": "Nord"
+    },
+    "editor": {
+      "advancedSummary": "Дополнительно",
+      "authorLabel": "Автор (необязательно)",
+      "authorPlaceholder": "Отображается в галерее",
+      "copySuffix": "{{name}} — копия",
+      "createTitle": "Создать тему",
+      "descriptionLabel": "Описание (необязательно)",
+      "descriptionPlaceholder": "Одно-два предложения о теме",
+      "editTitle": "Изменить тему",
+      "kindLabel": "Тип",
+      "nameLabel": "Название",
+      "renameCleanupWarning": "Тема сохранена как «{{name}}», но старую версию не удалось удалить. Она может остаться в списке.",
+      "resetToDerivedTitle": "Вернуть вычисленное значение",
+      "savingLabel": "Сохранение…",
+      "seedLabels": {
+        "accent": "Акцент",
+        "app": "Фон приложения",
+        "error": "Ошибка",
+        "success": "Успех",
+        "surface": "Поверхность",
+        "text": "Текст",
+        "warning": "Предупреждение"
+      },
+      "syntaxColorsSummary": "Цвета синтаксиса"
+    },
+    "gallery": {
+      "authorScreenshotLabel": "Скриншот автора",
+      "backAriaLabel": "Ко всем темам",
+      "detailSubtitle": "Предпросмотр с реальными цветами темы",
+      "empty": "Пока нет доступных тем.",
+      "installingLabel": "Установка…",
+      "loadError": "Не удалось загрузить галерею: {{error}}",
+      "loading": "Загрузка тем…",
+      "screenshotAlt": "Скриншот {{name}}",
+      "screenshotError": "Не удалось загрузить скриншот.",
+      "screenshotLoading": "Загрузка скриншота…",
+      "showMore_one": "Показать ещё ({{count}})",
+      "showMore_few": "Показать ещё ({{count}})",
+      "showMore_many": "Показать ещё ({{count}})",
+      "showMore_other": "Показать ещё ({{count}})",
+      "subtitle": "Из галереи pi-desktop-themes — нажмите тему для подробностей",
+      "title": "Темы сообщества",
+      "viewDetailsAria": "Подробнее о {{name}}"
+    },
+    "kind": {
+      "dark": "Тёмная",
+      "light": "Светлая"
+    }
+  },
+  "thinking": {
+    "effort": "Глубина размышления",
+    "effortWithLevel": "Глубина размышления: {{level}}"
+  },
+  "time": {
+    "justNow": "только что"
+  },
+  "timeline": {
+    "agentFinished": "Агент завершил работу",
+    "agentStarted": "Агент начал обработку",
+    "assistantResponseComplete": "Ответ ассистента завершён",
+    "assistantResponseFailed": "Ошибка ответа ассистента",
+    "branchesHeading": "Ветви",
+    "clearButton": "Очистить",
+    "cloneBranchButton": "Клонировать ветвь",
+    "cloneBranchTitle": "Клонировать текущую ветвь в новую сессию",
+    "compactionComplete": "Сжатие завершено",
+    "compactionStarted": "Сжатие начато",
+    "emptyHint": "Здесь будут появляться события агента в реальном времени",
+    "emptyTitle": "Пока нет активности",
+    "externalPromptReceived": "Получен внешний промпт",
+    "forkButton": "Ответвить",
+    "forkFromTitle": "Создать новую сессию от этого сообщения",
+    "heading": "Хронология агента",
+    "noForkMessages": "Нет предыдущих сообщений для ответвления.",
+    "retryAttempt": "Повторная попытка {{attempt}}",
+    "retryComplete": "Повторная попытка завершена",
+    "sessionTreeHeading": "Дерево сессий",
+    "tool": "Инструмент: {{tool}}"
+  },
+  "tools": {
+    "edit": {
+      "done": "Изменён {{target}}",
+      "doneWithoutTarget": "Изменён файл",
+      "label": "Изменить файл",
+      "summaryFirst_one": "Изменён {{count}} файл",
+      "summaryFirst_few": "Изменено {{count}} файла",
+      "summaryFirst_many": "Изменено {{count}} файлов",
+      "summaryFirst_other": "Изменено {{count}} файла",
+      "summaryNext_one": "изменён {{count}} файл",
+      "summaryNext_few": "изменено {{count}} файла",
+      "summaryNext_many": "изменено {{count}} файлов",
+      "summaryNext_other": "изменено {{count}} файла"
+    },
+    "fetch": {
+      "done": "Загружен {{target}}",
+      "doneWithoutTarget": "Загружен URL",
+      "label": "Загрузить URL",
+      "summaryFirst_one": "Загружен {{count}} URL",
+      "summaryFirst_few": "Загружено {{count}} URL",
+      "summaryFirst_many": "Загружено {{count}} URL",
+      "summaryFirst_other": "Загружено {{count}} URL",
+      "summaryNext_one": "загружен {{count}} URL",
+      "summaryNext_few": "загружено {{count}} URL",
+      "summaryNext_many": "загружено {{count}} URL",
+      "summaryNext_other": "загружено {{count}} URL"
+    },
+    "list": {
+      "done": "Получен список {{target}}",
+      "doneWithoutTarget": "Получен список папки",
+      "label": "Список файлов",
+      "summaryFirst_one": "Получен список {{count}} папки",
+      "summaryFirst_few": "Получены списки {{count}} папок",
+      "summaryFirst_many": "Получены списки {{count}} папок",
+      "summaryFirst_other": "Получены списки {{count}} папок",
+      "summaryNext_one": "получен список {{count}} папки",
+      "summaryNext_few": "получены списки {{count}} папок",
+      "summaryNext_many": "получены списки {{count}} папок",
+      "summaryNext_other": "получены списки {{count}} папок"
+    },
+    "other": {
+      "summaryFirst_one": "Выполнен {{count}} инструмент",
+      "summaryFirst_few": "Выполнено {{count}} инструмента",
+      "summaryFirst_many": "Выполнено {{count}} инструментов",
+      "summaryFirst_other": "Выполнено {{count}} инструмента",
+      "summaryNext_one": "выполнен {{count}} инструмент",
+      "summaryNext_few": "выполнено {{count}} инструмента",
+      "summaryNext_many": "выполнено {{count}} инструментов",
+      "summaryNext_other": "выполнено {{count}} инструмента"
+    },
+    "read": {
+      "done": "Прочитан {{target}}",
+      "doneWithoutTarget": "Прочитан файл",
+      "label": "Прочитать файл",
+      "summaryFirst_one": "Прочитан {{count}} файл",
+      "summaryFirst_few": "Прочитано {{count}} файла",
+      "summaryFirst_many": "Прочитано {{count}} файлов",
+      "summaryFirst_other": "Прочитано {{count}} файла",
+      "summaryNext_one": "прочитан {{count}} файл",
+      "summaryNext_few": "прочитано {{count}} файла",
+      "summaryNext_many": "прочитано {{count}} файлов",
+      "summaryNext_other": "прочитано {{count}} файла"
+    },
+    "run": {
+      "doneWithoutTarget": "Выполнена команда",
+      "label": "Выполнить команду",
+      "summaryFirst_one": "Выполнена {{count}} команда",
+      "summaryFirst_few": "Выполнено {{count}} команды",
+      "summaryFirst_many": "Выполнено {{count}} команд",
+      "summaryFirst_other": "Выполнено {{count}} команды",
+      "summaryNext_one": "выполнена {{count}} команда",
+      "summaryNext_few": "выполнено {{count}} команды",
+      "summaryNext_many": "выполнено {{count}} команд",
+      "summaryNext_other": "выполнено {{count}} команды"
+    },
+    "search": {
+      "done": "Выполнен поиск {{target}}",
+      "doneWithoutTarget": "Выполнен поисковый запрос",
+      "label": "Поиск",
+      "summaryFirst_one": "Выполнен {{count}} поисковый запрос",
+      "summaryFirst_few": "Выполнено {{count}} поисковых запроса",
+      "summaryFirst_many": "Выполнено {{count}} поисковых запросов",
+      "summaryFirst_other": "Выполнено {{count}} поисковых запроса",
+      "summaryNext_one": "выполнен {{count}} поисковый запрос",
+      "summaryNext_few": "выполнено {{count}} поисковых запроса",
+      "summaryNext_many": "выполнено {{count}} поисковых запросов",
+      "summaryNext_other": "выполнено {{count}} поисковых запроса"
+    },
+    "summarySeparator": ", ",
+    "write": {
+      "done": "Создан {{target}}",
+      "doneWithoutTarget": "Создан файл",
+      "label": "Записать файл",
+      "summaryFirst_one": "Создан {{count}} файл",
+      "summaryFirst_few": "Создано {{count}} файла",
+      "summaryFirst_many": "Создано {{count}} файлов",
+      "summaryFirst_other": "Создано {{count}} файла",
+      "summaryNext_one": "создан {{count}} файл",
+      "summaryNext_few": "создано {{count}} файла",
+      "summaryNext_many": "создано {{count}} файлов",
+      "summaryNext_other": "создано {{count}} файла"
+    }
+  },
+  "tray": {
+    "show": "Показать Pi Desktop",
+    "stillRunningBody": "Окно свёрнуто в системный трей. Нажмите значок в трее, чтобы открыть его, или выберите «Выйти» для завершения работы.",
+    "stillRunningTitle": "Pi Desktop продолжает работать",
+    "unavailableBody": "В этой среде нет системного трея, поэтому Pi Desktop завершит работу при закрытии окна.",
+    "unavailableTitle": "Системный трей недоступен"
+  },
+  "voice": {
+    "models": {
+      "moonshine-base": {
+        "name": "Moonshine Base",
+        "note": "Небольшая быстрая модель для английской диктовки. Баланс размера и точности."
+      },
+      "moonshine-tiny": {
+        "name": "Moonshine Tiny",
+        "note": "Самая маленькая английская модель. Быстрее всего на слабых компьютерах."
+      },
+      "parakeet-v2": {
+        "name": "Parakeet V2",
+        "note": "Очень точное распознавание английского. Большой объём скачивания."
+      },
+      "parakeet-v3": {
+        "name": "Parakeet V3",
+        "note": "Самая точная. 25 языков с автоопределением. Большой объём скачивания."
+      },
+      "whisper-base": {
+        "name": "Whisper Base",
+        "note": "Небольшая модель с поддержкой многих языков."
+      },
+      "whisper-small": {
+        "name": "Whisper Small",
+        "note": "Точнее распознаёт многие языки. Требует больше места."
+      }
+    }
+  },
+  "workflows": {
+    "agentGrid": {
+      "noTranscriptCaptured": "История не записана",
+      "openTranscript": "Открыть историю"
+    },
+    "card": {
+      "activeCount_one": "· в работе: {{count}}",
+      "activeCount_few": "· в работе: {{count}}",
+      "activeCount_many": "· в работе: {{count}}",
+      "activeCount_other": "· в работе: {{count}}",
+      "agentsProgress": "Агенты: {{done}}/{{total}}"
+    },
+    "control": {
+      "abortAriaLabel": "Прервать запуск",
+      "abortButtonLabel": "Прервать",
+      "dispatchFailed": "Не удалось отправить команду управления для {{agent}}.",
+      "extensionMissing": "Расширение рабочих процессов не загружено в процесс {{agent}} этого проекта.",
+      "notPermittedResume": "Этот запуск нельзя возобновить в текущем состоянии.",
+      "notPermittedStop": "Этот запуск уже нельзя прервать в текущем состоянии.",
+      "notRunning": "{{agent}} не запущен для этого проекта, поэтому управлять запуском отсюда нельзя.",
+      "pausedFallback": "Приостановлено",
+      "resumeAriaLabel": "Возобновить запуск",
+      "resumeButtonLabel": "Возобновить",
+      "resumeRequested": "Запрошено возобновление — перезапуск в проекте…",
+      "resumeTitle": "Возобновить рабочий процесс в его проекте",
+      "stopRequested": "Запрошено прерывание — остановка в проекте…",
+      "stopTitle": "Остановить рабочий процесс в его проекте",
+      "timeout": "{{agent}} не ответил. Состояние запуска могло измениться — обновите данные.",
+      "unavailable": "Управление рабочими процессами сейчас недоступно для этого проекта.",
+      "unreachable": "Не удалось подключиться к каналу управления процессами этого проекта."
+    },
+    "detail": {
+      "backAriaLabel": "Все запуски процессов",
+      "refreshAriaLabel": "Обновить запуск",
+      "statAgents": "агенты",
+      "statCostTime": "стоимость/время",
+      "statTokens": "токены",
+      "stepsHeading": "Шаги"
+    },
+    "panel": {
+      "activeCount_one": "В работе: {{count}}",
+      "activeCount_few": "В работе: {{count}}",
+      "activeCount_many": "В работе: {{count}}",
+      "activeCount_other": "В работе: {{count}}",
+      "closeAriaLabel": "Закрыть запуски процессов",
+      "loading": "Загрузка процесса…",
+      "maximizeAriaLabel": "Развернуть навигатор процессов",
+      "noRunsForProject": "Нет запусков для этого проекта",
+      "noRunsForSession": "Нет запусков для этой сессии",
+      "noRunsProjectDetail": "Для {{name}} нет записанных запусков процессов. Запуски других проектов доступны в общем списке.",
+      "noRunsSessionDetail": "Для этой сессии нет записанных запусков процессов. Запуски прошлых сессий доступны в общем списке.",
+      "noRunsYet": "Пока нет запусков",
+      "recordedCount_one": "Записано: {{count}}",
+      "recordedCount_few": "Записано: {{count}}",
+      "recordedCount_many": "Записано: {{count}}",
+      "recordedCount_other": "Записано: {{count}}",
+      "refreshAriaLabel": "Обновить запуски процессов",
+      "restoreAriaLabel": "Восстановить размер навигатора процессов",
+      "runCommandHint": "Выполните <cmd>/workflows run …</cmd> в чате.",
+      "stepTranscriptTitle": "История шага",
+      "thisProjectFallback": "этот проект",
+      "workflowDetailTitle": "Сведения о процессе"
+    },
+    "phaseStepper": {
+      "agentsProgress": "Агенты: {{done}}/{{total}}"
+    },
+    "result": {
+      "characterCount_one": "{{count}} символ",
+      "characterCount_few": "{{count}} символа",
+      "characterCount_many": "{{count}} символов",
+      "characterCount_other": "{{count}} символа",
+      "detailCount_one": "{{count}} подробность",
+      "detailCount_few": "{{count}} подробности",
+      "detailCount_many": "{{count}} подробностей",
+      "detailCount_other": "{{count}} подробности",
+      "emptyObject": "Рабочий процесс вернул пустой объект.",
+      "emptyShape": "пусто",
+      "emptyValue": "Пусто",
+      "fieldCount_one": "{{count}} поле",
+      "fieldCount_few": "{{count}} поля",
+      "fieldCount_many": "{{count}} полей",
+      "fieldCount_other": "{{count}} поля",
+      "itemCount_one": "{{count}} элемент",
+      "itemCount_few": "{{count}} элемента",
+      "itemCount_many": "{{count}} элементов",
+      "itemCount_other": "{{count}} элемента",
+      "itemTitle": "Элемент {{index}}",
+      "markdownReport": "Отчёт Markdown",
+      "moreItems_one": "Ещё + {{count}} элемент",
+      "moreItems_few": "Ещё + {{count}} элемента",
+      "moreItems_many": "Ещё + {{count}} элементов",
+      "moreItems_other": "Ещё + {{count}} элемента",
+      "nestedHidden": "Вложенные сведения скрыты",
+      "no": "Нет",
+      "noAdditionalDetails": "Нет дополнительных сведений.",
+      "noDetails": "Нет сведений",
+      "noItems": "Нет элементов",
+      "none": "Нет",
+      "outputLabel": "Результат",
+      "outputTitle": "Результат процесса",
+      "sectionCount_one": "{{count}} раздел",
+      "sectionCount_few": "{{count}} раздела",
+      "sectionCount_many": "{{count}} разделов",
+      "sectionCount_other": "{{count}} раздела",
+      "yes": "Да"
+    },
+    "status": {
+      "aborted": "остановлено"
+    },
+    "tabs": {
+      "logs": "Журналы",
+      "overview": "Обзор",
+      "results": "Результаты",
+      "script": "Скрипт"
+    },
+    "transcript": {
+      "backAriaLabel": "К запуску",
+      "defaultPhaseLabel": "шаг процесса",
+      "enableFullTranscriptsButton": "Сохранять полную историю будущих запусков",
+      "historyNotice": "Показана записанная история процесса. Для будущих запусков можно сохранять все исходные сообщения {{agent}} и результаты инструментов.",
+      "noTranscriptMessage": "Для этого шага история не сохранена.",
+      "persistenceEnabled": "Включено глобально. Перезагрузите {{agent}} перед следующим запуском процесса.",
+      "settingsUpdateFailed": "Не удалось обновить настройки процессов.",
+      "sourceCapturedHistory": "записанная история процесса",
+      "sourceFullSession": "полная история сессии",
+      "sourceNone": "нет истории",
+      "stepPromptLabel": "Промпт шага",
+      "stepResultLabel": "Результат шага",
+      "subtitle": "{{phase}} · {{source}}"
+    }
+  },
+  "workspaceTabs": {
+    "closeSessionTab": "Закрыть вкладку сессии",
+    "closeTabAriaLabel": "Закрыть {{name}}",
+    "closeTools": "Закрыть инструменты",
+    "newIsolatedTabAriaLabel": "Новая изолированная вкладка Git",
+    "newIsolatedTabTitle": "Новая изолированная вкладка Git (нужен Git-проект)",
+    "newLinkedTaskAriaLabel": "Новая связанная задача",
+    "newLinkedTaskTitle": "Новая связанная задача в нескольких репозиториях",
+    "newSessionAriaLabel": "Новая сессия в этом проекте",
+    "newSessionFallback": "Новая сессия",
+    "removeWorkspaceAriaLabel": "Убрать {{name}}",
+    "sessions": "Сессии",
+    "tools": "Инструменты"
+  }
+}
