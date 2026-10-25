@@ -1117,6 +1117,17 @@ export class WorkspaceManager {
     return workspace
   }
 
+  /**
+   * The real location of a checkout. Git prints worktree paths with symlinks
+   * resolved, while saved tabs keep the data-directory path they were made
+   * under, so the same checkout can be spelled two ways. Fall back to the
+   * plain path when the real one cannot be known.
+   */
+  private physicalPath(path: string): string {
+    const absolute = resolve(path)
+    return resolveRealPath(absolute) ?? absolute
+  }
+
   /** Whether a checkout lives inside the worktree root this app owns. */
   private isManagedWorktreePath(path: string): boolean {
     const root = resolveRealPath(getGuiDataPath(MANAGED_WORKTREES_DIR))
@@ -1135,15 +1146,15 @@ export class WorkspaceManager {
    * branch a task names.
    */
   private async findRelatedWorktree(sourcePath: string, repoRoot: string, taskPrompt: string): Promise<Workspace | null> {
-    const sourceResolved = resolve(sourcePath)
-    const repoRootResolved = resolve(repoRoot)
+    const sourceResolved = this.physicalPath(sourcePath)
+    const repoRootResolved = this.physicalPath(repoRoot)
     const normalizedTask = taskPrompt.trim().replace(/\s+/g, ' ').toLowerCase()
     if (!normalizedTask) return null
 
     const savedMatch = this.workspaces.find((workspace) =>
       workspace.kind === 'worktree' &&
       this.isManagedWorktreePath(workspace.path) &&
-      !pathsEqual(resolve(workspace.path), sourceResolved) &&
+      !pathsEqual(this.physicalPath(workspace.path), sourceResolved) &&
       workspace.taskPrompt?.trim().replace(/\s+/g, ' ').toLowerCase() === normalizedTask &&
       !!workspace.repoRoot &&
       pathsEqual(workspace.repoRoot, repoRoot) &&
@@ -1159,20 +1170,20 @@ export class WorkspaceManager {
 
     const entries = await listGitWorktrees(sourcePath).catch(() => [])
     const candidates = entries
+      .map((entry) => ({ ...entry, path: this.physicalPath(entry.path) }))
       .filter((entry, index) =>
         // `git worktree list` prints the main working tree first. That is the
         // user's primary checkout, so drop it by position and by path.
         index > 0 &&
-        !pathsEqual(resolve(entry.path), repoRootResolved) &&
+        !pathsEqual(entry.path, repoRootResolved) &&
         !entry.bare &&
-        !pathsEqual(resolve(entry.path), sourceResolved) &&
+        !pathsEqual(entry.path, sourceResolved) &&
         // Reuse is limited to the app's own worktree root; a checkout anywhere
         // else is the user's, not ours to hand over.
         this.isManagedWorktreePath(entry.path) &&
         existsSync(entry.path) &&
         entry.branch
       )
-      .map((entry) => ({ ...entry, path: resolve(entry.path) }))
     const matches = candidates.filter((entry) => {
       const branch = entry.branch!
       if (pullRequestBranch) return branch === pullRequestBranch
@@ -1187,7 +1198,9 @@ export class WorkspaceManager {
     if (matches.length !== 1) return null
 
     const match = matches[0]
-    const existing = this.workspaces.find((workspace) => pathsEqual(workspace.path, match.path))
+    // A tab already open on this checkout owns it; a second tab would let the
+    // first one's close remove the folder from under it.
+    const existing = this.workspaces.find((workspace) => pathsEqual(this.physicalPath(workspace.path), match.path))
     return existing ?? this.adoptExistingWorktree(repoRoot, match, taskPrompt.trim())
   }
 
