@@ -1,0 +1,2244 @@
+{
+  "activity": {
+    "completed": "Завершено у фоні",
+    "completedInAnotherWorkspace": "Завершено у фоні в іншому проєкті",
+    "failed": "Зупинено з помилкою",
+    "failedInAnotherWorkspace": "Зупинено з помилкою в іншому проєкті",
+    "working": "Pi працює",
+    "workingInAnotherWorkspace": "Pi працює в іншому проєкті"
+  },
+  "app": {
+    "dropFolder": {
+      "description": "Відкриває папку як проєкт (за потреби створює його)",
+      "title": "Перетягніть папку, щоб відкрити проєкт"
+    },
+    "errorBoundary": {
+      "fallback": "Не вдалося відобразити вміст"
+    },
+    "quit": "Вийти з Pi Desktop",
+    "resizeHandle": {
+      "title": "Потягніть, щоб змінити розмір"
+    },
+    "updateBanner": {
+      "available": "Доступна Pi Desktop <strong>v{{latestVersion}}</strong> — у вас v{{currentVersion}}.",
+      "dismissAriaLabel": "Приховати сповіщення про оновлення",
+      "downloadButton": "Завантажити"
+    }
+  },
+  "chat": {
+    "activity": {
+      "stalled": "Модель не відповідає вже {{silent}}. Можлива затримка у провайдера.",
+      "stop": "Зупинити",
+      "working": "У роботі…",
+      "workingFor": "У роботі · {{elapsed}}"
+    },
+    "attach": {
+      "allFilesFilter": "Усі файли",
+      "attachFailed": "Не вдалося прикріпити файл",
+      "dropHint": "Перетягніть файли для прикріплення",
+      "imagesFilter": "Зображення",
+      "onlyImagesPasted": "У поле повідомлення можна вставляти лише зображення",
+      "pasteFailed": "Не вдалося вставити зображення",
+      "readImageFailed": "Не вдалося прочитати дані зображення",
+      "reading": "Додавання вкладень…",
+      "unknownMimeType": "невідомий",
+      "unsupportedImageType": "Формат зображення не підтримується ({{mimeType}}). Використовуйте PNG, JPEG, GIF або WebP."
+    },
+    "closeFileTree": "Закрити дерево файлів",
+    "commandPopup": {
+      "selectHint": "↑↓ навігація · Enter/Tab вибрати · Esc закрити"
+    },
+    "composer": {
+      "placeholderIdle": "Задайте завдання для {{agent}} — / для команд",
+      "placeholderNotRunning": "Агент {{agent}} не запущений…",
+      "placeholderQueue": "Повідомлення в чергу — Ctrl+Enter надішле одразу"
+    },
+    "council": {
+      "planWithCouncil": "Планування з радою",
+      "startEngineFirst": "Запустіть Pi/OMP для планування з радою"
+    },
+    "emptyState": {
+      "chooseProject": "Виберіть проєкт — {{agent}} запуститься після надсилання.",
+      "pickProject": "Виберіть проєкт і опишіть завдання.",
+      "startFailed": "Не вдалося запустити {{agent}}. Перевірте налаштування.",
+      "starting": "Запуск агента {{agent}}…",
+      "title": "Яке завдання доручити {{agent}}?",
+      "waitingOnEngine": "{{agent}} запущений — очікуємо завантаження рушія. Локальним моделям може знадобитися час…"
+    },
+    "extensionUi": {
+      "editFallbackTitle": "Змінити",
+      "hideForNowWithShortcut": "Поки приховати ({{shortcut}})",
+      "inputFallbackTitle": "Введення",
+      "notificationFallback": "Сповіщення",
+      "selectFallbackTitle": "Вибрати",
+      "showWithShortcut": "Показати ({{shortcut}})",
+      "waitingForAnswer": "Pi чекає на відповідь"
+    },
+    "insertNote": {
+      "ariaLabel": "Вставити нотатку",
+      "titleWithShortcut": "Вставити нотатку (Ctrl+Shift+P)"
+    },
+    "loadingSession": "Завантаження сесії…",
+    "mentionPopup": {
+      "insertHint": "↑↓ навігація · Enter/Tab вставити шлях · Esc закрити"
+    },
+    "message": {
+      "branchedFrom": "Відгалуження від: «{{excerpt}}»",
+      "branchFromHere": "Створити відгалуження звідси",
+      "editAndResend": "Змінити й надіслати",
+      "stopped": "Зупинено"
+    },
+    "nextSteps": {
+      "title": "Пропоновані кроки"
+    },
+    "projectPicker": {
+      "noProject": "Без проєкту",
+      "noProjectHomeDirectory": "Без проєкту — домашня папка",
+      "openFolder": "Відкрити папку…",
+      "yourHomeDirectory": "Ваша домашня папка"
+    },
+    "reattached": {
+      "responseWillAppear": "Відповідь з’явиться тут одразу після завершення.",
+      "stillWorking": "{{agent}} ще працює в цій сесії."
+    },
+    "scrollToBottom": "Прокрутити вниз",
+    "search": {
+      "closeWithShortcut": "Закрити (Esc)",
+      "nextMatch": "Наступний збіг (Enter)",
+      "placeholder": "Знайти на сторінці",
+      "previousMatch": "Попередній збіг (Shift+Enter)"
+    },
+    "searchWorkspace": {
+      "ariaLabel": "Пошук у проєкті",
+      "titleWithShortcut": "Пошук у проєкті (Ctrl+Shift+F)"
+    },
+    "sendButton": {
+      "ariaLabel": "Надіслати повідомлення",
+      "titleWithShortcut": "Надіслати (Enter)"
+    },
+    "sendQueue": {
+      "count_one": "У черзі: {{count}}",
+      "count_few": "У черзі: {{count}}",
+      "count_many": "У черзі: {{count}}",
+      "count_other": "У черзі: {{count}}",
+      "edit": "Змінити",
+      "files_one": "{{count}} файл",
+      "files_few": "{{count}} файли",
+      "files_many": "{{count}} файлів",
+      "files_other": "{{count}} файлу",
+      "held": "Призупинено. Щоб продовжити, надішліть нове повідомлення або натисніть «Надіслати зараз»",
+      "next": "Надішлеться після завершення роботи агента",
+      "sendNow": "Надіслати зараз",
+      "sendNowHint": "Надіслати повідомлення агенту в поточний хід",
+      "title": "Черга повідомлень"
+    },
+    "startingAgent": "Запуск агента…",
+    "stopButton": {
+      "ariaLabel": "Зупинити генерацію",
+      "titleWithShortcut": "Зупинити (Esc)"
+    },
+    "subagentPanel": {
+      "back": "До списку",
+      "close": "Закрити",
+      "empty": "У цьому чаті поки немає субагентів.",
+      "finalOutput": "Підсумковий результат",
+      "finished": "Завершено",
+      "liveViewUnavailable": "Перегляд у реальному часі недоступний для цього запуску.",
+      "loading": "Завантаження…",
+      "progressOnly": "Повна історія з’явиться після завершення запуску.",
+      "refreshFailed": "Не вдалося оновити.",
+      "running": "У роботі",
+      "status": {
+        "done": "Готово",
+        "failed": "Помилка",
+        "running": "У роботі",
+        "stopped": "Зупинено"
+      },
+      "title": "Субагенти",
+      "transcriptUnavailable": "Історія недоступна."
+    },
+    "subagentProgress": {
+      "done_one": "Завершив роботу {{count}} субагент",
+      "done_few": "Завершили роботу {{count}} субагенти",
+      "done_many": "Завершили роботу {{count}} субагентів",
+      "done_other": "Завершили роботу {{count}} субагента",
+      "finishedWithFailures_one": "Завершив роботу {{count}} субагент, з помилкою: {{failed}}",
+      "finishedWithFailures_few": "Завершили роботу {{count}} субагенти, з помилкою: {{failed}}",
+      "finishedWithFailures_many": "Завершили роботу {{count}} субагентів, з помилкою: {{failed}}",
+      "finishedWithFailures_other": "Завершили роботу {{count}} субагента, з помилкою: {{failed}}",
+      "openPanel": "Відкрити панель субагентів",
+      "running_one": "Працює {{count}} субагент",
+      "running_few": "Працюють {{count}} субагенти",
+      "running_many": "Працюють {{count}} субагентів",
+      "running_other": "Працює {{count}} субагента"
+    },
+    "svgBlock": {
+      "renderedSvgAlt": "Відображений SVG",
+      "renderSvg": "Показати SVG",
+      "viewSource": "Вихідний код"
+    },
+    "toolbar": {
+      "diffViewer": "Перегляд змін",
+      "fileTree": "Дерево файлів",
+      "reviewPanel": "Панель перевірки",
+      "subagents": "Субагенти",
+      "subagentsRunning_one": "Субагенти, у роботі: {{count}}",
+      "subagentsRunning_few": "Субагенти, у роботі: {{count}}",
+      "subagentsRunning_many": "Субагенти, у роботі: {{count}}",
+      "subagentsRunning_other": "Субагенти, у роботі: {{count}}",
+      "terminal": "Термінал"
+    },
+    "toolCall": {
+      "status": {
+        "done": "готово",
+        "error": "помилка",
+        "running": "у роботі"
+      }
+    },
+    "voice": {
+      "errorTitle": "Помилка диктування: {{error}}",
+      "needsGpu": "Цій версії моделі потрібна відеокарта (GPU), але її не знайдено. Виберіть CPU у розділі «Налаштування > Голос», щоб завантажити версію для процесора.",
+      "setUpTitle": "Налаштувати диктування в розділі «Налаштування»",
+      "startTitle": "Почати диктування",
+      "stopTitle": "Зупинити й вставити текст",
+      "transcribing": "Розпізнавання мовлення"
+    },
+    "waitingForResponse": "Очікування відповіді…"
+  },
+  "commandGroups": {
+    "commands": "Команди",
+    "extensions": "Розширення",
+    "other": "Інше",
+    "prompts": "Промпти"
+  },
+  "commands": {
+    "addRepo": {
+      "description": "Додати репозиторій до пов’язаного завдання"
+    },
+    "clone": {
+      "description": "Клонувати поточну гілку в нову сесію"
+    },
+    "compact": {
+      "description": "Стиснути листування, щоб звільнити контекст"
+    },
+    "fork": {
+      "description": "Відкрити «Гілки» для відгалуження від повідомлення"
+    },
+    "linkedTask": {
+      "description": "Запустити пов’язане завдання в наборі репозиторіїв"
+    },
+    "model": {
+      "description": "Вибрати модель"
+    },
+    "new": {
+      "description": "Почати нову сесію"
+    },
+    "newRepoSet": {
+      "description": "Створити набір репозиторіїв для пов’язаних завдань"
+    },
+    "resume": {
+      "description": "Відкрити список сесій"
+    },
+    "settings": {
+      "description": "Відкрити налаштування"
+    },
+    "task": {
+      "description": "Запустити завдання в новій сесії {{agent}}"
+    }
+  },
+  "commandSources": {
+    "builtin": "вбудована",
+    "extension": "розширення",
+    "prompt": "промпт",
+    "skill": "навичка"
+  },
+  "common": {
+    "attachFile": "Прикріпити файл",
+    "cancel": "Скасувати",
+    "changedFilesHeading": "Змінені файли",
+    "close": "Закрити",
+    "collapse": "Згорнути",
+    "confirm": "Підтвердити",
+    "copied": "Скопійовано",
+    "copy": "Копіювати",
+    "cut": "Вирізати",
+    "delete": "Видалити",
+    "dismiss": "Приховати",
+    "export": "Експорт",
+    "global": "Глобальні",
+    "import": "Імпорт",
+    "install": "Установити",
+    "installed": "Установлено",
+    "loading": "Завантаження…",
+    "moreCount_one": "Ще +{{count}}",
+    "moreCount_few": "Ще +{{count}}",
+    "moreCount_many": "Ще +{{count}}",
+    "moreCount_other": "Ще +{{count}}",
+    "newSession": "Нова сесія",
+    "no": "ні",
+    "noWorkingTreeChanges": "У робочому дереві немає змін.",
+    "paste": "Вставити",
+    "project": "Проєкт",
+    "refresh": "Оновити",
+    "remove": "Видалити",
+    "retry": "Повторити",
+    "save": "Зберегти",
+    "selectAll": "Вибрати все",
+    "send": "Надіслати",
+    "settings": "Налаштування",
+    "showSidebar": "Показати бічну панель",
+    "skills": "Навички",
+    "submit": "Надіслати",
+    "thinking": "Міркування",
+    "workflowRuns": "Запуски процесів",
+    "yes": "так"
+  },
+  "composer": {
+    "permissionMenu": {
+      "title": "Дозволи"
+    }
+  },
+  "contextMenu": {
+    "addMessageToNotes": "Додати повідомлення до нотаток",
+    "addSelectionToNotes": "Додати виділене до нотаток",
+    "archive": "До архіву",
+    "copyAllVisibleText": "Копіювати весь видимий текст",
+    "copyCodeBlock": "Копіювати блок коду",
+    "copyLink": "Копіювати посилання",
+    "copyMessage": "Копіювати повідомлення",
+    "copySelection": "Копіювати виділене",
+    "deleteSessionConfirmMessage": "Видалити сесію «{{name}}»?\n\nЯкщо встановлена системна утиліта 'trash', файл потрапить до кошика і його можна буде відновити. Інакше файл сесії .jsonl буде видалено назавжди.",
+    "deleteSessionConfirmTitle": "Видалити сесію",
+    "deleteSessionLabel": "Видалити…",
+    "openLink": "Відкрити посилання",
+    "openSession": "Відкрити сесію",
+    "rename": "Перейменувати…",
+    "searchSelection": "Знайти виділене",
+    "shortcuts": {
+      "copy": "Ctrl+C",
+      "copyCodeBlock": "Ctrl+Shift+C",
+      "cut": "Ctrl+X",
+      "paste": "Ctrl+V",
+      "selectAll": "Ctrl+A"
+    },
+    "unarchive": "З архіву",
+    "workflowRuns": "Запуски процесів"
+  },
+  "conveyor": {
+    "branches": {
+      "agentWorking": "Дочекайтеся завершення всіх агентів у проєкті, перш ніж перемикати гілку.",
+      "createBranch": "Створити гілку",
+      "description": "Перемкнути локальну гілку проєкту без примусового перемикання та без відкладання змін",
+      "label": "Гілка проєкту",
+      "nameRequired": "Введіть назву нової гілки.",
+      "newBranchHint": "Починається від {{branch}}. Незакомічені зміни перейдуть до нової гілки.",
+      "newBranchOption": "Нова гілка…",
+      "newBranchPlaceholder": "feature/my-change",
+      "newBranchTitle": "Нова гілка",
+      "saveEditor": "Збережіть або скасуйте правки в редакторі перед зміною гілки."
+    },
+    "branchStatusClean": "{{branch}}",
+    "branchStatusDirty_one": "{{branch}} · змінено: {{count}}",
+    "branchStatusDirty_few": "{{branch}} · змінено: {{count}}",
+    "branchStatusDirty_many": "{{branch}} · змінено: {{count}}",
+    "branchStatusDirty_other": "{{branch}} · змінено: {{count}}",
+    "commit": "Коміт",
+    "commitAndPush": "Коміт + надсилання",
+    "commitAndPushTitle": "Створити коміт і надіслати гілку за один крок",
+    "commitButtonTitle": "Створити коміт із підготовлених змін або змін у проєкті",
+    "createPrButton": "Створити PR",
+    "detachedBranch": "без гілки",
+    "dialog": {
+      "baseBranchLabel": "Базова гілка",
+      "baseBranchPlaceholder": "Порожньо — гілка репозиторію за замовчуванням",
+      "closeAriaLabel": "Закрити діалог",
+      "commitMessageLabel": "Повідомлення коміту",
+      "commitTitle": "Створити коміт",
+      "descriptionLabel": "Опис",
+      "newFilesLabel": "Нові файли: позначте потрібні",
+      "newFilesLeftOut_one": "{{count}} новий файл не ввійде до коміту.",
+      "newFilesLeftOut_few": "{{count}} нові файли не ввійдуть до коміту.",
+      "newFilesLeftOut_many": "{{count}} нових файлів не ввійдуть до коміту.",
+      "newFilesLeftOut_other": "{{count}} нового файлу не ввійде до коміту.",
+      "prTitle": "Створити пул-реквест",
+      "titleLabel": "Заголовок"
+    },
+    "draft": {
+      "engineUnavailable": "Виконуваний файл агента недоступний. Перевірте налаштування агента або напишіть повідомлення вручну.",
+      "failed": "Не вдалося створити повідомлення. Натисніть «Запропонувати» ще раз або напишіть власне.",
+      "generating": "Створення повідомлення коміту англійською…",
+      "suggest": "Запропонувати повідомлення",
+      "suggestTitle": "Надіслати вибрані зміни моделі сесії для створення повідомлення коміту",
+      "timedOut": "Час створення повідомлення вичерпано. Натисніть «Запропонувати» ще раз або напишіть власне."
+    },
+    "errors": {
+      "branchRequired": "Для пул-реквесту потрібна іменована гілка.",
+      "chooseNewFiles": "Позначте хоча б один новий файл для коміту.",
+      "commitBeforePr": "Створіть коміт перед створенням пул-реквесту.",
+      "commitBeforePush": "Створіть коміт змін робочого дерева перед надсиланням.",
+      "commitMessageRequired": "Введіть повідомлення коміту.",
+      "committedPushFailed": "Коміт {{sha}} збережено локально, але надсилання не завершено: {{detail}}",
+      "operationInProgress": "Виконується інша операція Git. Дочекайтеся її завершення.",
+      "prBaseMissing": "На сервері ще немає базової гілки. Спочатку надішліть її або виконайте git remote set-head origin --auto.",
+      "prNeedsGitHub": "Для пул-реквестів потрібен віддалений репозиторій GitHub. Ця гілка надсилається на інший сервер.",
+      "prNothingToMerge": "У цій гілці немає комітів, відсутніх у {{base}}. Немає чого зливати.",
+      "prOnBaseBranch": "Ви на базовій гілці {{base}}. Для пул-реквесту перейдіть на іншу гілку.",
+      "prTitleRequired": "Введіть заголовок пул-реквесту.",
+      "pushBeforePr": "Надішліть гілку перед створенням пул-реквесту.",
+      "workspaceChanged": "Активний проєкт змінився. Операцію Git зупинено."
+    },
+    "feedback": {
+      "branchPushed": "Гілку надіслано.",
+      "committed": "Створено коміт {{sha}}.",
+      "committedAndPushed": "Створено коміт {{sha}}, гілку надіслано.",
+      "openLinkTitle": "Відкрити в браузері",
+      "prCreated": "Пул-реквест створено.",
+      "pushedCommits_one": "Надіслано {{count}} коміт.",
+      "pushedCommits_few": "Надіслано {{count}} коміти.",
+      "pushedCommits_many": "Надіслано {{count}} комітів.",
+      "pushedCommits_other": "Надіслано {{count}} коміту."
+    },
+    "openPrButtonLabel": "Відкрити PR #{{number}}",
+    "openPrButtonTitle": "Відкрити пул-реквест #{{number}} цієї гілки на GitHub",
+    "openRepositoryTitle": "Відкрити репозиторій на GitHub",
+    "prButtonLabel": "PR",
+    "prButtonTitle": "Створити пул-реквест через GitHub CLI",
+    "push": "Надіслати",
+    "pushButtonTitle": "Надіслати поточну гілку після підтвердження",
+    "pushConfirm": {
+      "branchNameFallback": "поточна гілка",
+      "currentBranchFallback": "поточну гілку",
+      "message": "Надіслати {{branch}} у {{target}}?",
+      "remoteFallback": "віддалений репозиторій",
+      "title": "Надіслати гілку?"
+    }
+  },
+  "council": {
+    "consensusPlan": {
+      "heading": "Узгоджений план",
+      "implementButton": "Реалізувати",
+      "reviseButton": "Доопрацювати",
+      "reviseInputPlaceholder": "Що змінити в плані…"
+    },
+    "header": "Планування з радою — {{phase}}",
+    "phase": {
+      "awaitingApproval": "очікування схвалення",
+      "consulting": "консультація",
+      "detecting": "виявлення",
+      "merging": "об’єднання",
+      "refused": "відмова"
+    },
+    "status": {
+      "contributed": "план готовий",
+      "errored": "помилка",
+      "merging": "об’єднання…",
+      "readyForReview": "готово до перевірки",
+      "streaming": "отримання відповіді…",
+      "timedOut": "час вичерпано",
+      "working": "у роботі…"
+    }
+  },
+  "customModels": {
+    "addModelButton": "Додати модель",
+    "addProviderButton": "Додати провайдера",
+    "apiKeyPlaceholder": "apiKey — значення, $ENV_VAR або !shell-command",
+    "baseUrlPlaceholder": "baseUrl",
+    "capabilityHint": "В імпортованих моделей можуть бути не позначені можливості. Для моделей із міркуванням увімкніть <reasoning>міркування</reasoning>, для моделей із зображеннями — <vision>зір</vision>. Перезапустіть {{engine}} для застосування.",
+    "contextWindowLabel": "контекст",
+    "defaultFileName": "файл моделей",
+    "description": "Власні провайдери й моделі в <code>{{path}}</code>. Застосовуються після перезапуску {{engine}}.",
+    "errors": {
+      "duplicateKeys": "Ключі провайдерів мають бути унікальними",
+      "emptyKey": "Кожен провайдер повинен мати непорожній ключ",
+      "saveFailed": "Не вдалося зберегти"
+    },
+    "loadError": {
+      "message": "Не вдалося безпечно завантажити {{fileName}}. Редагування вимкнено, щоб не перезаписати файл."
+    },
+    "maxTokensLabel": "макс.",
+    "modelIdPlaceholder": "ID моделі (обов’язково)",
+    "modelNamePlaceholder": "назва",
+    "providerKeyPlaceholder": "ключ провайдера (наприклад, ollama)",
+    "reasoningLabel": "міркування",
+    "removeModelTitle": "Видалити модель",
+    "removeProviderTitle": "Видалити провайдера",
+    "saveButton": "Зберегти {{fileName}}",
+    "savedRestartButton": "Збережено — перезапустіть {{engine}}",
+    "supportsReasoningEffortLabel": "налаштування глибини міркування",
+    "visionLabel": "зір"
+  },
+  "diagnostics": {
+    "fields": {
+      "appVersion": "Версія застосунку",
+      "binaryFound": "Виконуваний файл знайдено",
+      "chromium": "Chromium",
+      "electron": "Electron",
+      "engineVersion": "Версія {{agent}}",
+      "globalRules": "Глобальні правила",
+      "globalRulesInvalid": "помилка у файлі: {{error}}",
+      "guiDataDir": "Папка даних інтерфейсу",
+      "mode": "Режим",
+      "needsShell": "Потрібна оболонка",
+      "node": "Node",
+      "nodeBinary": "Виконуваний файл Node",
+      "pathEntriesSearched": "Перевірені каталоги PATH",
+      "platform": "Платформа",
+      "rejectedOverride": "Заданий шлях пропущено (не існує): {{path}}",
+      "resolutionSource": "Джерело шляху",
+      "script": "Скрипт",
+      "sessionsRoot": "Папка сесій",
+      "settingsFile": "Файл налаштувань",
+      "unknownError": "невідома помилка",
+      "unknownVersion": "невідома",
+      "workspaceRules": "Правила проєкту",
+      "workspaceRulesNone": "немає",
+      "workspaceRulesPresent": "є",
+      "workspaceRulesPresentWithAllowRules": "є, містять дозвільні правила",
+      "workspaceTrust": "Довіра до проєкту"
+    },
+    "keyState": {
+      "envMissing": "змінну середовища не задано",
+      "envSet": "змінну середовища задано",
+      "literal": "ключ задано",
+      "none": "немає ключа",
+      "shell": "команда оболонки"
+    },
+    "loadErrorTitle": "Не вдалося створити звіт",
+    "noCustomProviders": "Власні провайдери не налаштовані (models.json).",
+    "noRecentErrors": "За цей запуск немає попереджень і помилок.",
+    "noWorkspaces": "Немає проєктів.",
+    "providerModelCount_one": "{{count}} модель",
+    "providerModelCount_few": "{{count}} моделі",
+    "providerModelCount_many": "{{count}} моделей",
+    "providerModelCount_other": "{{count}} моделі",
+    "refreshAriaLabel": "Оновити діагностику",
+    "resolutionSource": {
+      "commonLocation": "Стандартна папка встановлення",
+      "engineInstall": "Папка встановлення {{agent}}",
+      "fallback": "Резервний шлях (не знайдено)",
+      "npmPrefix": "Глобальний префікс npm",
+      "override": "Заданий шлях",
+      "path": "PATH",
+      "versionManager": "Менеджер версій"
+    },
+    "sections": {
+      "application": "Застосунок",
+      "binaryTitle": "Виконуваний файл {{agent}}",
+      "permissions": "Дозволи",
+      "providers": "Провайдери",
+      "recentErrors": "Останні помилки",
+      "storage": "Сховище",
+      "workspaces": "Проєкти"
+    },
+    "title": "Діагностика",
+    "workspaceNotTrustedBadge": "немає довіри",
+    "workspacePathMissing": "не знайдена",
+    "workspaceTrustedBadge": "довірений"
+  },
+  "dialogs": {
+    "openFolder": {
+      "title": "Відкрити папку"
+    },
+    "openProject": {
+      "title": "Відкрити проєкт"
+    },
+    "permissionRules": {
+      "exportTitle": "Експорт правил дозволів",
+      "fileFilterName": "Правила дозволів",
+      "importTitle": "Імпорт правил дозволів"
+    },
+    "selectWorkspaceFolder": {
+      "title": "Вибрати папку проєкту"
+    },
+    "theme": {
+      "exportTitle": "Експорт теми",
+      "fileFilterName": "Тема",
+      "importTitle": "Імпорт теми"
+    }
+  },
+  "diff": {
+    "closeAriaLabel": "Закрити перегляд змін",
+    "deletedFileBadge": "ВИДАЛЕНО",
+    "discard": {
+      "agentWorking": "Дочекайтеся завершення всіх агентів у проєкті перед скасуванням змін.",
+      "all": "Скасувати зміни в показаних файлах",
+      "busy": "Скасування змін уже виконується.",
+      "confirm": "Відхилити",
+      "failed": "Git не зміг скасувати вибрані зміни. Оновіть список змін і перегляньте знову.",
+      "file": "Скасувати зміни в {{path}}",
+      "message_one": "Скасувати показані непідготовлені зміни? Зміни інших сесій у тих самих файлах теж буде скасовано. Нові файли буде видалено. Підготовлені зміни й коміти збережуться. Цю дію неможливо скасувати.\n\n{{files}}",
+      "message_few": "Скасувати показані непідготовлені зміни в цих файлах? Зміни інших сесій у них теж буде скасовано. Нові файли буде видалено. Підготовлені зміни й коміти збережуться. Цю дію неможливо скасувати.\n\n{{files}}",
+      "message_many": "Скасувати показані непідготовлені зміни в цих файлах? Зміни інших сесій у них теж буде скасовано. Нові файли буде видалено. Підготовлені зміни й коміти збережуться. Цю дію неможливо скасувати.\n\n{{files}}",
+      "message_other": "Скасувати показані непідготовлені зміни в цих файлах? Зміни інших сесій у них теж буде скасовано. Нові файли буде видалено. Підготовлені зміни й коміти збережуться. Цю дію неможливо скасувати.\n\n{{files}}",
+      "saveEditor": "Збережіть або закрийте редактор із незбереженими правками перед скасуванням змін.",
+      "stale": "Вибрані зміни застаріли. Оновіть список змін і перегляньте знову.",
+      "title_one": "Скасувати показані зміни?",
+      "title_few": "Скасувати показані зміни?",
+      "title_many": "Скасувати показані зміни?",
+      "title_other": "Скасувати показані зміни?",
+      "unsupported": "Ці зміни не можна скасувати тут. Двійкові файли, символічні посилання, підмодулі та назви файлів не в UTF-8 не підтримуються.",
+      "workingOnly": "Перейдіть до розділу «Робочі», щоб скасувати непідготовлені зміни."
+    },
+    "fileCount_one": "{{count}} файл",
+    "fileCount_few": "{{count}} файли",
+    "fileCount_many": "{{count}} файлів",
+    "fileCount_other": "{{count}} файла",
+    "heading": "Перегляд змін",
+    "loadErrorTitle": "Не вдалося завантажити зміни",
+    "newFileBadge": "НОВИЙ",
+    "noChanges": "Немає змін",
+    "noStagedChanges": "Немає підготовлених змін",
+    "openFile": "Відкрити файл",
+    "refreshAriaLabel": "Оновити зміни",
+    "sessionFilter": {
+      "description": "Показати файли, яких торкнулися виклики edit/write в цьому чаті. Зміни файлів можуть містити правки інших сесій. Правки з оболонки та від субагентів можуть бути відсутні. Вимкніть фільтр для перегляду всього проєкту. Надсилання завжди охоплює всю гілку.",
+      "label": "Файли, змінені в цій сесії",
+      "noMatches": "Немає змін для цієї сесії"
+    },
+    "stagedToggle": "Підготовлені",
+    "workingToggle": "Робочі",
+    "workingTreeClean": "Робоче дерево чисте"
+  },
+  "editorGuard": {
+    "discard": "Скасувати незбережені зміни?",
+    "discardButton": "Скасувати зміни",
+    "discardFile": "Скасувати незбережені зміни в {{fileName}}?",
+    "keepEditing": "Продовжити редагування",
+    "title": "Незбережені зміни"
+  },
+  "errors": {
+    "attachments": {
+      "notText": "Вкладення не є текстовим файлом або підтримуваним зображенням",
+      "pathNotPermitted": "Шлях вкладення не дозволений",
+      "tooLarge": "Вкладення завелике (макс. {{limit}} МБ)"
+    },
+    "council": {
+      "agentNotFound": "{{agent}} не знайдено. Установіть його або видаліть зі складу ради в налаштуваннях.",
+      "arbiterFailed": "Помилка арбітра",
+      "arbiterTimedOut": "Час очікування арбітра вичерпано",
+      "notEnoughMembers": "Для ради потрібно щонайменше {{min}} агентів. Установіть або ввімкніть Pi, Claude чи Codex або вимкніть раду.",
+      "planningDisabled": "Планування з радою вимкнено в налаштуваннях.",
+      "timeoutNotNumber": "Час очікування ради має бути скінченним числом",
+      "timeoutRange": "Час очікування ради має бути від {{min}} до {{max}} секунд",
+      "unknownConsensusMode": "Невідомий режим узгодження: {{mode}}",
+      "unknownError": "невідома помилка"
+    },
+    "fileService": {
+      "refusedRead": "Читання за межами активного проєкту заборонене",
+      "refusedWrite": "Запис за межами активного проєкту заборонений"
+    },
+    "fs": {
+      "blockedWrite": "Не вдалося записати «{{path}}» ({{code}}). У Windows запис зазвичай блокує контрольований доступ до папок (захист від програм-вимагачів). Дозвольте Pi Desktop у розділі «Безпека у Windows → Захист від вірусів і загроз → Захист від програм-вимагачів → Дозволити програмі контрольований доступ до папок» або перенесіть проєкт із папки «Документи»/«Робочий стіл» до незахищеної папки (наприклад, C:\\dev)."
+    },
+    "git": {
+      "branchExists": "Гілка «{{name}}» уже існує. Виберіть її в меню гілок для переходу",
+      "branchNameInvalid": "Неприпустима назва гілки: «{{name}}»",
+      "commandFailed": "Помилка {{command}}",
+      "commandFailedWithDetail": "Помилка {{command}}: {{detail}}",
+      "commitBeforePullRequest": "Створіть коміт змін робочого дерева перед створенням пул-реквесту",
+      "commitBeforePush": "Створіть коміт змін робочого дерева перед надсиланням",
+      "commitBeforeSwitch": "Створіть коміт або скасуйте зміни перед зміною гілки",
+      "commitMessageRequired": "Введіть повідомлення коміту",
+      "commitMessageTooLong": "Повідомлення коміту має містити не більше {{max}} символів",
+      "commitSelectionEmpty": "Не вибрано файли для коміту",
+      "commitSelectionOutsideWorkspace": "Файли для коміту мають бути в активному проєкті",
+      "detachedHeadCommit": "Не можна створити коміт за від’єднаного HEAD",
+      "detachedHeadPush": "Не можна надіслати зміни за від’єднаного HEAD",
+      "ignoredFilesBlockSwitch": "Перехід на {{branch}} перезапише або видалить ці локальні файли, які Git не показує як зміни. Перемістіть їх і повторіть перехід:\n{{files}}",
+      "localBranchRequired": "Виберіть наявну локальну гілку",
+      "namedBranchRequired": "Для пул-реквесту потрібна іменована гілка",
+      "newFileNotCommittable": "Не можна додати {{path}} до коміту: файл не є новим у вибраних змінах або ігнорується Git",
+      "noTrackedChanges": "У проєкті немає відстежуваних змін для коміту. Спочатку додайте нові файли до індексу, щоб включити їх.",
+      "operationInProgressCommit": "Не можна створити коміт під час операції Git {{operation}}",
+      "operationInProgressCreateBranch": "Не можна створити гілку під час операції Git {{operation}}",
+      "operationInProgressPush": "Не можна надіслати зміни під час операції Git {{operation}}",
+      "operationInProgressSwitch": "Не можна змінити гілку під час операції Git {{operation}}",
+      "pullRequestBaseMissing": "У віддаленому репозиторії немає базової гілки для пул-реквесту. Спочатку надішліть її або вкажіть базову гілку",
+      "pullRequestExists": "Для цієї гілки вже відкрито пул-реквест #{{number}}: {{url}}",
+      "pullRequestTitleRequired": "Введіть заголовок пул-реквесту",
+      "pushBeforePullRequest": "Надішліть гілку перед створенням пул-реквесту",
+      "pushUpstreamIsLocal": "Не можна надіслати гілку, у якої upstream указує на локальний репозиторій",
+      "stagedOutsideWorkspace": "В індексі є підготовлені файли за межами активного проєкту",
+      "subprocessTimedOut": "Час виконання {{command}} вичерпано",
+      "workingTreeClean": "Робоче дерево чисте"
+    },
+    "models": {
+      "duplicateModelId": "Провайдер «{{key}}»: повторюваний ID моделі «{{id}}»",
+      "fieldNotFiniteNumber": "Провайдер «{{key}}», модель «{{id}}»: {{field}} має бути скінченним числом",
+      "modelMissingId": "Провайдер «{{key}}»: у моделі немає ID",
+      "providerKeyEmpty": "Ключ провайдера не може бути порожнім"
+    },
+    "notes": {
+      "bodyRequired": "Введіть текст нотатки",
+      "notFound": "Нотатку не знайдено: {{id}}",
+      "titleRequired": "Введіть заголовок нотатки"
+    },
+    "packages": {
+      "invalidSpec": "Неприпустима специфікація пакета",
+      "listFailed": "Не вдалося прочитати список плагінів OMP: {{detail}}",
+      "missingBun": "Для встановлення й оновлення npm-плагінів OMP потрібен bun. Установіть bun із https://bun.sh і повторіть спробу.",
+      "pinnedOrNotFromNpm": "{{spec}} закріплено на версії або встановлено не з npm. Оновити його тут не можна."
+    },
+    "permissionRules": {
+      "fileTooLarge": "Файл правил завеликий (ліміт {{limit}} байтів)"
+    },
+    "pi": {
+      "commandFailedFallback": "Помилка команди",
+      "commandTimedOut": "Час виконання команди {{commandType}} вичерпано через {{timeoutMs}} мс",
+      "configuredPathMissing": "Указаний у {{settingsHint}} шлях до Pi не існує:\n  {{path}}\n\nУкажіть cli.js Pi (або папку встановлення) чи очистіть поле для автовизначення. Автовизначення теж нічого не знайшло.\n\n{{installHint}}",
+      "crashedBeforeReady": "Pi аварійно завершився до готовності.",
+      "cwdMissing": "Робоча папка Pi не існує або не є папкою:\n  {{cwd}}",
+      "exitedBeforeReady": "Pi завершився з кодом {{code}} до готовності.",
+      "failedToCreateManager": "Не вдалося створити менеджер Pi",
+      "installHint": "Установіть Pi командою:\n  {{npmCommand}}\nабо OMP командою:\n  {{bunCommand}}",
+      "nodeNotFound": "Виконуваний файл Node не знайдено за визначеним шляхом:\n  {{node}}\n\nДля запуску Pi через .js потрібен Node. Установіть Node із https://nodejs.org або задайте шлях до нього у змінній середовища NODE.",
+      "noManagerForWorkspace": "Немає менеджера Pi для проєкту",
+      "notFound": "Виконуваний файл Pi не знайдено. Перевірено PATH оболонки входу, глобальний префікс npm, менеджери версій Node (nvm, fnm, volta, asdf, mise, nodenv, n) і стандартні папки встановлення.\n\n{{installHint}}\n\nУже встановлено? Укажіть повний шлях до cli.js Pi у {{settingsHint}}.",
+      "processExited": "Процес Pi завершено",
+      "processKilled": "Процес Pi примусово завершено",
+      "processNotRunning": "Процес Pi не запущений",
+      "settingsHint": "Налаштування > Налаштування агента > Установлення агента",
+      "spawnError": "Помилка запуску: {{detail}}",
+      "startupTimeoutBusy": "Pi запущено, але він не став готовим за {{seconds}} с.\n\nPi працював і видавав вивід, але не відповів на перевірку готовності. Обробники запуску розширень виконуються до читання команд. Звернення до локального сервера моделей може затримати запуск на час завантаження моделі або обробки великого промпту. Перегляньте журнали рушія та сервера моделей і повторіть спробу.",
+      "startupTimeoutBusyWithStderr": "{{message}}\n\nВивід stderr Pi під час запуску:\n{{detail}}",
+      "startupTimeoutSilentNoOutput": "Pi нічого не вивів за {{seconds}} с.\n\nВивід не отримано. Знайдіть точну команду запуску в журналі застосунку та спробуйте виконати `pi --mode rpc` у терміналі.",
+      "startupTimeoutSilentWithStderr": "Pi нічого не вивів за {{seconds}} с.\n\nВивід stderr Pi під час запуску:\n{{detail}}"
+    },
+    "session": {
+      "alreadyAttached": "Файл сесії вже підключений до запущеного процесу",
+      "attachedToDifferentWorkspace": "Сесія вже підключена до процесу іншого проєкту",
+      "ompNoClone": "Рушій OMP не підтримує клонування сесії",
+      "pathMustExist": "{{field}} має вказувати на наявний файл сесії Pi",
+      "projectMismatch": "Проєкт сесії не збігається з активним проєктом",
+      "runtimeNotFound": "Процес сесії не знайдено: {{runtimeId}}"
+    },
+    "system": {
+      "externalUrlHttpOnly": "Дозволені лише URL http(s)"
+    },
+    "theme": {
+      "downloadFailed": "Не вдалося завантажити тему: {{status}}",
+      "exportWriteFailed": "Не вдалося записати тему в {{path}}",
+      "fileTooLarge": "Файл теми завеликий (ліміт {{limit}} байтів)",
+      "galleryIndexDownloadFailed": "Не вдалося завантажити індекс галереї: {{status}}",
+      "galleryIndexNotArray": "Індекс галереї не є масивом JSON",
+      "hostBlockedIPv4": "Хост URL теми «{{host}}» заблоковано (приватна/зарезервована IPv4-адреса)",
+      "hostBlockedIPv6": "Хост URL теми «{{host}}» заблоковано (приватна/зарезервована IPv6-адреса)",
+      "hostBlockedLocal": "Хост URL теми «{{host}}» заблоковано (локальне/петльове ім’я хоста)",
+      "kindInvalid": "Поле kind має бути \"dark\" або \"light\"",
+      "missingKey": "У {{label}} немає «{{key}}»",
+      "mustBeJsonObject": "Тема має бути об’єктом JSON",
+      "mustBeObject": "{{label}} має бути об’єктом",
+      "mustUseHttps": "URL теми має використовувати https, отримано {{protocol}}",
+      "notValidColor": "{{label}}.{{key}} — неприпустимий колір",
+      "redirectMissingLocation": "У перенаправленні URL теми ({{status}}) немає заголовка location",
+      "screenshotDownloadFailed": "Не вдалося завантажити знімок екрана: {{status}}",
+      "screenshotPathNotAllowed": "URL знімка екрана не належить до дозволених шляхів галереї",
+      "screenshotTooLarge": "Знімок екрана завеликий (ліміт {{limit}} байтів)",
+      "screenshotTypeMissing": "Формат знімка екрана не дозволений (content-type: відсутній)",
+      "screenshotTypeNotAllowed": "Формат знімка екрана не дозволений (content-type: {{contentType}})",
+      "textFieldInvalid": "{{label}} має бути непорожнім рядком завдовжки не більше {{max}} символів",
+      "tooManyRedirects": "Кількість перенаправлень URL теми перевищила {{max}}",
+      "unknownKey": "У {{label}} невідомий ключ «{{key}}»",
+      "unsupportedSchema": "Непідтримувана $schema (очікується {{expected}})"
+    },
+    "typesafe": {
+      "skillChecksumMismatch": "Контрольна сума {{file}} не збіглася з очікуваною. Pi Desktop не встановив файл.",
+      "skillDownloadFailed": "Не вдалося завантажити {{file}} (HTTP {{status}}).",
+      "skillInstalledElsewhere": "У {{directory}} уже є навичка TypeSafe, установлена не через Pi Desktop. Pi Desktop не змінював її."
+    },
+    "workflow": {
+      "runNotFound": "Запуск процесу не знайдено"
+    },
+    "workspace": {
+      "folderMissing": "Папка не існує: {{path}}",
+      "managedWorktreeCannotChangeFolder": "Не можна змінити папку вкладки керованого робочого дерева. Закрийте вкладку та створіть нову",
+      "noneActive": "Немає активного проєкту",
+      "noSourceForNewTab": "Немає вихідного проєкту для нової вкладки",
+      "notFound": "Проєкт не знайдено: {{workspaceId}}",
+      "notFoundPlain": "Проєкт не знайдено",
+      "pullRequestNotCheckedOut": "Завдання посилається на пул-реквест GitHub, який не відкрито в локальному робочому дереві",
+      "repoSetCannotChangeFolder": "Вкладка пов’язаного завдання зберігає папки репозиторіїв. Для інших папок створіть нове пов’язане завдання",
+      "sourceFolderMissing": "Вихідної папки не існує: {{path}}"
+    }
+  },
+  "files": {
+    "preview": {
+      "closeTitle": "Закрити редактор",
+      "modifiedBadge": "змінено",
+      "previewViewTitle": "Попередній перегляд",
+      "readFailed": "Не вдалося прочитати файл",
+      "revertTitle": "Скасувати зміни",
+      "savedBadge": "збережено",
+      "saveFailed": "Не вдалося зберегти файл",
+      "saveTitle": "Зберегти файл",
+      "scriptsDisabledNotice": "У попередньому перегляді цього недовіреного проєкту скрипти вимкнено.",
+      "sourceViewTitle": "Вихідний код"
+    },
+    "search": {
+      "contentPlaceholder": "Пошук у вмісті файлів…",
+      "contentToggle": "ВМІСТ",
+      "escToClose": "Esc — закрити",
+      "filesToggle": "ФАЙЛИ",
+      "lineSnippet": "Рядок {{line}}: {{snippet}}",
+      "namePlaceholder": "Пошук файлів за назвою…",
+      "noResults": "Нічого не знайдено",
+      "resultCount_one": "Результатів: {{count}}",
+      "resultCount_few": "Результатів: {{count}}",
+      "resultCount_many": "Результатів: {{count}}",
+      "resultCount_other": "Результатів: {{count}}",
+      "typeToSearch": "Введіть текст для пошуку…"
+    },
+    "tree": {
+      "folderMissingHint": "Можливо, папку переміщено або видалено. Клацніть проєкт правою кнопкою в бічній панелі та виберіть «Змінити папку…», щоб указати новий шлях.",
+      "folderNotFound": "Папку не знайдено",
+      "noWorkspaceHint": "Виберіть папку проєкту в перемикачі проєктів на бічній панелі.",
+      "noWorkspaceOpen": "Немає відкритого проєкту"
+    }
+  },
+  "home": {
+    "actions": {
+      "linkedTask": {
+        "description": "Одне завдання в кількох репозиторіях",
+        "title": "Пов’язане завдання"
+      },
+      "newSession": {
+        "inWorkspace": "У {{project}}",
+        "pickFolderFirst": "Спочатку виберіть папку"
+      },
+      "newTask": {
+        "description": "Почати роботу в новій сесії {{agent}}",
+        "title": "Нове завдання"
+      },
+      "openFolder": {
+        "description": "Вибрати папку проєкту для відкриття",
+        "title": "Відкрити папку"
+      }
+    },
+    "changedFiles": {
+      "moreOpenDiff_one": "Ще +{{count}} — відкрити зміни",
+      "moreOpenDiff_few": "Ще +{{count}} — відкрити зміни",
+      "moreOpenDiff_many": "Ще +{{count}} — відкрити зміни",
+      "moreOpenDiff_other": "Ще +{{count}} — відкрити зміни",
+      "noWorkspace": "Проєкт не вибрано."
+    },
+    "errorBanner": {
+      "checkInstalled": "Переконайтеся, що {{agent}} встановлений і шлях до нього вказаний правильно.",
+      "couldntStart": "Не вдалося запустити {{agent}}"
+    },
+    "recentSessions": {
+      "empty": "Поки немає сесій.",
+      "title": "Нещодавні сесії"
+    },
+    "recentWorkspaces": {
+      "empty": "Поки немає проєктів.",
+      "last": "останній",
+      "title": "Нещодавні проєкти"
+    },
+    "subtitle": "Відкрийте проєкт або продовжте роботу."
+  },
+  "imageViewer": {
+    "closeTitle": "Закрити зображення",
+    "readFailed": "Не вдалося прочитати зображення",
+    "unsupportedFile": "Формат зображення не підтримується"
+  },
+  "language": {
+    "nativeName": "Українська"
+  },
+  "menu": {
+    "actualSize": "Початковий розмір",
+    "close": "Закрити вікно",
+    "edit": "Редагування",
+    "file": "Файл",
+    "forceReload": "Примусово перезавантажити",
+    "minimize": "Згорнути",
+    "newWorkspace": "Новий проєкт…",
+    "openProject": "Відкрити проєкт…",
+    "redo": "Повторити",
+    "reload": "Перезавантажити",
+    "toggleDevTools": "Інструменти розробника",
+    "toggleFullScreen": "Повноекранний режим",
+    "undo": "Скасувати",
+    "view": "Вигляд",
+    "window": "Вікно",
+    "zoom": "Масштаб",
+    "zoomIn": "Збільшити",
+    "zoomOut": "Зменшити"
+  },
+  "missionControl": {
+    "controlUnavailable": "керування недоступне",
+    "idle": "{{agent}} простоює",
+    "liveSessions": "Активні сесії",
+    "needsAttention_one": "Потребують уваги: {{count}}",
+    "needsAttention_few": "Потребують уваги: {{count}}",
+    "needsAttention_many": "Потребують уваги: {{count}}",
+    "needsAttention_other": "Потребують уваги: {{count}}",
+    "newTask": "Нове завдання",
+    "noLiveRuntimes": "Поки немає запущених сесій. Запустіть завдання, щоб Pi працював у фоні.",
+    "noWorkflowRuns": "Поки немає запусків процесів.",
+    "open": "Відкрити",
+    "openAllWorkflows": "Відкрити всі процеси",
+    "proceed": "Продовжити",
+    "proceedWithWorkflow": "Продовжити цей процес",
+    "refreshWorkflowRuns": "Оновити запуски процесів",
+    "resumeFailed": "Не вдалося продовжити {{workflow}}: {{reason}}",
+    "resumeFailedGeneric": "Не вдалося продовжити {{workflow}}. Відкрийте запуск для подробиць.",
+    "retryWithWorkflow": "Повторити цей процес",
+    "review": "Перевірити",
+    "runtimeState": {
+      "completed": "завершено",
+      "failed": "помилка",
+      "idle": "простоює",
+      "needsApproval": "потрібне схвалення",
+      "stopped": "зупинено",
+      "working": "у роботі"
+    },
+    "startingSession": "Запуск сесії",
+    "subtitle": "Фонові сесії та запуски процесів усіх проєктів.",
+    "title": "Центр керування",
+    "unknownProject": "Невідомий проєкт",
+    "workflowActivity": "Активність процесів",
+    "workflowStatus": {
+      "aborted": "перервано",
+      "completed": "завершено",
+      "failed": "помилка",
+      "paused": "призупинено",
+      "pending": "очікування",
+      "running": "у роботі",
+      "unknown": "невідомо"
+    }
+  },
+  "models": {
+    "readFailure": {
+      "invalidJson": "Некоректний JSON у {{file}}: {{detail}}",
+      "invalidJsonNoDetail": "Некоректний JSON у {{file}}",
+      "invalidYaml": "Некоректний YAML у {{file}}: {{detail}}",
+      "invalidYamlNoDetail": "Некоректний YAML у {{file}}",
+      "missingProviders": "Некоректний файл моделей {{file}} (немає \"providers\")",
+      "unreadable": "Не вдалося прочитати {{file}}: {{detail}}"
+    },
+    "selector": {
+      "current": "Поточна",
+      "currentModelTitle": "{{model}}\n{{hint}}",
+      "loadFailed": "Не вдалося завантажити моделі",
+      "noModelsMatch": "Відповідних моделей немає",
+      "searchPlaceholder": "Пошук моделей…",
+      "selectModel": "Вибрати модель",
+      "selectModelCycleHint": "Вибрати модель (Ctrl+P — перебір, коли {{agent}} запущений)",
+      "selectModelWithShortcut": "Вибрати модель ({{shortcut}} або Ctrl+P — перебір, коли {{agent}} запущений)"
+    }
+  },
+  "notes": {
+    "backButton": "Назад",
+    "backTitle": "До нотаток",
+    "deleteNoteTitle": "Видалити нотатку",
+    "editNoteTitle": "Змінити нотатку",
+    "empty": {
+      "noMatch": "За запитом нічого не знайдено.",
+      "noneYet": "Поки немає нотаток. Створіть нотатку для повторного використання промптів."
+    },
+    "form": {
+      "bodyLabel": "Промпт / команда",
+      "bodyPlaceholder": "Текст промпту або команди для повторного використання…",
+      "editHeading": "Змінити нотатку",
+      "saveFailed": "Не вдалося зберегти нотатку",
+      "saving": "Збереження…",
+      "scopeLabel": "Область дії",
+      "tagsLabel": "Теги",
+      "tagsPlaceholder": "через пробіл або кому",
+      "thisWorkspaceFallback": "Цей проєкт",
+      "titleLabel": "Заголовок",
+      "titlePlaceholder": "Наприклад, рефакторинг із тестами"
+    },
+    "insertButton": "Вставити",
+    "insertIntoChatTitle": "Вставити в поле повідомлення",
+    "newNoteButton": "Нова нотатка",
+    "picker": {
+      "createNote": "Створити нотатку",
+      "navigationHint": "↑↓ навігація · Enter вставити · Esc закрити",
+      "noMatchingNotes": "Відповідних нотаток немає",
+      "noSavedNotes": "Поки немає збережених нотаток.",
+      "notComposeBox": "Тут вибирають збережені нотатки для вставлення, а не пишуть повідомлення.",
+      "searchPlaceholder": "Пошук нотаток для вставлення…"
+    },
+    "scope": {
+      "other": "Інший проєкт",
+      "workspaceFallback": "Проєкт"
+    },
+    "searchPlaceholder": "Пошук у заголовку, тексті або тегах…",
+    "title": "Нотатки",
+    "viewNoteTitle": "Переглянути нотатку"
+  },
+  "notifications": {
+    "completed": "Pi завершив роботу.",
+    "failed": "Pi зупинився з помилкою.",
+    "needs-approval": "Pi чекає на ваше схвалення.",
+    "withSession": "{{body}} Натисніть, щоб відкрити завершену сесію."
+  },
+  "packages": {
+    "catalog": {
+      "emptyHint": "Перегляньте каталог на <link>pi.dev/packages</link>",
+      "emptyTitle": "Пакети не знайдено",
+      "resultsCap": "Показано {{shown}} із {{total}} — уточніть запит.",
+      "searchPlaceholder": "Пошук пакетів…",
+      "viewRepo": "Відкрити репозиторій"
+    },
+    "installBar": {
+      "placeholder": "npm:package-name або git:github.com/user/repo"
+    },
+    "installed": {
+      "checkingUpdates": "Пошук оновлень…",
+      "checkUpdatesButton": "Перевірити оновлення",
+      "emptyHint": "Виберіть пакет у каталозі або встановіть через поле вище",
+      "emptyTitle": "Немає встановлених пакетів",
+      "removeButton": "Видалити пакет",
+      "updateAllButton": "Оновити все",
+      "updatePackageAria": "Оновити {{name}}",
+      "updatesAvailable_one": "Доступне {{count}} оновлення",
+      "updatesAvailable_few": "Доступні {{count}} оновлення",
+      "updatesAvailable_many": "Доступно {{count}} оновлень",
+      "updatesAvailable_other": "Доступно {{count}} оновлення",
+      "updateToVersion": "Оновити до v{{version}}",
+      "versionUpdateArrow": "v{{from}} → v{{to}}"
+    },
+    "tabs": {
+      "catalog": "Каталог",
+      "installed": "Установлені"
+    },
+    "title": "Пакети й навички",
+    "type": {
+      "extension": "розширення",
+      "package": "пакет",
+      "prompt": "промпт",
+      "skill": "навичка",
+      "theme": "тема"
+    },
+    "viewOnNpm": "Відкрити на npm"
+  },
+  "palette": {
+    "navigationHint": "↑↓ навігація · Enter/Tab виконати · / лише команди · Esc закрити",
+    "noMatches": "Немає збігів",
+    "searchPlaceholder": "Пошук команд, проєктів, сесій, файлів…",
+    "sections": {
+      "files": "Файли",
+      "sessions": "Сесії",
+      "workspaces": "Проєкти"
+    }
+  },
+  "permissionMode": {
+    "ask-commands": {
+      "description": "{{agent}} запитуватиме дозвіл на команди оболонки.",
+      "label": "Запитувати перед командами",
+      "shortLabel": "Запит команд"
+    },
+    "ask-edits": {
+      "description": "{{agent}} запитуватиме дозвіл на редагування файлів і команди оболонки, здатні змінювати файли.",
+      "label": "Запитувати перед правками",
+      "shortLabel": "Запит правок"
+    },
+    "plan-readonly": {
+      "description": "Доступні лише інструменти читання, пошуку та перегляду списків. Редагування файлів і команди оболонки заблоковані.",
+      "label": "План / Лише читання",
+      "shortLabel": "Лише читання"
+    },
+    "trusted": {
+      "description": "Усі інструменти {{agent}} доступні для завдань, яким ви довіряєте.",
+      "label": "Довірений",
+      "shortLabel": "Довірений"
+    }
+  },
+  "permissionRules": {
+    "action": {
+      "allow": "Дозволити",
+      "deny": "Заборонити"
+    },
+    "addRuleButton": "Додати правило",
+    "copyFromGlobalButton": "Копіювати глобальні",
+    "copyFromGlobalTitle": "Скопіювати глобальні правила до цього проєкту (замінить список нижче до збереження)",
+    "exportTitle": "Експортувати список нижче у файл JSON",
+    "importTitle": "Імпортувати правила з JSON (замінить список нижче до збереження)",
+    "legend": "Заборона завжди має пріоритет над дозволом, далі діє вибраний режим. * — знак підстановки.",
+    "loadErrorMessage": "Файл збережених правил некоректний та ігнорується: {{error}}",
+    "noRules": "Правил поки немає — усе визначає вибраний режим.",
+    "patternPlaceholder": "шаблон, наприклад npm test* (порожньо = будь-яке введення)",
+    "removeRuleAria": "Видалити правило {{index}}",
+    "removeRuleTitle": "Видалити правило",
+    "removeWorkspaceRulesButton": "Видалити правила проєкту",
+    "removeWorkspaceRulesTitle": "Видалити .pi-desktop/permission-rules.json проєкту та повернути глобальні правила",
+    "revokeTrustButton": "Відкликати довіру",
+    "rowActionAria": "Дія правила {{index}}",
+    "rowPatternAria": "Шаблон правила {{index}}",
+    "rowToolAria": "Інструмент правила {{index}}",
+    "toolPlaceholder": "інструмент (* = будь-який)",
+    "toolRequiredError": "Правило {{index}}: укажіть інструмент (* — будь-який)",
+    "trustedMessage": "Довірений проєкт — дозвільні правила діють, скрипти в HTML-перегляді ввімкнені.",
+    "trustWorkspaceButton": "Довіряти проєкту",
+    "untrustedMessage": "HTML-перегляд проєкту статичний (скрипти вимкнені). Надайте довіру, щоб увімкнути інтерактивний перегляд і дозвільні правила.",
+    "untrustedWithAllowRulesMessage": "Поки проєкт не має довіри, його дозвільні правила вимкнені, а HTML-перегляд статичний. Заборонні правила діють завжди. Довіряйте лише проєктам із надійних джерел.",
+    "workspaceOverrideNotice": "Проєкт має власний файл правил (.pi-desktop/permission-rules.json). Його заборони доповнюють глобальні правила; дозволи діють лише за довіри до проєкту — див. вкладку «Цей проєкт»."
+  },
+  "permissions": {
+    "prompt": {
+      "body": "{{agent}} хоче запустити інструмент {{tool}}.",
+      "command": "Команда:\n{{command}}",
+      "target": "Ціль: {{path}}",
+      "title": "Дозволити {{tool}}?"
+    }
+  },
+  "repoSets": {
+    "bar": {
+      "addRepository": "Додати репозиторій",
+      "addRepositoryTitle": "Додати репозиторій до завдання",
+      "ariaLabel": "Репозиторії завдання",
+      "changed_one": "{{count}} зміна",
+      "changed_few": "{{count}} зміни",
+      "changed_many": "{{count}} змін",
+      "changed_other": "{{count}} зміни",
+      "clean": "чисто",
+      "main": "основний",
+      "missing": "папку не знайдено",
+      "openPullRequest": "Відкрити пул-реквест",
+      "openPullRequestAriaLabel": "Відкрити пул-реквест {{name}}",
+      "shipAll": "Надіслати все",
+      "shipAllTitle": "Створити коміт, надіслати та відкрити пов’язаний пул-реквест у кожному репозиторії зі змінами",
+      "sourceWasDirty": "У вихідній копії були незакомічені зміни. Це робоче дерево починається з останнього коміту й не містить їх."
+    },
+    "dialog": {
+      "closeAriaLabel": "Закрити"
+    },
+    "edit": {
+      "addRepository": "Додати репозиторій",
+      "back": "Назад",
+      "delete": "Видалити набір",
+      "deleteConfirmMessage": "Видалити «{{name}}»? Відкриті пов’язані завдання продовжать працювати, репозиторії не зміняться.",
+      "deleteConfirmTitle": "Видалити набір репозиторіїв?",
+      "editTitle": "Змінити набір репозиторіїв",
+      "hint": "Додайте щонайменше два Git-репозиторії та виберіть основний.",
+      "mainLabel": "Основний",
+      "mainTitle": "Агент запускається в основному репозиторії та дотримується його правил проєкту.",
+      "nameLabel": "Назва набору",
+      "newTitle": "Новий набір репозиторіїв",
+      "pickFolderTitle": "Виберіть Git-репозиторій",
+      "removeRepositoryAriaLabel": "Видалити {{name}}",
+      "repositoriesLabel": "Репозиторії",
+      "repositoryNameAriaLabel": "Назва репозиторію"
+    },
+    "errors": {
+      "alreadyInTask": "Цей репозиторій уже є в завданні: {{path}}",
+      "checkoutFailed": "Не вдалося підготувати «{{name}}» для завдання. Репозиторії не змінено. {{detail}}",
+      "duplicateFolder": "Папку додано до набору двічі: {{path}}",
+      "duplicateName": "Два репозиторії мають назву «{{name}}». Задайте унікальні назви.",
+      "folderMissing": "Папки не існує: {{path}}",
+      "nameRequired": "Назвіть набір.",
+      "notFound": "Цей набір репозиторіїв більше не існує.",
+      "notGitRepository": "Папка не належить до Git-репозиторію: {{path}}",
+      "notLinkedTask": "Ця вкладка не є пов’язаним завданням.",
+      "oneMainRepository": "Виберіть один основний репозиторій.",
+      "repositoryNameRequired": "Назвіть кожен репозиторій.",
+      "repositoryNotInTask": "«{{name}}» не належить до цього завдання.",
+      "sameRepository": "«{{name}}» — друга робоча копія репозиторію, який уже є в наборі.",
+      "tooFewRepositories": "Додайте не менше {{minimum}} репозиторіїв."
+    },
+    "mode": {
+      "inPlace": {
+        "description": "Агент змінює ваші робочі копії в їхніх поточних гілках.",
+        "label": "На місці",
+        "short": "На місці"
+      },
+      "isolated": {
+        "description": "Нове робоче дерево в кожному репозиторії, усі в одній новій гілці. Ваші робочі копії не змінюються.",
+        "label": "Ізольовано (рекомендовано)",
+        "short": "Ізольовано"
+      }
+    },
+    "ship": {
+      "errors": {
+        "agentWorking": "Агент ще працює. Надішліть після його зупинки.",
+        "onBaseBranch": "Зміни в базовій гілці {{branch}}. Спочатку створіть іншу: «Надіслати все» відкриває пул-реквести й не надсилає до базової гілки."
+      },
+      "intro": "У кожному репозиторії зі змінами буде створено коміт, виконано надсилання та відкрито пул-реквест. Пул-реквести посилатимуться один на одного.",
+      "outcome": {
+        "failed": "Помилка на етапі «{{step}}»",
+        "missing": "Папку не знайдено",
+        "shipped": "Надіслано",
+        "unchanged": "Немає чого надсилати"
+      },
+      "repositoriesLabel": "Репозиторії",
+      "resultsLabel": "Результати за репозиторіями",
+      "retry": "Повторити невдалі",
+      "shipping": "Надсилання…",
+      "step": {
+        "commit": "коміт",
+        "link": "зв’язування",
+        "pullRequest": "пул-реквест",
+        "push": "надсилання"
+      },
+      "submit": "Надіслати все",
+      "title": "Надіслати всі репозиторії"
+    },
+    "start": {
+      "editSet": "Змінити",
+      "editSetAriaLabel": "Змінити {{name}}",
+      "empty": "Поки немає наборів репозиторіїв. Створіть перший.",
+      "modeLabel": "Де працює агент",
+      "nameLabel": "Назва завдання",
+      "namePlaceholder": "Якщо порожньо, використовується назва набору",
+      "newSet": "Новий набір репозиторіїв",
+      "repositoryCount_one": "{{count}} репозиторій",
+      "repositoryCount_few": "{{count}} репозиторії",
+      "repositoryCount_many": "{{count}} репозиторіїв",
+      "repositoryCount_other": "{{count}} репозиторію",
+      "setLabel": "Набір репозиторіїв",
+      "starting": "Підготовка репозиторіїв…",
+      "submit": "Запустити завдання",
+      "subtitle": "Одне завдання в кількох Git-репозиторіях із пов’язаними пул-реквестами.",
+      "title": "Нове пов’язане завдання"
+    }
+  },
+  "review": {
+    "gitStatusUnavailable": "Статус Git недоступний",
+    "heading": "Перевірка",
+    "openDiffButton": "Відкрити зміни",
+    "openDiffHint": "Переглянути зміни робочого дерева.",
+    "pendingApprovals": {
+      "none": "Немає запитів на схвалення.",
+      "queued_one": "Для активної сесії в черзі {{count}} елемент.",
+      "queued_few": "Для активної сесії в черзі {{count}} елементи.",
+      "queued_many": "Для активної сесії в черзі {{count}} елементів.",
+      "queued_other": "Для активної сесії в черзі {{count}} елемента."
+    },
+    "pendingApprovalsHeading": "Очікують схвалення",
+    "permissionsHeading": "Дозволи",
+    "sessionStatus": {
+      "idle": "{{agent}} бездіє в активній сесії.",
+      "working": "{{agent}} працює в активній сесії."
+    },
+    "sessionStatusHeading": "Статус сесії",
+    "subtitle": "Керуйте діями {{agent}} перед внесенням змін."
+  },
+  "sessions": {
+    "activeBadge": "активна",
+    "archivedBadge": "в архіві",
+    "archivedToggle": {
+      "hideTitle": "Приховати архівні сесії",
+      "hidingNone": "Нічого не приховано",
+      "showTitle": "Показати архівні сесії"
+    },
+    "currentProjectBadge": "поточний",
+    "currentWorkspaceLabel": "Поточний проєкт:",
+    "deleteConfirm": {
+      "message": "Видалити цю сесію? Якщо доступний <code>trash</code>, файл потрапить до кошика, інакше його буде видалено назавжди."
+    },
+    "deleteEllipsis": "Видалити…",
+    "empty": {
+      "createFirst": "Створіть першу сесію",
+      "noMatch": "Відповідних сесій немає",
+      "noneInProject": "У цьому проєкті поки немає сесій",
+      "noneYet": "Поки немає сесій",
+      "openProjectToSee": "Відкрийте проєкт, щоб побачити його сесії"
+    },
+    "engineSession": "Сесія {{engine}}",
+    "header": {
+      "projectCount_one": "{{count}} проєкт",
+      "projectCount_few": "{{count}} проєкти",
+      "projectCount_many": "{{count}} проєктів",
+      "projectCount_other": "{{count}} проєкту",
+      "sessionCount_one": "{{count}} сесія",
+      "sessionCount_few": "{{count}} сесії",
+      "sessionCount_many": "{{count}} сесій",
+      "sessionCount_other": "{{count}} сесії"
+    },
+    "runtime": {
+      "completed": "{{agent}} завершив роботу",
+      "failed": "{{agent}} зупинився з помилкою",
+      "needsApproval": "{{agent}} чекає на схвалення",
+      "working": "{{agent}} працює"
+    },
+    "scopeToggle": {
+      "allSessions": "Усі сесії",
+      "currentOnly": "Лише поточний",
+      "showCurrentProjectOnly": "Показати сесії лише поточного проєкту",
+      "showEveryProject": "Показати сесії всіх проєктів"
+    },
+    "searchPlaceholder": "Пошук сесій або проєктів…",
+    "sessionActions": {
+      "ariaLabel": "Дії із сесією",
+      "title": "Дії із сесією (або права кнопка миші на рядку)"
+    },
+    "tags": {
+      "add": "Додати",
+      "addPlaceholder": "Додати тег…",
+      "addTag": "Додати тег",
+      "autoTagHint": "Тег задано за контекстом чату — додайте власний, щоб замінити його",
+      "removeAutoTag": "Видалити автоматичний тег {{tag}}",
+      "removeTag": "Видалити тег {{tag}}"
+    },
+    "time": {
+      "days_one": "{{count}} дн. тому",
+      "days_few": "{{count}} дн. тому",
+      "days_many": "{{count}} дн. тому",
+      "days_other": "{{count}} дн. тому",
+      "hours_one": "{{count}} год. тому",
+      "hours_few": "{{count}} год. тому",
+      "hours_many": "{{count}} год. тому",
+      "hours_other": "{{count}} год. тому",
+      "minutes_one": "{{count}} хв. тому",
+      "minutes_few": "{{count}} хв. тому",
+      "minutes_many": "{{count}} хв. тому",
+      "minutes_other": "{{count}} хв. тому"
+    },
+    "title": "Сесії",
+    "unknownProject": "Невідомий"
+  },
+  "settings": {
+    "actions": {
+      "reset": "Скинути налаштування",
+      "save": "Зберегти налаштування",
+      "saved": "Збережено!"
+    },
+    "agentInstallation": {
+      "appliesToNewSessions": "Зміна діє для нових сесій. Відкриті сесії збережуть свій рушій.",
+      "autoDetectOption": "Автовизначення (спочатку Pi, потім OMP)",
+      "chooseExecutableTitle": "Вибрати виконуваний файл або папку встановлення",
+      "customPathOption": "Власний шлях…",
+      "description": "Автоматичне визначення Pi та OMP, вибір установленого рушія або власний шлях до виконуваного файлу.",
+      "detectedCount_one": "Знайдено {{count}} установлений рушій",
+      "detectedCount_few": "Знайдено {{count}} установлені рушії",
+      "detectedCount_many": "Знайдено {{count}} установлених рушіїв",
+      "detectedCount_other": "Знайдено {{count}} установленого рушія",
+      "engineAriaLabel": "Рушій агента",
+      "engineAutoOption": "Авто",
+      "installedOption": "{{engine}} — {{path}}",
+      "label": "Установлення агента",
+      "noneDetected": "Установлені Pi або OMP поки не знайдені",
+      "ompNotFoundOption": "OMP (не знайдено)",
+      "pathPlaceholder": "Шлях до виконуваного файлу, cli.js або папки встановлення",
+      "rescanTitle": "Повторити пошук агентів",
+      "scanningStatus": "Пошук у стандартних папках установлення та PATH…",
+      "selectDialogTitle": "Виберіть файл або папку агента"
+    },
+    "autoScroll": {
+      "description": "Автоматично прокручувати до нових повідомлень",
+      "label": "Автопрокручування"
+    },
+    "chatWidth": {
+      "description": "Максимальна ширина повідомлень і поля введення",
+      "fullOption": "На всю ширину",
+      "label": "Ширина чату",
+      "normalOption": "Звичайна"
+    },
+    "codeEditorFontSize": {
+      "description": "Розмір шрифту редактора коду та перегляду файлів",
+      "label": "Розмір шрифту коду"
+    },
+    "consensusMode": {
+      "arbiterOption": "Об’єднання арбітром (швидко)",
+      "debateOption": "Один раунд обговорення (повільніше, вартість ~×2)",
+      "description": "Як учасники ради досягають згоди",
+      "label": "Режим узгодження"
+    },
+    "councilEnabled": {
+      "confirmButton": "Увімкнути",
+      "confirmMessage": "Під час кожного запуску, крім {{engine}}, запускаються Claude та Codex. Це може значно збільшити витрати токенів, кредитів і коштів на API. Умикайте, лише якщо готові до додаткових витрат.",
+      "confirmTitle": "Увімкнути планування з радою?",
+      "description": "Запускає Claude/Codex разом із Pi для планування завдань. Збільшує витрати токенів, кредитів і коштів на API.",
+      "label": "Планування з радою"
+    },
+    "councilMembers": {
+      "description": "Які агенти беруть участь у плануванні з радою",
+      "label": "Учасники",
+      "notDetected": "(не знайдено)"
+    },
+    "councilTimeout": {
+      "description": "Скільки чекати кожного агента ({{min}}–{{max}})",
+      "label": "Час очікування учасника (с)"
+    },
+    "customTheme": {
+      "createButton": "Створити тему",
+      "description": "Створити копію поточної теми або змінити власну",
+      "editButton": "Змінити тему",
+      "label": "Власна тема"
+    },
+    "darkTheme": {
+      "description": "Використовується в темному режимі системи",
+      "label": "Темна тема"
+    },
+    "desktopNotifications": {
+      "description": "Сповіщати про завершення Pi, помилку або запит схвалення в іншому проєкті",
+      "label": "Системні сповіщення"
+    },
+    "language": {
+      "description": "Мова меню, кнопок і повідомлень",
+      "label": "Мова",
+      "labelWithEnglish": "{{label}} ({{english}})",
+      "optionLabel": "{{nativeName}} ({{name}})",
+      "system": "Системна ({{language}})"
+    },
+    "lightTheme": {
+      "description": "Використовується у світлому режимі системи",
+      "label": "Світла тема"
+    },
+    "minimizeToTrayOnClose": {
+      "description": "Після закриття вікна залишати Pi Desktop у системному треї (Windows і Linux)",
+      "label": "Згортати до трея після закриття"
+    },
+    "openToHomeOnLaunch": {
+      "description": "Увімкнено: головний екран зі статистикою, нещодавніми проєктами й вибором папки. Вимкнено: порожній чат із полем введення та вибором проєкту.",
+      "label": "Головний екран під час запуску"
+    },
+    "permissionMode": {
+      "description": "Типовий режим безпеки дій Pi",
+      "label": "Режим дозволів"
+    },
+    "permissionRules": {
+      "description": "Окремі правила інструментів для вибраного режиму",
+      "exportFailed": "Помилка експорту",
+      "importFailed": "Помилка імпорту",
+      "label": "Правила дозволів",
+      "removeWorkspaceConfirmMessage": "Видалити .pi-desktop/permission-rules.json цього проєкту? Знову діятимуть глобальні правила.",
+      "removeWorkspaceConfirmTitle": "Видалити правила проєкту",
+      "saveError_global": "Налаштування збережено, але глобальні правила не збережено: {{error}}",
+      "saveError_workspace": "Налаштування збережено, але правила проєкту не збережено: {{error}}",
+      "scopeTabListAriaLabel": "Область дії правил",
+      "workspaceScopeTab": "Цей проєкт"
+    },
+    "resumeLastSession": {
+      "description": "Під час відкриття проєкту продовжувати останню сесію замість створення нової",
+      "label": "Продовжувати останню сесію"
+    },
+    "runOnStartup": {
+      "description": "Запускати Pi Desktop під час входу в систему (діє у встановлених збірках)",
+      "label": "Запускати під час входу"
+    },
+    "sections": {
+      "agentConfiguration": "Налаштування агента",
+      "appearance": "Оформлення",
+      "behavior": "Поведінка",
+      "customModels": "Власні моделі",
+      "multiAgentCouncilPlanning": "Планування з радою агентів",
+      "typesafe": "TypeSafe Jev",
+      "voiceDictation": "Голосове диктування"
+    },
+    "shortcuts": {
+      "actionWithShortcut": "{{action}} ({{shortcut}})",
+      "commandPalette": "Палітра команд",
+      "commitPush": "Перевірка / Коміт і надсилання",
+      "description": "Натисніть сполучення й задайте нове з Cmd або Ctrl. Зміни діють одразу; збереження залишить їх після перезапуску. Навігація сесіями перебирає відкриті сесії поточного проєкту. Сполучення системного меню та редактора не змінюються. Escape скасовує запис. Диктування з будь-якого застосунку працює поверх інших вікон; його сполучення застосовується після збереження.",
+      "disable": "Вимкнути",
+      "disableAction": "Вимкнути сполучення для «{{action}}»",
+      "disabled": "Вимкнено",
+      "duplicate": "«{{action}}» і «{{other}}» використовують одне сполучення. Виберіть інше.",
+      "globalDictation": "Диктування з будь-якого застосунку: натисніть для початку або зупинки",
+      "heading": "Сполучення клавіш",
+      "inUse": "{{shortcut}} уже використовується для «{{action}}». Виберіть інше сполучення.",
+      "invalid": "Використовуйте Cmd або Ctrl з літерою, цифрою, розділовим знаком або F1–F12.",
+      "modelSelector": "Вибір моделі",
+      "nextProject": "Наступний проєкт",
+      "nextSession": "Наступна відкрита сесія",
+      "notes": "Вибір нотатки",
+      "pressKeys": "Натисніть сполучення…",
+      "previousProject": "Попередній проєкт",
+      "previousSession": "Попередня відкрита сесія",
+      "pushToTalk": "Диктування: утримуйте, щоб говорити",
+      "reserved": "Це сполучення зайняте дією системного меню або редактора.",
+      "reset": "Скинути сполучення",
+      "sidebar": "Бічна панель"
+    },
+    "showThinking": {
+      "description": "Показувати блоки міркування моделі у відповідях",
+      "label": "Показувати міркування"
+    },
+    "suggestNextSteps": {
+      "description": "Наприкінці ходу {{agent}} може запропонувати до трьох наступних кроків: наприклад, додати тести або перевірити те, що не вдалося. Натисніть крок, щоб вставити його в поле повідомлення. Діє для сесій, запущених після збереження.",
+      "label": "Пропонувати наступні кроки"
+    },
+    "terminalFontSize": {
+      "description": "Розмір шрифту панелі термінала",
+      "label": "Розмір шрифту термінала"
+    },
+    "theme": {
+      "deleteConfirmMessage": "Видалити тему «{{themeName}}»? Цю дію неможливо скасувати.",
+      "deleteConfirmTitle": "Видалити тему",
+      "description": "Колірна схема застосунку",
+      "editNotFoundError": "Не вдалося знайти поточну тему для редагування",
+      "exportNotFoundError": "Не вдалося знайти поточну тему для експорту",
+      "label": "Тема",
+      "systemOption": "Системна"
+    },
+    "themeActions": {
+      "browseGalleryButton": "Відкрити галерею",
+      "description": "Імпорт, експорт або встановлення теми за URL",
+      "label": "Дії з темою"
+    },
+    "typesafe": {
+      "apiKey": {
+        "environment": "TYPESAFE_API_KEY уже задана в середовищі, з яким запущено Pi Desktop. Pi та OMP використовують це значення.",
+        "invalid": "Некоректний API-ключ. Вставте його знову без пробілів.",
+        "label": "API-ключ",
+        "nextSession": "Ключ отримають нові сесії. Перезапустіть відкриту сесію, щоб передати їй ключ.",
+        "placeholder": "Вставте API-ключ TypeSafe",
+        "remove": "Видалити ключ",
+        "save": "Зберегти",
+        "saved": "Збережено. Читати ключ може лише ваш обліковий запис."
+      },
+      "intro": "Jev — модель TypeSafe для оцінювання рішень. Збережіть API-ключ і встановіть навичку Jev тут. Pi та OMP використовуватимуть ключ без повторного запиту. Сам Pi Desktop не звертається до TypeSafe.",
+      "links": {
+        "agentSkill": "Посібник із навички Jev",
+        "apiKeys": "Отримати API-ключ",
+        "introduction": "Документація TypeSafe"
+      },
+      "skill": {
+        "install": "Установити",
+        "installed": "Установлено ({{version}})",
+        "installedElsewhere": "Установлено поза Pi Desktop. Керуйте через інструмент установлення.",
+        "label": "Навичка Jev",
+        "location": "Розташування: {{directory}}",
+        "notInstalled": "Не встановлено. Навчає Pi та OMP роботі з TypeSafe.",
+        "remove": "Видалити навичку",
+        "update": "Оновити до {{version}}"
+      }
+    },
+    "uiFontFamily": {
+      "description": "Виберіть шрифт зі списку. Якщо його не встановлено, використовується системний. «Типові шрифти» відновлює початкові шрифти. Термінал і редактор коду не змінюються.",
+      "label": "Шрифт інтерфейсу",
+      "placeholder": "Типові шрифти"
+    },
+    "uiFontSize": {
+      "description": "Чат, панелі та бічна панель — крім термінала й редактора коду",
+      "label": "Розмір шрифту інтерфейсу"
+    },
+    "voice": {
+      "device": {
+        "auto": "Авто",
+        "cpu": "CPU",
+        "gpu": "GPU"
+      },
+      "downloading": "Завантаження файлів: {{done}} із {{total}}",
+      "englishOnly": "Лише англійська",
+      "getVersion": "Завантажити {{version}}",
+      "gpuUnnamed": "GPU",
+      "install": "Установити",
+      "intro": "Говоріть у мікрофон, і Pi Desktop перетворить мовлення на текст на вашому комп’ютері. Виберіть модель для завантаження. Без вашого вибору моделі не завантажуються.",
+      "multilingual": "Багато мов",
+      "precision": {
+        "fp16": "Версія для GPU (fp16)",
+        "int8": "Версія для CPU (int8)"
+      },
+      "remove": "Видалити",
+      "restartRequired": "Перезапустіть Pi Desktop, щоб застосувати зміну.",
+      "runOn": "Виконувати на",
+      "runtimeCpu": "Працює на процесорі (CPU) з версією кожної моделі для CPU.",
+      "runtimeCpuNoGpu": "Відповідну відеокарту не знайдено. Розпізнавання працює на процесорі (CPU) з версією кожної моделі для CPU.",
+      "runtimeGpu": "Працює на відеокарті ({{name}}) з версією кожної моделі для GPU.",
+      "selected": "Використовується",
+      "sizeMb": "~{{mb}} МБ",
+      "use": "Вибрати"
+    }
+  },
+  "sidebar": {
+    "archived": {
+      "collapseTitle": "Згорнути архівні сесії",
+      "expandTitle": "Розгорнути архівні сесії",
+      "heading_one": "В архіві ({{count}})",
+      "heading_few": "В архіві ({{count}})",
+      "heading_many": "В архіві ({{count}})",
+      "heading_other": "В архіві ({{count}})"
+    },
+    "header": {
+      "closeSidebar": "Закрити бічну панель",
+      "homeAriaLabel": "Головна",
+      "homeTitle": "Головна (Esc — до запуску завдань)"
+    },
+    "nav": {
+      "activitySection": "Активність",
+      "chat": "Чат",
+      "missionControl": "Центр керування",
+      "missionControlTitle": "Усі фонові сесії та процеси",
+      "newTaskTitle": "Запустити завдання в новій сесії {{agent}}",
+      "sessions": "Сесії",
+      "sessionsTitle": "Сесії цього проєкту",
+      "timeline": "Хронологія",
+      "timelineTitleWithProject": "Хронологія {{project}}",
+      "workflows": "Робочі процеси",
+      "workflowsTitleNoProject": "Усі запуски процесів (проєкт не відкрито)",
+      "workflowsTitleWithProject": "Запуски процесів у {{project}}",
+      "workspaceSection": "Проєкт"
+    },
+    "newSessionButton": {
+      "label": "Нова сесія",
+      "openProjectToBegin": "Відкрийте проєкт для початку",
+      "shortcutKbd": "Ctrl N",
+      "startsIn": "Запускається в {{project}}",
+      "titleNoProject": "Спочатку відкрийте проєкт",
+      "titleWithShortcut": "Почати нову сесію в цьому проєкті (Ctrl/Cmd+N)"
+    },
+    "openProjectFolder": {
+      "ariaLabel": "Відкрити папку проєкту",
+      "titleWithShortcut": "Відкрити папку проєкту (Ctrl/Cmd+O)"
+    },
+    "promptsWaitingInOtherWorkspaces_one": "В інших проєктах чекають на відповідь запити Pi: {{count}}",
+    "promptsWaitingInOtherWorkspaces_few": "В інших проєктах чекають на відповідь запити Pi: {{count}}",
+    "promptsWaitingInOtherWorkspaces_many": "В інших проєктах чекають на відповідь запити Pi: {{count}}",
+    "promptsWaitingInOtherWorkspaces_other": "В інших проєктах чекають на відповідь запити Pi: {{count}}",
+    "recentSessions": {
+      "emptyInProject": "У цьому проєкті поки немає сесій.",
+      "emptyNoProject": "Відкрийте проєкт, щоб побачити його сесії.",
+      "headingNoProject": "Нещодавні сесії",
+      "headingWithProject": "Нещодавні в {{project}}",
+      "startOneNow": "Почати сесію",
+      "viewAll": "Показати всі"
+    },
+    "sessionNamePlaceholder": "Назва сесії",
+    "sessionRow": {
+      "tooltipActive": "{{title}}\n\nКлацання — відкрити · подвійне — перейменувати · правою кнопкою — дії",
+      "tooltipInactive": "{{title}}\n\nКлацання — відкрити · правою кнопкою — дії"
+    },
+    "tools": {
+      "allWorkflows": "Усі процеси",
+      "allWorkflowsTitle": "Запуски процесів усіх проєктів",
+      "diagnostics": "Діагностика",
+      "notes": "Нотатки",
+      "packages": "Пакети",
+      "sectionLabel": "Інструменти"
+    },
+    "workflowRunsForSession": "Запуски процесів цієї сесії",
+    "workspaceMenu": {
+      "changeFolder": "Змінити папку…",
+      "rename": "Перейменувати"
+    },
+    "workspaceSwitcher": {
+      "namePlaceholder": "Назва проєкту",
+      "noWorkspace": "Немає проєкту",
+      "openProjectEllipsis": "Відкрити проєкт…",
+      "triggerTitle": "Клацання — перемкнути · подвійне — перейменувати · правою кнопкою — параметри"
+    }
+  },
+  "skills": {
+    "emptyHint": "Установіть пакети навичок або створіть навички в .pi/skills/",
+    "emptyOmp": "Навички не знайдено в ~/.omp/agent/skills, ~/.claude/skills або .omp/skills проєкту",
+    "emptyPi": "Навички не знайдено в ~/.pi/agent/skills або .pi/skills проєкту",
+    "emptyTitle": "Навички не знайдено",
+    "providedByPlugin": "Надається встановленим плагіном",
+    "refreshAriaLabel": "Оновити навички",
+    "runButton": "Запустити",
+    "selectPrompt": "Виберіть навичку для перегляду SKILL.md"
+  },
+  "stats": {
+    "heatmap": {
+      "dayTooltip_one": "{{date}} — повідомлень: {{count}}",
+      "dayTooltip_few": "{{date}} — повідомлень: {{count}}",
+      "dayTooltip_many": "{{date}} — повідомлень: {{count}}",
+      "dayTooltip_other": "{{date}} — повідомлень: {{count}}"
+    },
+    "modelLegend": {
+      "empty": "За цей період моделі не використовувалися.",
+      "tokenBreakdown": "{{input}} вхід · {{output}} вихід · {{cache}} кеш"
+    },
+    "overview": {
+      "activeDaysLabel": "Активних днів",
+      "currentStreakLabel": "Поточна серія",
+      "favoriteModelLabel": "Улюблена модель",
+      "longestStreakLabel": "Найдовша серія",
+      "messagesLabel": "Повідомлення",
+      "peakHourLabel": "Пікова година",
+      "sessionsLabel": "Сесії",
+      "streakDays_one": "{{count}} дн.",
+      "streakDays_few": "{{count}} дн.",
+      "streakDays_many": "{{count}} дн.",
+      "streakDays_other": "{{count}} дн.",
+      "totalTokensLabel": "Усього токенів"
+    },
+    "ranges": {
+      "oneYear": "1 р.",
+      "sevenDays": "7 дн.",
+      "sixMonths": "6 міс.",
+      "thirtyDays": "30 дн.",
+      "threeMonths": "3 міс."
+    },
+    "tabs": {
+      "models": "моделі",
+      "overview": "огляд"
+    },
+    "tokenChart": {
+      "barTooltip": "{{label}} — токенів: {{tokens}}",
+      "empty": "За цей період токени не використовувалися."
+    }
+  },
+  "status": {
+    "agentSection": {
+      "title": "Агент {{agent}}"
+    },
+    "compactButton": {
+      "compact": "Стиснути контекст",
+      "compacting": "Стиснення…",
+      "title": "Узагальнити й стиснути листування для звільнення контексту"
+    },
+    "contextSection": {
+      "title": "Використання контексту"
+    },
+    "errorCopied": "скопійовано",
+    "errorCopy": "копіювати",
+    "extensionsSection": {
+      "title": "Розширення"
+    },
+    "header": {
+      "title": "Стан системи"
+    },
+    "mcpSection": {
+      "title": "Сервери MCP"
+    },
+    "noExtensionsOrSkills": "Немає завантажених розширень і навичок",
+    "noMcpServers": "Сервери MCP не налаштовані",
+    "pidLabel": "(PID: {{pid}})",
+    "processStatus": {
+      "error": "помилка",
+      "running": "працює",
+      "starting": "запускається",
+      "stopped": "зупинений"
+    },
+    "promptTemplatesSection": {
+      "title": "Шаблони промптів"
+    },
+    "row": {
+      "cost": "Вартість",
+      "error": "Помилка",
+      "messages": "Повідомлення",
+      "model": "Модель",
+      "name": "Назва",
+      "path": "Шлях",
+      "provider": "Провайдер",
+      "session": "Сесія",
+      "status": "Статус",
+      "tokens": "Токени",
+      "usage": "Використання",
+      "window": "Вікно"
+    },
+    "scope": {
+      "cli": "cli",
+      "global": "глобальний",
+      "package": "пакет",
+      "project": "проєкт"
+    },
+    "skillCommandsSection": {
+      "title": "Команди навичок"
+    },
+    "trigger": {
+      "title": "Стан системи"
+    },
+    "workspaceSection": {
+      "title": "Проєкт"
+    }
+  },
+  "statusBar": {
+    "compact": "стиснути",
+    "compactContextTitle": "Стиснути контекст — узагальнити листування для звільнення місця",
+    "compacting": "стиснення…",
+    "contextUsage": "Контекст: {{tokens}} / {{contextWindow}} токенів",
+    "followUpQueued_one": "Продовжень у черзі: {{count}}",
+    "followUpQueued_few": "Продовжень у черзі: {{count}}",
+    "followUpQueued_many": "Продовжень у черзі: {{count}}",
+    "followUpQueued_other": "Продовжень у черзі: {{count}}",
+    "gitBranch": "Гілка Git: {{branch}}",
+    "hideTerminal": "Приховати термінал",
+    "openWorkflowRuns": "Відкрити запуски процесів",
+    "piError": "Помилка {{agent}}",
+    "piRunning": "{{agent}} працює (PID: {{pid}})",
+    "piStarting": "{{agent}} запускається",
+    "piStopped": "{{agent}} зупинений",
+    "showTerminal": "Показати термінал",
+    "steerQueued_one": "Вказівок у черзі: {{count}}",
+    "steerQueued_few": "Вказівок у черзі: {{count}}",
+    "steerQueued_many": "Вказівок у черзі: {{count}}",
+    "steerQueued_other": "Вказівок у черзі: {{count}}",
+    "streaming": "отримання відповіді",
+    "waitingOnPromptElsewhere": "{{agent}} чекає на відповідь в іншому проєкті; перейдіть туди, щоб відповісти",
+    "workflowCount_one": "{{count}} процес",
+    "workflowCount_few": "{{count}} процеси",
+    "workflowCount_many": "{{count}} процесів",
+    "workflowCount_other": "{{count}} процесу",
+    "workflowsFallback": "процеси"
+  },
+  "store": {
+    "confirm": {
+      "changeAnywayLabel": "Усе одно змінити",
+      "changeFolderMessage": "Pi ще відповідає в цій сесії. Зміна папки проєкту перезапустить Pi і перерве відповідь: записана частина відповіді збережеться, решту, включно з поточними викликами інструментів, буде відкинуто.",
+      "cloneAnywayLabel": "Усе одно клонувати",
+      "cloneMessage": "Pi ще відповідає в цій сесії. Клонування гілки зупинить його: записана частина відповіді збережеться, решту, включно з поточними викликами інструментів, буде відкинуто.",
+      "closeInPlaceLinkedTaskMessage": "Закрити «{{name}}»? Репозиторії та їхні файли не зміняться.",
+      "closeIsolatedLinkedTaskMessage": "Закрити «{{name}}»? Чисті робочі дерева завдання буде видалено; дерева з незакоміченими змінами залишаться на диску. Гілки збережуться.",
+      "closeManagedWorktreeMessage": "Закрити «{{name}}»? Чисті робочі дерева буде видалено; дерева вкладок із незакоміченими змінами залишаться на диску.",
+      "closeSessionTabMessage": "Pi ще працює в цій сесії. Закриття вкладки зупинить її процес; збережені повідомлення залишаться в розділі «Сесії».",
+      "closeSessionTabTitle": "Закрити вкладку сесії?",
+      "closeTabLabel": "Закрити вкладку",
+      "closeUnmanagedWorktreeMessage": "Закрити «{{name}}»? Це наявне робоче дерево та його файли залишаться на диску.",
+      "forkAnywayLabel": "Усе одно створити відгалуження",
+      "forkMessage": "Pi ще відповідає в цій сесії. Створення відгалуження зупинить його: записана частина відповіді збережеться, решту, включно з поточними викликами інструментів, буде відкинуто.",
+      "keepUntrustedLabel": "Не довіряти",
+      "keepWorkingLabel": "Продовжити роботу",
+      "newMessage": "Pi ще відповідає в цій сесії. Нова сесія зупинить його: записана частина відповіді збережеться, решту, включно з поточними викликами інструментів, буде відкинуто.",
+      "okLabel": "OK",
+      "removeWorkspaceMessage": "Прибрати «{{name}}» з бічної панелі? Процес Pi буде зупинено; файли на диску збережуться.",
+      "removeWorkspaceTitle": "Прибрати проєкт",
+      "startAnywayLabel": "Усе одно запустити",
+      "stillWorkingTitle": "Pi ще працює",
+      "switchAnywayLabel": "Усе одно перемкнути",
+      "switchMessage": "Pi ще відповідає в цій сесії. Відкриття іншої сесії зупинить його: записана частина відповіді збережеться, решту, включно з поточними викликами інструментів, буде відкинуто.",
+      "trustWorkspaceMessage": "У правилах проєкту (.pi-desktop/permission-rules.json) є дозволи, що дають Pi змогу пропускати підтвердження. Вони не діють без довіри до проєкту; заборони діють завжди. Довіряйте лише проєктам із надійних джерел.",
+      "trustWorkspaceTitle": "Довіряти цьому проєкту?",
+      "workspaceMessage": "Pi ще відповідає в цій сесії. Після перемикання він продовжить роботу: відповідь збережеться й з’явиться після повернення. Запити Pi, що виникли за вашої відсутності, буде показано, коли ви повернетеся.",
+      "workspaceRulesNoticeMessage": "Проєкт має власні правила дозволів (.pi-desktop/permission-rules.json). Їхні заборони обмежують Pi в цьому проєкті; в іншому діють глобальні правила.",
+      "workspaceRulesNoticeTitle": "Правила дозволів проєкту"
+    },
+    "messages": {
+      "addRepositoryError": "Не вдалося додати репозиторій: {{detail}}",
+      "arbiterFailed": "Помилка арбітра: {{detail}}",
+      "archiveError": "Помилка архівації: {{detail}}",
+      "cannotActivateSession": "Не вдалося активувати сесію",
+      "cannotCreateSession": "Не вдалося створити сесію",
+      "changeFolderError": "Помилка зміни папки: {{detail}}",
+      "closeSessionError": "Помилка закриття сесії: {{detail}}",
+      "compactingContext": "Стиснення контексту ({{reason}})…",
+      "compactionAborted": "Стиснення перервано.",
+      "contextCompacted": "Контекст стиснуто.",
+      "councilFailed": "Помилка ради: {{detail}}",
+      "councilNoQuorum": "Жоден консультант не підготував план (помилки або вичерпано час очікування). Роботу ради перервано.",
+      "createWorkspaceError": "Помилка створення проєкту: {{detail}}",
+      "defaultTaskLabel": "Завдання",
+      "deleteError": "Помилка видалення: {{detail}}",
+      "editedSessionName": "{{title}} (змінено)",
+      "editNotInSession": "У збереженій сесії немає цього повідомлення.",
+      "editResendError": "Не вдалося змінити й надіслати повідомлення: {{detail}}",
+      "error": "Помилка: {{detail}}",
+      "followUpError": "Помилка продовження: {{detail}}",
+      "imageFallbackName": "Зображення {{index}}",
+      "installedPackage": "Установлено {{spec}}. Перезапустіть Pi для завантаження.",
+      "installFailed": "Помилка встановлення",
+      "modelError": "Помилка моделі: {{detail}}",
+      "modelsFileNotLoaded": "Файл моделей ще не завантажений. Повторіть спробу.",
+      "newIsolatedTabError": "Помилка нової ізольованої вкладки: {{detail}}",
+      "newSessionError": "Помилка нової сесії: {{detail}}",
+      "notAFolder": "Не можна відкрити як проєкт — це не папка: {{path}}",
+      "notGitRepository": "Проєкт не є Git-репозиторієм. Виберіть «Нова сесія» для іншого чату або відкрийте Git-проєкт для ізольованої вкладки.",
+      "openFolderError": "Помилка відкриття папки: {{detail}}",
+      "removedPackage": "Видалено {{spec}}",
+      "removePackageFailed": "Помилка видалення",
+      "removeWorkspaceError": "Помилка видалення проєкту: {{detail}}",
+      "retrying": "Повторна спроба ({{attempt}}/{{maxAttempts}}): {{detail}}",
+      "reusedWorktree": "Знайдено відповідне робоче дерево Git. Завдання продовжено в ньому.",
+      "steerError": "Помилка надсилання вказівки: {{detail}}",
+      "switchSessionError": "Помилка зміни сесії: {{detail}}",
+      "switchWorkspaceError": "Помилка зміни проєкту: {{detail}}",
+      "tabClosedWorktreePreserved": "Вкладку закрито, але робоче дерево з незакоміченими змінами збережено в {{path}}",
+      "tabFromLastCommit": "Ця вкладка починається з останнього коміту. Незакомічені файли залишаються у вихідній вкладці.",
+      "taskLaunchError": "Помилка запуску завдання: {{detail}}",
+      "truncatedHistory_one": "Для швидкодії показано останні {{count}} із {{total}} повідомлень. Попередні ходи залишаються у файлі сесії на диску.",
+      "truncatedHistory_few": "Для швидкодії показано останні {{count}} із {{total}} повідомлень. Попередні ходи залишаються у файлі сесії на диску.",
+      "truncatedHistory_many": "Для швидкодії показано останні {{count}} із {{total}} повідомлень. Попередні ходи залишаються у файлі сесії на диску.",
+      "truncatedHistory_other": "Для швидкодії показано останні {{count}} із {{total}} повідомлень. Попередні ходи залишаються у файлі сесії на диску.",
+      "unarchiveError": "Помилка відновлення з архіву: {{detail}}",
+      "unknownError": "Невідома помилка",
+      "updatedAllPackages": "Пакети оновлено. Перезапустіть Pi для завантаження.",
+      "updatedPackage": "Оновлено {{spec}}. Перезапустіть Pi для завантаження.",
+      "updatePackageFailed": "Помилка оновлення",
+      "writeFailed": "Помилка запису"
+    },
+    "promptsWaiting_one": "Чекають на відповідь запити Pi: {{count}}",
+    "promptsWaiting_few": "Чекають на відповідь запити Pi: {{count}}",
+    "promptsWaiting_many": "Чекають на відповідь запити Pi: {{count}}",
+    "promptsWaiting_other": "Чекають на відповідь запити Pi: {{count}}"
+  },
+  "taskLauncher": {
+    "closeAriaLabel": "Закрити вікно запуску завдання",
+    "footerNote": "Завдання працює в новій сесії та продовжиться у фоні після перемикання. Відповідні робочі дерева PR/завдань використовуються повторно. Ctrl/Cmd+Enter — запуск.",
+    "isolatedWorktree": {
+      "description": "Використовує відповідне локальне робоче дерево PR/завдання або створює нове. Вихідний проєкт не змінюється.",
+      "label": "Використовувати ізольоване робоче дерево Git"
+    },
+    "openProjectFirst": "Спочатку відкрийте проєкт",
+    "starting": "Запуск…",
+    "startTask": "Запустити завдання",
+    "subtitle": "Почати нову сесію {{agent}} й одразу надіслати завдання.",
+    "task": "Завдання",
+    "taskPlaceholder": "Виправ тести, що падають, поясни причину та підготуй зміни до перевірки…"
+  },
+  "terminal": {
+    "clearAriaLabel": "Очистити термінал",
+    "clearTitle": "Очистити",
+    "hideTitle": "Приховати термінал (оболонка продовжить роботу)",
+    "maximizeLabel": "Розгорнути термінал",
+    "restartHint": "Натисніть будь-яку клавішу, щоб запустити нову оболонку",
+    "restoreLabel": "Відновити розмір термінала",
+    "title": "Термінал"
+  },
+  "themes": {
+    "builtin": {
+      "breeze-claudius": "Breeze Claudius",
+      "breeze-dark": "Breeze Dark",
+      "breeze-light": "Breeze Light",
+      "dark": "Темна",
+      "gruvbox": "Gruvbox",
+      "light": "Світла",
+      "nord": "Nord"
+    },
+    "editor": {
+      "advancedSummary": "Додатково",
+      "authorLabel": "Автор (необов’язково)",
+      "authorPlaceholder": "Відображається в галереї",
+      "copySuffix": "{{name}} — копія",
+      "createTitle": "Створити тему",
+      "descriptionLabel": "Опис (необов’язково)",
+      "descriptionPlaceholder": "Одне-два речення про тему",
+      "editTitle": "Змінити тему",
+      "kindLabel": "Тип",
+      "nameLabel": "Назва",
+      "renameCleanupWarning": "Тему збережено як «{{name}}», але стару версію не вдалося видалити. Вона може залишитися в списку.",
+      "resetToDerivedTitle": "Повернути обчислене значення",
+      "savingLabel": "Збереження…",
+      "seedLabels": {
+        "accent": "Акцент",
+        "app": "Фон застосунку",
+        "error": "Помилка",
+        "success": "Успіх",
+        "surface": "Поверхня",
+        "text": "Текст",
+        "warning": "Попередження"
+      },
+      "syntaxColorsSummary": "Кольори синтаксису"
+    },
+    "gallery": {
+      "authorScreenshotLabel": "Знімок екрана від автора",
+      "backAriaLabel": "До всіх тем",
+      "detailSubtitle": "Попередній перегляд зі справжніми кольорами теми",
+      "empty": "Поки немає доступних тем.",
+      "installingLabel": "Установлення…",
+      "loadError": "Не вдалося завантажити галерею: {{error}}",
+      "loading": "Завантаження тем…",
+      "screenshotAlt": "Знімок екрана {{name}}",
+      "screenshotError": "Не вдалося завантажити знімок екрана.",
+      "screenshotLoading": "Завантаження знімка екрана…",
+      "showMore_one": "Показати ще ({{count}})",
+      "showMore_few": "Показати ще ({{count}})",
+      "showMore_many": "Показати ще ({{count}})",
+      "showMore_other": "Показати ще ({{count}})",
+      "subtitle": "Із галереї pi-desktop-themes — натисніть на тему, щоб переглянути подробиці",
+      "title": "Теми спільноти",
+      "viewDetailsAria": "Докладніше про {{name}}"
+    },
+    "kind": {
+      "dark": "Темна",
+      "light": "Світла"
+    }
+  },
+  "thinking": {
+    "effort": "Глибина міркування",
+    "effortWithLevel": "Глибина міркування: {{level}}"
+  },
+  "time": {
+    "justNow": "щойно"
+  },
+  "timeline": {
+    "agentFinished": "Агент завершив роботу",
+    "agentStarted": "Агент почав обробку",
+    "assistantResponseComplete": "Відповідь асистента завершена",
+    "assistantResponseFailed": "Помилка відповіді асистента",
+    "branchesHeading": "Гілки",
+    "clearButton": "Очистити",
+    "cloneBranchButton": "Клонувати гілку",
+    "cloneBranchTitle": "Клонувати поточну гілку в нову сесію",
+    "compactionComplete": "Стиснення завершено",
+    "compactionStarted": "Стиснення розпочато",
+    "emptyHint": "Тут з’являтимуться події агента в реальному часі",
+    "emptyTitle": "Поки немає активності",
+    "externalPromptReceived": "Отримано зовнішній промпт",
+    "forkButton": "Відгалузити",
+    "forkFromTitle": "Створити нову сесію на основі цього повідомлення",
+    "heading": "Хронологія агента",
+    "noForkMessages": "Немає попередніх повідомлень для відгалуження.",
+    "retryAttempt": "Повторна спроба {{attempt}}",
+    "retryComplete": "Повторну спробу завершено",
+    "sessionTreeHeading": "Дерево сесій",
+    "tool": "Інструмент: {{tool}}"
+  },
+  "tools": {
+    "edit": {
+      "done": "Змінено {{target}}",
+      "doneWithoutTarget": "Змінено файл",
+      "label": "Змінити файл",
+      "summaryFirst_one": "Змінено {{count}} файл",
+      "summaryFirst_few": "Змінено {{count}} файли",
+      "summaryFirst_many": "Змінено {{count}} файлів",
+      "summaryFirst_other": "Змінено {{count}} файла",
+      "summaryNext_one": "змінено {{count}} файл",
+      "summaryNext_few": "змінено {{count}} файли",
+      "summaryNext_many": "змінено {{count}} файлів",
+      "summaryNext_other": "змінено {{count}} файла"
+    },
+    "fetch": {
+      "done": "Завантажено {{target}}",
+      "doneWithoutTarget": "Завантажено URL",
+      "label": "Завантажити URL",
+      "summaryFirst_one": "Завантажено {{count}} URL",
+      "summaryFirst_few": "Завантажено {{count}} URL",
+      "summaryFirst_many": "Завантажено {{count}} URL",
+      "summaryFirst_other": "Завантажено {{count}} URL",
+      "summaryNext_one": "завантажено {{count}} URL",
+      "summaryNext_few": "завантажено {{count}} URL",
+      "summaryNext_many": "завантажено {{count}} URL",
+      "summaryNext_other": "завантажено {{count}} URL"
+    },
+    "list": {
+      "done": "Отримано список {{target}}",
+      "doneWithoutTarget": "Отримано список папки",
+      "label": "Список файлів",
+      "summaryFirst_one": "Отримано список {{count}} папки",
+      "summaryFirst_few": "Отримано списки {{count}} папок",
+      "summaryFirst_many": "Отримано списки {{count}} папок",
+      "summaryFirst_other": "Отримано списки {{count}} папки",
+      "summaryNext_one": "отримано список {{count}} папки",
+      "summaryNext_few": "отримано списки {{count}} папок",
+      "summaryNext_many": "отримано списки {{count}} папок",
+      "summaryNext_other": "отримано списки {{count}} папки"
+    },
+    "other": {
+      "summaryFirst_one": "Виконано {{count}} інструмент",
+      "summaryFirst_few": "Виконано {{count}} інструменти",
+      "summaryFirst_many": "Виконано {{count}} інструментів",
+      "summaryFirst_other": "Виконано {{count}} інструмента",
+      "summaryNext_one": "виконано {{count}} інструмент",
+      "summaryNext_few": "виконано {{count}} інструменти",
+      "summaryNext_many": "виконано {{count}} інструментів",
+      "summaryNext_other": "виконано {{count}} інструмента"
+    },
+    "read": {
+      "done": "Прочитано {{target}}",
+      "doneWithoutTarget": "Прочитано файл",
+      "label": "Прочитати файл",
+      "summaryFirst_one": "Прочитано {{count}} файл",
+      "summaryFirst_few": "Прочитано {{count}} файли",
+      "summaryFirst_many": "Прочитано {{count}} файлів",
+      "summaryFirst_other": "Прочитано {{count}} файла",
+      "summaryNext_one": "прочитано {{count}} файл",
+      "summaryNext_few": "прочитано {{count}} файли",
+      "summaryNext_many": "прочитано {{count}} файлів",
+      "summaryNext_other": "прочитано {{count}} файла"
+    },
+    "run": {
+      "doneWithoutTarget": "Виконано команду",
+      "label": "Виконати команду",
+      "summaryFirst_one": "Виконано {{count}} команду",
+      "summaryFirst_few": "Виконано {{count}} команди",
+      "summaryFirst_many": "Виконано {{count}} команд",
+      "summaryFirst_other": "Виконано {{count}} команди",
+      "summaryNext_one": "виконано {{count}} команду",
+      "summaryNext_few": "виконано {{count}} команди",
+      "summaryNext_many": "виконано {{count}} команд",
+      "summaryNext_other": "виконано {{count}} команди"
+    },
+    "search": {
+      "done": "Виконано пошук {{target}}",
+      "doneWithoutTarget": "Виконано пошуковий запит",
+      "label": "Пошук",
+      "summaryFirst_one": "Виконано {{count}} пошуковий запит",
+      "summaryFirst_few": "Виконано {{count}} пошукові запити",
+      "summaryFirst_many": "Виконано {{count}} пошукових запитів",
+      "summaryFirst_other": "Виконано {{count}} пошукового запиту",
+      "summaryNext_one": "виконано {{count}} пошуковий запит",
+      "summaryNext_few": "виконано {{count}} пошукові запити",
+      "summaryNext_many": "виконано {{count}} пошукових запитів",
+      "summaryNext_other": "виконано {{count}} пошукового запиту"
+    },
+    "summarySeparator": ", ",
+    "write": {
+      "done": "Створено {{target}}",
+      "doneWithoutTarget": "Створено файл",
+      "label": "Записати файл",
+      "summaryFirst_one": "Створено {{count}} файл",
+      "summaryFirst_few": "Створено {{count}} файли",
+      "summaryFirst_many": "Створено {{count}} файлів",
+      "summaryFirst_other": "Створено {{count}} файла",
+      "summaryNext_one": "створено {{count}} файл",
+      "summaryNext_few": "створено {{count}} файли",
+      "summaryNext_many": "створено {{count}} файлів",
+      "summaryNext_other": "створено {{count}} файла"
+    }
+  },
+  "tray": {
+    "show": "Показати Pi Desktop",
+    "stillRunningBody": "Вікно згорнуто до системного трея. Натисніть значок у треї, щоб відкрити його, або виберіть «Вийти» для завершення роботи.",
+    "stillRunningTitle": "Pi Desktop продовжує працювати",
+    "unavailableBody": "У цьому середовищі немає системного трея, тому Pi Desktop завершить роботу після закриття вікна.",
+    "unavailableTitle": "Системний трей недоступний"
+  },
+  "voice": {
+    "models": {
+      "moonshine-base": {
+        "name": "Moonshine Base",
+        "note": "Невелика швидка модель для диктування англійською. Баланс розміру й точності."
+      },
+      "moonshine-tiny": {
+        "name": "Moonshine Tiny",
+        "note": "Найменша англійська модель. Найшвидша на слабких комп’ютерах."
+      },
+      "parakeet-v2": {
+        "name": "Parakeet V2",
+        "note": "Дуже точне розпізнавання англійської. Великий обсяг завантаження."
+      },
+      "parakeet-v3": {
+        "name": "Parakeet V3",
+        "note": "Найточніша. 25 мов з автовизначенням. Великий обсяг завантаження."
+      },
+      "whisper-base": {
+        "name": "Whisper Base",
+        "note": "Невелика модель із підтримкою багатьох мов."
+      },
+      "whisper-small": {
+        "name": "Whisper Small",
+        "note": "Точніше розпізнає багато мов. Потребує більше місця."
+      }
+    }
+  },
+  "workflows": {
+    "agentGrid": {
+      "noTranscriptCaptured": "Історію не записано",
+      "openTranscript": "Відкрити історію"
+    },
+    "card": {
+      "activeCount_one": "· у роботі: {{count}}",
+      "activeCount_few": "· у роботі: {{count}}",
+      "activeCount_many": "· у роботі: {{count}}",
+      "activeCount_other": "· у роботі: {{count}}",
+      "agentsProgress": "Агенти: {{done}}/{{total}}"
+    },
+    "control": {
+      "abortAriaLabel": "Перервати запуск",
+      "abortButtonLabel": "Перервати",
+      "dispatchFailed": "Не вдалося надіслати команду керування для {{agent}}.",
+      "extensionMissing": "Розширення робочих процесів не завантажено в процес {{agent}} цього проєкту.",
+      "notPermittedResume": "Цей запуск не можна відновити в поточному стані.",
+      "notPermittedStop": "Цей запуск уже не можна перервати в поточному стані.",
+      "notRunning": "{{agent}} не запущений для цього проєкту, тому керувати запуском звідси не можна.",
+      "pausedFallback": "Призупинено",
+      "resumeAriaLabel": "Відновити запуск",
+      "resumeButtonLabel": "Відновити",
+      "resumeRequested": "Запитано відновлення — перезапуск у проєкті…",
+      "resumeTitle": "Відновити робочий процес у його проєкті",
+      "stopRequested": "Запитано переривання — зупинка в проєкті…",
+      "stopTitle": "Зупинити робочий процес у його проєкті",
+      "timeout": "{{agent}} не відповів. Стан запуску міг змінитися — оновіть дані.",
+      "unavailable": "Керування робочими процесами зараз недоступне для цього проєкту.",
+      "unreachable": "Не вдалося підключитися до каналу керування процесами цього проєкту."
+    },
+    "detail": {
+      "backAriaLabel": "Усі запуски процесів",
+      "refreshAriaLabel": "Оновити запуск",
+      "statAgents": "агенти",
+      "statCostTime": "вартість/час",
+      "statTokens": "токени",
+      "stepsHeading": "Кроки"
+    },
+    "panel": {
+      "activeCount_one": "У роботі: {{count}}",
+      "activeCount_few": "У роботі: {{count}}",
+      "activeCount_many": "У роботі: {{count}}",
+      "activeCount_other": "У роботі: {{count}}",
+      "closeAriaLabel": "Закрити запуски процесів",
+      "loading": "Завантаження процесу…",
+      "maximizeAriaLabel": "Розгорнути навігатор процесів",
+      "noRunsForProject": "Немає запусків для цього проєкту",
+      "noRunsForSession": "Немає запусків для цієї сесії",
+      "noRunsProjectDetail": "Для {{name}} немає записаних запусків процесів. Запуски інших проєктів доступні в загальному списку.",
+      "noRunsSessionDetail": "Для цієї сесії немає записаних запусків процесів. Запуски попередніх сесій доступні в загальному списку.",
+      "noRunsYet": "Поки немає запусків",
+      "recordedCount_one": "Записано: {{count}}",
+      "recordedCount_few": "Записано: {{count}}",
+      "recordedCount_many": "Записано: {{count}}",
+      "recordedCount_other": "Записано: {{count}}",
+      "refreshAriaLabel": "Оновити запуски процесів",
+      "restoreAriaLabel": "Відновити розмір навігатора процесів",
+      "runCommandHint": "Виконайте <cmd>/workflows run …</cmd> у чаті.",
+      "stepTranscriptTitle": "Історія кроку",
+      "thisProjectFallback": "цей проєкт",
+      "workflowDetailTitle": "Відомості про процес"
+    },
+    "phaseStepper": {
+      "agentsProgress": "Агенти: {{done}}/{{total}}"
+    },
+    "result": {
+      "characterCount_one": "{{count}} символ",
+      "characterCount_few": "{{count}} символи",
+      "characterCount_many": "{{count}} символів",
+      "characterCount_other": "{{count}} символу",
+      "detailCount_one": "{{count}} подробиця",
+      "detailCount_few": "{{count}} подробиці",
+      "detailCount_many": "{{count}} подробиць",
+      "detailCount_other": "{{count}} подробиці",
+      "emptyObject": "Робочий процес повернув порожній об’єкт.",
+      "emptyShape": "порожньо",
+      "emptyValue": "Порожньо",
+      "fieldCount_one": "{{count}} поле",
+      "fieldCount_few": "{{count}} поля",
+      "fieldCount_many": "{{count}} полів",
+      "fieldCount_other": "{{count}} поля",
+      "itemCount_one": "{{count}} елемент",
+      "itemCount_few": "{{count}} елементи",
+      "itemCount_many": "{{count}} елементів",
+      "itemCount_other": "{{count}} елемента",
+      "itemTitle": "Елемент {{index}}",
+      "markdownReport": "Звіт Markdown",
+      "moreItems_one": "+ ще {{count}} елемент",
+      "moreItems_few": "+ ще {{count}} елементи",
+      "moreItems_many": "+ ще {{count}} елементів",
+      "moreItems_other": "+ ще {{count}} елемента",
+      "nestedHidden": "Вкладені відомості приховано",
+      "no": "Ні",
+      "noAdditionalDetails": "Немає додаткових відомостей.",
+      "noDetails": "Немає відомостей",
+      "noItems": "Немає елементів",
+      "none": "Немає",
+      "outputLabel": "Результат",
+      "outputTitle": "Результат процесу",
+      "sectionCount_one": "{{count}} розділ",
+      "sectionCount_few": "{{count}} розділи",
+      "sectionCount_many": "{{count}} розділів",
+      "sectionCount_other": "{{count}} розділу",
+      "yes": "Так"
+    },
+    "status": {
+      "aborted": "зупинено"
+    },
+    "tabs": {
+      "logs": "Журнали",
+      "overview": "Огляд",
+      "results": "Результати",
+      "script": "Скрипт"
+    },
+    "transcript": {
+      "backAriaLabel": "До запуску",
+      "defaultPhaseLabel": "крок процесу",
+      "enableFullTranscriptsButton": "Зберігати повну історію майбутніх запусків",
+      "historyNotice": "Показано записану історію процесу. Для майбутніх запусків можна зберігати всі необроблені повідомлення {{agent}} та результати інструментів.",
+      "noTranscriptMessage": "Для цього кроку історію не збережено.",
+      "persistenceEnabled": "Увімкнено глобально. Перезавантажте {{agent}} перед наступним запуском процесу.",
+      "settingsUpdateFailed": "Не вдалося оновити налаштування процесів.",
+      "sourceCapturedHistory": "записана історія процесу",
+      "sourceFullSession": "повна історія сесії",
+      "sourceNone": "немає історії",
+      "stepPromptLabel": "Промпт кроку",
+      "stepResultLabel": "Результат кроку",
+      "subtitle": "{{phase}} · {{source}}"
+    }
+  },
+  "workspaceTabs": {
+    "closeSessionTab": "Закрити вкладку сесії",
+    "closeTabAriaLabel": "Закрити {{name}}",
+    "closeTools": "Закрити інструменти",
+    "newIsolatedTabAriaLabel": "Нова ізольована вкладка Git",
+    "newIsolatedTabTitle": "Нова ізольована вкладка Git (потрібен Git-проєкт)",
+    "newLinkedTaskAriaLabel": "Нове пов’язане завдання",
+    "newLinkedTaskTitle": "Нове пов’язане завдання в кількох репозиторіях",
+    "newSessionAriaLabel": "Нова сесія в цьому проєкті",
+    "newSessionFallback": "Нова сесія",
+    "removeWorkspaceAriaLabel": "Прибрати {{name}}",
+    "sessions": "Сесії",
+    "tools": "Інструменти"
+  }
+}
