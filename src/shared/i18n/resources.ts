@@ -1,5 +1,6 @@
 import en from '../../../resources/locales/en/translation.json'
 import ru from '../../../resources/locales/ru/translation.json'
+import uk from '../../../resources/locales/uk/translation.json'
 import zhHans from '../../../resources/locales/zh-Hans/translation.json'
 
 /**
@@ -8,8 +9,9 @@ import zhHans from '../../../resources/locales/zh-Hans/translation.json'
  */
 export const LANGUAGE_RESOURCES = {
   en: { translation: en },
-  'zh-Hans': { translation: zhHans },
   ru: { translation: ru },
+  uk: { translation: uk },
+  'zh-Hans': { translation: zhHans },
 } as const
 
 export const BUNDLED_LANGUAGES: string[] = Object.keys(LANGUAGE_RESOURCES)
