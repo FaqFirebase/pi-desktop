@@ -1958,7 +1958,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     // in-flight history load the moment the user declines, leaving the
     // unchanged chat stuck loading; last-intent-wins keeps its own token.
     const intent = ++activationIntentGeneration
-    const superseded = (): boolean => intent !== activationIntentGeneration
+    // Other real navigation (switchSession, new session, workspace switch)
+    // invalidates session I/O while this intent waits on its dialogs. The
+    // snapshot is taken without incrementing: a change means the world moved
+    // on and this stale intent must not commit.
+    const loadGen = sessionLoadGeneration
+    const superseded = (): boolean => intent !== activationIntentGeneration || loadGen !== sessionLoadGeneration
     if (!(await get().confirmDiscardEditorChanges()) || superseded()) return false
     // Only a same-workspace swap abandons a running turn; switching workspaces
     // keeps the old workspace's turn running in the background, so the
@@ -1972,6 +1977,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       if (!sameWorkspace) {
         if (!(await get().activateWorkspace(workspaceId, { awaitingSession: true, skipDirtyConfirm: true }))) return false
+        // The awaited workspace switch can overlap a newer activation
+        // intent; only the newest may commit this far.
+        if (intent !== activationIntentGeneration) return false
       }
       // Confirmations passed and no other activation superseded this one:
       // now, and only now, the session load of the previous chat is invalid.
