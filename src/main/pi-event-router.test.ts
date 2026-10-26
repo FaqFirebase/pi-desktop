@@ -414,7 +414,7 @@ test('attaching the same manager twice does not double-route its events', () => 
   assert.deepEqual(h.broadcasts, [event])
 })
 
-function dualViewHarness() {
+function dualViewHarness(sameWorkspace = false) {
   const alpha = new PiRpcManager()
   const beta = new PiRpcManager()
   let active = beta
@@ -426,7 +426,7 @@ function dualViewHarness() {
   const responses: Array<{ manager: PiRpcManager; id: string; response: Record<string, unknown> }> = []
   const router = createPiEventRouter({
     getActiveManager: () => active,
-    workspaceIdFor: (manager) => manager === alpha ? WS_A : WS_B,
+    workspaceIdFor: (manager) => sameWorkspace || manager === alpha ? WS_A : WS_B,
     getSecondaryManager: () => secondary,
     preferSecondaryView: () => visible,
     sendSecondaryEvent: (manager, event) => { if (manager === secondary) secondaryEvents.push(event) },
@@ -442,6 +442,7 @@ function dualViewHarness() {
   return {
     router, alpha, beta, mainEvents, secondaryEvents, approvals, responses,
     useMain: (manager: PiRpcManager) => { active = manager; router.handleActiveWorkspaceChanged() },
+    activateRuntime: (manager: PiRpcManager) => { active = manager },
     show: (shown: boolean) => { visible = shown; router.refreshOwners() },
     select: (manager: PiRpcManager | null) => { secondary = manager; router.refreshOwners() },
   }
@@ -468,6 +469,33 @@ test('inactive secondary session streams and approvals stay independent of the m
   h.router.respond(request.id, { confirmed: false }, 'secondary')
   assert.deepEqual(h.responses, [{ manager: h.alpha, id: request.id, response: { confirmed: true } }])
   assert.equal(h.approvals.at(-1), null)
+})
+
+test('same-workspace runtime activation replays a hidden popup approval only to its new main owner', () => {
+  const h = dualViewHarness(true)
+  const request = dialogRequest('fileless-handoff')
+  h.alpha.emit('event', request)
+  h.show(false)
+
+  // Hiding or flushing before successful activation cannot select the target.
+  h.router.flush(WS_A)
+  assert.deepEqual(h.mainEvents, [])
+  assert.equal(h.router.getSecondaryRequest()?.id, request.id)
+  h.router.respond(request.id, { confirmed: false }, 'main')
+  assert.deepEqual(h.responses, [])
+
+  // Same-workspace activation does not emit an active-workspace change.
+  h.activateRuntime(h.alpha)
+  h.router.flush(WS_A)
+
+  assert.deepEqual(h.mainEvents, [request])
+  assert.equal(h.approvals.at(-1), null)
+  assert.equal(h.router.getSecondaryRequest(), null)
+  h.router.respond(request.id, { confirmed: false }, 'secondary')
+  assert.deepEqual(h.responses, [], 'the hidden popup must no longer answer')
+  h.router.respond(request.id, { confirmed: true }, 'main')
+  assert.deepEqual(h.responses, [{ manager: h.alpha, id: request.id, response: { confirmed: true } }])
+  assert.deepEqual(h.router.getPendingCounts(), {})
 })
 
 test('approval ownership transfers revoke the old main view and only the first current owner can answer', () => {

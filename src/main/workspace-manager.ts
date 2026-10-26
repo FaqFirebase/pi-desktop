@@ -600,7 +600,7 @@ export class WorkspaceManager {
     if (existing && existing.info.workspaceId !== workspaceId) {
       throw new Error(t('errors.session.attachedToDifferentWorkspace'))
     }
-    return this.snapshotRuntime(existing ?? this.createSessionRuntime(workspaceId, sessionPath))
+    return this.snapshotRuntime(existing ?? this.createSessionRuntime(workspaceId, sessionPath, false))
   }
 
   /** Drop inactive header-only sessions so abandoned New Session tabs do not linger. */

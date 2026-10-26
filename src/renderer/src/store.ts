@@ -1985,6 +1985,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         piEngine: runtime.engine ?? 'pi',
         piError: runtime.error,
       })
+      // A same-workspace runtime swap emits no workspace-change replay.
+      // The main process retains the dialog: recover it only after activation
+      // succeeds and survives the generation guard above.
+      void window.piDesktop.ui.flushPendingPrompts(workspaceId)
       if (reattaching) set({ isStreaming: true, reattachedMidTurn: true })
       void get().reloadActiveSession({ refreshList: false })
       scheduleSessionListRefresh(get)

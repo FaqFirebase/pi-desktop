@@ -1617,3 +1617,36 @@ test('allocating an inactive task does not evict a process from a full live-runt
     assert.equal(mgr.getActiveSessionRuntime()?.runtimeId, active)
   })
 })
+
+test('opening saved history preserves the live budget until its runtime starts', async () => {
+  await freshDataDir()
+  await withManager(async (mgr) => {
+    const workspace = await mgr.createWorkspace('Budget', await project())
+    const live: FakePiProcess[] = []
+    for (let index = 0; index < MAX_LIVE_SESSION_RUNTIMES; index++) {
+      live.push((await liveRuntime(mgr, workspace.id, 20000 + index)).process)
+    }
+    const active = mgr.getActiveSessionRuntime()?.runtimeId
+    const sessionPath = join(await project(), 'saved.jsonl')
+    await writeFile(sessionPath, JSON.stringify({ type: 'session', id: 'saved' }) + '\n')
+
+    const opened = mgr.openSessionRuntime(workspace.id, sessionPath)
+    assert.equal(opened.status, 'stopped')
+    assert.equal(opened.pid, null)
+    assert.equal(liveRuntimeCount(mgr), MAX_LIVE_SESSION_RUNTIMES)
+    assert.equal(live.some((process) => process.stopped), false)
+    assert.equal(mgr.getActiveSessionRuntime()?.runtimeId, active)
+
+    const manager = mgr.getSessionRuntimeManager(opened.runtimeId)!
+    const started = fakePiProcess(manager, 21000, 'stopped')
+    reportsSessionFile(manager, sessionPath, 'saved')
+    await mgr.startSessionRuntime(opened.runtimeId)
+
+    assert.equal(started.starts, 1)
+    assert.equal(started.lastStartOptions?.sessionPath, sessionPath)
+    assert.equal(live.filter((process) => process.stopped).length, 1)
+    assert.equal(live.at(-1)?.stopped, false, 'the active main session is never evicted')
+    assert.equal(liveRuntimeCount(mgr), MAX_LIVE_SESSION_RUNTIMES)
+    assert.equal(mgr.getActiveSessionRuntime()?.runtimeId, active)
+  })
+})
