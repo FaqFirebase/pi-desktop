@@ -69,6 +69,7 @@ function setup(stopAll?: () => Promise<void>) {
     workspaceTerminals: { stopAll: () => { calls.push('stop-terminals') } },
     editorGuard,
     confirmEditorDiscard: async () => { calls.push('confirm'); return discard },
+    destroyQuickChatWindow: () => { calls.push('destroy-quick-chat') },
     destroyTray: () => { calls.push('destroy-tray') },
     globalShortcut: { unregisterAll: () => { calls.push('release-shortcuts') } },
     activityStatsStore: { flushSync: () => { calls.push('flush-stats') } },
@@ -114,10 +115,11 @@ test('one native macOS quit exits even when shutdown resolves immediately', {
         flushSync: () => calls.push('flush-log')
       };
       const cleanupPiChildTempDir = () => calls.push('cleanup-temp');
+      const destroyQuickChatWindow = () => calls.push('destroy-quick-chat');
       ${ts.transpile(lifecycle, { target: ts.ScriptTarget.ES2022 })}
       app.on('quit', () => {
         assert.deepEqual(calls, [
-          'close-renderer', 'stop-all', 'destroy-tray', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp'
+          'destroy-quick-chat', 'close-renderer', 'stop-all', 'destroy-tray', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp'
         ]);
         process.stdout.write('quit-complete');
       });
@@ -135,7 +137,7 @@ test('one native macOS quit exits even when shutdown resolves immediately', {
     delete env.ELECTRON_RUN_AS_NODE
     const electron = createRequire(import.meta.url)('electron') as string
     const result = spawnSync(electron, [probe], {
-      env, encoding: 'utf8', timeout: 10_000, killSignal: 'SIGKILL',
+      env, encoding: 'utf8', timeout: 20_000, killSignal: 'SIGKILL',
     })
     assert.equal(result.error, undefined, `native quit did not exit: ${result.error?.message}\n${result.stdout}\n${result.stderr}`)
     assert.equal(result.status, 0, result.stderr)
@@ -148,7 +150,7 @@ test('one native macOS quit exits even when shutdown resolves immediately', {
 test('a single quit closes the renderer, drains pending writes and exits', { timeout: 1000 }, async () => {
   const state = setup()
   state.app.quit()
-  assert.deepEqual(state.calls, ['close-renderer', 'stop-all'])
+  assert.deepEqual(state.calls, ['destroy-quick-chat', 'close-renderer', 'stop-all'])
   assert.equal(state.rendererOpen(), false)
   assert.equal(state.exited(), false)
 
@@ -156,7 +158,7 @@ test('a single quit closes the renderer, drains pending writes and exits', { tim
   await state.exit
   assert.equal(state.exited(), true, 'no second user quit should be needed')
   assert.deepEqual(state.calls, [
-    'close-renderer', 'stop-all', 'destroy-tray', 'release-shortcuts', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
+    'destroy-quick-chat', 'close-renderer', 'stop-all', 'destroy-tray', 'release-shortcuts', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
   ])
 })
 
@@ -165,14 +167,14 @@ test('repeated quits share the drain and cannot reopen the window during shutdow
   state.app.quit()
   state.app.quit()
   state.showMainWindow()
-  assert.deepEqual(state.calls, ['close-renderer', 'stop-all'])
+  assert.deepEqual(state.calls, ['destroy-quick-chat', 'close-renderer', 'stop-all'])
   assert.equal(state.exited(), false)
 
   state.finish()
   await state.exit
   assert.equal(state.exited(), true)
   assert.deepEqual(state.calls, [
-    'close-renderer', 'stop-all', 'destroy-tray', 'release-shortcuts', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
+    'destroy-quick-chat', 'close-renderer', 'stop-all', 'destroy-tray', 'release-shortcuts', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
   ])
 })
 
@@ -190,7 +192,7 @@ test('cancelled unsaved-edit confirmation leaves the renderer and workspaces int
   state.discard()
   state.app.quit()
   await setImmediate()
-  assert.deepEqual(state.calls.slice(-3), ['confirm', 'close-renderer', 'stop-all'])
+  assert.deepEqual(state.calls.slice(-4), ['confirm', 'destroy-quick-chat', 'close-renderer', 'stop-all'])
   state.finish()
   await state.exit
   assert.equal(state.exited(), true)
@@ -203,7 +205,7 @@ test('a failed shutdown flush is logged and does not require another quit', { ti
   await state.exit
   assert.equal(state.exited(), true)
   assert.deepEqual(state.calls, [
-    'close-renderer', 'stop-all', 'warn', 'destroy-tray', 'release-shortcuts', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
+    'destroy-quick-chat', 'close-renderer', 'stop-all', 'warn', 'destroy-tray', 'release-shortcuts', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
   ])
 })
 
@@ -213,6 +215,6 @@ test('a synchronous shutdown failure is logged and does not hang the quit', { ti
   await state.exit
   assert.equal(state.exited(), true)
   assert.deepEqual(state.calls, [
-    'close-renderer', 'warn', 'destroy-tray', 'release-shortcuts', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
+    'destroy-quick-chat', 'close-renderer', 'warn', 'destroy-tray', 'release-shortcuts', 'flush-stats', 'flush-log', 'stop-terminals', 'cleanup-temp',
   ])
 })

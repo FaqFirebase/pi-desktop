@@ -1,4 +1,4 @@
-import { test, before, beforeEach } from 'node:test'
+import { test, before, beforeEach, type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import type {
   PermissionRule,
@@ -16,6 +16,10 @@ import type { PreviewTarget } from './store'
 // session change reached Pi and that nothing reached Pi when it was declined.
 const calls: string[] = []
 let switchResult: { success?: boolean; error?: string } | SessionRuntimeInfo | null = { success: true }
+// What the stubbed session.activateRuntime resolves; an error message makes it
+// reject, mirroring main's refusal of a stale/foreign target.
+let activateRuntimeResult: SessionRuntimeInfo | null = null
+let activateRuntimeError: string | null = null
 // Non-null makes the stubbed workspace.setActive reject, simulating a switch
 // that never commits on the main side.
 let setActiveFailure: string | null = null
@@ -175,6 +179,9 @@ const piDesktopStub = {
     respondEditor: (id: string, _value: string) => {
       calls.push(`respondEditor:${id}`)
     },
+    respondCancel: (id: string) => {
+      calls.push(`respondCancel:${id}`)
+    },
     flushPendingPrompts: async (workspaceId: string) => {
       calls.push(`flushPendingPrompts:${workspaceId}`)
     },
@@ -211,6 +218,11 @@ const piDesktopStub = {
     closeRuntime: async (runtimeId: string) => {
       calls.push(`closeRuntime:${runtimeId}`)
       return { runtimeId, workspaceId: WORKSPACE_ONE.id, sessionPath: SESSION_PATH, empty: false, deleted: false }
+    },
+    activateRuntime: async (workspaceId: string, runtimeId: string) => {
+      calls.push(`activateRuntime:${workspaceId}:${runtimeId}`)
+      if (activateRuntimeError) throw new Error(activateRuntimeError)
+      return activateRuntimeResult
     },
     delete: async (path: string) => {
       calls.push(`deleteSession:${path}`)
@@ -310,6 +322,8 @@ beforeEach(() => {
     answerPoll = null
   }
   switchResult = { success: true }
+  activateRuntimeResult = null
+  activateRuntimeError = null
   setActiveFailure = null
   pendingPromptsSnapshot = {}
   workspaceActivityFailure = null
@@ -577,6 +591,379 @@ test('createNewSession opens the new conversation in Chat and requests composer 
   assert.equal(state.currentView, 'chat')
   assert.equal(state.sessionLoading, false, 'an empty new session should render immediately')
   assert.equal(state.composerFocusRequested, true)
+})
+
+// ─── Exact runtime activation (secondary view "Open in Main" on a file-less tab) ──
+
+function filelessRuntime(runtimeId: string, workspace: Workspace): SessionRuntimeInfo {
+  return {
+    runtimeId,
+    workspaceId: workspace.id,
+    sessionPath: null,
+    sessionId: null,
+    status: 'running',
+    pid: 123,
+    error: null,
+    activity: null,
+    active: true,
+  }
+}
+
+// Controlled main-side IPC retains the dialog until the selected runtime is
+// ready to replay it; the store must expose an actionable request after opening.
+function approvalHandoff(t: TestContext, beforeResolution?: (runtimeId: string) => Promise<void>) {
+  const responses: Array<{ id: string; response: Record<string, unknown> }> = []
+  let activeRuntimeId = 'rt-other'
+  t.mock.method(piDesktopStub.session, 'activateRuntime', async (workspaceId: string, runtimeId: string) => {
+    assert.equal(workspaceId, WORKSPACE_ONE.id)
+    assert.ok(runtimeId === 'rt-target' || runtimeId === 'rt-other')
+    if (activateRuntimeError) throw new Error(activateRuntimeError)
+    activeRuntimeId = runtimeId
+    await beforeResolution?.(runtimeId)
+    return {
+      ...filelessRuntime(runtimeId, WORKSPACE_ONE),
+      activity: runtimeId === 'rt-target' ? 'needs-approval' as const : null,
+    }
+  })
+  t.mock.method(piDesktopStub.ui, 'flushPendingPrompts', async (workspaceId: string) => {
+    if (workspaceId === WORKSPACE_ONE.id && activeRuntimeId === 'rt-target') {
+      useAppStore.getState().handlePiEvent(EXTENSION_DIALOG)
+    }
+  })
+  t.mock.method(piDesktopStub.ui, 'respondConfirm', (id: string, confirmed: boolean) => {
+    responses.push({ id, response: { confirmed } })
+  })
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE]
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    activeSessionRuntimeId: 'rt-other',
+  })
+  return { responses }
+}
+
+test('opening a file-less approval runtime in main displays an actionable request', async (t) => {
+  const h = approvalHandoff(t)
+
+  assert.equal(await useAppStore.getState().activateRuntime(WORKSPACE_ONE.id, 'rt-target'), true)
+
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, 'rt-target')
+  assert.deepEqual(useAppStore.getState().extensionUiRequest, EXTENSION_DIALOG)
+  useAppStore.getState().respondExtensionUi(EXTENSION_DIALOG.id, { confirmed: true })
+  assert.deepEqual(h.responses, [{ id: EXTENSION_DIALOG.id, response: { confirmed: true } }])
+  assert.equal(useAppStore.getState().extensionUiRequest, null)
+})
+
+for (const reason of ['dirty editor', 'streaming turn'] as const) {
+  test(`a file-less approval is not displayed when main declines to leave its ${reason}`, async (t) => {
+    const h = approvalHandoff(t)
+    useAppStore.setState(reason === 'dirty editor'
+      ? { editorDirty: true, previewTarget: { path: '/tmp/one/file.ts', name: 'file.ts', kind: 'code' } }
+      : { isStreaming: true })
+    const pending = useAppStore.getState().activateRuntime(WORKSPACE_ONE.id, 'rt-target')
+    // Let the dirty-editor gate settle before inspecting the streaming gate.
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.ok(useAppStore.getState().confirmRequest)
+    useAppStore.getState().resolveConfirm(false)
+
+    assert.equal(await pending, false)
+    assert.equal(useAppStore.getState().activeSessionRuntimeId, 'rt-other')
+    assert.equal(useAppStore.getState().extensionUiRequest, null)
+    useAppStore.getState().respondExtensionUi(EXTENSION_DIALOG.id, { confirmed: true })
+    assert.deepEqual(h.responses, [], 'declining navigation must not expose an actionable request')
+  })
+}
+
+test('a rejected file-less activation does not display its approval in main', async (t) => {
+  const h = approvalHandoff(t)
+  activateRuntimeError = 'Session runtime not found'
+
+  assert.equal(await useAppStore.getState().activateRuntime(WORKSPACE_ONE.id, 'rt-target'), false)
+
+  assert.equal(useAppStore.getState().extensionUiRequest, null)
+  useAppStore.getState().respondExtensionUi(EXTENSION_DIALOG.id, { confirmed: true })
+  assert.deepEqual(h.responses, [])
+})
+
+test('an obsolete file-less activation cannot replay its approval over a newer exact-runtime selection', async (t) => {
+  let finishActivation!: () => void
+  let activationStarted!: () => void
+  const hold = new Promise<void>((resolve) => { finishActivation = resolve })
+  const started = new Promise<void>((resolve) => { activationStarted = resolve })
+  const h = approvalHandoff(t, async (runtimeId) => {
+    if (runtimeId === 'rt-target') {
+      activationStarted()
+      await hold
+    }
+  })
+  const obsolete = useAppStore.getState().activateRuntime(WORKSPACE_ONE.id, 'rt-target')
+  await started
+  assert.equal(await useAppStore.getState().activateRuntime(WORKSPACE_ONE.id, 'rt-other'), true)
+  finishActivation()
+
+  assert.equal(await obsolete, false)
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, 'rt-other')
+  assert.equal(useAppStore.getState().extensionUiRequest, null)
+  useAppStore.getState().respondExtensionUi(EXTENSION_DIALOG.id, { confirmed: true })
+  assert.deepEqual(h.responses, [], 'a stale activation must not expose an actionable request')
+})
+
+test('activateRuntime targets the exact runtime even when another is active in the same workspace', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE]
+  activateRuntimeResult = filelessRuntime('rt-target', WORKSPACE_ONE)
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    activeSessionRuntimeId: 'rt-other',
+    sessionRuntimes: {
+      'rt-other': filelessRuntime('rt-other', WORKSPACE_ONE),
+      'rt-target': filelessRuntime('rt-target', WORKSPACE_ONE),
+    },
+    currentView: 'sessions',
+    composerFocusRequested: false,
+  })
+
+  const ok = await useAppStore.getState().activateRuntime(WORKSPACE_ONE.id, 'rt-target')
+
+  assert.equal(ok, true)
+  assert.equal(calls.includes(`activateRuntime:${WORKSPACE_ONE.id}:rt-target`), true)
+  assert.equal(calls.some((c) => c.startsWith('switch:')), false, 'a file-less target cannot and must not switch by path')
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, 'rt-target')
+  assert.equal(useAppStore.getState().currentView, 'chat')
+  assert.equal(useAppStore.getState().composerFocusRequested, true)
+  assert.equal(useAppStore.getState().confirmRequest, null, 'an idle runtime raises no dialog')
+})
+
+test('activateRuntime asks before discarding a dirty editor in the same workspace', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE]
+  activateRuntimeResult = filelessRuntime('rt-target', WORKSPACE_ONE)
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    activeSessionRuntimeId: 'rt-other',
+    editorDirty: true,
+    previewTarget: { path: '/tmp/one/file.ts', name: 'file.ts', kind: 'code' } as PreviewTarget,
+  })
+
+  const pending = useAppStore.getState().activateRuntime(WORKSPACE_ONE.id, 'rt-target')
+  const request = useAppStore.getState().confirmRequest
+  assert.ok(request, 'same-workspace activation must still ask about the dirty editor')
+  useAppStore.getState().resolveConfirm(false)
+  assert.equal(await pending, false)
+  assert.equal(calls.some((c) => c.startsWith('activateRuntime:')), false, 'a declined switch must not reach main')
+})
+
+test('a declined exact-runtime activation keeps the retained session history load valid', async (t) => {
+  // The retained session's history load is in flight while the user asks for
+  // another runtime and then declines the dirty-editor confirm. Declining is
+  // not navigation: the unchanged chat's load must still land and clear
+  // sessionLoading instead of being discarded by a premature invalidation.
+  let releaseHistory: (() => void) | null = null
+  const gate = new Promise<void>((resolve) => { releaseHistory = resolve })
+  t.mock.method(piDesktopStub.session, 'getMessages', async () => {
+    calls.push('getMessages')
+    await gate
+    return { success: true, data: { messages: [] } }
+  })
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE]
+  activateRuntimeResult = filelessRuntime('rt-target', WORKSPACE_ONE)
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    activeSessionRuntimeId: 'rt-retained',
+    piStatus: 'running',
+    sessionLoading: true,
+    editorDirty: true,
+    previewTarget: { path: '/tmp/one/notes.md', name: 'notes.md', kind: 'code' },
+  })
+
+  const loading = useAppStore.getState().reloadActiveSession({ refreshList: false })
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.equal(calls.includes('getMessages'), true, 'the retained session history load is in flight')
+
+  const pending = useAppStore.getState().activateRuntime(WORKSPACE_ONE.id, 'rt-target')
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.ok(useAppStore.getState().confirmRequest, 'the dirty editor must be confirmed first')
+  useAppStore.getState().resolveConfirm(false)
+  assert.equal(await pending, false)
+
+  releaseHistory!()
+  await loading
+  assert.equal(useAppStore.getState().sessionLoading, false, 'the retained chat must not stay stuck loading')
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, 'rt-retained')
+  assert.equal(calls.some((call) => call.startsWith('activateRuntime:')), false, 'the decline never reached main')
+})
+
+test('other real navigation during the activation confirm rejects the stale intent', async () => {
+  // The dirty-editor confirm is pending when the user navigates elsewhere for
+  // real (switchSession bumps the session-load generation). Answering the
+  // stale confirm OK afterwards must not commit the activation over the
+  // newer navigation.
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE]
+  activateRuntimeResult = filelessRuntime('rt-target', WORKSPACE_ONE)
+  switchResult = {
+    runtimeId: 'rt-switched',
+    workspaceId: WORKSPACE_ONE.id,
+    sessionPath: SESSION_PATH,
+    sessionId: 'session-switched',
+    status: 'running',
+    pid: 7,
+    error: null,
+    activity: null,
+    active: true,
+  }
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    activeSessionRuntimeId: 'rt-retained',
+    piStatus: 'running',
+    editorDirty: true,
+    previewTarget: { path: '/tmp/one/notes.md', name: 'notes.md', kind: 'code' },
+  })
+
+  const pending = useAppStore.getState().activateRuntime(WORKSPACE_ONE.id, 'rt-target')
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.ok(useAppStore.getState().confirmRequest, 'the dirty editor confirm is pending')
+
+  await useAppStore.getState().switchSession(SESSION_PATH)
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, 'rt-switched')
+
+  useAppStore.getState().resolveConfirm(true)
+  assert.equal(await pending, false, 'a stale intent must not commit after other navigation')
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, 'rt-switched', 'the newer navigation result stands')
+  assert.equal(calls.some((call) => call.startsWith('activateRuntime:')), false, 'the stale intent never reached main')
+})
+
+test('a newer activation intent during an awaited workspace switch takes over the commit', async (t) => {
+  // Cross-workspace activation awaits activateWorkspace; a second activation
+  // started meanwhile must keep the first from committing after its await
+  // resolves.
+  let releaseFirst: (() => void) | null = null
+  const firstSwitch = new Promise<void>((resolve) => { releaseFirst = resolve })
+  activeWorkspaceResult = WORKSPACE_TWO
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activateRuntimeResult = filelessRuntime('rt-target', WORKSPACE_TWO)
+  t.mock.method(piDesktopStub.workspace, 'setActive', async () => {
+    calls.push(`setActiveWorkspace:${WORKSPACE_TWO.id}`)
+    await firstSwitch
+    return WORKSPACE_TWO
+  })
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    activeSessionRuntimeId: 'rt-retained',
+    piStatus: 'stopped',
+  })
+
+  const stale = useAppStore.getState().activateRuntime(WORKSPACE_TWO.id, 'rt-target')
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  // While the first intent is stuck awaiting the workspace switch, a second
+  // intent supersedes it.
+  const fresh = useAppStore.getState().activateRuntime(WORKSPACE_TWO.id, 'rt-target')
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  releaseFirst!()
+  assert.equal(await stale, false, 'the older intent must not commit after being superseded')
+  assert.equal(await fresh, true, 'the newer intent commits')
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, 'rt-target')
+})
+
+test('a declined cross-workspace exact activation preserves the dirty editor and current workspace', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activateRuntimeResult = filelessRuntime('rt-target', WORKSPACE_TWO)
+  const preview = { path: '/tmp/one/file.ts', name: 'file.ts', kind: 'code' } as PreviewTarget
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    activeSessionRuntimeId: 'rt-other',
+    editorDirty: true,
+    previewTarget: preview,
+  })
+  const pending = useAppStore.getState().activateRuntime(WORKSPACE_TWO.id, 'rt-target')
+  assert.ok(useAppStore.getState().confirmRequest)
+  useAppStore.getState().resolveConfirm(false)
+  assert.equal(await pending, false)
+  assert.equal(useAppStore.getState().activeWorkspace?.id, WORKSPACE_ONE.id)
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, 'rt-other')
+  assert.equal(useAppStore.getState().editorDirty, true)
+  assert.deepEqual(useAppStore.getState().previewTarget, preview)
+  assert.equal(calls.some((call) => call.startsWith('setActiveWorkspace:') || call.startsWith('activateRuntime:')), false)
+})
+
+test('activateRuntime asks before abandoning a streaming turn in the same workspace', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE]
+  activateRuntimeResult = filelessRuntime('rt-target', WORKSPACE_ONE)
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    activeSessionRuntimeId: 'rt-other',
+    isStreaming: true,
+    streamingContent: 'partial',
+  })
+
+  const pending = useAppStore.getState().activateRuntime(WORKSPACE_ONE.id, 'rt-target')
+  // The action awaits confirmDiscardEditorChanges first; let that microtask
+  // land so the streaming dialog is the one on screen.
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const request = useAppStore.getState().confirmRequest
+  assert.ok(request, 'a streaming turn must raise the dialog even within the same workspace')
+  useAppStore.getState().resolveConfirm(false)
+  assert.equal(await pending, false)
+  assert.equal(calls.some((c) => c.startsWith('activateRuntime:')), false)
+})
+
+test('activateRuntime opens the workspace first when the target lives elsewhere', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activateRuntimeResult = filelessRuntime('rt-target', WORKSPACE_TWO)
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    activeSessionRuntimeId: 'rt-one',
+  })
+
+  const ok = await useAppStore.getState().activateRuntime(WORKSPACE_TWO.id, 'rt-target')
+
+  assert.equal(ok, true)
+  assert.equal(calls.includes(`setActiveWorkspace:${WORKSPACE_TWO.id}`), true)
+  assert.equal(calls.includes(`activateRuntime:${WORKSPACE_TWO.id}:rt-target`), true)
+  assert.equal(useAppStore.getState().activeWorkspace?.id, WORKSPACE_TWO.id)
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, 'rt-target')
+  assert.equal(useAppStore.getState().currentView, 'chat')
+})
+
+test('activateRuntime reports a refused stale target and never falls back', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE]
+  activateRuntimeError = 'Session runtime not found'
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    activeSessionRuntimeId: 'rt-other',
+    currentView: 'chat',
+  })
+
+  const ok = await useAppStore.getState().activateRuntime(WORKSPACE_ONE.id, 'rt-gone')
+
+  assert.equal(ok, false)
+  // The catch path clears the loading flag; the still-active runtime's snapshot
+  // (main never re-emits on a refusal, but the pointer clears only locally) —
+  // the renderer never falls back to a path switch.
+  assert.equal(calls.some((c) => c.startsWith('switch:')), false, 'no path fallback for a missing runtime')
+  assert.equal(calls.some((c) => c.startsWith('activateRuntime:')), true)
+  assert.equal(useAppStore.getState().isStreaming, false)
+  assert.equal(useAppStore.getState().sessionLoading, false)
+  assert.equal(
+    useAppStore.getState().messages.some((m) => m.role === 'system' && /Session runtime not found/.test(m.content ?? '')),
+    true,
+    'the refusal reason must be shown to the user'
+  )
 })
 
 test('forkFrom is gated by the same warning', async () => {

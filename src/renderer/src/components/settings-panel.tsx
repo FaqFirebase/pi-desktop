@@ -1129,7 +1129,7 @@ export function SettingsPanel(): React.JSX.Element {
         </SettingsSection>
 
         <SettingsSection title={t('settings.shortcuts.heading')}>
-          <ShortcutSettings value={shortcuts} onChange={(shortcuts) => setSettingsDraft({ shortcuts })} />
+          <ShortcutSettings value={shortcuts} savedValue={settings?.shortcuts ?? DEFAULT_SETTINGS.shortcuts} onChange={(shortcuts) => setSettingsDraft({ shortcuts })} />
         </SettingsSection>
 
         <SettingsSection title={t('settings.sections.voiceDictation')}>

@@ -8,8 +8,8 @@ import { requestCommitPushDialog } from './commit-push-shortcut'
 import { adjacentTabIndex, projectTabs, sessionTabs } from './tab-navigation'
 import { emitVoiceShortcut } from '../voice/voice-shortcut'
 
-/** Actions that run once per key press; the voice keys are handled in dispatchAppShortcut. */
-type CommandShortcutAction = Exclude<ShortcutAction, 'pushToTalk' | 'globalDictation'>
+/** In-app commands exclude hold-to-talk and the main process's system-wide actions. */
+type CommandShortcutAction = Exclude<ShortcutAction, 'pushToTalk' | 'globalDictation' | 'quickChat'>
 
 /** The document listener that gets the key: before the focused element ('capture') or after it ('bubble'). */
 type ShortcutListenerPhase = 'capture' | 'bubble'
@@ -142,8 +142,8 @@ function dispatchAppShortcut(event: KeyboardEvent, phase: ShortcutListenerPhase)
   const platform = window.piDesktop.system.platform
   if (shortcutProblem(shortcuts, platform)) return
   const action = SHORTCUT_ACTIONS.find((candidate) => matchesShortcut(event, shortcuts[candidate], platform))
-  // The main process owns the system-wide dictation key.
-  if (!action || action === 'globalDictation') return
+  // The main process owns system-wide actions; dispatching here would toggle twice.
+  if (!action || action === 'globalDictation' || action === 'quickChat') return
   if (shortcutPhase(event, action) !== phase) return
   event.preventDefault()
   event.stopPropagation()

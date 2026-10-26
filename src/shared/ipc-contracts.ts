@@ -17,6 +17,7 @@ export const IPC_CHANNELS = {
   PI_RESTART: 'pi:restart',
   PI_STATUS: 'pi:status',
   PI_DETECT_INSTALLATIONS: 'pi:detect-installations',
+  QUICK_CHAT_SHORTCUT_STATUS: 'quick-chat:shortcut-status',
 
   // Pi commands
   PI_PROMPT: 'pi:prompt',
@@ -30,6 +31,7 @@ export const IPC_CHANNELS = {
   SESSION_NEW: 'session:new',
   SESSION_LAUNCH_TASK: 'session:launch-task',
   SESSION_CLOSE_RUNTIME: 'session:close-runtime',
+  SESSION_ACTIVATE_RUNTIME: 'session:activate-runtime',
   SESSION_SWITCH: 'session:switch',
   SESSION_LIST_RUNTIMES: 'session:list-runtimes',
   SESSION_FORK: 'session:fork',
@@ -62,6 +64,7 @@ export const IPC_CHANNELS = {
   SETTINGS_GET_ALL: 'settings:get-all',
   SETTINGS_SAVE: 'settings:save',
   I18N_GET_ENVIRONMENT: 'i18n:get-environment',
+  SETTINGS_OPEN_QUICK_CHAT: 'settings:open-quick-chat',
 
   // Permission rules
   PERMISSION_RULES_GET: 'permission-rules:get',
@@ -77,6 +80,7 @@ export const IPC_CHANNELS = {
   UI_CONFIRM_RESPONSE: 'ui:confirm-response',
   UI_INPUT_RESPONSE: 'ui:input-response',
   UI_EDITOR_RESPONSE: 'ui:editor-response',
+  UI_CANCEL_RESPONSE: 'ui:cancel-response',
   UI_PENDING_FLUSH: 'ui:pending-flush',
   UI_PENDING_GET: 'ui:pending-get',
   UI_EDITOR_DIRTY_SET: 'ui:editor-dirty-set',
@@ -217,6 +221,8 @@ export const IPC_CHANNELS = {
   EVENT_PENDING_PROMPTS: 'event:pending-prompts',
   EVENT_WORKSPACE_ACTIVITY: 'event:workspace-activity',
   EVENT_SESSION_RUNTIME: 'event:session-runtime',
+  /** A model/thinking switch changed a runtime's engine state; views bound to it refresh. */
+  EVENT_RUNTIME_STATE_CHANGED: 'event:runtime-state-changed',
   EVENT_ACTIVATE_WORKSPACE: 'event:activate-workspace',
   EVENT_FILE_CHANGE: 'event:file-change',
   EVENT_TERMINAL_DATA: 'event:terminal-data',

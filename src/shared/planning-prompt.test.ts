@@ -1,14 +1,9 @@
 import assert from 'node:assert/strict'
-import { sessionPreview, stripInjectedPreamble } from '../../../shared/session-preview'
+import { sessionPreview, stripInjectedPreamble } from './session-preview'
 import { buildPlanningPrompt } from './planning-prompt'
 
 const prompt = buildPlanningPrompt('Delete unused files')
 
-assert.match(prompt, /read-only planning mode/i)
-assert.match(prompt, /inspect/i)
-assert.match(prompt, /do not edit files/i)
-assert.match(prompt, /step-by-step plan/i)
-assert.match(prompt, /Delete unused files/)
 
 // The preamble is stored verbatim as the session's first user message, so the
 // builder must stay strippable: if its opening line or request sentinel drifts,

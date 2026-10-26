@@ -1,7 +1,7 @@
 export const SHORTCUT_ACTIONS = [
   'modelSelector', 'sidebar', 'files', 'diff', 'terminal', 'review',
   'newSession', 'previousProject', 'nextProject', 'previousSession', 'nextSession',
-  'commitPush', 'settings', 'commandPalette', 'notes', 'pushToTalk', 'globalDictation',
+  'commitPush', 'settings', 'commandPalette', 'notes', 'pushToTalk', 'globalDictation', 'quickChat',
 ] as const
 export type ShortcutAction = typeof SHORTCUT_ACTIONS[number]
 export type KeyboardShortcuts = Record<ShortcutAction, string | null>
@@ -28,6 +28,7 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   pushToTalk: 'Mod+Shift+T',
   // Off until the user picks one: a system-wide key is taken from every other app.
   globalDictation: null,
+  quickChat: null,
 }
 
 export interface ShortcutKeyEvent {

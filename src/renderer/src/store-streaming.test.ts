@@ -1,6 +1,7 @@
 import { before, beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { PiMessageUpdateEvent, PiRpcEvent } from '../../shared/ipc-contracts'
+import { placeStreamedDelta } from './streamed-delta'
 
 type AppStore = typeof import('./store')['useAppStore']
 let useAppStore: AppStore
@@ -285,8 +286,7 @@ test('a turn of a session the list already holds does not reload the list when i
   }
 })
 
-test('deltas take their place by offset, and a delta the view already holds changes nothing', async () => {
-  const { placeStreamedDelta } = await import('./store')
+test('deltas take their place by offset, and a delta the view already holds changes nothing', () => {
   assert.equal(placeStreamedDelta('', 'Hello', 0), 'Hello')
   assert.equal(placeStreamedDelta('Hello', ' world', 5), 'Hello world')
   assert.equal(placeStreamedDelta('Hello world', ' world', 5), 'Hello world')
