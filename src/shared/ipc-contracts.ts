@@ -1332,6 +1332,11 @@ export interface AppSettings {
   chatWidth: ChatWidth
   showThinking: boolean
   autoScroll: boolean
+  // Read text between single dollar signs, like $x$, as math in chat. Off by
+  // default because money such as "$5 and $10" would then show as math.
+  // \(x\), \[x\], ```math blocks and `$$x$$` alone on its line are always
+  // math (see renderer utils/markdown-math.ts).
+  singleDollarMath: boolean
   permissionMode: PermissionMode
   // Workspace paths whose "this workspace has its own permission rules"
   // notice has been acknowledged. Not exposed in the Settings UI.

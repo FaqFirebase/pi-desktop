@@ -42,6 +42,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   chatWidth: DEFAULT_CHAT_WIDTH,
   showThinking: true,
   autoScroll: true,
+  singleDollarMath: false,
   permissionMode: 'ask-edits',
   permissionRulesAckWorkspaces: [],
   resumeLastSession: true,

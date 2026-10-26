@@ -1393,6 +1393,10 @@
       "description": "Display model thinking blocks in responses",
       "label": "Show Thinking"
     },
+    "singleDollarMath": {
+      "description": "Read text between single dollar signs, like $x$, as math. Money such as $5 and $10 can then show as math by mistake.",
+      "label": "Single $ Math"
+    },
     "suggestNextSteps": {
       "description": "At the end of a turn, {{agent}} can suggest up to three next steps, such as missing tests or work it could not check. Click a step to put it in the message box. Applies to sessions that start after you save.",
       "label": "Suggest Next Steps"
