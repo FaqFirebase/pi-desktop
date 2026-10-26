@@ -602,9 +602,11 @@ test('an OMP runtime in the home directory opts into --allow-home; Pi and other 
         )
         await mgr.closeSessionRuntime(runtime.runtimeId)
       }
-      setPiExecutableOverride(null, 'auto')
     })
   } finally {
+    // An assertion failure above must not leave later tests spawning the OMP
+    // override this test installed, so the reset runs on every exit path.
+    setPiExecutableOverride(null, 'auto')
     if (savedHome === undefined) delete process.env.HOME
     else process.env.HOME = savedHome
   }

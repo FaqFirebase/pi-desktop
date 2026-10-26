@@ -137,11 +137,20 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
   }
 
   const getPendingCounts = (): PendingPromptCounts => {
+    const reaped: PiRpcManager[] = []
     for (const [manager, entry] of delivered) {
       if (!isExpired(entry)) continue
       revoke(manager, entry)
       origins.delete(entry.event.id)
       delivered.delete(manager)
+      reaped.push(manager)
+    }
+    // A reaped slot must not strand a queued dialog behind it. Pi resolves an
+    // expired request itself without a cancel event, so nothing else would
+    // move the queue until an unrelated flush: promote the next live prompt
+    // now, for the reaped manager only while it still owns a view.
+    for (const manager of reaped) {
+      if (queues.has(manager) && ownerFor(manager)) deliverNext(manager)
     }
     const counts: PendingPromptCounts = {}
     for (const [manager, entries] of queues) {

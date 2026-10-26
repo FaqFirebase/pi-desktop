@@ -756,6 +756,48 @@ test('activateRuntime asks before discarding a dirty editor in the same workspac
   assert.equal(calls.some((c) => c.startsWith('activateRuntime:')), false, 'a declined switch must not reach main')
 })
 
+test('a declined exact-runtime activation keeps the retained session history load valid', async (t) => {
+  // The retained session's history load is in flight while the user asks for
+  // another runtime and then declines the dirty-editor confirm. Declining is
+  // not navigation: the unchanged chat's load must still land and clear
+  // sessionLoading instead of being discarded by a premature invalidation.
+  let releaseHistory: (() => void) | null = null
+  const gate = new Promise<void>((resolve) => { releaseHistory = resolve })
+  t.mock.method(piDesktopStub.session, 'getMessages', async () => {
+    calls.push('getMessages')
+    await gate
+    return { success: true, data: { messages: [] } }
+  })
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE]
+  activateRuntimeResult = filelessRuntime('rt-target', WORKSPACE_ONE)
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    activeSessionRuntimeId: 'rt-retained',
+    piStatus: 'running',
+    sessionLoading: true,
+    editorDirty: true,
+    previewTarget: { path: '/tmp/one/notes.md', name: 'notes.md', kind: 'code' },
+  })
+
+  const loading = useAppStore.getState().reloadActiveSession({ refreshList: false })
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.equal(calls.includes('getMessages'), true, 'the retained session history load is in flight')
+
+  const pending = useAppStore.getState().activateRuntime(WORKSPACE_ONE.id, 'rt-target')
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.ok(useAppStore.getState().confirmRequest, 'the dirty editor must be confirmed first')
+  useAppStore.getState().resolveConfirm(false)
+  assert.equal(await pending, false)
+
+  releaseHistory!()
+  await loading
+  assert.equal(useAppStore.getState().sessionLoading, false, 'the retained chat must not stay stuck loading')
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, 'rt-retained')
+  assert.equal(calls.some((call) => call.startsWith('activateRuntime:')), false, 'the decline never reached main')
+})
+
 test('a declined cross-workspace exact activation preserves the dirty editor and current workspace', async () => {
   activeWorkspaceResult = WORKSPACE_ONE
   workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]

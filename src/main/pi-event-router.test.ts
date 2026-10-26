@@ -384,6 +384,26 @@ test('expired queued prompts stop being counted without a workspace visit', () =
   assert.deepEqual(h.responses, [], 'a reaped prompt cannot fall back to a different session')
 })
 
+test('a reaped expired delivered dialog promotes the queued replacement without a flush', () => {
+  const h = createHarness([WS_A])
+  const expired = dialogRequest('a1', { timeout: PROMPT_TIMEOUT_MS })
+  h.managers.get(WS_A)!.emit('event', expired)
+  // Pi auto-resolves the elapsed request without a cancel event, then asks
+  // its next blocking dialog while the slot still holds the expired one.
+  h.clock.now = PROMPT_TIMEOUT_MS
+  const fresh = dialogRequest('a2')
+  h.managers.get(WS_A)!.emit('event', fresh)
+  assert.deepEqual(
+    h.broadcasts,
+    [expired, fresh],
+    'the queued replacement must take the reaped slot on its own: nothing else would flush it',
+  )
+  assert.deepEqual(h.router.getPendingCounts(), { [WS_A]: 1 })
+  h.router.respond('a2', { confirmed: true })
+  assert.deepEqual(h.responses, [{ workspaceId: WS_A, id: 'a2', response: { confirmed: true } }])
+  assert.deepEqual(h.router.getPendingCounts(), {})
+})
+
 // ─── Activation ──────────────────────────────────────────────────────────────
 
 test('activation change re-broadcasts counts without mutating state', () => {
