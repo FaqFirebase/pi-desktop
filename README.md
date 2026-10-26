@@ -230,22 +230,24 @@ Quick Chat is a separate floating window that stays above other apps while you u
 
 - Start a new task in a project, or leave **No project** selected to work from your home directory. An agent starts only when you send.
 - Pick, paste, or drop files and images into the draft. Change the model and thinking level before sending; the selector leaves the task visible and does not resize the window.
-- Choose an existing session to read its replies or continue the conversation. **Open** takes that same session to the full workspace when you need the file tree, diff viewer, or terminal.
+- Choose an existing session to read its replies without starting an agent or evicting another session's process. Its model picker uses that session's engine. **Open** takes the same conversation and any pending approval to the full workspace.
 - Use **Cmd+N** on macOS or **Ctrl+N** elsewhere for a new task. Drafts stay separate by project and session during the app run.
 
 ### Global shortcut and opening
 
 Set a key combination for **Quick Chat (global)** in **Settings > Keyboard shortcuts** and save. The shortcut is off by default and works while Pi Desktop is running. The settings row shows whether the system accepted or rejected shortcut registration.
 
-You can also click **Open Quick Chat** directly in **Settings > Keyboard shortcuts** at any time. This button opens and focuses the popup even when the global shortcut is disabled, conflicting, or rejected.
+You can also click **Open Quick Chat** directly in **Settings > Keyboard shortcuts** at any time. This button opens the popup even when the global shortcut is disabled, conflicting, or rejected.
 
-On Linux under Wayland, system global shortcuts require desktop compositor support for the XDG Desktop Portal `GlobalShortcuts` interface and user consent (see [Electron globalShortcut documentation](https://raw.githubusercontent.com/electron/electron/v43.8.3/docs/api/global-shortcut.md)). If your Wayland environment does not support or grant portal shortcuts, the **Open Quick Chat** button in Settings provides a reliable fallback.
+On Linux under Wayland, system global shortcuts require desktop compositor support for the XDG Desktop Portal `GlobalShortcuts` interface and user consent (see [Electron globalShortcut documentation](https://raw.githubusercontent.com/electron/electron/v43.8.3/docs/api/global-shortcut.md)). If your Wayland environment does not support or grant portal shortcuts, use **Open Quick Chat** in Settings. The compositor still controls keyboard focus and always-on-top behavior.
 
 ### Window behavior and safety
 
 Quick Chat uses the same Pi/OMP engines, session history, permission modes, and workspace trust rules as the main window. It does not grant extra permissions. The default remains **Ask before edits**; requests can be allowed or denied in the popup.
 
 The initial window size follows the current display's work area. You can move or resize it; **Pin** keeps it visible when you return to another app. When unpinned, an outside click hides it. Escape and the shortcut also hide it without stopping work or answering a pending approval. Reopening returns to the selected session; **Stop** explicitly stops that task.
+
+The pin preference survives **Reload** and **Force Reload**; the button reflects the native window's current state.
 
 Enter sends; Shift+Enter adds a line. While a task is running, **Add instruction** steers it rather than creating another queued task. Model and thinking changes are available when the session is idle, or can be prepared before starting a new task.
 

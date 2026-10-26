@@ -9,11 +9,11 @@ import { pathsEqual } from '../../shared/path-compare'
 import { t } from '../../shared/i18n'
 import type { PiRpcManager } from '../pi-rpc-manager'
 import type { PiEventRouter, PiEventRouterDeps } from '../pi-event-router'
-import { getQuickChatWindow, hideQuickChatWindow, markQuickChatNativeModal, setQuickChatPinned, setQuickChatVisibilityHandler } from '../quick-chat-window'
+import { getQuickChatWindow, hideQuickChatWindow, isQuickChatPinned, markQuickChatNativeModal, setQuickChatPinned, setQuickChatVisibilityHandler } from '../quick-chat-window'
 import { getI18nEnvironment } from '../i18n'
 import { getGuiDataDir } from '../app-data-paths'
 import { listUserThemes } from '../theme-store'
-import { isWithinSessionRoots } from '../pi-paths'
+import { engineForBoundSession, isWithinSessionRoots } from '../pi-paths'
 import { assertTrustedSender, isObject, isString } from './validation'
 import { createListSessions } from './session-handlers'
 import { loadAppSettings } from './settings'
@@ -26,7 +26,8 @@ export interface QuickChatWindowAccess {
   getWindow: () => Electron.BrowserWindow | null
   hide: () => void
   onVisibility: (handler: (visible: boolean) => void) => void
-  setPinned?: (value: boolean) => void
+  isPinned: () => boolean
+  setPinned: (value: boolean) => void
 }
 
 /** Main owns the only binding. No popup operation changes the main active session. */
@@ -38,6 +39,7 @@ export function createQuickChatHandlers(
     hide: hideQuickChatWindow,
     onVisibility: setQuickChatVisibilityHandler,
     setPinned: setQuickChatPinned,
+    isPinned: isQuickChatPinned,
   },
 ): {
   routing: Pick<PiEventRouterDeps, 'getSecondaryManager' | 'preferSecondaryView' | 'sendSecondaryEvent' | 'sendSecondaryApproval'>
@@ -212,6 +214,7 @@ export function createQuickChatHandlers(
           (latest, workspace) => !latest || workspace.lastActiveAt > latest.lastActiveAt ? workspace : latest, null,
         )
         return {
+          pinned: windowAccess.isPinned(),
           binding,
           runtimes: wm.getSessionRuntimes(),
           sessions: sessions.filter((session) => workspaces.some((ws) => pathsEqual(ws.path, session.projectPath))),
@@ -364,6 +367,7 @@ export function createQuickChatHandlers(
         // same config context. Only when there is no live runtime does the
         // popup start the short-lived metadata query process.
         const manager = binding ? wm.getSessionRuntimeManager(binding.runtime.runtimeId) : null
+        const liveEngine = manager?.getStatus().status === 'running' ? manager.getEngineKind() : undefined
         if (manager && manager.getStatus().status === 'running') {
           const response = await manager.sendCommand({ type: 'get_available_models' })
           const data = isObject(response?.data) ? response.data : null
@@ -371,13 +375,13 @@ export function createQuickChatHandlers(
           if (Array.isArray(models)) return models as ModelInfo[]
         }
         const settings = await loadAppSettings(wm)
-        const engine = manager?.getEngineKind()
+        const targetRuntime = binding
+          ? wm.getSessionRuntime(binding.runtime.runtimeId)
+          : createdRuntimeId ? wm.getSessionRuntime(createdRuntimeId) : null
+        const engine = liveEngine ?? engineForBoundSession({ sessionPath: targetRuntime?.sessionPath ?? undefined }) ?? undefined
         // Query from the popup's own target, never main's active workspace.
         // A draft names its project explicitly; a session being resumed has
         // no draft yet, so the runtime the popup owns decides.
-        const targetRuntime = manager
-          ? binding!.runtime
-          : createdRuntimeId ? wm.getSessionRuntime(createdRuntimeId) : null
         const targetWorkspace = draftWorkspace
           ?? (targetRuntime ? wm.getWorkspaces().find((ws) => ws.id === targetRuntime.workspaceId) ?? null : null)
         return queryModelCatalog(wm, {
@@ -488,9 +492,9 @@ export function createQuickChatHandlers(
       })
       handle(QUICK_CHAT_CHANNELS.hide, () => windowAccess.hide())
       handle(QUICK_CHAT_CHANNELS.setPinned, (input) => {
-        if (isObject(input) && typeof input.pinned === 'boolean') {
-          windowAccess.setPinned?.(input.pinned)
-        }
+        if (!isObject(input) || typeof input.pinned !== 'boolean') throw new Error('Invalid Quick Chat pin state')
+        windowAccess.setPinned(input.pinned)
+        send({ type: 'pinned', pinned: windowAccess.isPinned() })
       })
       handle(QUICK_CHAT_CHANNELS.openInMain, () => {
         if (binding) {

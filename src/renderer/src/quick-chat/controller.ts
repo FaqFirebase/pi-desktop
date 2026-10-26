@@ -134,6 +134,9 @@ export class QuickChatController {
   private eventRevision = 0
   private approvalRevision = 0
   private configRevision = 0
+  private pinnedRevision = 0
+  // Only buffers a native update before the first context exists.
+  private pendingPinned: boolean | null = null
   private streamBoundary = 0
   private agentStarts = 0
   private latestPrompt: PendingPrompt | null = null
@@ -175,10 +178,14 @@ export class QuickChatController {
   async refreshContext(initial = false): Promise<void> {
     const load = ++this.contextLoad
     const revision = this.updateRevision
+    const pinnedRevision = this.pinnedRevision
     try {
       const context = await this.api.getContext()
       if (this.disposed || load !== this.contextLoad) return
-      this.patch({ context, loading: false })
+      const pinned = pinnedRevision === this.pinnedRevision
+        ? context.pinned : this.state.context?.pinned ?? this.pendingPinned ?? context.pinned
+      this.pendingPinned = null
+      this.patch({ context: { ...context, pinned }, loading: false })
       if (this.state.workspaceId && !context.workspaces.some((workspace) => workspace.id === this.state.workspaceId)) {
         if (this.state.mode === 'new') {
           const draft = this.drafts.get(this.draftKey())
@@ -190,6 +197,14 @@ export class QuickChatController {
       if (initial && revision === this.updateRevision) this.bind(context.binding)
     } catch (error) {
       if (load === this.contextLoad) this.patch({ error: errorText(error), loading: false })
+    }
+  }
+  async togglePinned(): Promise<void> {
+    if (!this.state.context) return
+    try {
+      await this.api.setPinned(!this.state.context.pinned)
+    } catch (error) {
+      this.patch({ error: errorText(error) })
     }
   }
   private bind(binding: QuickChatBinding | null): void {
@@ -693,6 +708,12 @@ export class QuickChatController {
     if (this.latestPrompt === prompt) this.latestPrompt = null
   }
   private onUpdate(update: QuickChatUpdate): void {
+    if (update.type === 'pinned') {
+      this.pinnedRevision++
+      if (this.state.context) this.patch({ context: { ...this.state.context, pinned: update.pinned } })
+      else this.pendingPinned = update.pinned
+      return
+    }
     if (update.type === 'visibility') {
       if (update.visible) {
         void this.refreshContext()

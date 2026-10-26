@@ -44,7 +44,7 @@ test('a model change completing after main switches to B still refreshes the pop
   let active: { id: string } = a
   const api = {
     onUpdate: (callback: typeof receive) => { receive = callback; return () => { receive = () => {} } },
-    getContext: async () => ({ binding, runtimes: [binding.runtime], workspaces: [], sessions: [], runtimeUpdatedAt: {}, defaultWorkspaceId: null, settings: { ...DEFAULT_SETTINGS }, i18nEnvironment: { systemLanguages: ['en'], pseudoLanguageEnabled: false }, themes: [] }),
+    getContext: async () => ({ pinned: false, binding, runtimes: [binding.runtime], workspaces: [], sessions: [], runtimeUpdatedAt: {}, defaultWorkspaceId: null, settings: { ...DEFAULT_SETTINGS }, i18nEnvironment: { systemLanguages: ['en'], pseudoLanguageEnabled: false }, themes: [] }),
     getSnapshot: async () => ({ binding, messages: [], streaming: null, request: null, model: currentModel, thinkingLevel: 'high', permissionMode: null }),
   } as unknown as QuickChatApi
   const popup = new QuickChatController(api)

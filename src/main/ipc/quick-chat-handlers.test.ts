@@ -7,9 +7,9 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import type { IpcContext } from './context'
-import type { QuickChatBinding, QuickChatContext, QuickChatSnapshot, QuickChatUpdate } from '../../shared/quick-chat'
+import type { QuickChatApi, QuickChatBinding, QuickChatContext, QuickChatSnapshot, QuickChatUpdate } from '../../shared/quick-chat'
 import { QUICK_CHAT_CHANNELS } from '../../shared/quick-chat'
-import { IPC_CHANNELS, type PiResponseEvent, type SessionRuntimeInfo, type Workspace } from '../../shared/ipc-contracts'
+import { IPC_CHANNELS, type ModelInfo, type PiResponseEvent, type PiStartOptions, type SessionRuntimeInfo, type Workspace } from '../../shared/ipc-contracts'
 import type { WorkspaceManager } from '../workspace-manager'
 import { configureGuiDataDir } from '../app-data-paths'
 import { RENDERER_INDEX_PATH } from '../renderer-origin'
@@ -23,6 +23,15 @@ import { engineProjectSessionDirs } from '../latest-project-session'
 // dynamically inside withBridge, after this stub is installed.
 const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<unknown>>()
 const require = createRequire(import.meta.url)
+const { QuickChatController } = require('../../renderer/src/quick-chat/controller') as {
+  QuickChatController: new (api: QuickChatApi) => {
+    start(): void
+    dispose(): void
+    togglePinned(): Promise<void>
+    refreshContext(): Promise<void>
+    getState(): { context: QuickChatContext | null }
+  }
+}
 const electronPath = require.resolve('electron')
 require('electron')
 const electronModule = require.cache[electronPath]!
@@ -47,6 +56,7 @@ interface BridgeFixture {
   broadcasts: Array<{ channel: string; data: unknown }>
   event: IpcMainInvokeEvent
   invoke(channel: string, ...args: unknown[]): Promise<unknown>
+  onUpdate(listener: (update: QuickChatUpdate) => void): () => void
   getShows(): number
   setStreaming(busy: boolean): void
   setStateData(data: Record<string, unknown>): void
@@ -69,6 +79,8 @@ async function withBridge(run: (fixture: BridgeFixture) => Promise<void>): Promi
 async function fixture(wm: WorkspaceManager, root: string): Promise<BridgeFixture> {
   // Load only after replacing Electron: the production module binds ipcMain on import.
   const { createQuickChatHandlers } = await import('./quick-chat-handlers')
+  const { isQuickChatPinned, setQuickChatPinned } = await import('../quick-chat-window')
+  setQuickChatPinned(false)
   const { saveAppSettings } = await import('./settings')
   await saveAppSettings({ permissionMode: 'plan-readonly' })
   const workspace = await wm.createWorkspace('Project', root)
@@ -108,9 +120,13 @@ async function fixture(wm: WorkspaceManager, root: string): Promise<BridgeFixtur
   let visibility: (shown: boolean) => void = () => {}
   let shows = 0
   const updates: QuickChatUpdate[] = []
+  const updateListeners = new Set<(update: QuickChatUpdate) => void>()
   const broadcasts: Array<{ channel: string; data: unknown }> = []
   const frame = { url: pathToFileURL(RENDERER_INDEX_PATH).href + '#quick-chat' }
-  const webContents = { mainFrame: frame, send: (_channel: string, update: QuickChatUpdate) => updates.push(update) }
+  const webContents = { mainFrame: frame, send: (_channel: string, update: QuickChatUpdate) => {
+    updates.push(update)
+    for (const listener of updateListeners) listener(update)
+  } }
   const window = { webContents, isDestroyed: () => false, isVisible: () => visible } as unknown as BrowserWindow
   const main = { isDestroyed: () => false, isMinimized: () => false, show: () => {}, focus: () => {} } as unknown as BrowserWindow
   const ctx = {
@@ -121,6 +137,8 @@ async function fixture(wm: WorkspaceManager, root: string): Promise<BridgeFixtur
     getWindow: () => window,
     hide: () => { visible = false; visibility(false) },
     onVisibility: (listener) => { visibility = listener },
+    isPinned: isQuickChatPinned,
+    setPinned: setQuickChatPinned,
   })
   const router = createPiEventRouter({
     ...bridge.routing,
@@ -133,8 +151,42 @@ async function fixture(wm: WorkspaceManager, root: string): Promise<BridgeFixtur
   bridge.register(router)
   const event = { sender: webContents, senderFrame: frame } as unknown as IpcMainInvokeEvent
   const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)!(event, ...args)
-  return { wm, alpha, beta, commands, updates, broadcasts, event, invoke, getShows: () => shows, setStreaming: (busy: boolean) => { streaming = busy }, setStateData: (data: Record<string, unknown>) => { stateData = data } }
+  return { wm, alpha, beta, commands, updates, broadcasts, event, invoke,
+    onUpdate: (listener) => { updateListeners.add(listener); return () => { updateListeners.delete(listener) } },
+    getShows: () => shows, setStreaming: (busy: boolean) => { streaming = busy }, setStateData: (data: Record<string, unknown>) => { stateData = data } }
 }
+
+test('reloading the popup hydrates native pin state and one click unpins it', async () => {
+  await withBridge(async (h) => {
+    const { isQuickChatPinned } = await import('../quick-chat-window')
+    const api = {
+      getContext: () => h.invoke(QUICK_CHAT_CHANNELS.context),
+      setPinned: (pinned: boolean) => h.invoke(QUICK_CHAT_CHANNELS.setPinned, { pinned }),
+      onUpdate: h.onUpdate,
+    } as unknown as QuickChatApi
+    const original = new QuickChatController(api)
+    original.start()
+    await original.refreshContext()
+    await original.togglePinned()
+    assert.equal(isQuickChatPinned(), true)
+    assert.equal(original.getState().context?.pinned, true)
+    await h.invoke(QUICK_CHAT_CHANNELS.hide)
+    assert.equal(isQuickChatPinned(), true, 'hiding preserves the native preference')
+    original.dispose()
+
+    const reloaded = new QuickChatController(api)
+    reloaded.start()
+    try {
+      await reloaded.refreshContext()
+      assert.equal(reloaded.getState().context?.pinned, true)
+      await reloaded.togglePinned()
+      assert.equal(isQuickChatPinned(), false, 'the first click after reload unpins natively')
+      assert.equal(reloaded.getState().context?.pinned, false)
+    } finally {
+      reloaded.dispose()
+    }
+  })
+})
 
 test('popup operations target their pinned runtime, preserve plan mode, adapt activity races, and navigate only by guarded intent', async () => {
   await withBridge(async (h) => {
@@ -456,6 +508,8 @@ test('pickWorkspace on a fresh manager creates the first workspace without activ
       getWindow: () => window,
       hide: () => {},
       onVisibility: () => {},
+      isPinned: () => false,
+      setPinned: () => {},
     })
     const router = createPiEventRouter({
       ...bridge.routing,
@@ -603,6 +657,86 @@ test('listModels uses the bound running manager catalog without spawning a query
     assert.equal(started.length, 0, 'a live bound runtime answers the catalog directly')
   })
 })
+
+for (const configured of ['pi', 'omp'] as const) {
+  test(`stopped saved sessions use their owning catalog, while file-less drafts use configured ${configured}`, async (t) => {
+    await withBridge(async (h) => {
+      // Static imports cannot bind Electron before this file's test stub.
+      const { PiRpcManager, setPiExecutableOverride } = await import('../pi-rpc-manager')
+      const owner = configured === 'pi' ? 'omp' : 'pi'
+      const root = h.wm.getActiveWorkspace()!.path
+      const saved = { pi: process.env.PI_CODING_AGENT_DIR, omp: process.env.OMP_CODING_AGENT_DIR }
+      process.env.PI_CODING_AGENT_DIR = join(root, 'pi-store')
+      process.env.OMP_CODING_AGENT_DIR = join(root, 'omp-store')
+      setPiExecutableOverride(null, configured)
+      try {
+        const project = join(root, 'catalog-project')
+        await mkdir(project)
+        const workspace = await h.wm.createWorkspace('Catalog project', project, { activate: false })
+        const [directory] = await engineProjectSessionDirs(owner, project)
+        await mkdir(directory, { recursive: true })
+        const sessionPath = join(directory, 'saved.jsonl')
+        await writeFile(sessionPath, JSON.stringify({ type: 'session', version: 3, id: 'saved', cwd: project }) + '\n')
+        const runtime = h.wm.openSessionRuntime(workspace.id, sessionPath)
+        const boundManager = h.wm.getSessionRuntimeManager(runtime.runtimeId)!
+        assert.equal(boundManager.getEngineKind(), configured, 'an unstarted manager reports the configured engine, not the session owner')
+        boundManager.getStatus = () => ({ status: 'stopped', pid: null, error: null })
+        boundManager.start = async () => { assert.fail('catalog reads must not resume the bound runtime') }
+        await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: runtime.runtimeId })
+
+        const starts: PiStartOptions[] = []
+        const catalog = [{ provider: 'catalog', id: 'available', name: 'Available' }] as ModelInfo[]
+        t.mock.method(PiRpcManager.prototype, 'start', async (options: PiStartOptions) => {
+          starts.push(options)
+          return { status: 'running', pid: 999, error: null }
+        })
+        t.mock.method(PiRpcManager.prototype, 'getStatus', () => ({ status: 'running', pid: 999, error: null }))
+        t.mock.method(PiRpcManager.prototype, 'sendCommand', async () => ({
+          type: 'response', command: 'get_available_models', success: true, data: { models: catalog },
+        }))
+        t.mock.method(PiRpcManager.prototype, 'stop', () => {})
+
+        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels), catalog)
+        assert.equal(starts[0].engine, owner)
+        assert.equal(starts[0].cwd, project, 'the stopped session queries its own workspace, not main')
+        assert.equal(starts[0].noSession, true)
+        assert.equal(h.wm.getSessionRuntime(runtime.runtimeId)?.status, 'stopped')
+
+        // A live process's actual identity wins even when its path belongs to
+        // the other engine, including a malformed direct-catalog fallback.
+        boundManager.getStatus = () => ({ status: 'running', pid: 123, error: null })
+        boundManager.getEngineKind = () => configured
+        boundManager.sendCommand = async () => ({
+          type: 'response', command: 'get_available_models', success: true, data: { models: catalog },
+        })
+        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels), catalog)
+        assert.equal(starts.length, 1, 'a valid live catalog is returned directly')
+        boundManager.sendCommand = async () => ({ type: 'response', command: 'get_available_models', success: true, data: {} })
+        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels), catalog)
+        assert.equal(starts[1].engine, configured, 'live identity also controls a catalog fallback')
+
+        await h.invoke(QUICK_CHAT_CHANNELS.newDraft)
+        const draft = await h.invoke(QUICK_CHAT_CHANNELS.createSession, workspace.id) as QuickChatBinding
+        const draftManager = h.wm.getSessionRuntimeManager(draft.runtime.runtimeId)!
+        draftManager.getStatus = () => ({ status: 'stopped', pid: null, error: null })
+        draftManager.start = async () => { assert.fail('catalog reads must not start a draft runtime') }
+        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels, workspace.id), catalog)
+        assert.equal(starts[2].engine, configured)
+        assert.equal(starts[2].cwd, project)
+        await h.invoke(QUICK_CHAT_CHANNELS.newDraft)
+        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels, workspace.id), catalog)
+        assert.equal(starts[3].engine, configured, 'an unbound fresh draft uses the configured engine')
+        assert.equal(starts[3].cwd, project)
+      } finally {
+        setPiExecutableOverride(null)
+        for (const [key, value] of [['PI_CODING_AGENT_DIR', saved.pi], ['OMP_CODING_AGENT_DIR', saved.omp]] as const) {
+          if (value === undefined) delete process.env[key]
+          else process.env[key] = value
+        }
+      }
+    })
+  })
+}
 
 
 test('saved OMP tasks remain selectable through a project alias after popup runtimes are gone', async () => {

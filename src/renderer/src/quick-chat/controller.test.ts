@@ -38,6 +38,7 @@ function harness(initial: QuickChatBinding | null = binding('A')): {
   hides: () => number
 } {
   const context: QuickChatContext = {
+    pinned: false,
     binding: initial, runtimes: [initial?.runtime ?? binding('A').runtime, binding('B', 2).runtime],
     workspaces: ['A', 'B'].map((id) => ({ id: `workspace-${id}`, name: id, path: `/cwd/${id}`, createdAt: 0, lastActiveAt: 0, color: '' })),
     defaultWorkspaceId: 'workspace-A', runtimeUpdatedAt: {},
@@ -84,7 +85,7 @@ function harness(initial: QuickChatBinding | null = binding('A')): {
     listModels: async () => [],
     setRuntimeModel: async (input) => { modelCalls.push({ provider: input.provider, modelId: input.modelId, version: input.version }); return { type: 'response', command: 'set_model', success: true } },
     setRuntimeThinking: async (input) => { thinkingCalls.push({ level: input.level, version: input.version }); return { type: 'response', command: 'set_thinking_level', success: true } },
-    setPinned: async () => {},
+    setPinned: async (pinned) => { context.pinned = pinned; listener?.({ type: 'pinned', pinned }) },
     hide: async () => { hides++ }, openInMain: async () => {},
     onUpdate: (callback) => { listener = callback; return () => { listener = null } },
   }
@@ -127,6 +128,39 @@ test('a stale context response cannot replace a binding update received during s
   pending.resolve(h.context)
   await flush()
   assert.equal(h.controller.getState().binding?.runtime.runtimeId, 'B')
+  h.controller.dispose()
+})
+
+test('pin updates during startup and show-time hydration outrank stale context without optimistic state', async () => {
+  const h = harness(null)
+  const startup = deferred<QuickChatContext>()
+  h.api.getContext = () => startup.promise
+  h.controller.start()
+  h.emit({ type: 'pinned', pinned: true })
+  startup.resolve({ ...h.context, pinned: false })
+  await flush()
+  assert.equal(h.controller.getState().context?.pinned, true)
+
+  const confirmation = deferred<void>()
+  let requested: boolean | null = null
+  h.api.setPinned = async (pinned) => { requested = pinned; await confirmation.promise }
+  const toggle = h.controller.togglePinned()
+  assert.equal(requested, false, 'the first click targets the hydrated native value')
+  assert.equal(h.controller.getState().context?.pinned, true, 'no local pin truth before main confirms')
+  h.emit({ type: 'pinned', pinned: false })
+  confirmation.resolve()
+  await toggle
+  assert.equal(h.controller.getState().context?.pinned, false)
+
+  h.emit({ type: 'visibility', visible: false })
+  assert.equal(h.controller.getState().context?.pinned, false, 'hide does not reset pin state')
+  const shown = deferred<QuickChatContext>()
+  h.api.getContext = () => shown.promise
+  h.emit({ type: 'visibility', visible: true })
+  h.emit({ type: 'pinned', pinned: true })
+  shown.resolve({ ...h.context, pinned: false })
+  await flush()
+  assert.equal(h.controller.getState().context?.pinned, true)
   h.controller.dispose()
 })
 

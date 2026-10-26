@@ -18,6 +18,8 @@ export interface QuickChatBinding {
 }
 export type QuickChatTarget = { runtimeId: string } | { workspaceId: string; sessionPath: string }
 export interface QuickChatContext {
+  /** Native main-process preference, including across renderer reloads. */
+  pinned: boolean
   binding: QuickChatBinding | null
   runtimes: SessionRuntimeInfo[]
   sessions: SessionListItem[]
@@ -52,6 +54,7 @@ export type QuickChatUpdate =
   | { type: 'runtimes'; runtimes: SessionRuntimeInfo[]; updatedAt: Record<string, number> }
   | { type: 'runtime-state'; runtimeId: string }
   | { type: 'visibility'; visible: boolean }
+  | { type: 'pinned'; pinned: boolean }
 export interface QuickChatApi {
   getContext(): Promise<QuickChatContext>
   selectTarget(target: QuickChatTarget): Promise<QuickChatBinding>

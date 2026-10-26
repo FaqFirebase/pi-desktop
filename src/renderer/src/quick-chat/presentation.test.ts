@@ -6,6 +6,7 @@ import { composerKeyAction, targetOptions } from './presentation'
 
 function context(): QuickChatContext {
   return {
+    pinned: false,
     binding: null,
     defaultWorkspaceId: 'project',
     workspaces: [{ id: 'project', name: 'Project', path: '/project', createdAt: 0, lastActiveAt: 0, color: '' }],

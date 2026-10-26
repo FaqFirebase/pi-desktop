@@ -53,7 +53,6 @@ export function QuickChatApp({ api = window.piQuickChat }: { api?: QuickChatApi 
   const [filter, setFilter] = useState('')
   const [highlight, setHighlight] = useState(0)
   const [isAtBottom, setIsAtBottom] = useState(true)
-  const [pinned, setPinned] = useState(false)
   const composing = useRef(false)
   const editor = useRef<HTMLTextAreaElement>(null)
   const pickerAnchor = useRef<HTMLDivElement>(null)
@@ -68,6 +67,7 @@ export function QuickChatApp({ api = window.piQuickChat }: { api?: QuickChatApi 
   const dragDepth = useRef(0)
   const scrollAtBottom = useRef(true)
   const context = state.context
+  const pinned = context?.pinned ?? false
   const platform = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac') ? 'darwin' : 'win32'
   const options = useMemo(() => (context ? targetOptions(context, t) : []), [context, t])
   const selected = selectedTarget(options, state.binding)
@@ -216,12 +216,6 @@ export function QuickChatApp({ api = window.piQuickChat }: { api?: QuickChatApi 
     void i18n.changeLanguage(language)
     document.documentElement.lang = language
   }, [environment, languageSetting])
-
-  const togglePin = (): void => {
-    const next = !pinned
-    setPinned(next)
-    void api.setPinned(next)
-  }
 
   useEffect(() => {
     const handleFocus = (): void => {
@@ -637,7 +631,9 @@ export function QuickChatApp({ api = window.piQuickChat }: { api?: QuickChatApi 
               )}
               title={pinned ? t('quickChat.unpin') : t('quickChat.pin')}
               aria-label={pinned ? t('quickChat.unpin') : t('quickChat.pin')}
-              onClick={togglePin}
+              disabled={!context}
+              aria-pressed={pinned}
+              onClick={() => { void controller.togglePinned() }}
             >
               <Pin size={13} className={pinned ? 'fill-current' : ''} />
             </button>
