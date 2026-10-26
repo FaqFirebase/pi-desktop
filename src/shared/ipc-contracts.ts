@@ -17,6 +17,7 @@ export const IPC_CHANNELS = {
   PI_RESTART: 'pi:restart',
   PI_STATUS: 'pi:status',
   PI_DETECT_INSTALLATIONS: 'pi:detect-installations',
+  QUICK_CHAT_SHORTCUT_STATUS: 'quick-chat:shortcut-status',
 
   // Pi commands
   PI_PROMPT: 'pi:prompt',
@@ -29,8 +30,8 @@ export const IPC_CHANNELS = {
   // Session management
   SESSION_NEW: 'session:new',
   SESSION_LAUNCH_TASK: 'session:launch-task',
-  SESSION_ACTIVATE_RUNTIME: 'session:activate-runtime',
   SESSION_CLOSE_RUNTIME: 'session:close-runtime',
+  SESSION_ACTIVATE_RUNTIME: 'session:activate-runtime',
   SESSION_SWITCH: 'session:switch',
   SESSION_LIST_RUNTIMES: 'session:list-runtimes',
   SESSION_FORK: 'session:fork',
@@ -63,6 +64,7 @@ export const IPC_CHANNELS = {
   SETTINGS_GET_ALL: 'settings:get-all',
   SETTINGS_SAVE: 'settings:save',
   I18N_GET_ENVIRONMENT: 'i18n:get-environment',
+  SETTINGS_OPEN_QUICK_CHAT: 'settings:open-quick-chat',
 
   // Permission rules
   PERMISSION_RULES_GET: 'permission-rules:get',

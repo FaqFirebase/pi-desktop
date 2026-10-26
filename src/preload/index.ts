@@ -93,6 +93,7 @@ import type {
 import type { ThemeFile } from '../shared/theme/theme-file'
 import type { SubagentListResult, SubagentTranscriptRef, SubagentTranscriptResult } from '../shared/subagent-task'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
+import type { QuickChatShortcutStatus } from '../shared/quick-chat'
 
 // ─── Type Definitions for the Exposed API ────────────────────────────────────
 
@@ -120,9 +121,9 @@ interface PiDesktopAPI {
   session: {
     createNew(): Promise<SessionRuntimeInfo>
     launchTask(options: SessionLaunchTaskOptions): Promise<SessionRuntimeInfo>
+    closeRuntime(runtimeId: string): Promise<SessionRuntimeCloseResult | null>
     /** Activate a specific runtime (e.g. a file-less New Session tab) without a path. */
     activateRuntime(workspaceId: string, runtimeId: string): Promise<SessionRuntimeInfo>
-    closeRuntime(runtimeId: string): Promise<SessionRuntimeCloseResult | null>
     switch(sessionPath: string, cwd?: string): Promise<SessionRuntimeInfo>
     listRuntimes(): Promise<SessionRuntimeInfo[]>
     fork(entryId?: string): Promise<unknown>
@@ -164,6 +165,8 @@ interface PiDesktopAPI {
   settings: {
     getAll(): Promise<AppSettings>
     save(settings: Partial<AppSettings>): Promise<AppSettings>
+    getQuickChatShortcutStatus(): Promise<QuickChatShortcutStatus>
+    openQuickChat(): Promise<void>
   }
 
   // Interface language
@@ -471,8 +474,8 @@ const api: PiDesktopAPI = {
   session: {
     createNew: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_NEW),
     launchTask: (options) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LAUNCH_TASK, options),
-    activateRuntime: (workspaceId, runtimeId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_ACTIVATE_RUNTIME, { workspaceId, runtimeId }),
     closeRuntime: (runtimeId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_CLOSE_RUNTIME, runtimeId),
+    activateRuntime: (workspaceId, runtimeId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_ACTIVATE_RUNTIME, { workspaceId, runtimeId }),
     switch: (sessionPath, cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SWITCH, sessionPath, cwd),
     listRuntimes: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_RUNTIMES),
     fork: (entryId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_FORK, entryId),
@@ -509,6 +512,8 @@ const api: PiDesktopAPI = {
   settings: {
     getAll: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_ALL),
     save: (settings) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SAVE, settings),
+    getQuickChatShortcutStatus: () => ipcRenderer.invoke(IPC_CHANNELS.QUICK_CHAT_SHORTCUT_STATUS),
+    openQuickChat: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_OPEN_QUICK_CHAT),
   },
 
   i18n: {
@@ -775,6 +780,7 @@ const api: PiDesktopAPI = {
       ipcRenderer.removeListener(IPC_CHANNELS.EVENT_SESSION_RUNTIME, handler)
     }
   },
+
   onRuntimeState: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { runtimeId: string }) => callback(data)
     ipcRenderer.on(IPC_CHANNELS.EVENT_RUNTIME_STATE_CHANGED, handler)

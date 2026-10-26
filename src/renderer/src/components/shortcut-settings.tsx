@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import {
@@ -6,6 +6,7 @@ import {
   type KeyboardShortcuts, type ShortcutAction, type ShortcutProblem,
 } from '../../../shared/keyboard-shortcuts'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
+import type { QuickChatShortcutStatus } from '../../../shared/quick-chat'
 
 function actionLabel(action: ShortcutAction, t: TFunction): string {
   switch (action) {
@@ -26,6 +27,7 @@ function actionLabel(action: ShortcutAction, t: TFunction): string {
     case 'nextSession': return t('settings.shortcuts.nextSession')
     case 'pushToTalk': return t('settings.shortcuts.pushToTalk')
     case 'globalDictation': return t('settings.shortcuts.globalDictation')
+    case 'quickChat': return t('settings.shortcuts.quickChat')
   }
 }
 
@@ -51,8 +53,9 @@ function refusalText({ action, binding, problem }: CaptureRefusal, t: TFunction,
     : problemText(problem, t)
 }
 
-export function ShortcutSettings({ value, onChange }: {
+export function ShortcutSettings({ value, savedValue, onChange }: {
   value: KeyboardShortcuts
+  savedValue: KeyboardShortcuts
   onChange: (value: KeyboardShortcuts) => void
 }): React.JSX.Element {
   const { t } = useTranslation()
@@ -60,6 +63,20 @@ export function ShortcutSettings({ value, onChange }: {
   const [recording, setRecording] = useState<ShortcutAction | null>(null)
   const [refusal, setRefusal] = useState<CaptureRefusal | null>(null)
   const problem = shortcutProblem(value, platform)
+  const [registration, setRegistration] = useState<QuickChatShortcutStatus | null>(null)
+  const [statusFailed, setStatusFailed] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setRegistration(null)
+    setStatusFailed(false)
+    void window.piDesktop.settings.getQuickChatShortcutStatus().then((status) => {
+      if (!cancelled) setRegistration(status)
+    }).catch(() => {
+      if (!cancelled) setStatusFailed(true)
+    })
+    return () => { cancelled = true }
+  }, [savedValue])
 
   return (
     <div className="space-y-3" data-shortcut-recorder>
@@ -101,6 +118,38 @@ export function ShortcutSettings({ value, onChange }: {
               className="text-xs text-muted hover:text-primary disabled:opacity-40"
             >{t('settings.shortcuts.disable')}</button>
           </div>
+          {action === 'quickChat' && (
+            <div className="basis-full space-y-1 text-xs text-dim">
+              <p>{t('settings.shortcuts.quickChatDescription')}</p>
+              {value.quickChat !== savedValue.quickChat && (
+                <p>{t('settings.shortcuts.globalUnsaved')}</p>
+              )}
+              {statusFailed ? (
+                <p role="alert" className="text-error">{t('settings.shortcuts.registrationUnknown')}</p>
+              ) : !registration ? (
+                <p role="status">{t('settings.shortcuts.registrationLoading')}</p>
+              ) : registration.binding === null ? (
+                <p role="status">{t('settings.shortcuts.registrationDisabled')}</p>
+              ) : registration.registered ? (
+                <p role="status">{t('settings.shortcuts.registrationActive', { shortcut: formatShortcut(registration.binding, platform) })}</p>
+              ) : (
+                <p role="alert" className="text-error">
+                  {t('settings.shortcuts.registrationFailed', { shortcut: formatShortcut(registration.binding, platform) })}
+                </p>
+              )}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void window.piDesktop.settings.openQuickChat()
+                  }}
+                  className="rounded-md border border-border-strong bg-surface px-2.5 py-1 text-xs text-primary hover:bg-surface-hover transition-colors"
+                >
+                  {t('settings.shortcuts.openQuickChat')}
+                </button>
+              </div>
+            </div>
+          )}
           {refusal?.action === action && (
             <p id={`shortcut-${action}-refusal`} role="alert" className="basis-full text-right text-xs text-error">
               {refusalText(refusal, t, platform)}

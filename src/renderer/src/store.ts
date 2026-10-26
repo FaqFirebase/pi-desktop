@@ -527,7 +527,7 @@ interface AppActions {
   closeSessionTab: (runtimeId: string) => Promise<void>
   switchSession: (path: string, projectPath?: string) => Promise<void>
   /**
-   * Activate a specific runtime by id without a session path (secondary view
+   * Activate a specific runtime by id without a session path (Quick Chat
    * "Open in Main" on a file-less tab). Runs the same dirty-editor and
    * streaming-turn confirms as any other session change.
    */
@@ -1941,7 +1941,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   /**
-   * Activate a specific runtime by id — the secondary view "Open in Main" path for
+   * Activate a specific runtime by id — the Quick Chat "Open in Main" path for
    * a file-less New Session tab, which no path-keyed switch can address. The
    * runtime keeps running; nothing is torn down, only the renderer's active
    * pointers move. The dirty-editor confirm runs in every case; a same-workspace

@@ -350,6 +350,30 @@ test('the system-wide dictation key is left to the main process when it reaches 
   unsubscribe()
 })
 
+test('Quick Chat is never dispatched as an in-app command in either listener phase', async () => {
+  const commands: VoiceShortcutCommand[] = []
+  const unsubscribe = onVoiceShortcut((command) => commands.push(command))
+  useAppStore.getState().setSettingsDraft({
+    shortcuts: { ...DEFAULT_SETTINGS.shortcuts, quickChat: 'Mod+Alt+Q', globalDictation: 'Mod+Alt+D' },
+  })
+  const updates = await storeUpdatesDuring(() => {
+    for (const platform of ['darwin', 'linux', 'win32']) {
+      setPlatform(platform)
+      for (const target of [new Target(), new Target([CODE_EDITOR]), new Target([TERMINAL])]) {
+        const event = keyEvent({
+          key: 'q', code: 'KeyQ', altKey: true, metaKey: platform === 'darwin', ctrlKey: platform !== 'darwin', target,
+        })
+        press(event)
+        assert.equal(event.defaultPrevented, false)
+        assert.equal(event.cancelBubble, false)
+      }
+    }
+  })
+  assert.equal(updates, 0)
+  assert.deepEqual(commands, [])
+  unsubscribe()
+})
+
 test('in the terminal, Ctrl+K, Ctrl+B, Ctrl+N, Ctrl+G, Ctrl+[ and Ctrl+] go to the shell on Linux and Windows', async () => {
   arrangeShortcutEffects()
   const expected: string[] = []

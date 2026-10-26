@@ -418,19 +418,19 @@ function dualViewHarness(sameWorkspace = false) {
   const alpha = new PiRpcManager()
   const beta = new PiRpcManager()
   let active = beta
-  let secondary: PiRpcManager | null = alpha
+  let quick: PiRpcManager | null = alpha
   let visible = true
   const mainEvents: PiRpcEvent[] = []
-  const secondaryEvents: PiRpcEvent[] = []
+  const quickEvents: PiRpcEvent[] = []
   const approvals: Array<PiExtensionUiRequest | null> = []
   const responses: Array<{ manager: PiRpcManager; id: string; response: Record<string, unknown> }> = []
   const router = createPiEventRouter({
     getActiveManager: () => active,
     workspaceIdFor: (manager) => sameWorkspace || manager === alpha ? WS_A : WS_B,
-    getSecondaryManager: () => secondary,
+    getSecondaryManager: () => quick,
     preferSecondaryView: () => visible,
-    sendSecondaryEvent: (manager, event) => { if (manager === secondary) secondaryEvents.push(event) },
-    sendSecondaryApproval: (manager, request) => { if (manager === secondary) approvals.push(request) },
+    sendSecondaryEvent: (manager, event) => { if (manager === quick) quickEvents.push(event) },
+    sendSecondaryApproval: (manager, request) => { if (manager === quick) approvals.push(request) },
     broadcastEvent: (event) => mainEvents.push(event),
     broadcastPendingCounts: () => {},
     now: () => 0,
@@ -440,28 +440,28 @@ function dualViewHarness(sameWorkspace = false) {
     router.attachManager(manager)
   }
   return {
-    router, alpha, beta, mainEvents, secondaryEvents, approvals, responses,
+    router, alpha, beta, mainEvents, quickEvents, approvals, responses,
     useMain: (manager: PiRpcManager) => { active = manager; router.handleActiveWorkspaceChanged() },
     activateRuntime: (manager: PiRpcManager) => { active = manager },
     show: (shown: boolean) => { visible = shown; router.refreshOwners() },
-    select: (manager: PiRpcManager | null) => { secondary = manager; router.refreshOwners() },
+    select: (manager: PiRpcManager | null) => { quick = manager; router.refreshOwners() },
   }
 }
 
-test('inactive secondary session streams and approvals stay independent of the main active session', () => {
+test('inactive popup session streams and approvals stay independent of the main active session', () => {
   const h = dualViewHarness()
   const alphaTurn: PiRpcEvent = { type: 'turn_start' }
   const betaTurn: PiRpcEvent = { type: 'turn_end', message: {}, toolResults: [] }
   h.alpha.emit('event', alphaTurn)
   h.beta.emit('event', betaTurn)
-  assert.deepEqual(h.secondaryEvents, [alphaTurn])
+  assert.deepEqual(h.quickEvents, [alphaTurn])
   assert.deepEqual(h.mainEvents, [betaTurn])
   const request = dialogRequest('background-approval')
   h.alpha.emit('event', request)
   assert.deepEqual(h.approvals, [request])
   assert.deepEqual(h.mainEvents, [betaTurn])
   h.router.respond(request.id, { confirmed: true }, 'main')
-  assert.deepEqual(h.responses, [], 'main cannot act on a secondary-owned approval')
+  assert.deepEqual(h.responses, [], 'main cannot act on a popup-owned approval')
   h.show(false)
   assert.equal(h.router.getSecondaryRequest()?.id, request.id)
   assert.deepEqual(h.responses, [], 'hiding never answers or denies a pending request')
