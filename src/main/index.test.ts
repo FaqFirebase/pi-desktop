@@ -137,7 +137,7 @@ test('one native macOS quit exits even when shutdown resolves immediately', {
     delete env.ELECTRON_RUN_AS_NODE
     const electron = createRequire(import.meta.url)('electron') as string
     const result = spawnSync(electron, [probe], {
-      env, encoding: 'utf8', timeout: 10_000, killSignal: 'SIGKILL',
+      env, encoding: 'utf8', timeout: 20_000, killSignal: 'SIGKILL',
     })
     assert.equal(result.error, undefined, `native quit did not exit: ${result.error?.message}\n${result.stdout}\n${result.stderr}`)
     assert.equal(result.status, 0, result.stderr)

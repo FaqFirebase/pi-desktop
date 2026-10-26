@@ -24,7 +24,7 @@ import { getVoiceModelsDir } from './voice-model-store'
 import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
 import { getSettingsPath } from './ipc/settings'
 import { disableCwdExecutableSearch } from './windows-exe-search'
-import { destroyQuickChatWindow, getQuickChatWindow, hideQuickChatWindow, setQuickChatQuittingHandler, toggleQuickChatWindow } from './quick-chat-window'
+import { destroyQuickChatWindow, getQuickChatWindow, hideQuickChatWindow, isQuickChatOpenRequested, setQuickChatQuittingHandler, toggleQuickChatWindow } from './quick-chat-window'
 
 // First, before anything spawns: Windows must never run a program from the
 // working directory (usually the workspace) when it is started by bare name.
@@ -228,8 +228,12 @@ function createMainWindow(): BrowserWindow {
 
   // Graceful show (avoid white flash)
   window.once('ready-to-show', () => {
-    window.show()
-    window.focus()
+    // A shortcut can open the popup before the main window's first paint.
+    if (isQuickChatOpenRequested()) window.showInactive()
+    else {
+      window.show()
+      window.focus()
+    }
   })
 
   // Minimize-to-tray: when enabled (Windows/Linux), a window close hides the

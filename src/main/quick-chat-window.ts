@@ -30,6 +30,10 @@ export function getQuickChatWindow(): BrowserWindow | null {
   return quickChatWindow && !quickChatWindow.isDestroyed() ? quickChatWindow : null
 }
 
+export function isQuickChatOpenRequested(): boolean {
+  return visibleRequested
+}
+
 /** Mark a parented native modal (folder picker) open/closed around its await. */
 export function markQuickChatNativeModal(open: boolean): void {
   nativeModalOpen = open ? nativeModalOpen + 1 : Math.max(0, nativeModalOpen - 1)
@@ -288,10 +292,17 @@ function createQuickChatWindow(): void {
       visibleRequested = false
     }
   })
-  window.once('ready-to-show', () => {
+  const markReadyAndShow = (): void => {
+    if (window.isDestroyed() || readyWindow === window) return
     readyWindow = window
     showQuickChatWindow(window)
-  })
+  }
+  window.once('ready-to-show', markReadyAndShow)
+  // Some Wayland compositors never emit ready-to-show (electron/electron#48859).
+  // The shared readiness guard keeps this first-wins and respects hide and quit.
+  if (process.platform === 'linux' && Boolean(process.env.WAYLAND_DISPLAY)) {
+    window.webContents.once('did-finish-load', markReadyAndShow)
+  }
   const devServerUrl = process.env.ELECTRON_RENDERER_URL
   if (devServerUrl) {
     const url = new URL(devServerUrl)
