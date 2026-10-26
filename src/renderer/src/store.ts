@@ -746,6 +746,10 @@ let sessionLoadGeneration = 0
 let historyLoadId = 0
 let sessionStateRequestId = 0
 let historyLoadingRuntime: string | null = null
+// Activation intents have their own sequence: a declined or superseded request
+// must not invalidate the retained chat's session I/O, which is what
+// sessionLoadGeneration guards. Last activation intent wins.
+let activationIntentGeneration = 0
 
 /**
  * Texts of prompts this GUI just sent to Pi, awaiting their echo on the RPC
@@ -1949,18 +1953,28 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
    * no-ops there, so without this the swap would discard it silently).
    */
   activateRuntime: async (workspaceId, runtimeId) => {
-    let gen = ++sessionLoadGeneration
-    if (!(await get().confirmDiscardEditorChanges()) || gen !== sessionLoadGeneration) return false
+    // The activation is only an intent until its confirmations pass. Bumping
+    // sessionLoadGeneration here would invalidate the retained session's
+    // in-flight history load the moment the user declines, leaving the
+    // unchanged chat stuck loading; last-intent-wins keeps its own token.
+    const intent = ++activationIntentGeneration
+    const superseded = (): boolean => intent !== activationIntentGeneration
+    if (!(await get().confirmDiscardEditorChanges()) || superseded()) return false
     // Only a same-workspace swap abandons a running turn; switching workspaces
     // keeps the old workspace's turn running in the background, so the
     // 'workspace' semantics (no warning) apply there.
     const sameWorkspace = get().activeWorkspace?.id === workspaceId
     if (sameWorkspace && !(await get().confirmSessionChange('switch'))) return false
-    if (gen !== sessionLoadGeneration) return false
+    if (superseded()) return false
+    // Invalidated only on a committed activation; on a refused one the catch
+    // below still reads gen, so it lives outside the try.
+    let gen = 0
     try {
       if (!sameWorkspace) {
         if (!(await get().activateWorkspace(workspaceId, { awaitingSession: true, skipDirtyConfirm: true }))) return false
       }
+      // Confirmations passed and no other activation superseded this one:
+      // now, and only now, the session load of the previous chat is invalid.
       gen = ++sessionLoadGeneration
       const workspace = get().activeWorkspace
       if (!workspace || workspace.id !== workspaceId) return false
