@@ -120,6 +120,8 @@ interface PiDesktopAPI {
   session: {
     createNew(): Promise<SessionRuntimeInfo>
     launchTask(options: SessionLaunchTaskOptions): Promise<SessionRuntimeInfo>
+    /** Activate a specific runtime (e.g. a file-less New Session tab) without a path. */
+    activateRuntime(workspaceId: string, runtimeId: string): Promise<SessionRuntimeInfo>
     closeRuntime(runtimeId: string): Promise<SessionRuntimeCloseResult | null>
     switch(sessionPath: string, cwd?: string): Promise<SessionRuntimeInfo>
     listRuntimes(): Promise<SessionRuntimeInfo[]>
@@ -417,6 +419,12 @@ interface PiDesktopAPI {
     respondInput(id: string, value: string): void
     respondEditor(id: string, value: string): void
     /**
+     * Answer a blocking select/input/editor prompt with a true cancel. The
+     * engine resolves it to undefined — unlike an empty value, which a select
+     * would reject as a non-option and an input would submit as empty text.
+     */
+    respondCancel(id: string): void
+    /**
      * Ask main to (re-)deliver the workspace's held blocking prompt.
      * No-op unless the workspace is active when the flush executes.
      */
@@ -434,6 +442,7 @@ interface PiDesktopAPI {
   onPendingPrompts(callback: (counts: PendingPromptCounts) => void): () => void
   onWorkspaceActivity(callback: (map: WorkspaceActivityMap) => void): () => void
   onSessionRuntime(callback: (runtime: SessionRuntimeInfo) => void): () => void
+  onRuntimeState(callback: (payload: { runtimeId: string }) => void): () => void
   onActivateWorkspace(callback: (payload: WorkspaceActivationIntent) => void): () => void
   onFileChange(callback: (event: FileChangeEvent) => void): () => void
   onMenuAction(callback: (action: string) => void): () => void
@@ -462,6 +471,7 @@ const api: PiDesktopAPI = {
   session: {
     createNew: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_NEW),
     launchTask: (options) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LAUNCH_TASK, options),
+    activateRuntime: (workspaceId, runtimeId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_ACTIVATE_RUNTIME, { workspaceId, runtimeId }),
     closeRuntime: (runtimeId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_CLOSE_RUNTIME, runtimeId),
     switch: (sessionPath, cwd) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SWITCH, sessionPath, cwd),
     listRuntimes: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_RUNTIMES),
@@ -723,6 +733,7 @@ const api: PiDesktopAPI = {
     respondConfirm: (id, confirmed) => ipcRenderer.invoke(IPC_CHANNELS.UI_CONFIRM_RESPONSE, id, confirmed),
     respondInput: (id, value) => ipcRenderer.invoke(IPC_CHANNELS.UI_INPUT_RESPONSE, id, value),
     respondEditor: (id, value) => ipcRenderer.invoke(IPC_CHANNELS.UI_EDITOR_RESPONSE, id, value),
+    respondCancel: (id) => ipcRenderer.invoke(IPC_CHANNELS.UI_CANCEL_RESPONSE, id),
     flushPendingPrompts: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.UI_PENDING_FLUSH, workspaceId),
     getPendingPrompts: () => ipcRenderer.invoke(IPC_CHANNELS.UI_PENDING_GET),
     setEditorDirty: (dirty, fileName) =>
@@ -762,6 +773,13 @@ const api: PiDesktopAPI = {
     ipcRenderer.on(IPC_CHANNELS.EVENT_SESSION_RUNTIME, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.EVENT_SESSION_RUNTIME, handler)
+    }
+  },
+  onRuntimeState: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { runtimeId: string }) => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.EVENT_RUNTIME_STATE_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.EVENT_RUNTIME_STATE_CHANGED, handler)
     }
   },
 
