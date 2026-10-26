@@ -798,6 +798,80 @@ test('a declined exact-runtime activation keeps the retained session history loa
   assert.equal(calls.some((call) => call.startsWith('activateRuntime:')), false, 'the decline never reached main')
 })
 
+test('other real navigation during the activation confirm rejects the stale intent', async () => {
+  // The dirty-editor confirm is pending when the user navigates elsewhere for
+  // real (switchSession bumps the session-load generation). Answering the
+  // stale confirm OK afterwards must not commit the activation over the
+  // newer navigation.
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE]
+  activateRuntimeResult = filelessRuntime('rt-target', WORKSPACE_ONE)
+  switchResult = {
+    runtimeId: 'rt-switched',
+    workspaceId: WORKSPACE_ONE.id,
+    sessionPath: SESSION_PATH,
+    sessionId: 'session-switched',
+    status: 'running',
+    pid: 7,
+    error: null,
+    activity: null,
+    active: true,
+  }
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE],
+    activeSessionRuntimeId: 'rt-retained',
+    piStatus: 'running',
+    editorDirty: true,
+    previewTarget: { path: '/tmp/one/notes.md', name: 'notes.md', kind: 'code' },
+  })
+
+  const pending = useAppStore.getState().activateRuntime(WORKSPACE_ONE.id, 'rt-target')
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.ok(useAppStore.getState().confirmRequest, 'the dirty editor confirm is pending')
+
+  await useAppStore.getState().switchSession(SESSION_PATH)
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, 'rt-switched')
+
+  useAppStore.getState().resolveConfirm(true)
+  assert.equal(await pending, false, 'a stale intent must not commit after other navigation')
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, 'rt-switched', 'the newer navigation result stands')
+  assert.equal(calls.some((call) => call.startsWith('activateRuntime:')), false, 'the stale intent never reached main')
+})
+
+test('a newer activation intent during an awaited workspace switch takes over the commit', async (t) => {
+  // Cross-workspace activation awaits activateWorkspace; a second activation
+  // started meanwhile must keep the first from committing after its await
+  // resolves.
+  let releaseFirst: (() => void) | null = null
+  const firstSwitch = new Promise<void>((resolve) => { releaseFirst = resolve })
+  activeWorkspaceResult = WORKSPACE_TWO
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activateRuntimeResult = filelessRuntime('rt-target', WORKSPACE_TWO)
+  t.mock.method(piDesktopStub.workspace, 'setActive', async () => {
+    calls.push(`setActiveWorkspace:${WORKSPACE_TWO.id}`)
+    await firstSwitch
+    return WORKSPACE_TWO
+  })
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    activeSessionRuntimeId: 'rt-retained',
+    piStatus: 'stopped',
+  })
+
+  const stale = useAppStore.getState().activateRuntime(WORKSPACE_TWO.id, 'rt-target')
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  // While the first intent is stuck awaiting the workspace switch, a second
+  // intent supersedes it.
+  const fresh = useAppStore.getState().activateRuntime(WORKSPACE_TWO.id, 'rt-target')
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  releaseFirst!()
+  assert.equal(await stale, false, 'the older intent must not commit after being superseded')
+  assert.equal(await fresh, true, 'the newer intent commits')
+  assert.equal(useAppStore.getState().activeSessionRuntimeId, 'rt-target')
+})
+
 test('a declined cross-workspace exact activation preserves the dirty editor and current workspace', async () => {
   activeWorkspaceResult = WORKSPACE_ONE
   workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
