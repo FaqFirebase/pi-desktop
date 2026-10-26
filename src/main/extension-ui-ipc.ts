@@ -1,5 +1,5 @@
 import { IPC_CHANNELS, type PendingPromptCounts } from '../shared/ipc-contracts'
-import { createPiEventRouter, type PiEventRouter } from './pi-event-router'
+import { createPiEventRouter, type PiEventRouter, type PiEventRouterDeps } from './pi-event-router'
 import type { PiRpcManager } from './pi-rpc-manager'
 
 /**
@@ -50,8 +50,10 @@ export function createExtensionUiRouter(deps: {
   broadcast: ChannelBroadcast
   /** Optional main-side observer of pending-count changes (activity tracker). */
   onPendingCounts?: (counts: PendingPromptCounts) => void
+  secondaryView?: Pick<PiEventRouterDeps, 'getSecondaryManager' | 'preferSecondaryView' | 'sendSecondaryEvent' | 'sendSecondaryApproval'>
 }): PiEventRouter {
   return createPiEventRouter({
+    ...deps.secondaryView,
     getActiveManager: () => deps.workspace.getActivePiManager(),
     workspaceIdFor: (manager) => deps.workspace.workspaceIdFor(manager),
     broadcastEvent: (event) => deps.broadcast(IPC_CHANNELS.EVENT_PI, event),
@@ -75,14 +77,26 @@ export function wireExtensionUiIpc<TEvent>(deps: ExtensionUiIpcDeps<TEvent>): vo
     handle(channel, async (event, id: unknown, payload: unknown) => {
       assertTrustedSender(event)
       if (typeof id !== 'string') throw new Error('id must be a string')
+      if (channel === IPC_CHANNELS.UI_CONFIRM_RESPONSE
+        ? typeof payload !== 'boolean'
+        : payload !== undefined && typeof payload !== 'string') throw new Error('Invalid extension UI response')
       router.respond(id, toResponse(payload))
     })
   }
 
   handleDialogResponse(IPC_CHANNELS.UI_SELECT_RESPONSE, (value) => ({ value }))
-  handleDialogResponse(IPC_CHANNELS.UI_CONFIRM_RESPONSE, (confirmed) => ({ confirmed: !!confirmed }))
+  handleDialogResponse(IPC_CHANNELS.UI_CONFIRM_RESPONSE, (confirmed) => ({ confirmed }))
   handleDialogResponse(IPC_CHANNELS.UI_INPUT_RESPONSE, (value) => ({ value }))
   handleDialogResponse(IPC_CHANNELS.UI_EDITOR_RESPONSE, (value) => ({ value }))
+
+  // A cancel is a real answer ({ cancelled: true }), never an empty value: the
+  // engine resolves it to undefined for select/input/editor and to false for
+  // confirm, so a select cancel cannot be rejected as a non-option.
+  handle(IPC_CHANNELS.UI_CANCEL_RESPONSE, async (event, id: unknown) => {
+    assertTrustedSender(event)
+    if (typeof id !== 'string') throw new Error('id must be a string')
+    router.respond(id, { cancelled: true })
+  })
 
   handle(IPC_CHANNELS.UI_PENDING_FLUSH, async (event, workspaceId: unknown) => {
     assertTrustedSender(event)
