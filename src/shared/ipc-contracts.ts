@@ -143,6 +143,7 @@ export const IPC_CHANNELS = {
 
   // Skills
   SKILLS_LIST: 'skills:list',
+  SKILLS_READ: 'skills:read',
   COMMANDS_LIST: 'commands:list',
   MCP_SERVERS_LIST: 'mcp:servers-list',
 

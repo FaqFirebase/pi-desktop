@@ -1,11 +1,12 @@
 import { ipcMain } from 'electron'
-import { IPC_CHANNELS } from '../../shared/ipc-contracts'
+import { IPC_CHANNELS, type InstalledSkill } from '../../shared/ipc-contracts'
+import { isString } from './validation'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import type { IpcContext } from './context'
 import { getPiCli } from '../pi-rpc-manager'
-import { listSkills, mergeRpcSkills } from '../skills-discovery'
+import { listSkills, mergeRpcSkills, readListedSkillFile } from '../skills-discovery'
 import { isPiBuiltInExtensionCommand } from '../../shared/pi-command'
 
 export function registerSkillsMcpHandlers(ctx: IpcContext): void {
@@ -13,7 +14,7 @@ export function registerSkillsMcpHandlers(ctx: IpcContext): void {
 
   // ─── Skills ─────────────────────────────────────────────────────────────
 
-  ipcMain.handle(IPC_CHANNELS.SKILLS_LIST, async () => {
+  const listCurrentSkills = async (): Promise<InstalledSkill[]> => {
     const ws = workspaceManager.getActiveWorkspace()
     const cwd = ws?.path ?? process.cwd()
     const pi = workspaceManager.getActivePiManager()
@@ -26,6 +27,14 @@ export function registerSkillsMcpHandlers(ctx: IpcContext): void {
       mergeRpcSkills(skills, await fetchCommands(pi))
     }
     return skills
+  }
+
+  ipcMain.handle(IPC_CHANNELS.SKILLS_LIST, () => listCurrentSkills())
+
+  // Checked against a fresh skill list, so only a file the panel lists is read.
+  ipcMain.handle(IPC_CHANNELS.SKILLS_READ, async (_event, filePath: unknown) => {
+    if (!isString(filePath)) throw new Error('filePath must be a string')
+    return readListedSkillFile(await listCurrentSkills(), filePath)
   })
 
   ipcMain.handle(IPC_CHANNELS.COMMANDS_LIST, async () => {

@@ -170,10 +170,10 @@ export function SkillsPanel(): React.JSX.Element {
       setDetail(selected.description)
       return
     }
-    window.piDesktop.files
+    window.piDesktop.skills
       .read(selected.path)
       .then((content) => {
-        if (!cancelled) setDetail(typeof content === 'string' ? content : '')
+        if (!cancelled) setDetail(content)
       })
       .catch(() => {
         if (!cancelled) setDetail('')
