@@ -75,3 +75,13 @@ test('normalizeStoredSettings resets an invalid voice device', () => {
   const settings = normalizeStoredSettings({ voiceDevice: 'npu' }, LANGUAGES)
   assert.equal(settings.voiceDevice, DEFAULT_SETTINGS.voiceDevice)
 })
+
+test('skill groups default to none and are cleaned on load', () => {
+  assert.deepEqual(DEFAULT_SETTINGS.skillGroups, [])
+  const settings = normalizeStoredSettings(
+    { skillGroups: [{ id: 'a', name: ' Git ', skills: ['commit'], collapsed: true }, { id: 'b', name: '' }] },
+    LANGUAGES
+  )
+  assert.deepEqual(settings.skillGroups, [{ id: 'a', name: 'Git', skills: ['commit'], collapsed: true }])
+  assert.deepEqual(normalizeStoredSettings({ skillGroups: 'bad' }, LANGUAGES).skillGroups, [])
+})

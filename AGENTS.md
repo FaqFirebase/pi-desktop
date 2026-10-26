@@ -60,6 +60,7 @@ src/
 │   ├── council-config.ts         # Council planning config, prompts, parsers
 │   ├── models-config.ts          # Custom models.json validate/merge
 │   ├── package-filter.ts         # Tokenized catalog search, shared main+renderer
+│   ├── skill-groups.ts           # Skills panel groups: a display setting keyed by skill name; skill files never move
 │   ├── package-spec.ts           # Validate package specs before the Pi CLI runs
 │   ├── version-compare.ts        # x.y.z-prerelease ordering (app and package update checks)
 │   ├── path-compare.ts           # Platform-aware path equality (win32 case-fold); main+renderer
@@ -267,7 +268,7 @@ src/
             ├── review-rail.tsx    # Review panel: permissions, approvals, changed files, session status
             ├── chat-tool-rail.tsx # Right-edge icon rail: review, files, diff, and terminal toggles
             ├── package-browser.tsx # Package/skill browser, fetch-once + local filter, update check
-            ├── skills-panel.tsx   # Skills browser
+            ├── skills-panel.tsx   # Skills browser: search, user-made groups (settings `skillGroups`)
             ├── notes-panel.tsx    # Reusable prompts/notes
             ├── note-picker.tsx    # Insert a saved note
             ├── command-palette.tsx # Ctrl/Cmd+K quick switcher (commands, workspaces, sessions, files)

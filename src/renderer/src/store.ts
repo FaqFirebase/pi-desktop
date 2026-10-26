@@ -14,6 +14,7 @@ import { createStaleGuard } from './utils/stale-guard'
 import { splitClaudeCliMarkers } from './claude-cli-markers'
 import { markUnansweredToolCallsRunning, settleRunningToolCall } from './reattached-tool-calls'
 import type { PiCommand } from '../../shared/pi-command'
+import type { SkillGroup } from '../../shared/skill-groups'
 import { forkPointForUserMessage, normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
 import { clampSidebarWidth } from '../../shared/sidebar-width'
@@ -584,6 +585,7 @@ interface AppActions {
   setPermissionRulesDraft: (scope: PermissionRulesScope, rules: PermissionRule[] | null) => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   toggleSessionGroupCollapsed: (projectPath: string) => Promise<void>
+  updateSkillGroups: (change: (groups: SkillGroup[]) => SkillGroup[]) => Promise<void>
   saveSidebarWidth: (width: number) => Promise<void>
   loadCommands: () => Promise<void>
 
@@ -2452,6 +2454,21 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     set({ settings: updated })
     if (get().piStatus === 'running') {
       await get().restartPi()
+    }
+  },
+
+  updateSkillGroups: async (change) => {
+    const current = get().settings
+    if (!current) return
+    // Shown at once and saved after, so quick edits (collapse, then move)
+    // each build on the last one instead of on a save still in flight.
+    const skillGroups = change(current.skillGroups)
+    set({ settings: { ...current, skillGroups } })
+    try {
+      const updated = await window.piDesktop.settings.save({ skillGroups })
+      if (get().settings?.skillGroups === skillGroups) set({ settings: updated })
+    } catch {
+      await get().loadSettings()
     }
   },
 

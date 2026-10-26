@@ -6,6 +6,7 @@ import { getVoiceModel, type VoicePrecision } from './voice-models'
 import { isVoiceDevice } from './voice-device'
 import { isChatWidth } from './chat-width'
 import { normalizeKeyboardShortcuts } from './keyboard-shortcuts'
+import { normalizeSkillGroups } from './skill-groups'
 
 const ENGINE_SETTINGS: readonly AgentEngine[] = ['auto', 'pi', 'omp']
 const VOICE_PRECISIONS: readonly VoicePrecision[] = ['int8', 'fp16']
@@ -36,6 +37,7 @@ export function normalizeStoredSettings(stored: Record<string, unknown>, languag
   }
   merged.language = normalizeLanguageSetting(merged.language, languages)
   merged.shortcuts = normalizeKeyboardShortcuts(merged.shortcuts)
+  merged.skillGroups = normalizeSkillGroups(merged.skillGroups)
   if (typeof merged.voiceModel !== 'string' || !getVoiceModel(merged.voiceModel)) {
     merged.voiceModel = DEFAULT_SETTINGS.voiceModel
   }
