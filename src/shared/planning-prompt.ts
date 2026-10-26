@@ -1,7 +1,7 @@
 import {
   PLANNING_PREAMBLE_OPENING,
   PLANNING_PREAMBLE_SENTINEL,
-} from '../../../shared/session-preview'
+} from './session-preview'
 
 /**
  * The preamble is stored verbatim as the session's first user message, so the
