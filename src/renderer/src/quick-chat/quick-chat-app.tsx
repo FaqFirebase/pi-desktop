@@ -87,9 +87,10 @@ export function QuickChatApp({ api = window.piQuickChat }: { api?: QuickChatApi 
   const renderView = useMemo(
     () => ({
       showThinking: context?.settings.showThinking ?? DEFAULT_SETTINGS.showThinking,
+      singleDollarMath: context?.settings.singleDollarMath ?? DEFAULT_SETTINGS.singleDollarMath,
       provider: state.model?.provider,
     }),
-    [context?.settings.showThinking, state.model?.provider]
+    [context?.settings.showThinking, context?.settings.singleDollarMath, state.model?.provider]
   )
   const liveTools = useMemo(
     () =>

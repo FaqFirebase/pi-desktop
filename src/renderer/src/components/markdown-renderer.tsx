@@ -23,7 +23,9 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
   const { show, ContextMenuComponent } = useContextMenu()
   const view = useContext(ReadOnlyChatContext)
   const singleDollarMath = useAppStore(
-    (state) => state.settingsDraft.singleDollarMath ?? state.settings?.singleDollarMath ?? DEFAULT_SETTINGS.singleDollarMath
+    (state) => view
+      ? view.singleDollarMath
+      : state.settingsDraft.singleDollarMath ?? state.settings?.singleDollarMath ?? DEFAULT_SETTINGS.singleDollarMath
   )
   const markdown = useMemo(() => normalizeMathDelimiters(content, singleDollarMath), [content, singleDollarMath])
 
