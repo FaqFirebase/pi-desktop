@@ -8,6 +8,7 @@ import { composePrompt } from './utils/compose-prompt'
 import { firstQueued, withQueued, withoutQueued, withoutWorkspaceQueue, type SendQueues } from './send-queue'
 import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
 import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
+import { placeStreamedDelta } from './streamed-delta'
 import { isStoppedAnswer } from '../../shared/stopped-answer'
 import { stripAnsi } from './utils/strip-ansi'
 import { createStaleGuard } from './utils/stale-guard'
@@ -525,6 +526,12 @@ interface AppActions {
   launchTask: (options: SessionLaunchTaskOptions) => Promise<boolean>
   closeSessionTab: (runtimeId: string) => Promise<void>
   switchSession: (path: string, projectPath?: string) => Promise<void>
+  /**
+   * Activate a specific runtime by id without a session path (secondary view
+   * "Open in Main" on a file-less tab). Runs the same dirty-editor and
+   * streaming-turn confirms as any other session change.
+   */
+  activateRuntime: (workspaceId: string, runtimeId: string) => Promise<boolean>
   /**
    * Open a session row from any surface (sidebar, session panel, quick
    * switcher): auto-switches or creates the owning workspace first, then
@@ -1933,6 +1940,68 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     await switchPipeline
   },
 
+  /**
+   * Activate a specific runtime by id — the secondary view "Open in Main" path for
+   * a file-less New Session tab, which no path-keyed switch can address. The
+   * runtime keeps running; nothing is torn down, only the renderer's active
+   * pointers move. The dirty-editor confirm runs in every case; a same-workspace
+   * swap additionally confirms an abandoned streaming turn (activateWorkspace
+   * no-ops there, so without this the swap would discard it silently).
+   */
+  activateRuntime: async (workspaceId, runtimeId) => {
+    let gen = ++sessionLoadGeneration
+    if (!(await get().confirmDiscardEditorChanges()) || gen !== sessionLoadGeneration) return false
+    // Only a same-workspace swap abandons a running turn; switching workspaces
+    // keeps the old workspace's turn running in the background, so the
+    // 'workspace' semantics (no warning) apply there.
+    const sameWorkspace = get().activeWorkspace?.id === workspaceId
+    if (sameWorkspace && !(await get().confirmSessionChange('switch'))) return false
+    if (gen !== sessionLoadGeneration) return false
+    try {
+      if (!sameWorkspace) {
+        if (!(await get().activateWorkspace(workspaceId, { awaitingSession: true, skipDirtyConfirm: true }))) return false
+      }
+      gen = ++sessionLoadGeneration
+      const workspace = get().activeWorkspace
+      if (!workspace || workspace.id !== workspaceId) return false
+      set({
+        currentView: 'chat',
+        sessionLoading: true,
+        sessionState: null,
+        sessionStats: null,
+        activeSessionRuntimeId: null,
+        extensionUiRequest: null,
+      })
+      get().clearMessages()
+      const runtime = await window.piDesktop.session.activateRuntime(workspaceId, runtimeId)
+      if (gen !== sessionLoadGeneration || !runtime) return false
+      const reattaching = runtime.activity === 'working' || runtime.activity === 'needs-approval'
+      set({
+        composerFocusRequested: true,
+        sessionLoading: runtime.status !== 'running',
+        activeSessionRuntimeId: runtime.runtimeId,
+        piStatus: runtime.status,
+        piPid: runtime.pid,
+        piEngine: runtime.engine ?? 'pi',
+        piError: runtime.error,
+      })
+      if (reattaching) set({ isStreaming: true, reattachedMidTurn: true })
+      void get().reloadActiveSession({ refreshList: false })
+      scheduleSessionListRefresh(get)
+      return true
+    } catch (err) {
+      if (gen !== sessionLoadGeneration) return false
+      set({ sessionLoading: false, ...idleTurnState() })
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: t('store.messages.switchSessionError', { detail: err instanceof Error ? err.message : String(err) }),
+        timestamp: Date.now(),
+      })
+      return false
+    }
+  },
+
   reloadActiveSession: async (options) => {
     const gen = sessionLoadGeneration
     const refreshList = options?.refreshList ?? true
@@ -2827,7 +2896,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       if (extensionUiRequest.method === 'confirm') {
         window.piDesktop.ui.respondConfirm(extensionUiRequest.id, false)
       } else {
-        window.piDesktop.ui.respondInput(extensionUiRequest.id, '')
+        // A cancel is a real answer, not an empty value: an empty string would
+        // be rejected for select (no such option) and submitted as text for
+        // input/editor. The engine resolves cancelled to undefined.
+        window.piDesktop.ui.respondCancel(extensionUiRequest.id)
       }
       set({ extensionUiRequest: null })
     }
@@ -3786,17 +3858,6 @@ useAppStore.subscribe((state, prev) => {
 // Zustand set supports both object and callback forms
 type ZustandSet = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void
 
-/**
- * `current` with one streamed delta placed at its offset, or null when the
- * delta starts past the end of `current`: the view attached in the middle of
- * the message and missed its start. A delta `current` already holds (a
- * snapshot covered it) changes nothing; a delta without an offset appends.
- */
-export function placeStreamedDelta(current: string, delta: string, offset: number | undefined): string | null {
-  if (offset === undefined) return current + delta
-  if (offset > current.length) return null
-  return offset + delta.length <= current.length ? current : current.slice(0, offset) + delta
-}
 
 // Counts committed assistant messages, so a streamed-text snapshot requested
 // for one message is never applied to the next.
