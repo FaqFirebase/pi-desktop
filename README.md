@@ -30,7 +30,7 @@ Pi Desktop is in alpha, so expect rough edges.
 - [Multi-Agent Council Planning](#multi-agent-council-planning): Pi, Claude, and Codex plan together before Pi builds (opt-in)
 - [TypeSafe Jev](#typesafe-jev): save your TypeSafe API key once and install the Jev skill for Pi and OMP (opt-in)
 - [Voice dictation](#voice-dictation) that runs on your machine with a model you pick (opt-in)
-- [Translatable interface](#languages) (English and Simplified Chinese ship today)
+- [Translatable interface](#languages) (English, Russian, Simplified Chinese, Turkish, and Ukrainian ship today)
 
 ## Review panel
 
@@ -138,7 +138,7 @@ User theme files live in the app's data directory under `themes/` (on Linux, `~/
 
 Pick the interface language in **Settings > Appearance > Language**. **System default** follows your operating system's language list and falls back to English. The change applies when you click **Save Settings**, with no restart.
 
-English and Simplified Chinese are bundled today. Each language is one JSON file in `resources/locales/<code>/translation.json`; see [Translations](CONTRIBUTING.md#translations) to add one.
+English, Russian, Simplified Chinese, Turkish, and Ukrainian are bundled today. Each language is one JSON file in `resources/locales/<code>/translation.json`; see [Translations](CONTRIBUTING.md#translations) to add one.
 
 Only the app's own text is translated. Chat replies, file contents, and names of models, packages, and sessions stay as they are. Logs and the copied Diagnostics report stay in English, so bug reports stay readable.
 
