@@ -1,0 +1,2143 @@
+{
+  "activity": {
+    "completed": "Arka planda tamamlandı",
+    "completedInAnotherWorkspace": "Başka bir çalışma alanında arka planda tamamlandı",
+    "failed": "Hatayla durdu",
+    "failedInAnotherWorkspace": "Başka bir çalışma alanında hatayla durdu",
+    "working": "Pi çalışıyor",
+    "workingInAnotherWorkspace": "Pi başka bir çalışma alanında çalışıyor"
+  },
+  "app": {
+    "dropFolder": {
+      "description": "Klasörü çalışma alanı olarak açar (gerekirse oluşturur)",
+      "title": "Proje olarak açmak için klasörü bırakın"
+    },
+    "errorBoundary": {
+      "fallback": "İçerik görüntülenemedi"
+    },
+    "quit": "Pi Desktop'tan çık",
+    "resizeHandle": {
+      "title": "Boyutlandırmak için sürükle"
+    },
+    "updateBanner": {
+      "available": "Pi Desktop <strong>v{{latestVersion}}</strong> sürümü çıktı — kullanılan sürüm: v{{currentVersion}}.",
+      "dismissAriaLabel": "Güncelleme bildirimini kapat",
+      "downloadButton": "İndir"
+    }
+  },
+  "chat": {
+    "activity": {
+      "stalled": "Model {{silent}} süredir yanıt vermiyor. Sağlayıcı yavaş olabilir.",
+      "stop": "Durdur",
+      "working": "Çalışıyor…",
+      "workingFor": "Çalışıyor · {{elapsed}}"
+    },
+    "attach": {
+      "allFilesFilter": "Tüm dosyalar",
+      "attachFailed": "Dosya eklenemedi",
+      "dropHint": "Eklemek için dosyaları bırakın",
+      "imagesFilter": "Görseller",
+      "onlyImagesPasted": "Mesaj kutusuna yalnızca görsel yapıştırılabilir",
+      "pasteFailed": "Görsel yapıştırılamadı",
+      "readImageFailed": "Görsel verisi okunamadı",
+      "reading": "Ekler ekleniyor…",
+      "unknownMimeType": "bilinmiyor",
+      "unsupportedImageType": "Desteklenmeyen görsel türü ({{mimeType}}). PNG, JPEG, GIF veya WebP kullanın."
+    },
+    "closeFileTree": "Dosya ağacını kapat",
+    "commandPopup": {
+      "selectHint": "↑↓ gezin · Enter/Tab seç · Esc kapat"
+    },
+    "composer": {
+      "placeholderIdle": "{{agent}} ajanına her şeyi sorabilirsiniz — komutlar için /",
+      "placeholderNotRunning": "{{agent}} ajanı çalışmıyor...",
+      "placeholderQueue": "Kuyruğa mesaj eklemek için yaz — Ctrl+Enter hemen gönderir"
+    },
+    "council": {
+      "planWithCouncil": "Konseyle planla",
+      "startEngineFirst": "Konseyle planlamadan önce Pi/OMP'yi başlatın"
+    },
+    "emptyState": {
+      "chooseProject": "Bir proje seç — {{agent}} mesaj gönderilince başlar.",
+      "pickProject": "Bir proje seçin ve ne yapılmasını istediğinizi anlatın.",
+      "startFailed": "{{agent}} başlatılamadı. Ayarları kontrol edin.",
+      "starting": "{{agent}} ajanı başlatılıyor…",
+      "title": "{{agent}} ne üzerinde çalışsın?",
+      "waitingOnEngine": "{{agent}} hazır — motorun yüklenmesi bekleniyor. Yerel modeller biraz sürebilir…"
+    },
+    "extensionUi": {
+      "editFallbackTitle": "Düzenle",
+      "hideForNowWithShortcut": "Şimdilik gizle ({{shortcut}})",
+      "inputFallbackTitle": "Giriş",
+      "notificationFallback": "Bildirim",
+      "selectFallbackTitle": "Seç",
+      "showWithShortcut": "Göster ({{shortcut}})",
+      "waitingForAnswer": "Pi bir yanıt bekliyor"
+    },
+    "insertNote": {
+      "ariaLabel": "Not ekle",
+      "titleWithShortcut": "Not ekle (Ctrl+Shift+P)"
+    },
+    "loadingSession": "Oturum yükleniyor…",
+    "mentionPopup": {
+      "insertHint": "↑↓ gezin · Enter/Tab yolu ekle · Esc kapat"
+    },
+    "message": {
+      "branchedFrom": "Dallanılan mesaj: \"{{excerpt}}\"",
+      "branchFromHere": "Buradan dallan",
+      "editAndResend": "Düzenle ve yeniden gönder",
+      "stopped": "Durduruldu"
+    },
+    "nextSteps": {
+      "title": "Önerilen sonraki adımlar"
+    },
+    "projectPicker": {
+      "noProject": "Proje yok",
+      "noProjectHomeDirectory": "Proje yok — ev dizini",
+      "openFolder": "Klasör aç…",
+      "yourHomeDirectory": "Ev dizini"
+    },
+    "reattached": {
+      "responseWillAppear": "Yanıt biter bitmez burada görünür.",
+      "stillWorking": "{{agent}} bu oturumda hâlâ çalışıyor."
+    },
+    "scrollToBottom": "En alta kaydır",
+    "search": {
+      "closeWithShortcut": "Kapat (Esc)",
+      "nextMatch": "Sonraki eşleşme (Enter)",
+      "placeholder": "Sayfada bul",
+      "previousMatch": "Önceki eşleşme (Shift+Enter)"
+    },
+    "searchWorkspace": {
+      "ariaLabel": "Çalışma alanında ara",
+      "titleWithShortcut": "Çalışma alanında ara (Ctrl+Shift+F)"
+    },
+    "sendButton": {
+      "ariaLabel": "Mesaj gönder",
+      "titleWithShortcut": "Gönder (Enter)"
+    },
+    "sendQueue": {
+      "count_one": "Kuyrukta {{count}} mesaj",
+      "count_other": "Kuyrukta {{count}} mesaj",
+      "edit": "Düzenle",
+      "files_one": "{{count}} dosya",
+      "files_other": "{{count}} dosya",
+      "held": "Duraklatıldı. Sonraki mesaj ya da Şimdi gönder kuyruğu yeniden başlatır",
+      "next": "Ajan bitirince gönderilir",
+      "sendNow": "Şimdi gönder",
+      "sendNowHint": "Bu mesajı çalışan tura hemen gönder",
+      "title": "Kuyruktaki mesajlar"
+    },
+    "startingAgent": "Ajan başlatılıyor…",
+    "stopButton": {
+      "ariaLabel": "Üretimi durdur",
+      "titleWithShortcut": "Durdur (Esc)"
+    },
+    "subagentPanel": {
+      "back": "Listeye dön",
+      "close": "Kapat",
+      "empty": "Bu sohbette henüz alt ajan yok.",
+      "finalOutput": "Son çıktı",
+      "finished": "Tamamlandı",
+      "liveViewUnavailable": "Bu çalıştırma için canlı görünüm yok.",
+      "loading": "Yükleniyor…",
+      "progressOnly": "Tam döküm bu çalıştırma bitince görünür.",
+      "refreshFailed": "Yenilenemedi.",
+      "running": "Çalışıyor",
+      "status": {
+        "done": "Bitti",
+        "failed": "Başarısız",
+        "running": "Çalışıyor",
+        "stopped": "Durduruldu"
+      },
+      "title": "Alt ajanlar",
+      "transcriptUnavailable": "Döküm yok."
+    },
+    "subagentProgress": {
+      "done_one": "{{count}} alt ajan bitti",
+      "done_other": "{{count}} alt ajan bitti",
+      "finishedWithFailures_one": "{{count}} alt ajan bitti, {{failed}} başarısız",
+      "finishedWithFailures_other": "{{count}} alt ajan bitti, {{failed}} başarısız",
+      "openPanel": "Alt ajan panelini aç",
+      "running_one": "{{count}} alt ajan çalışıyor",
+      "running_other": "{{count}} alt ajan çalışıyor"
+    },
+    "svgBlock": {
+      "renderedSvgAlt": "İşlenmiş SVG",
+      "renderSvg": "SVG'yi işle",
+      "viewSource": "Kaynağı göster"
+    },
+    "toolbar": {
+      "diffViewer": "Fark görüntüleyici",
+      "fileTree": "Dosya ağacı",
+      "reviewPanel": "İnceleme paneli",
+      "subagents": "Alt ajanlar",
+      "subagentsRunning_one": "Alt ajanlar, {{count}} çalışıyor",
+      "subagentsRunning_other": "Alt ajanlar, {{count}} çalışıyor",
+      "terminal": "Terminal"
+    },
+    "toolCall": {
+      "status": {
+        "done": "bitti",
+        "error": "hata",
+        "running": "çalışıyor"
+      }
+    },
+    "voice": {
+      "errorTitle": "Sesli dikte başarısız: {{error}}",
+      "needsGpu": "Bu model sürümü ekran kartı (GPU) gerektiriyor ve GPU bulunamadı. CPU sürümü için Ayarlar > Ses altında CPU'yu seçin.",
+      "setUpTitle": "Sesli dikteyi Ayarlar'dan kurun",
+      "startTitle": "Sesli dikteyi başlat",
+      "stopTitle": "Durdur ve metni ekle",
+      "transcribing": "Ses metne dönüştürülüyor"
+    },
+    "waitingForResponse": "Yanıt bekleniyor..."
+  },
+  "commandGroups": {
+    "commands": "Komutlar",
+    "extensions": "Eklentiler",
+    "other": "Diğer",
+    "prompts": "İstemler"
+  },
+  "commands": {
+    "addRepo": {
+      "description": "Bu bağlı göreve bir depo ekle"
+    },
+    "clone": {
+      "description": "Geçerli dalı yeni bir oturuma klonla"
+    },
+    "compact": {
+      "description": "Bağlamda yer açmak için konuşmayı sıkıştır"
+    },
+    "fork": {
+      "description": "Bir mesajdan çatallamak için Dallar'ı aç"
+    },
+    "linkedTask": {
+      "description": "Bir depo kümesinde bağlı görev başlat"
+    },
+    "model": {
+      "description": "Model seç"
+    },
+    "new": {
+      "description": "Yeni oturum başlat"
+    },
+    "newRepoSet": {
+      "description": "Depo kümesi oluştur: bağlı görevler için depo grubu"
+    },
+    "resume": {
+      "description": "Oturumlar listesini aç"
+    },
+    "settings": {
+      "description": "Ayarları aç"
+    },
+    "task": {
+      "description": "Yeni bir {{agent}} oturumunda görev başlat"
+    }
+  },
+  "commandSources": {
+    "builtin": "yerleşik",
+    "extension": "eklenti",
+    "prompt": "istem",
+    "skill": "skill"
+  },
+  "common": {
+    "attachFile": "Dosya ekle",
+    "cancel": "İptal",
+    "changedFilesHeading": "Değişen dosyalar",
+    "close": "Kapat",
+    "collapse": "Daralt",
+    "confirm": "Onayla",
+    "copied": "Kopyalandı",
+    "copy": "Kopyala",
+    "cut": "Kes",
+    "delete": "Sil",
+    "dismiss": "Kapat",
+    "export": "Dışa aktar",
+    "global": "Genel",
+    "import": "İçe aktar",
+    "install": "Kur",
+    "installed": "Kurulu",
+    "loading": "Yükleniyor…",
+    "moreCount_one": "+{{count}} daha",
+    "moreCount_other": "+{{count}} daha",
+    "newSession": "Yeni oturum",
+    "no": "hayır",
+    "noWorkingTreeChanges": "Çalışma ağacında değişiklik yok.",
+    "paste": "Yapıştır",
+    "project": "Proje",
+    "refresh": "Yenile",
+    "remove": "Kaldır",
+    "retry": "Yeniden dene",
+    "save": "Kaydet",
+    "selectAll": "Tümünü seç",
+    "send": "Gönder",
+    "settings": "Ayarlar",
+    "showSidebar": "Kenar çubuğunu göster",
+    "skills": "Skill'ler",
+    "submit": "Gönder",
+    "thinking": "Düşünme",
+    "workflowRuns": "İş akışı çalıştırmaları",
+    "yes": "evet"
+  },
+  "composer": {
+    "permissionMenu": {
+      "title": "İzinler"
+    }
+  },
+  "contextMenu": {
+    "addMessageToNotes": "Mesajı notlara ekle",
+    "addSelectionToNotes": "Seçimi notlara ekle",
+    "archive": "Arşivle",
+    "copyAllVisibleText": "Görünen tüm metni kopyala",
+    "copyCodeBlock": "Kod bloğunu kopyala",
+    "copyLink": "Bağlantıyı kopyala",
+    "copyMessage": "Mesajı kopyala",
+    "copySelection": "Seçimi kopyala",
+    "deleteSessionConfirmMessage": "\"{{name}}\" oturumu silinsin mi?\n\nKuruluysa sistemin 'trash' CLI aracı kullanılır (geri alınabilir); değilse .jsonl oturum dosyası kalıcı olarak silinir.",
+    "deleteSessionConfirmTitle": "Oturumu sil",
+    "deleteSessionLabel": "Sil…",
+    "openLink": "Bağlantıyı aç",
+    "openSession": "Oturumu aç",
+    "rename": "Yeniden adlandır…",
+    "searchSelection": "Seçimi ara",
+    "shortcuts": {
+      "copy": "Ctrl+C",
+      "copyCodeBlock": "Ctrl+Shift+C",
+      "cut": "Ctrl+X",
+      "paste": "Ctrl+V",
+      "selectAll": "Ctrl+A"
+    },
+    "unarchive": "Arşivden çıkar",
+    "workflowRuns": "İş akışı çalıştırmaları"
+  },
+  "conveyor": {
+    "branches": {
+      "agentWorking": "Dal değiştirmeden önce bu çalışma alanındaki tüm ajanların bitirmesini bekleyin.",
+      "createBranch": "Dal oluştur",
+      "description": "Projenin yerel dalını zorlamadan ve değişiklikleri stash'lemeden değiştir",
+      "label": "Proje dalı",
+      "nameRequired": "Yeni dal için bir ad girin.",
+      "newBranchHint": "Başlangıç: {{branch}}. Commit edilmemiş değişiklikler yeni dala taşınır.",
+      "newBranchOption": "Yeni dal…",
+      "newBranchPlaceholder": "feature/my-change",
+      "newBranchTitle": "Yeni dal",
+      "saveEditor": "Dal değiştirmeden önce düzenleyicideki değişiklikleri kaydet ya da geri al."
+    },
+    "branchStatusClean": "{{branch}}",
+    "branchStatusDirty_one": "{{branch}} · {{count}} değişiklik",
+    "branchStatusDirty_other": "{{branch}} · {{count}} değişiklik",
+    "commit": "Commit",
+    "commitAndPush": "Commit + Push",
+    "commitAndPushTitle": "Değişiklikleri commit et ve dalı tek adımda push et",
+    "commitButtonTitle": "Hazırlanan değişiklikleri ya da bu çalışma alanındaki değişiklikleri commit et",
+    "createPrButton": "PR oluştur",
+    "detachedBranch": "bağımsız",
+    "dialog": {
+      "baseBranchLabel": "Temel dal",
+      "baseBranchPlaceholder": "Deponun varsayılanı için boş bırakın",
+      "closeAriaLabel": "İletişim kutusunu kapat",
+      "commitMessageLabel": "Commit mesajı",
+      "commitTitle": "Değişiklikleri commit et",
+      "descriptionLabel": "Açıklama",
+      "newFilesLabel": "Yeni dosyalar: eklenecek dosyaları işaretle",
+      "newFilesLeftOut_one": "{{count}} yeni dosya commit edilmeyecek.",
+      "newFilesLeftOut_other": "{{count}} yeni dosya commit edilmeyecek.",
+      "prTitle": "Pull request oluştur",
+      "titleLabel": "Başlık"
+    },
+    "draft": {
+      "engineUnavailable": "Ajan çalıştırılabilir dosyası kullanılamıyor. Ajan yapılandırmasını kontrol edin ya da mesajı elle yazın.",
+      "failed": "Mesaj oluşturulamadı. Öner'i yeniden deneyin ya da mesajı kendiniz yazın.",
+      "generating": "İngilizce commit mesajı oluşturuluyor…",
+      "suggest": "Mesaj öner",
+      "suggestTitle": "Commit mesajı önermesi için seçili değişiklikleri oturum modeline gönder",
+      "timedOut": "Mesaj oluşturma zaman aşımına uğradı. Öner'i yeniden deneyin ya da mesajı kendiniz yazın."
+    },
+    "errors": {
+      "branchRequired": "Pull request oluşturmak için adlandırılmış bir dal gerekir.",
+      "chooseNewFiles": "Commit için en az bir yeni dosya işaretle.",
+      "commitBeforePr": "Pull request oluşturmadan önce değişiklikleri commit et.",
+      "commitBeforePush": "Push etmeden önce çalışma ağacını commit et.",
+      "commitMessageRequired": "Commit mesajı gerekli.",
+      "committedPushFailed": "{{sha}} commit'i yerelde kaydedildi ama push tamamlanmadı: {{detail}}",
+      "operationInProgress": "Başka bir Git işlemi sürüyor. Bitmesini bekleyin.",
+      "prBaseMissing": "Uzak depoda henüz temel dal yok. Önce temel dalı push edin ya da git remote set-head origin --auto komutunu çalıştırın.",
+      "prNeedsGitHub": "Pull request için GitHub uzak deposu gerekir. Bu dal GitHub dışındaki bir uzak depoya push ediyor.",
+      "prNothingToMerge": "Bu dalda {{base}} dalında olmayan commit yok; birleştirilecek bir şey yok.",
+      "prOnBaseBranch": "Şu an temel dal olan {{base}} üzerindesiniz. Pull request oluşturmak için başka bir dala geçin.",
+      "prTitleRequired": "Pull request başlığı gerekli.",
+      "pushBeforePr": "Pull request oluşturmadan önce dalı push et.",
+      "workspaceChanged": "Etkin çalışma alanı değişti. Git işlemi durduruldu."
+    },
+    "feedback": {
+      "branchPushed": "Dal push edildi.",
+      "committed": "{{sha}} commit edildi.",
+      "committedAndPushed": "{{sha}} commit edildi ve dal push edildi.",
+      "openLinkTitle": "Tarayıcıda aç",
+      "prCreated": "Pull request oluşturuldu.",
+      "pushedCommits_one": "{{count}} commit push edildi.",
+      "pushedCommits_other": "{{count}} commit push edildi."
+    },
+    "openPrButtonLabel": "PR #{{number}} aç",
+    "openPrButtonTitle": "Bu dalın #{{number}} numaralı pull request'ini GitHub'da aç",
+    "openRepositoryTitle": "Depoyu GitHub'da aç",
+    "prButtonLabel": "PR",
+    "prButtonTitle": "GitHub CLI ile pull request oluştur",
+    "push": "Push",
+    "pushButtonTitle": "Onaydan sonra geçerli dalı push et",
+    "pushConfirm": {
+      "branchNameFallback": "geçerli dal",
+      "currentBranchFallback": "geçerli dal",
+      "message": "Dal: {{branch}} → Hedef: {{target}}. Push edilsin mi?",
+      "remoteFallback": "uzak depo",
+      "title": "Dal push edilsin mi?"
+    }
+  },
+  "council": {
+    "consensusPlan": {
+      "heading": "Uzlaşı planı",
+      "implementButton": "Bunu uygula",
+      "reviseButton": "Revize et",
+      "reviseInputPlaceholder": "Planda değişiklik iste…"
+    },
+    "header": "Konsey planlaması — {{phase}}",
+    "phase": {
+      "awaitingApproval": "onay bekliyor",
+      "consulting": "danışılıyor",
+      "detecting": "algılanıyor",
+      "merging": "birleştiriliyor",
+      "refused": "reddedildi"
+    },
+    "status": {
+      "contributed": "katkı verdi",
+      "errored": "hata verdi",
+      "merging": "birleştiriliyor…",
+      "readyForReview": "incelemeye hazır",
+      "streaming": "akıyor…",
+      "timedOut": "zaman aşımı",
+      "working": "çalışıyor…"
+    }
+  },
+  "customModels": {
+    "addModelButton": "Model ekle",
+    "addProviderButton": "Sağlayıcı ekle",
+    "apiKeyPlaceholder": "apiKey — düz değer, $ENV_VAR veya !shell-komutu",
+    "baseUrlPlaceholder": "baseUrl",
+    "capabilityHint": "Not: içe aktarılan modeller yetenek bayrakları ayarlanmadan yüklenebilir. Model düşünmeyi destekliyorsa <reasoning>reasoning</reasoning>, görsel kabul ediyorsa <vision>vision</vision> kutusunu işaretle. Uygulamak için {{engine}} yeniden başlatılmalı.",
+    "contextWindowLabel": "ctx",
+    "defaultFileName": "model dosyası",
+    "description": "<code>{{path}}</code> içindeki özel sağlayıcılar ve modeller. {{engine}} yeniden başlayınca uygulanır.",
+    "errors": {
+      "duplicateKeys": "Sağlayıcı anahtarları benzersiz olmalı",
+      "emptyKey": "Her sağlayıcının boş olmayan bir anahtarı olmalı",
+      "saveFailed": "Kaydedilemedi"
+    },
+    "loadError": {
+      "message": "{{fileName}} güvenli şekilde yüklenemedi; üzerine yazılmasın diye düzenleme kapatıldı."
+    },
+    "maxTokensLabel": "maks",
+    "modelIdPlaceholder": "model kimliği (zorunlu)",
+    "modelNamePlaceholder": "ad",
+    "providerKeyPlaceholder": "sağlayıcı-anahtarı (ör. ollama)",
+    "reasoningLabel": "reasoning",
+    "removeModelTitle": "Modeli kaldır",
+    "removeProviderTitle": "Sağlayıcıyı kaldır",
+    "saveButton": "Kaydet: {{fileName}}",
+    "savedRestartButton": "Kaydedildi — uygulamak için {{engine}} yeniden başlat",
+    "supportsReasoningEffortLabel": "reasoning effort destekler",
+    "visionLabel": "vision"
+  },
+  "diagnostics": {
+    "fields": {
+      "appVersion": "Uygulama sürümü",
+      "binaryFound": "İkili dosya bulundu",
+      "chromium": "Chromium",
+      "electron": "Electron",
+      "engineVersion": "{{agent}} sürümü",
+      "globalRules": "Genel kurallar",
+      "globalRulesInvalid": "geçersiz dosya: {{error}}",
+      "guiDataDir": "Arayüz veri dizini",
+      "mode": "Mod",
+      "needsShell": "Kabuk gerekir",
+      "node": "Node",
+      "nodeBinary": "Node ikili dosyası",
+      "pathEntriesSearched": "Taranan PATH girdileri",
+      "platform": "Platform",
+      "rejectedOverride": "Yapılandırılan yol yok sayıldı (mevcut değil): {{path}}",
+      "resolutionSource": "Çözümleme kaynağı",
+      "script": "Betik",
+      "sessionsRoot": "Oturum kök dizini",
+      "settingsFile": "Ayar dosyası",
+      "unknownError": "bilinmeyen hata",
+      "unknownVersion": "bilinmiyor",
+      "workspaceRules": "Çalışma alanı kuralları",
+      "workspaceRulesNone": "yok",
+      "workspaceRulesPresent": "var",
+      "workspaceRulesPresentWithAllowRules": "var, izin kuralları içeriyor",
+      "workspaceTrust": "Çalışma alanı güveni"
+    },
+    "keyState": {
+      "envMissing": "ortam değişkeni yok",
+      "envSet": "ortam değişkeni ayarlı",
+      "literal": "anahtar yapılandırıldı",
+      "none": "anahtar yok",
+      "shell": "kabuk komutu"
+    },
+    "loadErrorTitle": "Rapor oluşturulamadı",
+    "noCustomProviders": "Yapılandırılmış özel sağlayıcı yok (models.json).",
+    "noRecentErrors": "Bu çalıştırmada uyarı ya da hata kaydedilmedi.",
+    "noWorkspaces": "Çalışma alanı yok.",
+    "providerModelCount_one": "{{count}} model",
+    "providerModelCount_other": "{{count}} model",
+    "refreshAriaLabel": "Tanılamayı yenile",
+    "resolutionSource": {
+      "commonLocation": "Yaygın kurulum konumu",
+      "engineInstall": "{{agent}} kurulum konumu",
+      "fallback": "Yedek (bulunamadı)",
+      "npmPrefix": "npm genel öneki",
+      "override": "Yapılandırılan yol",
+      "path": "PATH",
+      "versionManager": "Sürüm yöneticisi"
+    },
+    "sections": {
+      "application": "Uygulama",
+      "binaryTitle": "{{agent}} ikili dosyası",
+      "permissions": "İzinler",
+      "providers": "Sağlayıcılar",
+      "recentErrors": "Son hatalar",
+      "storage": "Depolama",
+      "workspaces": "Çalışma alanları"
+    },
+    "title": "Tanılama",
+    "workspaceNotTrustedBadge": "güvenilmiyor",
+    "workspacePathMissing": "eksik",
+    "workspaceTrustedBadge": "güvenilir"
+  },
+  "dialogs": {
+    "openFolder": {
+      "title": "Klasör aç"
+    },
+    "openProject": {
+      "title": "Proje aç"
+    },
+    "permissionRules": {
+      "exportTitle": "İzin kurallarını dışa aktar",
+      "fileFilterName": "İzin kuralları",
+      "importTitle": "İzin kurallarını içe aktar"
+    },
+    "selectWorkspaceFolder": {
+      "title": "Çalışma alanı klasörünü seç"
+    },
+    "theme": {
+      "exportTitle": "Temayı dışa aktar",
+      "fileFilterName": "Tema",
+      "importTitle": "Tema içe aktar"
+    }
+  },
+  "diff": {
+    "closeAriaLabel": "Fark görüntüleyiciyi kapat",
+    "deletedFileBadge": "SİLİNDİ",
+    "discard": {
+      "agentWorking": "Değişiklikleri atmadan önce bu projedeki tüm ajanların bitirmesini bekleyin.",
+      "all": "Gösterilen dosyalardaki değişiklikleri at",
+      "busy": "Zaten bir atma işlemi sürüyor.",
+      "confirm": "At",
+      "failed": "Git seçili değişiklikleri atamadı. Farkı yenile ve yeniden incele.",
+      "file": "Değişiklikleri at: {{path}}",
+      "message_one": "Bu dosyada gösterilen hazırlanmamış değişiklikler atılsın mı? Aynı dosyadaki başka oturumlardan gelen değişiklikler de dahildir. Yeni dosya silinir. Hazırlanan değişiklikler ve commit'ler etkilenmez. Bu işlem geri alınamaz.\n\n{{files}}",
+      "message_other": "Bu dosyalarda gösterilen hazırlanmamış değişiklikler atılsın mı? Aynı dosyalardaki başka oturumlardan gelen değişiklikler de dahildir. Yeni dosyalar silinir. Hazırlanan değişiklikler ve commit'ler etkilenmez. Bu işlem geri alınamaz.\n\n{{files}}",
+      "saveEditor": "Değişiklikleri atmadan önce kaydedilmemiş düzenleyiciyi kaydet ya da kapat.",
+      "stale": "Seçili değişiklikler artık güncel değil. Farkı yenile ve yeniden incele.",
+      "title_one": "Gösterilen değişiklik atılsın mı?",
+      "title_other": "Gösterilen değişiklikler atılsın mı?",
+      "unsupported": "Bu fark burada atılamaz. İkili dosyalar, sembolik bağlantılar, alt modüller ve geçerli UTF-8 olmayan dosya adları desteklenmez.",
+      "workingOnly": "Hazırlanmamış değişiklikleri atmak için Çalışma görünümüne geç."
+    },
+    "fileCount_one": "{{count}} dosya",
+    "fileCount_other": "{{count}} dosya",
+    "heading": "Fark görüntüleyici",
+    "loadErrorTitle": "Fark yüklenemedi",
+    "newFileBadge": "YENİ",
+    "noChanges": "Değişiklik yok",
+    "noStagedChanges": "Hazırlanan değişiklik yok",
+    "openFile": "Dosyayı aç",
+    "refreshAriaLabel": "Farkı yenile",
+    "sessionFilter": {
+      "description": "Bu sohbette edit/write çağrılarının dokunduğu dosyaları süzer. Dosyanın tamamını gösteren farklar başka oturumların değişikliklerini de içerebilir. Kabuk ve alt ajan değişiklikleri eksik olabilir. Tüm projeyi görmek için kapatın. Push her zaman dalın tamamına uygulanır.",
+      "label": "Bu oturumda dokunulan dosyalar",
+      "noMatches": "Bu oturum için eşleşen değişiklik yok"
+    },
+    "stagedToggle": "Hazırlanan",
+    "workingToggle": "Çalışma",
+    "workingTreeClean": "Çalışma ağacı temiz"
+  },
+  "editorGuard": {
+    "discard": "Kaydedilmemiş değişiklikler atılsın mı?",
+    "discardButton": "Değişiklikleri at",
+    "discardFile": "{{fileName}} dosyasındaki kaydedilmemiş değişiklikler atılsın mı?",
+    "keepEditing": "Düzenlemeye devam et",
+    "title": "Kaydedilmemiş değişiklikler"
+  },
+  "errors": {
+    "attachments": {
+      "notText": "Ek bir metin dosyası veya desteklenen bir görsel değil",
+      "pathNotPermitted": "Ek yoluna izin verilmiyor",
+      "tooLarge": "Ek çok büyük (en fazla {{limit}} MB)"
+    },
+    "council": {
+      "agentNotFound": "{{agent}} bulunamadı. Kurun ya da Ayarlar'daki konsey üyelerinden çıkarın.",
+      "arbiterFailed": "Hakem başarısız oldu",
+      "arbiterTimedOut": "Hakem zaman aşımına uğradı",
+      "notEnoughMembers": "Konsey için en az {{min}} ajan gerekir. Pi, Claude veya Codex'i kurun ya da etkinleştirin veya konseyi kapatın.",
+      "planningDisabled": "Konsey planlaması Ayarlar'da devre dışı.",
+      "timeoutNotNumber": "Konsey zaman aşımı sonlu bir sayı olmalı",
+      "timeoutRange": "Konsey zaman aşımı {{min}} ile {{max}} saniye arasında olmalı",
+      "unknownConsensusMode": "Bilinmeyen uzlaşı modu: {{mode}}",
+      "unknownError": "bilinmeyen hata"
+    },
+    "fileService": {
+      "refusedRead": "Etkin çalışma alanı dışından okuma reddedildi",
+      "refusedWrite": "Etkin çalışma alanı dışına yazma reddedildi"
+    },
+    "fs": {
+      "blockedWrite": "\"{{path}}\" yazılamadı ({{code}}). Windows'ta bunun nedeni genellikle değişikliği engelleyen Denetimli Klasör Erişimi'dir (Fidye yazılımı koruması). Ya Windows Güvenliği → Virüs ve tehdit koruması → Fidye yazılımı koruması → \"Bir uygulamaya Denetimli klasör erişimi üzerinden izin ver\" yolundan Pi Desktop'a izin verin ya da bu projeyi Belgeler/Masaüstü dışında korumasız bir klasöre taşıyın (örneğin C:\\dev)."
+    },
+    "git": {
+      "branchExists": "\"{{name}}\" adlı bir dal zaten var. Geçmek için dal menüsünden seçin",
+      "branchNameInvalid": "\"{{name}}\" geçerli bir dal adı değil",
+      "commandFailed": "{{command}} başarısız oldu",
+      "commandFailedWithDetail": "{{command}} başarısız oldu: {{detail}}",
+      "commitBeforePullRequest": "Pull request oluşturmadan önce çalışma ağacını commit edin",
+      "commitBeforePush": "Push etmeden önce çalışma ağacını commit edin",
+      "commitBeforeSwitch": "Dal değiştirmeden önce değişiklikleri commit edin ya da atın",
+      "commitMessageRequired": "Commit mesajı gerekli",
+      "commitMessageTooLong": "Commit mesajı en fazla {{max}} karakter olmalı",
+      "commitSelectionEmpty": "Commit için seçili dosya yok",
+      "commitSelectionOutsideWorkspace": "Commit için seçilen dosyalar etkin çalışma alanının içinde olmalı",
+      "detachedHeadCommit": "Ayrık HEAD durumunda commit edilemez",
+      "detachedHeadPush": "Ayrık HEAD durumunda push edilemez",
+      "ignoredFilesBlockSwitch": "{{branch}} dalına geçmek, Git'in değişiklik olarak göstermediği şu yerel dosyaların üzerine yazar ya da onları siler. Önce bunları başka yere taşıyın, sonra yeniden geçin:\n{{files}}",
+      "localBranchRequired": "Var olan bir yerel dal seçin",
+      "namedBranchRequired": "Pull request oluşturmak için adlandırılmış bir dal gerekli",
+      "newFileNotCommittable": "{{path}} commit edilemez: seçili değişikliklerde yeni bir dosya değil ya da Git onu yok sayıyor",
+      "noTrackedChanges": "Bu çalışma alanında commit edilecek izlenen değişiklik yok. İzlenmeyen dosyaları dahil etmek için önce hazırlayın.",
+      "operationInProgressCommit": "Bir Git {{operation}} işlemi sürerken commit edilemez",
+      "operationInProgressCreateBranch": "Bir Git {{operation}} işlemi sürerken dal oluşturulamaz",
+      "operationInProgressPush": "Bir Git {{operation}} işlemi sürerken push edilemez",
+      "operationInProgressSwitch": "Bir Git {{operation}} işlemi sürerken dal değiştirilemez",
+      "pullRequestBaseMissing": "Uzak depoda pull request için temel dal yok. Önce temel dalı push edin ya da bir temel dal girin",
+      "pullRequestExists": "Bu dal için #{{number}} numaralı pull request zaten açık: {{url}}",
+      "pullRequestTitleRequired": "Pull request başlığı gerekli",
+      "pushBeforePullRequest": "Pull request oluşturmadan önce dalı push edin",
+      "pushUpstreamIsLocal": "Upstream'i yerel depo olan bir dal push edilemez",
+      "stagedOutsideWorkspace": "İndekste etkin çalışma alanı dışında hazırlanmış dosyalar var",
+      "subprocessTimedOut": "{{command}} zaman aşımına uğradı",
+      "workingTreeClean": "Çalışma ağacı temiz"
+    },
+    "models": {
+      "duplicateModelId": "Sağlayıcı \"{{key}}\": yinelenen model kimliği \"{{id}}\"",
+      "fieldNotFiniteNumber": "Sağlayıcı \"{{key}}\", model \"{{id}}\": {{field}} sonlu bir sayı olmalı",
+      "modelMissingId": "Sağlayıcı \"{{key}}\": bir modelin kimliği eksik",
+      "providerKeyEmpty": "Sağlayıcı anahtarı boş olamaz"
+    },
+    "notes": {
+      "bodyRequired": "Not içeriği gerekli",
+      "notFound": "Not bulunamadı: {{id}}",
+      "titleRequired": "Not başlığı gerekli"
+    },
+    "packages": {
+      "invalidSpec": "Geçersiz paket tanımı",
+      "listFailed": "OMP eklenti listesi okunamadı: {{detail}}",
+      "missingBun": "OMP, npm eklentilerini kurmak veya güncellemek için bun'a ihtiyaç duyar. bun'ı https://bun.sh adresinden kurup yeniden deneyin.",
+      "pinnedOrNotFromNpm": "{{spec}} sabitlenmiş ya da npm'den kurulmamış, bu yüzden buradan güncellenemez."
+    },
+    "permissionRules": {
+      "fileTooLarge": "kural dosyası çok büyük (sınır {{limit}} bayt)"
+    },
+    "pi": {
+      "commandFailedFallback": "Komut başarısız oldu",
+      "commandTimedOut": "{{commandType}} komutu {{timeoutMs}} ms sonra zaman aşımına uğradı",
+      "configuredPathMissing": "{{settingsHint}} içinde ayarlanan Pi çalıştırılabilir dosya yolu yok:\n  {{path}}\n\nBunu Pi'nin cli.js dosyasına (veya kurulum dizinine) yönlendirin ya da otomatik algılama için alanı temizleyin. Otomatik algılama da bir şey bulamadı.\n\n{{installHint}}",
+      "crashedBeforeReady": "Pi hazır olmadan çöktü.",
+      "cwdMissing": "Pi çalışma dizini yok ya da bir dizin değil:\n  {{cwd}}",
+      "exitedBeforeReady": "Pi hazır olmadan {{code}} koduyla çıktı.",
+      "failedToCreateManager": "Pi yöneticisi oluşturulamadı",
+      "installHint": "Pi'yi şununla kurun:\n  {{npmCommand}}\nya da OMP'yi şununla kurun:\n  {{bunCommand}}",
+      "nodeNotFound": "Çözümlenen yolda Node çalıştırılabilir dosyası bulunamadı:\n  {{node}}\n\nPi'nin .js giriş noktası Node gerektirir. Node'u https://nodejs.org adresinden kurun ya da NODE ortam değişkenini Node çalıştırılabilir dosyasının yoluna ayarlayın.",
+      "noManagerForWorkspace": "Çalışma alanı için Pi yöneticisi yok",
+      "notFound": "Pi çalıştırılabilir dosyası bulunamadı. Giriş kabuğunun PATH'i, npm'in global öneki, Node sürüm yöneticileri (nvm, fnm, volta, asdf, mise, nodenv, n) ve yaygın kurulum konumları tarandı.\n\n{{installHint}}\n\nZaten kurulu mu? Pi'nin cli.js dosyasının tam yolunu {{settingsHint}} içinde ayarlayın.",
+      "processExited": "Pi süreci sonlandı",
+      "processKilled": "Pi süreci öldürüldü",
+      "processNotRunning": "Pi süreci çalışmıyor",
+      "settingsHint": "Ayarlar > Ajan yapılandırması > Ajan kurulumu",
+      "spawnError": "Başlatma hatası: {{detail}}",
+      "startupTimeoutBusy": "Pi başladı ama {{seconds}} sn içinde hazır olmadı.\n\nPi çalışıyor ve çıktı üretiyordu, ancak hazır olma denetimine hiç yanıt vermedi. Eklenti başlangıç kancaları Pi komutları okumadan önce çalışır; yerel bir model sunucusunu çağıran bir kanca, model yüklenirken veya büyük bir istemi ön işlerken bu kadar bekleyebilir. Motor ve model sunucusu günlüklerini kontrol edip yeniden deneyin.",
+      "startupTimeoutBusyWithStderr": "{{message}}\n\nBaşlangıç sırasında yakalanan Pi stderr çıktısı:\n{{detail}}",
+      "startupTimeoutSilentNoOutput": "Pi {{seconds}} sn içinde çıktı üretmedi.\n\nYakalanan çıktı yok. Tam başlatma komutu için uygulama günlüğüne bakın ve `pi --mode rpc` komutunu doğrudan bir terminalde çalıştırmayı deneyin.",
+      "startupTimeoutSilentWithStderr": "Pi {{seconds}} sn içinde çıktı üretmedi.\n\nBaşlangıç sırasında yakalanan Pi stderr çıktısı:\n{{detail}}"
+    },
+    "session": {
+      "alreadyAttached": "Oturum dosyası zaten çalışan bir çalışma zamanına bağlı",
+      "attachedToDifferentWorkspace": "Oturum zaten başka bir çalışma alanının çalışma zamanına bağlı",
+      "ompNoClone": "OMP motoru oturum klonlamayı desteklemiyor",
+      "pathMustExist": "{{field}} var olan bir Pi oturum dosyasını göstermeli",
+      "projectMismatch": "Oturumun projesi etkin çalışma alanıyla eşleşmiyor",
+      "runtimeNotFound": "Oturum çalışma zamanı bulunamadı: {{runtimeId}}"
+    },
+    "system": {
+      "externalUrlHttpOnly": "Yalnız http(s) URL'lerine izin verilir"
+    },
+    "theme": {
+      "downloadFailed": "tema indirilemedi: {{status}}",
+      "exportWriteFailed": "Tema şuraya yazılamadı: {{path}}",
+      "fileTooLarge": "tema dosyası çok büyük (sınır {{limit}} bayt)",
+      "galleryIndexDownloadFailed": "galeri dizini indirilemedi: {{status}}",
+      "galleryIndexNotArray": "galeri dizini bir JSON dizisi değil",
+      "hostBlockedIPv4": "tema URL'sindeki \"{{host}}\" sunucusu engellendi (özel/ayrılmış IPv4 adresi)",
+      "hostBlockedIPv6": "tema URL'sindeki \"{{host}}\" sunucusu engellendi (özel/ayrılmış IPv6 adresi)",
+      "hostBlockedLocal": "tema URL'sindeki \"{{host}}\" sunucusu engellendi (yerel/loopback ana makine adı)",
+      "kindInvalid": "kind \"dark\" veya \"light\" olmalı",
+      "missingKey": "{{label}} içinde \"{{key}}\" eksik",
+      "mustBeJsonObject": "tema bir JSON nesnesi olmalı",
+      "mustBeObject": "{{label}} bir nesne olmalı",
+      "mustUseHttps": "tema URL'leri https kullanmalı, gelen: {{protocol}}",
+      "notValidColor": "{{label}}.{{key}} geçerli bir renk değil",
+      "redirectMissingLocation": "tema URL yönlendirmesinde ({{status}}) location başlığı yoktu",
+      "screenshotDownloadFailed": "ekran görüntüsü indirilemedi: {{status}}",
+      "screenshotPathNotAllowed": "ekran görüntüsü URL'si izin verilen bir galeri yolu değil",
+      "screenshotTooLarge": "ekran görüntüsü çok büyük (sınır {{limit}} bayt)",
+      "screenshotTypeMissing": "ekran görüntüsü izin verilen bir görsel türü değil (content-type: yok)",
+      "screenshotTypeNotAllowed": "ekran görüntüsü izin verilen bir görsel türü değil (content-type: {{contentType}})",
+      "textFieldInvalid": "{{label}} en fazla {{max}} karakterlik boş olmayan bir metin olmalı",
+      "tooManyRedirects": "tema URL'si {{max}} yönlendirme sınırını aştı",
+      "unknownKey": "{{label}} içinde bilinmeyen anahtar \"{{key}}\"",
+      "unsupportedSchema": "desteklenmeyen $schema (beklenen: {{expected}})"
+    },
+    "typesafe": {
+      "skillChecksumMismatch": "{{file}} beklenen sağlama toplamıyla eşleşmedi, bu yüzden Pi Desktop onu kurmadı.",
+      "skillDownloadFailed": "{{file}} indirilemedi (HTTP {{status}}).",
+      "skillInstalledElsewhere": "Pi Desktop'ın kurmadığı bir TypeSafe skill'i zaten şurada: {{directory}}. Pi Desktop onu değiştirmedi."
+    },
+    "workflow": {
+      "runNotFound": "İş akışı çalıştırması bulunamadı"
+    },
+    "workspace": {
+      "folderMissing": "Klasör yok: {{path}}",
+      "managedWorktreeCannotChangeFolder": "Yönetilen worktree sekmelerinin klasörü değiştirilemez; sekmeyi kapatıp yenisini oluşturun",
+      "noneActive": "Etkin çalışma alanı yok",
+      "noSourceForNewTab": "Yeni sekme için kaynak çalışma alanı yok",
+      "notFound": "Çalışma alanı bulunamadı: {{workspaceId}}",
+      "notFoundPlain": "Çalışma alanı bulunamadı",
+      "pullRequestNotCheckedOut": "Görev, yerel bir worktree'de checkout edilmemiş bir GitHub pull request'ine başvuruyor",
+      "repoSetCannotChangeFolder": "Bağlantılı görev sekmesi depolarının klasörlerini korur; başka klasörler kullanmak için yeni bir bağlantılı görev başlatın",
+      "sourceFolderMissing": "Kaynak klasör yok: {{path}}"
+    }
+  },
+  "files": {
+    "preview": {
+      "closeTitle": "Düzenleyiciyi kapat",
+      "modifiedBadge": "değiştirildi",
+      "previewViewTitle": "Önizleme",
+      "readFailed": "Dosya okunamadı",
+      "revertTitle": "Değişiklikleri geri al",
+      "savedBadge": "kaydedildi",
+      "saveFailed": "Dosya kaydedilemedi",
+      "saveTitle": "Dosyayı kaydet",
+      "scriptsDisabledNotice": "Güvenilir olmayan bu çalışma alanının önizlemesinde betikler devre dışı.",
+      "sourceViewTitle": "Kaynak"
+    },
+    "search": {
+      "contentPlaceholder": "Dosya içeriklerinde ara...",
+      "contentToggle": "İÇERİK",
+      "escToClose": "Kapatmak için Esc",
+      "filesToggle": "DOSYALAR",
+      "lineSnippet": "Satır {{line}}: {{snippet}}",
+      "namePlaceholder": "Dosyaları ada göre ara...",
+      "noResults": "Sonuç bulunamadı",
+      "resultCount_one": "{{count}} sonuç",
+      "resultCount_other": "{{count}} sonuç",
+      "typeToSearch": "Aramak için yazın..."
+    },
+    "tree": {
+      "folderMissingHint": "Klasör taşınmış ya da silinmiş olabilir. Kenar çubuğunda çalışma alanına sağ tıklayıp başka bir yeri göstermek için “Klasörü değiştir…” seçeneğini seçin.",
+      "folderNotFound": "Klasör bulunamadı",
+      "noWorkspaceHint": "Kenar çubuğundaki çalışma alanı değiştiriciden bir proje klasörüne geçin.",
+      "noWorkspaceOpen": "Açık çalışma alanı yok"
+    }
+  },
+  "home": {
+    "actions": {
+      "linkedTask": {
+        "description": "Birden çok depoya yayılan tek görev",
+        "title": "Bağlantılı görev"
+      },
+      "newSession": {
+        "inWorkspace": "Proje: {{project}}",
+        "pickFolderFirst": "Önce bir klasör seçin"
+      },
+      "newTask": {
+        "description": "Yeni bir {{agent}} oturumunda çalışmaya başla",
+        "title": "Yeni görev"
+      },
+      "openFolder": {
+        "description": "Çalışma alanı olarak açmak için bir proje seçin",
+        "title": "Klasör aç"
+      }
+    },
+    "changedFiles": {
+      "moreOpenDiff_one": "+{{count}} tane daha — fark incelemesini aç",
+      "moreOpenDiff_other": "+{{count}} tane daha — fark incelemesini aç",
+      "noWorkspace": "Çalışma alanı seçilmedi."
+    },
+    "errorBanner": {
+      "checkInstalled": "{{agent}} kurulu mu ve yolu doğru mu, kontrol edin.",
+      "couldntStart": "{{agent}} başlatılamadı"
+    },
+    "recentSessions": {
+      "empty": "Henüz oturum yok.",
+      "title": "Son oturumlar"
+    },
+    "recentWorkspaces": {
+      "empty": "Henüz çalışma alanı yok.",
+      "last": "son",
+      "title": "Son çalışma alanları"
+    },
+    "subtitle": "Bir çalışma alanı açın ya da kaldığınız yerden devam edin."
+  },
+  "imageViewer": {
+    "closeTitle": "Görseli kapat",
+    "readFailed": "Görsel okunamadı",
+    "unsupportedFile": "Desteklenen bir görsel dosyası değil"
+  },
+  "language": {
+    "nativeName": "Türkçe"
+  },
+  "menu": {
+    "actualSize": "Gerçek boyut",
+    "close": "Pencereyi kapat",
+    "edit": "Düzen",
+    "file": "Dosya",
+    "forceReload": "Zorla yeniden yükle",
+    "minimize": "Simge durumuna küçült",
+    "newWorkspace": "Yeni çalışma alanı...",
+    "openProject": "Proje aç...",
+    "redo": "Yinele",
+    "reload": "Yeniden yükle",
+    "toggleDevTools": "Geliştirici araçlarını aç/kapat",
+    "toggleFullScreen": "Tam ekranı aç/kapat",
+    "undo": "Geri al",
+    "view": "Görünüm",
+    "window": "Pencere",
+    "zoom": "Büyüt",
+    "zoomIn": "Yakınlaştır",
+    "zoomOut": "Uzaklaştır"
+  },
+  "missionControl": {
+    "controlUnavailable": "denetim kullanılamıyor",
+    "idle": "{{agent}} boşta",
+    "liveSessions": "Canlı oturumlar",
+    "needsAttention_one": "{{count}} oturum ilgi bekliyor",
+    "needsAttention_other": "{{count}} oturum ilgi bekliyor",
+    "newTask": "Yeni görev",
+    "noLiveRuntimes": "Henüz canlı oturum çalışma zamanı yok. Pi'yi arka planda çalıştırmak için bir görev başlatın.",
+    "noWorkflowRuns": "Henüz iş akışı çalıştırması yok.",
+    "open": "Aç",
+    "openAllWorkflows": "Tüm iş akışlarını aç",
+    "proceed": "Devam et",
+    "proceedWithWorkflow": "Bu iş akışıyla devam et",
+    "refreshWorkflowRuns": "İş akışı çalıştırmalarını yenile",
+    "resumeFailed": "{{workflow}} devam ettirilemedi: {{reason}}",
+    "resumeFailedGeneric": "{{workflow}} devam ettirilemedi. Ayrıntılar için çalıştırmayı açın.",
+    "retryWithWorkflow": "Bu iş akışını yeniden dene",
+    "review": "İncele",
+    "runtimeState": {
+      "completed": "tamamlandı",
+      "failed": "başarısız",
+      "idle": "boşta",
+      "needsApproval": "onay bekliyor",
+      "stopped": "durduruldu",
+      "working": "çalışıyor"
+    },
+    "startingSession": "Oturum başlatılıyor",
+    "subtitle": "Tüm projelerdeki arka plan oturumları ve iş akışı çalıştırmaları.",
+    "title": "Görev Kontrolü",
+    "unknownProject": "Bilinmeyen proje",
+    "workflowActivity": "İş akışı etkinliği",
+    "workflowStatus": {
+      "aborted": "durduruldu",
+      "completed": "tamamlandı",
+      "failed": "başarısız",
+      "paused": "duraklatıldı",
+      "pending": "bekliyor",
+      "running": "çalışıyor",
+      "unknown": "bilinmiyor"
+    }
+  },
+  "models": {
+    "readFailure": {
+      "invalidJson": "{{file}} geçerli bir JSON değil: {{detail}}",
+      "invalidJsonNoDetail": "{{file}} geçerli bir JSON değil",
+      "invalidYaml": "{{file}} geçerli bir YAML değil: {{detail}}",
+      "invalidYamlNoDetail": "{{file}} geçerli bir YAML değil",
+      "missingProviders": "{{file}} geçerli bir model yapılandırması değil (\"providers\" eksik)",
+      "unreadable": "{{file}} okunamadı: {{detail}}"
+    },
+    "selector": {
+      "current": "Geçerli",
+      "currentModelTitle": "{{model}}\n{{hint}}",
+      "loadFailed": "Modeller yüklenemedi",
+      "noModelsMatch": "Eşleşen model yok",
+      "searchPlaceholder": "Model ara…",
+      "selectModel": "Model seç",
+      "selectModelCycleHint": "Model seç ({{agent}} çalışırken sırayla geçmek için Ctrl+P)",
+      "selectModelWithShortcut": "Model seç ({{shortcut}} ya da {{agent}} çalışırken sırayla geçmek için Ctrl+P)"
+    }
+  },
+  "notes": {
+    "backButton": "Geri",
+    "backTitle": "Notlara dön",
+    "deleteNoteTitle": "Notu sil",
+    "editNoteTitle": "Notu düzenle",
+    "empty": {
+      "noMatch": "Aramayla eşleşen not yok.",
+      "noneYet": "Henüz not yok. İstemleri yeniden kullanmak için bir not oluşturun."
+    },
+    "form": {
+      "bodyLabel": "İstem / Komut",
+      "bodyPlaceholder": "Yeniden kullanılacak istem veya komut metni...",
+      "editHeading": "Notu düzenle",
+      "saveFailed": "Not kaydedilemedi",
+      "saving": "Kaydediliyor...",
+      "scopeLabel": "Kapsam",
+      "tagsLabel": "Etiketler",
+      "tagsPlaceholder": "boşluk veya virgülle ayrılmış",
+      "thisWorkspaceFallback": "Bu çalışma alanı",
+      "titleLabel": "Başlık",
+      "titlePlaceholder": "ör. Testlerle yeniden düzenle"
+    },
+    "insertButton": "Ekle",
+    "insertIntoChatTitle": "Sohbet girişine ekle",
+    "newNoteButton": "Yeni not",
+    "picker": {
+      "createNote": "Not oluştur",
+      "navigationHint": "↑↓ gezin · Enter ekle · Esc kapat",
+      "noMatchingNotes": "Eşleşen not yok",
+      "noSavedNotes": "Henüz kayıtlı not yok.",
+      "notComposeBox": "Bu seçici kaydettiğiniz notları ekler; mesaj yazma kutusu değildir.",
+      "searchPlaceholder": "Eklenecek kayıtlı notlarda ara..."
+    },
+    "scope": {
+      "other": "Diğer çalışma alanı",
+      "workspaceFallback": "Çalışma alanı"
+    },
+    "searchPlaceholder": "Başlık, içerik veya etiket ara...",
+    "title": "Notlar",
+    "viewNoteTitle": "Notu görüntüle"
+  },
+  "notifications": {
+    "completed": "Pi işini bitirdi.",
+    "failed": "Pi bir hatayla durdu.",
+    "needs-approval": "Pi onayınızı bekliyor.",
+    "withSession": "{{body}} Biten oturumu açmak için tıklayın."
+  },
+  "packages": {
+    "catalog": {
+      "emptyHint": "Göz atmak için <link>pi.dev/packages</link> adresini ziyaret edin",
+      "emptyTitle": "Paket bulunamadı",
+      "resultsCap": "{{total}} sonuçtan {{shown}} tanesi gösteriliyor — sonuçları daraltmak için aramayı ayrıntılandırın.",
+      "searchPlaceholder": "Paket ara...",
+      "viewRepo": "Depoyu görüntüle"
+    },
+    "installBar": {
+      "placeholder": "npm:package-name veya git:github.com/user/repo"
+    },
+    "installed": {
+      "checkingUpdates": "Güncellemeler denetleniyor…",
+      "checkUpdatesButton": "Güncellemeleri denetle",
+      "emptyHint": "Kataloğa göz atın ya da yukarıdaki kurulum çubuğunu kullanın",
+      "emptyTitle": "Kurulu paket yok",
+      "removeButton": "Paketi kaldır",
+      "updateAllButton": "Tümünü güncelle",
+      "updatePackageAria": "{{name}} paketini güncelle",
+      "updatesAvailable_one": "{{count}} güncelleme var",
+      "updatesAvailable_other": "{{count}} güncelleme var",
+      "updateToVersion": "v{{version}} sürümüne güncelle",
+      "versionUpdateArrow": "v{{from}} → v{{to}}"
+    },
+    "tabs": {
+      "catalog": "Katalog",
+      "installed": "Kurulu"
+    },
+    "title": "Paketler ve skill'ler",
+    "type": {
+      "extension": "eklenti",
+      "package": "paket",
+      "prompt": "istem",
+      "skill": "skill",
+      "theme": "tema"
+    },
+    "viewOnNpm": "npm'de görüntüle"
+  },
+  "palette": {
+    "navigationHint": "↑↓ gezin · Enter/Tab çalıştır · / yalnız komutlar · Esc kapat",
+    "noMatches": "Eşleşme yok",
+    "searchPlaceholder": "Komut, çalışma alanı, oturum, dosya ara...",
+    "sections": {
+      "files": "Dosyalar",
+      "sessions": "Oturumlar",
+      "workspaces": "Çalışma alanları"
+    }
+  },
+  "permissionMode": {
+    "ask-commands": {
+      "description": "{{agent}} kabuk komutlarını çalıştırmadan önce sorar.",
+      "label": "Komutlardan önce sor",
+      "shortLabel": "Komutları sor"
+    },
+    "ask-edits": {
+      "description": "{{agent}} dosya düzenlemelerinden ve dosyaları değiştirebilecek kabuk komutlarından önce sorar.",
+      "label": "Düzenlemelerden önce sor",
+      "shortLabel": "Düzenlemeleri sor"
+    },
+    "plan-readonly": {
+      "description": "Yalnız okuma/arama/listeleme araçları etkin. Dosya düzenlemeleri ve kabuk komutları engellenir.",
+      "label": "Plan / Salt okunur",
+      "shortLabel": "Salt okunur"
+    },
+    "trusted": {
+      "description": "Güvendiğiniz iş akışları için tüm {{agent}} araçları etkin.",
+      "label": "Güvenilir",
+      "shortLabel": "Güvenilir"
+    }
+  },
+  "permissionRules": {
+    "action": {
+      "allow": "İzin ver",
+      "deny": "Reddet"
+    },
+    "addRuleButton": "Kural ekle",
+    "copyFromGlobalButton": "Globalden kopyala",
+    "copyFromGlobalTitle": "Global kural listesini bu çalışma alanına kopyala (kaydedene kadar aşağıdaki listenin yerini alır)",
+    "exportTitle": "Aşağıdaki listeyi bir JSON dosyasına aktar",
+    "importTitle": "Kuralları bir JSON dosyasından içe aktar (kaydedene kadar aşağıdaki listenin yerini alır)",
+    "legend": "Önce reddetme, sonra izin verme kuralları geçerlidir; hiçbiri eşleşmezse yukarıdaki mod karar verir. Joker karakter olarak * kullanın.",
+    "loadErrorMessage": "Kayıtlı kural dosyası geçersiz ve yok sayılıyor: {{error}}",
+    "noRules": "Henüz kural yok — her şeye yukarıdaki mod karar verir.",
+    "patternPlaceholder": "desen, ör. npm test* (boş = her girdi)",
+    "removeRuleAria": "{{index}}. kuralı kaldır",
+    "removeRuleTitle": "Kuralı kaldır",
+    "removeWorkspaceRulesButton": "Çalışma alanı kurallarını kaldır",
+    "removeWorkspaceRulesTitle": "Bu çalışma alanının .pi-desktop/permission-rules.json dosyasını sil; global kurallar yeniden geçerli olur",
+    "revokeTrustButton": "Güveni geri al",
+    "rowActionAria": "{{index}}. kural eylemi",
+    "rowPatternAria": "{{index}}. kural deseni",
+    "rowToolAria": "{{index}}. kural aracı",
+    "toolPlaceholder": "araç (* = her biri)",
+    "toolRequiredError": "{{index}}. kural: araç gerekli (her araç için * kullanın)",
+    "trustedMessage": "Güvenilir — bu çalışma alanının izin kuralları geçerli ve HTML önizlemeleri betik çalıştırır.",
+    "trustWorkspaceButton": "Çalışma alanına güven",
+    "untrustedMessage": "Bu çalışma alanının HTML önizlemeleri statik (betikler devre dışı). Etkileşimli önizlemeleri ve izin kurallarını etkinleştirmek için çalışma alanına güvenin.",
+    "untrustedWithAllowRulesMessage": "Bu çalışma alanına güvenene kadar izin kuralları etkin değil ve HTML önizlemeleri statik. Reddetme kuralları yine geçerli. Yalnız güvendiğiniz bir kaynaktan gelen çalışma alanlarına güvenin.",
+    "workspaceOverrideNotice": "Bu çalışma alanının kendi kural dosyası var (.pi-desktop/permission-rules.json). Reddetme kuralları bu global kurallara ek olarak uygulanır; izin kuralları yalnız çalışma alanına güvenirseniz geçerli olur — Bu çalışma alanı sekmesine bakın."
+  },
+  "permissions": {
+    "prompt": {
+      "body": "{{agent}}, {{tool}} aracını çalıştırmak istiyor.",
+      "command": "Komut:\n{{command}}",
+      "target": "Hedef: {{path}}",
+      "title": "{{tool}} çalıştırılsın mı?"
+    }
+  },
+  "repoSets": {
+    "bar": {
+      "addRepository": "Depo ekle",
+      "addRepositoryTitle": "Bu göreve bir depo ekle",
+      "ariaLabel": "Bu görevdeki depolar",
+      "changed_one": "{{count}} değişiklik",
+      "changed_other": "{{count}} değişiklik",
+      "clean": "temiz",
+      "main": "ana",
+      "missing": "klasör yok",
+      "openPullRequest": "Pull request'i aç",
+      "openPullRequestAriaLabel": "{{name}} deposunun pull request'ini aç",
+      "shipAll": "Tümünü gönder",
+      "shipAllTitle": "Değişiklik olan her depoda commit et, push et ve bağlantılı bir pull request aç",
+      "sourceWasDirty": "Kendi checkout'unuzda commit edilmemiş değişiklikler vardı. Bu worktree son commit'ten başlar, bu yüzden o değişiklikler içinde yok."
+    },
+    "dialog": {
+      "closeAriaLabel": "Kapat"
+    },
+    "edit": {
+      "addRepository": "Depo ekle",
+      "back": "Geri",
+      "delete": "Kümeyi sil",
+      "deleteConfirmMessage": "\"{{name}}\" silinsin mi? Açık bağlantılı görevler çalışmaya devam eder ve depolarınız değişmez.",
+      "deleteConfirmTitle": "Depo kümesi silinsin mi?",
+      "editTitle": "Depo kümesini düzenle",
+      "hint": "İki veya daha fazla git deposu ekleyip ana depoyu seçin.",
+      "mainLabel": "Ana",
+      "mainTitle": "Ajan ana depoda başlar ve onun proje kurallarına uyar.",
+      "nameLabel": "Küme adı",
+      "newTitle": "Yeni depo kümesi",
+      "pickFolderTitle": "Bir git deposu seçin",
+      "removeRepositoryAriaLabel": "{{name}} deposunu kaldır",
+      "repositoriesLabel": "Depolar",
+      "repositoryNameAriaLabel": "Depo adı"
+    },
+    "errors": {
+      "alreadyInTask": "Bu depo zaten görevde: {{path}}",
+      "checkoutFailed": "\"{{name}}\" görev için hazırlanamadı. Hiçbir depo değiştirilmedi. {{detail}}",
+      "duplicateFolder": "Bu klasör kümede iki kez var: {{path}}",
+      "duplicateName": "İki deponun adı \"{{name}}\". Her birine ayrı bir ad verin.",
+      "folderMissing": "Bu klasör yok: {{path}}",
+      "nameRequired": "Kümeye bir ad verin.",
+      "notFound": "Bu depo kümesi artık yok.",
+      "notGitRepository": "Bu klasör bir git deposunda değil: {{path}}",
+      "notLinkedTask": "Bu sekme bağlantılı bir görev değil.",
+      "oneMainRepository": "Bir ana depo seçin.",
+      "repositoryNameRequired": "Her depoya bir ad verin.",
+      "repositoryNotInTask": "\"{{name}}\" bu görevde yok.",
+      "sameRepository": "\"{{name}}\", kümede zaten bulunan bir deponun ikinci checkout'u.",
+      "tooFewRepositories": "En az {{minimum}} depo ekleyin."
+    },
+    "mode": {
+      "inPlace": {
+        "description": "Ajan, kendi checkout'larınızı mevcut dallarında düzenler.",
+        "label": "Yerinde",
+        "short": "Yerinde"
+      },
+      "isolated": {
+        "description": "Her depoda yeni bir worktree, hepsi tek bir yeni dalda. Checkout'larınız değişmez.",
+        "label": "Yalıtılmış (önerilen)",
+        "short": "Yalıtılmış"
+      }
+    },
+    "ship": {
+      "errors": {
+        "agentWorking": "Ajan hâlâ çalışıyor. Durduğunda gönderin.",
+        "onBaseBranch": "Değişiklikler {{branch}} temel dalında. Önce başka bir dal oluşturun: Tümünü gönder pull request açar, temel dala push etmez."
+      },
+      "intro": "Değişiklik olan her depo için bir commit, bir push ve bir pull request oluşturulur. Pull request'ler birbirine bağlanır.",
+      "outcome": {
+        "failed": "Şu adımda başarısız: {{step}}",
+        "missing": "Klasör yok",
+        "shipped": "Gönderildi",
+        "unchanged": "Gönderilecek bir şey yok"
+      },
+      "repositoriesLabel": "Depolar",
+      "resultsLabel": "Her deponun sonuçları",
+      "retry": "Başarısızları yeniden dene",
+      "shipping": "Gönderiliyor…",
+      "step": {
+        "commit": "commit",
+        "link": "bağlantı",
+        "pullRequest": "pull request",
+        "push": "push"
+      },
+      "submit": "Tümünü gönder",
+      "title": "Tüm depoları gönder"
+    },
+    "start": {
+      "editSet": "Düzenle",
+      "editSetAriaLabel": "{{name}} kümesini düzenle",
+      "empty": "Henüz depo kümesi yok. Başlamak için bir tane oluşturun.",
+      "modeLabel": "Ajanın çalışacağı yer",
+      "nameLabel": "Görev adı",
+      "namePlaceholder": "Boş bırakılırsa küme adı kullanılır",
+      "newSet": "Yeni depo kümesi",
+      "repositoryCount_one": "{{count}} depo",
+      "repositoryCount_other": "{{count}} depo",
+      "setLabel": "Depo kümesi",
+      "starting": "Depolar hazırlanıyor…",
+      "submit": "Görevi başlat",
+      "subtitle": "Birden çok git deposuna yayılan, bağlantılı pull request'lerle gönderilen tek görev.",
+      "title": "Yeni bağlantılı görev"
+    }
+  },
+  "review": {
+    "gitStatusUnavailable": "Git durumu alınamadı",
+    "heading": "İnceleme",
+    "openDiffButton": "Fark incelemesini aç",
+    "openDiffHint": "Çalışma ağacındaki değişiklikleri incele.",
+    "pendingApprovals": {
+      "none": "Bekleyen onay isteği yok.",
+      "queued_one": "Etkin oturum için kuyrukta bekleyen {{count}} öğe var.",
+      "queued_other": "Etkin oturum için kuyrukta bekleyen {{count}} öğe var."
+    },
+    "pendingApprovalsHeading": "Bekleyen onaylar",
+    "permissionsHeading": "İzinler",
+    "sessionStatus": {
+      "idle": "Etkin oturumda {{agent}} boşta.",
+      "working": "Etkin oturumda {{agent}} çalışıyor."
+    },
+    "sessionStatusHeading": "Oturum durumu",
+    "subtitle": "Değişiklikler ilerlemeden önce {{agent}} ajanının neler yapabileceğini denetle."
+  },
+  "sessions": {
+    "activeBadge": "etkin",
+    "archivedBadge": "arşivlendi",
+    "archivedToggle": {
+      "hideTitle": "Arşivlenmiş oturumları gizle",
+      "hidingNone": "Hiçbiri gizlenmiyor",
+      "showTitle": "Arşivlenmiş oturumları göster"
+    },
+    "currentProjectBadge": "geçerli",
+    "currentWorkspaceLabel": "Geçerli çalışma alanı:",
+    "deleteConfirm": {
+      "message": "Bu oturum silinsin mi? Varsa <code>trash</code> kullanılır, yoksa kalıcı olarak silinir."
+    },
+    "deleteEllipsis": "Sil...",
+    "empty": {
+      "createFirst": "İlk oturumu oluştur",
+      "noMatch": "Aramayla eşleşen oturum yok",
+      "noneInProject": "Bu projede henüz oturum yok",
+      "noneYet": "Henüz oturum yok",
+      "openProjectToSee": "Oturumları görmek için bir proje açın"
+    },
+    "engineSession": "{{engine}} oturumu",
+    "header": {
+      "projectCount_one": "{{count}} proje",
+      "projectCount_other": "{{count}} proje",
+      "sessionCount_one": "{{count}} oturum",
+      "sessionCount_other": "{{count}} oturum"
+    },
+    "runtime": {
+      "completed": "{{agent}} tamamladı",
+      "failed": "{{agent}} bir hatayla durdu",
+      "needsApproval": "{{agent}} onay bekliyor",
+      "working": "{{agent}} çalışıyor"
+    },
+    "scopeToggle": {
+      "allSessions": "Tüm oturumlar",
+      "currentOnly": "Yalnız geçerli",
+      "showCurrentProjectOnly": "Yalnız geçerli projenin oturumlarını göster",
+      "showEveryProject": "Tüm projelerin oturumlarını göster"
+    },
+    "searchPlaceholder": "Oturum veya proje ara...",
+    "sessionActions": {
+      "ariaLabel": "Oturum işlemleri",
+      "title": "Oturum işlemleri (veya satıra sağ tıkla)"
+    },
+    "tags": {
+      "add": "Ekle",
+      "addPlaceholder": "Etiket ekle...",
+      "addTag": "Etiket ekle",
+      "autoTagHint": "Sohbet bağlamından otomatik etiketlendi; yerine geçmesi için kendi etiketinizi ekleyin",
+      "removeAutoTag": "Otomatik etiketi kaldır: {{tag}}",
+      "removeTag": "Etiketi kaldır: {{tag}}"
+    },
+    "time": {
+      "days_one": "{{count}} gün önce",
+      "days_other": "{{count}} gün önce",
+      "hours_one": "{{count}} sa önce",
+      "hours_other": "{{count}} sa önce",
+      "minutes_one": "{{count}} dk önce",
+      "minutes_other": "{{count}} dk önce"
+    },
+    "title": "Oturumlar",
+    "unknownProject": "Bilinmiyor"
+  },
+  "settings": {
+    "actions": {
+      "reset": "Varsayılanlara sıfırla",
+      "save": "Ayarları kaydet",
+      "saved": "Kaydedildi!"
+    },
+    "agentInstallation": {
+      "appliesToNewSessions": "Bu değişiklik yeni oturumlarda geçerli olur. Açık oturumlar başladıkları motorla devam eder.",
+      "autoDetectOption": "Otomatik algıla (önce Pi, sonra OMP)",
+      "chooseExecutableTitle": "Çalıştırılabilir dosya veya kurulum dizini seç",
+      "customPathOption": "Özel yol…",
+      "description": "Pi ve OMP otomatik algılansın, kurulu bir motor seçilsin ya da özel bir çalıştırılabilir dosya/yol kullanılsın.",
+      "detectedCount_one": "{{count}} kurulu motor algılandı",
+      "detectedCount_other": "{{count}} kurulu motor algılandı",
+      "engineAriaLabel": "Ajan motoru",
+      "engineAutoOption": "Otomatik",
+      "installedOption": "{{engine}} — {{path}}",
+      "label": "Ajan kurulumu",
+      "noneDetected": "Henüz Pi veya OMP kurulumu algılanmadı",
+      "ompNotFoundOption": "OMP (bulunamadı)",
+      "pathPlaceholder": "Çalıştırılabilir dosya, cli.js veya kurulum dizini yolu",
+      "rescanTitle": "Kurulu ajanları yeniden tara",
+      "scanningStatus": "Yaygın kurulum konumları ve PATH taranıyor…",
+      "selectDialogTitle": "Ajan çalıştırılabilir dosyasını veya dizinini seç"
+    },
+    "autoScroll": {
+      "description": "Yeni mesajlara otomatik kaydır",
+      "label": "Otomatik kaydırma"
+    },
+    "chatWidth": {
+      "description": "Mesajların ve istem kutusunun ne kadar genişleyebileceği",
+      "fullOption": "Tam genişlik",
+      "label": "Sohbet genişliği",
+      "normalOption": "Normal"
+    },
+    "codeEditorFontSize": {
+      "description": "Kod düzenleyici / dosya görüntüleyici yazı tipi boyutu",
+      "label": "Kod düzenleyici yazı tipi boyutu"
+    },
+    "consensusMode": {
+      "arbiterOption": "Hakem birleştirmesi (hızlı)",
+      "debateOption": "Bir tartışma turu (daha yavaş, ~2 kat maliyet)",
+      "description": "Konsey üyelerinin uzlaşıya nasıl varacağı",
+      "label": "Uzlaşı modu"
+    },
+    "councilEnabled": {
+      "confirmButton": "Etkinleştir",
+      "confirmMessage": "Her çalıştırma {{engine}} dışında Claude ve Codex de başlatır. Bu, token kullanımını ve kredi/API maliyetini ciddi ölçüde artırabilir. Yalnız ek harcama sorun değilse etkinleştirin.",
+      "confirmTitle": "Konsey planlaması etkinleştirilsin mi?",
+      "description": "Görevleri planlamak için Pi ile birlikte Claude/Codex başlatır. Token kullanımını ve kredi/API maliyetini artırır.",
+      "label": "Konsey planlamasını etkinleştir"
+    },
+    "councilMembers": {
+      "description": "Konsey planlamasına katılan ajanlar",
+      "label": "Üyeler",
+      "notDetected": "(algılanmadı)"
+    },
+    "councilTimeout": {
+      "description": "Her ajan için ne kadar bekleneceği ({{min}}-{{max}})",
+      "label": "Üye başına zaman aşımı (saniye)"
+    },
+    "customTheme": {
+      "createButton": "Tema oluştur",
+      "description": "Geçerli temayı çatallayın veya oluşturduğunuz bir temayı düzenleyin",
+      "editButton": "Temayı düzenle",
+      "label": "Özel tema"
+    },
+    "darkTheme": {
+      "description": "Sistem koyu moddayken kullanılır",
+      "label": "Koyu tema"
+    },
+    "desktopNotifications": {
+      "description": "Bakılmayan bir çalışma alanında Pi bitirdiğinde, hata verdiğinde veya onay beklediğinde bildir",
+      "label": "Masaüstü bildirimleri"
+    },
+    "language": {
+      "description": "Menü, düğme ve mesajların dili",
+      "label": "Dil",
+      "labelWithEnglish": "{{label}} ({{english}})",
+      "optionLabel": "{{nativeName}} ({{name}})",
+      "system": "Sistem varsayılanı ({{language}})"
+    },
+    "lightTheme": {
+      "description": "Sistem açık moddayken kullanılır",
+      "label": "Açık tema"
+    },
+    "minimizeToTrayOnClose": {
+      "description": "Pencere kapatıldığında Pi Desktop'tan çıkmak yerine sistem tepsisinde çalışmaya devam et (Windows ve Linux)",
+      "label": "Kapatınca sistem tepsisine küçült"
+    },
+    "openToHomeOnLaunch": {
+      "description": "Açık: tam Ana sayfa başlatıcısı (istatistikler, son kullanılanlar, klasör aç). Kapalı: Sohbet, boş oturumun ortadaki istem kutusu ve proje seçiciyle açılır.",
+      "label": "Açılışta ana ekranı göster"
+    },
+    "permissionMode": {
+      "description": "Pi eylemleri için varsayılan güvenlik modu",
+      "label": "İzin modu"
+    },
+    "permissionRules": {
+      "description": "Yukarıdaki mod için araç bazında ayrıntılı geçersiz kılmalar",
+      "exportFailed": "Dışa aktarma başarısız",
+      "importFailed": "İçe aktarma başarısız",
+      "label": "İzin kuralları",
+      "removeWorkspaceConfirmMessage": "Bu çalışma alanının .pi-desktop/permission-rules.json dosyası silinsin mi? Genel izin kuralları yeniden geçerli olur.",
+      "removeWorkspaceConfirmTitle": "Çalışma alanı kurallarını kaldır",
+      "saveError_global": "Ayarlar kaydedildi, ancak genel izin kuralları kaydedilemedi: {{error}}",
+      "saveError_workspace": "Ayarlar kaydedildi, ancak çalışma alanı izin kuralları kaydedilemedi: {{error}}",
+      "scopeTabListAriaLabel": "İzin kuralları kapsamı",
+      "workspaceScopeTab": "Bu çalışma alanı"
+    },
+    "resumeLastSession": {
+      "description": "Bir çalışma alanı açılınca yeni oturum başlatmak yerine en son oturumuna devam et",
+      "label": "Son oturuma devam et"
+    },
+    "runOnStartup": {
+      "description": "Bilgisayarda oturum açılınca Pi Desktop'ı otomatik başlat (kurulu sürümlerde geçerli olur)",
+      "label": "Başlangıçta çalıştır"
+    },
+    "sections": {
+      "agentConfiguration": "Ajan yapılandırması",
+      "appearance": "Görünüm",
+      "behavior": "Davranış",
+      "customModels": "Özel modeller",
+      "multiAgentCouncilPlanning": "Çok ajanlı konsey planlaması",
+      "typesafe": "TypeSafe Jev",
+      "voiceDictation": "Sesli dikte"
+    },
+    "shortcuts": {
+      "actionWithShortcut": "{{action}} ({{shortcut}})",
+      "commandPalette": "Komut paleti",
+      "commitPush": "İncele / Commit et ve push et",
+      "description": "Bir kısayola tıklayın ve Cmd veya Ctrl içeren yeni bir kombinasyona basın. Değişiklikler hemen uygulanır; Kaydet, yeniden başlatmadan sonra da korunmalarını sağlar. Oturum gezinmesi geçerli projedeki açık oturumlar arasında döner. Diğer yerel menü ve düzenleyici kısayolları değişmez. Escape kaydı iptal eder. Her uygulamadan sesli dikte kısayolu başka uygulamalar öndeyken de çalışır ve Kaydet ile uygulanır.",
+      "disable": "Devre dışı bırak",
+      "disableAction": "Kısayolu devre dışı bırak: {{action}}",
+      "disabled": "Devre dışı",
+      "duplicate": "{{action}} ve {{other}} aynı kısayolu kullanıyor. Başka bir kombinasyon seçin.",
+      "globalDictation": "Her uygulamadan sesli dikte: başlatmak veya durdurmak için bas",
+      "heading": "Klavye kısayolları",
+      "inUse": "{{shortcut}} zaten kullanımda: {{action}}. Başka bir kombinasyon seçin.",
+      "invalid": "Cmd veya Ctrl ile birlikte bir harf, rakam, noktalama tuşu ya da F1–F12 kullanın.",
+      "modelSelector": "Model seçici",
+      "nextProject": "Sonraki proje",
+      "nextSession": "Sonraki açık oturum",
+      "notes": "Not seçici",
+      "pressKeys": "Bir kombinasyona bas…",
+      "previousProject": "Önceki proje",
+      "previousSession": "Önceki açık oturum",
+      "pushToTalk": "Sesli dikte: konuşmak için basılı tut",
+      "reserved": "Bu kombinasyon yerel bir menü veya düzenleyici eylemine ayrılmış.",
+      "reset": "Kısayolları sıfırla",
+      "sidebar": "Kenar çubuğu"
+    },
+    "showThinking": {
+      "description": "Yanıtlarda modelin düşünme bloklarını göster",
+      "label": "Düşünmeyi göster"
+    },
+    "singleDollarMath": {
+      "description": "$x$ gibi tek dolar işaretleri arasındaki metni matematik olarak oku. Bu durumda $5 ve $10 gibi para tutarları yanlışlıkla matematik olarak görünebilir.",
+      "label": "Tek $ ile matematik"
+    },
+    "suggestNextSteps": {
+      "description": "Bir turun sonunda {{agent}}, eksik testler veya denetleyemediği işler gibi en fazla üç sonraki adım önerebilir. Bir adıma tıklayınca mesaj kutusuna eklenir. Kaydettikten sonra başlayan oturumlarda geçerli olur.",
+      "label": "Sonraki adımları öner"
+    },
+    "terminalFontSize": {
+      "description": "Terminal paneli yazı tipi boyutu",
+      "label": "Terminal yazı tipi boyutu"
+    },
+    "theme": {
+      "deleteConfirmMessage": "\"{{themeName}}\" teması silinsin mi? Bu işlem geri alınamaz.",
+      "deleteConfirmTitle": "Temayı sil",
+      "description": "Uygulama renk şeması",
+      "editNotFoundError": "Düzenlenecek geçerli tema bulunamadı",
+      "exportNotFoundError": "Dışa aktarılacak geçerli tema bulunamadı",
+      "label": "Tema",
+      "systemOption": "Sistem"
+    },
+    "themeActions": {
+      "browseGalleryButton": "Galeriye göz at",
+      "description": "Tema içe aktar, dışa aktar veya bir URL'den kur",
+      "label": "Tema işlemleri"
+    },
+    "typesafe": {
+      "apiKey": {
+        "environment": "TYPESAFE_API_KEY, Pi Desktop'ın başlatıldığı ortamda zaten tanımlı. Pi ve OMP bu değeri kullanır.",
+        "invalid": "Bu geçerli bir API anahtarı değil. Boşluk olmadan yeniden yapıştırın.",
+        "label": "API anahtarı",
+        "nextSession": "Yeni oturumlar anahtarı alır. Açık bir oturumun anahtarı alması için oturumu yeniden başlatın.",
+        "placeholder": "TypeSafe API anahtarınızı yapıştırın",
+        "remove": "Anahtarı kaldır",
+        "save": "Kaydet",
+        "saved": "Kaydedildi. Yalnız bu kullanıcı hesabı okuyabilir."
+      },
+      "intro": "Jev, TypeSafe'in değerlendirme modelidir. API anahtarınızı kaydedin ve Jev skill'ini buradan kurun. Pi ve OMP anahtarı sormadan kullanır. Pi Desktop TypeSafe'i kendisi çağırmaz.",
+      "links": {
+        "agentSkill": "Jev skill rehberi",
+        "apiKeys": "API anahtarı al",
+        "introduction": "TypeSafe belgeleri"
+      },
+      "skill": {
+        "install": "Kur",
+        "installed": "Kurulu ({{version}})",
+        "installedElsewhere": "Pi Desktop dışında kurulmuş. Kurulduğu araçla yönet.",
+        "label": "Jev skill'i",
+        "location": "Konum: {{directory}}",
+        "notInstalled": "Kurulu değil. Pi ve OMP'ye TypeSafe'in nasıl kullanılacağını öğretir.",
+        "remove": "Skill'i kaldır",
+        "update": "Güncelle: {{version}}"
+      }
+    },
+    "uiFontFamily": {
+      "description": "Listeden bir yazı tipi seçin. Kurulu olmayan yazı tipi yerine sistem yazı tipi kullanılır. Varsayılanlara dönmek için Varsayılan yazı tiplerini seçin. Terminal ve kod düzenleyici değişmez.",
+      "label": "Arayüz yazı tipi",
+      "placeholder": "Varsayılan yazı tipleri"
+    },
+    "uiFontSize": {
+      "description": "Sohbet, paneller ve kenar çubuğu; terminal ve kod düzenleyici hariç",
+      "label": "Arayüz yazı tipi boyutu"
+    },
+    "voice": {
+      "device": {
+        "auto": "Otomatik",
+        "cpu": "CPU",
+        "gpu": "GPU"
+      },
+      "downloading": "{{total}} dosyadan {{done}} tanesi indiriliyor",
+      "englishOnly": "Yalnız İngilizce",
+      "getVersion": "{{version}} sürümünü al",
+      "gpuUnnamed": "GPU",
+      "install": "Kur",
+      "intro": "Mikrofona konuşun, Pi Desktop sesi bilgisayarınızda metne çevirsin. İndirmek için bir model seçin. Bir model seçilene kadar hiçbir şey indirilmez.",
+      "multilingual": "Çok dilli",
+      "precision": {
+        "fp16": "GPU sürümü (fp16)",
+        "int8": "CPU sürümü (int8)"
+      },
+      "remove": "Kaldır",
+      "restartRequired": "Bu değişikliği uygulamak için Pi Desktop'ı yeniden başlatın.",
+      "runOn": "Çalıştırma yeri",
+      "runtimeCpu": "Her modelin CPU sürümüyle işlemcide (CPU) çalışır.",
+      "runtimeCpuNoGpu": "Kullanılabilir ekran kartı bulunamadı; ses, her modelin CPU sürümüyle işlemcide (CPU) çalışır.",
+      "runtimeGpu": "Her modelin GPU sürümüyle ekran kartında ({{name}}) çalışır.",
+      "selected": "Kullanımda",
+      "sizeMb": "~{{mb}} MB",
+      "use": "Kullan"
+    }
+  },
+  "sidebar": {
+    "archived": {
+      "collapseTitle": "Arşivlenmiş oturumları daralt",
+      "expandTitle": "Arşivlenmiş oturumları genişlet",
+      "heading_one": "Arşiv ({{count}})",
+      "heading_other": "Arşiv ({{count}})"
+    },
+    "header": {
+      "closeSidebar": "Kenar çubuğunu kapat",
+      "homeAriaLabel": "Ana sayfa",
+      "homeTitle": "Ana sayfa (başlatıcı için Esc)"
+    },
+    "nav": {
+      "activitySection": "Etkinlik",
+      "chat": "Sohbet",
+      "missionControl": "Görev Kontrolü",
+      "missionControlTitle": "Tüm arka plan oturumları ve iş akışları",
+      "newTaskTitle": "Yeni bir {{agent}} oturumunda görev başlat",
+      "sessions": "Oturumlar",
+      "sessionsTitle": "Bu projedeki oturumlar",
+      "timeline": "Zaman çizelgesi",
+      "timelineTitleWithProject": "Zaman çizelgesi: {{project}}",
+      "workflows": "İş akışları",
+      "workflowsTitleNoProject": "Tüm iş akışı çalıştırmaları (açık proje yok)",
+      "workflowsTitleWithProject": "İş akışı çalıştırmaları: {{project}}",
+      "workspaceSection": "Çalışma alanı"
+    },
+    "newSessionButton": {
+      "label": "Yeni oturum",
+      "openProjectToBegin": "Başlamak için bir proje açın",
+      "shortcutKbd": "Ctrl N",
+      "startsIn": "Başlangıç yeri: {{project}}",
+      "titleNoProject": "Önce bir proje açın",
+      "titleWithShortcut": "Bu projede yeni oturum başlat (Ctrl/Cmd+N)"
+    },
+    "openProjectFolder": {
+      "ariaLabel": "Proje klasörü aç",
+      "titleWithShortcut": "Proje klasörü aç (Ctrl/Cmd+O)"
+    },
+    "promptsWaitingInOtherWorkspaces_one": "Diğer çalışma alanlarında bekleyen {{count}} Pi istemi",
+    "promptsWaitingInOtherWorkspaces_other": "Diğer çalışma alanlarında bekleyen {{count}} Pi istemi",
+    "recentSessions": {
+      "emptyInProject": "Bu projede henüz oturum yok.",
+      "emptyNoProject": "Oturumları görmek için bir proje açın.",
+      "headingNoProject": "Son oturumlar",
+      "headingWithProject": "Son oturumlar: {{project}}",
+      "startOneNow": "Şimdi başlat",
+      "viewAll": "Tümünü gör"
+    },
+    "sessionNamePlaceholder": "Oturum adı",
+    "sessionRow": {
+      "tooltipActive": "{{title}}\n\nAçmak için tıklayın · yeniden adlandırmak için çift tıklayın · işlemler için sağ tıklayın",
+      "tooltipInactive": "{{title}}\n\nAçmak için tıklayın · işlemler için sağ tıklayın"
+    },
+    "tools": {
+      "allWorkflows": "Tüm iş akışları",
+      "allWorkflowsTitle": "Tüm projelerin iş akışı çalıştırmaları",
+      "diagnostics": "Tanılama",
+      "notes": "Notlar",
+      "packages": "Paketler",
+      "sectionLabel": "Araçlar"
+    },
+    "workflowRunsForSession": "Bu oturumun iş akışı çalıştırmaları",
+    "workspaceMenu": {
+      "changeFolder": "Klasörü değiştir…",
+      "rename": "Yeniden adlandır"
+    },
+    "workspaceSwitcher": {
+      "namePlaceholder": "Çalışma alanı adı",
+      "noWorkspace": "Çalışma alanı yok",
+      "openProjectEllipsis": "Proje aç…",
+      "triggerTitle": "Değiştirmek için tıklayın · yeniden adlandırmak için çift tıklayın · seçenekler için sağ tıklayın"
+    }
+  },
+  "skills": {
+    "emptyHint": "Skill paketleri kur veya .pi/skills/ içinde skill oluştur",
+    "emptyOmp": "~/.omp/agent/skills, ~/.claude/skills veya proje .omp/skills dizininde skill bulunamadı",
+    "emptyPi": "~/.pi/agent/skills veya proje .pi/skills dizininde skill bulunamadı",
+    "emptyTitle": "Skill bulunamadı",
+    "groups": {
+      "actions": "Grup işlemleri",
+      "delete": "Grubu sil",
+      "deleteConfirmMessage": "\"{{name}}\" grubu silinsin mi? İçindeki skill'ler kurulu kalır ve ana listeye döner.",
+      "deleteConfirmTitle": "Grup silinsin mi?",
+      "emptyGroup": "Henüz skill yok. Bir skill seçin ve bu grubu atayın.",
+      "groupLabel": "Grup",
+      "moveDown": "Aşağı taşı",
+      "moveUp": "Yukarı taşı",
+      "namePlaceholder": "Grup adı",
+      "newGroup": "Yeni grup",
+      "newGroupOption": "Yeni grup…",
+      "noGroup": "Grup yok",
+      "noMatches": "Aramayla eşleşen skill yok",
+      "noneAvailable": "Bu skill'lerin hiçbiri geçerli motor için kurulu değil.",
+      "rename": "Grubu yeniden adlandır",
+      "searchPlaceholder": "Skill ara",
+      "tip": "Skill'lerini gruplara ayır."
+    },
+    "providedByPlugin": "Kurulu bir eklenti tarafından sağlanıyor",
+    "refreshAriaLabel": "Skill'leri yenile",
+    "runButton": "Çalıştır",
+    "selectPrompt": "SKILL.md dosyasını görmek için bir skill seçin"
+  },
+  "stats": {
+    "heatmap": {
+      "dayTooltip_one": "{{date}} — {{count}} mesaj",
+      "dayTooltip_other": "{{date}} — {{count}} mesaj"
+    },
+    "modelLegend": {
+      "empty": "Bu aralıkta model kullanımı yok.",
+      "tokenBreakdown": "{{input}} giriş · {{output}} çıkış · {{cache}} önbellek"
+    },
+    "overview": {
+      "activeDaysLabel": "Etkin günler",
+      "currentStreakLabel": "Güncel seri",
+      "favoriteModelLabel": "En çok kullanılan model",
+      "longestStreakLabel": "En uzun seri",
+      "messagesLabel": "Mesajlar",
+      "peakHourLabel": "En yoğun saat",
+      "sessionsLabel": "Oturumlar",
+      "streakDays_one": "{{count}} gün",
+      "streakDays_other": "{{count}} gün",
+      "totalTokensLabel": "Toplam token"
+    },
+    "ranges": {
+      "oneYear": "1 yıl",
+      "sevenDays": "7 gün",
+      "sixMonths": "6 ay",
+      "thirtyDays": "30 gün",
+      "threeMonths": "3 ay"
+    },
+    "tabs": {
+      "models": "modeller",
+      "overview": "genel bakış"
+    },
+    "tokenChart": {
+      "barTooltip": "{{label}} — {{tokens}} token",
+      "empty": "Bu aralıkta token kullanımı yok."
+    }
+  },
+  "status": {
+    "agentSection": {
+      "title": "{{agent}} ajanı"
+    },
+    "compactButton": {
+      "compact": "Bağlamı sıkıştır",
+      "compacting": "Sıkıştırılıyor…",
+      "title": "Bağlamda yer açmak için konuşmayı özetle ve sıkıştır"
+    },
+    "contextSection": {
+      "title": "Bağlam kullanımı"
+    },
+    "errorCopied": "kopyalandı",
+    "errorCopy": "kopyala",
+    "extensionsSection": {
+      "title": "Eklentiler"
+    },
+    "header": {
+      "title": "Sistem durumu"
+    },
+    "mcpSection": {
+      "title": "MCP sunucuları"
+    },
+    "noExtensionsOrSkills": "Yüklü eklenti veya skill yok",
+    "noMcpServers": "Yapılandırılmış MCP sunucusu yok",
+    "pidLabel": "(PID: {{pid}})",
+    "processStatus": {
+      "error": "hata",
+      "running": "çalışıyor",
+      "starting": "başlatılıyor",
+      "stopped": "durdu"
+    },
+    "promptTemplatesSection": {
+      "title": "İstem şablonları"
+    },
+    "row": {
+      "cost": "Maliyet",
+      "error": "Hata",
+      "messages": "Mesajlar",
+      "model": "Model",
+      "name": "Ad",
+      "path": "Yol",
+      "provider": "Sağlayıcı",
+      "session": "Oturum",
+      "status": "Durum",
+      "tokens": "Token",
+      "usage": "Kullanım",
+      "window": "Pencere"
+    },
+    "scope": {
+      "cli": "cli",
+      "global": "genel",
+      "package": "paket",
+      "project": "proje"
+    },
+    "skillCommandsSection": {
+      "title": "Skill komutları"
+    },
+    "trigger": {
+      "title": "Sistem durumu"
+    },
+    "workspaceSection": {
+      "title": "Çalışma alanı"
+    }
+  },
+  "statusBar": {
+    "compact": "sıkıştır",
+    "compactContextTitle": "Bağlamı sıkıştır — yer açmak için konuşmayı özetle",
+    "compacting": "sıkıştırılıyor…",
+    "contextUsage": "Bağlam: {{tokens}} / {{contextWindow}} token",
+    "followUpQueued_one": "{{count}} ek mesaj kuyrukta",
+    "followUpQueued_other": "{{count}} ek mesaj kuyrukta",
+    "gitBranch": "Git dalı: {{branch}}",
+    "hideTerminal": "Terminali gizle",
+    "openWorkflowRuns": "İş akışı çalıştırmalarını aç",
+    "piError": "{{agent}} hatası",
+    "piRunning": "{{agent}} çalışıyor (PID: {{pid}})",
+    "piStarting": "{{agent}} başlatılıyor",
+    "piStopped": "{{agent}} durdu",
+    "showTerminal": "Terminali göster",
+    "steerQueued_one": "{{count}} yönlendirme kuyrukta",
+    "steerQueued_other": "{{count}} yönlendirme kuyrukta",
+    "streaming": "akış sürüyor",
+    "waitingOnPromptElsewhere": "{{agent}} başka bir çalışma alanında bir istem için bekliyor; yanıtlamak için oraya geç",
+    "workflowCount_one": "{{count}} iş akışı",
+    "workflowCount_other": "{{count}} iş akışı",
+    "workflowsFallback": "iş akışları"
+  },
+  "store": {
+    "confirm": {
+      "changeAnywayLabel": "Yine de değiştir",
+      "changeFolderMessage": "Pi bu oturumda yanıtını bitirmedi. Proje klasörünü değiştirmek Pi'yi yeniden başlatır ve yanıtı durdurur: Pi'nin oturuma şimdiye kadar yazdıkları korunur, ancak yanıtın geri kalanı — hâlâ çalışan araç çağrıları dahil — atılır.",
+      "cloneAnywayLabel": "Yine de klonla",
+      "cloneMessage": "Pi bu oturumda yanıtını bitirmedi. Bu dalı klonlamak yanıtı durdurur: Pi'nin oturuma şimdiye kadar yazdıkları korunur, ancak yanıtın geri kalanı — hâlâ çalışan araç çağrıları dahil — atılır.",
+      "closeInPlaceLinkedTaskMessage": "\"{{name}}\" kapatılsın mı? Depolar ve dosyaları değişmez.",
+      "closeIsolatedLinkedTaskMessage": "\"{{name}}\" kapatılsın mı? Bu görevin temiz worktree'leri kaldırılır; commit edilmemiş değişiklik içeren worktree'ler diskte kalır. Dallar korunur.",
+      "closeManagedWorktreeMessage": "\"{{name}}\" kapatılsın mı? Temiz worktree'ler kaldırılır; commit edilmemiş değişiklik içeren sekmeler diskte korunur.",
+      "closeSessionTabMessage": "Pi bu oturumda hâlâ çalışıyor. Sekmeyi kapatmak çalışmasını durdurur; kaydedilmiş mesajlara Oturumlar'dan erişilebilir.",
+      "closeSessionTabTitle": "Oturum sekmesi kapatılsın mı?",
+      "closeTabLabel": "Sekmeyi kapat",
+      "closeUnmanagedWorktreeMessage": "\"{{name}}\" kapatılsın mı? Bu mevcut worktree ve dosyaları diskte kalır.",
+      "forkAnywayLabel": "Yine de çatalla",
+      "forkMessage": "Pi bu oturumda yanıtını bitirmedi. Bu oturumu çatallamak yanıtı durdurur: Pi'nin oturuma şimdiye kadar yazdıkları korunur, ancak yanıtın geri kalanı — hâlâ çalışan araç çağrıları dahil — atılır.",
+      "keepUntrustedLabel": "Güvenilmez olarak bırak",
+      "keepWorkingLabel": "Çalışmaya devam et",
+      "newMessage": "Pi bu oturumda yanıtını bitirmedi. Yeni oturum başlatmak yanıtı durdurur: Pi'nin oturuma şimdiye kadar yazdıkları korunur, ancak yanıtın geri kalanı — hâlâ çalışan araç çağrıları dahil — atılır.",
+      "okLabel": "Tamam",
+      "removeWorkspaceMessage": "\"{{name}}\" kenar çubuğundan kaldırılsın mı? Pi süreci durur; diskteki dosyalara dokunulmaz.",
+      "removeWorkspaceTitle": "Çalışma alanını kaldır",
+      "startAnywayLabel": "Yine de başlat",
+      "stillWorkingTitle": "Pi hâlâ çalışıyor",
+      "switchAnywayLabel": "Yine de geç",
+      "switchMessage": "Pi bu oturumda yanıtını bitirmedi. Başka bir oturum açmak yanıtı durdurur: Pi'nin oturuma şimdiye kadar yazdıkları korunur, ancak yanıtın geri kalanı — hâlâ çalışan araç çağrıları dahil — atılır.",
+      "trustWorkspaceMessage": "Bu çalışma alanı, Pi'nin onay istemlerini atlamasına izin verecek allow kuralları içeren izin kuralları (.pi-desktop/permission-rules.json) tanımlıyor. Bu çalışma alanına güvenilene kadar bu kurallar yok sayılır; deny kuralları her zaman uygulanır. Yalnızca güvenilen bir kaynaktan gelen çalışma alanlarına güven.",
+      "trustWorkspaceTitle": "Bu çalışma alanına güvenilsin mi?",
+      "workspaceMessage": "Pi bu oturumda yanıtını bitirmedi. Başka yere geçildiğinde çalışmaya devam eder: yanıt oturuma kaydedilir ve geri dönüldüğünde geri yüklenir; bu sırada Pi'nin açtığı istemler bekletilir ve dönüşte gösterilir.",
+      "workspaceRulesNoticeMessage": "Bu çalışma alanı kendi izin kurallarını (.pi-desktop/permission-rules.json) tanımlıyor. Burada çalışırken deny kuralları Pi'yi kısıtlar; bunun dışında genel kurallar geçerlidir.",
+      "workspaceRulesNoticeTitle": "Çalışma alanı izin kuralları"
+    },
+    "messages": {
+      "addRepositoryError": "Depo eklenemedi: {{detail}}",
+      "arbiterFailed": "Hakem başarısız oldu: {{detail}}",
+      "archiveError": "Arşivleme hatası: {{detail}}",
+      "cannotActivateSession": "Oturum etkinleştirilemiyor",
+      "cannotCreateSession": "Oturum oluşturulamıyor",
+      "changeFolderError": "Klasör değiştirme hatası: {{detail}}",
+      "closeSessionError": "Oturum kapatma hatası: {{detail}}",
+      "compactingContext": "Bağlam sıkıştırılıyor ({{reason}})...",
+      "compactionAborted": "Sıkıştırma durduruldu.",
+      "contextCompacted": "Bağlam sıkıştırıldı.",
+      "councilFailed": "Konsey başarısız oldu: {{detail}}",
+      "councilNoQuorum": "Hiçbir danışman plan üretmedi (hepsi zaman aşımına uğradı ya da hata verdi). Konsey durduruldu.",
+      "createWorkspaceError": "Çalışma alanı oluşturma hatası: {{detail}}",
+      "defaultTaskLabel": "Görev",
+      "deleteError": "Silme hatası: {{detail}}",
+      "editedSessionName": "{{title}} (düzenlendi)",
+      "editNotInSession": "Kaydedilmiş oturum bu mesajı içermiyor.",
+      "editResendError": "Mesaj düzenlenip yeniden gönderilemedi: {{detail}}",
+      "error": "Hata: {{detail}}",
+      "followUpError": "Ek mesaj hatası: {{detail}}",
+      "imageFallbackName": "Görsel {{index}}",
+      "installedPackage": "{{spec}} kuruldu. Yüklemek için Pi'yi yeniden başlatın.",
+      "installFailed": "Kurulum başarısız",
+      "modelError": "Model hatası: {{detail}}",
+      "modelsFileNotLoaded": "Model dosyası henüz yüklenmedi. Yeniden deneyin.",
+      "newIsolatedTabError": "Yeni yalıtılmış sekme hatası: {{detail}}",
+      "newSessionError": "Yeni oturum hatası: {{detail}}",
+      "notAFolder": "Proje olarak açılamıyor — klasör değil: {{path}}",
+      "notGitRepository": "Bu proje bir Git deposu değil. Başka bir konuşma için Yeni oturum'u kullanın ya da yalıtılmış sekme için bir Git projesi açın.",
+      "openFolderError": "Klasör açma hatası: {{detail}}",
+      "removedPackage": "{{spec}} kaldırıldı",
+      "removePackageFailed": "Kaldırma başarısız",
+      "removeWorkspaceError": "Çalışma alanı kaldırma hatası: {{detail}}",
+      "retrying": "Yeniden deneniyor (deneme {{attempt}}/{{maxAttempts}}): {{detail}}",
+      "reusedWorktree": "İlgili mevcut Git worktree bulundu ve görev orada sürdürüldü.",
+      "steerError": "Yönlendirme hatası: {{detail}}",
+      "switchSessionError": "Oturum değiştirme hatası: {{detail}}",
+      "switchWorkspaceError": "Çalışma alanı değiştirme hatası: {{detail}}",
+      "tabClosedWorktreePreserved": "Sekme kapatıldı, ancak commit edilmemiş worktree şu konumda korundu: {{path}}",
+      "tabFromLastCommit": "Bu sekme son commit'ten başlar. Commit edilmemiş dosyalar kaynak sekmede kalır.",
+      "taskLaunchError": "Görev başlatma hatası: {{detail}}",
+      "truncatedHistory_one": "Performans için {{total}} mesajın son {{count}} tanesi gösteriliyor. Eski turlar oturum dosyasında diskte duruyor.",
+      "truncatedHistory_other": "Performans için {{total}} mesajın son {{count}} tanesi gösteriliyor. Eski turlar oturum dosyasında diskte duruyor.",
+      "unarchiveError": "Arşivden çıkarma hatası: {{detail}}",
+      "unknownError": "Bilinmeyen hata",
+      "updatedAllPackages": "Paketler güncellendi. Yüklemek için Pi'yi yeniden başlatın.",
+      "updatedPackage": "{{spec}} güncellendi. Yüklemek için Pi'yi yeniden başlatın.",
+      "updatePackageFailed": "Güncelleme başarısız",
+      "writeFailed": "Yazma başarısız"
+    },
+    "promptsWaiting_one": "{{count}} Pi istemi bekliyor",
+    "promptsWaiting_other": "{{count}} Pi istemi bekliyor"
+  },
+  "taskLauncher": {
+    "closeAriaLabel": "Görev başlatıcıyı kapat",
+    "footerNote": "Görev yeni bir oturumda çalışır ve başka yere geçilse de arka planda sürer. Eşleşen mevcut PR/görev worktree'leri yeniden kullanılır. Ctrl/Cmd+Enter ile başlatılır.",
+    "isolatedWorktree": {
+      "description": "Eşleşen yerel bir PR/görev worktree'si varsa onu kullanır; yoksa yenisini oluşturur. Kaynak projeye dokunulmaz.",
+      "label": "Yalıtılmış bir Git worktree kullan"
+    },
+    "openProjectFirst": "Önce bir proje açın",
+    "starting": "Başlatılıyor…",
+    "startTask": "Görevi başlat",
+    "subtitle": "Yeni bir {{agent}} oturumu başlat ve görevi hemen gönder.",
+    "task": "Görev",
+    "taskPlaceholder": "Başarısız testleri düzelt, kök nedeni açıkla ve değişiklikleri incelemeye hazırla…"
+  },
+  "terminal": {
+    "clearAriaLabel": "Terminali temizle",
+    "clearTitle": "Temizle",
+    "hideTitle": "Terminali gizle (kabuk çalışmaya devam eder)",
+    "maximizeLabel": "Terminali büyüt",
+    "restartHint": "Yeni bir kabuk başlatmak için herhangi bir tuşa bas",
+    "restoreLabel": "Terminali geri yükle",
+    "title": "Terminal"
+  },
+  "themes": {
+    "builtin": {
+      "breeze-claudius": "Breeze Claudius",
+      "breeze-dark": "Breeze Dark",
+      "breeze-light": "Breeze Light",
+      "dark": "Koyu",
+      "gruvbox": "Gruvbox",
+      "light": "Açık",
+      "nord": "Nord"
+    },
+    "editor": {
+      "advancedSummary": "Gelişmiş",
+      "authorLabel": "Yazar (isteğe bağlı)",
+      "authorPlaceholder": "Galeride gösterilir",
+      "copySuffix": "{{name}} Kopya",
+      "createTitle": "Tema oluştur",
+      "descriptionLabel": "Açıklama (isteğe bağlı)",
+      "descriptionPlaceholder": "Tema hakkında bir iki cümle",
+      "editTitle": "Temayı düzenle",
+      "kindLabel": "Tür",
+      "nameLabel": "Ad",
+      "renameCleanupWarning": "Tema \"{{name}}\" olarak kaydedildi, ancak eski sürüm kaldırılamadı ve listede görünmeye devam edebilir.",
+      "resetToDerivedTitle": "Türetilmiş değere sıfırla",
+      "savingLabel": "Kaydediliyor…",
+      "seedLabels": {
+        "accent": "Vurgu",
+        "app": "Uygulama arka planı",
+        "error": "Hata",
+        "success": "Başarılı",
+        "surface": "Yüzey",
+        "text": "Metin",
+        "warning": "Uyarı"
+      },
+      "syntaxColorsSummary": "Sözdizimi renkleri"
+    },
+    "gallery": {
+      "authorScreenshotLabel": "Yazarın ekran görüntüsü",
+      "backAriaLabel": "Tüm temalara dön",
+      "detailSubtitle": "Temanın gerçek renkleriyle canlı önizleme",
+      "empty": "Henüz kullanılabilir tema yok.",
+      "installingLabel": "Kuruluyor…",
+      "loadError": "Galeri yüklenemedi: {{error}}",
+      "loading": "Temalar yükleniyor…",
+      "screenshotAlt": "Ekran görüntüsü: {{name}}",
+      "screenshotError": "Ekran görüntüsü yüklenemedi.",
+      "screenshotLoading": "Ekran görüntüsü yükleniyor…",
+      "showMore_one": "Daha fazla göster ({{count}})",
+      "showMore_other": "Daha fazla göster ({{count}})",
+      "subtitle": "pi-desktop-themes galerisinden — ayrıntılar için bir temaya tıklayın",
+      "title": "Topluluk temaları",
+      "viewDetailsAria": "Ayrıntıları görüntüle: {{name}}"
+    },
+    "kind": {
+      "dark": "Koyu",
+      "light": "Açık"
+    }
+  },
+  "thinking": {
+    "effort": "Düşünme seviyesi",
+    "effortWithLevel": "Düşünme seviyesi: {{level}}"
+  },
+  "time": {
+    "justNow": "az önce"
+  },
+  "timeline": {
+    "agentFinished": "Ajan bitirdi",
+    "agentStarted": "Ajan işlemeye başladı",
+    "assistantResponseComplete": "Asistan yanıtı tamamlandı",
+    "assistantResponseFailed": "Asistan yanıtı başarısız oldu",
+    "branchesHeading": "Dallar",
+    "clearButton": "Temizle",
+    "cloneBranchButton": "Dalı klonla",
+    "cloneBranchTitle": "Geçerli dalı yeni bir oturuma klonla",
+    "compactionComplete": "Sıkıştırma tamamlandı",
+    "compactionStarted": "Sıkıştırma başladı",
+    "emptyHint": "Ajan olayları burada gerçek zamanlı görünür",
+    "emptyTitle": "Henüz etkinlik yok",
+    "externalPromptReceived": "Dış istem alındı",
+    "forkButton": "Çatalla",
+    "forkFromTitle": "Bu mesajdan yeni bir oturum çatalla",
+    "heading": "Ajan zaman çizelgesi",
+    "noForkMessages": "Çatallanacak önceki mesaj yok.",
+    "retryAttempt": "Yeniden deneme {{attempt}}",
+    "retryComplete": "Yeniden deneme tamamlandı",
+    "sessionTreeHeading": "Oturum ağacı",
+    "tool": "Araç: {{tool}}"
+  },
+  "tools": {
+    "edit": {
+      "done": "Düzenlendi: {{target}}",
+      "doneWithoutTarget": "Bir dosya düzenlendi",
+      "label": "Dosya düzenle",
+      "summaryFirst_one": "Bir dosya düzenlendi",
+      "summaryFirst_other": "{{count}} dosya düzenlendi",
+      "summaryNext_one": "bir dosya düzenlendi",
+      "summaryNext_other": "{{count}} dosya düzenlendi"
+    },
+    "fetch": {
+      "done": "Getirildi: {{target}}",
+      "doneWithoutTarget": "Bir URL getirildi",
+      "label": "URL getir",
+      "summaryFirst_one": "Bir URL getirildi",
+      "summaryFirst_other": "{{count}} URL getirildi",
+      "summaryNext_one": "bir URL getirildi",
+      "summaryNext_other": "{{count}} URL getirildi"
+    },
+    "list": {
+      "done": "Listelendi: {{target}}",
+      "doneWithoutTarget": "Bir konum listelendi",
+      "label": "Dosyaları listele",
+      "summaryFirst_one": "Bir konum listelendi",
+      "summaryFirst_other": "{{count}} konum listelendi",
+      "summaryNext_one": "bir konum listelendi",
+      "summaryNext_other": "{{count}} konum listelendi"
+    },
+    "other": {
+      "summaryFirst_one": "Bir araç çalıştırıldı",
+      "summaryFirst_other": "{{count}} araç çalıştırıldı",
+      "summaryNext_one": "bir araç çalıştırıldı",
+      "summaryNext_other": "{{count}} araç çalıştırıldı"
+    },
+    "read": {
+      "done": "Okundu: {{target}}",
+      "doneWithoutTarget": "Bir dosya okundu",
+      "label": "Dosya oku",
+      "summaryFirst_one": "Bir dosya okundu",
+      "summaryFirst_other": "{{count}} dosya okundu",
+      "summaryNext_one": "bir dosya okundu",
+      "summaryNext_other": "{{count}} dosya okundu"
+    },
+    "run": {
+      "doneWithoutTarget": "Bir komut çalıştırıldı",
+      "label": "Komut çalıştır",
+      "summaryFirst_one": "Bir komut çalıştırıldı",
+      "summaryFirst_other": "{{count}} komut çalıştırıldı",
+      "summaryNext_one": "bir komut çalıştırıldı",
+      "summaryNext_other": "{{count}} komut çalıştırıldı"
+    },
+    "search": {
+      "done": "Arandı: {{target}}",
+      "doneWithoutTarget": "Bir sorgu arandı",
+      "label": "Ara",
+      "summaryFirst_one": "Bir sorgu arandı",
+      "summaryFirst_other": "{{count}} sorgu arandı",
+      "summaryNext_one": "bir sorgu arandı",
+      "summaryNext_other": "{{count}} sorgu arandı"
+    },
+    "summarySeparator": ", ",
+    "write": {
+      "done": "Oluşturuldu: {{target}}",
+      "doneWithoutTarget": "Bir dosya oluşturuldu",
+      "label": "Dosya yaz",
+      "summaryFirst_one": "Bir dosya oluşturuldu",
+      "summaryFirst_other": "{{count}} dosya oluşturuldu",
+      "summaryNext_one": "bir dosya oluşturuldu",
+      "summaryNext_other": "{{count}} dosya oluşturuldu"
+    }
+  },
+  "tray": {
+    "show": "Pi Desktop'ı göster",
+    "stillRunningBody": "Pencere sistem tepsisine gizlendi. Yeniden açmak için tepsi simgesine tıklayın ya da çıkmak için Çık'ı kullanın.",
+    "stillRunningTitle": "Pi Desktop hâlâ çalışıyor",
+    "unavailableBody": "Bu masaüstünde sistem tepsisi yok; Pi Desktop tepsiye küçülmek yerine normal şekilde kapanacak.",
+    "unavailableTitle": "Sistem tepsisi kullanılamıyor"
+  },
+  "voice": {
+    "models": {
+      "moonshine-base": {
+        "name": "Moonshine Base",
+        "note": "Küçük ve hızlı İngilizce dikte. Boyut ile doğruluk arasında iyi denge."
+      },
+      "moonshine-tiny": {
+        "name": "Moonshine Tiny",
+        "note": "En küçük İngilizce model. Zayıf bilgisayarlarda en hızlısı."
+      },
+      "parakeet-v2": {
+        "name": "Parakeet V2",
+        "note": "Çok yüksek doğrulukta İngilizce. Büyük indirme."
+      },
+      "parakeet-v3": {
+        "name": "Parakeet V3",
+        "note": "En yüksek doğruluk. Otomatik algılamalı 25 dil. Büyük indirme."
+      },
+      "whisper-base": {
+        "name": "Whisper Base",
+        "note": "Birçok dili kapsayan küçük model."
+      },
+      "whisper-small": {
+        "name": "Whisper Small",
+        "note": "Birçok dilde daha yüksek doğruluk. Daha büyük indirme."
+      }
+    }
+  },
+  "workflows": {
+    "agentGrid": {
+      "noTranscriptCaptured": "Döküm kaydedilmedi",
+      "openTranscript": "Dökümü aç"
+    },
+    "card": {
+      "activeCount_one": "· {{count}} etkin",
+      "activeCount_other": "· {{count}} etkin",
+      "agentsProgress": "{{done}}/{{total}} ajan"
+    },
+    "control": {
+      "abortAriaLabel": "Çalıştırmayı durdur",
+      "abortButtonLabel": "Durdur",
+      "dispatchFailed": "Kontrol komutu {{agent}} sürecine gönderilemedi.",
+      "extensionMissing": "İş akışları eklentisi bu çalışma alanının {{agent}} sürecinde yüklü değil.",
+      "notPermittedResume": "Bu çalıştırma mevcut durumunda sürdürülemez.",
+      "notPermittedStop": "Bu çalıştırma mevcut durumunda artık durdurulamaz.",
+      "notRunning": "{{agent}} bu çalışma alanı için çalışmıyor; bu yüzden çalıştırma buradan kontrol edilemez.",
+      "pausedFallback": "Duraklatıldı",
+      "resumeAriaLabel": "Çalıştırmayı sürdür",
+      "resumeButtonLabel": "Sürdür",
+      "resumeRequested": "Sürdürme istendi — çalıştırma kendi çalışma alanında yeniden başlatılıyor…",
+      "resumeTitle": "İş akışını kendi çalışma alanında sürdür",
+      "stopRequested": "Durdurma istendi — çalıştırma kendi çalışma alanında durduruluyor…",
+      "stopTitle": "İş akışını kendi çalışma alanında durdur",
+      "timeout": "{{agent}} yanıt vermedi. Çalıştırmanın durumu değişmiş olabilir — en güncel hâli görmek için yenile.",
+      "unavailable": "İş akışı kontrolü şu anda bu çalışma alanı için kullanılamıyor.",
+      "unreachable": "Bu çalışma alanının iş akışı kontrol yoluna ulaşılamadı."
+    },
+    "detail": {
+      "backAriaLabel": "Tüm iş akışı çalıştırmaları",
+      "refreshAriaLabel": "Çalıştırmayı yenile",
+      "statAgents": "ajan",
+      "statCostTime": "maliyet/süre",
+      "statTokens": "token",
+      "stepsHeading": "Adımlar"
+    },
+    "panel": {
+      "activeCount_one": "{{count}} etkin",
+      "activeCount_other": "{{count}} etkin",
+      "closeAriaLabel": "İş akışı çalıştırmalarını kapat",
+      "loading": "İş akışı yükleniyor…",
+      "maximizeAriaLabel": "İş akışı gezginini büyüt",
+      "noRunsForProject": "Bu proje için çalıştırma yok",
+      "noRunsForSession": "Bu oturum için çalıştırma yok",
+      "noRunsProjectDetail": "Kayıtlı iş akışı çalıştırması yok: {{name}}. Diğer projelerin çalıştırmaları genel listede görünür.",
+      "noRunsSessionDetail": "Bu oturum için kayıtlı iş akışı çalıştırması yok. Eski oturumların çalıştırmaları genel listede görünür.",
+      "noRunsYet": "Henüz çalıştırma yok",
+      "recordedCount_one": "{{count}} kayıtlı",
+      "recordedCount_other": "{{count}} kayıtlı",
+      "refreshAriaLabel": "İş akışı çalıştırmalarını yenile",
+      "restoreAriaLabel": "İş akışı gezginini geri yükle",
+      "runCommandHint": "Sohbette <cmd>/workflows run …</cmd> çalıştır.",
+      "stepTranscriptTitle": "Adım dökümü",
+      "thisProjectFallback": "bu proje",
+      "workflowDetailTitle": "İş akışı ayrıntısı"
+    },
+    "phaseStepper": {
+      "agentsProgress": "{{done}}/{{total}} ajan"
+    },
+    "result": {
+      "characterCount_one": "{{count}} karakter",
+      "characterCount_other": "{{count}} karakter",
+      "detailCount_one": "{{count}} ayrıntı",
+      "detailCount_other": "{{count}} ayrıntı",
+      "emptyObject": "İş akışı boş bir nesne döndürdü.",
+      "emptyShape": "boş",
+      "emptyValue": "Boş",
+      "fieldCount_one": "{{count}} alan",
+      "fieldCount_other": "{{count}} alan",
+      "itemCount_one": "{{count}} öğe",
+      "itemCount_other": "{{count}} öğe",
+      "itemTitle": "Öğe {{index}}",
+      "markdownReport": "Markdown raporu",
+      "moreItems_one": "+ {{count}} öğe daha",
+      "moreItems_other": "+ {{count}} öğe daha",
+      "nestedHidden": "İç içe ayrıntılar gizlendi",
+      "no": "Hayır",
+      "noAdditionalDetails": "Ek ayrıntı yok.",
+      "noDetails": "Ayrıntı yok",
+      "noItems": "Öğe yok",
+      "none": "Yok",
+      "outputLabel": "Çıktı",
+      "outputTitle": "İş akışı çıktısı",
+      "sectionCount_one": "{{count}} bölüm",
+      "sectionCount_other": "{{count}} bölüm",
+      "yes": "Evet"
+    },
+    "status": {
+      "aborted": "durduruldu"
+    },
+    "tabs": {
+      "logs": "Günlükler",
+      "overview": "Genel bakış",
+      "results": "Sonuçlar",
+      "script": "Betik"
+    },
+    "transcript": {
+      "backAriaLabel": "Çalıştırmaya dön",
+      "defaultPhaseLabel": "iş akışı adımı",
+      "enableFullTranscriptsButton": "Sonraki çalıştırmalar için tam dökümleri etkinleştir",
+      "historyNotice": "İş akışının kaydedilen geçmişi gösteriliyor. Sonraki çalıştırmalar her ham {{agent}} mesajını ve araç sonucunu saklayabilir.",
+      "noTranscriptMessage": "Bu adım için döküm saklanmadı.",
+      "persistenceEnabled": "Genel olarak etkinleştirildi. Sonraki iş akışı çalıştırmasından önce {{agent}} yeniden yüklenmeli.",
+      "settingsUpdateFailed": "İş akışı ayarları güncellenemedi.",
+      "sourceCapturedHistory": "kaydedilen iş akışı geçmişi",
+      "sourceFullSession": "tam oturum dökümü",
+      "sourceNone": "döküm yok",
+      "stepPromptLabel": "Adım istemi",
+      "stepResultLabel": "Adım sonucu",
+      "subtitle": "{{phase}} · {{source}}"
+    }
+  },
+  "workspaceTabs": {
+    "closeSessionTab": "Oturum sekmesini kapat",
+    "closeTabAriaLabel": "Kapat: {{name}}",
+    "closeTools": "Araçları kapat",
+    "newIsolatedTabAriaLabel": "Yeni yalıtılmış Git sekmesi",
+    "newIsolatedTabTitle": "Yeni yalıtılmış Git sekmesi (Git projesi gerektirir)",
+    "newLinkedTaskAriaLabel": "Yeni bağlantılı görev",
+    "newLinkedTaskTitle": "Birden çok depoya yayılan yeni bağlantılı görev",
+    "newSessionAriaLabel": "Bu projede yeni oturum",
+    "newSessionFallback": "Yeni oturum",
+    "removeWorkspaceAriaLabel": "Kaldır: {{name}}",
+    "sessions": "Oturumlar",
+    "tools": "Araçlar"
+  }
+}
