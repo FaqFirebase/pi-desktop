@@ -24,6 +24,8 @@ import { getVoiceModelsDir } from './voice-model-store'
 import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
 import { getSettingsPath } from './ipc/settings'
 import { disableCwdExecutableSearch } from './windows-exe-search'
+import { setupCuaWebviewSecurity } from './cua-webview-security'
+import { shutdownCuaSession } from './ipc/computer-handlers'
 
 // First, before anything spawns: Windows must never run a program from the
 // working directory (usually the workspace) when it is started by bare name.
@@ -477,6 +479,9 @@ app.whenReady().then(async () => {
   // Lock both preview partitions to local files before any preview can load.
   hardenPreviewSession()
 
+  // Configure la sécurité pour le webview CUA (partition isolée, validation URLs)
+  setupCuaWebviewSecurity()
+
   // Serve downloaded speech-model files to the renderer. The handler streams
   // files only from the single speech-models directory and rejects traversal.
   protocol.handle(VOICE_PROTOCOL_SCHEME, (request) =>
@@ -574,6 +579,8 @@ app.on('before-quit', (event) => {
 app.on('will-quit', (event) => {
   if (!shutdownComplete) {
     event.preventDefault()
+    // Coupe le tunnel SSH CUA avant le reste du teardown.
+    shutdownCuaSession()
     // The executor turns a synchronous stopAll() throw into a rejection, so a
     // failed teardown is logged and the quit still resumes instead of hanging.
     shutdownPending ??= new Promise<void>((resolve) => resolve(workspaceManager?.stopAll()))

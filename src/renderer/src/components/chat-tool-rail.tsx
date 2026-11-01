@@ -3,7 +3,7 @@ import { activeShortcuts } from '../utils/app-shortcuts'
 import { formatShortcut } from '../../../shared/keyboard-shortcuts'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
-import { FolderTree, GitCompare, ListChecks, Terminal, ShieldCheck } from 'lucide-react'
+import { FolderTree, GitCompare, ListChecks, Terminal, ShieldCheck, Monitor } from 'lucide-react'
 import { countRunningSubagentTasks } from '../../../shared/subagent-task'
 
 export function ChatToolRail(): React.JSX.Element {
@@ -50,6 +50,19 @@ export function ChatToolRail(): React.JSX.Element {
         active={terminalOpen}
         onClick={() => useAppStore.getState().toggleTerminal()}
         title={t('chat.toolbar.terminal')}
+      />
+      <RailButton
+        icon={<Monitor size={16} />}
+        active={useAppStore.getState().computerPanelOpen}
+        onClick={() => {
+          const state = useAppStore.getState()
+          if (state.computerPanelOpen) {
+            state.closeComputerPanel()
+          } else {
+            void state.openComputerPanel()
+          }
+        }}
+        title={t('chat.toolbar.computer')}
       />
     </nav>
   )

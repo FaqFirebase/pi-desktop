@@ -28,6 +28,8 @@ import { registerVoiceHandlers } from './ipc/voice-handlers'
 import { registerTypeSafeHandlers } from './ipc/typesafe-handlers'
 import { registerWorkflowHandlers } from './ipc/workflow-handlers'
 import { registerSubagentHandlers } from './ipc/subagent-handlers'
+import { registerComputerHandlers } from './ipc/computer-handlers'
+import { registerJevHandlers } from './ipc/jev-handlers'
 import { wireWorkspaceActivity, type WindowControls } from './ipc/workspace-activity-wiring'
 import type { WorkspaceTerminals } from './workspace-terminals'
 
@@ -77,6 +79,8 @@ export function registerIpcHandlers(
   registerSubagentHandlers(ctx)
   registerVoiceHandlers(ctx)
   registerTypeSafeHandlers()
+  registerComputerHandlers()
+  registerJevHandlers()
 
   // ─── Extension UI Responses and Pi Event Forwarding ─────────────────────
 

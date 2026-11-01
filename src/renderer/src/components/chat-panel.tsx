@@ -32,6 +32,7 @@ import { ImageViewer } from './image-viewer'
 import { DiffViewer } from './diff-viewer'
 import { SubagentPanel } from './subagent-panel'
 import { TerminalPanel } from './terminal'
+import { ComputerPanel } from './computer-panel'
 import { isFileWatchDemanded, useChatScroll, useChatVisible, useChatWidth } from '../hooks'
 import { messageColumnClass } from '../utils/chat-width'
 import { createMeasureRef } from '../utils/element-measure'
@@ -77,6 +78,7 @@ export function ChatPanel(): React.JSX.Element {
   const toggleFileSearch = useAppStore((state) => state.toggleFileSearch)
   const previewTarget = useAppStore((state) => state.previewTarget)
   const reviewOpen = useAppStore((state) => state.reviewOpen)
+  const computerPanelOpen = useAppStore((state) => state.computerPanelOpen)
   const messageColumn = messageColumnClass(useChatWidth())
 
   // sidePanel lives in the store so it survives view switches (e.g. Settings
@@ -443,6 +445,9 @@ export function ChatPanel(): React.JSX.Element {
 
       {/* Terminal panel */}
       <TerminalPanel />
+
+      {/* Computer panel (Cua) */}
+      {computerPanelOpen && <ComputerPanel />}
 
       {/* File search modal */}
       <FileSearch isOpen={fileSearchOpen} onClose={toggleFileSearch} />

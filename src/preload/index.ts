@@ -89,10 +89,15 @@ import type {
   GitConveyorPullRequestOptions,
   GitConveyorPullRequestResult,
   I18nEnvironment,
+  ComputerOpenSessionResult,
+  ComputerGetViewerResult,
+  ComputerCloseSessionResult,
+  ComputerBackend,
+  CuaJudgment,
 } from '../shared/ipc-contracts'
 import type { ThemeFile } from '../shared/theme/theme-file'
 import type { SubagentListResult, SubagentTranscriptRef, SubagentTranscriptResult } from '../shared/subagent-task'
-import { IPC_CHANNELS } from '../shared/ipc-contracts'
+import { IPC_CHANNELS, JEV_JUDGE_CUA_CHANNEL } from '../shared/ipc-contracts'
 
 // ─── Type Definitions for the Exposed API ────────────────────────────────────
 
@@ -396,6 +401,18 @@ interface PiDesktopAPI {
     get(): Promise<DiagnosticsReport>
   }
 
+  // Computer Panel (Cua Integration)
+  computer: {
+    openSession(backend: ComputerBackend): Promise<ComputerOpenSessionResult>
+    getSessionViewer(sessionId: string): Promise<ComputerGetViewerResult>
+    closeSession(sessionId: string): Promise<ComputerCloseSessionResult>
+  }
+
+  // Jev (TypeSafe) : jugement des demandes CUA
+  jev: {
+    judgeCuaUse(request: string): Promise<CuaJudgment>
+  }
+
   // Update check (GitHub releases)
   updates: {
     check(): Promise<UpdateCheckResult>
@@ -695,6 +712,16 @@ const api: PiDesktopAPI = {
 
   diagnostics: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_GET),
+  },
+
+  computer: {
+    openSession: (backend) => ipcRenderer.invoke(IPC_CHANNELS.COMPUTER_OPEN_SESSION, backend),
+    getSessionViewer: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.COMPUTER_GET_VIEWER, sessionId),
+    closeSession: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.COMPUTER_CLOSE_SESSION, sessionId),
+  },
+
+  jev: {
+    judgeCuaUse: (request) => ipcRenderer.invoke(JEV_JUDGE_CUA_CHANNEL, request),
   },
 
   updates: {
