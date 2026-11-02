@@ -1,6 +1,6 @@
 # Guide complet — Panneau Computer (CUA) dans Pi Desktop
 
-*Document rédigé le 2026-11-01. Chaque affirmation a été vérifiée dans le code du dépôt (`C:\Users\noname\Work\pi-desktop-cua`) ou sur la machine réelle ce jour-là. Ce guide remplace les deux fichiers obsolètes à la racine du dépôt (`INTEGRATION_SUMMARY.md` et `TESTING_GUIDE.md`, qui décrivent un premier échafaudage avec une IP `192.168.1.110` et un port `3000` qui n'existent plus).*
+*Document initial rédigé le 2026-11-01 ; section de contrôle agent et sauvegarde mise à jour le 2026-11-02 par lecture du code uniquement, sans nouveau test ni smoke test. Les observations machine datées du 2026-11-01 sont historiques et ne garantissent pas l'état actuel.*
 
 ## Table des matières
 
@@ -67,7 +67,7 @@ Le mode Auto interroge l'API TypeSafe (`https://api.typesafe.ai/v1/systemone`, m
 
 ### 3.1 Ouvrir et fermer
 
-- Le panneau s'ouvre **uniquement manuellement** : cliquez sur l'icône **moniteur** (Computer) dans le rail vertical à droite de la conversation (le même rail que Review, Fichiers, Diff, Sous-agents, Terminal). Un second clic sur l'icône, ou la croix **X** dans l'en-tête du panneau, le ferme.
+- Le panneau s'ouvre manuellement via l'icône **moniteur** (Computer) dans le rail vertical à droite de la conversation, ou via l'outil agent `show_computer` si l'extension décrite au §3.5 est chargée. Un second clic sur l'icône, ou la croix **X** dans l'en-tête du panneau, le ferme.
 - **Fermer le panneau supprime tout** : le space Cua (ou le conteneur) est détruit côté hôte **et** le tunnel SSH local est tué. Vérifié en pratique : après fermeture, il reste 0 space et 0 processus `ssh` parasite.
 - Quand l'application quitte (`will-quit`), le tunnel SSH résiduel est coupé (`shutdownCuaSession`). Attention : **les spaces Cua, eux, ne sont pas supprimés** à la fermeture de l'app — voir §5 et §6.2.
 
@@ -108,7 +108,29 @@ Flux (code : `src/main/jev-cua.ts`, `src/main/ipc/jev-handlers.ts`, `resolveAuto
 
 Replis déterministes vers `docker-vm` (avec la raison affichée) : aucune clé TypeSafe enregistrée, échec réseau/HTTP/analyse, timeout, backend hors liste, pont indisponible, ou aucun prompt à juger. Jev ne bloque donc jamais l'ouverture.
 
-À noter : le mode Auto **n'est pas déclenché par l'agent** (Pi/OMP) — il n'y a pas d'outil qui ouvre le panneau tout seul ; c'est vous qui cliquez, Jev ne fait que choisir l'environnement.
+Le mode Auto manuel utilise le dernier message utilisateur. L'outil agent `show_computer` peut aussi ouvrir le panneau ; son mode Auto pose actuellement à Jev une demande générique, sans transmettre le texte utilisateur.
+
+### 3.5 Contrôle depuis l'agent OMP
+
+La copie portable de l'extension est conservée dans **`resources/pi-cua-control.ts`**, avec les autres extensions du dépôt. Elle n'est pas chargée automatiquement par Pi Desktop : pour l'utiliser, copier ce seul fichier dans `~/.omp/agent/extensions/pi-cua-control.ts`, puis recharger/redémarrer la session OMP. Ne pas copier de configuration, de jeton ou de fichier de credentials.
+
+Découverte du serveur, dans l'ordre : répertoire `PI_DESKTOP_USER_DATA_DIR` si défini, `%APPDATA%/pi-desktop` si disponible, puis `~/.pi-desktop-dev`. Pour une autre plateforme ou plusieurs instances, définir explicitement `PI_DESKTOP_USER_DATA_DIR` vers le profil voulu. La copie portable remplace seulement le chemin de développement Windows nominatif par `homedir()` ; le fichier externe existant reste inchangé.
+
+| Outil OMP | Route HTTP | Effet |
+|---|---|---|
+| `show_computer({ backend? })` | `POST /computer/open` | Ouvre/réutilise la session ; défaut `auto` ; retourne notamment `success`, `sessionId`, `viewerUrl`, `backend` |
+| `hide_computer({})` | `POST /computer/close` | Ferme la session courante et masque le panneau ; ce n'est pas une simple réduction visuelle |
+| `computer_status({})` | `GET /computer/status` | Retourne `open`, `sessionId`, `backend` |
+| `computer_exec({ command })` | `POST /computer/exec` | Exécute `cua sb exec … -- sh -lc` dans la session active ; nécessite une session ouverte |
+
+Le serveur main écoute uniquement sur `127.0.0.1`, sur un port attribué par l'OS. Il génère un jeton aléatoire de 32 octets par lancement et écrit `{ port, token }` dans `<userData>/cua-control.json`. Chaque route exige `Authorization: Bearer <token>` ; le fichier est retiré à l'arrêt normal. Le perdant du verrou single-instance ne publie pas ce fichier. Les événements main → renderer synchronisent l'ouverture/fermeture du panneau.
+
+Les corps sont limités à 256 Kio. Les erreurs métier peuvent avoir HTTP 200 avec `success: false` : lire le résultat, pas seulement le statut HTTP. `computer_exec` a un délai serveur de 30 s ; un code de sortie non nul est un résultat normal à examiner. L'arrêt du client SSH/CLI au délai ne prouve pas l'arrêt de tous les descendants dans l'invité.
+
+**Sécurité et limites :** `cua-control.json` contient un secret donnant accès au contrôle et au shell invité ; ne jamais le commiter ni le partager, et protéger le profil avec les permissions OS. L'écriture actuelle n'impose pas de mode propriétaire explicite ni d'ACL Windows dédiée. La boucle locale et le bearer ne remplacent pas une validation des actions sensibles par l'utilisateur. Les URL viewer peuvent également contenir un ticket confidentiel. Cette sauvegarde n'atteste aucun succès d'exécution de l'extension, des routes HTTP, du shell invité ou de la synchronisation renderer ; les tests de routage sont présents mais non exécutés.
+
+Validation séparée rapportée par l'agent parent le 2026-11-02 : `npm run typecheck` réussi ; `node --import tsx --test src/main/cua-control-routes.test.ts src/main/jev-cua.test.ts` réussi (**28/28**). Aucun lancement UI ni smoke test bout-en-bout n'a été réalisé pour cette sauvegarde. La mention « non exécutés lors de cette sauvegarde » désigne les actions de l'agent de sauvegarde, pas cette validation parent.
+
 
 ---
 
@@ -268,19 +290,16 @@ Règle i18n obligatoire pour **toute clé ajoutée** : parité `en` ↔ `zh-Hans
 
 ### 6.7 Mettre à jour le fork depuis le dépôt distant
 
-État vérifié le 2026-11-01 : le dépôt local `C:\Users\noname\Work\pi-desktop-cua` a pour **seul remote `origin` = `https://github.com/FaqFirebase/pi-desktop.git`** (le fork), sur la branche `master`. **Le travail CUA n'est pas encore commité** : `git status` montre les fichiers CUA en `??` (non suivis : `computer-handlers.ts`, `jev-cua.*`, `cua-*.ts`, `computer-panel.tsx`, etc.) et plusieurs fichiers modifiés (`index.ts`, `ipc-handlers.ts`, `preload/index.ts`, les deux `translation.json`, `store.ts`, etc.).
+La sauvegarde CUA se fait sur la branche **`feat/cua-computer-panel`**, exclusivement vers le remote **`fork` = `https://github.com/noshishinitai/pi-desktop.git`**. Le remote `origin` désigne `https://github.com/FaqFirebase/pi-desktop.git` ; ne pas y pousser cette sauvegarde.
 
-Séquence sûre pour absorber des évolutions distantes :
+Après revue des changements et sélection explicite des fichiers à sauvegarder :
 
 ```powershell
-cd C:\Users\noname\Work\pi-desktop-cua
-git add -A ; git commit -m "feat(cua): panneau Computer + intégration CUA + Jev"   # À FAIRE EN PREMIER : rien n'est commité aujourd'hui
-git fetch origin
-git log --oneline master..origin/master        # ce qui est arrivé d'en haut
-git rebase origin/master                        # ou git merge origin/master
+git commit -m "feat(cua): preserve agent control bridge and portable OMP extension"
+git push fork HEAD:refs/heads/feat/cua-computer-panel
 ```
 
-Aucun remote « upstream » du projet original n'est configuré ; si vous voulez suivre les releases amont, ajoutez-le explicitement (`git remote add upstream <URL-du-projet-originel>`) avant de mélanger ses branches. Tant que le travail CUA n'est pas commité, toute commande git destructrice (`reset --hard`, `clean`) **détruira l'intégration** — commiter d'abord.
+Cette procédure ne réécrit ni ne supprime l'historique. Ne pas utiliser `reset --hard`, `clean` ou un push forcé pour sauvegarder le travail. Une mise à jour depuis l'amont est une opération distincte, hors de cette sauvegarde.
 
 ### 6.8 Sécurité : ce qui est isolé et pourquoi
 
@@ -297,7 +316,7 @@ Conséquence pratique : changer le port de tunnel ou `cuaDockerHostPort` **sans 
 ## 7. Limites actuelles et pistes
 
 - **`main-os` et `proxmox-vm` sont bloqués côté Cua**, pas côté Pi Desktop : la chaîne complète (ticket `sb create --on direct:…`, tunnel, sécurité) est écrite et testable ; il manque un build `cua-spacesd` exposant un *desktop provider* sur ces hôtes. Pistes : suivre les releases Cua, tester à nouveau le sondage `cua spacesd targets` après upgrade.
-- **Le mode Auto ne pilote pas l'ouverture** : c'est l'utilisateur qui ouvre le panneau ; Jev ne fait que choisir le backend. `needsComputer` est calculé par Jev mais ignoré à l'ouverture. Piste : exposer un déclencheur côté agent (un outil Pi/OMP qui demande l'ouverture du panneau avec le prompt en contexte).
+- **Auto côté agent sans contexte utilisateur** : `show_computer` peut maintenant ouvrir le panneau, mais Jev reçoit une demande générique ; le flux manuel garde le dernier message utilisateur. `needsComputer` reste ignoré à l'ouverture.
 - **Une seule session à la fois, un seul space sur l'hôte VM** : pas de multi-bureaux. Les spaces survivent au crash de l'app (voir §6.2). Piste : supprimer les spaces orphelins au démarrage ou à `will-quit`.
 - **La sélection de backend n'est pas persistée** (défaut `docker-vm` à chaque lancement). Piste : une clé de settings dédiée si besoin.
 - **`cuaDockerHostPort` n'a pas de champ d'interface** (éditation manuelle de `settings.json`). Piste : l'ajouter à Settings → Behavior avec un redémarrage requis, comme le port de tunnel.
@@ -316,6 +335,9 @@ Conséquence pratique : changer le port de tunnel ou `cuaDockerHostPort` **sans 
 | `src/main/ipc/computer-handlers.ts` | Cœur du main : 4 flux d'ouverture par backend, tickets viewer, tunnel SSH, rafraîchissement, fermeture, file de sérialisation, `shutdownCuaSession` |
 | `src/main/jev-cua.ts` | Module Jev : construction des 2 questions TypeSafe, appel HTTP (8 s), validation stricte, repli `jev-unavailable` |
 | `src/main/jev-cua.test.ts` | Tests du module Jev (avec fetch stub injecté) |
+| `src/main/cua-control-server.ts` | Serveur HTTP loopback, jeton de découverte, opérations de session et événements renderer |
+| `src/main/cua-control-routes.ts` et `src/main/cua-control-routes.test.ts` | Authentification, routage, validation et tests unitaires non exécutés lors de cette sauvegarde |
+| `resources/pi-cua-control.ts` | Copie portable de l'extension OMP externe ; installation manuelle, sans configuration ni secret |
 | `src/main/ipc/jev-handlers.ts` | Canal IPC `jev:judge-cua` : lit la clé TypeSafe côté main, renvoie le jugement seul |
 | `src/main/cua-settings.ts` | Lecture synchrone de `settings.json` : `cuaHost`, `cuaTunnelPort`, `cuaDockerHostPort` (+ défauts) |
 | `src/main/cua-webview-security.ts` | Partition `persist:cua-viewer` : liste blanche d'origines, filtrage réseau, refus permissions/popups/navigation |

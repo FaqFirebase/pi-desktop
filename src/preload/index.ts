@@ -93,6 +93,7 @@ import type {
   ComputerGetViewerResult,
   ComputerCloseSessionResult,
   ComputerBackend,
+  ComputerAgentEvent,
   CuaJudgment,
 } from '../shared/ipc-contracts'
 import type { ThemeFile } from '../shared/theme/theme-file'
@@ -406,6 +407,8 @@ interface PiDesktopAPI {
     openSession(backend: ComputerBackend): Promise<ComputerOpenSessionResult>
     getSessionViewer(sessionId: string): Promise<ComputerGetViewerResult>
     closeSession(sessionId: string): Promise<ComputerCloseSessionResult>
+    /** Push du serveur de contrôle CUA (agent OMP) ; retourne le unsubscribe. */
+    onAgentEvent(callback: (event: ComputerAgentEvent) => void): () => void
   }
 
   // Jev (TypeSafe) : jugement des demandes CUA
@@ -718,6 +721,11 @@ const api: PiDesktopAPI = {
     openSession: (backend) => ipcRenderer.invoke(IPC_CHANNELS.COMPUTER_OPEN_SESSION, backend),
     getSessionViewer: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.COMPUTER_GET_VIEWER, sessionId),
     closeSession: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.COMPUTER_CLOSE_SESSION, sessionId),
+    onAgentEvent: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: ComputerAgentEvent) => callback(data)
+      ipcRenderer.on(IPC_CHANNELS.COMPUTER_AGENT_EVENT, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.COMPUTER_AGENT_EVENT, handler)
+    },
   },
 
   jev: {

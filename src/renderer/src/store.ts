@@ -88,6 +88,7 @@ import type {
   ModelInfo,
   PiPromptResultEvent,
   ComputerBackend,
+  ComputerAgentEvent,
 } from '../../shared/ipc-contracts'
 import {
   promptRanWithoutAgent, promptRefusal, promptResultRefusal, reportsNoAgentRun, reportsPromptOutcome,
@@ -3938,6 +3939,41 @@ useAppStore.subscribe((state, prev) => {
     state.editorDirty ? (state.previewTarget?.name ?? null) : null
   )
 })
+
+// Événements du serveur de contrôle CUA (agent OMP) : une session ouverte ou
+// fermée depuis l'extérieur doit synchroniser le panneau avec l'état réel du
+// main, sans repasser par le flux manuel (qui ignore ces événements). Écrire
+// l'état directement — jamais closeComputerPanel(), qui redemanderait une
+// fermeture déjà effectuée côté main. 'exec' est informatif : ignoré.
+// L'abonnement se pose au démarrage du module ; les tests qui stubbent
+// window.piDesktop sans le bloc computer sont simplement ignorés.
+function applyComputerAgentEvent(event: ComputerAgentEvent): void {
+  if (event.type === 'opened') {
+    useAppStore.setState({
+      computerPanelOpen: true,
+      computerViewerUrl: event.viewerUrl,
+      computerSessionId: event.sessionId,
+      computerSessionBackend: event.backend,
+      computerJudgmentReason: null,
+      computerError: null,
+    })
+    return
+  }
+  if (event.type === 'closed') {
+    useAppStore.setState({
+      computerPanelOpen: false,
+      computerViewerUrl: null,
+      computerSessionId: null,
+      computerSessionBackend: null,
+      computerJudgmentReason: null,
+      computerError: null,
+    })
+  }
+}
+
+if (typeof window !== 'undefined' && window.piDesktop?.computer?.onAgentEvent) {
+  window.piDesktop.computer.onAgentEvent(applyComputerAgentEvent)
+}
 
 // A turn starts the activity clock. Many paths set isStreaming (a send, the
 // engine's agent_start, an external prompt, an attach mid-turn), so a

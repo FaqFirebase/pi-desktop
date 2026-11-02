@@ -72,8 +72,15 @@ function firstLine(text: string): string {
   return text.trim().split('\n')[0] ?? ''
 }
 
-/** One-shot remote command over SSH; resolves with stdout/exit code. */
-function runRemoteShell(remoteCmd: string, settings: CuaSettings): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+/**
+ * One-shot remote command over SSH; resolves with stdout/exit code.
+ * `timeoutMs` (when given) kills the SSH process and flags `timedOut`.
+ */
+function runRemoteShell(
+  remoteCmd: string,
+  settings: CuaSettings,
+  timeoutMs?: number
+): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }> {
   // Le lib target du process main n'inclut pas es2024 : forme executor nécessaire.
   return new Promise((resolve) => {
     const proc = spawn('ssh', [
@@ -87,6 +94,13 @@ function runRemoteShell(remoteCmd: string, settings: CuaSettings): Promise<{ std
 
     let stdout = ''
     let stderr = ''
+    let timedOut = false
+    const timer = timeoutMs
+      ? setTimeout(() => {
+          timedOut = true
+          proc.kill()
+        }, timeoutMs)
+      : undefined
 
     proc.stdout?.on('data', (data) => {
       stdout += data.toString()
@@ -95,26 +109,46 @@ function runRemoteShell(remoteCmd: string, settings: CuaSettings): Promise<{ std
       stderr += data.toString()
     })
     proc.on('close', (code) => {
-      resolve({ stdout, stderr, exitCode: code ?? 1 })
+      clearTimeout(timer)
+      resolve({ stdout, stderr, exitCode: code ?? 1, timedOut })
     })
     proc.on('error', (err) => {
-      resolve({ stdout, stderr: err.message, exitCode: 1 })
+      clearTimeout(timer)
+      resolve({ stdout, stderr: err.message, exitCode: 1, timedOut: false })
     })
   })
 }
 
 /** One-shot remote `cua <args>` over SSH. */
-function runCuaCommand(args: string[], settings: CuaSettings): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  return runRemoteShell(`${REMOTE_PATH_EXPORT} cua ${args.join(' ')}`, settings)
+function runCuaCommand(
+  args: string[],
+  settings: CuaSettings,
+  timeoutMs?: number
+): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }> {
+  return runRemoteShell(`${REMOTE_PATH_EXPORT} cua ${args.join(' ')}`, settings, timeoutMs)
 }
 
-/** One-shot local executable (docker.exe, cua.exe) with captured output. */
-function runLocalCommand(exe: string, args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+/**
+ * One-shot local executable (docker.exe, cua.exe) with captured output.
+ * `timeoutMs` (when given) kills the process and flags `timedOut`.
+ */
+function runLocalCommand(
+  exe: string,
+  args: string[],
+  timeoutMs?: number
+): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }> {
   return new Promise((resolve) => {
     const proc = spawn(exe, args, { windowsHide: true })
 
     let stdout = ''
     let stderr = ''
+    let timedOut = false
+    const timer = timeoutMs
+      ? setTimeout(() => {
+          timedOut = true
+          proc.kill()
+        }, timeoutMs)
+      : undefined
 
     proc.stdout?.on('data', (data) => {
       stdout += data.toString()
@@ -123,10 +157,12 @@ function runLocalCommand(exe: string, args: string[]): Promise<{ stdout: string;
       stderr += data.toString()
     })
     proc.on('close', (code) => {
-      resolve({ stdout, stderr, exitCode: code ?? 1 })
+      clearTimeout(timer)
+      resolve({ stdout, stderr, exitCode: code ?? 1, timedOut })
     })
     proc.on('error', (err) => {
-      resolve({ stdout, stderr: err.message, exitCode: 1 })
+      clearTimeout(timer)
+      resolve({ stdout, stderr: err.message, exitCode: 1, timedOut: false })
     })
   })
 }
@@ -531,40 +567,127 @@ async function closeSession(session: CuaSession, settings: CuaSettings): Promise
 }
 
 /**
+ * Ouvre (ou retrouve) l'unique session Cua sur le backend demandé. 'auto' est
+ * résolu par l'appelant (renderer via Jev, serveur de contrôle via jev-cua) ;
+ * par sécurité on retombe sur le backend historique.
+ */
+export function openComputerSession(backend: ComputerBackend): Promise<ComputerOpenSessionResult> {
+  return enqueueSessionOp(async () => {
+    const settings = readCuaSettingsSync()
+    const resolved: SessionBackend = backend === 'auto' || !backend ? 'docker-vm' : backend
+    if (currentSession) {
+      if (currentSession.backend !== resolved) {
+        return { success: false, error: `Une session ${currentSession.backend} est déjà ouverte — fermez-la avant d’ouvrir un autre backend.` }
+      }
+      return { success: true, sessionId: currentSession.spaceName, viewerUrl: currentSession.viewerUrl, backend: currentSession.backend }
+    }
+    try {
+      switch (resolved) {
+        case 'docker-vm':
+          return await openDockerVmSession(settings)
+        case 'docker-host':
+          return await openDockerHostSession(settings)
+        case 'main-os':
+          return await openMainOsSession()
+        case 'proxmox-vm':
+          return await openProxmoxVmSession(settings)
+        default:
+          return { success: false, error: `Backend inconnu : ${String(resolved)}` }
+      }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Erreur inconnue' }
+    }
+  })
+}
+
+/** Ferme la session portant cet id (le main n'en garde qu'une à la fois). */
+export function closeComputerSession(sessionId: string): Promise<ComputerCloseSessionResult> {
+  return enqueueSessionOp(async () => {
+    if (!currentSession || currentSession.spaceName !== sessionId) {
+      return { success: false, error: 'Session Cua introuvable.' }
+    }
+    const settings = readCuaSettingsSync()
+    try {
+      const error = await closeSession(currentSession, settings)
+      return error ? { success: false, error } : { success: true }
+    } catch (err) {
+      stopTunnel(currentSession)
+      currentSession = null
+      return { success: false, error: err instanceof Error ? err.message : 'Erreur inconnue' }
+    }
+  })
+}
+
+/** État de la session Cua côté main — source de vérité du panneau Computer. */
+export interface ComputerSessionState {
+  open: boolean
+  sessionId: string | null
+  backend: SessionBackend | null
+}
+
+export function getComputerSessionState(): ComputerSessionState {
+  return currentSession
+    ? { open: true, sessionId: currentSession.spaceName, backend: currentSession.backend }
+    : { open: false, sessionId: null, backend: null }
+}
+
+/** Résultat d'un `cua sb exec` dans le space courant (serveur de contrôle). */
+export interface ComputerExecResult {
+  success: boolean
+  stdout?: string
+  stderr?: string
+  /** Absent quand l'exécution n'a pas abouti (pas de space, délai dépassé). */
+  exitCode?: number
+  error?: string
+}
+
+const CUA_EXEC_TIMEOUT_MS = 30_000
+
+/** Embed a value in a POSIX command line as one single-quoted argument. */
+function shellSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+/**
+ * Exécute `cua sb exec local:<space> -- sh -lc <command>` dans le space actif,
+ * par le même chemin que le backend de la session (SSH hôte Cua ou CLI local).
+ * `success` reflète l'exécution du pipeline : un exit code non nul est un
+ * résultat normal, restitué dans `exitCode` ; `error` est réservé aux échecs
+ * d'infrastructure (aucun space, délai dépassé).
+ */
+export async function execComputerCommand(command: string): Promise<ComputerExecResult> {
+  const session = currentSession
+  if (!session) {
+    return { success: false, error: 'Aucun space CUA actif — ouvrez une session (show_computer) avant exec.' }
+  }
+  const spaceRef = `local:${session.spaceName}`
+  const res =
+    session.backend === 'docker-host' || session.backend === 'main-os'
+      ? await runLocalCommand(LOCAL_CUA_EXE, ['sb', 'exec', spaceRef, '--', 'sh', '-lc', command], CUA_EXEC_TIMEOUT_MS)
+      : await runRemoteShell(
+          `${REMOTE_PATH_EXPORT} cua sb exec ${shellSingleQuote(spaceRef)} -- sh -lc ${shellSingleQuote(command)}`,
+          readCuaSettingsSync(),
+          CUA_EXEC_TIMEOUT_MS
+        )
+  if (res.timedOut) {
+    return {
+      success: false,
+      stdout: res.stdout,
+      stderr: res.stderr,
+      error: `Exécution interrompue : délai de ${CUA_EXEC_TIMEOUT_MS / 1000} s dépassé.`,
+    }
+  }
+  return { success: true, stdout: res.stdout, stderr: res.stderr, exitCode: res.exitCode }
+}
+
+/**
  * Enregistre les handlers IPC pour le panneau Computer (Cua)
  */
 export function registerComputerHandlers(): void {
   ipcMain.handle(
     IPC_CHANNELS.COMPUTER_OPEN_SESSION,
     async (_event: IpcMainInvokeEvent, backend: ComputerBackend): Promise<ComputerOpenSessionResult> =>
-      enqueueSessionOp(async () => {
-        const settings = readCuaSettingsSync()
-        // 'auto' est résolu par le renderer (jugement Jev) avant l'appel ; par
-        // sécurité on retombe sur le backend historique.
-        const resolved: SessionBackend = backend === 'auto' || !backend ? 'docker-vm' : backend
-        if (currentSession) {
-          if (currentSession.backend !== resolved) {
-            return { success: false, error: `Une session ${currentSession.backend} est déjà ouverte — fermez-la avant d’ouvrir un autre backend.` }
-          }
-          return { success: true, sessionId: currentSession.spaceName, viewerUrl: currentSession.viewerUrl, backend: currentSession.backend }
-        }
-        try {
-          switch (resolved) {
-            case 'docker-vm':
-              return await openDockerVmSession(settings)
-            case 'docker-host':
-              return await openDockerHostSession(settings)
-            case 'main-os':
-              return await openMainOsSession()
-            case 'proxmox-vm':
-              return await openProxmoxVmSession(settings)
-            default:
-              return { success: false, error: `Backend inconnu : ${String(resolved)}` }
-          }
-        } catch (err) {
-          return { success: false, error: err instanceof Error ? err.message : 'Erreur inconnue' }
-        }
-      })
+      openComputerSession(backend)
   )
 
   ipcMain.handle(
@@ -585,20 +708,7 @@ export function registerComputerHandlers(): void {
   ipcMain.handle(
     IPC_CHANNELS.COMPUTER_CLOSE_SESSION,
     async (_event: IpcMainInvokeEvent, sessionId: string): Promise<ComputerCloseSessionResult> =>
-      enqueueSessionOp(async () => {
-        if (!currentSession || currentSession.spaceName !== sessionId) {
-          return { success: false, error: 'Session Cua introuvable.' }
-        }
-        const settings = readCuaSettingsSync()
-        try {
-          const error = await closeSession(currentSession, settings)
-          return error ? { success: false, error } : { success: true }
-        } catch (err) {
-          stopTunnel(currentSession)
-          currentSession = null
-          return { success: false, error: err instanceof Error ? err.message : 'Erreur inconnue' }
-        }
-      })
+      closeComputerSession(sessionId)
   )
 }
 

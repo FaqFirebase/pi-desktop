@@ -25,6 +25,7 @@ import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches
 import { getSettingsPath } from './ipc/settings'
 import { disableCwdExecutableSearch } from './windows-exe-search'
 import { setupCuaWebviewSecurity } from './cua-webview-security'
+import { startCuaControlServer, stopCuaControlServer } from './cua-control-server'
 import { shutdownCuaSession } from './ipc/computer-handlers'
 
 // First, before anything spawns: Windows must never run a program from the
@@ -136,9 +137,13 @@ configureGuiDataDir(userDataDir)
 // process exits immediately; the first receives 'second-instance'. Taken AFTER
 // userData is set so an isolated PI_DESKTOP_USER_DATA_DIR gets its own lock and
 // can run beside the canonical instance (dev vs installed).
+// The loser still reaches whenReady() before quitting, so anything that
+// publishes shared state (cua-control.json) must check this flag first.
+let gotSingleInstanceLock = false
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
+  gotSingleInstanceLock = true
   app.on('second-instance', () => {
     showMainWindow()
   })
@@ -494,6 +499,16 @@ app.whenReady().then(async () => {
   // Configure la sécurité pour le webview CUA (partition isolée, validation URLs)
   setupCuaWebviewSecurity()
 
+  // Serveur de contrôle CUA : l'agent OMP (extension pi-cua-control) pilote le
+  // panneau Computer via 127.0.0.1 + jeton ; découverte par <userData>/cua-control.json.
+  // Jamais côté perdant du verrou : il atteindrait whenReady puis quitterait en
+  // laissant un cua-control.json mort derrière lui.
+  if (gotSingleInstanceLock) {
+    void startCuaControlServer().catch((err) => {
+      appLog.error('cua', 'Control server failed to start', err)
+    })
+  }
+
   // Serve downloaded speech-model files to the renderer. The handler streams
   // files only from the single speech-models directory and rejects traversal.
   protocol.handle(VOICE_PROTOCOL_SCHEME, (request) =>
@@ -593,6 +608,8 @@ app.on('will-quit', (event) => {
     event.preventDefault()
     // Coupe le tunnel SSH CUA avant le reste du teardown.
     shutdownCuaSession()
+    // Retire cua-control.json et ferme le serveur de contrôle de l'agent.
+    stopCuaControlServer()
     // The executor turns a synchronous stopAll() throw into a rejection, so a
     // failed teardown is logged and the quit still resumes instead of hanging.
     shutdownPending ??= new Promise<void>((resolve) => resolve(workspaceManager?.stopAll()))

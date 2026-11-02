@@ -103,6 +103,9 @@ export const IPC_CHANNELS = {
   COMPUTER_OPEN_SESSION: 'computer:open-session',
   COMPUTER_GET_VIEWER: 'computer:get-viewer',
   COMPUTER_CLOSE_SESSION: 'computer:close-session',
+  // Push main → renderer : un agent externe (serveur de contrôle CUA) a ouvert
+  // ou fermé la session ; le panneau doit se synchroniser avec l'état du main.
+  COMPUTER_AGENT_EVENT: 'computer:agent-event',
   SUBAGENT_LIST: 'subagent:list',
   SUBAGENT_GET_TRANSCRIPT: 'subagent:get-transcript',
 
@@ -1992,6 +1995,16 @@ export interface ComputerCloseSessionResult {
   success: boolean
   error?: string
 }
+
+/**
+ * Événement poussé du main vers le renderer quand le serveur de contrôle CUA
+ * (agent OMP) modifie la session. `backend` est le backend réellement résolu
+ * (jamais 'auto'). `exec` est informatif : le renderer peut l'ignorer.
+ */
+export type ComputerAgentEvent =
+  | { type: 'opened'; sessionId: string; viewerUrl: string; backend: ComputerBackend }
+  | { type: 'closed' }
+  | { type: 'exec'; command: string }
 
 // ─── Jev (TypeSafe) — jugements Computer Use ────────────────────────────────
 
