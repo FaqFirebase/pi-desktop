@@ -99,7 +99,13 @@ export const IPC_CHANNELS = {
   WORKFLOW_CONTROL: 'workflow:control',
   WORKFLOW_SET_PERSISTENCE: 'workflow:set-persistence',
 
-  // Subagent panel
+  // Computer Panel (Cua Integration)
+  COMPUTER_OPEN_SESSION: 'computer:open-session',
+  COMPUTER_GET_VIEWER: 'computer:get-viewer',
+  COMPUTER_CLOSE_SESSION: 'computer:close-session',
+  // Push main → renderer : un agent externe (serveur de contrôle CUA) a ouvert
+  // ou fermé la session ; le panneau doit se synchroniser avec l'état du main.
+  COMPUTER_AGENT_EVENT: 'computer:agent-event',
   SUBAGENT_LIST: 'subagent:list',
   SUBAGENT_GET_TRANSCRIPT: 'subagent:get-transcript',
 
@@ -1390,6 +1396,12 @@ export interface AppSettings {
   // 'gpu'. It picks which precision Settings downloads. Unknown values reset
   // to 'auto' on load.
   voiceDevice: VoiceDevice
+  // CUA.ai Spaces host: SSH target (user omitted, always `cua`) of the VM that
+  // runs the Cua CLI and Docker, used by the Computer panel.
+  cuaHost: string
+  // Fixed local port of the SSH tunnel that exposes the Cua viewer loopback URL
+  // to the webview. The webview security whitelist follows this value.
+  cuaTunnelPort: number
 }
 
 // ─── Voice Dictation Types ──────────────────────────────────────────────────
@@ -1947,4 +1959,74 @@ export interface TimelineEvent {
   detail?: string
   status?: 'running' | 'success' | 'error' | 'cancelled'
   metadata?: Record<string, unknown>
+}
+
+// ─── Computer Panel (Cua Integration) ──────────────────────────────────────
+
+/** Où une session Computer s'exécute. */
+export type ComputerBackend =
+  /** Ce PC Windows (app Cua Spaces installée, machine relay « PC-NONAME »). */
+  | 'main-os'
+  /** Le desktop de la VM CUA elle-même (hôte de Spaces Proxmox). */
+  | 'proxmox-vm'
+  /** Conteneur trycua/linux lancé par le Docker de ce PC. */
+  | 'docker-host'
+  /** Conteneur Linux créé par le Cua CLI sur la VM CUA (comportement par défaut). */
+  | 'docker-vm'
+  /** Laisser Jev (TypeSafe) juger le backend adapté à la demande. */
+  | 'auto'
+
+/** Requête de COMPUTER_OPEN_SESSION. */
+export interface ComputerOpenSessionRequest {
+  backend: ComputerBackend
+}
+
+/** Résultat de l'ouverture d'une session Cua */
+export interface ComputerOpenSessionResult {
+  success: boolean
+  sessionId?: string
+  viewerUrl?: string
+  /** Le backend réellement utilisé (résolu quand la demande était 'auto'). */
+  backend?: ComputerBackend
+  error?: string
+}
+
+/** Résultat de la récupération de l'URL du viewer */
+export interface ComputerGetViewerResult {
+  success: boolean
+  viewerUrl?: string
+  error?: string
+}
+
+/** Résultat de la fermeture d'une session Cua */
+export interface ComputerCloseSessionResult {
+  success: boolean
+  error?: string
+}
+
+/**
+ * Événement poussé du main vers le renderer quand le serveur de contrôle CUA
+ * (agent OMP) modifie la session. `backend` est le backend réellement résolu
+ * (jamais 'auto'). `exec` est informatif : le renderer peut l'ignorer.
+ */
+export type ComputerAgentEvent =
+  | { type: 'opened'; sessionId: string; viewerUrl: string; backend: ComputerBackend }
+  | { type: 'closed' }
+  | { type: 'exec'; command: string }
+
+// ─── Jev (TypeSafe) — jugements Computer Use ────────────────────────────────
+
+/** Canal IPC du jugement Jev pour les demandes CUA (hors IPC_CHANNELS, propriété du module jev). */
+export const JEV_JUDGE_CUA_CHANNEL = 'jev:judge-cua'
+
+/** Jugement typé Jev pour une demande utilisateur impliquant CUA. */
+export interface CuaJudgment {
+  /** La demande a-t-elle besoin d'un ordinateur (GUI) plutôt que du seul navigateur ? */
+  needsComputer: boolean
+  /** Backend recommandé. */
+  backend: ComputerBackend
+  /** Confiance 0..1 du jugement. */
+  confidence: number
+  /** Phrase courte expliquant le choix (peut être absente). */
+  reason?: string
 }

@@ -111,6 +111,9 @@ export function SettingsPanel(): React.JSX.Element {
   const [detectedAgentInstalls, setDetectedAgentInstalls] = useState<AgentInstallation[]>([])
   const [scanningAgentInstalls, setScanningAgentInstalls] = useState(false)
   const [theme, setTheme] = useState(draft0.theme ?? settings?.theme ?? DEFAULT_SETTINGS.theme)
+  // CUA.ai Spaces host (Computer panel): SSH host + local tunnel port.
+  const [cuaHost, setCuaHost] = useState(draft0.cuaHost ?? settings?.cuaHost ?? DEFAULT_SETTINGS.cuaHost)
+  const [cuaTunnelPort, setCuaTunnelPort] = useState(draft0.cuaTunnelPort ?? settings?.cuaTunnelPort ?? DEFAULT_SETTINGS.cuaTunnelPort)
   const [systemLightTheme, setSystemLightTheme] = useState(
     draft0.systemLightTheme ?? settings?.systemLightTheme ?? DEFAULT_SETTINGS.systemLightTheme,
   )
@@ -584,6 +587,10 @@ export function SettingsPanel(): React.JSX.Element {
       resumeLastSession,
       openToHomeOnLaunch,
       runOnStartup,
+      cuaHost: cuaHost.trim() || DEFAULT_SETTINGS.cuaHost,
+      cuaTunnelPort: Number.isInteger(cuaTunnelPort) && cuaTunnelPort >= 1024 && cuaTunnelPort <= 65535
+        ? cuaTunnelPort
+        : DEFAULT_SETTINGS.cuaTunnelPort,
       minimizeToTrayOnClose,
       permissionMode,
       language,
@@ -662,6 +669,8 @@ export function SettingsPanel(): React.JSX.Element {
       permissionMode: DEFAULT_SETTINGS.permissionMode,
       language: DEFAULT_SETTINGS.language,
       shortcuts: DEFAULT_SETTINGS.shortcuts,
+      cuaHost: DEFAULT_SETTINGS.cuaHost,
+      cuaTunnelPort: DEFAULT_SETTINGS.cuaTunnelPort,
     }
 
     setPiPath(defaults.piExecutablePath!)
@@ -686,6 +695,8 @@ export function SettingsPanel(): React.JSX.Element {
     setMinimizeToTrayOnClose(defaults.minimizeToTrayOnClose!)
     setPermissionMode(defaults.permissionMode!)
     setLanguage(defaults.language!)
+    setCuaHost(defaults.cuaHost!)
+    setCuaTunnelPort(defaults.cuaTunnelPort!)
     setScopeRules({ global: EMPTY_SCOPE_RULES, workspace: EMPTY_SCOPE_RULES })
     setRulesActionError(null)
     useAppStore.getState().setPermissionRulesDraft('global', null)
@@ -1097,6 +1108,32 @@ export function SettingsPanel(): React.JSX.Element {
             description={t('settings.suggestNextSteps.description', { agent: runningEngineLabel })}
           >
             <Toggle checked={suggestNextSteps} onChange={(v) => { setSuggestNextSteps(v); setSettingsDraft({ suggestNextSteps: v }) }} />
+          </SettingsRow>
+
+          <SettingsRow label={t('settings.cuaHost.label')} description={t('settings.cuaHost.description')} stack>
+            <input
+              type="text"
+              value={cuaHost}
+              onChange={(e) => { setCuaHost(e.target.value); setSettingsDraft({ cuaHost: e.target.value }) }}
+              placeholder={DEFAULT_SETTINGS.cuaHost}
+              className="w-64 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary focus:border-focus focus:outline-none"
+            />
+          </SettingsRow>
+
+          <SettingsRow label={t('settings.cuaTunnelPort.label')} description={t('settings.cuaTunnelPort.description')}>
+            <input
+              type="number"
+              min={1024}
+              max={65535}
+              value={cuaTunnelPort}
+              onChange={(e) => {
+                const v = Number.parseInt(e.target.value, 10)
+                const next = Number.isInteger(v) ? v : (DEFAULT_SETTINGS.cuaTunnelPort as number)
+                setCuaTunnelPort(next)
+                setSettingsDraft({ cuaTunnelPort: next })
+              }}
+              className="w-28 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary focus:border-focus focus:outline-none"
+            />
           </SettingsRow>
 
           <SettingsRow

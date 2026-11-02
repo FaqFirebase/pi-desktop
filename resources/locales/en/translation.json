@@ -168,6 +168,7 @@
       "viewSource": "View source"
     },
     "toolbar": {
+      "computer": "Computer",
       "diffViewer": "Diff viewer",
       "fileTree": "File tree",
       "reviewPanel": "Review panel",
@@ -1304,6 +1305,14 @@
       "editButton": "Edit theme",
       "label": "Custom Theme"
     },
+    "cuaHost": {
+      "description": "IP or hostname of the machine running the Cua CLI and Docker (SSH user `cua`, key ~/.ssh/id_pve). Used by the Computer panel.",
+      "label": "CUA Host"
+    },
+    "cuaTunnelPort": {
+      "description": "Local port of the SSH tunnel that exposes the Cua viewer to the Computer panel. Restart the app after changing it.",
+      "label": "CUA Tunnel Port"
+    },
     "darkTheme": {
       "description": "Used when the system is in dark mode",
       "label": "Dark Theme"
@@ -2139,5 +2148,21 @@
     "removeWorkspaceAriaLabel": "Remove {{name}}",
     "sessions": "Sessions",
     "tools": "Tools"
+  },
+  "computer": {
+    "backendAuto": "Auto (Jev)",
+    "backendAria": "Session backend",
+    "backendDockerHost": "Docker (this PC)",
+    "backendDockerVm": "Docker (CUA VM)",
+    "backendMainOs": "Main OS",
+    "backendProxmoxVm": "Proxmox VM",
+    "close": "Close panel",
+    "error": "Unable to load computer viewer",
+    "noSession": "No active computer session",
+    "noSessionHint": "Create a Cua Space to start using the computer.",
+    "openExternal": "Open in browser",
+    "refresh": "Refresh viewer",
+    "retry": "Retry",
+    "title": "Computer"
   }
 }

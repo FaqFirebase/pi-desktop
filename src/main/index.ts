@@ -24,6 +24,9 @@ import { getVoiceModelsDir } from './voice-model-store'
 import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
 import { getSettingsPath } from './ipc/settings'
 import { disableCwdExecutableSearch } from './windows-exe-search'
+import { setupCuaWebviewSecurity } from './cua-webview-security'
+import { startCuaControlServer, stopCuaControlServer } from './cua-control-server'
+import { shutdownCuaSession } from './ipc/computer-handlers'
 
 // First, before anything spawns: Windows must never run a program from the
 // working directory (usually the workspace) when it is started by bare name.
@@ -119,18 +122,6 @@ async function reloadMainWindowWithGuard(ignoreCache: boolean): Promise<void> {
   else window.webContents.reload()
 }
 
-// Single-instance lock: with "minimize to tray" the window can be hidden while
-// the app keeps running, so a relaunch (taskbar, launcher, `pi-desktop <path>`)
-// must focus the existing instance instead of spawning a second one. The second
-// process exits immediately; the first receives 'second-instance'.
-if (!app.requestSingleInstanceLock()) {
-  app.quit()
-} else {
-  app.on('second-instance', () => {
-    showMainWindow()
-  })
-}
-
 // PI_DESKTOP_USER_DATA_DIR set by the launching process overrides the
 // canonical appData-derived directory: that exact directory holds all GUI
 // data and legacy migration is skipped, keeping it fully isolated.
@@ -139,6 +130,24 @@ const userDataDir = externalUserDataDir ?? getCanonicalUserDataDir(app.getPath('
 mkdirSync(userDataDir, { recursive: true })
 app.setPath('userData', userDataDir)
 configureGuiDataDir(userDataDir)
+
+// Single-instance lock: with "minimize to tray" the window can be hidden while
+// the app keeps running, so a relaunch (taskbar, launcher, `pi-desktop <path>`)
+// must focus the existing instance instead of spawning a second one. The second
+// process exits immediately; the first receives 'second-instance'. Taken AFTER
+// userData is set so an isolated PI_DESKTOP_USER_DATA_DIR gets its own lock and
+// can run beside the canonical instance (dev vs installed).
+// The loser still reaches whenReady() before quitting, so anything that
+// publishes shared state (cua-control.json) must check this flag first.
+let gotSingleInstanceLock = false
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  gotSingleInstanceLock = true
+  app.on('second-instance', () => {
+    showMainWindow()
+  })
+}
 
 // Voice dictation on the GPU needs WebGPU, which Chromium keeps off on Linux
 // unless it starts with extra switches. Set them now, before the app is ready.
@@ -291,17 +300,27 @@ function createMainWindow(): BrowserWindow {
     // of your own project); for an untrusted workspace scripts are disabled so —
     // with sandbox + webSecurity above and the partitions' network block —
     // malicious preview HTML cannot read other local files or exfiltrate data.
-    const preferences = previewGuestPreferences({
-      partition: params.partition,
-      src: params.src,
-      workspaceTrusted: isActiveWorkspaceTrusted(),
-    })
-    webPreferences.plugins = preferences.plugins
-    if (!preferences.javascript) {
-      webPreferences.javascript = false
+    if (params.partition === 'persist:cua-viewer') {
+      // The Cua viewer is a JS app served over the local tunnel: scripts on,
+      // plugins off. Its network surface is the origin whitelist in
+      // cua-webview-security, not the preview file-only rule.
+      webPreferences.plugins = false
+    } else {
+      const preferences = previewGuestPreferences({
+        partition: params.partition,
+        src: params.src,
+        workspaceTrusted: isActiveWorkspaceTrusted(),
+      })
+      webPreferences.plugins = preferences.plugins
+      if (!preferences.javascript) {
+        webPreferences.javascript = false
+      }
     }
 
-    if (!params.src.startsWith('file://')) {
+    // The CUA viewer is the one non-file guest: its partition is locked to the
+    // local SSH-tunnel origins by setupCuaWebviewSecurity (whitelist + permission
+    // deny), so the file:// rule for previews does not apply to it.
+    if (!params.src.startsWith('file://') && params.partition !== 'persist:cua-viewer') {
       event.preventDefault()
     }
   })
@@ -477,6 +496,19 @@ app.whenReady().then(async () => {
   // Lock both preview partitions to local files before any preview can load.
   hardenPreviewSession()
 
+  // Configure la sécurité pour le webview CUA (partition isolée, validation URLs)
+  setupCuaWebviewSecurity()
+
+  // Serveur de contrôle CUA : l'agent OMP (extension pi-cua-control) pilote le
+  // panneau Computer via 127.0.0.1 + jeton ; découverte par <userData>/cua-control.json.
+  // Jamais côté perdant du verrou : il atteindrait whenReady puis quitterait en
+  // laissant un cua-control.json mort derrière lui.
+  if (gotSingleInstanceLock) {
+    void startCuaControlServer().catch((err) => {
+      appLog.error('cua', 'Control server failed to start', err)
+    })
+  }
+
   // Serve downloaded speech-model files to the renderer. The handler streams
   // files only from the single speech-models directory and rejects traversal.
   protocol.handle(VOICE_PROTOCOL_SCHEME, (request) =>
@@ -574,6 +606,10 @@ app.on('before-quit', (event) => {
 app.on('will-quit', (event) => {
   if (!shutdownComplete) {
     event.preventDefault()
+    // Coupe le tunnel SSH CUA avant le reste du teardown.
+    shutdownCuaSession()
+    // Retire cua-control.json et ferme le serveur de contrôle de l'agent.
+    stopCuaControlServer()
     // The executor turns a synchronous stopAll() throw into a rejection, so a
     // failed teardown is logged and the quit still resumes instead of hanging.
     shutdownPending ??= new Promise<void>((resolve) => resolve(workspaceManager?.stopAll()))

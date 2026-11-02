@@ -88,12 +88,128 @@ import type {
   ModelsFileInfo,
   ModelInfo,
   PiPromptResultEvent,
+  ComputerBackend,
+  ComputerAgentEvent,
 } from '../../shared/ipc-contracts'
 import {
   promptRanWithoutAgent, promptRefusal, promptResultRefusal, reportsNoAgentRun, reportsPromptOutcome,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
+
+// ─── Computer Panel (Cua Integration) ────────────────────────────────────────
+
+/** Mode d'ouverture du panneau Computer */
+export type ComputerPanelMode = 'manual' | 'on-demand' | 'auto'
+
+/** État du panneau Computer */
+export interface ComputerPanelState {
+  /** URL du viewer Cua à charger dans le webview */
+  computerViewerUrl: string | null
+  /** ID de la session Cua active */
+  computerSessionId: string | null
+  /** Erreur lors du chargement du viewer */
+  computerError: string | null
+  /** Panneau Computer ouvert */
+  computerPanelOpen: boolean
+  /** Mode d'ouverture du panneau */
+  computerMode: ComputerPanelMode
+  /** Backend sélectionné pour les sessions ('auto' = jugé par Jev à l'ouverture) */
+  computerBackend: ComputerBackend
+  /** Backend réellement résolu pour la session en cours (affiché quand 'auto') */
+  computerSessionBackend: ComputerBackend | null
+  /** Raison du jugement Jev quand le backend choisi était 'auto' (null sinon) */
+  computerJudgmentReason: string | null
+}
+
+/** Backends concrets que Jev peut recommander ('auto' est le choix, pas un résultat). */
+function isConcreteComputerBackend(value: ComputerBackend): value is Exclude<ComputerBackend, 'auto'> {
+  return value !== 'auto'
+}
+
+/**
+ * Résout le backend 'auto' en interrogeant Jev sur le dernier prompt
+ * utilisateur. Toute défaillance du pont (handler absent, rejet, réponse
+ * hors liste) retombe sur le backend historique 'docker-vm'. La raison du
+ * jugement est conservée pour affichage : sans elle, jugement réel et
+ * fallback seraient indiscernables.
+ */
+interface AutoResolution {
+  backend: Exclude<ComputerBackend, 'auto'>
+  reason: string | null
+}
+
+async function resolveAutoComputerBackend(messages: DisplayMessage[]): Promise<AutoResolution> {
+  const lastPrompt = [...messages].reverse().find((message) => message.role === 'user')?.content ?? ''
+  if (!lastPrompt.trim()) return { backend: 'docker-vm', reason: 'aucun prompt à juger' }
+  try {
+    const judgment = await window.piDesktop.jev.judgeCuaUse(lastPrompt.slice(0, 500))
+    return isConcreteComputerBackend(judgment.backend)
+      ? { backend: judgment.backend, reason: judgment.reason ?? null }
+      : { backend: 'docker-vm', reason: 'jev: backend hors liste' }
+  } catch {
+    return { backend: 'docker-vm', reason: 'jev: pont indisponible' }
+  }
+}
+
+// Sérialise les opérations de session Computer (ouverture/fermeture/rafraîchissement/
+// changement de backend) : un sélecteur <select> émet un onChange par flèche clavier,
+// et deux ouvertures concurrentes laisseraient chacune un space/conteneur orphelin.
+let computerOpChain: Promise<unknown> = Promise.resolve()
+function withComputerLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = computerOpChain.then(fn, fn)
+  computerOpChain = run.then(
+    () => undefined,
+    () => undefined
+  )
+  return run
+}
+
+/**
+ * Cœur non verrouillé de l'ouverture : ouvre une session sur le backend
+ * sélectionné ('auto' = jugé par Jev sur le dernier prompt) et met l'état du
+ * panneau. Appelé par openComputerPanel et, en réentrance directe, par
+ * setComputerBackend — jamais via withComputerLock, qui deadloquerait.
+ */
+async function runComputerOpen(
+  set: (partial: Partial<AppState & AppActions>) => void,
+  get: () => AppState & AppActions
+): Promise<void> {
+  try {
+    // Demander au main process de créer/obtenir une session Cua sur le
+    // backend sélectionné ; 'auto' est jugé par Jev sur le dernier prompt.
+    const selected = get().computerBackend
+    const resolved = selected === 'auto'
+      ? await resolveAutoComputerBackend(get().messages)
+      : { backend: selected as Exclude<ComputerBackend, 'auto'>, reason: null }
+    const result = await window.piDesktop.computer.openSession(resolved.backend)
+    if (result.success && result.viewerUrl) {
+      set({
+        computerPanelOpen: true,
+        computerViewerUrl: result.viewerUrl,
+        computerSessionId: result.sessionId ?? null,
+        computerSessionBackend: result.backend ?? resolved.backend,
+        computerJudgmentReason: selected === 'auto' ? resolved.reason : null,
+        computerError: null,
+      })
+    } else {
+      set({
+        computerPanelOpen: true,
+        computerSessionBackend: null,
+        computerJudgmentReason: selected === 'auto' ? resolved.reason : null,
+        computerError: result.error ?? 'Failed to open Cua session',
+      })
+    }
+  } catch (err) {
+    set({
+      computerPanelOpen: true,
+      computerSessionBackend: null,
+      computerJudgmentReason: null,
+      computerError: err instanceof Error ? err.message : 'Unknown error',
+    })
+  }
+}
+
 
 // ─── Preview Target ──────────────────────────────────────────────────────────
 
@@ -489,6 +605,16 @@ interface AppState {
 
   // Cross-session lineage tree
   lineage: LineageNode[]
+
+  // Computer Panel (Cua Integration)
+  computerViewerUrl: string | null
+  computerSessionId: string | null
+  computerError: string | null
+  computerPanelOpen: boolean
+  computerMode: ComputerPanelMode
+  computerBackend: ComputerBackend
+  computerSessionBackend: ComputerBackend | null
+  computerJudgmentReason: string | null
 }
 
 interface AppActions {
@@ -714,6 +840,13 @@ interface AppActions {
 
   // Lineage
   loadLineage: () => Promise<void>
+
+  // Computer Panel (Cua Integration)
+  openComputerPanel: () => Promise<void>
+  closeComputerPanel: () => void
+  refreshComputerViewer: () => Promise<void>
+  setComputerMode: (mode: ComputerPanelMode) => void
+  setComputerBackend: (backend: ComputerBackend) => Promise<void>
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1263,6 +1396,16 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   updateDismissed: false,
 
   lineage: [],
+
+  // Computer Panel (Cua Integration)
+  computerViewerUrl: null,
+  computerSessionId: null,
+  computerError: null,
+  computerPanelOpen: false,
+  computerMode: 'manual',
+  computerBackend: 'docker-vm',
+  computerSessionBackend: null,
+  computerJudgmentReason: null,
 
   // ─── Pi Lifecycle ─────────────────────────────────────────────────────
 
@@ -3726,6 +3869,78 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       set({ lineage: [] })
     }
   },
+
+  // ─── Computer Panel (Cua Integration) ─────────────────────────────────
+
+  openComputerPanel: () => withComputerLock(() => runComputerOpen(set, get)),
+
+  closeComputerPanel: () => {
+    set({ computerPanelOpen: false })
+    // Fermer proprement la session Cua (tunnel + space/conteneur) derrière
+    // nous, une fois les opérations en vol terminées (file du verrou).
+    void withComputerLock(async () => {
+      const { computerSessionId } = get()
+      if (computerSessionId) {
+        try {
+          await window.piDesktop.computer.closeSession(computerSessionId)
+        } catch {
+          // Le main process nettoie de son côté ; on vide l'état quand même.
+        }
+        set({ computerViewerUrl: null, computerSessionId: null, computerSessionBackend: null, computerJudgmentReason: null })
+      }
+      // Une ouverture en vol avant ce tour de file a pu rouvrir le panneau.
+      set({ computerPanelOpen: false })
+    })
+  },
+
+  refreshComputerViewer: () =>
+    withComputerLock(async () => {
+      const { computerSessionId } = get()
+      if (!computerSessionId) return
+
+      try {
+        const result = await window.piDesktop.computer.getSessionViewer(computerSessionId)
+        if (result.success && result.viewerUrl) {
+          set({
+            computerViewerUrl: result.viewerUrl,
+            computerError: null,
+          })
+        } else {
+          set({
+            computerError: result.error ?? 'Failed to refresh viewer',
+          })
+        }
+      } catch (err) {
+        set({
+          computerError: err instanceof Error ? err.message : 'Unknown error',
+        })
+      }
+    }),
+
+  setComputerMode: (mode: ComputerPanelMode) => {
+    set({ computerMode: mode })
+  },
+
+  setComputerBackend: (backend: ComputerBackend) =>
+    withComputerLock(async () => {
+      if (backend === get().computerBackend) return
+      set({ computerBackend: backend })
+      // Une session ouverte doit être remplacée par un backend différent : on
+      // ferme l'ancienne (le main garde le backend de la session en cours) puis
+      // on rouvre avec la nouvelle sélection.
+      const sessionId = get().computerSessionId
+      if (sessionId) {
+        try {
+          await window.piDesktop.computer.closeSession(sessionId)
+        } catch {
+          // Le main nettoie de son côté ; la réouverture ci-dessous le dira.
+        }
+        set({ computerViewerUrl: null, computerSessionId: null, computerSessionBackend: null, computerError: null })
+      }
+      if (get().computerPanelOpen) {
+        await runComputerOpen(set, get)
+      }
+    }),
 }))
 
 // Mirror editor-dirty transitions to main, which guards quit, window close,
@@ -3741,6 +3956,41 @@ useAppStore.subscribe((state, prev) => {
     state.editorDirty ? (state.previewTarget?.name ?? null) : null
   )
 })
+
+// Événements du serveur de contrôle CUA (agent OMP) : une session ouverte ou
+// fermée depuis l'extérieur doit synchroniser le panneau avec l'état réel du
+// main, sans repasser par le flux manuel (qui ignore ces événements). Écrire
+// l'état directement — jamais closeComputerPanel(), qui redemanderait une
+// fermeture déjà effectuée côté main. 'exec' est informatif : ignoré.
+// L'abonnement se pose au démarrage du module ; les tests qui stubbent
+// window.piDesktop sans le bloc computer sont simplement ignorés.
+function applyComputerAgentEvent(event: ComputerAgentEvent): void {
+  if (event.type === 'opened') {
+    useAppStore.setState({
+      computerPanelOpen: true,
+      computerViewerUrl: event.viewerUrl,
+      computerSessionId: event.sessionId,
+      computerSessionBackend: event.backend,
+      computerJudgmentReason: null,
+      computerError: null,
+    })
+    return
+  }
+  if (event.type === 'closed') {
+    useAppStore.setState({
+      computerPanelOpen: false,
+      computerViewerUrl: null,
+      computerSessionId: null,
+      computerSessionBackend: null,
+      computerJudgmentReason: null,
+      computerError: null,
+    })
+  }
+}
+
+if (typeof window !== 'undefined' && window.piDesktop?.computer?.onAgentEvent) {
+  window.piDesktop.computer.onAgentEvent(applyComputerAgentEvent)
+}
 
 // A turn starts the activity clock. Many paths set isStreaming (a send, the
 // engine's agent_start, an external prompt, an attach mid-turn), so a

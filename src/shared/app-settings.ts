@@ -43,5 +43,11 @@ export function normalizeStoredSettings(stored: Record<string, unknown>, languag
   }
   if (!isVoicePrecision(merged.voicePrecision)) merged.voicePrecision = DEFAULT_SETTINGS.voicePrecision
   if (!isVoiceDevice(merged.voiceDevice)) merged.voiceDevice = DEFAULT_SETTINGS.voiceDevice
+  merged.cuaHost = typeof merged.cuaHost === 'string' && merged.cuaHost.trim() && !/\s/.test(merged.cuaHost)
+    ? merged.cuaHost.trim()
+    : DEFAULT_SETTINGS.cuaHost
+  if (!Number.isInteger(merged.cuaTunnelPort) || merged.cuaTunnelPort < 1024 || merged.cuaTunnelPort > 65535) {
+    merged.cuaTunnelPort = DEFAULT_SETTINGS.cuaTunnelPort
+  }
   return merged
 }

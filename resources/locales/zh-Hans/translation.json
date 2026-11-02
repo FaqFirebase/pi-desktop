@@ -163,6 +163,7 @@
       "viewSource": "查看源码"
     },
     "toolbar": {
+      "computer": "计算机",
       "diffViewer": "差异查看器",
       "fileTree": "文件树",
       "reviewPanel": "审查面板",
@@ -1277,6 +1278,14 @@
       "editButton": "编辑主题",
       "label": "自定义主题"
     },
+    "cuaHost": {
+      "description": "运行 Cua CLI 和 Docker 的机器的 IP 或主机名（SSH 用户 `cua`，密钥 ~/.ssh/id_pve）。由 Computer 面板使用。",
+      "label": "CUA 主机"
+    },
+    "cuaTunnelPort": {
+      "description": "将 Cua 查看器暴露给 Computer 面板的 SSH 隧道本地端口。修改后需重启应用。",
+      "label": "CUA 隧道端口"
+    },
     "darkTheme": {
       "description": "系统处于深色模式时使用",
       "label": "深色主题"
@@ -2077,5 +2086,21 @@
     "removeWorkspaceAriaLabel": "移除 {{name}}",
     "sessions": "会话",
     "tools": "工具"
+  },
+  "computer": {
+    "backendAuto": "自动（Jev）",
+    "backendAria": "会话后端",
+    "backendDockerHost": "Docker（本机）",
+    "backendDockerVm": "Docker（CUA 虚拟机）",
+    "backendMainOs": "主系统",
+    "backendProxmoxVm": "Proxmox 虚拟机",
+    "close": "关闭面板",
+    "error": "无法加载计算机查看器",
+    "noSession": "没有活动的计算机会话",
+    "noSessionHint": "创建一个 Cua Space 以开始使用计算机。",
+    "openExternal": "在浏览器中打开",
+    "refresh": "刷新查看器",
+    "retry": "重试",
+    "title": "计算机"
   }
 }

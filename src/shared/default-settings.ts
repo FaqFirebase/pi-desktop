@@ -61,4 +61,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   voiceModel: null,
   voicePrecision: 'int8',
   voiceDevice: 'auto',
+  cuaHost: '192.168.1.44',
+  cuaTunnelPort: 38100,
 }
