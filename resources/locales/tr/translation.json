@@ -1816,7 +1816,7 @@
     "clearTitle": "Temizle",
     "hideTitle": "Terminali gizle (kabuk çalışmaya devam eder)",
     "maximizeLabel": "Terminali büyüt",
-    "restartHint": "Yeni bir kabuk başlatmak için herhangi bir tuşa bas",
+    "restartHint": "Yeni bir kabuk başlatmak için herhangi bir tuşa basın",
     "restoreLabel": "Terminali geri yükle",
     "title": "Terminal"
   },
