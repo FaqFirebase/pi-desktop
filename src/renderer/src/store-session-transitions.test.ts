@@ -162,6 +162,13 @@ const piDesktopStub = {
       return { status: 'running' as const, pid: 1, error: null }
     },
   },
+  settings: {
+    // Echoes the patch back as the saved settings; only the recorded call matters.
+    save: async (patch: Record<string, unknown>) => {
+      calls.push(`settings.save:${JSON.stringify(patch)}`)
+      return patch
+    },
+  },
   ui: {
     respondSelect: (id: string, _value: string) => {
       calls.push(`respondSelect:${id}`)
@@ -663,6 +670,63 @@ test('cloneBranch is gated by the same warning', async () => {
 
   assert.deepEqual(calls, [], 'a declined clone must not reach Pi')
   assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+// ─── Permission mode (applied by restarting Pi) ──────────────────────────────
+
+test('a permission mode change mid-turn asks first and names the restart', async () => {
+  useAppStore.setState({ piStatus: 'running' })
+  enterStreamingState()
+
+  const pending = useAppStore.getState().setPermissionMode('trusted')
+  const request = useAppStore.getState().confirmRequest
+  assert.ok(request, 'a streaming turn must raise the dialog before Pi restarts')
+  assert.equal(request.confirmLabel, 'Change anyway')
+  assert.equal(request.cancelLabel, 'Keep working')
+  assert.match(request.message, /Changing the permission mode restarts Pi/)
+  assert.equal(request.danger, true, 'discarding a running turn must not be the default action')
+
+  useAppStore.getState().resolveConfirm(false)
+  await pending
+})
+
+test('a declined permission mode change keeps the turn, the setting, and the process', async () => {
+  useAppStore.setState({ piStatus: 'running' })
+  enterStreamingState()
+  answerConfirm(false)
+
+  await useAppStore.getState().setPermissionMode('trusted')
+
+  assert.deepEqual(calls, [], 'a declined change must neither save the mode nor restart Pi')
+  assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+test('an accepted permission mode change mid-turn saves the mode, then restarts Pi', async () => {
+  useAppStore.setState({ piStatus: 'running' })
+  enterStreamingState()
+  answerConfirm(true)
+
+  await useAppStore.getState().setPermissionMode('trusted')
+
+  assert.deepEqual(calls.slice(0, 2), ['settings.save:{"permissionMode":"trusted"}', 'pi.restart'])
+})
+
+test('a permission mode change while Pi is idle restarts without asking', async () => {
+  useAppStore.setState({ piStatus: 'running' })
+
+  await useAppStore.getState().setPermissionMode('trusted')
+
+  assert.equal(useAppStore.getState().confirmRequest, null, 'an idle Pi must not raise a dialog')
+  assert.deepEqual(calls.slice(0, 2), ['settings.save:{"permissionMode":"trusted"}', 'pi.restart'])
+})
+
+test('a permission mode change with Pi stopped only saves the mode', async () => {
+  enterStreamingState()
+
+  await useAppStore.getState().setPermissionMode('trusted')
+
+  assert.equal(useAppStore.getState().confirmRequest, null, 'no process means no turn to discard')
+  assert.deepEqual(calls, ['settings.save:{"permissionMode":"trusted"}'])
 })
 
 // ─── Cross-workspace extension-UI prompts (queue-and-replay) ─────────────────

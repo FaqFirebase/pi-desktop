@@ -1697,6 +1697,7 @@
       "keepWorkingLabel": "让它继续工作",
       "newMessage": "Pi 在此会话中尚未完成响应。启动新会话会中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
       "okLabel": "确定",
+      "permissionModeMessage": "",
       "removeWorkspaceMessage": "从侧边栏移除“{{name}}”？其 Pi 进程会停止；磁盘上的文件不受影响。",
       "removeWorkspaceTitle": "移除工作区",
       "startAnywayLabel": "仍然启动",

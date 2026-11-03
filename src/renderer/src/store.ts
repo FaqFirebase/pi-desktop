@@ -173,7 +173,7 @@ export interface ConfirmRequest extends ConfirmOptions {
 }
 
 /** The actions that abandon the live turn, either by replacing the session or by leaving it. */
-export type SessionChangeAction = 'switch' | 'new' | 'fork' | 'clone' | 'workspace' | 'changeFolder'
+export type SessionChangeAction = 'switch' | 'new' | 'fork' | 'clone' | 'workspace' | 'changeFolder' | 'permissionMode'
 
 /**
  * The confirm dialog's message + confirm label for each session-change action.
@@ -202,6 +202,9 @@ function sessionChangePrompt(action: SessionChangeAction): { message: string; co
     // directory is bound at spawn), so the turn does not survive in the background.
     case 'changeFolder':
       return { message: t('store.confirm.changeFolderMessage'), confirmLabel: t('store.confirm.changeAnywayLabel') }
+    // The same restart as a folder change: the mode is bound at spawn.
+    case 'permissionMode':
+      return { message: t('store.confirm.permissionModeMessage'), confirmLabel: t('store.confirm.changeAnywayLabel') }
   }
 }
 
@@ -2450,6 +2453,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     set({ settingsDraft: {}, permissionRulesDrafts: { global: null, workspace: null } }),
 
   setPermissionMode: async (mode) => {
+    // Pi reads the mode only at spawn (its tool list and the permissions
+    // extension's environment), so applying it restarts Pi, which discards a
+    // turn in progress. Ask first, as changing the project folder does.
+    if (get().piStatus === 'running' && !(await get().confirmSessionChange('permissionMode'))) return
     const updated = await window.piDesktop.settings.save({ permissionMode: mode })
     set({ settings: updated })
     if (get().piStatus === 'running') {
