@@ -25,6 +25,7 @@ interface TrayDeps {
   hasSeenHint: boolean
   // Persist that the hint has now been shown (fire-and-forget).
   onHintShown: () => void
+  toggleQuickChat?: () => void
 }
 
 let deps: TrayDeps | null = null
@@ -56,13 +57,18 @@ function showWindow(): void {
 // Tooltip is the product name (not translated); the menu follows the language.
 function applyTrayText(target: Tray): void {
   target.setToolTip(app.getName())
-  target.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: t('tray.show'), click: () => showWindow() },
-      { type: 'separator' },
-      { label: t('app.quit'), click: () => deps?.quit() },
-    ]),
+  const items: Electron.MenuItemConstructorOptions[] = [
+    { label: t('tray.show'), click: () => showWindow() },
+  ]
+  const toggleQuickChat = deps?.toggleQuickChat
+  if (toggleQuickChat) {
+    items.push({ label: t('quickChat.title'), click: () => toggleQuickChat() })
+  }
+  items.push(
+    { type: 'separator' },
+    { label: t('app.quit'), click: () => deps?.quit() },
   )
+  target.setContextMenu(Menu.buildFromTemplate(items))
 }
 
 /** Create the tray icon. Returns whether it was created (false on failure). */

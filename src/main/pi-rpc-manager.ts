@@ -1116,11 +1116,13 @@ export class PiRpcManager extends EventEmitter {
    * Respond to an extension UI request.
    */
   sendExtensionUiResponse(id: string, response: Record<string, unknown>): void {
+    if (this.status !== 'running') return
     this.sendCommandFireAndForget({
       type: 'extension_ui_response',
       id,
       ...response,
     })
+    if (this.status === 'running') this.emit('extension-ui-response', id)
   }
 
   private setupStreams(): void {

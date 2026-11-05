@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useMemo, useState, useRef } from 'react'
+import { memo, useContext, useLayoutEffect, useMemo, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore, type DisplayMessage } from '../store'
 import { modelDisplayName } from '../../../shared/models-config'
@@ -20,6 +20,7 @@ import { getCodeEditorLanguageName } from './code-editor-language'
 import { highlightCodeToHtml } from './chat-code-highlight'
 import { LineNumberedCode } from './line-numbered-code'
 import { MarkdownRenderer } from './markdown-renderer'
+import { ReadOnlyChatContext } from './read-only-chat-context'
 import { CopyButton } from './copy-button'
 import { useContextMenu, buildMessageContextMenu } from './context-menu'
 import { RelativeTime } from '../utils/relative-time'
@@ -58,6 +59,7 @@ function MessageBubbleImpl({
   hideModelHeader?: boolean
 }): React.JSX.Element {
   const { t } = useTranslation()
+  const view = useContext(ReadOnlyChatContext)
   const [copied, setCopied] = useState(false)
   const [showThinking, setShowThinking] = useState(message.initiallyShowThinking ?? false)
   const [isEditing, setIsEditing] = useState(false)
@@ -117,9 +119,9 @@ function MessageBubbleImpl({
   // Context menu for message-specific actions
   const { show: showContextMenu, ContextMenuComponent: MessageContextMenu } = useContextMenu()
 
-  const startNoteFromText = useAppStore((state) => state.startNoteFromText)
-
+  const startNoteFromText = useAppStore((state) => (view ? undefined : state.startNoteFromText))
   const handleMessageContextMenu = (e: React.MouseEvent) => {
+    if (view || !startNoteFromText) return
     showContextMenu(e, buildMessageContextMenu(message.content, startNoteFromText))
   }
 
@@ -137,9 +139,9 @@ function MessageBubbleImpl({
         onSaveEdit={handleSaveEdit}
         onCancelEdit={handleCancelEdit}
         onBranch={handleBranch}
-        onRetry={onRetry}
+        onRetry={readOnly || view !== null ? undefined : onRetry}
         onExport={handleExport}
-        readOnly={readOnly}
+        readOnly={readOnly || view !== null}
       />
       </div>
       {MessageContextMenu}
@@ -159,6 +161,7 @@ function MessageBubbleImpl({
         onToggleThinking={() => setShowThinking(!showThinking)}
         onExport={handleExport}
         hideModelHeader={hideModelHeader}
+        readOnly={readOnly || view !== null}
       />
       {/* Indented past the avatar column so it reads as part of the answer. */}
       {message.stopped && <StoppedNotice className="-mt-2 mb-4 pl-10" />}
@@ -329,7 +332,7 @@ function UserMessage({
               <ActionButton icon={<GitBranch size={11} />} onClick={onBranch} title={t('chat.message.branchFromHere')} />
             </>
           )}
-          {onRetry && (
+          {!readOnly && onRetry && (
             <ActionButton icon={<RotateCcw size={11} />} onClick={() => onRetry(message.id)} title={t('common.retry')} />
           )}
           {!readOnly && <ActionButton icon={<Download size={11} />} onClick={onExport} title={t('common.export')} />}
@@ -349,6 +352,7 @@ function AssistantMessage({
   onToggleThinking,
   onExport,
   hideModelHeader,
+  readOnly,
 }: {
   message: DisplayMessage
   onCopy: () => void
@@ -357,11 +361,13 @@ function AssistantMessage({
   onToggleThinking: () => void
   onExport: () => void
   hideModelHeader?: boolean
+  readOnly?: boolean
 }): React.JSX.Element {
   const { t } = useTranslation()
-  const customModels = useAppStore((state) => state.customModels)
+  const view = useContext(ReadOnlyChatContext)
+  const customModels = useAppStore((state) => (view ? null : state.customModels))
   const thinkingEnabled = useAppStore(
-    (state) => state.settingsDraft.showThinking ?? state.settings?.showThinking ?? DEFAULT_SETTINGS.showThinking
+    (state) => view?.showThinking ?? state.settingsDraft.showThinking ?? state.settings?.showThinking ?? DEFAULT_SETTINGS.showThinking
   )
 
   // With thinking off, a thinking-only turn (no text, no tool calls) would
@@ -585,7 +591,7 @@ function AssistantMessage({
                 title={copied ? t('common.copied') : t('common.copy')}
                 label={copied ? t('common.copied') : t('common.copy')}
               />
-              <ActionButton icon={<Download size={11} />} onClick={onExport} title={t('common.export')} />
+              {!readOnly && !view && <ActionButton icon={<Download size={11} />} onClick={onExport} title={t('common.export')} />}
             </div>
           )}
 
@@ -888,14 +894,16 @@ function ToolGroupBubbleImpl({
   title,
   messages,
   onRetry,
+  readOnly,
 }: {
   title: string
   messages: DisplayMessage[]
   onRetry?: (messageId: string) => void
+  readOnly?: boolean
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false)
-  const customModels = useAppStore((state) => state.customModels)
-
+  const view = useContext(ReadOnlyChatContext)
+  const customModels = useAppStore((state) => (view ? null : state.customModels))
   // If every assistant turn in the group used the same model, show one shared
   // provider · model header above the body and suppress the per-turn headers. If
   // they differ (a mid-run model switch), keep each turn's own header so the
@@ -969,8 +977,9 @@ function ToolGroupBubbleImpl({
                 <MessageBubble
                   key={m.id}
                   message={m}
-                  onRetry={onRetry}
+                  onRetry={readOnly || view !== null ? undefined : onRetry}
                   hideModelHeader={showSharedHeader}
+                  readOnly={readOnly || view !== null}
                 />
               ))}
             </div>
