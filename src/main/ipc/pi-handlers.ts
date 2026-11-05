@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { access } from 'fs/promises'
 import { isString, isObject } from './validation'
-import { validateStartOptions, applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
+import { validateStartOptions, applyModelDefaults, applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
 import { loadAppSettings } from './settings'
 import type { IpcContext } from './context'
 import { detectPiInstallations, getConfiguredEngineKind } from '../pi-rpc-manager'
@@ -27,17 +27,12 @@ export function registerPiHandlers(ctx: IpcContext): void {
       cwd = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()
     }
 
-    // Prefer explicit start options, else last model chosen in the GUI.
-    const withDefaults = {
-      ...opts,
-      cwd,
-      provider: opts.provider ?? settings.defaultProvider ?? undefined,
-      model: opts.model ?? settings.defaultModel ?? undefined,
-      defaultThinkingLevel: settings.defaultThinkingLevel ?? undefined,
-    }
     await workspaceManager.startPiForWorkspace(
       activeWs.id,
-      applyPermissionModeToStartOptions(applyResumePreference(withDefaults, settings), settings)
+      applyPermissionModeToStartOptions(
+        applyResumePreference(applyModelDefaults({ ...opts, cwd }, settings), settings),
+        settings
+      )
     )
     const pi = workspaceManager.getPiManager(activeWs.id)
     if (!pi) throw new Error(t('errors.pi.failedToCreateManager'))
@@ -71,7 +66,7 @@ export function registerPiHandlers(ctx: IpcContext): void {
     const runtimeId = workspaceManager.runtimeIdFor(pi)
     const runtime = runtimeId ? workspaceManager.getSessionRuntime(runtimeId) : null
     const startOptions = applyPermissionModeToStartOptions(
-      applyResumePreference({ cwd: activeWs.path, ...opts }, settings),
+      applyResumePreference(applyModelDefaults({ cwd: activeWs.path, ...opts }, settings), settings),
       settings
     )
     if (runtime) {

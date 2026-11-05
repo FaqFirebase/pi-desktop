@@ -26,7 +26,7 @@ import { basename, join, resolve } from 'path'
 import { existsSync } from 'fs'
 import { moveToTrash } from '../session-trash'
 import { assertTrustedSender, isObject, isString } from './validation'
-import { applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
+import { applyModelDefaults, applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
 import { loadAppSettings } from './settings'
 import type { IpcContext } from './context'
 import { t } from '../../shared/i18n'
@@ -79,13 +79,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     const settings = await loadAppSettings(workspaceManager)
     const workspace = workspaceManager.getWorkspaces().find((item) => item.id === runtime.workspaceId)
     if (!workspace) return
-    const options = {
-      cwd: workspace.path,
-      ...(sessionPath ? { sessionPath } : {}),
-      provider: settings.defaultProvider ?? undefined,
-      model: settings.defaultModel ?? undefined,
-      defaultThinkingLevel: settings.defaultThinkingLevel ?? undefined,
-    }
+    const options = applyModelDefaults({ cwd: workspace.path, ...(sessionPath ? { sessionPath } : {}) }, settings)
     await workspaceManager.startSessionRuntime(runtime.runtimeId, applyPermissionModeToStartOptions(
       sessionPath ? applyResumePreference(options, settings) : options,
       settings
