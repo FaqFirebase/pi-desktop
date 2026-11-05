@@ -1731,6 +1731,7 @@
       "keepWorkingLabel": "Keep working",
       "newMessage": "Pi has not finished responding in this session. Starting a new session stops it: whatever Pi already wrote to the session is kept, but the rest of the response — including any tool calls still running — is discarded.",
       "okLabel": "OK",
+      "permissionModeMessage": "Pi has not finished responding in this session. Changing the permission mode restarts Pi, which stops it: whatever Pi already wrote to the session is kept, but the rest of the response — including any tool calls still running — is discarded.",
       "removeWorkspaceMessage": "Remove \"{{name}}\" from the sidebar? Its Pi process stops; files on disk are not touched.",
       "removeWorkspaceTitle": "Remove workspace",
       "startAnywayLabel": "Start anyway",

@@ -1731,6 +1731,7 @@
       "keepWorkingLabel": "Çalışmaya devam et",
       "newMessage": "Pi bu oturumda yanıtını bitirmedi. Yeni oturum başlatmak yanıtı durdurur: Pi'nin oturuma şimdiye kadar yazdıkları korunur, ancak yanıtın geri kalanı — hâlâ çalışan araç çağrıları dahil — atılır.",
       "okLabel": "Tamam",
+      "permissionModeMessage": "Pi bu oturumda yanıtını bitirmedi. İzin modunu değiştirmek Pi'yi yeniden başlatır ve yanıtı durdurur: Pi'nin oturuma şimdiye kadar yazdıkları korunur, ancak yanıtın geri kalanı — hâlâ çalışan araç çağrıları dahil — atılır.",
       "removeWorkspaceMessage": "\"{{name}}\" kenar çubuğundan kaldırılsın mı? Pi süreci durur; diskteki dosyalara dokunulmaz.",
       "removeWorkspaceTitle": "Çalışma alanını kaldır",
       "startAnywayLabel": "Yine de başlat",
