@@ -75,8 +75,9 @@ export function registerPiHandlers(ctx: IpcContext): void {
       settings
     )
     if (runtime) {
-      const info = await workspaceManager.restartSessionRuntime(runtime.runtimeId, startOptions)
-      return { status: info.status, pid: info.pid, error: info.error }
+      await workspaceManager.restartSessionRuntime(runtime.runtimeId, startOptions)
+      // The full status, engine included: the renderer reads a missing engine as Pi
+      return pi.getStatus()
     }
 
     pi.stop()
