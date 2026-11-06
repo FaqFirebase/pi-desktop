@@ -1360,7 +1360,8 @@
       "pushToTalk": "语音听写：按住说话",
       "reserved": "此组合键已被原生菜单或编辑器操作占用。",
       "reset": "重置快捷键",
-      "sidebar": "侧边栏"
+      "sidebar": "侧边栏",
+      "thinkingBlocks": "思考块：全部折叠或展开"
     },
     "showThinking": {
       "description": "在回复中显示模型思考块",

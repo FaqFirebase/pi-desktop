@@ -240,6 +240,7 @@ You can change the app shortcuts in **Settings > Keyboard shortcuts**, or turn a
 | `Mod+Shift+H` | Show this session's changes in the diff; press again to Commit + Push |
 | `Mod+,` | Settings |
 | `Ctrl+Shift+P` | Insert a saved note |
+| `Mod+T` | Collapse or expand all thinking blocks |
 | `Mod+[` / `Mod+]` | Previous / next open session in the project |
 | `Mod+Shift+[` / `Mod+Shift+]` | Previous / next project |
 | `Mod+Shift+T` (hold) | Voice dictation while held |

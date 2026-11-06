@@ -1387,7 +1387,8 @@
       "pushToTalk": "Sesli dikte: konuşmak için basılı tut",
       "reserved": "Bu kombinasyon yerel bir menü veya düzenleyici eylemine ayrılmış.",
       "reset": "Kısayolları sıfırla",
-      "sidebar": "Kenar çubuğu"
+      "sidebar": "Kenar çubuğu",
+      "thinkingBlocks": "Düşünme blokları: tümünü daralt veya genişlet"
     },
     "showThinking": {
       "description": "Yanıtlarda modelin düşünme bloklarını göster",

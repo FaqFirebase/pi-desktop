@@ -1387,7 +1387,8 @@
       "pushToTalk": "Voice dictation: hold to talk",
       "reserved": "This combination is reserved for a native menu or editor action.",
       "reset": "Reset shortcuts",
-      "sidebar": "Sidebar"
+      "sidebar": "Sidebar",
+      "thinkingBlocks": "Thinking blocks: collapse or expand all"
     },
     "showThinking": {
       "description": "Display model thinking blocks in responses",

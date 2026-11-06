@@ -59,7 +59,14 @@ function MessageBubbleImpl({
 }): React.JSX.Element {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
-  const [showThinking, setShowThinking] = useState(message.initiallyShowThinking ?? false)
+  const allThinkingExpanded = useAppStore((state) => state.allThinkingExpanded)
+  const [showThinking, setShowThinking] = useState(allThinkingExpanded ?? message.initiallyShowThinking ?? false)
+  // A collapse-or-expand-all command overrides this block's own toggle once, when it arrives.
+  const [appliedThinkingCommand, setAppliedThinkingCommand] = useState(allThinkingExpanded)
+  if (allThinkingExpanded !== appliedThinkingCommand) {
+    setAppliedThinkingCommand(allThinkingExpanded)
+    if (allThinkingExpanded !== null) setShowThinking(allThinkingExpanded)
+  }
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(message.content)
 
