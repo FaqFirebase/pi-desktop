@@ -9,6 +9,17 @@ import { pathToFileURL } from 'url'
 export const RENDERER_INDEX_PATH = join(__dirname, '../renderer/index.html')
 
 /**
+ * The file URL the main window loads. Electron keeps this exact text as the
+ * frame URL; loadFile() does not (it keeps `~` raw, as in a Windows short
+ * name, where this writes %7E), and the sender check then rejects every call.
+ */
+export function rendererIndexUrl(indexPath: string): string {
+  return pathToFileURL(indexPath).href
+}
+
+export const RENDERER_INDEX_URL = rendererIndexUrl(RENDERER_INDEX_PATH)
+
+/**
  * True when `frameUrl` belongs to the app's own renderer: the dev server's exact
  * origin in development, or the packaged index file (ignoring hash/query used by
  * client-side routing) in production. Parses the URL so a look-alike host or a
@@ -31,5 +42,5 @@ export function isTrustedRendererUrl(
       return false
     }
   }
-  return parsed.protocol === 'file:' && parsed.pathname === pathToFileURL(opts.rendererIndexPath).pathname
+  return parsed.protocol === 'file:' && parsed.pathname === new URL(rendererIndexUrl(opts.rendererIndexPath)).pathname
 }
