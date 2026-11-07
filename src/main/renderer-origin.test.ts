@@ -76,7 +76,8 @@ test('native: electron reports the loaded index url as the trusted frame url', (
     const env = { ...process.env }
     delete env.ELECTRON_RUN_AS_NODE
     const electron = createRequire(import.meta.url)('electron') as string
-    const platformArgs = process.platform === 'linux' ? ['--ozone-platform=headless'] : []
+    // ci runners have no root-owned chrome-sandbox, and the probe only loads local files
+    const platformArgs = process.platform === 'linux' ? ['--ozone-platform=headless', '--no-sandbox'] : []
     const result = spawnSync(electron, [...platformArgs, probe], {
       env, encoding: 'utf8', timeout: NATIVE_PROBE_TIMEOUT_MS, killSignal: 'SIGKILL',
     })
