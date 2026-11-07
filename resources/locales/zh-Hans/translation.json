@@ -1360,11 +1360,16 @@
       "pushToTalk": "语音听写：按住说话",
       "reserved": "此组合键已被原生菜单或编辑器操作占用。",
       "reset": "重置快捷键",
-      "sidebar": "侧边栏"
+      "sidebar": "侧边栏",
+      "thinkingBlocks": "思考块：全部折叠或展开"
     },
     "showThinking": {
       "description": "在回复中显示模型思考块",
       "label": "显示思考过程"
+    },
+    "singleDollarMath": {
+      "description": "将单个美元符号之间的文本（如 $x$）显示为数学公式。开启后，$5 和 $10 这样的金额可能被误显示为公式。",
+      "label": "单美元符号公式"
     },
     "suggestNextSteps": {
       "description": "每轮结束时，{{agent}} 可以建议最多三个后续步骤，例如缺少的测试或它无法检查的工作。点击某个步骤即可将其放入消息框。保存后新开始的会话生效。",
@@ -1530,6 +1535,25 @@
     "emptyOmp": "未在 ~/.omp/agent/skills、~/.claude/skills 或项目 .omp/skills 中找到技能",
     "emptyPi": "未在 ~/.pi/agent/skills 或项目 .pi/skills 中找到技能",
     "emptyTitle": "未找到技能",
+    "groups": {
+      "actions": "分组操作",
+      "delete": "删除分组",
+      "deleteConfirmMessage": "删除分组“{{name}}”？其中的技能仍保持安装，并回到主列表。",
+      "deleteConfirmTitle": "删除分组？",
+      "emptyGroup": "暂无技能。选择一个技能，然后选择此分组。",
+      "groupLabel": "分组",
+      "moveDown": "下移",
+      "moveUp": "上移",
+      "namePlaceholder": "分组名称",
+      "newGroup": "新建分组",
+      "newGroupOption": "新建分组…",
+      "noGroup": "无分组",
+      "noMatches": "没有与搜索匹配的技能",
+      "noneAvailable": "这些技能均未为当前引擎安装。",
+      "rename": "重命名分组",
+      "searchPlaceholder": "搜索技能",
+      "tip": "将你的技能整理到分组中。"
+    },
     "providedByPlugin": "由已安装的插件提供",
     "refreshAriaLabel": "刷新技能",
     "runButton": "运行",
@@ -1674,6 +1698,7 @@
       "keepWorkingLabel": "让它继续工作",
       "newMessage": "Pi 在此会话中尚未完成响应。启动新会话会中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
       "okLabel": "确定",
+      "permissionModeMessage": "Pi 在此会话中尚未完成响应。更改权限模式会重启 Pi，从而中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
       "removeWorkspaceMessage": "从侧边栏移除“{{name}}”？其 Pi 进程会停止；磁盘上的文件不受影响。",
       "removeWorkspaceTitle": "移除工作区",
       "startAnywayLabel": "仍然启动",

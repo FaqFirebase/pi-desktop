@@ -972,9 +972,10 @@ test('push never moves the base branch a branch was started from, and publishes 
 
 test('with no recorded default branch the conventional base names are protected the same way', async () => {
   await withPublishedMain(async (repo, remote, git) => {
-    git(['remote', 'set-head', 'origin', '--delete'])
     git(['push', 'origin', 'main:master'])
     git(['fetch', 'origin'])
+    // Fetch may recreate origin/HEAD from the bare remote's default branch.
+    git(['remote', 'set-head', 'origin', '--delete'])
     const master = git(['rev-parse', 'refs/heads/master'], remote)
     git(['checkout', '--track', '-b', 'feat', 'origin/master'])
     git(['commit', '--allow-empty', '-m', 'feature work'])

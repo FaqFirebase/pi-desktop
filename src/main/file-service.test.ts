@@ -4,6 +4,8 @@ import { mkdtemp, writeFile, mkdir, readFile, symlink } from 'fs/promises'
 import { join } from 'path'
 import { execFileSync } from 'child_process'
 import { tmpdir } from 'os'
+import { once } from 'node:events'
+import type { FSWatcher } from 'chokidar'
 import {
   buildNewFileDiff,
   describeGitError,
@@ -71,7 +73,7 @@ assert.equal(
 
 // ─── startWatching ────────────────────────────────────────────────────────
 
-function waitForChange(timeoutMs: number): {
+function waitForChange(timeoutMs: number, matches: (event: FileChangeEvent) => boolean = () => true): {
   promise: Promise<FileChangeEvent[]>
   onChange: (event: FileChangeEvent) => void
 } {
@@ -82,10 +84,17 @@ function waitForChange(timeoutMs: number): {
   })
   const onChange = (event: FileChangeEvent): void => {
     events.push(event)
-    resolve(events)
+    if (matches(event)) resolve(events)
   }
   setTimeout(() => resolve(events), timeoutMs)
   return { promise, onChange }
+}
+
+async function startWatching(service: FileService, onChange: (event: FileChangeEvent) => void): Promise<void> {
+  service.startWatching(onChange)
+  // Wait for the scan, not an arbitrary delay that depends on the machine.
+  const watcher = Reflect.get(service, 'watcher') as FSWatcher
+  await once(watcher, 'ready', { signal: AbortSignal.timeout(5000) })
 }
 
 async function testWatcherEmitsOnChange(): Promise<void> {
@@ -93,9 +102,7 @@ async function testWatcherEmitsOnChange(): Promise<void> {
   const service = new FileService(dir)
   const { promise, onChange } = waitForChange(3000)
 
-  service.startWatching(onChange)
-  // Give chokidar a moment to finish its initial scan before mutating.
-  await new Promise((r) => setTimeout(r, 300))
+  await startWatching(service, onChange)
   await writeFile(join(dir, 'hello.txt'), 'hi')
 
   const events = await promise
@@ -111,8 +118,7 @@ async function testWatcherIgnoresHeavyDirs(): Promise<void> {
   const service = new FileService(dir)
   const { promise, onChange } = waitForChange(1500)
 
-  service.startWatching(onChange)
-  await new Promise((r) => setTimeout(r, 300))
+  await startWatching(service, onChange)
   await writeFile(join(dir, 'node_modules', 'ignored.js'), 'x')
 
   const events = await promise
@@ -128,8 +134,7 @@ async function testWatcherDoesNotFollowSymlinks(): Promise<void> {
   const service = new FileService(dir)
   const { promise, onChange } = waitForChange(1500)
 
-  service.startWatching(onChange)
-  await new Promise((r) => setTimeout(r, 300))
+  await startWatching(service, onChange)
   await writeFile(join(target, 'inside-target.txt'), 'x')
 
   const events = await promise
@@ -259,18 +264,22 @@ test('Git config files show in the tree and in search, the .git folder does not'
 async function testHomeWatcherIgnoresRootToolingOnly(): Promise<void> {
   const dir = await makeToolingWorkspace()
   const service = new FileService(dir, dir)
-  const { promise, onChange } = waitForChange(3000)
+  const nestedFile = 'Projects/app/.cargo/seen.toml'
+  const { promise, onChange } = waitForChange(3000, (event) => event.relativePath === nestedFile)
 
-  service.startWatching(onChange)
-  await new Promise((r) => setTimeout(r, 300))
+  await startWatching(service, onChange)
   await writeFile(join(dir, '.cargo', 'ignored.toml'), 'x')
+  // Exercise the real watcher/debounce window before the nested write; fake
+  // timers cannot advance operating-system file events.
   await new Promise((r) => setTimeout(r, 800))
   await writeFile(join(dir, 'Projects', 'app', '.cargo', 'seen.toml'), 'x')
 
   const events = await promise
   service.stopWatching()
 
-  assert.deepEqual(events.map((event) => event.relativePath), ['Projects/app/.cargo/seen.toml'])
+  const paths = events.map((event) => event.relativePath)
+  assert.ok(paths.includes(nestedFile), 'the nested tooling directory remains watched')
+  assert.equal(paths.some((path) => path === '.cargo' || path.startsWith('.cargo/')), false)
 }
 
 test('home watcher ignores root tooling stores but watches nested ones', testHomeWatcherIgnoresRootToolingOnly)

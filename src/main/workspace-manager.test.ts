@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdir, mkdtemp, readFile, writeFile, access } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile, access, realpath, symlink } from 'fs/promises'
 import { existsSync } from 'fs'
 import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
@@ -27,6 +27,17 @@ async function freshDataDir(): Promise<void> {
 
 async function project(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'pi-proj-'))
+}
+
+/**
+ * Point the data directory at a symlink, so Git's physical worktree paths and
+ * the app's own data paths spell the same checkout two ways.
+ */
+async function symlinkedDataDir(): Promise<void> {
+  const data = await mkdtemp(join(tmpdir(), 'pi-ws-'))
+  const alias = join(await project(), 'gui-data')
+  await symlink(data, alias, 'junction')
+  configureGuiDataDir(alias)
 }
 
 /**
@@ -294,7 +305,7 @@ test('reuses the same managed worktree for the same task', async () => {
 })
 
 test('adopts an explicitly named leftover worktree without deleting it on close', async () => {
-  await freshDataDir()
+  await symlinkedDataDir()
   const repo = await project()
   await writeFile(join(repo, 'README.md'), 'leftover worktree\n', 'utf-8')
   const git = gitRepo(repo)
@@ -310,7 +321,7 @@ test('adopts an explicitly named leftover worktree without deleting it on close'
       taskPrompt: 'Continue work in feature/existing',
     })
 
-    assert.equal(adopted.path.replaceAll('\\', '/'), leftover.replaceAll('\\', '/'))
+    assert.equal(await realpath(adopted.path), await realpath(leftover))
     assert.equal(adopted.branch, 'feature/existing')
     assert.equal(adopted.managed, false)
     const result = await mgr.removeWorkspace(adopted.id)
@@ -319,6 +330,50 @@ test('adopts an explicitly named leftover worktree without deleting it on close'
   })
 
   git(['worktree', 'remove', leftover])
+})
+
+test('a task naming an open tab\'s branch returns that tab, not a second one', async () => {
+  await symlinkedDataDir()
+  const repo = await project()
+  await writeFile(join(repo, 'README.md'), 'open tab\n', 'utf-8')
+  gitRepo(repo)
+
+  await withManager(async (mgr) => {
+    const source = await mgr.createWorkspace('Repo', repo)
+    const tab = await mgr.createWorktreeWorkspace({ sourceWorkspaceId: source.id })
+    const again = await mgr.createWorktreeWorkspace({
+      sourceWorkspaceId: source.id,
+      taskPrompt: `Continue work in ${tab.branch}`,
+    })
+
+    // Two tabs on one checkout would let closing the first remove the folder
+    // the second still works in.
+    assert.equal(again.id, tab.id)
+    assert.equal(mgr.getWorkspaces().filter((workspace) => workspace.kind === 'worktree').length, 1)
+    await mgr.removeWorkspace(tab.id)
+  })
+})
+
+test('a task run from a tab never adopts that same tab\'s checkout', async () => {
+  await symlinkedDataDir()
+  const repo = await project()
+  await writeFile(join(repo, 'README.md'), 'source tab\n', 'utf-8')
+  gitRepo(repo)
+
+  await withManager(async (mgr) => {
+    const repoWorkspace = await mgr.createWorkspace('Repo', repo)
+    const sourceTab = await mgr.createWorktreeWorkspace({ sourceWorkspaceId: repoWorkspace.id })
+    const task = await mgr.createWorktreeWorkspace({
+      sourceWorkspaceId: sourceTab.id,
+      taskPrompt: `Continue work in ${sourceTab.branch}`,
+    })
+
+    assert.notEqual(task.id, sourceTab.id)
+    assert.notEqual(await realpath(task.path), await realpath(sourceTab.path))
+    assert.equal(task.managed, true, 'the task gets a fresh checkout of its own')
+    await mgr.removeWorkspace(task.id)
+    await mgr.removeWorkspace(sourceTab.id)
+  })
 })
 
 test('never reuses the main checkout or a worktree the user made', async () => {
@@ -565,6 +620,32 @@ test('a restart before the first answer starts a new session, not a missing or o
       await mgr.startSessionRuntime(runtime.runtimeId, { continueSession: true })
       assert.equal(process.lastStartOptions?.sessionPath, unwritten)
     })
+  })
+})
+
+test('a restart mid-turn ends the turn, so the new process is never reported as working', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const workspace = await mgr.createWorkspace('Alpha', await project())
+    const { runtime, process } = await liveRuntime(mgr, workspace.id, 9300)
+    mgr.setSessionRuntimeActivity(runtime.runtimeId, 'working')
+    const seen: SessionRuntimeInfo[] = []
+    mgr.onSessionRuntime((snapshot) => seen.push(snapshot))
+    // subscribing replays the mid-turn snapshot from before the restart
+    seen.length = 0
+
+    await mgr.restartSessionRuntime(runtime.runtimeId)
+
+    assert.equal(process.starts, 1)
+    assert.equal(mgr.getSessionRuntime(runtime.runtimeId)?.activity, null)
+    const running = seen.filter((snapshot) => snapshot.status === 'running')
+    assert.ok(running.length > 0, 'the renderer is told the new process runs')
+    assert.equal(
+      running.some((snapshot) => snapshot.activity === 'working'),
+      false,
+      'the new idle process never ends the old turn, so the chat would stay working'
+    )
   })
 })
 

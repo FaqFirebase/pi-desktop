@@ -1,6 +1,8 @@
 import { test, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type {
+  AppSettings,
+  PermissionMode,
   PermissionRule,
   PiExtensionUiRequest,
   PiRpcEvent,
@@ -188,6 +190,13 @@ const piDesktopStub = {
   },
   model: {
     set: async (_provider: string, _modelId: string) => {},
+  },
+  settings: {
+    // only permissionMode is read; the cast keeps the stub stable as AppSettings grows
+    save: async (patch: Partial<AppSettings>) => {
+      calls.push(`saveSettings:${patch.permissionMode}`)
+      return patch as AppSettings
+    },
   },
   commands: {
     abort: async () => {
@@ -1659,6 +1668,53 @@ test('a stopped Pi is not restarted by a folder change', async () => {
 
   assert.equal(calls.includes(`changePath:${WORKSPACE_ONE.id}:/tmp/elsewhere`), true)
   assert.equal(calls.includes('pi.restart'), false)
+})
+
+const TRUSTED_MODE: PermissionMode = 'trusted'
+
+test('changing the permission mode warns while Pi is streaming', async () => {
+  useAppStore.setState({ piStatus: 'running' })
+  enterStreamingState()
+  answerConfirm(false)
+
+  await useAppStore.getState().setPermissionMode(TRUSTED_MODE)
+
+  assert.equal(
+    calls.some((c) => c.startsWith('saveSettings:') || c === 'pi.restart'),
+    false,
+    'the restart below would kill the in-flight turn, so declining must abort'
+  )
+  assert.equal(useAppStore.getState().isStreaming, true)
+})
+
+test('an accepted mid-turn permission mode change saves it and restarts Pi', async () => {
+  useAppStore.setState({ piStatus: 'running' })
+  enterStreamingState()
+
+  const pending = useAppStore.getState().setPermissionMode(TRUSTED_MODE)
+  const request = useAppStore.getState().confirmRequest
+  assert.ok(request, 'a streaming turn must raise the dialog')
+  assert.equal(request.confirmLabel, 'Change anyway')
+  assert.match(request.message, /Changing the permission mode restarts Pi/)
+  useAppStore.getState().resolveConfirm(true)
+  await pending
+
+  assert.deepEqual(calls, [`saveSettings:${TRUSTED_MODE}`, 'pi.restart'])
+  assert.equal(useAppStore.getState().settings?.permissionMode, TRUSTED_MODE)
+})
+
+test('changing the permission mode on an idle Pi restarts it without a dialog', async () => {
+  useAppStore.setState({ piStatus: 'running' })
+
+  const pending = useAppStore.getState().setPermissionMode(TRUSTED_MODE)
+  assert.equal(useAppStore.getState().confirmRequest, null, 'an idle Pi must not raise a dialog')
+  await pending
+
+  assert.deepEqual(
+    calls,
+    [`saveSettings:${TRUSTED_MODE}`, 'pi.restart'],
+    'Pi reads the permission mode at spawn — without a restart the old mode stays in force'
+  )
 })
 
 test('changing an inactive workspace folder touches neither dialog nor preview', async () => {

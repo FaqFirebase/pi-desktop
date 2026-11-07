@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { RPC_SKILL_PATH_PREFIX, type InstalledSkill } from '../shared/ipc-contracts'
-import { listSkills, mergeRpcSkills, parseSkillFrontmatter } from './skills-discovery'
+import { listSkills, mergeRpcSkills, parseSkillFrontmatter, readListedSkillFile } from './skills-discovery'
 
 const skillMd = (name: string): string => `---\nname: ${name}\ndescription: ${name} does things\n---\n\nBody.\n`
 
@@ -55,6 +55,38 @@ async function withSkillTree<T>(fn: (home: string, cwd: string) => Promise<T>): 
 }
 
 const names = (skills: InstalledSkill[]): string[] => skills.map((s) => s.name).sort()
+
+test('readListedSkillFile reads a listed global skill outside the project', async () => {
+  await withSkillTree(async (home, cwd) => {
+    const skills = await listSkills(cwd, 'pi', home)
+    const alpha = skills.find((s) => s.name === 'alpha')!
+    assert.equal(await readListedSkillFile(skills, alpha.path), skillMd('alpha'))
+  })
+})
+
+test('readListedSkillFile refuses any path the skill list does not hold', async () => {
+  await withSkillTree(async (home, cwd) => {
+    const skills = await listSkills(cwd, 'pi', home)
+    // A real skill file the current engine does not list (OMP-only root).
+    const hidden = join(home, '.omp', 'agent', 'skills', 'omp-global', 'SKILL.md')
+    const alpha = skills.find((s) => s.name === 'alpha')!
+    // Same file as alpha, spelled with `..`: only the exact listed path is accepted.
+    const traversal = alpha.path.replace(/SKILL\.md$/, '../alpha/SKILL.md')
+    for (const path of [hidden, traversal, join(home, '.pi', '.env'), '/etc/passwd']) {
+      await assert.rejects(() => readListedSkillFile(skills, path), /not a listed skill file/i, path)
+    }
+  })
+})
+
+test('readListedSkillFile refuses catalog skills with no file and non-markdown paths', async () => {
+  const skills: InstalledSkill[] = [
+    { name: 'plugin-only', description: '', path: `${RPC_SKILL_PATH_PREFIX}plugin-only`, source: 'package', enabled: true },
+    { name: 'odd', description: '', path: '/pkg/odd/skill.json', source: 'package', enabled: true },
+  ]
+  for (const skill of skills) {
+    await assert.rejects(() => readListedSkillFile(skills, skill.path), /not a listed skill file/i)
+  }
+})
 
 test('listSkills for Pi sees only Pi and .agents roots, recursively', async () => {
   await withSkillTree(async (home, cwd) => {

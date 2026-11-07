@@ -48,6 +48,20 @@ test('continueSession must be a boolean', () => {
   assert.throws(() => startOptions.validateStartOptions({ continueSession: 'no' }), /continueSession/)
 })
 
+test('model defaults fill only what the caller left unset', () => {
+  const settings = { ...DEFAULT_SETTINGS, defaultProvider: 'saved-provider', defaultModel: 'saved-model', defaultThinkingLevel: 'high' }
+
+  assert.deepEqual(startOptions.applyModelDefaults({ cwd: '/work' }, settings), {
+    cwd: '/work',
+    provider: 'saved-provider',
+    model: 'saved-model',
+    defaultThinkingLevel: 'high',
+  })
+  const named = startOptions.applyModelDefaults({ provider: 'named-provider', model: 'named-model' }, settings)
+  assert.equal(named.provider, 'named-provider')
+  assert.equal(named.model, 'named-model')
+})
+
 function permissionArgs(settings: Partial<AppSettings>, engine: AgentEngineKind = 'pi'): string[] {
   return startOptions.applyPermissionModeToStartOptions({ engine }, { ...DEFAULT_SETTINGS, ...settings }).args ?? []
 }

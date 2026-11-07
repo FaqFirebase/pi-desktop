@@ -5,10 +5,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { IPC_CHANNELS, type GitBranchSwitchResult, type SessionRuntimeActivity } from '../../shared/ipc-contracts'
-import { RENDERER_INDEX_PATH } from '../renderer-origin'
+import { RENDERER_INDEX_URL } from '../renderer-origin'
 import type { IpcContext } from './context'
 
 // One stub for every test: the handler module keeps the electron exports it
@@ -53,7 +52,7 @@ test('branch IPC validates inputs and workspace activity, switches explicitly, a
       },
       broadcast: (...args: unknown[]) => events.push(args),
     } as unknown as IpcContext)
-    const event = { senderFrame: { url: process.env.ELECTRON_RENDERER_URL ?? pathToFileURL(RENDERER_INDEX_PATH).href } }
+    const event = { senderFrame: { url: process.env.ELECTRON_RENDERER_URL ?? RENDERER_INDEX_URL } }
     const list = handlers.get(IPC_CHANNELS.GIT_LOCAL_BRANCHES)!
     const switchBranch = handlers.get(IPC_CHANNELS.GIT_SWITCH_BRANCH)!
     await assert.rejects(list({}), /Unauthorized/)
@@ -118,7 +117,7 @@ test('new-branch IPC creates from HEAD while an agent works, refuses bad names a
       },
       broadcast: (...args: unknown[]) => events.push(args),
     } as unknown as IpcContext)
-    const event = { senderFrame: { url: process.env.ELECTRON_RENDERER_URL ?? pathToFileURL(RENDERER_INDEX_PATH).href } }
+    const event = { senderFrame: { url: process.env.ELECTRON_RENDERER_URL ?? RENDERER_INDEX_URL } }
     const createBranch = handlers.get(IPC_CHANNELS.GIT_CREATE_BRANCH)!
     await assert.rejects(createBranch({}, 'project', 'feature'), /Unauthorized/)
     await assert.rejects(createBranch(event, 'project', 7), /must be strings/)

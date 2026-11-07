@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { once } from 'node:events'
 import {
   buildPiArgs,
   buildPiInvocation,
@@ -407,6 +408,8 @@ test('buildPiInvocation rejects arguments cmd.exe cannot carry', () => {
 // that dies ends the attempt at once through its exit event.
 
 /** Fast test timings — real values are 20s / 120s. */
+// These integration tests cross a child-process boundary; fake timers cannot
+// advance the engine's own clock.
 const TEST_WAITING_NOTICE_MS = 400
 const TEST_READY_MS = 2_000
 /** Probe id the manager correlates on; fixed by the wire protocol. */
@@ -455,6 +458,9 @@ async function withFakeEngine(
   const script = join(dir, 'fake-pi')
   writeFileSync(script, FAKE_ENGINE_SOURCE)
   chmodSync(script, 0o755)
+  const savedShell = process.env.SHELL
+  // Startup timing must not include the developer's interactive shell setup.
+  process.env.SHELL = join(dir, 'no-such-shell')
   setPiExecutableOverride(script, 'pi')
   const manager = new PiRpcManager({ waitingNoticeMs: TEST_WAITING_NOTICE_MS, readyMs: TEST_READY_MS })
   try {
@@ -462,26 +468,33 @@ async function withFakeEngine(
   } finally {
     manager.stop()
     setPiExecutableOverride(null, 'auto')
+    if (savedShell === undefined) delete process.env.SHELL
+    else process.env.SHELL = savedShell
     rmSync(dir, { recursive: true, force: true })
   }
 }
-
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** Starts Pi, checks the waiting notice between the two timings, and expects ready. */
 async function assertReadyAfterWaitingNotice(manager: PiRpcManager, env: Record<string, string>): Promise<void> {
   const phases: string[] = []
   manager.on('startup-phase', (phase: string) => phases.push(phase))
 
+  const waiting = once(manager, 'startup-phase')
   const started = manager.start({ env })
-  await delay(TEST_WAITING_NOTICE_MS + 200)
-  assert.equal(manager.getStatus().status, 'starting', 'still starting after the notice delay')
+  const [phase] = await Promise.race([
+    waiting,
+    started.then((status) => {
+      throw new Error(`Startup ended before the waiting notice: ${status.status}: ${status.error ?? ''}`)
+    }),
+  ])
+  assert.equal(phase, 'waiting-on-engine')
+  assert.equal(manager.getStatus().status, 'starting', 'the notice does not end startup')
   assert.equal(manager.getStatus().startupPhase, 'waiting-on-engine')
-  assert.deepEqual(phases, ['waiting-on-engine'], 'the phase flip is announced once')
 
   const status = await started
   assert.equal(status.status, 'running', 'a late probe response still means ready')
   assert.equal(status.startupPhase, undefined, 'phase reporting ends with startup')
+  assert.deepEqual(phases, ['waiting-on-engine'], 'the phase flip is announced once')
 }
 
 test('startup keeps waiting past the notice delay while Pi is emitting output', SKIP_ON_WINDOWS, async () => {

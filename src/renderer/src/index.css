@@ -153,6 +153,12 @@
     margin-bottom: 0;
   }
 
+  /* Wide display math scrolls inside the message instead of widening it. */
+  .markdown-body .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
   /* Live stream caret: attach to the last block so it tracks the end of the
      current chunk instead of rendering as a sibling one line below. */
   .markdown-body.streaming-md > *:last-child::after {

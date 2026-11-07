@@ -2,13 +2,16 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import ReactMarkdown, { type Components } from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import 'katex/dist/katex.min.css'
 import { useContextMenu, buildCodeBlockContextMenu, buildLinkContextMenu } from './context-menu'
 import { CopyButton } from './copy-button'
 import { LineNumberedCode } from './line-numbered-code'
 import { splitReadTruncationNote } from '../message-grouping'
 import { looksLikeFilePath, openFileFromChat } from './chat-file-link'
 import { ErrorBoundary } from './error-boundary'
+import { useAppStore } from '../store'
+import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
+import { MathSpan, markdownRehypePlugins, markdownRemarkPlugins, normalizeMathDelimiters } from '../utils/markdown-math'
 import { Code2, Eye } from 'lucide-react'
 
 interface MarkdownRendererProps {
@@ -17,6 +20,10 @@ interface MarkdownRendererProps {
 
 export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.Element {
   const { show, ContextMenuComponent } = useContextMenu()
+  const singleDollarMath = useAppStore(
+    (state) => state.settingsDraft.singleDollarMath ?? state.settings?.singleDollarMath ?? DEFAULT_SETTINGS.singleDollarMath
+  )
+  const markdown = useMemo(() => normalizeMathDelimiters(content, singleDollarMath), [content, singleDollarMath])
 
   // Component identity must survive token updates or React remounts code
   // blocks, images and their local controls on every chunk.
@@ -132,6 +139,9 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
       )
     },
 
+    // Rendered math (KaTeX HTML)
+    span: MathSpan,
+
     // Tables
     table: ({ children, ...props }) => (
       <div className="overflow-x-auto">
@@ -144,8 +154,12 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
     <ErrorBoundary
       fallback={<pre className="whitespace-pre-wrap break-words text-secondary">{content}</pre>}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {content}
+      <ReactMarkdown
+        remarkPlugins={markdownRemarkPlugins(singleDollarMath)}
+        rehypePlugins={markdownRehypePlugins}
+        components={components}
+      >
+        {markdown}
       </ReactMarkdown>
       {ContextMenuComponent}
     </ErrorBoundary>

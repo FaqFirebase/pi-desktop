@@ -82,6 +82,20 @@ export function applyResumePreference(options: PiStartOptions, settings: AppSett
   return options
 }
 
+/**
+ * Fill in the model the user last chose in the GUI wherever the caller named
+ * none. Every start needs it: an engine started without one runs its own
+ * default model, which may be one the user cannot use.
+ */
+export function applyModelDefaults(options: PiStartOptions, settings: AppSettings): PiStartOptions {
+  return {
+    ...options,
+    provider: options.provider ?? settings.defaultProvider ?? undefined,
+    model: options.model ?? settings.defaultModel ?? undefined,
+    defaultThinkingLevel: options.defaultThinkingLevel ?? settings.defaultThinkingLevel ?? undefined,
+  }
+}
+
 export function applyPermissionModeToStartOptions(
   options: PiStartOptions,
   settings: AppSettings

@@ -132,6 +132,7 @@ export function SettingsPanel(): React.JSX.Element {
   const [chatWidth, setChatWidth] = useState(draft0.chatWidth ?? settings?.chatWidth ?? DEFAULT_SETTINGS.chatWidth)
   const [showThinking, setShowThinking] = useState(draft0.showThinking ?? settings?.showThinking ?? DEFAULT_SETTINGS.showThinking)
   const [autoScroll, setAutoScroll] = useState(draft0.autoScroll ?? settings?.autoScroll ?? DEFAULT_SETTINGS.autoScroll)
+  const [singleDollarMath, setSingleDollarMath] = useState(draft0.singleDollarMath ?? settings?.singleDollarMath ?? DEFAULT_SETTINGS.singleDollarMath)
   const [desktopNotifications, setDesktopNotifications] = useState(draft0.desktopNotifications ?? settings?.desktopNotifications ?? DEFAULT_SETTINGS.desktopNotifications)
   const [suggestNextSteps, setSuggestNextSteps] = useState(draft0.suggestNextSteps ?? settings?.suggestNextSteps ?? DEFAULT_SETTINGS.suggestNextSteps)
   const [resumeLastSession, setResumeLastSession] = useState(draft0.resumeLastSession ?? settings?.resumeLastSession ?? DEFAULT_SETTINGS.resumeLastSession)
@@ -318,6 +319,7 @@ export function SettingsPanel(): React.JSX.Element {
     setChatWidth(draft.chatWidth ?? settings.chatWidth)
     setShowThinking(draft.showThinking ?? settings.showThinking)
     setAutoScroll(draft.autoScroll ?? settings.autoScroll)
+    setSingleDollarMath(draft.singleDollarMath ?? settings.singleDollarMath)
     setDesktopNotifications(draft.desktopNotifications ?? settings.desktopNotifications)
     setSuggestNextSteps(draft.suggestNextSteps ?? settings.suggestNextSteps)
     setResumeLastSession(draft.resumeLastSession ?? settings.resumeLastSession)
@@ -576,6 +578,7 @@ export function SettingsPanel(): React.JSX.Element {
       chatWidth,
       showThinking,
       autoScroll,
+      singleDollarMath,
       desktopNotifications,
       suggestNextSteps,
       resumeLastSession,
@@ -649,6 +652,7 @@ export function SettingsPanel(): React.JSX.Element {
       chatWidth: DEFAULT_SETTINGS.chatWidth,
       showThinking: DEFAULT_SETTINGS.showThinking,
       autoScroll: DEFAULT_SETTINGS.autoScroll,
+      singleDollarMath: DEFAULT_SETTINGS.singleDollarMath,
       desktopNotifications: DEFAULT_SETTINGS.desktopNotifications,
       suggestNextSteps: DEFAULT_SETTINGS.suggestNextSteps,
       resumeLastSession: DEFAULT_SETTINGS.resumeLastSession,
@@ -673,6 +677,7 @@ export function SettingsPanel(): React.JSX.Element {
     setChatWidth(defaults.chatWidth!)
     setShowThinking(defaults.showThinking!)
     setAutoScroll(defaults.autoScroll!)
+    setSingleDollarMath(defaults.singleDollarMath!)
     setDesktopNotifications(defaults.desktopNotifications!)
     setSuggestNextSteps(defaults.suggestNextSteps!)
     setResumeLastSession(defaults.resumeLastSession!)
@@ -1074,6 +1079,10 @@ export function SettingsPanel(): React.JSX.Element {
 
           <SettingsRow label={t('settings.autoScroll.label')} description={t('settings.autoScroll.description')}>
             <Toggle checked={autoScroll} onChange={(v) => { setAutoScroll(v); setSettingsDraft({ autoScroll: v }) }} />
+          </SettingsRow>
+
+          <SettingsRow label={t('settings.singleDollarMath.label')} description={t('settings.singleDollarMath.description')}>
+            <Toggle checked={singleDollarMath} onChange={(v) => { setSingleDollarMath(v); setSettingsDraft({ singleDollarMath: v }) }} />
           </SettingsRow>
 
           <SettingsRow

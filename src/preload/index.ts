@@ -285,6 +285,8 @@ interface PiDesktopAPI {
   // Skills, Commands, MCP, Tags
   skills: {
     list(): Promise<InstalledSkill[]>
+    /** A listed skill's markdown; any other path is refused. */
+    read(filePath: string): Promise<string>
   }
   piCommands: {
     list(): Promise<unknown[]>
@@ -612,6 +614,7 @@ const api: PiDesktopAPI = {
 
   skills: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.SKILLS_LIST),
+    read: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.SKILLS_READ, filePath),
   },
   piCommands: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.COMMANDS_LIST),

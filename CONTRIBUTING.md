@@ -195,6 +195,8 @@ Before submitting a pull request:
 
 6. No regressions in existing functionality
 
+Process and file-watcher tests use real operating-system events. Wait for readiness signals instead of fixed startup sleeps, and avoid Linux-only programs or `ps` fields in POSIX fixtures. Fake-engine startup tests must not source the developer's interactive shell configuration: it changes the timing being tested.
+
 ## Project structure
 
 ```
