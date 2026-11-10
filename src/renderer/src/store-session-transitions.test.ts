@@ -196,7 +196,7 @@ const piDesktopStub = {
     },
   },
   model: {
-    set: async (_provider: string, _modelId: string) => {},
+    set: async (_provider: string, _modelId: string) => ({ type: 'response', command: 'set_model', success: true }),
   },
   settings: {
     // only permissionMode is read; the cast keeps the stub stable as AppSettings grows

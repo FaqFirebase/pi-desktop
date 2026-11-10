@@ -58,16 +58,17 @@ const catalogQueries = new Map<string, Promise<ModelInfo[]>>()
  */
 export async function queryModelCatalog(
   wm: WorkspaceManager,
-  options: { engine?: AgentEngineKind; cwd?: string; provider?: string; model?: string; thinkingLevel?: string } = {},
+  options: { cwd: string; engine?: AgentEngineKind; provider?: string; model?: string; thinkingLevel?: string },
 ): Promise<ModelInfo[]> {
   const engine = options.engine ?? getConfiguredEngineKind()
   const settings = await loadAppSettings(wm)
   const provider = options.provider ?? settings.defaultProvider ?? undefined
   const model = options.model ?? settings.defaultModel ?? undefined
   const thinkingLevel = options.thinkingLevel ?? settings.defaultThinkingLevel ?? undefined
-  // An absent project means Home, never the main window's active workspace.
+  // Callers must name a selected workspace; missing context never means Home.
+  if (typeof options.cwd !== 'string' || !options.cwd) throw new Error('A model catalog workspace is required')
   const home = app.getPath('home')
-  const cwd = options.cwd ?? home
+  const cwd = options.cwd
   // The context a catalog is resolved in: a project's own config, custom
   // models and settings can change the list, so the cwd is part of the merge
   // key — two projects querying at once never share one process.

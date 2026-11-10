@@ -73,9 +73,6 @@ async function deleteSessionFile(sessionPath: string): Promise<SessionDeleteResu
 export function registerSessionHandlers(ctx: IpcContext): void {
   const { workspaceManager, getActivePi, tagManager, archivedSessions } = ctx
 
-  const startRuntime = async (runtime: SessionRuntimeInfo, _sessionPath?: string): Promise<void> =>
-    ensureSessionRuntimeStarted(workspaceManager, runtime)
-
   // ─── Session Management ─────────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.SESSION_NEW, async (): Promise<SessionRuntimeInfo> => {
@@ -84,7 +81,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     const runtime = await workspaceManager.createNewSessionRuntime(workspace.id)
     // Navigation must not wait for Pi startup. The runtime event marks it
     // starting/running and hydrates the renderer when ready.
-    void startRuntime(runtime).catch(() => undefined)
+    void ensureSessionRuntimeStarted(workspaceManager, runtime).catch(() => undefined)
     return runtime
   })
 
@@ -103,7 +100,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     // renderer's active-manager shortcut because the user can switch away
     // before Pi finishes starting. The engine's answer settles the working
     // state when the prompt runs no turn.
-    void startRuntime(runtime)
+    void ensureSessionRuntimeStarted(workspaceManager, runtime)
       .then(() => workspaceManager.promptSessionRuntime(runtime.runtimeId, prompt))
       .catch(() => workspaceManager.setSessionRuntimeActivity(runtime.runtimeId, 'failed'))
     return runtime
@@ -122,7 +119,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     if (cwd && !pathsEqual(workspace.path, cwd)) throw new Error(t('errors.session.projectMismatch'))
     const runtime = await workspaceManager.activateSession(workspace.id, sessionPath)
     if (runtime.status !== 'running' && runtime.status !== 'starting') {
-      void startRuntime(runtime, sessionPath).catch(() => undefined)
+      void ensureSessionRuntimeStarted(workspaceManager, runtime).catch(() => undefined)
     }
     return runtime
   }
@@ -164,7 +161,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     }
     const activated = await workspaceManager.activateRuntime(workspaceId, runtimeId)
     if (activated.status !== 'running' && activated.status !== 'starting') {
-      void startRuntime(activated).catch(() => undefined)
+      void ensureSessionRuntimeStarted(workspaceManager, activated).catch(() => undefined)
     }
     return activated
   })
