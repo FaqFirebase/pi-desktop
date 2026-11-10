@@ -147,6 +147,7 @@ export const IPC_CHANNELS = {
 
   // Skills
   SKILLS_LIST: 'skills:list',
+  SKILLS_READ: 'skills:read',
   COMMANDS_LIST: 'commands:list',
   MCP_SERVERS_LIST: 'mcp:servers-list',
 
@@ -1353,6 +1354,8 @@ export interface AppSettings {
   // Project paths whose session group is collapsed in the Sessions panel.
   // Persisted so the collapsed/expanded layout survives navigation and restarts.
   collapsedSessionGroups: string[]
+  // User-made groups in the Skills panel. Display only: skill files never move.
+  skillGroups: import('./skill-groups').SkillGroup[]
   /** Sidebar width in pixels; clamped by `clampSidebarWidth` on read. */
   sidebarWidth: number
   // Show the Home/launcher screen on launch (Pi starts lazily on first action)

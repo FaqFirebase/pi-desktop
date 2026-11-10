@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { isString, isObject, isOptionalBoolean, isOptionalString } from './validation'
-import { validateStartOptions, applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
+import { validateStartOptions, applyModelDefaults, applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
 import { loadAppSettings } from './settings'
 import type { AppSettings, Workspace, WorkspaceTabOptions } from '../../shared/ipc-contracts'
 import type { WorkspaceManager } from '../workspace-manager'
@@ -39,16 +39,7 @@ export function startNewTabInBackground(
   void workspaceManager.startPiForWorkspace(
     workspace.id,
     applyPermissionModeToStartOptions(
-      applyResumePreference(
-        {
-          cwd: workspace.path,
-          provider: settings.defaultProvider ?? undefined,
-          model: settings.defaultModel ?? undefined,
-          defaultThinkingLevel: settings.defaultThinkingLevel ?? undefined,
-          forkSessionPath,
-        },
-        settings
-      ),
+      applyResumePreference(applyModelDefaults({ cwd: workspace.path, forkSessionPath }, settings), settings),
       settings
     )
   ).catch((error) => appLog.warn('workspaces', 'Background tab Pi start failed', error))

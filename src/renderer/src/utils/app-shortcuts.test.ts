@@ -319,6 +319,30 @@ test('session navigation uses open sessions in the active project, supports rema
   assert.equal(selected.length, 4)
 })
 
+test('the thinking blocks shortcut opens them all first, then closes and opens them again', () => {
+  assert.equal(useAppStore.getState().allThinkingExpanded, null)
+  for (const expanded of [true, false, true]) {
+    press(keyEvent({ key: 't', code: 'KeyT' }))
+    assert.equal(useAppStore.getState().allThinkingExpanded, expanded)
+  }
+  press(keyEvent({ key: 't', code: 'KeyT', repeat: true }))
+  assert.equal(useAppStore.getState().allThinkingExpanded, true)
+})
+
+test('in the terminal, Ctrl+T goes to the shell, and Cmd+T on macOS still toggles the thinking blocks', () => {
+  setPlatform('linux')
+  let reachedXterm = false
+  press(keyEvent({ ...CTRL, key: 't', code: 'KeyT', target: new Target([TERMINAL]) }), (event) => {
+    reachedXterm = !event.defaultPrevented
+    xtermSendsKey(event)
+  })
+  assert.equal(reachedXterm, true)
+  assert.equal(useAppStore.getState().allThinkingExpanded, null)
+  setPlatform('darwin')
+  press(keyEvent({ key: 't', code: 'KeyT', target: new Target([TERMINAL]) }), xtermSendsKey)
+  assert.equal(useAppStore.getState().allThinkingExpanded, true)
+})
+
 test('push to talk holds while its keys are down and releases on its own key-up or a lost focus', () => {
   const commands: VoiceShortcutCommand[] = []
   const unsubscribe = onVoiceShortcut((command) => commands.push(command))

@@ -105,6 +105,9 @@ export async function runAppShortcut(action: CommandShortcutAction): Promise<voi
     case 'notes':
       state.setNotePickerOpen(!state.notePickerOpen)
       return
+    case 'thinkingBlocks':
+      state.toggleAllThinking()
+      return
     case 'commitPush':
       await requestCommitPushDialog()
   }

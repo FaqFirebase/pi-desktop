@@ -844,7 +844,9 @@ export class WorkspaceManager {
   async restartSessionRuntime(runtimeId: string, options: PiStartOptions = {}): Promise<SessionRuntimeInfo> {
     const entry = this.sessionRuntimes.get(runtimeId)
     if (!entry) throw new Error(t('errors.session.runtimeNotFound', { runtimeId }))
-    entry.manager.stop()
+    // A turn in progress ends with the old process. Its 'working' mark must not
+    // carry over, or the new idle process looks mid-turn until it ends a turn.
+    this.stopSessionRuntime(runtimeId)
     return this.startSessionRuntime(runtimeId, options)
   }
 

@@ -1,5 +1,6 @@
 import en from '../../../resources/locales/en/translation.json'
 import ru from '../../../resources/locales/ru/translation.json'
+import tr from '../../../resources/locales/tr/translation.json'
 import uk from '../../../resources/locales/uk/translation.json'
 import zhHans from '../../../resources/locales/zh-Hans/translation.json'
 
@@ -10,6 +11,7 @@ import zhHans from '../../../resources/locales/zh-Hans/translation.json'
 export const LANGUAGE_RESOURCES = {
   en: { translation: en },
   ru: { translation: ru },
+  tr: { translation: tr },
   uk: { translation: uk },
   'zh-Hans': { translation: zhHans },
 } as const

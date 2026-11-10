@@ -6,7 +6,7 @@ import { trimGetMessagesResponse } from '../get-messages-trim'
 import { withStoppedAnswers } from '../omp-stopped-answers'
 import { readSessionEntries } from '../session-jsonl'
 import { isObject } from './validation'
-import { applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
+import { applyModelDefaults, applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
 import { loadAppSettings } from './settings'
 import { existsSync } from 'fs'
 import { t } from '../../shared/i18n'
@@ -30,14 +30,11 @@ export async function ensureSessionRuntimeStarted(wm: WorkspaceManager, runtime:
     const workspace = wm.getWorkspaces().find((item) => item.id === runtime.workspaceId)
     if (!workspace || !wm.getSessionRuntime(runtime.runtimeId)) throw new Error(t('errors.session.runtimeNotFound', { runtimeId: runtime.runtimeId }))
     const sessionPath = runtime.sessionPath && existsSync(runtime.sessionPath) ? runtime.sessionPath : undefined
-    const options = {
+    const options = applyModelDefaults({
       cwd: workspace.path,
       ...(sessionPath ? { sessionPath } : { continueSession: false }),
-      provider: settings.defaultProvider ?? undefined,
-      model: settings.defaultModel ?? undefined,
-      defaultThinkingLevel: settings.defaultThinkingLevel ?? undefined,
       args: settings.defaultArgs,
-    }
+    }, settings)
     const started = await wm.startSessionRuntime(runtime.runtimeId, applyPermissionModeToStartOptions(
       sessionPath ? applyResumePreference(options, settings) : options, settings,
     ))
