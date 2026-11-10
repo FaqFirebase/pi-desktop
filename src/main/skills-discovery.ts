@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'fs/promises'
-import { join } from 'path'
+import { extname, join } from 'path'
 import { existsSync } from 'fs'
-import { RPC_SKILL_PATH_PREFIX, type InstalledSkill } from '../shared/ipc-contracts'
+import { RPC_SKILL_PATH_PREFIX, isRpcSkillPath, type InstalledSkill } from '../shared/ipc-contracts'
 import { skillDisplayName } from '../shared/pi-command'
 
 /**
@@ -80,6 +80,21 @@ export async function listSkills(
     seen.add(skill.name)
     return true
   })
+}
+
+const SKILL_FILE_EXTENSION = '.md'
+
+/**
+ * Read a skill's markdown for the Skills panel. Global skills live outside the
+ * workspace, where the general file read refuses to go, so this read is
+ * allowed only for the exact path of a skill file in the current skill list.
+ */
+export async function readListedSkillFile(skills: readonly InstalledSkill[], filePath: string): Promise<string> {
+  const listed = skills.some((skill) => skill.path === filePath && !isRpcSkillPath(skill.path))
+  if (!listed || extname(filePath).toLowerCase() !== SKILL_FILE_EXTENSION) {
+    throw new Error('Not a listed skill file')
+  }
+  return readFile(filePath, 'utf-8')
 }
 
 interface CollectOptions {

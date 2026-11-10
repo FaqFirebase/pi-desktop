@@ -12,7 +12,6 @@ Pi Desktop is in alpha, so expect rough edges.
 - Composer with `@` file mentions, prompt recall with `Up`/`Down`, a model picker you can drive from the keyboard, and file or image attachments (pick, paste, or drop them)
 - Find in the conversation (`Ctrl/Cmd+F`) and a quick switcher (`Ctrl/Cmd+K`) for commands, skills, prompt templates, workspaces, sessions, and files
 - Multiple workspaces with project tabs you can drag to reorder. Each live session runs its own agent process, so a turn keeps running after you switch away. Mission Control and sidebar activity dots show background work, and desktop notifications tell you when a session finishes, fails, or waits for approval
-- Opening a saved conversation from any view allocates its tab without spawning or evicting an agent process and without moving the main window's selection; a session that waits for approval replays its request when its tab becomes the active one
 - New Task starts a fresh session in a project and sends the task right away, optionally in an isolated Git worktree
 - [Linked tasks](#linked-tasks): one task across several Git repositories, shipped as linked pull requests
 - Right-edge tool rail that opens the Review panel, file tree, diff viewer, and terminal
@@ -31,7 +30,7 @@ Pi Desktop is in alpha, so expect rough edges.
 - [Multi-Agent Council Planning](#multi-agent-council-planning): Pi, Claude, and Codex plan together before Pi builds (opt-in)
 - [TypeSafe Jev](#typesafe-jev): save your TypeSafe API key once and install the Jev skill for Pi and OMP (opt-in)
 - [Voice dictation](#voice-dictation) that runs on your machine with a model you pick (opt-in)
-- [Translatable interface](#languages) (English and Simplified Chinese ship today)
+- [Translatable interface](#languages) (English, Russian, Simplified Chinese, Turkish, and Ukrainian ship today)
 
 ## Review panel
 
@@ -139,7 +138,7 @@ User theme files live in the app's data directory under `themes/` (on Linux, `~/
 
 Pick the interface language in **Settings > Appearance > Language**. **System default** follows your operating system's language list and falls back to English. The change applies when you click **Save Settings**, with no restart.
 
-English and Simplified Chinese are bundled today. Each language is one JSON file in `resources/locales/<code>/translation.json`; see [Translations](CONTRIBUTING.md#translations) to add one.
+English, Russian, Simplified Chinese, Turkish, and Ukrainian are bundled today. Each language is one JSON file in `resources/locales/<code>/translation.json`; see [Translations](CONTRIBUTING.md#translations) to add one.
 
 Only the app's own text is translated. Chat replies, file contents, and names of models, packages, and sessions stay as they are. Logs and the copied Diagnostics report stay in English, so bug reports stay readable.
 
@@ -241,6 +240,7 @@ You can change the app shortcuts in **Settings > Keyboard shortcuts**, or turn a
 | `Mod+Shift+H` | Show this session's changes in the diff; press again to Commit + Push |
 | `Mod+,` | Settings |
 | `Ctrl+Shift+P` | Insert a saved note |
+| `Mod+T` | Collapse or expand all thinking blocks |
 | `Mod+[` / `Mod+]` | Previous / next open session in the project |
 | `Mod+Shift+[` / `Mod+Shift+]` | Previous / next project |
 | `Mod+Shift+T` (hold) | Voice dictation while held |

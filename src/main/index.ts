@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, protocol, session, shell } from 'electron'
 import { existsSync, mkdirSync } from 'fs'
 import { basename, dirname, join, resolve as resolvePath } from 'path'
-import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
+import { isTrustedRendererUrl, RENDERER_INDEX_PATH, RENDERER_INDEX_URL } from './renderer-origin'
 import { workspaceTrustStore } from './workspace-trust'
 import { PREVIEW_PARTITIONS } from '../shared/preview-partitions'
 import { isBlockedPreviewRequest, previewGuestPreferences } from './preview-guest'
@@ -310,7 +310,7 @@ function createMainWindow(): BrowserWindow {
   if (DEV_SERVER_URL) {
     window.loadURL(DEV_SERVER_URL)
   } else {
-    window.loadFile(RENDERER_INDEX_PATH)
+    window.loadURL(RENDERER_INDEX_URL)
   }
 
   // Dev tools in development

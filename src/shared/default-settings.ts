@@ -47,6 +47,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   permissionRulesAckWorkspaces: [],
   resumeLastSession: true,
   collapsedSessionGroups: [],
+  skillGroups: [],
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   openToHomeOnLaunch: true,
   runOnStartup: false,

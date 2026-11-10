@@ -1,7 +1,7 @@
 export const SHORTCUT_ACTIONS = [
   'modelSelector', 'sidebar', 'files', 'diff', 'terminal', 'review',
   'newSession', 'previousProject', 'nextProject', 'previousSession', 'nextSession',
-  'commitPush', 'settings', 'commandPalette', 'notes', 'pushToTalk', 'globalDictation',
+  'commitPush', 'settings', 'commandPalette', 'notes', 'thinkingBlocks', 'pushToTalk', 'globalDictation',
 ] as const
 export type ShortcutAction = typeof SHORTCUT_ACTIONS[number]
 export type KeyboardShortcuts = Record<ShortcutAction, string | null>
@@ -13,6 +13,7 @@ export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   commandPalette: 'Mod+K',
   modelSelector: 'Mod+Shift+M',
   notes: 'Ctrl+Shift+P',
+  thinkingBlocks: 'Mod+T',
   // Not Meta: that is the Super/Windows key outside macOS, and Super+P is the
   // system display switcher there. Clear of the editor's and terminal's keys.
   commitPush: 'Mod+Shift+H',
