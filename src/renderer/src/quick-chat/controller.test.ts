@@ -2,10 +2,10 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { setImmediate as flush } from 'node:timers/promises'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
-import type { AttachmentReadResult, ModelInfo, PiExtensionUiRequest, PiResponseEvent, PiRpcEvent, PromptImage, Workspace } from '../../../shared/ipc-contracts'
+import type { ModelInfo, PiExtensionUiRequest, PiResponseEvent, PiRpcEvent, PromptImage } from '../../../shared/ipc-contracts'
 import type { QuickChatApi, QuickChatBinding, QuickChatContext, QuickChatSnapshot, QuickChatUpdate } from '../../../shared/quick-chat'
 import { QuickChatController } from './controller'
-import { composerKeyAction, targetOptions } from './presentation'
+import { targetOptions } from './presentation'
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: Error) => void } {
   // The renderer's ES2022 library target does not expose Promise.withResolvers.
@@ -34,11 +34,11 @@ function harness(initial: QuickChatBinding | null = binding('A')): {
   creations: string[]; stops: number[]
   modelCalls: Array<{ provider: string; modelId: string; version: number }>
   thinkingCalls: Array<{ level: string; version: number }>
-  homeResolutions: () => number
+  picks: () => number
   hides: () => number
 } {
   const context: QuickChatContext = {
-    pinned: false,
+    pinned: false, canPin: true,
     binding: initial, runtimes: [initial?.runtime ?? binding('A').runtime, binding('B', 2).runtime],
     workspaces: ['A', 'B'].map((id) => ({ id: `workspace-${id}`, name: id, path: `/cwd/${id}`, createdAt: 0, lastActiveAt: 0, color: '' })),
     defaultWorkspaceId: 'workspace-A', runtimeUpdatedAt: {},
@@ -50,12 +50,11 @@ function harness(initial: QuickChatBinding | null = binding('A')): {
   let version = initial?.version ?? 0
   const creations: string[] = []
   const stops: number[] = []
-  let homeResolutions = 0
+  let picks = 0
   const submissions: Array<{ version: number; text: string; mode: 'prompt' | 'steer'; images?: PromptImage[]; model?: { provider: string; modelId: string }; thinkingLevel?: string }> = []
   const answers: Array<{ version: number; id: string; response: Record<string, unknown> }> = []
   const modelCalls: Array<{ provider: string; modelId: string; version: number }> = []
   const thinkingCalls: Array<{ level: string; version: number }> = []
-  const homeWorkspace: Workspace = { id: 'workspace-home', name: 'Home', path: '/home', createdAt: 0, lastActiveAt: 0, color: '' }
   const api: QuickChatApi = {
     getContext: async () => context,
     selectTarget: async (target) => {
@@ -71,25 +70,24 @@ function harness(initial: QuickChatBinding | null = binding('A')): {
       return current
     },
     newDraft: async () => { current = null; version++; listener?.({ type: 'binding', binding: null }) },
-    pickWorkspace: async () => null,
-    resolveHomeWorkspace: async () => {
-      homeResolutions++
-      if (!context.workspaces.some((workspace) => workspace.id === homeWorkspace.id)) context.workspaces.push(homeWorkspace)
-      return homeWorkspace
-    },
+    pickWorkspace: async () => { picks++; return null },
     stop: async (bindingVersion) => { stops.push(bindingVersion) },
     getSnapshot: async () => snapshot(current!),
     submitText: async (input) => { submissions.push(input); return { type: 'response', id: `prompt-${submissions.length}`, command: input.mode, success: true } },
     respond: async (input) => { answers.push(input) },
-    pickAttachment: async () => [],
+    pickAttachment: async () => ({ attachments: [], errors: [] }),
     listModels: async () => [],
+    listCommands: async () => [],
+    searchFiles: async () => [],
+    voiceStatus: async () => { throw new Error('voice is not used by the controller') },
+    openSettings: async () => {},
     setRuntimeModel: async (input) => { modelCalls.push({ provider: input.provider, modelId: input.modelId, version: input.version }); return { type: 'response', command: 'set_model', success: true } },
     setRuntimeThinking: async (input) => { thinkingCalls.push({ level: input.level, version: input.version }); return { type: 'response', command: 'set_thinking_level', success: true } },
     setPinned: async (pinned) => { context.pinned = pinned; listener?.({ type: 'pinned', pinned }) },
     hide: async () => { hides++ }, openInMain: async () => {},
     onUpdate: (callback) => { listener = callback; return () => { listener = null } },
   }
-  return { api, controller: new QuickChatController(api), context, submissions, answers, creations, stops, hides: () => hides, modelCalls, thinkingCalls, homeResolutions: () => homeResolutions,
+  return { api, controller: new QuickChatController(api), context, submissions, answers, creations, stops, hides: () => hides, modelCalls, thinkingCalls, picks: () => picks,
     emit: (update) => { listener?.(update) },
     event: (event, target = current!) => { listener?.({ type: 'event', event, version: target.version, runtimeId: target.runtime.runtimeId }) },
   }
@@ -242,7 +240,7 @@ test('failed sends keep text; accepted sends do not clear a later draft revision
   await flush()
   h.controller.setDraft('keep me')
   h.api.submitText = async () => ({ type: 'response', command: 'prompt', success: false, error: 'engine refused' })
-  await h.controller.submit()
+  assert.equal(await h.controller.submit(), false)
   assert.equal(h.controller.getState().draft, 'keep me')
   assert.equal(h.controller.getState().error, 'engine refused')
   const pending = deferred<PiResponseEvent | null>()
@@ -251,7 +249,7 @@ test('failed sends keep text; accepted sends do not clear a later draft revision
   h.controller.setDraft('changed')
   h.controller.setDraft('keep me')
   pending.resolve({ type: 'response', command: 'prompt', success: true })
-  await submitting
+  assert.equal(await submitting, true)
   assert.equal(h.controller.getState().draft, 'keep me')
   h.controller.dispose()
 })
@@ -335,8 +333,10 @@ test('raw blocking events cannot acquire approval ownership and response failure
   assert.equal(h.controller.getState().request, null)
   h.emit({ type: 'approval', version: 1, request })
   h.api.respond = async () => { throw new Error('request ownership changed') }
-  await h.controller.answer({ value: 'answer' })
+  assert.equal(await h.controller.answer({ value: 'answer' }), false)
   assert.equal(h.controller.getState().error, 'request ownership changed')
+  assert.equal(h.controller.getState().request?.id, 'input')
+  assert.equal(await h.controller.cancelRequest(), false)
   assert.equal(h.controller.getState().request?.id, 'input')
   h.controller.dispose()
 })
@@ -369,15 +369,6 @@ test('target list reuses live sessions and maps saved sessions to their own cwd,
   assert.equal(options.some((option) => option.title === 'Foreign'), false)
 })
 
-test('IME suppresses Enter and Escape; dropdown Escape has priority over hiding', () => {
-  assert.equal(composerKeyAction({ key: 'Enter', shiftKey: false, isComposing: true }, false, false), 'none')
-  assert.equal(composerKeyAction({ key: 'Escape', shiftKey: false, keyCode: 229 }, false, false), 'none')
-  assert.equal(composerKeyAction({ key: 'Escape', shiftKey: false }, true, false), 'none')
-  assert.equal(composerKeyAction({ key: 'Escape', shiftKey: false }, false, true), 'close-dropdown')
-  assert.equal(composerKeyAction({ key: 'Escape', shiftKey: false }, false, false), 'hide')
-  assert.equal(composerKeyAction({ key: 'Enter', shiftKey: true }, false, false), 'none')
-  assert.equal(composerKeyAction({ key: 'Enter', shiftKey: false }, false, false), 'submit')
-})
 
 test('runtime restart keeps the same draft and blocks a second send until the first settles', async () => {
   const h = harness()
@@ -496,7 +487,7 @@ test('an engine refusal arriving before the submit response cannot clear failed 
   const submitting = h.controller.submit()
   h.event({ type: 'prompt_result', id: 'refused-prompt', agentInvoked: false, status: 'error', error: { message: 'engine rejected after admission' } })
   pending.resolve({ type: 'response', id: 'refused-prompt', command: 'prompt', success: true })
-  await submitting
+  assert.equal(await submitting, false)
   assert.equal(h.controller.getState().draft, 'do not lose this')
   assert.equal(h.controller.getState().error, 'engine rejected after admission')
   h.controller.dispose()
@@ -590,6 +581,24 @@ test('separate id-less live messages are retained, and terminal batches do not a
   h.controller.dispose()
 })
 
+test('a tool message backfilled before its live commit is displayed only once', async () => {
+  const h = harness()
+  const raw = {
+    role: 'assistant', timestamp: 1730000000000,
+    content: [{ type: 'toolCall', id: 'unique-call', name: 'write', arguments: { path: 'a.txt', content: 'x' } }],
+  }
+  const target = binding('A')
+  target.runtime.activity = 'working'
+  h.api.getSnapshot = async () => snapshot(target, { messages: [raw] })
+  h.controller.start()
+  await flush()
+  h.event({ type: 'message_end', message: raw })
+  assert.equal(h.controller.getState().messages.length, 1)
+  h.event({ type: 'message_end', message: { ...raw, content: [{ ...raw.content[0], id: 'another-call' }] } })
+  assert.equal(h.controller.getState().messages.length, 2, 'distinct tool calls must remain distinct')
+  h.controller.dispose()
+})
+
 test('fresh popup opens in no-project state without adopting main or allocating a session', async () => {
   const h = harness(null)
   h.controller.start()
@@ -597,7 +606,7 @@ test('fresh popup opens in no-project state without adopting main or allocating 
   assert.equal(h.controller.getState().mode, 'new')
   assert.equal(h.controller.getState().workspaceId, null)
   assert.equal(h.controller.getState().binding, null)
-  assert.equal(h.homeResolutions(), 0, 'opening the popup must not materialize the home workspace')
+  assert.equal(h.picks(), 0, 'opening the popup must not ask for a directory')
   h.controller.setDraft('a quick task')
   await h.controller.newTask()
   await h.controller.hide()
@@ -609,23 +618,28 @@ test('fresh popup opens in no-project state without adopting main or allocating 
   assert.deepEqual(h.submissions, [])
 })
 
-test('unassigned input sends to the home workspace, then new-task drafts stay project-local', async () => {
+test('unassigned send requires an explicit folder, then new-task drafts stay project-local', async () => {
   const h = harness(null)
   h.context.defaultWorkspaceId = null
   h.controller.start()
   await flush()
-  // No project: type a task and send it — the home workspace materializes.
   h.controller.setDraft('capture before choosing a project')
-  await h.controller.submit()
-  assert.equal(h.homeResolutions(), 1, 'a no-project send resolves the home workspace once')
-  assert.deepEqual(h.creations, ['workspace-home'], 'the created session targets the home workspace')
-  assert.equal(h.controller.getState().workspaceId, 'workspace-home', 'the home workspace is adopted after sending')
+  assert.equal(await h.controller.submit(), false)
+  assert.equal(h.picks(), 1)
+  assert.equal(h.controller.getState().draft, 'capture before choosing a project')
+  assert.equal(h.controller.getScopeKey(), 'new:')
+  assert.deepEqual(h.creations, [])
+  assert.deepEqual(h.submissions, [])
+  h.api.pickWorkspace = async () => h.context.workspaces[0]
+  assert.equal(await h.controller.submit(), true)
+  assert.deepEqual(h.creations, ['workspace-A'])
+  assert.equal(h.controller.getState().workspaceId, 'workspace-A')
   assert.equal(h.controller.getState().binding?.runtime.runtimeId, 'created-1')
-  assert.equal(h.controller.getState().draft, '', 'the sent draft clears')
+  assert.equal(h.controller.getState().draft, '')
+  assert.deepEqual(h.controller.getState().history, ['capture before choosing a project'])
+  assert.equal(h.context.runtimes.find((runtime) => runtime.active)?.runtimeId, 'B')
   await h.controller.newTask()
-  assert.equal(h.controller.getState().workspaceId, 'workspace-home', 'new task keeps the home workspace chosen by the send')
-  // Drafts stay project-local: a no-project draft, a B draft and a home draft
-  // never leak into each other.
+  assert.equal(h.controller.getState().workspaceId, 'workspace-A')
   h.controller.setWorkspace('workspace-A')
   assert.equal(h.controller.getState().draft, '')
   h.controller.setDraft('task for A')
@@ -688,6 +702,7 @@ test('a failed initial send retries the same created session without losing text
   }
   h.controller.start()
   await flush()
+  h.controller.setWorkspace('workspace-A')
   h.controller.setDraft('keep this task')
   await h.controller.submit()
   await flush()
@@ -726,6 +741,7 @@ test('reopening preserves the current session so the user can see responses and 
   const h = harness(null)
   h.controller.start()
   await flush()
+  h.controller.setWorkspace('workspace-A')
   h.controller.setDraft('finish this')
   await h.controller.submit()
   await flush()
@@ -744,6 +760,7 @@ test('reopening keeps unsent follow-ups and pending approvals, and Stop never im
   const h = harness(null)
   h.controller.start()
   await flush()
+  h.controller.setWorkspace('workspace-A')
   h.controller.setDraft('start this')
   await h.controller.submit()
   await flush()
@@ -828,7 +845,7 @@ test('canceling the project picker keeps unassigned text and choosing a folder a
   h.controller.dispose()
 })
 
-test('a removed draft project falls back to the home workspace instead of silently re-targeting', async () => {
+test('a removed draft project requires explicit folder selection rather than silently re-targeting', async () => {
   const h = harness(null)
   h.controller.start()
   await flush()
@@ -837,9 +854,9 @@ test('a removed draft project falls back to the home workspace instead of silent
   await h.controller.refreshContext()
   assert.equal(h.controller.getState().workspaceId, null)
   assert.equal(h.controller.getState().draft, 'task for a removed project')
-  await h.controller.submit()
-  assert.deepEqual(h.creations, ['workspace-home'], 'the removed-project draft sends to the home workspace')
-  assert.equal(h.controller.getState().workspaceId, 'workspace-home')
+  assert.equal(await h.controller.submit(), false)
+  assert.deepEqual(h.creations, [])
+  assert.equal(h.controller.getState().workspaceId, null)
   h.controller.dispose()
 })
 
@@ -847,6 +864,7 @@ test('a new-task model choice creates no runtime and rides the first send', asyn
   const h = harness(null)
   h.controller.start()
   await flush()
+  h.controller.setWorkspace('workspace-A')
   h.controller.setDraft('first task')
   const chosen = await h.controller.setModelChoice(model('deepseek', 'deepseek-v4-flash'))
   assert.equal(chosen, true)
@@ -1035,6 +1053,7 @@ for (const mode of ['new', 'stopped'] as const) {
     h.controller.start()
     try {
       await flush()
+      if (mode === 'new') h.controller.setWorkspace('workspace-A')
       h.controller.setDraft('keep this task')
       await h.controller.setThinkingChoice('max')
       await h.controller.setModelChoice(model('provider', 'wide', ['low', 'max']))
@@ -1056,11 +1075,10 @@ test('controller stages attachments, composes prompt with text files inlined and
   h.controller.start()
   try {
     await flush()
-    h.controller.setDraft('Check these')
-    h.controller.addAttachments([
+    h.controller.saveDraft({ text: 'Check these', attachments: [
       { kind: 'text', name: 'config.json', path: 'config.json', content: '{"key":"value"}' },
       { kind: 'image', name: 'screenshot.png', path: 'screenshot.png', image: { type: 'image', mimeType: 'image/png', data: 'BASE64IMG' } },
-    ])
+    ] })
     assert.equal(h.controller.getState().attachments.length, 2)
     await h.controller.submit()
     assert.equal(h.submissions.length, 1)
@@ -1070,32 +1088,6 @@ test('controller stages attachments, composes prompt with text files inlined and
     assert.deepEqual(h.submissions[0].images, [{ type: 'image', mimeType: 'image/png', data: 'BASE64IMG' }])
     assert.equal(h.controller.getState().draft, '')
     assert.equal(h.controller.getState().attachments.length, 0)
-  } finally {
-    h.controller.dispose()
-  }
-})
-
-test('attachment removal, error clearing and deduplication work as expected', async () => {
-  const h = harness(binding('A'))
-  h.controller.start()
-  try {
-    await flush()
-    h.controller.addAttachments([
-      { kind: 'text', name: 'a.txt', path: 'a.txt', content: 'AAA' },
-      { kind: 'text', name: 'b.txt', path: 'b.txt', content: 'BBB' },
-    ])
-    assert.equal(h.controller.getState().attachments.length, 2)
-    // Duplicate attachment ignored
-    h.controller.addAttachments([{ kind: 'text', name: 'a.txt', path: 'a.txt', content: 'AAA' }])
-    assert.equal(h.controller.getState().attachments.length, 2)
-    h.controller.removeAttachment(0)
-    assert.equal(h.controller.getState().attachments.length, 1)
-    assert.equal(h.controller.getState().attachments[0].name, 'b.txt')
-    h.controller.setAttachError('Failed to read file')
-    assert.equal(h.controller.getState().attachError, 'Failed to read file')
-    h.controller.clearAttachments()
-    assert.equal(h.controller.getState().attachments.length, 0)
-    assert.equal(h.controller.getState().attachError, null)
   } finally {
     h.controller.dispose()
   }
@@ -1121,25 +1113,6 @@ test('a pending model switch cannot lock the next session or apply its result th
   }
 })
 
-test('picked attachments do not move into another project when their read finishes late', async () => {
-  const h = harness(null)
-  const pending = deferred<AttachmentReadResult[]>()
-  h.api.pickAttachment = () => pending.promise
-  h.controller.start()
-  try {
-    await flush()
-    h.controller.setWorkspace('workspace-A')
-    const reading = h.controller.pickAttachment()
-    h.controller.setWorkspace('workspace-B')
-    pending.resolve([{ kind: 'text', name: 'private-A.txt', content: 'A only' }])
-    await reading
-    assert.deepEqual(h.controller.getState().attachments, [])
-    assert.equal(h.controller.getState().isReadingAttachments, false)
-  } finally {
-    h.controller.dispose()
-  }
-})
-
 test('send acknowledgement removes only the attachments captured by that send', async () => {
   const h = harness()
   const pending = deferred<PiResponseEvent | null>()
@@ -1147,10 +1120,9 @@ test('send acknowledgement removes only the attachments captured by that send', 
   h.controller.start()
   try {
     await flush()
-    h.controller.setDraft('send these files')
-    h.controller.addAttachments([{ kind: 'text', name: 'first.txt', path: 'first.txt', content: 'first' }])
+    h.controller.saveDraft({ text: 'send these files', attachments: [{ kind: 'text', name: 'first.txt', path: 'first.txt', content: 'first' }] })
     const sending = h.controller.submit()
-    h.controller.addAttachments([{ kind: 'text', name: 'next.txt', path: 'next.txt', content: 'next' }])
+    h.controller.saveDraft({ ...h.controller.readDraft(), attachments: [...h.controller.readDraft().attachments, { kind: 'text', name: 'next.txt', path: 'next.txt', content: 'next' }] })
     pending.resolve({ type: 'response', id: 'prompt-1', command: 'prompt', success: true })
     await sending
     assert.equal(h.controller.getState().draft, '')
@@ -1166,26 +1138,6 @@ test('send acknowledgement removes only the attachments captured by that send', 
   }
 })
 
-test('a dropped attachment batch is discarded after its draft target changes', async () => {
-  const h = harness(null)
-  const pending = deferred<AttachmentReadResult>()
-  h.controller.start()
-  try {
-    await flush()
-    h.controller.setWorkspace('workspace-A')
-    const reading = h.controller.readAttachments([
-      { label: 'private.txt', path: 'private.txt', read: () => pending.promise },
-    ])
-    h.controller.setWorkspace('workspace-B')
-    pending.resolve({ kind: 'text', name: 'private.txt', content: 'A only' })
-    await reading
-    assert.deepEqual(h.controller.getState().attachments, [])
-    assert.equal(h.controller.getState().attachError, null)
-  } finally {
-    h.controller.dispose()
-  }
-})
-
 test('a replacement attachment with the same path survives an earlier send', async () => {
   const h = harness()
   const pending = deferred<PiResponseEvent | null>()
@@ -1193,11 +1145,9 @@ test('a replacement attachment with the same path survives an earlier send', asy
   h.controller.start()
   try {
     await flush()
-    h.controller.setDraft('original')
-    h.controller.addAttachments([{ kind: 'text', name: 'file.txt', path: 'file.txt', content: 'old' }])
+    h.controller.saveDraft({ text: 'original', attachments: [{ kind: 'text', name: 'file.txt', path: 'file.txt', content: 'old' }] })
     const sending = h.controller.submit()
-    h.controller.removeAttachment(0)
-    h.controller.addAttachments([{ kind: 'text', name: 'file.txt', path: 'file.txt', content: 'new' }])
+    h.controller.saveDraft({ text: 'original', attachments: [{ kind: 'text', name: 'file.txt', path: 'file.txt', content: 'new' }] })
     pending.resolve({ type: 'response', command: 'prompt', success: true })
     await sending
     assert.deepEqual(h.controller.getState().attachments, [
@@ -1233,4 +1183,49 @@ test('stream activity cannot hide the confirmed model and thinking level from a 
   } finally {
     h.controller.dispose()
   }
+})
+
+test('a stale draft owner is ignored and visible/history/notify updates stay scoped', async () => {
+  const h = harness(null)
+  h.controller.start()
+  await flush()
+  h.controller.setDraft('current draft')
+  const staleKey = h.controller.getScopeKey()
+  h.controller.setWorkspace('workspace-B')
+  const freshKey = h.controller.getScopeKey()
+  assert.equal(staleKey, 'new:')
+  assert.equal(freshKey, 'new:workspace-B')
+  h.controller.saveDraft({ text: 'stale write', attachments: [] }, staleKey)
+  assert.equal(h.controller.getState().draft, 'current draft', 'an obsolete owner cannot clobber the live draft')
+  h.controller.saveDraft({ text: 'fresh write', attachments: [] })
+  assert.equal(h.controller.getState().draft, 'fresh write')
+  h.controller.recordPrompt('prompt one')
+  h.controller.setWorkspace('workspace-A')
+  assert.deepEqual(h.controller.getState().history, [], 'history stays per draft scope')
+  h.controller.recordPrompt('prompt two')
+  assert.deepEqual(h.controller.getState().history, ['prompt two'])
+  h.controller.setWorkspace('workspace-B')
+  assert.deepEqual(h.controller.getState().history, ['prompt one'], 'B retains the prompt recorded in B')
+  h.controller.setNoProject()
+  assert.deepEqual(h.controller.getState().history, [], 'the unassigned scope has not recorded any prompt')
+  h.controller.recordPrompt('unassigned prompt')
+  h.controller.setWorkspace('workspace-A')
+  assert.deepEqual(h.controller.getState().history, ['prompt two'], 'A keeps its own recall history')
+  h.controller.setNoProject()
+  assert.deepEqual(h.controller.getState().history, ['unassigned prompt'], 'the unassigned scope keeps its own history')
+  const notify: PiExtensionUiRequest = { type: 'extension_ui_request', method: 'notify', id: 'notify-1', message: 'done' }
+  h.emit({ type: 'visibility', visible: false })
+  assert.equal(h.controller.getState().visible, false)
+  h.controller.setWorkspace('workspace-B')
+  h.event(notify, binding('B', 2))
+  assert.equal(h.controller.getState().notify, null, 'another runtime notify never lands here')
+  await h.controller.select({ runtimeId: 'A' })
+  h.event(notify)
+  assert.equal(h.controller.getState().notify, notify)
+  assert.equal(h.controller.getState().request, null, 'a notify never becomes blocking ownership')
+  h.controller.dismissNotify()
+  assert.equal(h.controller.getState().notify, null)
+  h.emit({ type: 'visibility', visible: true })
+  assert.equal(h.controller.getState().visible, true)
+  h.controller.dispose()
 })

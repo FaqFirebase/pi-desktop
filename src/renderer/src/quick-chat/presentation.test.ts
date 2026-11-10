@@ -2,11 +2,13 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import type { QuickChatContext } from '../../../shared/quick-chat'
-import { composerKeyAction, targetOptions } from './presentation'
+import type { DisplayMessage } from '../message-parsing'
+import { targetOptions, transcriptMessages } from './presentation'
 
 function context(): QuickChatContext {
   return {
     pinned: false,
+    canPin: true,
     binding: null,
     defaultWorkspaceId: 'project',
     workspaces: [{ id: 'project', name: 'Project', path: '/project', createdAt: 0, lastActiveAt: 0, color: '' }],
@@ -19,6 +21,32 @@ function context(): QuickChatContext {
     settings: { ...DEFAULT_SETTINGS }, i18nEnvironment: { systemLanguages: ['en'], pseudoLanguageEnabled: false }, themes: [],
   }
 }
+
+test('a tool and its result appear only in the live bubble until the transcript takes over', () => {
+  const messages: DisplayMessage[] = [
+    { id: 'call', role: 'assistant', timestamp: 1, content: '', toolCalls: [{ id: 'write', name: 'write', arguments: '{}' }] },
+    { id: 'result', role: 'toolResult', timestamp: 2, content: 'written', toolCallId: 'write' },
+    { id: 'answer', role: 'assistant', timestamp: 3, content: 'done' },
+  ]
+  assert.deepEqual(transcriptMessages(messages, new Map([['write', {}]])), [messages[2]])
+  assert.equal(transcriptMessages(messages, new Map()), messages, 'settled history must reappear without mutating or losing messages')
+  assert.equal(messages[0].toolCalls?.length, 1)
+})
+
+test('live tool projection preserves prose, thinking, stopped answers and unrelated tool calls', () => {
+  const call = { id: 'live', name: 'write', arguments: '{}' }
+  const other = { id: 'older', name: 'read', arguments: '{}' }
+  const messages: DisplayMessage[] = [
+    { id: 'mixed', role: 'assistant', timestamp: 1, content: 'Explanation', thinking: 'Reasoning', toolCalls: [call, other] },
+    { id: 'stopped', role: 'assistant', timestamp: 2, content: '', stopped: true, toolCalls: [call] },
+    { id: 'old-result', role: 'toolResult', timestamp: 3, content: 'old result', toolCallId: 'older' },
+  ]
+  const projected = transcriptMessages(messages, new Map([['live', {}]]))
+  assert.deepEqual(projected[0], { ...messages[0], toolCalls: [other] })
+  assert.deepEqual(projected[1], { ...messages[1], toolCalls: undefined })
+  assert.equal(projected[2], messages[2])
+  assert.equal(messages[0].toolCalls?.length, 2)
+})
 
 test('recent-task ordering uses saved history until newer live activity occurs, without listing a live session twice', () => {
   const value = context()
@@ -43,15 +71,4 @@ test('recent rows distinguish approval, completed, failed, stopped and starting 
   assert.equal(status(), 'stopped')
   runtime.status = 'starting'
   assert.equal(status(), 'starting')
-})
-
-test('new-task shortcut is platform-specific and never consumes composition or the reserved shifted chord', () => {
-  const key = { key: 'n', shiftKey: false }
-  assert.equal(composerKeyAction({ ...key, metaKey: true }, false, false, 'darwin'), 'new-task')
-  assert.equal(composerKeyAction({ ...key, ctrlKey: true }, false, true, 'win32'), 'new-task')
-  assert.equal(composerKeyAction({ ...key, ctrlKey: true }, false, false, 'darwin'), 'none')
-  assert.equal(composerKeyAction({ ...key, metaKey: true }, false, false, 'win32'), 'none')
-  assert.equal(composerKeyAction({ ...key, metaKey: true, shiftKey: true }, false, false, 'darwin'), 'none')
-  assert.equal(composerKeyAction({ ...key, metaKey: true, isComposing: true }, false, false, 'darwin'), 'none')
-  assert.equal(composerKeyAction({ ...key, metaKey: true, keyCode: 229 }, false, false, 'darwin'), 'none')
 })

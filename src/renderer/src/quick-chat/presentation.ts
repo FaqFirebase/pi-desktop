@@ -1,5 +1,18 @@
 import { t as defaultT } from '../../../shared/i18n'
 import type { QuickChatBinding, QuickChatContext, QuickChatTarget } from '../../../shared/quick-chat'
+import type { DisplayMessage } from '../message-parsing'
+
+/** A live tool is shown by StreamingBubble until it settles into the transcript. */
+export function transcriptMessages(messages: DisplayMessage[], liveTools: ReadonlyMap<string, unknown>): DisplayMessage[] {
+  if (!liveTools.size) return messages
+  return messages.flatMap((message) => {
+    if (message.role === 'toolResult' && message.toolCallId && liveTools.has(message.toolCallId)) return []
+    if (message.role !== 'assistant' || !message.toolCalls?.some((call) => liveTools.has(call.id))) return [message]
+    const toolCalls = message.toolCalls.filter((call) => !liveTools.has(call.id))
+    if (!toolCalls.length && !message.content && !message.thinking && !message.stopped) return []
+    return [{ ...message, toolCalls: toolCalls.length ? toolCalls : undefined }]
+  })
+}
 
 export type TargetStatus = 'working' | 'needs-approval' | 'completed' | 'failed' | 'starting' | 'stopped' | 'ready' | 'saved'
 export interface TargetOption {
@@ -66,27 +79,4 @@ export function targetOptions(context: QuickChatContext, t = defaultT): TargetOp
 }
 export function selectedTarget(options: TargetOption[], binding: QuickChatBinding | null): TargetOption | undefined {
   return binding ? options.find((option) => 'runtimeId' in option.target && option.target.runtimeId === binding.runtime.runtimeId) : undefined
-}
-export interface ComposerKey {
-  key: string
-  shiftKey: boolean
-  metaKey?: boolean
-  ctrlKey?: boolean
-  altKey?: boolean
-  isComposing?: boolean
-  keyCode?: number
-}
-export function composerKeyAction(event: ComposerKey, composing: boolean, dropdownOpen: boolean, platform = ''): 'none' | 'hide' | 'close-dropdown' | 'submit' | 'new-task' {
-  if (composing || event.isComposing || event.keyCode === 229) return 'none'
-  const mod = platform === 'darwin' ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
-  if (mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'n') return 'new-task'
-  if (event.key === 'Escape') return dropdownOpen ? 'close-dropdown' : 'hide'
-  if (event.key === 'Enter' && !event.shiftKey && !dropdownOpen) return 'submit'
-  return 'none'
-}
-
-export function modelShortName(modelId: string, modelName?: string | null): string {
-  if (modelName && modelName.trim().length > 0) return modelName.trim()
-  const slash = modelId.lastIndexOf('/')
-  return slash >= 0 ? modelId.slice(slash + 1) : modelId
 }

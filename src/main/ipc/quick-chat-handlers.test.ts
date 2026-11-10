@@ -1,15 +1,17 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createRequire } from 'node:module'
+import { EventEmitter } from 'node:events'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { setImmediate } from 'node:timers/promises'
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import type { IpcContext } from './context'
-import type { QuickChatApi, QuickChatBinding, QuickChatContext, QuickChatSnapshot, QuickChatUpdate } from '../../shared/quick-chat'
+import type { QuickChatAttachmentBatch, QuickChatBinding, QuickChatContext, QuickChatSnapshot, QuickChatUpdate } from '../../shared/quick-chat'
 import { QUICK_CHAT_CHANNELS } from '../../shared/quick-chat'
-import { IPC_CHANNELS, type ModelInfo, type PiResponseEvent, type PiStartOptions, type SessionRuntimeInfo, type Workspace } from '../../shared/ipc-contracts'
+import { IPC_CHANNELS, type ModelInfo, type PiResponseEvent, type PiStartOptions, type SessionRuntimeInfo, type VoiceStatus, type Workspace } from '../../shared/ipc-contracts'
 import type { WorkspaceManager } from '../workspace-manager'
 import { configureGuiDataDir } from '../app-data-paths'
 import { RENDERER_INDEX_PATH } from '../renderer-origin'
@@ -23,15 +25,6 @@ import { engineProjectSessionDirs } from '../latest-project-session'
 // dynamically inside withBridge, after this stub is installed.
 const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<unknown>>()
 const require = createRequire(import.meta.url)
-const { QuickChatController } = require('../../renderer/src/quick-chat/controller') as {
-  QuickChatController: new (api: QuickChatApi) => {
-    start(): void
-    dispose(): void
-    togglePinned(): Promise<void>
-    refreshContext(): Promise<void>
-    getState(): { context: QuickChatContext | null }
-  }
-}
 const electronPath = require.resolve('electron')
 require('electron')
 const electronModule = require.cache[electronPath]!
@@ -42,6 +35,7 @@ electronModule.exports = {
   ipcMain: { handle: (channel: string, handler: (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<unknown>) => handlers.set(channel, handler) },
   app: {
     isPackaged: false, getAppPath: () => process.cwd(), getPreferredSystemLanguages: () => ['en'],
+    commandLine: { getSwitchValue: (name: string) => name === 'ozone-platform' ? 'x11' : '' },
     getPath: (name: string) => name === 'home' ? '/home' : '',
   },
   dialog: { showOpenDialog: async () => pickerResult },
@@ -54,12 +48,14 @@ interface BridgeFixture {
   commands: Array<{ id: string; command: Record<string, unknown> }>
   updates: QuickChatUpdate[]
   broadcasts: Array<{ channel: string; data: unknown }>
+  menuActions: string[]
+  main: BrowserWindow
   event: IpcMainInvokeEvent
   invoke(channel: string, ...args: unknown[]): Promise<unknown>
-  onUpdate(listener: (update: QuickChatUpdate) => void): () => void
   getShows(): number
   setStreaming(busy: boolean): void
   setStateData(data: Record<string, unknown>): void
+  setCanPin(value: boolean): void
 }
 
 async function withBridge(run: (fixture: BridgeFixture) => Promise<void>): Promise<void> {
@@ -118,17 +114,18 @@ async function fixture(wm: WorkspaceManager, root: string): Promise<BridgeFixtur
   }
   let visible = true
   let visibility: (shown: boolean) => void = () => {}
+  let canPin = true
   let shows = 0
   const updates: QuickChatUpdate[] = []
-  const updateListeners = new Set<(update: QuickChatUpdate) => void>()
   const broadcasts: Array<{ channel: string; data: unknown }> = []
   const frame = { url: pathToFileURL(RENDERER_INDEX_PATH).href + '#quick-chat' }
   const webContents = { mainFrame: frame, send: (_channel: string, update: QuickChatUpdate) => {
     updates.push(update)
-    for (const listener of updateListeners) listener(update)
   } }
   const window = { webContents, isDestroyed: () => false, isVisible: () => visible } as unknown as BrowserWindow
-  const main = { isDestroyed: () => false, isMinimized: () => false, show: () => {}, focus: () => {} } as unknown as BrowserWindow
+  const menuActions: string[] = []
+  const mainContents = Object.assign(new EventEmitter(), { isLoadingMainFrame: () => false, send: (channel: string) => menuActions.push(channel) })
+  const main = { webContents: mainContents, isDestroyed: () => false, isMinimized: () => false, show: () => {}, focus: () => {} } as unknown as BrowserWindow
   const ctx = {
     workspaceManager: wm,
     broadcast: (channel: string, data: unknown) => broadcasts.push({ channel, data }),
@@ -138,6 +135,7 @@ async function fixture(wm: WorkspaceManager, root: string): Promise<BridgeFixtur
     hide: () => { visible = false; visibility(false) },
     onVisibility: (listener) => { visibility = listener },
     isPinned: isQuickChatPinned,
+    canPin: () => canPin,
     setPinned: setQuickChatPinned,
   })
   const router = createPiEventRouter({
@@ -151,40 +149,28 @@ async function fixture(wm: WorkspaceManager, root: string): Promise<BridgeFixtur
   bridge.register(router)
   const event = { sender: webContents, senderFrame: frame } as unknown as IpcMainInvokeEvent
   const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)!(event, ...args)
-  return { wm, alpha, beta, commands, updates, broadcasts, event, invoke,
-    onUpdate: (listener) => { updateListeners.add(listener); return () => { updateListeners.delete(listener) } },
-    getShows: () => shows, setStreaming: (busy: boolean) => { streaming = busy }, setStateData: (data: Record<string, unknown>) => { stateData = data } }
+  return { wm, alpha, beta, commands, updates, broadcasts, menuActions, main, event, invoke,
+    getShows: () => shows, setStreaming: (busy: boolean) => { streaming = busy }, setStateData: (data: Record<string, unknown>) => { stateData = data }, setCanPin: (value: boolean) => { canPin = value } }
 }
 
-test('reloading the popup hydrates native pin state and one click unpins it', async () => {
+test('popup context reloads preserve native pin state and the next request unpins it', async () => {
   await withBridge(async (h) => {
+    // Native preferences bind Electron after the test module boundary.
     const { isQuickChatPinned } = await import('../quick-chat-window')
-    const api = {
-      getContext: () => h.invoke(QUICK_CHAT_CHANNELS.context),
-      setPinned: (pinned: boolean) => h.invoke(QUICK_CHAT_CHANNELS.setPinned, { pinned }),
-      onUpdate: h.onUpdate,
-    } as unknown as QuickChatApi
-    const original = new QuickChatController(api)
-    original.start()
-    await original.refreshContext()
-    await original.togglePinned()
+    const original = await h.invoke(QUICK_CHAT_CHANNELS.context) as QuickChatContext
+    assert.equal(original.canPin, true)
+    await h.invoke(QUICK_CHAT_CHANNELS.setPinned, { pinned: !original.pinned })
     assert.equal(isQuickChatPinned(), true)
-    assert.equal(original.getState().context?.pinned, true)
+    assert.deepEqual(h.updates.at(-1), { type: 'pinned', pinned: true })
     await h.invoke(QUICK_CHAT_CHANNELS.hide)
     assert.equal(isQuickChatPinned(), true, 'hiding preserves the native preference')
-    original.dispose()
-
-    const reloaded = new QuickChatController(api)
-    reloaded.start()
-    try {
-      await reloaded.refreshContext()
-      assert.equal(reloaded.getState().context?.pinned, true)
-      await reloaded.togglePinned()
-      assert.equal(isQuickChatPinned(), false, 'the first click after reload unpins natively')
-      assert.equal(reloaded.getState().context?.pinned, false)
-    } finally {
-      reloaded.dispose()
-    }
+    const reloaded = await h.invoke(QUICK_CHAT_CHANNELS.context) as QuickChatContext
+    assert.equal(reloaded.pinned, true)
+    await h.invoke(QUICK_CHAT_CHANNELS.setPinned, { pinned: !reloaded.pinned })
+    assert.equal(isQuickChatPinned(), false)
+    assert.deepEqual(h.updates.at(-1), { type: 'pinned', pinned: false })
+    const unpinned = await h.invoke(QUICK_CHAT_CHANNELS.context) as QuickChatContext
+    assert.equal(unpinned.pinned, false)
   })
 })
 
@@ -316,18 +302,23 @@ test('createSession rejects malformed and unknown targets without creating anyth
   })
 })
 
-test('resolveHomeWorkspace materializes a Home workspace without activating it, and reuses it', async () => {
+test('unassigned or invalid query targets never create Home or start an engine', async (t) => {
   await withBridge(async (h) => {
+    // Load after Electron's module exports have been replaced by the test boundary.
+    const { PiRpcManager } = await import('../pi-rpc-manager')
+    t.mock.method(PiRpcManager.prototype, 'start', async () => assert.fail('an unassigned query cannot start an engine'))
     const activeBefore = h.wm.getActiveWorkspaceId()
-    const first = await h.invoke(QUICK_CHAT_CHANNELS.resolveHomeWorkspace) as Workspace
-    assert.equal(first.name, 'Home')
-    assert.equal(first.path, '/home')
-    assert.equal(h.wm.getActiveWorkspaceId(), activeBefore, 'the popup must not move main active workspace')
-    assert.equal(h.wm.getWorkspaces().filter((w) => w.path === '/home').length, 1)
-    // A second call reuses the same workspace rather than duplicating it.
-    const second = await h.invoke(QUICK_CHAT_CHANNELS.resolveHomeWorkspace) as Workspace
-    assert.equal(second.id, first.id)
-    assert.equal(h.wm.getWorkspaces().filter((w) => w.path === '/home').length, 1)
+    const workspacesBefore = h.wm.getWorkspaces()
+    const queries = [
+      [QUICK_CHAT_CHANNELS.listModels, undefined],
+      [QUICK_CHAT_CHANNELS.listModels, null],
+      [QUICK_CHAT_CHANNELS.listModels, { kind: 'draft', workspaceId: 'missing' }],
+      [QUICK_CHAT_CHANNELS.listModels, { kind: 'draft', workspaceId: h.alpha.workspaceId, cwd: '/home' }],
+      [QUICK_CHAT_CHANNELS.listCommands, { kind: 'draft', workspaceId: 'missing' }],
+      [QUICK_CHAT_CHANNELS.searchFiles, { target: { kind: 'draft', workspaceId: 'missing' }, query: '' }],
+    ] as const
+    for (const [channel, input] of queries) await assert.rejects(h.invoke(channel, input))
+    assert.deepEqual(h.wm.getWorkspaces(), workspacesBefore)
     assert.equal(h.wm.getActiveWorkspaceId(), activeBefore)
   })
 })
@@ -509,6 +500,7 @@ test('pickWorkspace on a fresh manager creates the first workspace without activ
       hide: () => {},
       onVisibility: () => {},
       isPinned: () => false,
+      canPin: () => true,
       setPinned: () => {},
     })
     const router = createPiEventRouter({
@@ -648,13 +640,14 @@ test('an idle running session switches its model through the bound manager', asy
 
 test('listModels uses the bound running manager catalog without spawning a query process', async () => {
   await withBridge(async (h) => {
-    const binding = await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: h.alpha.runtimeId }) as QuickChatBinding
+    const binding = await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: h.beta.runtimeId }) as QuickChatBinding
     const manager = h.wm.getSessionRuntimeManager(binding.runtime.runtimeId)!
     const started: unknown[] = []
     manager.start = async (...args: unknown[]) => { started.push(args); return { status: 'running', pid: 999, error: null } as never }
-    const models = await h.invoke(QUICK_CHAT_CHANNELS.listModels) as Array<{ provider: string; id: string }>
+    const models = await h.invoke(QUICK_CHAT_CHANNELS.listModels, { kind: 'runtime', version: binding.version }) as Array<{ provider: string; id: string }>
     assert.deepEqual(models, [{ provider: 'deepseek', id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' }])
     assert.equal(started.length, 0, 'a live bound runtime answers the catalog directly')
+    assert.equal(h.commands.at(-1)?.id, h.beta.runtimeId)
   })
 })
 
@@ -673,6 +666,7 @@ for (const configured of ['pi', 'omp'] as const) {
         const project = join(root, 'catalog-project')
         await mkdir(project)
         const workspace = await h.wm.createWorkspace('Catalog project', project, { activate: false })
+        h.wm.getPiManager(workspace.id)!.getStatus = () => ({ status: 'stopped', pid: null, error: null })
         const [directory] = await engineProjectSessionDirs(owner, project)
         await mkdir(directory, { recursive: true })
         const sessionPath = join(directory, 'saved.jsonl')
@@ -682,7 +676,8 @@ for (const configured of ['pi', 'omp'] as const) {
         assert.equal(boundManager.getEngineKind(), configured, 'an unstarted manager reports the configured engine, not the session owner')
         boundManager.getStatus = () => ({ status: 'stopped', pid: null, error: null })
         boundManager.start = async () => { assert.fail('catalog reads must not resume the bound runtime') }
-        await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: runtime.runtimeId })
+        const selected = await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: runtime.runtimeId }) as QuickChatBinding
+        const runtimeTarget = { kind: 'runtime', version: selected.version }
 
         const starts: PiStartOptions[] = []
         const catalog = [{ provider: 'catalog', id: 'available', name: 'Available' }] as ModelInfo[]
@@ -696,7 +691,7 @@ for (const configured of ['pi', 'omp'] as const) {
         }))
         t.mock.method(PiRpcManager.prototype, 'stop', () => {})
 
-        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels), catalog)
+        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels, runtimeTarget), catalog)
         assert.equal(starts[0].engine, owner)
         assert.equal(starts[0].cwd, project, 'the stopped session queries its own workspace, not main')
         assert.equal(starts[0].noSession, true)
@@ -709,10 +704,10 @@ for (const configured of ['pi', 'omp'] as const) {
         boundManager.sendCommand = async () => ({
           type: 'response', command: 'get_available_models', success: true, data: { models: catalog },
         })
-        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels), catalog)
+        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels, runtimeTarget), catalog)
         assert.equal(starts.length, 1, 'a valid live catalog is returned directly')
         boundManager.sendCommand = async () => ({ type: 'response', command: 'get_available_models', success: true, data: {} })
-        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels), catalog)
+        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels, runtimeTarget), catalog)
         assert.equal(starts[1].engine, configured, 'live identity also controls a catalog fallback')
 
         await h.invoke(QUICK_CHAT_CHANNELS.newDraft)
@@ -720,11 +715,11 @@ for (const configured of ['pi', 'omp'] as const) {
         const draftManager = h.wm.getSessionRuntimeManager(draft.runtime.runtimeId)!
         draftManager.getStatus = () => ({ status: 'stopped', pid: null, error: null })
         draftManager.start = async () => { assert.fail('catalog reads must not start a draft runtime') }
-        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels, workspace.id), catalog)
+        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels, { kind: 'draft', workspaceId: workspace.id }), catalog)
         assert.equal(starts[2].engine, configured)
         assert.equal(starts[2].cwd, project)
         await h.invoke(QUICK_CHAT_CHANNELS.newDraft)
-        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels, workspace.id), catalog)
+        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels, { kind: 'draft', workspaceId: workspace.id }), catalog)
         assert.equal(starts[3].engine, configured, 'an unbound fresh draft uses the configured engine')
         assert.equal(starts[3].cwd, project)
       } finally {
@@ -775,34 +770,253 @@ test('saved OMP tasks remain selectable through a project alias after popup runt
   })
 })
 
-test('pickAttachment reads selected files and submit forwards images to the engine', async () => {
+test('picked attachments keep distinct paths and successful reads survive another file failing', async () => {
   await withBridge(async (h) => {
     const root = h.wm.getActiveWorkspace()!.path
     const testFile = join(root, 'attached.txt')
     await writeFile(testFile, 'Hello attached file')
+    const otherDir = join(root, 'other')
+    await mkdir(otherDir)
+    const otherFile = join(otherDir, 'attached.txt')
+    await writeFile(otherFile, 'Second file with the same name')
     pickerResult.canceled = false
-    pickerResult.filePaths = [testFile]
+    pickerResult.filePaths = [testFile, join(root, 'missing.txt'), otherFile]
     try {
-      const picked = await h.invoke(QUICK_CHAT_CHANNELS.pickAttachment) as Array<{ kind: string; name: string; content?: string }>
-      assert.equal(picked.length, 1)
-      assert.equal(picked[0].kind, 'text')
-      assert.equal(picked[0].name, 'attached.txt')
-      assert.equal(picked[0].content, 'Hello attached file')
+      const picked = await h.invoke(QUICK_CHAT_CHANNELS.pickAttachment) as QuickChatAttachmentBatch
+      assert.deepEqual(picked.attachments.map((item) => [item.path, item.kind === 'text' ? item.content : null]), [
+        [testFile, 'Hello attached file'],
+        [otherFile, 'Second file with the same name'],
+      ])
+      assert.equal(picked.errors.length, 1)
+      assert.match(picked.errors[0], /missing\.txt/)
 
-      const binding = await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: h.alpha.runtimeId }) as QuickChatBinding
-      await h.invoke(QUICK_CHAT_CHANNELS.submit, {
-        version: binding.version,
-        text: 'Prompt with image',
-        mode: 'prompt',
-        images: [{ type: 'image', mimeType: 'image/png', data: 'B64PNG' }],
-      })
-      const promptCmd = h.commands.find((c) => c.command.type === 'prompt')
-      assert.ok(promptCmd, 'prompt command sent')
-      assert.equal(stripInjectedPreamble(String((promptCmd?.command as Record<string, unknown>).message)), 'Prompt with image')
-      assert.deepEqual((promptCmd?.command as Record<string, unknown>).images, [{ type: 'image', mimeType: 'image/png', data: 'B64PNG' }])
     } finally {
       pickerResult.canceled = true
       pickerResult.filePaths = []
     }
+  })
+})
+
+test('every popup query rejects other windows, subframes, and stale runtime versions', async () => {
+  await withBridge(async (h) => {
+    const first = await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: h.alpha.runtimeId }) as QuickChatBinding
+    const runtime = { kind: 'runtime', version: first.version }
+    const queries = [
+      [QUICK_CHAT_CHANNELS.listModels, runtime],
+      [QUICK_CHAT_CHANNELS.listCommands, runtime],
+      [QUICK_CHAT_CHANNELS.searchFiles, { target: runtime, query: 'file' }],
+      [QUICK_CHAT_CHANNELS.voiceStatus, undefined],
+      [QUICK_CHAT_CHANNELS.openSettings, undefined],
+    ] as const
+    for (const [channel, input] of queries) {
+      const invoke = handlers.get(channel)!
+      await assert.rejects(invoke({ ...h.event, sender: {} } as IpcMainInvokeEvent, input), /Unauthorized Quick Chat sender/)
+      await assert.rejects(invoke({ ...h.event, senderFrame: { url: h.event.senderFrame?.url } } as IpcMainInvokeEvent, input), /Unauthorized Quick Chat sender/)
+    }
+    await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: h.beta.runtimeId })
+    for (const [channel, input] of queries.slice(0, 3)) await assert.rejects(h.invoke(channel, input))
+    assert.equal(h.commands.length, 0)
+    assert.deepEqual(h.menuActions, [])
+  })
+})
+
+test('draft file search and model metadata use selected B even while the popup is bound to A', async (t) => {
+  await withBridge(async (h) => {
+    // Load the engine after the Electron boundary stub, not as a static import.
+    const { PiRpcManager } = await import('../pi-rpc-manager')
+    const a = h.wm.getActiveWorkspace()!
+    const project = join(a.path, 'selected-b')
+    await mkdir(project)
+    await writeFile(join(a.path, 'needle-a.txt'), 'A')
+    await writeFile(join(project, 'needle-b.txt'), 'B')
+    const b = await h.wm.createWorkspace('B', project, { activate: false })
+    const bManager = h.wm.getPiManager(b.id)!
+    bManager.getStatus = () => ({ status: 'stopped', pid: null, error: null })
+    bManager.start = async () => assert.fail('draft metadata must not start a workspace agent')
+    await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: h.alpha.runtimeId })
+    const starts: PiStartOptions[] = []
+    const catalog = [{ provider: 'b-provider', id: 'b-model', name: 'B model' }]
+    t.mock.method(PiRpcManager.prototype, 'start', async (options: PiStartOptions) => {
+      starts.push(options)
+      return { status: 'running', pid: 999, error: null }
+    })
+    t.mock.method(PiRpcManager.prototype, 'getStatus', () => ({ status: 'running', pid: 999, error: null }))
+    t.mock.method(PiRpcManager.prototype, 'sendCommand', async () => ({
+      type: 'response', command: 'get_available_models', success: true, data: { models: catalog },
+    }))
+    t.mock.method(PiRpcManager.prototype, 'stop', () => {})
+    const target = { kind: 'draft', workspaceId: b.id }
+    const files = await h.invoke(QUICK_CHAT_CHANNELS.searchFiles, { target, query: 'needle' }) as Array<{ path: string; name: string }>
+    assert.deepEqual(files.map((file) => file.path), [join(project, 'needle-b.txt')])
+    assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels, target), catalog)
+    assert.equal(starts.length, 1)
+    assert.equal(starts[0].cwd, project)
+    assert.equal(starts[0].noSession, true)
+    assert.equal(h.wm.getActiveWorkspaceId(), a.id)
+    assert.equal(h.commands.length, 0, 'the bound A runtime never receives B catalog requests')
+  })
+})
+
+for (const engine of ['pi', 'omp'] as const) {
+  test(`${engine} commands come from B's actual catalog and stopped targets never start`, async () => {
+    await withBridge(async (h) => {
+      const a = h.wm.getActiveWorkspace()!
+      const project = join(a.path, `commands-${engine}`)
+      await mkdir(project)
+      const b = await h.wm.createWorkspace('B', project, { activate: false })
+      const runtime = h.wm.createInactiveSessionRuntime(b.id)
+      const manager = h.wm.getSessionRuntimeManager(runtime.runtimeId)!
+      let running = true
+      manager.getStatus = () => ({ status: running ? 'running' : 'stopped', pid: running ? 456 : null, error: null })
+      manager.getEngineKind = () => engine
+      manager.start = async () => assert.fail('command completion must not start an agent')
+      const verbs: string[] = []
+      const catalog = [{ name: 'project-b', source: 'extension', description: 'B only' }, { name: 'skill:b', source: 'skill' }]
+      manager.sendCommand = async (command) => {
+        verbs.push(String(command.type))
+        return { type: 'response', command: String(command.type), success: true, data: { commands: catalog } }
+      }
+      const selected = await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: runtime.runtimeId }) as QuickChatBinding
+      const target = { kind: 'runtime', version: selected.version }
+      assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listCommands, target), catalog)
+      assert.deepEqual(verbs, [engine === 'omp' ? 'get_available_commands' : 'get_commands'])
+      running = false
+      assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listCommands, target), [])
+      assert.equal(verbs.length, 1)
+      const workspaceManager = h.wm.getPiManager(b.id)!
+      workspaceManager.getStatus = () => ({ status: 'running', pid: 789, error: null })
+      workspaceManager.getEngineKind = () => engine
+      workspaceManager.sendCommand = manager.sendCommand
+      assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listCommands, { kind: 'draft', workspaceId: b.id }), catalog)
+      assert.equal(verbs.length, 2)
+      workspaceManager.getStatus = () => ({ status: 'stopped', pid: null, error: null })
+      workspaceManager.start = async () => assert.fail('draft commands must not start an agent')
+      assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listCommands, { kind: 'draft', workspaceId: b.id }), [])
+      assert.equal(verbs.length, 2)
+      assert.equal(h.commands.length, 0, 'main A never receives a command query')
+      assert.equal(h.wm.getActiveWorkspaceId(), a.id)
+    })
+  })
+}
+
+test('late file results reject the old runtime rather than appearing in the new task', async (t) => {
+  await withBridge(async (h) => {
+    const first = await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: h.alpha.runtimeId }) as QuickChatBinding
+    t.mock.method(h.wm.getFileService(h.alpha.workspaceId)!, 'searchFiles', async () => {
+      await setImmediate()
+      return []
+    })
+    const read = h.invoke(QUICK_CHAT_CHANNELS.searchFiles, { target: { kind: 'runtime', version: first.version }, query: 'file' })
+    await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: h.beta.runtimeId })
+    await assert.rejects(read)
+  })
+})
+
+test('voice status shares main settings/catalog behavior and Settings leaves both session pointers intact', async () => {
+  await withBridge(async (h) => {
+    // The voice IPC module must also bind Electron after the test boundary stub.
+    const { registerVoiceHandlers } = await import('./voice-handlers')
+    const { saveAppSettings } = await import('./settings')
+    await saveAppSettings({ voiceDevice: 'cpu', voicePrecision: 'fp16' })
+    registerVoiceHandlers({ workspaceManager: h.wm, broadcast: () => {} } as unknown as IpcContext)
+    const selected = await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: h.alpha.runtimeId }) as QuickChatBinding
+    const workspaceBefore = h.wm.getActiveWorkspaceId()
+    const runtimeBefore = h.wm.getActiveSessionRuntime()?.runtimeId
+    const popupStatus = await h.invoke(QUICK_CHAT_CHANNELS.voiceStatus) as VoiceStatus
+    assert.deepEqual(popupStatus, await h.invoke(IPC_CHANNELS.VOICE_STATUS))
+    assert.ok(Array.isArray(popupStatus.catalog))
+    assert.equal(popupStatus.device, 'cpu')
+    assert.equal(popupStatus.selectedPrecision, 'fp16')
+    await h.invoke(QUICK_CHAT_CHANNELS.openSettings)
+    assert.equal(h.getShows(), 1)
+    assert.deepEqual(h.menuActions, ['menu:settings'])
+    assert.equal(h.wm.getActiveWorkspaceId(), workspaceBefore)
+    assert.equal(h.wm.getActiveSessionRuntime()?.runtimeId, runtimeBefore)
+    const context = await h.invoke(QUICK_CHAT_CHANNELS.context) as QuickChatContext
+    assert.equal(context.binding?.version, selected.version)
+    assert.equal(context.binding?.runtime.runtimeId, h.alpha.runtimeId)
+  })
+})
+
+test('unsupported pin capability is reported and cannot retain native pin state', async () => {
+  await withBridge(async (h) => {
+    await h.invoke(QUICK_CHAT_CHANNELS.setPinned, { pinned: true })
+    h.setCanPin(false)
+    const context = await h.invoke(QUICK_CHAT_CHANNELS.context) as QuickChatContext
+    assert.equal(context.canPin, false)
+    assert.equal(context.pinned, false)
+    await h.invoke(QUICK_CHAT_CHANNELS.setPinned, { pinned: true })
+    assert.deepEqual(h.updates.at(-1), { type: 'pinned', pinned: false })
+  })
+})
+
+test('a user-selected Home workspace permits its OMP model query without changing main', async (t) => {
+  await withBridge(async (h) => {
+    // Metadata queries must bind Electron only after the test's module boundary.
+    const { PiRpcManager, setPiExecutableOverride } = await import('../pi-rpc-manager')
+    const before = h.wm.getActiveWorkspaceId()
+    const home = await h.wm.createWorkspace('Home', '/home', { activate: false })
+    h.wm.getPiManager(home.id)!.getStatus = () => ({ status: 'stopped', pid: null, error: null })
+    const starts: PiStartOptions[] = []
+    setPiExecutableOverride(null, 'omp')
+    t.mock.method(PiRpcManager.prototype, 'start', async (options: PiStartOptions) => {
+      starts.push(options)
+      return { status: 'running', pid: 999, error: null }
+    })
+    t.mock.method(PiRpcManager.prototype, 'getStatus', () => ({ status: 'running', pid: 999, error: null }))
+    t.mock.method(PiRpcManager.prototype, 'sendCommand', async () => ({
+      type: 'response', command: 'get_available_models', success: true, data: { models: [] },
+    }))
+    t.mock.method(PiRpcManager.prototype, 'stop', () => {})
+    try {
+      assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels, { kind: 'draft', workspaceId: home.id }), [])
+      assert.equal(starts.length, 1)
+      assert.equal(starts[0].cwd, '/home')
+      assert.equal(starts[0].engine, 'omp')
+      assert.ok(starts[0].args?.includes('--allow-home'))
+      assert.equal(h.wm.getActiveWorkspaceId(), before)
+    } finally {
+      setPiExecutableOverride(null)
+    }
+  })
+})
+
+test('shared session startup preserves model defaults and explicit fresh-session semantics', async (t) => {
+  await withBridge(async (h) => {
+    // Shared startup depends on Electron settings, so load after the boundary stub.
+    const { ensureSessionRuntimeStarted } = await import('./session-runtime-io')
+    const { saveAppSettings } = await import('./settings')
+    await saveAppSettings({ defaultProvider: 'saved-provider', defaultModel: 'saved-model', defaultThinkingLevel: 'high', defaultArgs: ['--user-flag'] })
+    const runtime = h.wm.createInactiveSessionRuntime(h.alpha.workspaceId)
+    const manager = h.wm.getSessionRuntimeManager(runtime.runtimeId)!
+    manager.getStatus = () => ({ status: 'stopped', pid: null, error: null })
+    const starts: PiStartOptions[] = []
+    t.mock.method(h.wm, 'startSessionRuntime', async (_runtimeId: string, options: PiStartOptions) => {
+      starts.push(options)
+      return { ...runtime, status: 'running', pid: 123, error: null }
+    })
+    await ensureSessionRuntimeStarted(h.wm, runtime)
+    assert.equal(starts.length, 1)
+    assert.equal(starts[0].provider, 'saved-provider')
+    assert.equal(starts[0].model, 'saved-model')
+    assert.equal(starts[0].defaultThinkingLevel, 'high')
+    assert.equal(starts[0].continueSession, false)
+    assert.equal(starts[0].cwd, h.wm.getWorkspaces().find((workspace) => workspace.id === runtime.workspaceId)?.path)
+    assert.ok(starts[0].args?.includes('--user-flag'))
+  })
+})
+
+test('Settings waits for a recreated main renderer and ignores a window closed before load', async (t) => {
+  await withBridge(async (h) => {
+    t.mock.method(h.main.webContents, 'isLoadingMainFrame', () => true)
+    await h.invoke(QUICK_CHAT_CHANNELS.openSettings)
+    assert.equal(h.getShows(), 1)
+    assert.deepEqual(h.menuActions, [])
+    h.main.webContents.emit('did-finish-load')
+    assert.deepEqual(h.menuActions, ['menu:settings'])
+    await h.invoke(QUICK_CHAT_CHANNELS.openSettings)
+    t.mock.method(h.main, 'isDestroyed', () => true)
+    h.main.webContents.emit('did-finish-load')
+    assert.deepEqual(h.menuActions, ['menu:settings'])
   })
 })

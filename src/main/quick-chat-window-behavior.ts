@@ -5,6 +5,22 @@ export interface WindowRectangle {
   height: number
 }
 
+/** Explicit Ozone selection wins over the login session's inherited environment. */
+export function isQuickChatWayland(input: {
+  platform: string
+  ozonePlatform: string
+  ozonePlatformHint: string
+  waylandDisplay?: string
+  sessionType?: string
+}): boolean {
+  if (input.platform !== 'linux') return false
+  if (input.ozonePlatform === 'x11') return false
+  if (input.ozonePlatform === 'wayland') return true
+  if (input.ozonePlatformHint === 'x11') return false
+  if (input.ozonePlatformHint === 'wayland') return true
+  return Boolean(input.waylandDisplay) || input.sessionType === 'wayland'
+}
+
 /** Work-area coordinates are already in Electron's device-independent pixels. */
 export function clampQuickChatBounds(bounds: WindowRectangle, workArea: WindowRectangle): WindowRectangle {
   const width = Math.min(Math.max(1, bounds.width), workArea.width)

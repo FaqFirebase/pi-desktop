@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Menu, screen } from 'electron'
 import { join } from 'path'
-import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from './renderer-origin'
-import { adaptiveQuickChatSize, clampQuickChatBounds, positionQuickChatBounds, resolveQuickChatBounds, shouldHideQuickChatOnBlur, type WindowRectangle } from './quick-chat-window-behavior'
+import { isTrustedRendererUrl, RENDERER_INDEX_PATH, RENDERER_INDEX_URL } from './renderer-origin'
+import { adaptiveQuickChatSize, clampQuickChatBounds, isQuickChatWayland, positionQuickChatBounds, resolveQuickChatBounds, shouldHideQuickChatOnBlur, type WindowRectangle } from './quick-chat-window-behavior'
 
 let quickChatWindow: BrowserWindow | null = null
 let visibleRequested = false
@@ -18,12 +18,22 @@ let automaticBounds: WindowRectangle | null = null
 let applyingBounds = false
 let pinned = false
 
+export function canPinQuickChatWindow(): boolean {
+  return !isQuickChatWayland({
+    platform: process.platform,
+    ozonePlatform: app.commandLine.getSwitchValue('ozone-platform'),
+    ozonePlatformHint: app.commandLine.getSwitchValue('ozone-platform-hint'),
+    waylandDisplay: process.env.WAYLAND_DISPLAY,
+    sessionType: process.env.XDG_SESSION_TYPE,
+  })
+}
+
 export function setQuickChatPinned(value: boolean): void {
-  pinned = value
+  pinned = canPinQuickChatWindow() && value
 }
 
 export function isQuickChatPinned(): boolean {
-  return pinned
+  return canPinQuickChatWindow() && pinned
 }
 
 export function getQuickChatWindow(): BrowserWindow | null {
@@ -300,7 +310,7 @@ function createQuickChatWindow(): void {
   window.once('ready-to-show', markReadyAndShow)
   // Some Wayland compositors never emit ready-to-show (electron/electron#48859).
   // The shared readiness guard keeps this first-wins and respects hide and quit.
-  if (process.platform === 'linux' && Boolean(process.env.WAYLAND_DISPLAY)) {
+  if (!canPinQuickChatWindow()) {
     window.webContents.once('did-finish-load', markReadyAndShow)
   }
   const devServerUrl = process.env.ELECTRON_RENDERER_URL
@@ -309,6 +319,6 @@ function createQuickChatWindow(): void {
     url.hash = 'quick-chat'
     void window.loadURL(url.toString())
   } else {
-    void window.loadFile(RENDERER_INDEX_PATH, { hash: 'quick-chat' })
+    void window.loadURL(`${RENDERER_INDEX_URL}#quick-chat`)
   }
 }

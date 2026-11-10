@@ -1,15 +1,15 @@
-import { app, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { existsSync } from 'fs'
 import { basename, join } from 'path'
-import type { QuickChatBinding, QuickChatContext, QuickChatSnapshot, QuickChatUpdate } from '../../shared/quick-chat'
+import type { QuickChatAttachmentBatch, QuickChatBinding, QuickChatContext, QuickChatSnapshot, QuickChatUpdate } from '../../shared/quick-chat'
 import { QUICK_CHAT_CHANNELS } from '../../shared/quick-chat'
-import { IPC_CHANNELS, promptRefusal, SUPPORTED_IMAGE_EXTENSIONS, type AttachmentReadResult, type ModelInfo, type PiExtensionUiRequest, type PiRpcEvent, type PromptImage, type SessionRuntimeInfo, type Workspace } from '../../shared/ipc-contracts'
+import { IPC_CHANNELS, promptRefusal, SUPPORTED_IMAGE_EXTENSIONS, type ModelInfo, type PiExtensionUiRequest, type PiRpcEvent, type PromptImage, type SessionRuntimeInfo, type Workspace } from '../../shared/ipc-contracts'
 import { buildPlanningPrompt } from '../../shared/planning-prompt'
 import { pathsEqual } from '../../shared/path-compare'
 import { t } from '../../shared/i18n'
 import type { PiRpcManager } from '../pi-rpc-manager'
 import type { PiEventRouter, PiEventRouterDeps } from '../pi-event-router'
-import { getQuickChatWindow, hideQuickChatWindow, isQuickChatPinned, markQuickChatNativeModal, setQuickChatPinned, setQuickChatVisibilityHandler } from '../quick-chat-window'
+import { canPinQuickChatWindow, getQuickChatWindow, hideQuickChatWindow, isQuickChatPinned, markQuickChatNativeModal, setQuickChatPinned, setQuickChatVisibilityHandler } from '../quick-chat-window'
 import { getI18nEnvironment } from '../i18n'
 import { getGuiDataDir } from '../app-data-paths'
 import { listUserThemes } from '../theme-store'
@@ -17,7 +17,10 @@ import { engineForBoundSession, isWithinSessionRoots } from '../pi-paths'
 import { assertTrustedSender, isObject, isString } from './validation'
 import { createListSessions } from './session-handlers'
 import { loadAppSettings } from './settings'
-import { ensureSessionRuntimeStarted, queryModelCatalog, readRuntimeMessages, readStoppedRuntimeMessages } from './session-runtime-io'
+import { ensureSessionRuntimeStarted, readRuntimeMessages, readStoppedRuntimeMessages } from './session-runtime-io'
+import { queryModelCatalog } from './model-catalog-query'
+import { fetchCommands } from './skills-mcp-handlers'
+import { buildVoiceStatus } from './voice-handlers'
 import { readAttachment } from '../attachment-reader'
 import { requestWorkspaceActivation, type WindowControls } from './workspace-activity-wiring'
 import type { IpcContext } from './context'
@@ -27,7 +30,14 @@ export interface QuickChatWindowAccess {
   hide: () => void
   onVisibility: (handler: (visible: boolean) => void) => void
   isPinned: () => boolean
+  canPin: () => boolean
   setPinned: (value: boolean) => void
+}
+
+interface ResolvedQueryTarget {
+  workspace: Workspace
+  runtime: QuickChatBinding | null
+  manager: PiRpcManager | null
 }
 
 /** Main owns the only binding. No popup operation changes the main active session. */
@@ -40,6 +50,7 @@ export function createQuickChatHandlers(
     onVisibility: setQuickChatVisibilityHandler,
     setPinned: setQuickChatPinned,
     isPinned: isQuickChatPinned,
+    canPin: canPinQuickChatWindow,
   },
 ): {
   routing: Pick<PiEventRouterDeps, 'getSecondaryManager' | 'preferSecondaryView' | 'sendSecondaryEvent' | 'sendSecondaryApproval'>
@@ -112,6 +123,24 @@ export function createQuickChatHandlers(
       throw new Error(t('quickChat.errors.targetUnavailable'))
     }
     return { version: binding.version, runtime }
+  }
+
+  function resolveQueryTarget(input: unknown): ResolvedQueryTarget {
+    if (!isObject(input) || Object.keys(input).length !== 2) throw new Error('Invalid Quick Chat query target')
+    const runtime = input.kind === 'runtime' ? requireBinding(input.version) : null
+    if (!runtime && (input.kind !== 'draft' || !isString(input.workspaceId))) throw new Error('Invalid Quick Chat query target')
+    const workspaceId = runtime ? runtime.runtime.workspaceId : input.workspaceId
+    const workspace = wm.getWorkspaces().find((item) => item.id === workspaceId)
+    if (!workspace) throw new Error(t('quickChat.errors.targetUnavailable'))
+    return {
+      workspace, runtime,
+      manager: runtime ? wm.getSessionRuntimeManager(runtime.runtime.runtimeId) : wm.getPiManager(workspace.id),
+    }
+  }
+
+  function assertQueryCurrent(target: ResolvedQueryTarget): void {
+    if (target.runtime) requireBinding(target.runtime.version)
+    else if (!wm.getWorkspaces().some((item) => item.id === target.workspace.id)) throw new Error(t('quickChat.errors.targetUnavailable'))
   }
 
   async function ready(captured: QuickChatBinding): Promise<{ binding: QuickChatBinding; manager: PiRpcManager }> {
@@ -214,7 +243,8 @@ export function createQuickChatHandlers(
           (latest, workspace) => !latest || workspace.lastActiveAt > latest.lastActiveAt ? workspace : latest, null,
         )
         return {
-          pinned: windowAccess.isPinned(),
+          pinned: windowAccess.canPin() && windowAccess.isPinned(),
+          canPin: windowAccess.canPin(),
           binding,
           runtimes: wm.getSessionRuntimes(),
           sessions: sessions.filter((session) => workspaces.some((ws) => pathsEqual(ws.path, session.projectPath))),
@@ -352,46 +382,49 @@ export function createQuickChatHandlers(
         } finally { submitting.delete(id) }
       })
       handle(QUICK_CHAT_CHANNELS.listModels, async (input): Promise<ModelInfo[]> => {
-        // The renderer passes the popup's own draft target (null = the
-        // no-project home bucket); anything else must be a workspace that
-        // exists. It decides whose config and custom models the query sees.
-        let draftWorkspaceId: string | null = null
-        if (input === undefined || input === null) draftWorkspaceId = null
-        else if (isString(input)) draftWorkspaceId = input
-        else throw new Error('Invalid Quick Chat model query target')
-        const draftWorkspace = draftWorkspaceId
-          ? wm.getWorkspaces().find((ws) => ws.id === draftWorkspaceId) ?? null
-          : null
-        if (draftWorkspaceId && !draftWorkspace) throw new Error(t('quickChat.errors.targetUnavailable'))
-        // Prefer the bound runtime's own catalog when it is live: same engine,
-        // same config context. Only when there is no live runtime does the
-        // popup start the short-lived metadata query process.
-        const manager = binding ? wm.getSessionRuntimeManager(binding.runtime.runtimeId) : null
-        const liveEngine = manager?.getStatus().status === 'running' ? manager.getEngineKind() : undefined
-        if (manager && manager.getStatus().status === 'running') {
-          const response = await manager.sendCommand({ type: 'get_available_models' })
+        const target = resolveQueryTarget(input)
+        const live = target.manager?.getStatus().status === 'running' ? target.manager : null
+        if (live) {
+          const response = await live.sendCommand({ type: 'get_available_models' })
+          assertQueryCurrent(target)
           const data = isObject(response?.data) ? response.data : null
-          const models = data?.models
-          if (Array.isArray(models)) return models as ModelInfo[]
+          if (Array.isArray(data?.models)) return data.models as ModelInfo[]
         }
-        const settings = await loadAppSettings(wm)
-        const targetRuntime = binding
-          ? wm.getSessionRuntime(binding.runtime.runtimeId)
-          : createdRuntimeId ? wm.getSessionRuntime(createdRuntimeId) : null
-        const engine = liveEngine ?? engineForBoundSession({ sessionPath: targetRuntime?.sessionPath ?? undefined }) ?? undefined
-        // Query from the popup's own target, never main's active workspace.
-        // A draft names its project explicitly; a session being resumed has
-        // no draft yet, so the runtime the popup owns decides.
-        const targetWorkspace = draftWorkspace
-          ?? (targetRuntime ? wm.getWorkspaces().find((ws) => ws.id === targetRuntime.workspaceId) ?? null : null)
-        if (!targetWorkspace) throw new Error(t('quickChat.errors.targetUnavailable'))
-        return queryModelCatalog(wm, {
-          engine,
-          cwd: targetWorkspace.path,
-          provider: settings.defaultProvider ?? undefined,
-          model: settings.defaultModel ?? undefined,
-          thinkingLevel: settings.defaultThinkingLevel ?? undefined,
+        const models = await queryModelCatalog(wm, {
+          cwd: target.workspace.path,
+          engine: live?.getEngineKind() ?? engineForBoundSession({ sessionPath: target.runtime?.runtime.sessionPath ?? undefined }) ?? undefined,
         })
+        assertQueryCurrent(target)
+        return models
+      })
+      handle(QUICK_CHAT_CHANNELS.searchFiles, async (input) => {
+        if (!isObject(input) || !isString(input.query)) throw new Error('Invalid Quick Chat file query')
+        const target = resolveQueryTarget(input.target)
+        const files = wm.getFileService(target.workspace.id)
+        if (!files) throw new Error(t('quickChat.errors.targetUnavailable'))
+        const results = await files.searchFiles(input.query)
+        assertQueryCurrent(target)
+        return results
+      })
+      handle(QUICK_CHAT_CHANNELS.listCommands, async (input): Promise<unknown[]> => {
+        const target = resolveQueryTarget(input)
+        // A stopped target has no available RPC catalog; passive completion
+        // never starts or resumes an agent.
+        if (!target.manager || target.manager.getStatus().status !== 'running') return []
+        const commands = await fetchCommands(target.manager)
+        assertQueryCurrent(target)
+        return commands
+      })
+      handle(QUICK_CHAT_CHANNELS.voiceStatus, () => buildVoiceStatus(wm))
+      handle(QUICK_CHAT_CHANNELS.openSettings, () => {
+        windowControls.showWindow()
+        const window = windowControls.getWindow()
+        if (!window || window.isDestroyed()) return
+        if (window.webContents.isLoadingMainFrame()) {
+          window.webContents.once('did-finish-load', () => {
+            if (!window.isDestroyed()) window.webContents.send('menu:settings')
+          })
+        } else window.webContents.send('menu:settings')
       })
       handle(QUICK_CHAT_CHANNELS.setRuntimeModel, async (input) => {
         if (!isObject(input) || typeof input.provider !== 'string' || typeof input.modelId !== 'string') throw new Error('Invalid Quick Chat model config')
@@ -444,7 +477,7 @@ export function createQuickChatHandlers(
         emitRuntimes()
         return created
       })
-      handle(QUICK_CHAT_CHANNELS.pickAttachment, async (): Promise<AttachmentReadResult[]> => {
+      handle(QUICK_CHAT_CHANNELS.pickAttachment, async (): Promise<QuickChatAttachmentBatch> => {
         const window = windowAccess.getWindow()
         if (!window || window.isDestroyed()) throw new Error('Quick Chat window unavailable')
         markQuickChatNativeModal(true)
@@ -457,23 +490,19 @@ export function createQuickChatHandlers(
               { name: t('chat.attach.allFilesFilter'), extensions: ['*'] },
             ],
           })
-          if (result.canceled || result.filePaths.length === 0) return []
-          const attachments: AttachmentReadResult[] = []
+          const batch: QuickChatAttachmentBatch = { attachments: [], errors: [] }
+          if (result.canceled) return batch
           for (const filePath of result.filePaths) {
-            attachments.push(await readAttachment(filePath))
+            try {
+              batch.attachments.push({ ...await readAttachment(filePath), path: filePath })
+            } catch (error) {
+              batch.errors.push(`${basename(filePath)}: ${error instanceof Error ? error.message : String(error)}`)
+            }
           }
-          return attachments
+          return batch
         } finally {
           markQuickChatNativeModal(false)
         }
-      })
-      handle(QUICK_CHAT_CHANNELS.resolveHomeWorkspace, async (): Promise<Workspace | null> => {
-        const home = app.getPath('home')
-        if (!home) return null
-        // "No project" sends the task from the home directory. The workspace
-        // materializes only when the user actually sends, and never activates
-        // in main — the popup must not move main's active-project pointer.
-        return wm.createWorkspace('Home', home, { activate: false })
       })
       handle(QUICK_CHAT_CHANNELS.stop, async (input) => {
         const captured = requireBinding(input)
@@ -494,7 +523,7 @@ export function createQuickChatHandlers(
       handle(QUICK_CHAT_CHANNELS.hide, () => windowAccess.hide())
       handle(QUICK_CHAT_CHANNELS.setPinned, (input) => {
         if (!isObject(input) || typeof input.pinned !== 'boolean') throw new Error('Invalid Quick Chat pin state')
-        windowAccess.setPinned(input.pinned)
+        windowAccess.setPinned(windowAccess.canPin() && input.pinned)
         send({ type: 'pinned', pinned: windowAccess.isPinned() })
       })
       handle(QUICK_CHAT_CHANNELS.openInMain, () => {

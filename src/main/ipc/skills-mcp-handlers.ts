@@ -52,7 +52,7 @@ export function registerSkillsMcpHandlers(ctx: IpcContext): void {
 // ─── Command Catalog ─────────────────────────────────────────────────────────
 
 /** Command catalog from the running engine (Pi and OMP name the request differently). */
-async function fetchCommands(pi: {
+export async function fetchCommands(pi: {
   getEngineKind(): 'pi' | 'omp'
   sendCommand(command: Record<string, unknown>): Promise<unknown>
 }): Promise<unknown[]> {

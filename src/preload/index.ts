@@ -95,6 +95,13 @@ import type { SubagentListResult, SubagentTranscriptRef, SubagentTranscriptResul
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import type { QuickChatShortcutStatus } from '../shared/quick-chat'
 
+// Quick Chat can open Settings before the main renderer's hooks have mounted.
+let pendingSettingsMenu = false
+let settingsMenuSubscribed = false
+ipcRenderer.on('menu:settings', () => {
+  if (!settingsMenuSubscribed) pendingSettingsMenu = true
+})
+
 // ─── Type Definitions for the Exposed API ────────────────────────────────────
 
 interface PiDesktopAPI {
@@ -810,15 +817,21 @@ const api: PiDesktopAPI = {
 
   onMenuAction: (callback) => {
     const handlers: Array<() => void> = []
-    const actions = ['menu:new-session', 'menu:close-session', 'menu:new-workspace', 'menu:open-project']
+    const actions = ['menu:new-session', 'menu:close-session', 'menu:new-workspace', 'menu:open-project', 'menu:settings']
 
     for (const action of actions) {
       const handler = () => callback(action)
       ipcRenderer.on(action, handler)
       handlers.push(() => ipcRenderer.removeListener(action, handler))
     }
+    settingsMenuSubscribed = true
+    if (pendingSettingsMenu) {
+      pendingSettingsMenu = false
+      callback('menu:settings')
+    }
 
     return () => {
+      settingsMenuSubscribed = false
       for (const cleanup of handlers) cleanup()
     }
   },
