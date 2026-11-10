@@ -25,6 +25,7 @@ import { useContextMenu, buildDefaultContextMenu } from './components/context-me
 import { usePiEvents, useMenuActions, useInitialize } from './hooks'
 import { useFolderDrop } from './hooks/use-folder-drop'
 import { useAppStore } from './store'
+import { MainChatProvider } from './main-chat-provider'
 import { handleAppShortcut, handleAppShortcutAfterTarget, handleAppShortcutRelease, releasePushToTalk } from './utils/app-shortcuts'
 import { emitVoiceShortcut } from './voice/voice-shortcut'
 import { useEffect } from 'react'
@@ -97,6 +98,7 @@ export function App(): React.JSX.Element {
     showChrome && workflowPanelOpen && !workflowPanelFilter && workflowPanelWorkspaceId === null
 
   return (
+    <MainChatProvider>
     <div className="relative flex h-screen flex-col bg-app text-primary">
       {isDraggingFolder && (
         <div
@@ -195,5 +197,6 @@ export function App(): React.JSX.Element {
       <CommandPalette />
       {ContextMenuComponent}
     </div>
+    </MainChatProvider>
   )
 }

@@ -138,6 +138,9 @@ export function useMenuActions(): void {
           if (runtimeId) void state.closeSessionTab(runtimeId)
           break
         }
+        case 'menu:settings':
+          setCurrentView('settings')
+          break
         case 'menu:new-workspace':
           setCurrentView('settings') // Open settings where workspace creation lives
           break
@@ -491,35 +494,36 @@ export function isAbortShortcut(event: { key: string; defaultPrevented: boolean 
 export function useChatKeyboard(
   onSend: (message: string) => void,
   onSendNow: (message: string) => void,
-  onAbort: () => void,
-  inputRef: React.RefObject<HTMLTextAreaElement | null>
+  inputRef: React.RefObject<HTMLTextAreaElement | null>,
+  { active, streaming, escape, onEscape }: {
+    active: boolean
+    streaming: boolean
+    escape: 'abort' | 'hide'
+    onEscape: () => void
+  }
 ): void {
-  const isStreaming = useAppStore((state) => state.isStreaming)
-
   useEffect(() => {
+    if (!active) return
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isImeComposing(e)) return
-      if (isAbortShortcut(e, isStreaming)) {
+      if (e.defaultPrevented || isImeComposing(e)) return
+      if (e.key === 'Escape' && (escape === 'hide' || isAbortShortcut(e, streaming))) {
         e.preventDefault()
-        onAbort()
+        onEscape()
         return
       }
 
       // Enter: send message (without Shift)
       if (e.key === 'Enter' && !e.shiftKey && document.activeElement === inputRef.current) {
         e.preventDefault()
-        const value = inputRef.current?.value.trim()
-        if (value) {
-          if (e.ctrlKey || e.metaKey) onSendNow(value)
-          else onSend(value)
-          if (inputRef.current) inputRef.current.value = ''
-        }
+        const value = inputRef.current?.value ?? ''
+        if (e.ctrlKey || e.metaKey) onSendNow(value)
+        else onSend(value)
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isStreaming, onSend, onSendNow, onAbort, inputRef])
+  }, [active, streaming, escape, onSend, onSendNow, onEscape, inputRef])
 }
 
 /** A Pi built-in that maps to a GUI action rather than being inserted as text. */
@@ -571,6 +575,7 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
       { name: 'resume', description: t('commands.resume.description'), run: () => setCurrentView('sessions') },
       { name: 'fork', description: t('commands.fork.description'), run: () => setCurrentView('timeline') },
       { name: 'settings', description: t('commands.settings.description'), run: () => setCurrentView('settings') },
+      { name: 'quick-chat', description: t('quickChat.title'), run: () => { void window.piDesktop.settings.openQuickChat() } },
     ],
     [
       compactContext, cloneBranch, createNewSession, setTaskLauncherOpen, setLinkedTaskDialog, addRepoToLinkedTask,

@@ -7,14 +7,14 @@ import { buildPlanningPrompt } from '../../shared/planning-prompt'
 import { composePrompt } from './utils/compose-prompt'
 import { firstQueued, withQueued, withoutQueued, withoutWorkspaceQueue, type SendQueues } from './send-queue'
 import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
-import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
-import { placeStreamedDelta } from './streamed-delta'
+import type { DisplayAttachment, DisplayMessage } from './message-parsing'
+import { appendPromptHistory, applyChatStreamUpdate, applyChatToolExecution, parseChatMessage, retainChatMessageIdentity, type ChatToolCall } from './chat-session-state'
 import { isStoppedAnswer } from '../../shared/stopped-answer'
 import { stripAnsi } from './utils/strip-ansi'
 import { createStaleGuard } from './utils/stale-guard'
 import { splitClaudeCliMarkers } from './claude-cli-markers'
 import { markUnansweredToolCallsRunning, settleRunningToolCall } from './reattached-tool-calls'
-import type { PiCommand } from '../../shared/pi-command'
+import { normalizePiCommands, type PiCommand } from '../../shared/pi-command'
 import type { SkillGroup } from '../../shared/skill-groups'
 import { forkPointForUserMessage, normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
@@ -310,10 +310,7 @@ interface AppState {
   promptHistory: string[]
   streamingContent: string
   streamingThinking: string
-  streamingToolCalls: Map<
-    string,
-    { name: string; args: string; result?: string; isExecuting: boolean; isError?: boolean; startedAt?: number; durationMs?: number }
-  >
+  streamingToolCalls: Map<string, ChatToolCall>
   isStreaming: boolean
   /**
    * History may be incomplete after a mid-turn attach or a snapshot racing
@@ -568,13 +565,13 @@ interface AppActions {
   cloneBranch: () => Promise<void>
 
   // Model
-  setModel: (provider: string, modelId: string) => Promise<void>
+  setModel: (provider: string, modelId: string) => Promise<boolean>
   saveDefaultModel: (provider: string, modelId: string) => Promise<void>
   cycleModel: () => Promise<void>
   listModels: () => Promise<ModelInfo[]>
 
   // Thinking
-  setThinkingLevel: (level: string) => Promise<void>
+  setThinkingLevel: (level: string) => Promise<boolean>
   cycleThinkingLevel: () => Promise<void>
 
   // Context compaction
@@ -739,17 +736,6 @@ function generateId(): string {
   return `msg-${Date.now()}-${++messageCounter}`
 }
 
-function normalizePiCommands(raw: unknown): PiCommand[] {
-  if (!Array.isArray(raw)) return []
-  return raw
-    .filter((command): command is Record<string, unknown> => typeof command === 'object' && command !== null)
-    .map((command) => ({
-      name: String(command.name ?? ''),
-      description: String(command.description ?? ''),
-      source: typeof command.source === 'string' ? command.source : 'extension',
-    }))
-    .filter((command) => command.name.length > 0)
-}
 
 // Navigation invalidates all session I/O. History and state requests also
 // have their own sequence so overlapping loads of one session cannot rewind it.
@@ -1048,7 +1034,7 @@ async function parseMessagesChunked(
     if (gen !== sessionLoadGeneration) return null
     const end = Math.min(i + PARSE_CHUNK, raw.length)
     for (let j = i; j < end; j++) {
-      const parsed = parseAgentMessage(raw[j])
+      const parsed = parseChatMessage(raw[j])
       if (parsed) out.push(parsed)
     }
     // Yield so Windows doesn't mark the window "Not Responding".
@@ -1403,18 +1389,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     })
   },
 
-  // Append a sent prompt to the recall history. Ignores blanks and consecutive
-  // duplicates (shell-style), and caps the list so it can't grow unbounded.
-  recordPrompt: (text) =>
-    set((state) => {
-      const trimmed = text.trim()
-      if (!trimmed) return state
-      const history = state.promptHistory
-      if (history[history.length - 1] === trimmed) return state
-      const next = [...history, trimmed]
-      if (next.length > 200) next.shift()
-      return { promptHistory: next }
-    }),
+  // Append a sent prompt to the recall history. Blanks and consecutive
+  // duplicates are ignored (shell-style); shared with the quick-chat popup.
+  recordPrompt: (text) => set(() => ({ promptHistory: appendPromptHistory(useAppStore.getState().promptHistory, text) })),
 
   // ─── Prompts ──────────────────────────────────────────────────────────
 
@@ -2097,23 +2074,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
               timestamp: Date.now(),
             })
           }
-          // Preserve React keys and the user's open reasoning blocks when an
-          // idle backfill returns the same messages with fresh parser IDs.
-          const previous = new Map<string, DisplayMessage[]>()
-          const key = (entry: DisplayMessage): string => JSON.stringify([
-            entry.role, entry.content, entry.thinking, entry.toolCallId,
-            !entry.content && !entry.thinking ? entry.toolCalls?.map((call) => call.id) : undefined,
-          ])
-          for (const entry of messagesAtStart) {
-            const identity = key(entry)
-            const matches = previous.get(identity) ?? []
-            matches.push(entry)
-            previous.set(identity, matches)
-          }
-          const messages = loaded.map((entry) => {
-            const existing = previous.get(key(entry))?.shift()
-            return existing ? { ...entry, id: existing.id, initiallyShowThinking: existing.initiallyShowThinking } : entry
-          })
+          const messages = retainChatMessageIdentity(loaded, messagesAtStart)
           // Back in a turn that is still running: its unanswered tools are running.
           const reattached = get().isStreaming && get().reattachedMidTurn
           set({
@@ -2346,9 +2307,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // The runtime stopped after the picker listed: keep the choice for the next start.
       if (get().piStatus !== 'running') {
         await get().saveDefaultModel(provider, modelId)
-        return
+        return true
       }
-      await window.piDesktop.model.set(provider, modelId)
+      const response = await window.piDesktop.model.set(provider, modelId) as { success?: boolean; error?: string } | null
+      if (!response?.success) throw new Error(response?.error ?? t('store.messages.unknownError'))
       try {
         await get().saveDefaultModel(provider, modelId)
       } catch {
@@ -2356,6 +2318,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       }
       set({ composerFocusRequested: true })
       get().refreshSessionState()
+      return true
     } catch (err) {
       get().addMessage({
         id: generateId(),
@@ -2363,6 +2326,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         content: t('store.messages.modelError', { detail: err instanceof Error ? err.message : String(err) }),
         timestamp: Date.now(),
       })
+      return false
     }
   },
 
@@ -2408,9 +2372,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Thinking ─────────────────────────────────────────────────────────
 
   setThinkingLevel: async (level) => {
+    let applied = false
     try {
       const response = await window.piDesktop.thinking.setLevel(level) as { success?: boolean } | null
-      if (!response?.success) return
+      if (!response?.success) return false
+      applied = true
       try {
         const updated = await window.piDesktop.settings.save({ defaultThinkingLevel: level })
         set({ settings: updated })
@@ -2418,8 +2384,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         await get().refreshSessionState()
       }
     } catch {
-      // Silent failure
+      return applied
     }
+    return applied
   },
 
   cycleThinkingLevel: async () => {
@@ -2624,7 +2591,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         // ignored: assistant content renders via message_update / message_end.
         const startedMessage = (event as PiMessageStartEvent).message
         if (startedMessage && (startedMessage as { role?: unknown }).role === 'user') {
-          const parsed = parseAgentMessage(startedMessage)
+          const parsed = parseChatMessage(startedMessage)
           if (parsed && parsed.content.trim() && !consumeLocalEcho(parsed.content)) {
             get().addMessage(parsed)
             // Mirror sendPrompt's turn-start state so the external turn gets
@@ -3945,97 +3912,26 @@ function backfillStreamingText(get: () => AppState & AppActions, set: ZustandSet
     .finally(() => { streamingTextBackfill = null })
 }
 
-const STREAMED_DELTA_FIELDS = {
-  text_delta: 'streamingContent',
-  thinking_delta: 'streamingThinking',
-} as const satisfies Record<string, keyof AppState>
-
 function handleMessageUpdate(
   event: PiMessageUpdateEvent,
   set: ZustandSet,
   get: () => AppState & AppActions,
 ): void {
-  const { assistantMessageEvent } = event
-  // Start/delta events identify the call by its index in the partial message;
-  // only toolcall_end carries the finalized toolCall directly.
-  const partialContent = assistantMessageEvent.partial?.content
-  const toolCall = assistantMessageEvent.toolCall ?? (
-    Array.isArray(partialContent) && assistantMessageEvent.contentIndex !== undefined
-      ? partialContent[assistantMessageEvent.contentIndex] as Record<string, unknown> | undefined
-      : undefined
-  )
-
-  switch (assistantMessageEvent.type) {
-    case 'text_delta':
-    case 'thinking_delta': {
-      const field = STREAMED_DELTA_FIELDS[assistantMessageEvent.type]
-      let missedStart = false
-      set((state) => {
-        const placed = placeStreamedDelta(state[field], assistantMessageEvent.delta ?? '', assistantMessageEvent.offset)
-        if (placed !== null) return { [field]: placed }
-        missedStart = true
-        return {}
-      })
-      if (missedStart) backfillStreamingText(get, set)
-      break
+  let missingPrefix = false
+  set((state) => {
+    const next = applyChatStreamUpdate({
+      content: state.streamingContent,
+      thinking: state.streamingThinking,
+      tools: state.streamingToolCalls,
+    }, event.assistantMessageEvent)
+    missingPrefix = next.missingPrefix
+    return {
+      streamingContent: next.content,
+      streamingThinking: next.thinking,
+      streamingToolCalls: next.tools,
     }
-
-    case 'text_end':
-    case 'thinking_end':
-      // Content is finalized in message_end
-      break
-
-    case 'toolcall_start': {
-      if (toolCall) {
-        const callId = String(toolCall.id ?? '')
-        set((state) => {
-          const newMap = new Map(state.streamingToolCalls)
-          newMap.set(callId, {
-            name: String(toolCall.name ?? 'unknown'),
-            args: '',
-            isExecuting: true,
-            startedAt: Date.now(),
-          })
-          return { streamingToolCalls: newMap }
-        })
-      }
-      break
-    }
-
-    case 'toolcall_delta': {
-      if (toolCall?.id) {
-        set((state) => {
-          const newMap = new Map(state.streamingToolCalls)
-          const existing = newMap.get(String(toolCall.id))
-          if (existing) {
-            newMap.set(String(toolCall.id), {
-              ...existing,
-              args: existing.args + (assistantMessageEvent.delta ?? ''),
-            })
-          }
-          return { streamingToolCalls: newMap }
-        })
-      }
-      break
-    }
-
-    case 'toolcall_end': {
-      if (toolCall?.id) {
-        set((state) => {
-          const newMap = new Map(state.streamingToolCalls)
-          const existing = newMap.get(String(toolCall.id))
-          if (existing) {
-            newMap.set(String(toolCall.id), {
-              ...existing,
-              args: JSON.stringify(toolCall.arguments ?? existing.args),
-            })
-          }
-          return { streamingToolCalls: newMap }
-        })
-      }
-      break
-    }
-  }
+  })
+  if (missingPrefix) backfillStreamingText(get, set)
 }
 
 // Pi and OMP report a plain user stop with exactly these texts; anything else
@@ -4073,7 +3969,7 @@ function handleTurnComplete(
     const newMessages = [...state.messages]
     // Final messages contain the full body, including bytes emitted before a
     // mid-turn attach. Deltas alone can only reconstruct the suffix we saw.
-    const final = !completeTools && Array.isArray(message?.content) ? parseAgentMessage(message) : null
+    const final = !completeTools && Array.isArray(message?.content) ? parseChatMessage(message) : null
     const nativeIds = new Set((Array.isArray(message?.content) ? message.content : [])
       .filter((block: Record<string, unknown>) => block?.type === 'toolCall')
       .map((block: Record<string, unknown>) => block.id))
@@ -4176,13 +4072,7 @@ function handleToolStart(
   set: ZustandSet
 ): void {
   set((state) => {
-    const newMap = new Map(state.streamingToolCalls)
-    newMap.set(event.toolCallId, {
-      name: event.toolName,
-      args: JSON.stringify(event.args),
-      isExecuting: true,
-      startedAt: Date.now(),
-    })
+    const newMap = applyChatToolExecution(state.streamingToolCalls, event)
     const subagentTasks = subagentTasksAfterTool(state, event.toolName, {
       toolCallId: event.toolCallId,
       args: event.args,
@@ -4198,18 +4088,8 @@ function handleToolUpdate(
   event: PiToolExecutionUpdateEvent,
   set: ZustandSet
 ): void {
-  const text = event.partialResult.content
-    .filter((c) => c.type === 'text')
-    .map((c) => c.text ?? '')
-    .join('')
-
   set((state) => {
-    const newMap = new Map(state.streamingToolCalls)
-    const existing = newMap.get(event.toolCallId)
-    newMap.set(event.toolCallId, {
-      ...(existing ?? { name: event.toolName, args: JSON.stringify(event.args), isExecuting: true }),
-      result: text || existing?.result,
-    })
+    const newMap = applyChatToolExecution(state.streamingToolCalls, event)
 
     const subagentTasks = subagentTasksAfterTool(state, event.toolName, {
       toolCallId: event.toolCallId,
@@ -4226,23 +4106,9 @@ function handleToolEnd(
   event: PiToolExecutionEndEvent,
   set: ZustandSet
 ): void {
-  const resultText = event.result.content
-    .filter((c) => c.type === 'text')
-    .map((c) => c.text ?? '')
-    .join('')
-
   set((state) => {
-    const newMap = new Map(state.streamingToolCalls)
-    const existing = newMap.get(event.toolCallId)
-    if (existing) {
-      newMap.set(event.toolCallId, {
-        ...existing,
-        isExecuting: false,
-        isError: event.isError,
-        result: resultText || existing.result,
-        durationMs: existing.startedAt ? Date.now() - existing.startedAt : existing.durationMs,
-      })
-    }
+    const existing = state.streamingToolCalls.get(event.toolCallId)
+    const newMap = applyChatToolExecution(state.streamingToolCalls, event)
 
     const subagentTasks = subagentTasksAfterTool(state, event.toolName, {
       toolCallId: event.toolCallId,

@@ -384,9 +384,10 @@ export function createQuickChatHandlers(
         // no draft yet, so the runtime the popup owns decides.
         const targetWorkspace = draftWorkspace
           ?? (targetRuntime ? wm.getWorkspaces().find((ws) => ws.id === targetRuntime.workspaceId) ?? null : null)
+        if (!targetWorkspace) throw new Error(t('quickChat.errors.targetUnavailable'))
         return queryModelCatalog(wm, {
           engine,
-          cwd: targetWorkspace?.path,
+          cwd: targetWorkspace.path,
           provider: settings.defaultProvider ?? undefined,
           model: settings.defaultModel ?? undefined,
           thinkingLevel: settings.defaultThinkingLevel ?? undefined,

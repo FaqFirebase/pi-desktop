@@ -135,6 +135,7 @@
     "startingAgent": "Запуск агента…",
     "stopButton": {
       "ariaLabel": "Остановить генерацию",
+      "title": "Остановить",
       "titleWithShortcut": "Остановить (Esc)"
     },
     "subagentPanel": {
