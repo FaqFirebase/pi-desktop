@@ -179,3 +179,24 @@ test('parseSkillFrontmatter accepts CRLF endings and a UTF-8 BOM', () => {
     description: 'bom file',
   })
 })
+
+test('OMP global skills come from the profile OMP runs under (OMP_PROFILE)', async (t) => {
+  const saved = { OMP_PROFILE: process.env.OMP_PROFILE, PI_PROFILE: process.env.PI_PROFILE }
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+  process.env.OMP_PROFILE = 'work'
+  delete process.env.PI_PROFILE
+  await withSkillTree(async (home, cwd) => {
+    await writeSkill(join(home, '.omp', 'profiles', 'work', 'agent', 'skills'), 'work-only')
+    const skills = (await listSkills(cwd, 'omp', home)).map((skill) => skill.name)
+    assert.equal(skills.includes('work-only'), true)
+    assert.equal(skills.includes('omp-global'), false, "the default profile's global skills are another account's")
+    // Project, .claude and .agents roots are shared by every profile.
+    assert.equal(skills.includes('proj-omp'), true)
+    assert.equal(skills.includes('shared'), true)
+  })
+})

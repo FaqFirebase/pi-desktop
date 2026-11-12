@@ -62,6 +62,7 @@ src/
 │   ├── package-filter.ts         # Tokenized catalog search, shared main+renderer
 │   ├── skill-groups.ts           # Skills panel groups: a display setting keyed by skill name; skill files never move
 │   ├── package-spec.ts           # Validate package specs before the Pi CLI runs
+│   ├── omp-profile.ts            # OMP profile name rule
 │   ├── version-compare.ts        # x.y.z-prerelease ordering (app and package update checks)
 │   ├── path-compare.ts           # Platform-aware path equality (win32 case-fold); main+renderer
 │   ├── folder-drop.ts            # Pure helpers for drag-drop folder -> workspace
@@ -100,6 +101,7 @@ src/
 │   ├── pi-rpc-manager.ts         # Agent subprocess management (pi or omp), startup readiness probe, descendant-tree kill
 │   ├── pi-binary-resolution.ts   # Locate and identify installed pi/omp executables
 │   ├── pi-paths.ts               # Per-engine session-store roots; which engine owns a session file
+│   ├── omp-paths.ts              # OMP's directories for the profile in OMP_PROFILE
 │   ├── pi-dotenv.ts              # Read ~/.pi/.env for agent processes, the terminal, and Diagnostics
 │   ├── agent-resources.ts        # Path of a file shipped in resources/ (an agent extension), dev and packaged
 │   ├── latest-project-session.ts # Per-engine session directories of a project; its latest session
@@ -327,6 +329,7 @@ resources/
 - Session names: Pi appends `session_info` records; OMP rewrites a fixed first-line `{"type":"title"}` slot. `session-name.ts`/`session-metadata.ts` read both (session_info outranks the title slot).
 - Skills are listed per engine (`skills-discovery.ts`): Pi scans `~/.pi/agent/skills`, `~/.agents/skills` and project `.pi/skills`/`.agents/skills` recursively; OMP scans `.omp`, `.claude` and `.agents` roots one level deep. Skills only the other engine can load are never shown. When the engine is running, plugin-shipped skills from its command catalog are merged in (`rpc:`-prefixed pseudo-paths render from the description).
 - `~/.pi/.env` (`pi-dotenv.ts`) adds its variables to every Pi or OMP process, the council's Pi run, commit message suggestions, package CLI runs, and the terminal, and Diagnostics uses it for the provider key check. A variable already in the app's environment wins.
+- OMP profiles: OMP runs under the profile its environment names (`OMP_PROFILE`, else the legacy `PI_PROFILE`; empty or `default` is the default profile), and a named profile moves OMP's whole tree to `~/.omp/profiles/<name>`. Agent processes inherit the app's environment, so every OMP file the app reads follows the same profile: the session store, `models.yml`, `mcp.json`, global skills and the plugin store (`omp-paths.ts`; name rule in `shared/omp-profile.ts`, mirroring OMP's). A name OMP would refuse falls back to the default profile's files and is logged at startup. `OMP_CODING_AGENT_DIR` still relocates only the default profile's session store.
 
 ### Workspace management
 
@@ -544,6 +547,7 @@ The GUI data dir is `<appData>/pi-desktop` (on Linux, `~/.config/pi-desktop`). `
 | `<workspace>/.pi-desktop/permission-rules.json` | Workspace permission rules |
 | `~/.pi/agent/sessions/` | Pi session files (organized by cwd) |
 | `~/.omp/agent/sessions/` | OMP session files (same layout; OMP writes here regardless of flags) |
+| `~/.omp/profiles/<name>/` | The same OMP tree for the named profile in `OMP_PROFILE` (`agent/sessions/`, `agent/models.yml`, `agent/mcp.json`, `agent/skills/`, `plugins/`) |
 | `~/.pi/agent/settings.json` | Pi global settings (installed `packages[]`) |
 | `.pi/settings.json` | Pi project settings |
 | `~/.pi/agent/models.json` | Pi custom models/providers |

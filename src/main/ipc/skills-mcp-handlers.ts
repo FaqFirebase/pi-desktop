@@ -8,6 +8,7 @@ import type { IpcContext } from './context'
 import { getPiCli } from '../pi-rpc-manager'
 import { listSkills, mergeRpcSkills, readListedSkillFile } from '../skills-discovery'
 import { isPiBuiltInExtensionCommand } from '../../shared/pi-command'
+import { currentOmpProfile, ompAgentDirIn } from '../omp-paths'
 
 export function registerSkillsMcpHandlers(ctx: IpcContext): void {
   const { workspaceManager } = ctx
@@ -86,16 +87,18 @@ async function listMcpServers(wsPath?: string): Promise<McpServerInfo[]> {
   const servers: McpServerInfo[] = []
   const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
   const omp = getPiCli().kind === 'omp'
+  // OMP's global MCP servers belong to the profile it runs under (OMP_PROFILE).
+  const ompAgentDir = ompAgentDirIn(homeDir, currentOmpProfile())
   const globalSettingsPaths = omp
     ? [
-        join(homeDir, '.omp', 'agent', 'mcp.json'),
-        join(homeDir, '.omp', 'agent', '.mcp.json'),
+        join(ompAgentDir, 'mcp.json'),
+        join(ompAgentDir, '.mcp.json'),
         join(homeDir, '.pi', 'agent', 'settings.json'),
       ]
     : [
         join(homeDir, '.pi', 'agent', 'settings.json'),
-        join(homeDir, '.omp', 'agent', 'mcp.json'),
-        join(homeDir, '.omp', 'agent', '.mcp.json'),
+        join(ompAgentDir, 'mcp.json'),
+        join(ompAgentDir, '.mcp.json'),
       ]
   for (const settingsPath of globalSettingsPaths) {
     await collectMcpServers(settingsPath, servers, 'global')

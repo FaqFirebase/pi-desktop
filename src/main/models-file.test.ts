@@ -112,3 +112,21 @@ test('describeModelsReadFailure keeps the current English messages', () => {
     'Could not read models.json: EACCES',
   )
 })
+
+test('the OMP models file belongs to the profile OMP runs under (OMP_PROFILE)', (t) => {
+  const saved = { OMP_PROFILE: process.env.OMP_PROFILE, PI_PROFILE: process.env.PI_PROFILE }
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+  process.env.OMP_PROFILE = 'work'
+  delete process.env.PI_PROFILE
+  assert.equal(
+    resolveModelsFile('omp', '/nonexistent-home').file,
+    join('/nonexistent-home', '.omp', 'profiles', 'work', 'agent', 'models.yml')
+  )
+  // Pi has no profiles.
+  assert.equal(resolveModelsFile('pi', '/home/u').file, join('/home/u', '.pi', 'agent', 'models.json'))
+})
