@@ -645,6 +645,9 @@
       "notFound": "Note not found: {{id}}",
       "titleRequired": "Note title is required"
     },
+    "ompUsage": {
+      "unreadable": "OMP printed usage output the app could not read"
+    },
     "packages": {
       "invalidSpec": "Invalid package specification",
       "listFailed": "Could not read the OMP plugin list: {{detail}}",
@@ -1685,6 +1688,22 @@
     },
     "trigger": {
       "title": "System status"
+    },
+    "usage": {
+      "capacity_one": "{{used}} of {{count}} account used",
+      "capacity_other": "{{used}} of {{count}} accounts used",
+      "fetched": "Fetched {{time}}",
+      "noAccounts": "No signed-in account reports usage",
+      "resetsExpire": "soonest expires in {{duration}}",
+      "resetsIn": "resets in {{duration}}",
+      "savedResets_one": "{{count}} saved reset",
+      "savedResets_other": "{{count}} saved resets",
+      "unknownAmount": "unknown",
+      "usableNow_one": "{{count}} usable now",
+      "usableNow_other": "{{count}} usable now"
+    },
+    "usageSection": {
+      "title": "Usage Limits"
     },
     "workspaceSection": {
       "title": "Workspace"

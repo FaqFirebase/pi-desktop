@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { findSessionPreview, getSessionTitle } from '../utils/session-title'
 import { processStatusLabel } from '../utils/process-status-label'
+import { formatDurationShort } from '../utils/format-duration'
+import { formatRelativeTime } from '../utils/format-relative-time'
 import { useAppStore } from '../store'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { invocationToken } from '../../../shared/pi-command'
-import type { InstalledSkill } from '../../../shared/ipc-contracts'
+import type { InstalledSkill, OmpUsageAccount, OmpUsageResult, OmpUsageStatus } from '../../../shared/ipc-contracts'
 import { clsx } from 'clsx'
 import {
   Activity,
@@ -23,6 +25,7 @@ import {
   Plug,
   FileText,
   BookOpen,
+  Gauge,
 } from 'lucide-react'
 
 interface CommandInfo {
@@ -55,8 +58,13 @@ export function StatusPopover(): React.JSX.Element {
   const [skills, setSkills] = useState<InstalledSkill[]>([])
   const [mcpServers, setMcpServers] = useState<McpServer[]>([])
   const [loading, setLoading] = useState(false)
+  const [usage, setUsage] = useState<OmpUsageResult | null>(null)
+  const [usageLoading, setUsageLoading] = useState(false)
+  // Reset countdowns tick while the popover is open.
+  const [now, setNow] = useState(() => Date.now())
 
   const piStatus = useAppStore((state) => state.piStatus)
+  const piEngine = useAppStore((state) => state.piEngine)
   const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
   const piPid = useAppStore((state) => state.piPid)
   const piError = useAppStore((state) => state.piError)
@@ -99,6 +107,30 @@ export function StatusPopover(): React.JSX.Element {
     }
 
     loadData()
+  }, [isOpen])
+
+  // Account usage limits (`omp usage`). Main answers null when the engine in
+  // view is Pi, which has no equivalent, so the section stays hidden.
+  const loadUsage = useCallback(async () => {
+    setUsageLoading(true)
+    try {
+      setUsage(await window.piDesktop.ompUsage.get())
+    } catch (err) {
+      setUsage({ ok: false, error: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setUsageLoading(false)
+      setNow(Date.now())
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isOpen) void loadUsage()
+  }, [isOpen, piEngine, loadUsage])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
   }, [isOpen])
 
   // Close on click outside
@@ -237,19 +269,7 @@ export function StatusPopover(): React.JSX.Element {
                       label={t('status.row.usage')}
                       value={
                         <div className="flex items-center gap-2">
-                          <div className="flex-1 h-1.5 bg-card rounded-full overflow-hidden">
-                            <div
-                              className={clsx(
-                                'h-full rounded-full transition-all',
-                                contextPct > 80
-                                  ? 'bg-error'
-                                  : contextPct > 60
-                                    ? 'bg-warning'
-                                    : 'bg-success'
-                              )}
-                              style={{ width: `${contextPct}%` }}
-                            />
-                          </div>
+                          <UsageBar percent={contextPct} tone={usageTone(contextPct)} />
                           <span className="text-[11px] w-8 shrink-0 text-right tabular-nums">
                             {contextPct}%
                           </span>
@@ -277,6 +297,46 @@ export function StatusPopover(): React.JSX.Element {
                   )}
                   {isCompacting ? t('status.compactButton.compacting') : t('status.compactButton.compact')}
                 </button>
+              </StatusSection>
+            )}
+
+            {/* Account usage limits (OMP) */}
+            {(usage || (usageLoading && piEngine === 'omp')) && (
+              <StatusSection title={t('status.usageSection.title')} icon={<Gauge size={13} />}>
+                {!usage ? (
+                  <div className="flex justify-center py-1">
+                    <Loader2 size={12} className="animate-spin text-dim" />
+                  </div>
+                ) : !usage.ok ? (
+                  <div className="text-[11px] text-error line-clamp-3 break-words" title={usage.error}>
+                    {usage.error}
+                  </div>
+                ) : usage.report.accounts.length === 0 ? (
+                  <div className="text-xs text-faint py-1">{t('status.usage.noAccounts')}</div>
+                ) : (
+                  <>
+                    {usage.report.accounts.map((account, index) => (
+                      <UsageAccountRows key={`${account.provider}:${account.account ?? index}`} account={account} now={now} />
+                    ))}
+                    {usage.report.capacity
+                      .filter((row) => row.accounts > 1)
+                      .map((row) => (
+                        <StatusRow
+                          key={`${row.provider}:${row.window}:${row.meter ?? ''}`}
+                          label={`${row.provider} ${row.meter ? `${row.window} (${row.meter})` : row.window}`}
+                          value={t('status.usage.capacity', {
+                            used: row.usedAccounts.toFixed(2),
+                            count: row.accounts,
+                          })}
+                        />
+                      ))}
+                    {usage.report.fetchedAt !== null && (
+                      <div className="text-[10px] text-faint">
+                        {t('status.usage.fetched', { time: formatRelativeTime(usage.report.fetchedAt, now) })}
+                      </div>
+                    )}
+                  </>
+                )}
               </StatusSection>
             )}
 
@@ -405,6 +465,7 @@ export function StatusPopover(): React.JSX.Element {
             <button
               onClick={() => {
                 useAppStore.getState().refreshSessionStats()
+                void loadUsage()
               }}
               className="flex items-center gap-1 hover:text-muted transition-colors"
             >
@@ -457,6 +518,88 @@ function StatusSection({
       {expanded && (
         <div className="px-4 pb-2 space-y-1">
           {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Usage bar ───────────────────────────────────────────────────────────────
+
+type UsageTone = 'success' | 'warning' | 'error'
+
+const TONE_CLASSES = {
+  success: 'bg-success',
+  warning: 'bg-warning',
+  error: 'bg-error',
+} as const satisfies Record<UsageTone, string>
+
+/** Bar color for a used percentage; OMP's own warning/exhausted status wins when it is worse. */
+function usageTone(percent: number, status?: OmpUsageStatus): UsageTone {
+  if (status === 'exhausted' || percent > 80) return 'error'
+  if (status === 'warning' || percent > 60) return 'warning'
+  return 'success'
+}
+
+function UsageBar({ percent, tone }: { percent: number; tone: UsageTone }): React.JSX.Element {
+  return (
+    <div className="flex-1 h-1.5 bg-card rounded-full overflow-hidden">
+      <div
+        className={clsx('h-full rounded-full transition-all', TONE_CLASSES[tone])}
+        style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+      />
+    </div>
+  )
+}
+
+// ─── Usage account ───────────────────────────────────────────────────────────
+
+function UsageAccountRows({ account, now }: { account: OmpUsageAccount; now: number }): React.JSX.Element {
+  const { t } = useTranslation()
+  const { resets } = account
+  return (
+    <div className="py-0.5 space-y-1">
+      <div className="flex items-baseline gap-1.5 min-w-0 text-[11px]">
+        <span className="shrink-0 font-medium text-secondary">{account.provider}</span>
+        {account.account && (
+          <span className="truncate text-faint" title={account.account}>{account.account}</span>
+        )}
+        {account.org && (
+          <span className="ml-auto shrink-0 max-w-[40%] truncate text-faint" title={account.org}>{account.org}</span>
+        )}
+      </div>
+      {account.limits.map((limit) => {
+        const percent = limit.usedFraction === null ? null : Math.round(limit.usedFraction * 1000) / 10
+        return (
+          <div key={limit.id}>
+            <div className="flex items-center gap-2">
+              <span className="w-28 shrink-0 truncate text-[11px] text-dim" title={limit.label}>{limit.label}</span>
+              {percent === null ? (
+                <span className="ml-auto text-[11px] text-faint">{t('status.usage.unknownAmount')}</span>
+              ) : (
+                <>
+                  <UsageBar percent={percent} tone={usageTone(percent, limit.status)} />
+                  <span className="w-11 shrink-0 text-right text-[11px] tabular-nums text-secondary">
+                    {percent.toFixed(1)}%
+                  </span>
+                </>
+              )}
+            </div>
+            {limit.resetsAt !== null && (
+              <div className="text-right text-[10px] text-faint">
+                {t('status.usage.resetsIn', { duration: formatDurationShort(limit.resetsAt - now) })}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      {resets && resets.available > 0 && (
+        <div className="flex flex-wrap gap-x-2 text-[10px] text-faint">
+          <span>{t('status.usage.savedResets', { count: resets.available })}</span>
+          <span>{t('status.usage.usableNow', { count: resets.usable })}</span>
+          {resets.soonestExpiresAt !== null && (
+            <span>{t('status.usage.resetsExpire', { duration: formatDurationShort(resets.soonestExpiresAt - now) })}</span>
+          )}
         </div>
       )}
     </div>

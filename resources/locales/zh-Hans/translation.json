@@ -631,6 +631,9 @@
       "notFound": "未找到笔记：{{id}}",
       "titleRequired": "必须填写笔记标题"
     },
+    "ompUsage": {
+      "unreadable": "OMP 输出的用量信息无法读取"
+    },
     "packages": {
       "invalidSpec": "无效的包描述",
       "listFailed": "无法读取 OMP 插件列表：{{detail}}",
@@ -1654,6 +1657,19 @@
     },
     "trigger": {
       "title": "系统状态"
+    },
+    "usage": {
+      "capacity_other": "已用 {{used}} / {{count}} 个账号",
+      "fetched": "获取于{{time}}",
+      "noAccounts": "没有已登录账号报告用量",
+      "resetsExpire": "最早于 {{duration}} 后过期",
+      "resetsIn": "{{duration}} 后重置",
+      "savedResets_other": "已保存 {{count}} 次重置",
+      "unknownAmount": "未知",
+      "usableNow_other": "{{count}} 次现在可用"
+    },
+    "usageSection": {
+      "title": "用量限额"
     },
     "workspaceSection": {
       "title": "工作区"

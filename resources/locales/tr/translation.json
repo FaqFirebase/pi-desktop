@@ -645,6 +645,9 @@
       "notFound": "Not bulunamadı: {{id}}",
       "titleRequired": "Not başlığı gerekli"
     },
+    "ompUsage": {
+      "unreadable": "OMP, uygulamanın okuyamadığı bir kullanım çıktısı verdi"
+    },
     "packages": {
       "invalidSpec": "Geçersiz paket tanımı",
       "listFailed": "OMP eklenti listesi okunamadı: {{detail}}",
@@ -1685,6 +1688,22 @@
     },
     "trigger": {
       "title": "Sistem durumu"
+    },
+    "usage": {
+      "capacity_one": "{{count}} hesaptan {{used}} kullanıldı",
+      "capacity_other": "{{count}} hesaptan {{used}} kullanıldı",
+      "fetched": "{{time}} alındı",
+      "noAccounts": "Oturum açılmış hiçbir hesap kullanım bildirmiyor",
+      "resetsExpire": "en yakını {{duration}} içinde sona eriyor",
+      "resetsIn": "{{duration}} içinde sıfırlanır",
+      "savedResets_one": "{{count}} kayıtlı sıfırlama",
+      "savedResets_other": "{{count}} kayıtlı sıfırlama",
+      "unknownAmount": "bilinmiyor",
+      "usableNow_one": "{{count}} şimdi kullanılabilir",
+      "usableNow_other": "{{count}} şimdi kullanılabilir"
+    },
+    "usageSection": {
+      "title": "Kullanım Limitleri"
     },
     "workspaceSection": {
       "title": "Çalışma alanı"

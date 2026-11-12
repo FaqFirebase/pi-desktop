@@ -146,6 +146,8 @@ export const IPC_CHANNELS = {
   SKILLS_READ: 'skills:read',
   COMMANDS_LIST: 'commands:list',
   MCP_SERVERS_LIST: 'mcp:servers-list',
+  // OMP account usage limits (`omp usage --json`)
+  OMP_USAGE_GET: 'omp:usage-get',
 
   // Models config
   MODELS_READ: 'models:read',
@@ -965,6 +967,66 @@ export interface SessionStats {
     percent: number | null
   } | null
 }
+
+// ─── OMP usage limits (`omp usage --json`) ──────────────────────────────────
+
+export type OmpUsageStatus = 'ok' | 'warning' | 'exhausted' | 'unknown'
+
+/** One limit window of an account, e.g. "Claude 5 Hour". */
+export interface OmpUsageLimit {
+  id: string
+  label: string
+  /** 0..1; above 1 is overage. Null when the provider reported no amount. */
+  usedFraction: number | null
+  /** Epoch ms the window resets, when reported. */
+  resetsAt: number | null
+  status: OmpUsageStatus
+}
+
+/** Saved rate-limit resets an account can spend on demand. */
+export interface OmpUsageResets {
+  /** Banked resets, including ones not usable now. */
+  available: number
+  /** Resets the provider says can be spent now. */
+  usable: number
+  /** Epoch ms of the soonest expiry among banked resets, when reported. */
+  soonestExpiresAt: number | null
+}
+
+/** One authenticated account's usage report. */
+export interface OmpUsageAccount {
+  provider: string
+  /** Email, else account id; null when the report names neither. */
+  account: string | null
+  org: string | null
+  limits: OmpUsageLimit[]
+  resets: OmpUsageResets | null
+}
+
+/** Quota left across all of a provider's accounts for one window. */
+export interface OmpUsageCapacity {
+  provider: string
+  window: string
+  /** Separate meter of the window, e.g. a model tier; null for the main one. */
+  meter: string | null
+  accounts: number
+  /** Accounts' worth of quota used, 0..accounts. */
+  usedAccounts: number
+}
+
+export interface OmpUsageReport {
+  accounts: OmpUsageAccount[]
+  capacity: OmpUsageCapacity[]
+  /**
+   * Epoch ms of the oldest account report. OMP caches reports per account, so
+   * this is how stale the section can be; null when no report says.
+   */
+  fetchedAt: number | null
+}
+
+export type OmpUsageResult =
+  | { ok: true; report: OmpUsageReport }
+  | { ok: false; error: string }
 
 export interface SessionListItem {
   path: string
