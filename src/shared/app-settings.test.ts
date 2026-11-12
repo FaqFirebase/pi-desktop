@@ -85,3 +85,9 @@ test('skill groups default to none and are cleaned on load', () => {
   assert.deepEqual(settings.skillGroups, [{ id: 'a', name: 'Git', skills: ['commit'], collapsed: true }])
   assert.deepEqual(normalizeStoredSettings({ skillGroups: 'bad' }, LANGUAGES).skillGroups, [])
 })
+
+test('multiple instances are off by default, and a stored choice is kept', () => {
+  assert.equal(DEFAULT_SETTINGS.allowMultipleInstances, false)
+  assert.equal(normalizeStoredSettings({ allowMultipleInstances: true }, LANGUAGES).allowMultipleInstances, true)
+  assert.equal(normalizeStoredSettings({ allowMultipleInstances: 'yes' }, LANGUAGES).allowMultipleInstances, false)
+})

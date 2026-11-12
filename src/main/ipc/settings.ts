@@ -20,7 +20,8 @@ import type { IpcContext } from './context'
 
 // ─── App Settings Persistence ────────────────────────────────────────────────
 
-const SETTINGS_FILE_NAME = 'settings.json'
+/** Also read at startup, before the data folder is applied (see index.ts). */
+export const SETTINGS_FILE_NAME = 'settings.json'
 
 /** Also consumed by the diagnostics report. */
 export function getSettingsPath(): string {

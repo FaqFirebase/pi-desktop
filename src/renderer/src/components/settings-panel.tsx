@@ -138,6 +138,9 @@ export function SettingsPanel(): React.JSX.Element {
   const [resumeLastSession, setResumeLastSession] = useState(draft0.resumeLastSession ?? settings?.resumeLastSession ?? DEFAULT_SETTINGS.resumeLastSession)
   const [openToHomeOnLaunch, setOpenToHomeOnLaunch] = useState(draft0.openToHomeOnLaunch ?? settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch)
   const [runOnStartup, setRunOnStartup] = useState(draft0.runOnStartup ?? settings?.runOnStartup ?? DEFAULT_SETTINGS.runOnStartup)
+  const [allowMultipleInstances, setAllowMultipleInstances] = useState(
+    draft0.allowMultipleInstances ?? settings?.allowMultipleInstances ?? DEFAULT_SETTINGS.allowMultipleInstances
+  )
   const [minimizeToTrayOnClose, setMinimizeToTrayOnClose] = useState(draft0.minimizeToTrayOnClose ?? settings?.minimizeToTrayOnClose ?? DEFAULT_SETTINGS.minimizeToTrayOnClose)
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
     draft0.permissionMode ?? settings?.permissionMode ?? DEFAULT_SETTINGS.permissionMode,
@@ -325,6 +328,7 @@ export function SettingsPanel(): React.JSX.Element {
     setResumeLastSession(draft.resumeLastSession ?? settings.resumeLastSession)
     setOpenToHomeOnLaunch(draft.openToHomeOnLaunch ?? settings.openToHomeOnLaunch)
     setRunOnStartup(draft.runOnStartup ?? settings.runOnStartup)
+    setAllowMultipleInstances(draft.allowMultipleInstances ?? settings.allowMultipleInstances)
     setMinimizeToTrayOnClose(draft.minimizeToTrayOnClose ?? settings.minimizeToTrayOnClose)
     setPermissionMode(draft.permissionMode ?? settings.permissionMode)
     setLanguage(draft.language ?? settings.language)
@@ -584,6 +588,7 @@ export function SettingsPanel(): React.JSX.Element {
       resumeLastSession,
       openToHomeOnLaunch,
       runOnStartup,
+      allowMultipleInstances,
       minimizeToTrayOnClose,
       permissionMode,
       language,
@@ -658,6 +663,7 @@ export function SettingsPanel(): React.JSX.Element {
       resumeLastSession: DEFAULT_SETTINGS.resumeLastSession,
       openToHomeOnLaunch: DEFAULT_SETTINGS.openToHomeOnLaunch,
       runOnStartup: DEFAULT_SETTINGS.runOnStartup,
+      allowMultipleInstances: DEFAULT_SETTINGS.allowMultipleInstances,
       minimizeToTrayOnClose: DEFAULT_SETTINGS.minimizeToTrayOnClose,
       permissionMode: DEFAULT_SETTINGS.permissionMode,
       language: DEFAULT_SETTINGS.language,
@@ -683,6 +689,7 @@ export function SettingsPanel(): React.JSX.Element {
     setResumeLastSession(defaults.resumeLastSession!)
     setOpenToHomeOnLaunch(defaults.openToHomeOnLaunch!)
     setRunOnStartup(defaults.runOnStartup!)
+    setAllowMultipleInstances(defaults.allowMultipleInstances!)
     setMinimizeToTrayOnClose(defaults.minimizeToTrayOnClose!)
     setPermissionMode(defaults.permissionMode!)
     setLanguage(defaults.language!)
@@ -1118,6 +1125,16 @@ export function SettingsPanel(): React.JSX.Element {
             description={t('settings.runOnStartup.description')}
           >
             <Toggle checked={runOnStartup} onChange={(v) => { setRunOnStartup(v); void applyImmediate({ runOnStartup: v }) }} />
+          </SettingsRow>
+
+          <SettingsRow
+            label={t('settings.allowMultipleInstances.label')}
+            description={t('settings.allowMultipleInstances.description')}
+          >
+            <Toggle
+              checked={allowMultipleInstances}
+              onChange={(v) => { setAllowMultipleInstances(v); setSettingsDraft({ allowMultipleInstances: v }) }}
+            />
           </SettingsRow>
 
           <SettingsRow

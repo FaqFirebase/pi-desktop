@@ -1316,6 +1316,10 @@
       "scanningStatus": "Поиск в стандартных папках установки и PATH…",
       "selectDialogTitle": "Выберите файл или папку агента"
     },
+    "allowMultipleInstances": {
+      "description": "",
+      "label": ""
+    },
     "autoScroll": {
       "description": "Автоматически прокручивать к новым сообщениям",
       "label": "Автопрокрутка"

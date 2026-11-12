@@ -22,7 +22,8 @@ import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { VOICE_PROTOCOL_SCHEME, handleVoiceProtocolRequest } from './voice-protocol'
 import { getVoiceModelsDir } from './voice-model-store'
 import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
-import { getSettingsPath } from './ipc/settings'
+import { getSettingsPath, SETTINGS_FILE_NAME } from './ipc/settings'
+import { resolveMultipleInstances } from './instance-mode'
 import { disableCwdExecutableSearch } from './windows-exe-search'
 
 // First, before anything spawns: Windows must never run a program from the
@@ -119,10 +120,31 @@ async function reloadMainWindowWithGuard(ignoreCache: boolean): Promise<void> {
   else window.webContents.reload()
 }
 
+// PI_DESKTOP_USER_DATA_DIR set by the launching process overrides the
+// canonical appData-derived directory: that exact directory holds all GUI
+// data and legacy migration is skipped, keeping it fully isolated.
+const externalUserDataDir = getExternalGuiDataDir()
+const userDataDir = externalUserDataDir ?? getCanonicalUserDataDir(app.getPath('appData'))
+mkdirSync(userDataDir, { recursive: true })
+
+// Multiple instances are opt-in (setting or PI_DESKTOP_ALLOW_MULTIPLE_INSTANCES).
+// Electron keys the single-instance lock on the userData path when the lock is
+// requested, so the order below decides its scope: applied first, the data
+// folder gets a lock of its own; applied after, every launch shares one lock.
+const multipleInstances = resolveMultipleInstances(process.env, join(userDataDir, SETTINGS_FILE_NAME))
+
+function applyUserDataDir(): void {
+  app.setPath('userData', userDataDir)
+  configureGuiDataDir(userDataDir)
+}
+
+if (multipleInstances) applyUserDataDir()
+
 // Single-instance lock: with "minimize to tray" the window can be hidden while
 // the app keeps running, so a relaunch (taskbar, launcher, `pi-desktop <path>`)
 // must focus the existing instance instead of spawning a second one. The second
-// process exits immediately; the first receives 'second-instance'.
+// process exits immediately; the first receives 'second-instance'. With
+// multiple instances allowed, this only covers launches on the same data folder.
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -131,14 +153,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 }
 
-// PI_DESKTOP_USER_DATA_DIR set by the launching process overrides the
-// canonical appData-derived directory: that exact directory holds all GUI
-// data and legacy migration is skipped, keeping it fully isolated.
-const externalUserDataDir = getExternalGuiDataDir()
-const userDataDir = externalUserDataDir ?? getCanonicalUserDataDir(app.getPath('appData'))
-mkdirSync(userDataDir, { recursive: true })
-app.setPath('userData', userDataDir)
-configureGuiDataDir(userDataDir)
+if (!multipleInstances) applyUserDataDir()
 
 // Voice dictation on the GPU needs WebGPU, which Chromium keeps off on Linux
 // unless it starts with extra switches. Set them now, before the app is ready.

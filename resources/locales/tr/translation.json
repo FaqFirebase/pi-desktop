@@ -1262,6 +1262,10 @@
       "scanningStatus": "Yaygın kurulum konumları ve PATH taranıyor…",
       "selectDialogTitle": "Ajan çalıştırılabilir dosyasını veya dizinini seç"
     },
+    "allowMultipleInstances": {
+      "description": "",
+      "label": ""
+    },
     "autoScroll": {
       "description": "Yeni mesajlara otomatik kaydır",
       "label": "Otomatik kaydırma"

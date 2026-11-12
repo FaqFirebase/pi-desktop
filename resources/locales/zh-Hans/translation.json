@@ -1235,6 +1235,10 @@
       "scanningStatus": "正在扫描常见安装位置和 PATH…",
       "selectDialogTitle": "选择智能体可执行文件或目录"
     },
+    "allowMultipleInstances": {
+      "description": "",
+      "label": ""
+    },
     "autoScroll": {
       "description": "自动滚动到新消息",
       "label": "自动滚动"
