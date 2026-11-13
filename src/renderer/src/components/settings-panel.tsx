@@ -87,6 +87,7 @@ export function SettingsPanel(): React.JSX.Element {
   const shortcuts = useAppStore(activeShortcuts)
   const shortcutsInvalid = shortcutProblem(shortcuts, window.piDesktop.system.platform) !== null
   const loadSettings = useAppStore((state) => state.loadSettings)
+  const applyPermissionModeToSessions = useAppStore((state) => state.applyPermissionModeToSessions)
   const setSettingsDraft = useAppStore((state) => state.setSettingsDraft)
   const clearSettingsDraft = useAppStore((state) => state.clearSettingsDraft)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
@@ -598,6 +599,7 @@ export function SettingsPanel(): React.JSX.Element {
 
     // Reload settings in store
     await loadSettings()
+    await applyPermissionModeToSessions()
 
     // Persist permission rules too (only the scopes shouldPersistScope
     // allowed — never overwrite a scope's file with an empty list because
@@ -697,6 +699,7 @@ export function SettingsPanel(): React.JSX.Element {
     applyThemeSettings(result)
     document.documentElement.style.fontSize = `${result.fontSize}px`
     await loadSettings()
+    await applyPermissionModeToSessions()
     clearSettingsDraft()
 
     setSaved(true)

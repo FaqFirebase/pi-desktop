@@ -26,6 +26,7 @@ import { ReviewRail } from './review-rail'
 import { groupToolMessages, prepareChatMessages } from '../message-grouping'
 import { latestNextSteps } from '../next-steps'
 import { NextStepsBar } from './next-steps-bar'
+import { PermissionModeRestartNotice } from './permission-mode-restart-notice'
 import { NowContext } from '../utils/relative-time'
 import { FileTree, FileSearch, FilePreview } from './file-tree'
 import { ImageViewer } from './image-viewer'
@@ -429,6 +430,9 @@ export function ChatPanel(): React.JSX.Element {
                         </div>
                       </div>
                     )}
+                    <div className={clsx('pointer-events-auto mx-auto w-full px-4 empty:hidden', messageColumn)}>
+                      <PermissionModeRestartNotice />
+                    </div>
                     <ChatInput dropZoneRef={chatDropZoneRef} />
                   </div>
                 </>

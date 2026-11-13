@@ -34,6 +34,7 @@ let pendingPromptsSnapshot: Record<string, number> = {}
 let workspaceActivityFailure: string | null = null
 let workspaceActivitySnapshot: Record<string, { state: 'working' | 'needs-approval' | 'completed' | 'failed'; since: number }> = {}
 let activeWorkspaceResult: Workspace | null = null
+let permissionModeRestartedRuntimeIds: string[] = []
 let workspaceListResult: Workspace[] = []
 // Results the stubbed files.search returns; the hook runs while the "IPC" is
 // in flight so tests can interleave state changes with the await.
@@ -166,6 +167,14 @@ const piDesktopStub = {
     restart: async () => {
       calls.push('pi.restart')
       return { status: 'running' as const, pid: 1, error: null }
+    },
+    applyPermissionMode: async () => {
+      calls.push('pi.applyPermissionMode')
+      return permissionModeRestartedRuntimeIds
+    },
+    getStatus: async () => {
+      calls.push('pi.getStatus')
+      return { status: 'running' as const, pid: 2, error: null }
     },
   },
   ui: {
@@ -332,6 +341,7 @@ beforeEach(() => {
   }
   switchResult = { success: true }
   activateRuntimeResult = null
+  permissionModeRestartedRuntimeIds = []
   activateRuntimeError = null
   setActiveFailure = null
   pendingPromptsSnapshot = {}
@@ -2086,7 +2096,7 @@ test('an accepted mid-turn permission mode change saves it and restarts Pi', asy
   useAppStore.getState().resolveConfirm(true)
   await pending
 
-  assert.deepEqual(calls, [`saveSettings:${TRUSTED_MODE}`, 'pi.restart'])
+  assert.deepEqual(calls, [`saveSettings:${TRUSTED_MODE}`, 'pi.restart', 'pi.applyPermissionMode'])
   assert.equal(useAppStore.getState().settings?.permissionMode, TRUSTED_MODE)
 })
 
@@ -2099,9 +2109,39 @@ test('changing the permission mode on an idle Pi restarts it without a dialog', 
 
   assert.deepEqual(
     calls,
-    [`saveSettings:${TRUSTED_MODE}`, 'pi.restart'],
+    [`saveSettings:${TRUSTED_MODE}`, 'pi.restart', 'pi.applyPermissionMode'],
     'Pi reads the permission mode at spawn — without a restart the old mode stays in force'
   )
+})
+
+const ACTIVE_RUNTIME: SessionRuntimeInfo = {
+  runtimeId: 'active', workspaceId: WORKSPACE_ONE.id, sessionPath: null, sessionId: null,
+  status: 'running', pid: 1, error: null, activity: null, active: true,
+}
+
+test('applying the permission mode refreshes the active session when main restarted it', async () => {
+  useAppStore.setState({
+    piStatus: 'stopped',
+    sessionRuntimes: { [ACTIVE_RUNTIME.runtimeId]: ACTIVE_RUNTIME },
+  })
+  permissionModeRestartedRuntimeIds = [ACTIVE_RUNTIME.runtimeId]
+
+  await useAppStore.getState().applyPermissionModeToSessions()
+
+  assert.deepEqual(calls.slice(0, 2), ['pi.applyPermissionMode', 'pi.getStatus'])
+  assert.equal(useAppStore.getState().piStatus, 'running', 'main restarted the process, so the status bar must follow')
+})
+
+test('applying the permission mode leaves the active session alone when main did not restart it', async () => {
+  useAppStore.setState({
+    piStatus: 'running',
+    sessionRuntimes: { [ACTIVE_RUNTIME.runtimeId]: ACTIVE_RUNTIME },
+  })
+  permissionModeRestartedRuntimeIds = ['background']
+
+  await useAppStore.getState().applyPermissionModeToSessions()
+
+  assert.deepEqual(calls, ['pi.applyPermissionMode'])
 })
 
 test('changing an inactive workspace folder touches neither dialog nor preview', async () => {

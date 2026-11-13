@@ -91,6 +91,11 @@
     "nextSteps": {
       "title": "Önerilen sonraki adımlar"
     },
+    "permissionModeRestart": {
+      "idle": "{{agent}} hâlâ eski izin moduyla çalışıyor. {{mode}} modunu kullanmak için yeniden başlatın.",
+      "restart": "{{agent}} yeniden başlat",
+      "working": "{{agent}} hâlâ çalışıyor ve siz yeniden başlatana kadar eski izin modunu korur. {{mode}} modunu kullanmak için iş bitince yeniden başlatın."
+    },
     "projectPicker": {
       "noProject": "Proje yok",
       "noProjectHomeDirectory": "Proje yok — ev dizini",

@@ -91,6 +91,11 @@
     "nextSteps": {
       "title": "建议的后续步骤"
     },
+    "permissionModeRestart": {
+      "idle": "{{agent}} 仍在使用旧的权限模式。请重启它以使用“{{mode}}”。",
+      "restart": "重启 {{agent}}",
+      "working": "{{agent}} 仍在工作，在你重启之前会沿用旧的权限模式。请在它完成后重启，以使用“{{mode}}”。"
+    },
     "projectPicker": {
       "noProject": "无项目",
       "noProjectHomeDirectory": "无项目 — 主目录",

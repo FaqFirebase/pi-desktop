@@ -91,6 +91,11 @@
     "nextSteps": {
       "title": "Suggested next steps"
     },
+    "permissionModeRestart": {
+      "idle": "{{agent}} still runs with the old permission mode. Restart it to use {{mode}}.",
+      "restart": "Restart {{agent}}",
+      "working": "{{agent}} is still working. It keeps the old permission mode until you restart it. Restart it when it finishes to use {{mode}}."
+    },
     "projectPicker": {
       "noProject": "No project",
       "noProjectHomeDirectory": "No project — home directory",

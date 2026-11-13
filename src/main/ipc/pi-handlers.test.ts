@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IpcContext } from './context'
-import type { PiStartOptions, PiStatus } from '../../shared/ipc-contracts'
+import type { PermissionMode, PiStartOptions, PiStatus, SessionRuntimeActivity, SessionRuntimeInfo } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { configureGuiDataDir } from '../app-data-paths'
 import { buildPiArgs } from '../pi-rpc-manager'
@@ -19,7 +19,8 @@ const RUNTIME_ID = 'runtime'
  * record the options each restart of that runtime gets.
  */
 async function withRestartableRuntime(
-  fn: (restarts: PiStartOptions[], root: string) => Promise<void>
+  fn: (restarts: PiStartOptions[], root: string) => Promise<void>,
+  runtimes: SessionRuntimeInfo[] = []
 ): Promise<void> {
   const require = createRequire(import.meta.url)
   const electronPath = require.resolve('electron')
@@ -41,6 +42,8 @@ async function withRestartableRuntime(
     registerPiHandlers({
       workspaceManager: {
         getActiveWorkspace: () => ({ id: 'workspace', path: root }),
+        getWorkspaces: () => [{ id: 'workspace', path: root }],
+        getSessionRuntimes: () => runtimes,
         getPiManager: () => manager,
         runtimeIdFor: () => RUNTIME_ID,
         getSessionRuntime: () => runtime,
@@ -81,4 +84,47 @@ test('a session restart keeps the model chosen in the GUI', async () => {
     assert.equal(args[args.indexOf('--provider') + 1], 'chosen-provider')
     assert.equal(args[args.indexOf('--model') + 1], 'chosen-model')
   })
+})
+
+function runtimeStartedWith(
+  runtimeId: string,
+  permissionMode: PermissionMode,
+  overrides: Partial<SessionRuntimeInfo> = {}
+): SessionRuntimeInfo {
+  return {
+    runtimeId,
+    workspaceId: 'workspace',
+    sessionPath: null,
+    sessionId: null,
+    status: 'running',
+    pid: 1,
+    error: null,
+    activity: null,
+    active: false,
+    permissionMode,
+    ...overrides,
+  }
+}
+
+test('a changed permission mode restarts only the idle sessions that hold the old one', async () => {
+  const busy: SessionRuntimeActivity[] = ['working', 'needs-approval']
+  const runtimes = [
+    runtimeStartedWith('idle', 'plan-readonly'),
+    runtimeStartedWith('finished', 'plan-readonly', { activity: 'completed' }),
+    ...busy.map((activity) => runtimeStartedWith(activity, 'plan-readonly', { activity })),
+    runtimeStartedWith('current', 'trusted'),
+    runtimeStartedWith('stopped', 'plan-readonly', { status: 'stopped', pid: null }),
+    runtimeStartedWith('unstarted', 'plan-readonly', { permissionMode: null }),
+  ]
+  await withRestartableRuntime(async (restarts) => {
+    const { saveAppSettings } = await import('./settings')
+    await saveAppSettings({ permissionMode: 'trusted' })
+
+    const restarted = await handlers.get(IPC_CHANNELS.PI_APPLY_PERMISSION_MODE)!() as string[]
+
+    // a session in the middle of a turn would lose its answer to a restart
+    assert.deepEqual(restarted, ['idle', 'finished'])
+    assert.equal(restarts.length, 2)
+    for (const options of restarts) assert.equal(options.env?.PI_DESKTOP_PERMISSION_MODE, 'trusted')
+  }, runtimes)
 })

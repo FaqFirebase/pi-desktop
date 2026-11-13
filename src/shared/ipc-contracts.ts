@@ -15,6 +15,7 @@ export const IPC_CHANNELS = {
   PI_START: 'pi:start',
   PI_STOP: 'pi:stop',
   PI_RESTART: 'pi:restart',
+  PI_APPLY_PERMISSION_MODE: 'pi:apply-permission-mode',
   PI_STATUS: 'pi:status',
   PI_DETECT_INSTALLATIONS: 'pi:detect-installations',
   QUICK_CHAT_SHORTCUT_STATUS: 'quick-chat:shortcut-status',
@@ -297,6 +298,13 @@ export interface SessionRuntimeInfo extends PiStatus {
    * turn runs.
    */
   promptRefusal?: string
+  /**
+   * The permission mode the live process started with. Its tool list is fixed
+   * at spawn, so a later change to the setting reaches this runtime only
+   * through a restart. Null until the first start; absent on a snapshot that
+   * predates the field.
+   */
+  permissionMode?: PermissionMode | null
 }
 
 export interface SessionRuntimeCloseResult {

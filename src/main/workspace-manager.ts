@@ -129,7 +129,6 @@ interface SessionRuntimeEntry {
    * no turn started (see promptSessionRuntime).
    */
   runlessPromptRuns: number | null
-  permissionMode: PermissionMode | null
 }
 
 /**
@@ -352,7 +351,7 @@ export class WorkspaceManager {
   }
 
   getSessionRuntimePermissionMode(runtimeId: string): PermissionMode | null {
-    return this.sessionRuntimes.get(runtimeId)?.permissionMode ?? null
+    return this.sessionRuntimes.get(runtimeId)?.info.permissionMode ?? null
   }
 
   private snapshotRuntime(entry: SessionRuntimeEntry): SessionRuntimeInfo {
@@ -512,7 +511,6 @@ export class WorkspaceManager {
       appCreated: sessionPath === null,
       agentRunStarts: 0,
       runlessPromptRuns: null,
-      permissionMode: null,
       info: {
         runtimeId,
         workspaceId,
@@ -523,6 +521,7 @@ export class WorkspaceManager {
         error: null,
         activity: null,
         active: false,
+        permissionMode: null,
       },
     }
     this.sessionRuntimes.set(runtimeId, entry)
@@ -786,7 +785,10 @@ export class WorkspaceManager {
     // learn the mode the process actually started with — including main's
     // new-session and restart paths that never go through a secondary view's own
     // start helper.
-    entry.permissionMode = (startOptions.env?.PI_DESKTOP_PERMISSION_MODE as PermissionMode | undefined) ?? null
+    entry.info = {
+      ...entry.info,
+      permissionMode: (startOptions.env?.PI_DESKTOP_PERMISSION_MODE as PermissionMode | undefined) ?? null,
+    }
     await entry.manager.start(startOptions)
     // closeSessionRuntime() can win while startup is waiting for Pi. Do not
     // emit the now-detached entry after the closed marker was broadcast.

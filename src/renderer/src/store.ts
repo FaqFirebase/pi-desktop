@@ -506,6 +506,12 @@ interface AppActions {
   openLastSession: () => Promise<boolean>
   stopPi: () => Promise<void>
   restartPi: (options?: Record<string, unknown>) => Promise<void>
+  /**
+   * Bring every live session to the saved permission mode. A session that is
+   * idle restarts at once; one in the middle of a turn keeps running with its
+   * old tool set until the user restarts it (see the chat panel notice).
+   */
+  applyPermissionModeToSessions: () => Promise<void>
 
   // Messages
   addMessage: (message: DisplayMessage) => void
@@ -1402,19 +1408,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   restartPi: async (options) => {
     try {
-      const status = await window.piDesktop.pi.restart(options as Record<string, unknown> | undefined)
-      set({ piStatus: status.status, piStartupPhase: status.startupPhase ?? null, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
-
-      // Re-read session state after a restart so the status bar's model label
-      // and stats reflect a changed models.json (mirrors startPi). Without this
-      // the label keeps the pre-restart model.
-      if (status.status === 'running') {
-        await get().refreshSessionState()
-        await get().refreshSessionStats()
-        await get().refreshSessionList()
-      }
+      await adoptRestartedPi(set, get, await window.piDesktop.pi.restart(options as Record<string, unknown> | undefined))
     } catch (err) {
       set({ piStatus: 'error', piStartupPhase: null, piError: err instanceof Error ? err.message : String(err) })
+    }
+  },
+
+  applyPermissionModeToSessions: async () => {
+    const restartedRuntimeIds = await window.piDesktop.pi.applyPermissionMode()
+    const activeRuntime = Object.values(get().sessionRuntimes).find((runtime) => runtime.active)
+    if (activeRuntime && restartedRuntimeIds.includes(activeRuntime.runtimeId)) {
+      await adoptRestartedPi(set, get, await window.piDesktop.pi.getStatus())
     }
   },
 
@@ -2487,6 +2491,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (get().piStatus === 'running') {
       await get().restartPi()
     }
+    await get().applyPermissionModeToSessions()
   },
 
   updateSkillGroups: async (change) => {
@@ -3846,6 +3851,19 @@ let streamingTextBackfill: Promise<void> | null = null
  * mid-sentence is shown: the "still working" banner stands in until the turn
  * ends and the attach backfill loads the full answer.
  */
+async function adoptRestartedPi(set: ZustandSet, get: () => AppState & AppActions, status: PiStatus): Promise<void> {
+  set({ piStatus: status.status, piStartupPhase: status.startupPhase ?? null, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
+
+  // Re-read session state after a restart so the status bar's model label
+  // and stats reflect a changed models.json (mirrors startPi). Without this
+  // the label keeps the pre-restart model.
+  if (status.status === 'running') {
+    await get().refreshSessionState()
+    await get().refreshSessionStats()
+    await get().refreshSessionList()
+  }
+}
+
 function backfillStreamingText(get: () => AppState & AppActions, set: ZustandSet): void {
   if (streamingTextBackfill) return
   const scope = { streamed: committedStreamCount, gen: sessionLoadGeneration, runtimeId: get().activeSessionRuntimeId }

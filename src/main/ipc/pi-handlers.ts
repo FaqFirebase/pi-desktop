@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
-import { IPC_CHANNELS } from '../../shared/ipc-contracts'
+import { IPC_CHANNELS, isRuntimeBusy, type AppSettings, type PiStartOptions } from '../../shared/ipc-contracts'
+import { runtimeNeedsPermissionRestart } from '../../shared/permission-mode'
 import { access } from 'fs/promises'
 import { isString, isObject } from './validation'
 import { validateStartOptions, applyModelDefaults, applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
@@ -7,6 +8,13 @@ import { loadAppSettings } from './settings'
 import type { IpcContext } from './context'
 import { detectPiInstallations, getConfiguredEngineKind } from '../pi-rpc-manager'
 import { t } from '../../shared/i18n'
+
+function restartStartOptions(cwd: string, options: PiStartOptions, settings: AppSettings): PiStartOptions {
+  return applyPermissionModeToStartOptions(
+    applyResumePreference(applyModelDefaults({ cwd, ...options }, settings), settings),
+    settings
+  )
+}
 
 export function registerPiHandlers(ctx: IpcContext): void {
   const { workspaceManager, getActivePi } = ctx
@@ -65,10 +73,7 @@ export function registerPiHandlers(ctx: IpcContext): void {
     // session it shows.
     const runtimeId = workspaceManager.runtimeIdFor(pi)
     const runtime = runtimeId ? workspaceManager.getSessionRuntime(runtimeId) : null
-    const startOptions = applyPermissionModeToStartOptions(
-      applyResumePreference(applyModelDefaults({ cwd: activeWs.path, ...opts }, settings), settings),
-      settings
-    )
+    const startOptions = restartStartOptions(activeWs.path, opts, settings)
     if (runtime) {
       await workspaceManager.restartSessionRuntime(runtime.runtimeId, startOptions)
       // The full status, engine included: the renderer reads a missing engine as Pi
@@ -77,6 +82,24 @@ export function registerPiHandlers(ctx: IpcContext): void {
 
     pi.stop()
     return pi.start(startOptions)
+  })
+
+  // A process keeps the tool list it was spawned with, so a changed permission
+  // mode reaches a session only through a restart. A session in the middle of a
+  // turn is left alone: restarting it would cut the answer off. The renderer
+  // tells the user to restart those once they finish.
+  ipcMain.handle(IPC_CHANNELS.PI_APPLY_PERMISSION_MODE, async (): Promise<string[]> => {
+    const settings = await loadAppSettings(workspaceManager)
+    const workspaces = workspaceManager.getWorkspaces()
+    const idleStale = workspaceManager
+      .getSessionRuntimes()
+      .filter((runtime) => runtimeNeedsPermissionRestart(runtime, settings.permissionMode) && !isRuntimeBusy(runtime.activity))
+    await Promise.all(idleStale.map((runtime) => {
+      const workspace = workspaces.find((item) => item.id === runtime.workspaceId)
+      if (!workspace) throw new Error(t('errors.workspace.notFound', { workspaceId: runtime.workspaceId }))
+      return workspaceManager.restartSessionRuntime(runtime.runtimeId, restartStartOptions(workspace.path, {}, settings))
+    }))
+    return idleStale.map((runtime) => runtime.runtimeId)
   })
 
   ipcMain.handle(IPC_CHANNELS.PI_STATUS, async () => {

@@ -110,6 +110,7 @@ interface PiDesktopAPI {
     start(options?: PiStartOptions): Promise<PiStatus>
     stop(): Promise<PiStatus>
     restart(options?: PiStartOptions): Promise<PiStatus>
+    applyPermissionMode(): Promise<string[]>
     getStatus(): Promise<PiStatus>
     detectInstallations(options?: AgentDetectionOptions): Promise<AgentInstallationsResult>
   }
@@ -467,6 +468,7 @@ const api: PiDesktopAPI = {
     start: (options?: PiStartOptions) => ipcRenderer.invoke(IPC_CHANNELS.PI_START, options),
     stop: () => ipcRenderer.invoke(IPC_CHANNELS.PI_STOP),
     restart: (options?: PiStartOptions) => ipcRenderer.invoke(IPC_CHANNELS.PI_RESTART, options),
+    applyPermissionMode: () => ipcRenderer.invoke(IPC_CHANNELS.PI_APPLY_PERMISSION_MODE),
     getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.PI_STATUS),
     detectInstallations: (options) => ipcRenderer.invoke(IPC_CHANNELS.PI_DETECT_INSTALLATIONS, options),
   },
