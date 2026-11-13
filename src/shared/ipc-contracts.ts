@@ -930,6 +930,11 @@ export interface ModelInfo {
     mode?: string
     efforts?: string[]
   }
+  /**
+   * Pi's per-model thinking levels: a string marks a supported level, null an
+   * unsupported one. xhigh and max are supported only when named.
+   */
+  thinkingLevelMap?: Partial<Record<string, string | null>>
 }
 
 // ─── Session Types ──────────────────────────────────────────────────────────
