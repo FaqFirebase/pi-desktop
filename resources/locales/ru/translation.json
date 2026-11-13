@@ -679,6 +679,9 @@
       "notFound": "Заметка не найдена: {{id}}",
       "titleRequired": "Введите заголовок заметки"
     },
+    "ompUsage": {
+      "unreadable": "OMP вывел данные об использовании, которые приложение не смогло прочитать"
+    },
     "packages": {
       "invalidSpec": "Недопустимая спецификация пакета",
       "listFailed": "Не удалось прочитать список плагинов OMP: {{detail}}",
@@ -1812,6 +1815,28 @@
     },
     "trigger": {
       "title": "Состояние системы"
+    },
+    "usage": {
+      "capacity_one": "израсходовано {{used}} из {{count}} аккаунта",
+      "capacity_few": "израсходовано {{used}} из {{count}} аккаунтов",
+      "capacity_many": "израсходовано {{used}} из {{count}} аккаунтов",
+      "capacity_other": "израсходовано {{used}} из {{count}} аккаунта",
+      "fetched": "Получено {{time}}",
+      "noAccounts": "Ни один аккаунт не сообщает об использовании",
+      "resetsExpire": "ближайший истекает через {{duration}}",
+      "resetsIn": "сброс через {{duration}}",
+      "savedResets_one": "{{count}} сохранённый сброс",
+      "savedResets_few": "{{count}} сохранённых сброса",
+      "savedResets_many": "{{count}} сохранённых сбросов",
+      "savedResets_other": "{{count}} сохранённого сброса",
+      "unknownAmount": "неизвестно",
+      "usableNow_one": "{{count}} доступен сейчас",
+      "usableNow_few": "{{count}} доступны сейчас",
+      "usableNow_many": "{{count}} доступно сейчас",
+      "usableNow_other": "{{count}} доступно сейчас"
+    },
+    "usageSection": {
+      "title": "Лимиты использования"
     },
     "workspaceSection": {
       "title": "Проект"

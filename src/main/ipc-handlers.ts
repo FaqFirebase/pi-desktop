@@ -14,6 +14,7 @@ import { registerWorkspaceHandlers } from './ipc/workspace-handlers'
 import { registerLinkedTaskHandlers } from './ipc/linked-task-handlers'
 import { registerPackageHandlers } from './ipc/package-handlers'
 import { registerSkillsMcpHandlers } from './ipc/skills-mcp-handlers'
+import { registerOmpUsageHandlers } from './ipc/omp-usage-handlers'
 import { registerModelsConfigHandlers } from './ipc/models-config-handlers'
 import { registerCouncilHandlers } from './ipc/council-handlers'
 import { registerTagHandlers } from './ipc/tag-handlers'
@@ -63,6 +64,7 @@ export function registerIpcHandlers(
   registerLinkedTaskHandlers(ctx)
   registerPackageHandlers(ctx)
   registerSkillsMcpHandlers(ctx)
+  registerOmpUsageHandlers(ctx)
   registerModelsConfigHandlers(ctx)
   registerCouncilHandlers(ctx)
   registerTagHandlers(ctx)

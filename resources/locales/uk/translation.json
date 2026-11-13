@@ -679,6 +679,9 @@
       "notFound": "Нотатку не знайдено: {{id}}",
       "titleRequired": "Введіть заголовок нотатки"
     },
+    "ompUsage": {
+      "unreadable": "OMP вивів дані про використання, які застосунок не зміг прочитати"
+    },
     "packages": {
       "invalidSpec": "Неприпустима специфікація пакета",
       "listFailed": "Не вдалося прочитати список плагінів OMP: {{detail}}",
@@ -1812,6 +1815,28 @@
     },
     "trigger": {
       "title": "Стан системи"
+    },
+    "usage": {
+      "capacity_one": "використано {{used}} з {{count}} облікового запису",
+      "capacity_few": "використано {{used}} з {{count}} облікових записів",
+      "capacity_many": "використано {{used}} з {{count}} облікових записів",
+      "capacity_other": "використано {{used}} з {{count}} облікового запису",
+      "fetched": "Отримано {{time}}",
+      "noAccounts": "Жоден обліковий запис не повідомляє про використання",
+      "resetsExpire": "найближчий спливає через {{duration}}",
+      "resetsIn": "скидання через {{duration}}",
+      "savedResets_one": "{{count}} збережене скидання",
+      "savedResets_few": "{{count}} збережені скидання",
+      "savedResets_many": "{{count}} збережених скидань",
+      "savedResets_other": "{{count}} збереженого скидання",
+      "unknownAmount": "невідомо",
+      "usableNow_one": "{{count}} доступне зараз",
+      "usableNow_few": "{{count}} доступні зараз",
+      "usableNow_many": "{{count}} доступно зараз",
+      "usableNow_other": "{{count}} доступно зараз"
+    },
+    "usageSection": {
+      "title": "Ліміти використання"
     },
     "workspaceSection": {
       "title": "Проєкт"

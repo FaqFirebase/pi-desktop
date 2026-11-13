@@ -15,6 +15,7 @@ import type {
   WorkspaceRemoveResult,
   InstalledPackage,
   InstalledSkill,
+  OmpUsageResult,
   CatalogPackage,
   PackageUpdate,
   FileTreeNode,
@@ -306,6 +307,10 @@ interface PiDesktopAPI {
   }
   mcpServers: {
     list(): Promise<unknown[]>
+  }
+  ompUsage: {
+    /** `omp usage --json` for the engine in view; null under Pi. */
+    get(): Promise<OmpUsageResult | null>
   }
   tags: {
     get(sessionId: string): Promise<string[]>
@@ -645,6 +650,9 @@ const api: PiDesktopAPI = {
   },
   mcpServers: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.MCP_SERVERS_LIST),
+  },
+  ompUsage: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.OMP_USAGE_GET),
   },
   tags: {
     get: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.TAG_GET, sessionId),

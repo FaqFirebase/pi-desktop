@@ -139,6 +139,8 @@ src/
 │   ├── omp-fork-points.ts        # Fork candidates read from an OMP session file (no get_fork_messages RPC)
 │   ├── omp-stopped-answers.ts    # Stopped answers a reloaded OMP session leaves out of get_messages, read back from its file
 │   ├── omp-plugin-list.ts        # Parse `omp plugin list --json` for the installed-packages panel
+│   ├── omp-usage.ts              # Parse `omp usage --json` (account usage limits, saved resets) for the status popover
+│   ├── cli-json.ts               # The JSON object an engine CLI printed with `--json`, behind any warnings
 │   ├── skills-discovery.ts       # Per-engine skill roots scan + catalog merge
 │   ├── session-metadata.ts       # Bounded reader: session name, header, first-message preview; header-only (disposable) means metadata only
 │   ├── session-jsonl.ts          # Session JSONL text -> entries (a partial last line is skipped)
@@ -216,6 +218,7 @@ src/
         │   ├── ui-font.ts        # Apply the UI font setting
         │   ├── debounced-buffer.ts # Debounced editor text buffer
         │   ├── format-relative-time.ts # Relative-time labels capped at days
+        │   ├── format-duration.ts # Short countdowns ("4d 10h") in the interface language
         │   ├── relative-time.tsx # Shared ticking "now" for relative labels
         │   ├── stale-guard.ts    # Last-write-wins guard for overlapping loads
         │   ├── preview-load-error.ts # Preview load/save failure kept as data, translated at render
@@ -482,6 +485,7 @@ Click the status icon in the sidebar header to see:
 - Agent status, PID, model, provider, thinking level, session
 - Context usage with a progress bar
 - Message count, tokens, and cost, with a compact button
+- Under OMP, Usage Limits: each signed-in account's limit windows from `omp usage --json` (used %, reset countdown), saved resets, and cross-account capacity when a provider has several accounts. Main runs the CLI (`ipc/omp-usage-handlers.ts`) on open and on Refresh, one run at a time, and answers null under Pi, which hides the section
 - Workspace info
 - Extensions, skills, MCP servers, prompt templates, and skill commands
 
