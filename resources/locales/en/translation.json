@@ -1055,7 +1055,6 @@
     "chooseProject": "Select project",
     "chooseProjectFirst": "Choose a project folder before sending.",
     "chooseSession": "Choose a session",
-    "compacting": "Compacting context…",
     "completed": "Completed",
     "errors": {
       "runtimeBusy": "Could not switch while the session is busy, stopped, or waiting for an answer.",
@@ -1076,10 +1075,8 @@
     "open": "Open",
     "openInMain": "View in main window",
     "pickWorkspace": "Open project folder…",
-    "pin": "Pin on top (stay visible when losing focus)",
     "ready": "Ready",
     "retry": "Retry",
-    "retrying": "Retrying ({{attempt}}/{{total}})…",
     "savedSession": "Saved session",
     "searchSessions": "Search sessions",
     "sendRejected": "The engine did not accept this message.",
@@ -1091,7 +1088,6 @@
     "stopped": "Stopped by you",
     "targetUnavailable": "This session is no longer available. Choose a session again; your draft is preserved.",
     "title": "Quick Chat",
-    "unpin": "Unpin window",
     "untitledSession": "Untitled session",
     "working": "Working"
   },

@@ -59,7 +59,6 @@ export function registerIpcHandlers(
   registerModelHandlers(ctx)
   registerSettingsHandlers(ctx)
   registerPermissionRulesHandlers(ctx)
-  registerThemeHandlers()
   registerWorkspaceHandlers(ctx)
   registerLinkedTaskHandlers(ctx)
   registerPackageHandlers(ctx)
@@ -91,6 +90,7 @@ export function registerIpcHandlers(
     secondaryView: quickChat.routing,
   })
   quickChat.register(router)
+  registerThemeHandlers((themes) => quickChat.updateThemes(themes))
 
   // Router construction, the dialog-answer channels, the pending-prompt
   // flush/get pair and the two workspace hooks all live in extension-ui-ipc.ts

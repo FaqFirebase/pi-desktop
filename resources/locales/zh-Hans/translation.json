@@ -1036,7 +1036,6 @@
     "chooseProject": "选择项目",
     "chooseProjectFirst": "发送前请先选择项目文件夹。",
     "chooseSession": "选择会话",
-    "compacting": "正在压缩上下文…",
     "completed": "已完成",
     "errors": {
       "runtimeBusy": "会话忙碌、已停止或正在等待回答时无法切换。",
@@ -1057,10 +1056,8 @@
     "open": "查看",
     "openInMain": "在主窗口查看",
     "pickWorkspace": "打开文件夹…",
-    "pin": "置顶悬浮（失焦不收起）",
     "ready": "就绪",
     "retry": "重试",
-    "retrying": "正在重试（{{attempt}}/{{total}}）…",
     "savedSession": "已保存会话",
     "searchSessions": "搜索会话",
     "sendRejected": "引擎未接受此消息。",
@@ -1072,7 +1069,6 @@
     "stopped": "已停止",
     "targetUnavailable": "此会话已不可用。请重新选择会话；草稿已保留。",
     "title": "快捷聊天",
-    "unpin": "取消置顶",
     "untitledSession": "未命名会话",
     "working": "执行中"
   },

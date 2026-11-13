@@ -5,7 +5,7 @@ import { ChatSessionContext, type ChatSessionBindings } from './chat-session-con
 import { isChatVisible, useCommandCatalog } from './hooks'
 import { DEFAULT_SETTINGS } from '../../shared/default-settings'
 import { t } from '../../shared/i18n'
-import { SUPPORTED_IMAGE_EXTENSIONS } from '../../shared/ipc-contracts'
+import { attachmentDialogOptions } from '../../shared/attachment-dialog'
 import { composePrompt } from './utils/compose-prompt'
 import { readAttachmentBatch, type AttachmentBatch } from './utils/attachment-batch'
 import { TurnActivityLine } from './components/turn-activity-line'
@@ -47,13 +47,7 @@ export function MainChatProvider({ children }: { children: ReactNode }): React.J
         return true
       },
       pickAttachments: async (): Promise<AttachmentBatch> => {
-        const paths = await window.piDesktop.system.openAttachmentDialog({
-          title: t('common.attachFile'),
-          filters: [
-            { name: t('chat.attach.imagesFilter'), extensions: [...SUPPORTED_IMAGE_EXTENSIONS] },
-            { name: t('chat.attach.allFilesFilter'), extensions: ['*'] },
-          ],
-        })
+        const paths = await window.piDesktop.system.openAttachmentDialog(attachmentDialogOptions())
         const batch = await readAttachmentBatch(paths.map((path) => ({
           label: path, path, read: () => window.piDesktop.files.readAttachment(path),
         })), () => (useAppStore.getState().activeWorkspace?.id ?? '') === workspaceId)

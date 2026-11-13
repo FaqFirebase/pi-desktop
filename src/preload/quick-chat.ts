@@ -18,7 +18,6 @@ const api: QuickChatApi = {
   openSettings: () => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.openSettings),
   setRuntimeModel: (input) => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.setRuntimeModel, input),
   setRuntimeThinking: (input) => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.setRuntimeThinking, input),
-  setPinned: (pinned) => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.setPinned, { pinned }),
   hide: () => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.hide),
   pickAttachment: () => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.pickAttachment),
   openInMain: () => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.openInMain),

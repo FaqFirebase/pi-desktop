@@ -21,23 +21,6 @@
   font-family: inherit;
 }
 
-/* ─── Sleek Custom Scrollbars ────────────────────────────────────────────── */
-
-.quick-chat *::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-.quick-chat *::-webkit-scrollbar-track {
-  background: transparent;
-}
-.quick-chat *::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--color-border-strong) 40%, transparent);
-  border-radius: 9999px;
-}
-.quick-chat *::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-border-strong) 70%, transparent);
-}
-
 /* ─── Drag Regions for Window Movement ─────────────────────────────────────── */
 
 .qc-drag-region,
@@ -46,29 +29,6 @@
 }
 
 .qc-no-drag,
-.qc-no-drag *,
-button,
-button *,
-input,
-textarea,
-select,
-a {
+.qc-no-drag * {
   -webkit-app-region: no-drag;
-}
-
-/* ─── Dropdown Transitions ───────────────────────────────────────────────── */
-
-@keyframes qcDropdownIn {
-  from {
-    opacity: 0;
-    transform: translateY(-2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-dropdown-in {
-  animation: qcDropdownIn 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }

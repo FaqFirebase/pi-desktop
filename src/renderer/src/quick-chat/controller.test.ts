@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { setImmediate as flush } from 'node:timers/promises'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
-import type { ModelInfo, PiExtensionUiRequest, PiResponseEvent, PiRpcEvent, PromptImage } from '../../../shared/ipc-contracts'
+import { t } from '../../../shared/i18n'
+import type { ModelInfo, PiExtensionUiRequest, PiResponseEvent, PiRpcEvent, PromptImage, UserThemeRecord } from '../../../shared/ipc-contracts'
 import type { QuickChatApi, QuickChatBinding, QuickChatContext, QuickChatSnapshot, QuickChatUpdate } from '../../../shared/quick-chat'
+import { THEME_SCHEMA_V1 } from '../../../shared/theme/theme-file'
 import { QuickChatController } from './controller'
 import { targetOptions } from './presentation'
 
@@ -26,6 +28,10 @@ function message(text: string, id: string, role = 'assistant'): Record<string, u
 function model(provider: string, id: string, efforts?: string[]): ModelInfo {
   return { provider, id, name: id, api: 'test', baseUrl: '', reasoning: true, input: ['text'], contextWindow: 1000, maxTokens: 100, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, thinking: efforts ? { efforts } : undefined }
 }
+/** Types into the composer the way the app does: through saveDraft, keeping attachments. */
+function typeDraft(controller: QuickChatController, text: string): void {
+  controller.saveDraft({ text, attachments: controller.getState().attachments })
+}
 function harness(initial: QuickChatBinding | null = binding('A')): {
   api: QuickChatApi; controller: QuickChatController; context: QuickChatContext
   emit: (update: QuickChatUpdate) => void; event: (event: PiRpcEvent, target?: QuickChatBinding) => void
@@ -38,7 +44,6 @@ function harness(initial: QuickChatBinding | null = binding('A')): {
   hides: () => number
 } {
   const context: QuickChatContext = {
-    pinned: false, canPin: true,
     binding: initial, runtimes: [initial?.runtime ?? binding('A').runtime, binding('B', 2).runtime],
     workspaces: ['A', 'B'].map((id) => ({ id: `workspace-${id}`, name: id, path: `/cwd/${id}`, createdAt: 0, lastActiveAt: 0, color: '' })),
     defaultWorkspaceId: 'workspace-A', runtimeUpdatedAt: {},
@@ -83,7 +88,6 @@ function harness(initial: QuickChatBinding | null = binding('A')): {
     openSettings: async () => {},
     setRuntimeModel: async (input) => { modelCalls.push({ provider: input.provider, modelId: input.modelId, version: input.version }); return { type: 'response', command: 'set_model', success: true } },
     setRuntimeThinking: async (input) => { thinkingCalls.push({ level: input.level, version: input.version }); return { type: 'response', command: 'set_thinking_level', success: true } },
-    setPinned: async (pinned) => { context.pinned = pinned; listener?.({ type: 'pinned', pinned }) },
     hide: async () => { hides++ }, openInMain: async () => {},
     onUpdate: (callback) => { listener = callback; return () => { listener = null } },
   }
@@ -93,11 +97,11 @@ function harness(initial: QuickChatBinding | null = binding('A')): {
   }
 }
 
-test('popup stays pinned while main changes active session, filters events, and isolates drafts', async () => {
+test('popup stays bound while main changes active session, filters events, and isolates drafts', async () => {
   const h = harness()
   h.controller.start()
   await flush()
-  h.controller.setDraft('A draft')
+  typeDraft(h.controller, 'A draft')
   h.context.runtimes[0].active = false
   h.context.runtimes[1].active = true
   await h.controller.refreshContext()
@@ -106,7 +110,7 @@ test('popup stays pinned while main changes active session, filters events, and 
   assert.equal(h.controller.getState().messages.length, 0)
   await h.controller.select({ runtimeId: 'B' })
   await flush()
-  h.controller.setDraft('B draft')
+  typeDraft(h.controller, 'B draft')
   await h.controller.select({ runtimeId: 'A' })
   await flush()
   assert.equal(h.controller.getState().draft, 'A draft')
@@ -126,39 +130,6 @@ test('a stale context response cannot replace a binding update received during s
   pending.resolve(h.context)
   await flush()
   assert.equal(h.controller.getState().binding?.runtime.runtimeId, 'B')
-  h.controller.dispose()
-})
-
-test('pin updates during startup and show-time hydration outrank stale context without optimistic state', async () => {
-  const h = harness(null)
-  const startup = deferred<QuickChatContext>()
-  h.api.getContext = () => startup.promise
-  h.controller.start()
-  h.emit({ type: 'pinned', pinned: true })
-  startup.resolve({ ...h.context, pinned: false })
-  await flush()
-  assert.equal(h.controller.getState().context?.pinned, true)
-
-  const confirmation = deferred<void>()
-  let requested: boolean | null = null
-  h.api.setPinned = async (pinned) => { requested = pinned; await confirmation.promise }
-  const toggle = h.controller.togglePinned()
-  assert.equal(requested, false, 'the first click targets the hydrated native value')
-  assert.equal(h.controller.getState().context?.pinned, true, 'no local pin truth before main confirms')
-  h.emit({ type: 'pinned', pinned: false })
-  confirmation.resolve()
-  await toggle
-  assert.equal(h.controller.getState().context?.pinned, false)
-
-  h.emit({ type: 'visibility', visible: false })
-  assert.equal(h.controller.getState().context?.pinned, false, 'hide does not reset pin state')
-  const shown = deferred<QuickChatContext>()
-  h.api.getContext = () => shown.promise
-  h.emit({ type: 'visibility', visible: true })
-  h.emit({ type: 'pinned', pinned: true })
-  shown.resolve({ ...h.context, pinned: false })
-  await flush()
-  assert.equal(h.controller.getState().context?.pinned, true)
   h.controller.dispose()
 })
 
@@ -238,7 +209,7 @@ test('failed sends keep text; accepted sends do not clear a later draft revision
   const h = harness()
   h.controller.start()
   await flush()
-  h.controller.setDraft('keep me')
+  typeDraft(h.controller, 'keep me')
   h.api.submitText = async () => ({ type: 'response', command: 'prompt', success: false, error: 'engine refused' })
   assert.equal(await h.controller.submit(), false)
   assert.equal(h.controller.getState().draft, 'keep me')
@@ -246,8 +217,8 @@ test('failed sends keep text; accepted sends do not clear a later draft revision
   const pending = deferred<PiResponseEvent | null>()
   h.api.submitText = () => pending.promise
   const submitting = h.controller.submit()
-  h.controller.setDraft('changed')
-  h.controller.setDraft('keep me')
+  typeDraft(h.controller, 'changed')
+  typeDraft(h.controller, 'keep me')
   pending.resolve({ type: 'response', command: 'prompt', success: true })
   assert.equal(await submitting, true)
   assert.equal(h.controller.getState().draft, 'keep me')
@@ -258,13 +229,13 @@ test('only the sent session draft clears if the target changes while submission 
   const h = harness()
   h.controller.start()
   await flush()
-  h.controller.setDraft('send A')
+  typeDraft(h.controller, 'send A')
   const pending = deferred<PiResponseEvent | null>()
   h.api.submitText = () => pending.promise
   const submitting = h.controller.submit()
   await h.controller.select({ runtimeId: 'B' })
   await flush()
-  h.controller.setDraft('keep B')
+  typeDraft(h.controller, 'keep B')
   pending.resolve({ type: 'response', command: 'prompt', success: true })
   await submitting
   assert.equal(h.controller.getState().draft, 'keep B')
@@ -278,12 +249,12 @@ test('send intent is explicit prompt while idle, steer while busy, and duplicate
   const h = harness()
   h.controller.start()
   await flush()
-  h.controller.setDraft('idle')
+  typeDraft(h.controller, 'idle')
   await h.controller.submit()
   await flush()
   assert.equal(h.submissions[0].mode, 'prompt')
   h.event({ type: 'agent_start' })
-  h.controller.setDraft('steer now')
+  typeDraft(h.controller, 'steer now')
   const pending = deferred<PiResponseEvent | null>()
   h.api.submitText = (input) => { h.submissions.push(input); return pending.promise }
   const submitting = h.controller.submit()
@@ -374,7 +345,7 @@ test('runtime restart keeps the same draft and blocks a second send until the fi
   const h = harness()
   h.controller.start()
   await flush()
-  h.controller.setDraft('resume session')
+  typeDraft(h.controller, 'resume session')
   const pending = deferred<PiResponseEvent | null>()
   let submissions = 0
   h.api.submitText = () => { submissions++; return pending.promise }
@@ -400,14 +371,14 @@ test('a newly saved session migrates only its own pending draft, never an identi
   const h = harness(initial)
   h.controller.start()
   await flush()
-  h.controller.setDraft('identical text')
+  typeDraft(h.controller, 'identical text')
   const pending = deferred<PiResponseEvent | null>()
   h.api.submitText = () => pending.promise
   const submitting = h.controller.submit()
   h.emit({ type: 'binding', binding: binding('A') })
   await h.controller.select({ runtimeId: 'B' })
   await flush()
-  h.controller.setDraft('identical text')
+  typeDraft(h.controller, 'identical text')
   pending.resolve({ type: 'response', command: 'prompt', success: true })
   await submitting
   assert.equal(h.controller.getState().draft, 'identical text')
@@ -421,7 +392,7 @@ test('selection errors and binding invalidation preserve drafts without silently
   const h = harness()
   h.controller.start()
   await flush()
-  h.controller.setDraft('keep this')
+  typeDraft(h.controller, 'keep this')
   h.api.selectTarget = async () => { throw new Error('cannot resume saved session') }
   await h.controller.select({ workspaceId: 'workspace-B', sessionPath: '/saved/B' })
   assert.equal(h.controller.getState().binding?.runtime.runtimeId, 'A')
@@ -460,17 +431,17 @@ test('a deferred engine refusal restores only the accepted draft revision, not l
   const h = harness()
   h.controller.start()
   await flush()
-  h.controller.setDraft('OMP admitted but later refused')
+  typeDraft(h.controller, 'OMP admitted but later refused')
   await h.controller.submit()
   await flush()
   assert.equal(h.controller.getState().draft, '')
   h.event({ type: 'prompt_result', id: 'prompt-1', agentInvoked: false, status: 'error', error: { message: 'missing model' } })
   assert.equal(h.controller.getState().draft, 'OMP admitted but later refused')
   assert.equal(h.controller.getState().error, 'missing model')
-  h.controller.setDraft('try another message')
+  typeDraft(h.controller, 'try another message')
   await h.controller.submit()
   await flush()
-  h.controller.setDraft('new unsent draft')
+  typeDraft(h.controller, 'new unsent draft')
   h.event({ type: 'prompt_result', id: 'prompt-2', agentInvoked: false, status: 'error', error: { message: 'expired login' } })
   assert.equal(h.controller.getState().draft, 'new unsent draft')
   assert.equal(h.controller.getState().busy, false)
@@ -481,7 +452,7 @@ test('an engine refusal arriving before the submit response cannot clear failed 
   const h = harness()
   h.controller.start()
   await flush()
-  h.controller.setDraft('do not lose this')
+  typeDraft(h.controller, 'do not lose this')
   const pending = deferred<PiResponseEvent | null>()
   h.api.submitText = () => pending.promise
   const submitting = h.controller.submit()
@@ -517,7 +488,7 @@ test('another prompt result cannot restore a steer draft or erase a running answ
   running.runtime.activity = 'working'
   h.api.getSnapshot = async () => snapshot(running, { streaming: { content: 'still working', thinking: '' } })
   h.event({ type: 'message_update', message: { role: 'assistant' }, assistantMessageEvent: { type: 'text_delta', delta: 'still working', offset: 0 } })
-  h.controller.setDraft('steer the running task')
+  typeDraft(h.controller, 'steer the running task')
   await h.controller.submit()
   h.event({ type: 'prompt_result', id: 'main-window-command', agentInvoked: false, status: 'error', error: { message: 'unrelated refusal' } })
   assert.equal(h.controller.getState().draft, '')
@@ -532,7 +503,7 @@ test('only the matching prompt outcome can refuse an unacknowledged submission',
   await flush()
   const pending = deferred<PiResponseEvent | null>()
   h.api.submitText = () => pending.promise
-  h.controller.setDraft('popup prompt')
+  typeDraft(h.controller, 'popup prompt')
   const sending = h.controller.submit()
   h.event({ type: 'prompt_result', id: 'another-request', agentInvoked: false, status: 'error', error: { message: 'not this prompt' } })
   pending.resolve({ type: 'response', id: 'popup-request', command: 'prompt', success: true })
@@ -599,15 +570,15 @@ test('a tool message backfilled before its live commit is displayed only once', 
   h.controller.dispose()
 })
 
-test('fresh popup opens in no-project state without adopting main or allocating a session', async () => {
+test('fresh popup starts a new task in main\'s current project without adopting its session or allocating one', async () => {
   const h = harness(null)
   h.controller.start()
   await flush()
   assert.equal(h.controller.getState().mode, 'new')
-  assert.equal(h.controller.getState().workspaceId, null)
+  assert.equal(h.controller.getState().workspaceId, 'workspace-A', 'the model list and file search have a project at once')
   assert.equal(h.controller.getState().binding, null)
   assert.equal(h.picks(), 0, 'opening the popup must not ask for a directory')
-  h.controller.setDraft('a quick task')
+  typeDraft(h.controller, 'a quick task')
   await h.controller.newTask()
   await h.controller.hide()
   h.emit({ type: 'visibility', visible: true })
@@ -616,6 +587,11 @@ test('fresh popup opens in no-project state without adopting main or allocating 
   assert.equal(h.controller.getState().binding, null)
   assert.deepEqual(h.creations, [])
   assert.deepEqual(h.submissions, [])
+  h.controller.setNoProject()
+  await h.controller.retry()
+  h.emit({ type: 'visibility', visible: true })
+  await flush()
+  assert.equal(h.controller.getState().workspaceId, null, 'a later context load never overrides the user\'s own choice')
 })
 
 test('unassigned send requires an explicit folder, then new-task drafts stay project-local', async () => {
@@ -623,7 +599,7 @@ test('unassigned send requires an explicit folder, then new-task drafts stay pro
   h.context.defaultWorkspaceId = null
   h.controller.start()
   await flush()
-  h.controller.setDraft('capture before choosing a project')
+  typeDraft(h.controller, 'capture before choosing a project')
   assert.equal(await h.controller.submit(), false)
   assert.equal(h.picks(), 1)
   assert.equal(h.controller.getState().draft, 'capture before choosing a project')
@@ -642,10 +618,10 @@ test('unassigned send requires an explicit folder, then new-task drafts stay pro
   assert.equal(h.controller.getState().workspaceId, 'workspace-A')
   h.controller.setWorkspace('workspace-A')
   assert.equal(h.controller.getState().draft, '')
-  h.controller.setDraft('task for A')
+  typeDraft(h.controller, 'task for A')
   h.controller.setWorkspace('workspace-B')
   assert.equal(h.controller.getState().draft, '')
-  h.controller.setDraft('task for B')
+  typeDraft(h.controller, 'task for B')
   h.controller.setWorkspace('workspace-A')
   assert.equal(h.controller.getState().draft, 'task for A')
   h.controller.setWorkspace('workspace-B')
@@ -656,7 +632,7 @@ test('unassigned send requires an explicit folder, then new-task drafts stay pro
   h.controller.setWorkspace('workspace-B')
   assert.equal(h.controller.getState().draft, 'task for B', 'switching back to B restores its own draft')
   h.controller.setNoProject()
-  h.controller.setDraft('unassigned idea')
+  typeDraft(h.controller, 'unassigned idea')
   h.controller.setWorkspace('workspace-B')
   assert.equal(h.controller.getState().draft, 'unassigned idea', 'an unassigned draft follows the next chosen project')
   h.controller.setNoProject()
@@ -674,10 +650,10 @@ test('first submission creates exactly one session and preserves typing during c
   h.controller.start()
   await flush()
   h.controller.setWorkspace('workspace-A')
-  h.controller.setDraft('first task')
+  typeDraft(h.controller, 'first task')
   const sending = h.controller.submit()
   await h.controller.submit()
-  h.controller.setDraft('next unsent text')
+  typeDraft(h.controller, 'next unsent text')
   h.controller.setWorkspace('workspace-B')
   await h.controller.newTask()
   assert.equal(h.controller.getState().workspaceId, 'workspace-A')
@@ -703,7 +679,7 @@ test('a failed initial send retries the same created session without losing text
   h.controller.start()
   await flush()
   h.controller.setWorkspace('workspace-A')
-  h.controller.setDraft('keep this task')
+  typeDraft(h.controller, 'keep this task')
   await h.controller.submit()
   await flush()
   const runtimeId = h.controller.getState().binding?.runtime.runtimeId
@@ -720,7 +696,7 @@ test('new-task navigation does not stop or answer the old task and preserves its
   const h = harness()
   h.controller.start()
   await flush()
-  h.controller.setDraft('a follow-up for A')
+  typeDraft(h.controller, 'a follow-up for A')
   h.event({ type: 'agent_start' })
   h.emit({ type: 'approval', version: 1, request: { type: 'extension_ui_request', id: 'pending-A', method: 'confirm' } })
   await h.controller.newTask()
@@ -729,7 +705,7 @@ test('new-task navigation does not stop or answer the old task and preserves its
   assert.equal(h.controller.getState().draft, '')
   assert.deepEqual(h.answers, [])
   assert.deepEqual(h.stops, [])
-  h.controller.setDraft('independent task')
+  typeDraft(h.controller, 'independent task')
   await h.controller.select({ runtimeId: 'A' })
   await flush()
   assert.equal(h.controller.getState().draft, 'a follow-up for A')
@@ -742,7 +718,7 @@ test('reopening preserves the current session so the user can see responses and 
   h.controller.start()
   await flush()
   h.controller.setWorkspace('workspace-A')
-  h.controller.setDraft('finish this')
+  typeDraft(h.controller, 'finish this')
   await h.controller.submit()
   await flush()
   const completed = h.controller.getState().binding!
@@ -761,7 +737,7 @@ test('reopening keeps unsent follow-ups and pending approvals, and Stop never im
   h.controller.start()
   await flush()
   h.controller.setWorkspace('workspace-A')
-  h.controller.setDraft('start this')
+  typeDraft(h.controller, 'start this')
   await h.controller.submit()
   await flush()
   const target = h.controller.getState().binding!
@@ -770,7 +746,7 @@ test('reopening keeps unsent follow-ups and pending approvals, and Stop never im
   h.api.getSnapshot = async () => snapshot(target, { request })
   h.emit({ type: 'binding', binding: target })
   h.emit({ type: 'approval', version: target.version, request })
-  h.controller.setDraft('follow-up not yet sent')
+  typeDraft(h.controller, 'follow-up not yet sent')
   h.emit({ type: 'visibility', visible: true })
   await flush()
   assert.equal(h.controller.getState().binding?.runtime.runtimeId, target.runtime.runtimeId)
@@ -794,7 +770,7 @@ test('Enter during Stop preserves the draft without starting or steering another
   const pending = deferred<void>()
   h.api.stop = () => pending.promise
   const stopping = h.controller.stop()
-  h.controller.setDraft('send only after stopping')
+  typeDraft(h.controller, 'send only after stopping')
   await h.controller.submit()
   assert.deepEqual(h.submissions, [])
   assert.equal(h.controller.getState().draft, 'send only after stopping')
@@ -811,7 +787,7 @@ test('startup binding revisions do not lose a matching refusal received before a
   h.api.getSnapshot = async () => snapshot(started)
   h.controller.start()
   await flush()
-  h.controller.setDraft('keep the startup task')
+  typeDraft(h.controller, 'keep the startup task')
   const sending = h.controller.submit()
   h.emit({ type: 'binding', binding: started })
   h.event({ type: 'prompt_result', id: 'startup-refusal', agentInvoked: false, status: 'error', error: { message: 'missing credentials' } }, started)
@@ -828,7 +804,7 @@ test('canceling the project picker keeps unassigned text and choosing a folder a
   h.context.workspaces = []
   h.controller.start()
   await flush()
-  h.controller.setDraft('an idea captured before a folder exists')
+  typeDraft(h.controller, 'an idea captured before a folder exists')
   await h.controller.pickWorkspace()
   assert.equal(h.controller.getState().workspaceId, null)
   assert.equal(h.controller.getState().draft, 'an idea captured before a folder exists')
@@ -849,7 +825,7 @@ test('a removed draft project requires explicit folder selection rather than sil
   const h = harness(null)
   h.controller.start()
   await flush()
-  h.controller.setDraft('task for a removed project')
+  typeDraft(h.controller, 'task for a removed project')
   h.context.workspaces = h.context.workspaces.filter((workspace) => workspace.id !== 'workspace-A')
   await h.controller.refreshContext()
   assert.equal(h.controller.getState().workspaceId, null)
@@ -865,7 +841,7 @@ test('a new-task model choice creates no runtime and rides the first send', asyn
   h.controller.start()
   await flush()
   h.controller.setWorkspace('workspace-A')
-  h.controller.setDraft('first task')
+  typeDraft(h.controller, 'first task')
   const chosen = await h.controller.setModelChoice(model('deepseek', 'deepseek-v4-flash'))
   assert.equal(chosen, true)
   assert.equal(h.controller.getState().preparedModel?.modelId, 'deepseek-v4-flash')
@@ -881,13 +857,50 @@ test('a new-task model choice creates no runtime and rides the first send', asyn
   h.controller.dispose()
 })
 
+test('a model choice stays pending when main turns the send into a steer', async () => {
+  const h = harness()
+  const stopped = binding('A')
+  stopped.runtime.status = 'stopped'
+  stopped.runtime.activity = 'completed'
+  h.api.getSnapshot = async () => snapshot(stopped)
+  h.controller.start()
+  await flush()
+  typeDraft(h.controller, 'add this')
+  await h.controller.setModelChoice(model('deepseek', 'deepseek-v4-flash'))
+  // A turn started from the main window before this send arrived.
+  h.api.submitText = async (input) => { h.submissions.push(input); return { type: 'response', command: 'steer', success: true } }
+  assert.equal(await h.controller.submit(), true)
+  assert.equal(h.controller.getState().preparedModel?.modelId, 'deepseek-v4-flash', 'the choice waits for the next prompt')
+  h.controller.dispose()
+})
+
+test('a no-project send into a project with its own draft clears the text it sent, not the project draft', async () => {
+  const h = harness(null)
+  h.controller.start()
+  await flush()
+  h.controller.setWorkspace('workspace-A')
+  typeDraft(h.controller, 'project draft')
+  // Leaving through B keeps A's draft in A; the no-project draft is separate.
+  h.controller.setWorkspace('workspace-B')
+  h.controller.setNoProject()
+  typeDraft(h.controller, 'sent from no project')
+  h.api.pickWorkspace = async () => h.context.workspaces.find((workspace) => workspace.id === 'workspace-A')!
+  assert.equal(await h.controller.submit(), true)
+  assert.equal(h.submissions.at(-1)?.text, 'sent from no project')
+  assert.equal(h.controller.getState().draft, 'project draft', 'the project keeps its own draft')
+  await h.controller.newTask()
+  h.controller.setNoProject()
+  assert.equal(h.controller.getState().draft, '', 'the sent text cannot be sent twice')
+  h.controller.dispose()
+})
+
 test('per-project draft model isolation survives project switches and hide/reshow', async () => {
   const h = harness(null)
   h.controller.start()
   await flush()
   h.controller.setWorkspace('workspace-A')
   await h.controller.setModelChoice(model('provider-a', 'model-a'))
-  h.controller.setDraft('task for A')
+  typeDraft(h.controller, 'task for A')
   h.controller.setWorkspace('workspace-B')
   assert.equal(h.controller.getState().preparedModel, null, 'B starts without A choice')
   assert.equal(h.controller.getState().draft, '')
@@ -908,7 +921,7 @@ test('a stopped session keeps its model choice pending and applies it on the nex
   h.api.getSnapshot = async () => snapshot(stopped)
   h.controller.start()
   await flush()
-  h.controller.setDraft('resume this')
+  typeDraft(h.controller, 'resume this')
   const chosen = await h.controller.setModelChoice(model('deepseek', 'deepseek-v4-flash'))
   assert.equal(chosen, true)
   assert.deepEqual(h.modelCalls, [], 'a stopped runtime never receives a live switch')
@@ -935,7 +948,7 @@ test('an idle running session switches its model live; a busy one stores it pend
   assert.equal(busy, true)
   assert.equal(h.modelCalls.length, 1, 'a busy runtime must not receive set_model')
   assert.equal(h.controller.getState().preparedModel?.provider, 'anthropic')
-  h.controller.setDraft('steer now')
+  typeDraft(h.controller, 'steer now')
   await h.controller.submit()
   assert.equal(h.submissions[0].mode, 'steer')
   assert.equal(h.submissions[0].model?.provider, 'anthropic')
@@ -990,7 +1003,7 @@ test('a binding event during the first send does not leave the applied model pen
   h.controller.start()
   await flush()
   h.controller.setWorkspace('workspace-A')
-  h.controller.setDraft('first task')
+  typeDraft(h.controller, 'first task')
   await h.controller.setModelChoice(model('deepseek', 'deepseek-v4-flash'))
   // The engine starts the runtime mid-send and its status-change events
   // re-bind with a fresh version — exactly what the real app does. The
@@ -1054,7 +1067,7 @@ for (const mode of ['new', 'stopped'] as const) {
     try {
       await flush()
       if (mode === 'new') h.controller.setWorkspace('workspace-A')
-      h.controller.setDraft('keep this task')
+      typeDraft(h.controller, 'keep this task')
       await h.controller.setThinkingChoice('max')
       await h.controller.setModelChoice(model('provider', 'wide', ['low', 'max']))
       assert.equal(h.controller.getState().preparedThinkingLevel, 'max')
@@ -1187,9 +1200,10 @@ test('stream activity cannot hide the confirmed model and thinking level from a 
 
 test('a stale draft owner is ignored and visible/history/notify updates stay scoped', async () => {
   const h = harness(null)
+  h.context.defaultWorkspaceId = null
   h.controller.start()
   await flush()
-  h.controller.setDraft('current draft')
+  typeDraft(h.controller, 'current draft')
   const staleKey = h.controller.getScopeKey()
   h.controller.setWorkspace('workspace-B')
   const freshKey = h.controller.getScopeKey()
@@ -1227,5 +1241,108 @@ test('a stale draft owner is ignored and visible/history/notify updates stay sco
   assert.equal(h.controller.getState().notify, null)
   h.emit({ type: 'visibility', visible: true })
   assert.equal(h.controller.getState().visible, true)
+  h.controller.dispose()
+})
+
+test('a provider error shows once as a notice, as in the main chat, and keeps its place on reload', async () => {
+  const h = harness()
+  h.controller.start()
+  await flush()
+  const failed = { id: 'a1', role: 'assistant', stopReason: 'error', errorMessage: '403 subscription required', content: [], timestamp: 1730000000000 }
+  h.event({ type: 'message_start', message: message('first', 'u1', 'user') })
+  h.event({ type: 'message_end', message: failed })
+  h.event({ type: 'turn_end', message: failed, toolResults: [] })
+  const notices = (): string[] => h.controller.getState().messages.filter((item) => item.role === 'system').map((item) => item.content)
+  assert.deepEqual(notices(), [t('store.messages.error', { detail: '403 subscription required' })], 'turn_end adds no second copy')
+  h.api.getSnapshot = async () => snapshot(binding('A'), { messages: [message('first', 'u1', 'user'), failed, message('second', 'u2', 'user'), message('answer', 'a2')] })
+  await h.controller.retry()
+  const ids = h.controller.getState().messages.map((item) => item.role === 'system' ? 'notice' : item.content)
+  assert.equal(ids.filter((id) => id === 'notice').length, 1)
+  assert.ok(ids.indexOf('notice') < ids.indexOf('second'), 'the notice stays before the later turn')
+  assert.equal(h.controller.getState().error, null)
+  h.controller.dispose()
+})
+
+test('compaction and retry notices land in the transcript instead of the status line', async () => {
+  const h = harness()
+  h.controller.start()
+  await flush()
+  h.event({ type: 'compaction_start', reason: 'threshold' })
+  h.event({ type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 0, errorMessage: 'overloaded' })
+  assert.equal(h.controller.getState().status, '')
+  assert.deepEqual(h.controller.getState().messages.map((item) => item.content), [
+    t('store.messages.compactingContext', { reason: 'threshold' }),
+    t('store.messages.retrying', { attempt: 1, maxAttempts: 3, detail: 'overloaded' }),
+  ])
+  h.event({ type: 'agent_start' })
+  h.event({ type: 'auto_retry_end', success: false, attempt: 3, finalError: 'overloaded' })
+  assert.equal(h.controller.getState().busy, false)
+  h.controller.dispose()
+})
+
+test('a notice toast survives a restart of the same runtime and clears on a session switch', async () => {
+  const h = harness()
+  h.controller.start()
+  await flush()
+  const notify: PiExtensionUiRequest = { type: 'extension_ui_request', method: 'notify', id: 'notify-1', message: 'extension loaded', notifyType: 'warning' }
+  h.event(notify)
+  h.emit({ type: 'binding', binding: { ...binding('A', 2), runtime: { ...binding('A').runtime, status: 'starting' } } })
+  assert.equal(h.controller.getState().notify, notify, 'a process restart does not cut the toast short')
+  const dismiss = h.controller.dismissNotify
+  dismiss()
+  assert.equal(h.controller.getState().notify, null, 'the dismiss handler works detached, so it can keep one identity')
+  h.event(notify, binding('A', 2))
+  await h.controller.select({ runtimeId: 'B' })
+  assert.equal(h.controller.getState().notify, null, 'another session never shows the old toast')
+  h.controller.dispose()
+})
+
+test('a restart of the same runtime keeps the transcript until the new snapshot arrives', async () => {
+  const h = harness()
+  h.controller.start()
+  await flush()
+  h.event({ type: 'message_start', message: message('earlier question', 'u1', 'user') })
+  assert.deepEqual(h.controller.getState().messages.map((item) => item.content), ['earlier question'])
+  const reloaded = deferred<QuickChatSnapshot | null>()
+  h.api.getSnapshot = () => reloaded.promise
+  const restarted = { ...binding('A', 2), runtime: { ...binding('A').runtime, status: 'starting' as const } }
+  h.emit({ type: 'binding', binding: restarted })
+  await flush()
+  assert.deepEqual(h.controller.getState().messages.map((item) => item.content), ['earlier question'], 'no blank transcript while the engine starts')
+  reloaded.resolve(snapshot(restarted, { messages: [message('earlier question', 'u1', 'user'), message('engine answer', 'a1')] }))
+  await flush()
+  assert.deepEqual(h.controller.getState().messages.map((item) => item.content), ['earlier question', 'engine answer'], 'the snapshot replaces the kept copy without a duplicate')
+  h.controller.dispose()
+})
+
+test('a snapshot overtaken by a binding change answers null and changes nothing', async () => {
+  const h = harness()
+  h.controller.start()
+  await flush()
+  h.event({ type: 'message_start', message: message('kept', 'u1', 'user') })
+  h.api.getSnapshot = async () => null
+  await h.controller.retry()
+  assert.equal(h.controller.getState().error, null)
+  assert.deepEqual(h.controller.getState().messages.map((item) => item.content), ['kept'])
+  h.controller.dispose()
+})
+
+test('a theme edit in main reaches the open popup without a context reload', async () => {
+  const h = harness()
+  h.controller.start()
+  await flush()
+  let contextReads = 0
+  const getContext = h.api.getContext
+  h.api.getContext = () => { contextReads++; return getContext() }
+  const edited: UserThemeRecord = {
+    id: 'mine',
+    file: {
+      $schema: THEME_SCHEMA_V1, name: 'Mine', kind: 'dark',
+      seeds: { app: '#101010', surface: '#202020', text: '#eeeeee', accent: '#ff6600', success: '#33cc66', warning: '#ffcc00', error: '#ff4444' },
+    },
+  }
+  h.emit({ type: 'themes', themes: [edited] })
+  assert.deepEqual(h.controller.getState().context?.themes, [edited])
+  assert.equal(contextReads, 0)
   h.controller.dispose()
 })

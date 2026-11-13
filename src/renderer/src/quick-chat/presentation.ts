@@ -1,4 +1,5 @@
 import { t as defaultT } from '../../../shared/i18n'
+import { matchesShortcut, type KeyboardShortcuts, type ShortcutKeyEvent } from '../../../shared/keyboard-shortcuts'
 import type { QuickChatBinding, QuickChatContext, QuickChatTarget } from '../../../shared/quick-chat'
 import type { DisplayMessage } from '../message-parsing'
 
@@ -21,7 +22,6 @@ export interface TargetOption {
   title: string
   workspace: string
   path: string
-  live: boolean
   status: TargetStatus
   updatedAt: number
 }
@@ -31,10 +31,19 @@ function sameDirectory(a: string, b: string): boolean {
   const right = normalize(b)
   return /^[a-z]:/i.test(left) ? left.toLowerCase() === right.toLowerCase() : left === right
 }
-function runtimeStatus(runtime: QuickChatContext['runtimes'][number]): TargetStatus {
+type Runtime = QuickChatContext['runtimes'][number]
+function processStatus(runtime: Runtime): TargetStatus {
   if (runtime.status === 'error') return 'failed'
-  if (runtime.activity) return runtime.activity
   return runtime.status === 'starting' ? 'starting' : runtime.status === 'stopped' ? 'stopped' : 'ready'
+}
+function runtimeStatus(runtime: Runtime): TargetStatus {
+  return runtime.status !== 'error' && runtime.activity ? runtime.activity : processStatus(runtime)
+}
+/** The bound session's status line: the popup's own turn state wins over the process state. */
+export function boundStatus(input: { request: boolean; busy: boolean; runtime: Runtime | undefined }): TargetStatus {
+  if (input.request) return 'needs-approval'
+  if (input.busy) return 'working'
+  return input.runtime ? processStatus(input.runtime) : 'ready'
 }
 export function targetStatusLabel(status: TargetStatus, t = defaultT): string {
   switch (status) {
@@ -60,7 +69,7 @@ export function targetOptions(context: QuickChatContext, t = defaultT): TargetOp
     options.push({
       key: `runtime:${runtime.runtimeId}`, target: { runtimeId: runtime.runtimeId },
       title: session?.name || session?.preview || t('quickChat.untitledSession'),
-      workspace: workspace.name, path: workspace.path, live: true,
+      workspace: workspace.name, path: workspace.path,
       status: runtimeStatus(runtime), updatedAt: context.runtimeUpdatedAt[runtime.runtimeId] ?? session?.lastModified ?? 0,
     })
   }
@@ -72,11 +81,24 @@ export function targetOptions(context: QuickChatContext, t = defaultT): TargetOp
     options.push({
       key: `saved:${workspace.id}:${session.path}`, target: { workspaceId: workspace.id, sessionPath: session.path },
       title: session.name || session.preview || t('quickChat.untitledSession'),
-      workspace: workspace.name, path: session.projectPath, live: false, status: 'saved', updatedAt: session.lastModified,
+      workspace: workspace.name, path: session.projectPath, status: 'saved', updatedAt: session.lastModified,
     })
   }
   return options.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 export function selectedTarget(options: TargetOption[], binding: QuickChatBinding | null): TargetOption | undefined {
   return binding ? options.find((option) => 'runtimeId' in option.target && option.target.runtimeId === binding.runtime.runtimeId) : undefined
+}
+
+type QuickChatKeyAction = 'hide' | 'newTask' | 'models'
+
+/**
+ * The popup command a key runs. The Quick Chat key hides the popup from inside it, as the
+ * system-wide key does on desktops that deliver it; a Wayland portal without an app id never does.
+ */
+export function quickChatKeyAction(event: ShortcutKeyEvent, shortcuts: KeyboardShortcuts, platform: string): QuickChatKeyAction | null {
+  if (matchesShortcut(event, shortcuts.quickChat, platform)) return 'hide'
+  if (matchesShortcut(event, shortcuts.newSession, platform)) return 'newTask'
+  if (matchesShortcut(event, shortcuts.modelSelector, platform)) return 'models'
+  return null
 }

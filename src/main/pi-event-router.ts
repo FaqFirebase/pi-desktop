@@ -80,7 +80,9 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
   // Every blocking dialog's asking manager, until answered or evicted.
   const origins = new Map<string, PiRpcManager>()
   const owners = new Map<PiRpcManager, 'main' | 'secondary'>()
-  const seenBlockingIds = new Set<string>()
+  // Request ids each process has already raised, so a repeat never shows twice.
+  // A stopped or restarted process starts a fresh set: it may reuse old ids.
+  const seenBlockingIds = new WeakMap<PiRpcManager, Set<string>>()
   const attached = new WeakSet<PiRpcManager>()
 
   const isBlockingDialog = (event: PiRpcEvent): event is PiExtensionUiRequest =>
@@ -192,8 +194,10 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
   }
 
   const handleBlockingDialog = (manager: PiRpcManager, event: PiExtensionUiRequest): void => {
-    if (seenBlockingIds.has(event.id)) return
-    seenBlockingIds.add(event.id)
+    const seen = seenBlockingIds.get(manager) ?? new Set<string>()
+    if (seen.has(event.id)) return
+    seen.add(event.id)
+    seenBlockingIds.set(manager, seen)
     origins.set(event.id, manager)
     if (ownerFor(manager) && !delivered.has(manager)) {
       const entry = track(event)
@@ -234,6 +238,7 @@ export function createPiEventRouter(deps: PiEventRouterDeps): PiEventRouter {
    * deliver against a process that will never consume the answer.
    */
   const evictManager = (manager: PiRpcManager): void => {
+    seenBlockingIds.delete(manager)
     const ownedIds = new Set<string>()
     for (const [id, origin] of origins) {
       if (origin === manager) ownedIds.add(id)

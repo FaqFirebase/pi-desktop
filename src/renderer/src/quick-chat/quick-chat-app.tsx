@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
-import { AlertCircle, ArrowDown, Check, ChevronDown, ExternalLink, Folder, FolderPlus, Loader2, MessageSquare, Pin, Plus, Search, ShieldAlert, X } from 'lucide-react'
+import { AlertCircle, ArrowDown, Check, ChevronDown, ExternalLink, Folder, FolderPlus, Loader2, MessageSquare, Plus, Search, ShieldAlert, X } from 'lucide-react'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { availableLanguages, i18n } from '../../../shared/i18n'
 import { resolveLanguage } from '../../../shared/i18n/resolve'
-import { matchesShortcut } from '../../../shared/keyboard-shortcuts'
 import { normalizePiCommands, withGuiCommands, type PiCommand } from '../../../shared/pi-command'
-import type { ModelInfo } from '../../../shared/ipc-contracts'
+import { isRuntimeBusy, type ModelInfo } from '../../../shared/ipc-contracts'
 import type { QuickChatApi, QuickChatQueryTarget } from '../../../shared/quick-chat'
 import { ChatSessionContext, type ChatSessionBindings } from '../chat-session-context'
 import { ChatInput } from '../components/chat-input'
@@ -21,8 +20,11 @@ import { applyUiFont } from '../utils/ui-font'
 import { isImeComposing } from '../utils/ime-composing'
 import type { ComposerAttachment, ComposerDraft } from '../store'
 import { QuickChatController } from './controller'
-import { selectedTarget, targetOptions, targetStatusLabel, transcriptMessages } from './presentation'
+import { boundStatus, quickChatKeyAction, selectedTarget, targetOptions, targetStatusLabel, transcriptMessages } from './presentation'
 import './quick-chat.css'
+
+// Within this distance of the end, the transcript keeps following new output.
+const FOLLOW_TAIL_THRESHOLD_PX = 60
 
 export function QuickChatApp({ api = window.piQuickChat }: { api?: QuickChatApi }): React.JSX.Element {
   const { t } = useTranslation()
@@ -49,7 +51,7 @@ export function QuickChatApp({ api = window.piQuickChat }: { api?: QuickChatApi 
   const options = useMemo(() => context ? targetOptions(context, t) : [], [context, t])
   const selected = selectedTarget(options, state.binding)
   const matching = options.filter((item) => `${item.title} ${item.workspace} ${item.path}`.toLocaleLowerCase().includes(filter.toLocaleLowerCase()))
-  const activeTasks = context?.runtimes.filter((item) => !item.closed && (item.activity === 'working' || item.activity === 'needs-approval')) ?? []
+  const activeTasks = context?.runtimes.filter((item) => !item.closed && isRuntimeBusy(item.activity)) ?? []
   const target = useMemo<QuickChatQueryTarget | null>(() => version !== undefined
     ? { kind: 'runtime', version }
     : state.mode === 'new' && state.workspaceId ? { kind: 'draft', workspaceId: state.workspaceId } : null,
@@ -106,8 +108,6 @@ export function QuickChatApp({ api = window.piQuickChat }: { api?: QuickChatApi 
       },
       cycle: async () => {
         if (bindings.models.locked) return
-        const current = controller.getState()
-        if (current.busy || current.request || current.sending || current.switching) return
         let models: ModelInfo[]
         try {
           models = await query.list()
@@ -136,7 +136,7 @@ export function QuickChatApp({ api = window.piQuickChat }: { api?: QuickChatApi 
       cancel: async () => {
         if (!await controller.cancelRequest()) throw new Error(controller.getState().error ?? t('quickChat.errors.staleApproval'))
       },
-      dismissNotify: () => controller.dismissNotify(), hideSurface: () => { void controller.hide() },
+      dismissNotify: controller.dismissNotify, hideSurface: () => { void controller.hide() },
     },
     composer: {
       scopeKey, active: state.visible, loading: state.loading || state.selecting,
@@ -211,20 +211,48 @@ export function QuickChatApp({ api = window.piQuickChat }: { api?: QuickChatApi 
     setPicker((current) => current === 'sessions' ? null : 'sessions')
     void controller.refreshContext()
   }
-  const status = state.request ? t('quickChat.needsApproval') : state.busy ? t('quickChat.working')
-    : runtime?.status === 'starting' ? t('quickChat.starting') : runtime?.status === 'error' ? t('quickChat.failed')
-      : runtime?.status === 'stopped' ? t('quickChat.stopped') : t('quickChat.ready')
+  const status = targetStatusLabel(boundStatus({ request: !!state.request, busy: state.busy, runtime }), t)
+  const selectTarget = (option: (typeof matching)[number]): void => {
+    setPicker(null)
+    void controller.select(option.target).then(requestFocus)
+  }
+  const onKeyDown = (event: React.KeyboardEvent): void => {
+    if (event.defaultPrevented || isImeComposing(event.nativeEvent)) return
+    if (event.key === 'Escape' && picker) { event.preventDefault(); setPicker(null); requestFocus(); return }
+    const action = quickChatKeyAction(event, settings.shortcuts, platform)
+    if (action === 'hide') { event.preventDefault(); void controller.hide() }
+    else if (action === 'newTask') { event.preventDefault(); newTask() }
+    else if (action === 'models' && !bindings.models.locked) { event.preventDefault(); setModelPickerOpen((open) => !open) }
+  }
+  const onSessionSearchKeyDown = (event: React.KeyboardEvent): void => {
+    if (isImeComposing(event.nativeEvent)) return
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      setHighlight((index) => Math.max(0, Math.min(matching.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1))))
+    } else if (event.key === 'Enter' && matching[highlight]) {
+      event.preventDefault()
+      selectTarget(matching[highlight])
+    }
+  }
+  const openActiveTask = (): void => {
+    const task = activeTasks.find((item) => item.activity === 'needs-approval') ?? (activeTasks.length === 1 ? activeTasks[0] : null)
+    if (task) void controller.select({ runtimeId: task.runtimeId }).then(requestFocus)
+    else toggleSessions()
+  }
+  const onTranscriptScroll = (event: React.UIEvent<HTMLDivElement>): void => {
+    const element = event.currentTarget
+    followTail.current = element.scrollHeight - element.scrollTop - element.clientHeight < FOLLOW_TAIL_THRESHOLD_PX
+    setAtBottom(followTail.current)
+  }
+  const scrollToBottom = (): void => {
+    if (transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight
+    followTail.current = true
+    setAtBottom(true)
+  }
   return (
     <ChatSessionContext.Provider value={bindings}>
       <ReadOnlyChatContext.Provider value={renderView}>
-        <main ref={dropZone} className="quick-chat" onKeyDown={(event) => {
-          if (event.defaultPrevented || isImeComposing(event.nativeEvent)) return
-          if (event.key === 'Escape' && picker) { event.preventDefault(); setPicker(null); requestFocus() }
-          else if (matchesShortcut(event, settings.shortcuts.newSession, platform)) { event.preventDefault(); newTask() }
-          else if (matchesShortcut(event, settings.shortcuts.modelSelector, platform) && !bindings.models.locked) {
-            event.preventDefault(); setModelPickerOpen((open) => !open)
-          }
-        }}>
+        <main ref={dropZone} className="quick-chat" onKeyDown={onKeyDown}>
           <header className="qc-drag-region flex h-10 shrink-0 items-center gap-2 border-b border-border px-3 text-xs">
             <span className="shrink-0 font-semibold">{t('quickChat.title')}</span>
             {state.mode === 'new' && <button className="qc-no-drag flex min-w-0 items-center gap-1 rounded-md px-2 py-1 text-secondary hover:bg-surface-hover" disabled={state.sending || state.selecting || state.pickingWorkspace} aria-haspopup="listbox" aria-expanded={picker === 'projects'} onClick={() => setPicker((value) => value === 'projects' ? null : 'projects')}>
@@ -235,7 +263,6 @@ export function QuickChatApp({ api = window.piQuickChat }: { api?: QuickChatApi 
             </button>
             <div className="ml-auto flex shrink-0 items-center gap-1">
               {state.mode === 'session' && <button className="qc-no-drag rounded p-1 text-muted hover:bg-surface-hover" title={t('quickChat.newTask')} aria-label={t('quickChat.newTask')} disabled={state.sending || state.selecting} onClick={newTask}><Plus size={14} /></button>}
-              {context?.canPin && <button className={clsx('qc-no-drag rounded p-1 hover:bg-surface-hover', context.pinned ? 'text-accent' : 'text-muted')} title={context.pinned ? t('quickChat.unpin') : t('quickChat.pin')} aria-label={context.pinned ? t('quickChat.unpin') : t('quickChat.pin')} aria-pressed={context.pinned} onClick={() => { void controller.togglePinned() }}><Pin size={14} /></button>}
               <button className="qc-no-drag rounded p-1 text-muted hover:bg-surface-hover" title={t('quickChat.openInMain')} aria-label={t('quickChat.open')} onClick={() => { void controller.openInMain() }}><ExternalLink size={14} /></button>
               <button className="qc-no-drag rounded p-1 text-muted hover:bg-surface-hover" title={t('quickChat.hide')} aria-label={t('quickChat.hide')} onClick={() => { void controller.hide() }}><X size={14} /></button>
             </div>
@@ -246,17 +273,10 @@ export function QuickChatApp({ api = window.piQuickChat }: { api?: QuickChatApi 
               {picker === 'sessions' ? <>
                 <button className="mb-2 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-accent hover:bg-surface-hover" onClick={newTask}><Plus size={14} />{t('quickChat.newTask')}</button>
                 <div className="mb-2 flex items-center gap-2 rounded-lg border border-border px-2"><Search size={13} className="text-muted" />
-                  <input ref={sessionSearch} className="w-full bg-transparent py-2 text-xs outline-none" aria-label={t('quickChat.searchSessions')} placeholder={t('quickChat.searchSessions')} value={filter} onChange={(event) => { setFilter(event.target.value); setHighlight(0) }} onKeyDown={(event) => {
-                    if (isImeComposing(event.nativeEvent)) return
-                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                      event.preventDefault(); setHighlight((index) => Math.max(0, Math.min(matching.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1))))
-                    } else if (event.key === 'Enter' && matching[highlight]) {
-                      event.preventDefault(); void controller.select(matching[highlight].target).then(requestFocus); setPicker(null)
-                    }
-                  }} />
+                  <input ref={sessionSearch} className="w-full bg-transparent py-2 text-xs outline-none" aria-label={t('quickChat.searchSessions')} placeholder={t('quickChat.searchSessions')} value={filter} onChange={(event) => { setFilter(event.target.value); setHighlight(0) }} onKeyDown={onSessionSearchKeyDown} />
                 </div>
                 <div className="max-h-60 overflow-y-auto" role="listbox" aria-label={t('quickChat.chooseSession')}>
-                  {matching.map((option, index) => <button key={option.key} role="option" aria-selected={selected?.key === option.key} title={option.path} className={clsx('flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left', index === highlight ? 'bg-card' : 'hover:bg-surface-hover')} onMouseEnter={() => setHighlight(index)} onClick={() => { setPicker(null); void controller.select(option.target).then(requestFocus) }}>
+                  {matching.map((option, index) => <button key={option.key} role="option" aria-selected={selected?.key === option.key} title={option.path} className={clsx('flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left', index === highlight ? 'bg-card' : 'hover:bg-surface-hover')} onMouseEnter={() => setHighlight(index)} onClick={() => selectTarget(option)}>
                     <MessageSquare size={13} className="shrink-0 text-muted" />
                     <span className="min-w-0 flex-1"><span className="block truncate text-xs">{option.title}</span><span className="block truncate text-[10px] text-muted">{option.workspace} · {targetStatusLabel(option.status, t)}</span></span>
                     {selected?.key === option.key && <Check size={13} className="text-success" />}
@@ -270,25 +290,17 @@ export function QuickChatApp({ api = window.piQuickChat }: { api?: QuickChatApi 
               </div>}
             </section>
           </>}
-          {activeTasks.length > 0 && <button className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1 text-left text-xs text-accent hover:bg-surface-hover" onClick={() => {
-            const task = activeTasks.find((item) => item.activity === 'needs-approval') ?? (activeTasks.length === 1 ? activeTasks[0] : null)
-            if (task) void controller.select({ runtimeId: task.runtimeId }).then(requestFocus)
-            else toggleSessions()
-          }}><ShieldAlert size={12} />{t('quickChat.activeTasksCount', { count: activeTasks.length })}</button>}
+          {activeTasks.length > 0 && <button className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1 text-left text-xs text-accent hover:bg-surface-hover" onClick={openActiveTask}><ShieldAlert size={12} />{t('quickChat.activeTasksCount', { count: activeTasks.length })}</button>}
           {(state.status || state.mode === 'session') && <div role="status" className="shrink-0 px-3 py-1 text-[11px] text-muted">{state.status || status}</div>}
           {state.error && <div role="alert" className="flex shrink-0 items-start gap-2 border-b border-error/30 bg-error-bg px-3 py-2 text-xs text-error"><AlertCircle size={14} className="shrink-0" /><span className="min-w-0 flex-1 break-words">{state.error}</span><button className="shrink-0 underline" onClick={() => { void controller.retry() }}>{t('quickChat.retry')}</button></div>}
-          <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto px-4 py-3" onScroll={(event) => {
-            const element = event.currentTarget
-            followTail.current = element.scrollHeight - element.scrollTop - element.clientHeight < 60
-            setAtBottom(followTail.current)
-          }}>
+          <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto px-4 py-3" onScroll={onTranscriptScroll}>
             {state.loading && <div className="flex items-center gap-2 text-xs text-muted"><Loader2 size={14} className="animate-spin" />{t('quickChat.loading')}</div>}
             {state.mode === 'new' && <div className="flex h-full flex-col items-center justify-center gap-2 py-6 text-center"><MessageSquare size={24} className="text-accent" /><h1 className="font-medium">{t('quickChat.newTask')}</h1><p className="max-w-sm text-xs text-muted">{t('quickChat.newTaskDescription')}</p>{!state.workspaceId && <p className="max-w-sm text-xs text-muted">{t('quickChat.chooseProjectFirst')}</p>}</div>}
             {state.mode === 'session' && !state.binding && !state.loading && <p className="py-6 text-center text-xs text-muted">{t('quickChat.targetUnavailable')}</p>}
             {state.mode === 'session' && state.binding && !state.loading && !state.messages.length && !state.busy && <p className="py-6 text-center text-xs text-muted">{t('quickChat.startConversation')}</p>}
             {renderItems.map((item) => item.kind === 'toolGroup' ? <ToolGroupBubble key={item.id} title={item.title} messages={item.messages} /> : <MessageBubble key={item.message.id} message={item.message} readOnly />)}
             {(state.busy || state.content || state.thinking || state.tools.size > 0) && <StreamingBubble content={state.content} thinking={state.thinking} toolCalls={state.tools} />}
-            {!atBottom && <button className="sticky bottom-1 mx-auto flex rounded-full border border-border bg-surface p-2 text-secondary shadow-md" title={t('chat.scrollToBottom')} aria-label={t('chat.scrollToBottom')} onClick={() => { if (transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight; followTail.current = true; setAtBottom(true) }}><ArrowDown size={14} /></button>}
+            {!atBottom && <button className="sticky bottom-1 mx-auto flex rounded-full border border-border bg-surface p-2 text-secondary shadow-md" title={t('chat.scrollToBottom')} aria-label={t('chat.scrollToBottom')} onClick={scrollToBottom}><ArrowDown size={14} /></button>}
           </div>
           <div className="shrink-0 pb-3 pt-2">
             {state.busy && <p className="px-4 pb-2 text-xs text-muted">{t('quickChat.steerHint')}</p>}

@@ -1,13 +1,12 @@
 import { t } from '../../../shared/i18n'
-import { promptRanWithoutAgent, promptRefusal, promptResultRefusal, type ModelInfo, type PermissionMode, type PiExtensionUiRequest, type PiPromptResultEvent, type PiRpcEvent } from '../../../shared/ipc-contracts'
+import { isRuntimeBusy, promptRanWithoutAgent, promptRefusal, promptResultRefusal, type ModelInfo, type PermissionMode, type PiExtensionUiRequest, type PiPromptResultEvent, type PiRpcEvent } from '../../../shared/ipc-contracts'
 import type { QuickChatApi, QuickChatBinding, QuickChatContext, QuickChatTarget, QuickChatUpdate } from '../../../shared/quick-chat'
 import type { DisplayMessage } from '../message-parsing'
 import type { ComposerAttachment, ComposerDraft } from '../store'
-import { appendPromptHistory, applyChatStreamUpdate, applyChatToolExecution, mergeChatMessages, parseChatMessage, parseChatMessages, type ChatToolCall } from '../chat-session-state'
+import { appendPromptHistory, applyChatStreamUpdate, applyChatToolExecution, chatEventNotice, keepNoticesInPlace, mergeChatMessages, parseChatMessage, parseChatMessages, type ChatToolCall } from '../chat-session-state'
 import { composePrompt } from '../utils/compose-prompt'
 import { markUnansweredToolCallsRunning, settleRunningToolCall } from '../reattached-tool-calls'
 import { placeStreamedDelta } from '../streamed-delta'
-import { stripAnsi } from '../utils/strip-ansi'
 import { thinkingLevels } from '../utils/thinking-levels'
 
 export interface QuickChatState {
@@ -53,6 +52,8 @@ export interface QuickChatState {
 }
 interface Draft { text: string; revision: number; attachments?: ComposerAttachment[]; model?: { provider: string; modelId: string; name?: string } | null; thinkingLevel?: string | null }
 interface Delta { field: 'content' | 'thinking'; text: string; offset: number | undefined }
+/** State a live update can change while a background read is in flight; the read must not overwrite it. */
+type LiveField = 'binding' | 'busy' | 'request' | 'config'
 interface PendingPrompt {
   generation: number
   runtimeId: string
@@ -67,14 +68,27 @@ interface PendingPrompt {
   refusal?: string
 }
 
+const NOTICE_ID_PREFIX = 'notice-'
+const STEER_COMMAND = 'steer'
+function isNotice(message: DisplayMessage): boolean {
+  return message.id.startsWith(NOTICE_ID_PREFIX)
+}
+
 export function bindingDraftKey(binding: QuickChatBinding): string {
   return `runtime:${binding.runtime.runtimeId}`
+}
+function newDraftKey(workspaceId: string | null): string {
+  return `new:${workspaceId ?? ''}`
+}
+/** The live stream area emptied, as at a message or turn boundary. */
+function idleStream(): Pick<QuickChatState, 'content' | 'thinking' | 'tools'> {
+  return { content: '', thinking: '', tools: new Map() }
 }
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** This controller owns only the popup's pinned view and drafts, never main's queue. */
+/** This controller owns only the popup's bound view and drafts, never main's queue. */
 export class QuickChatController {
   private state: QuickChatState = {
     context: null, binding: null, visible: true, history: [], draftVersion: 0, notify: null, mode: 'new', workspaceId: null, messages: [], content: '', thinking: '', tools: new Map(), busy: false,
@@ -91,13 +105,8 @@ export class QuickChatController {
   private generation = 0
   private contextLoad = 0
   private selection = 0
-  private updateRevision = 0
-  private eventRevision = 0
-  private approvalRevision = 0
-  private configRevision = 0
-  private pinnedRevision = 0
-  // Only buffers a native update before the first context exists.
-  private pendingPinned: boolean | null = null
+  // Parts of the state changed by live updates while a background read was open.
+  private openReads = new Set<Set<LiveField>>()
   private streamBoundary = 0
   private agentStarts = 0
   private latestPrompt: PendingPrompt | null = null
@@ -107,6 +116,9 @@ export class QuickChatController {
   private disposed = false
   private enteringNewDraft = false
   private creatingSession: { workspaceId: string; key: string; runtimeId?: string } | null = null
+  private noticeCount = 0
+  // The first context picks main's project once; later the user's choice wins.
+  private workspaceDefaulted = false
 
   constructor(private readonly api: QuickChatApi) {}
   getState = (): QuickChatState => this.state
@@ -114,17 +126,28 @@ export class QuickChatController {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
+  /** Opens a read; the returned set collects every live field touched until it closes. */
+  private openRead(): Set<LiveField> {
+    const touched = new Set<LiveField>()
+    this.openReads.add(touched)
+    return touched
+  }
+  private touch(...fields: LiveField[]): void {
+    for (const touched of this.openReads) for (const field of fields) touched.add(field)
+  }
+  /** Stream text from before this point can no longer fill the live bubble. */
+  private fenceStream(): void {
+    this.streamBoundary++
+    this.deltas = []
+  }
   private patch(patch: Partial<QuickChatState>): void {
     if (this.disposed) return
     this.state = { ...this.state, ...patch }
     for (const listener of this.listeners) listener()
   }
-  private draftKey(): string {
-    return this.state.mode === 'session' && this.state.binding
-      ? bindingDraftKey(this.state.binding)
-      : `new:${this.state.workspaceId ?? ''}`
-  }
-  getScopeKey = (): string => this.draftKey()
+  getScopeKey = (): string => this.state.mode === 'session' && this.state.binding
+    ? bindingDraftKey(this.state.binding)
+    : newDraftKey(this.state.workspaceId)
   readDraft = (): ComposerDraft => ({ text: this.state.draft, attachments: this.state.attachments })
   saveDraft(draft: ComposerDraft, scopeKey = this.getScopeKey()): void {
     if (scopeKey !== this.getScopeKey()) return
@@ -136,12 +159,13 @@ export class QuickChatController {
     this.patch({ draft: draft.text, attachments: draft.attachments })
   }
   recordPrompt(text: string): void {
-    const key = this.draftKey()
+    const key = this.getScopeKey()
     const history = appendPromptHistory(this.histories.get(key) ?? [], text)
     this.histories.set(key, history)
     this.patch({ history })
   }
-  dismissNotify(): void {
+  // Stable identity: the toast's dismiss timer must not restart on each render.
+  dismissNotify = (): void => {
     this.patch({ notify: null })
   }
   start(): void {
@@ -158,34 +182,30 @@ export class QuickChatController {
   }
   async refreshContext(initial = false): Promise<void> {
     const load = ++this.contextLoad
-    const revision = this.updateRevision
-    const pinnedRevision = this.pinnedRevision
+    const touched = this.openRead()
     try {
       const context = await this.api.getContext()
       if (this.disposed || load !== this.contextLoad) return
-      const pinned = pinnedRevision === this.pinnedRevision
-        ? context.pinned : this.state.context?.pinned ?? this.pendingPinned ?? context.pinned
-      this.pendingPinned = null
-      this.patch({ context: { ...context, pinned }, loading: false })
+      this.patch({ context, loading: false })
       if (this.state.workspaceId && !context.workspaces.some((workspace) => workspace.id === this.state.workspaceId)) {
         if (this.state.mode === 'new') {
-          const draft = this.drafts.get(this.draftKey())
-          if (draft) this.drafts.set('new:', draft)
+          const draft = this.drafts.get(this.getScopeKey())
+          if (draft) this.drafts.set(newDraftKey(null), draft)
         }
         this.patch({ workspaceId: null })
       }
+      // A new task starts in main's current project, so its model list and
+      // file search work at once; "No project" stays one click away.
+      if (!this.workspaceDefaulted && this.state.mode === 'new' && this.state.workspaceId === null && context.defaultWorkspaceId) {
+        this.workspaceDefaulted = true
+        this.setWorkspace(context.defaultWorkspaceId)
+      }
       // An update delivered while getContext was in flight is newer than its binding.
-      if (initial && revision === this.updateRevision) this.bind(context.binding)
+      if (initial && !touched.has('binding')) this.bind(context.binding)
     } catch (error) {
       if (load === this.contextLoad) this.patch({ error: errorText(error), loading: false })
-    }
-  }
-  async togglePinned(): Promise<void> {
-    if (!this.state.context) return
-    try {
-      await this.api.setPinned(!this.state.context.pinned)
-    } catch (error) {
-      this.patch({ error: errorText(error) })
+    } finally {
+      this.openReads.delete(touched)
     }
   }
   private bind(binding: QuickChatBinding | null): void {
@@ -204,39 +224,32 @@ export class QuickChatController {
         this.histories.delete(this.creatingSession.key)
       }
     }
-    if (previous && binding && previous.runtime.runtimeId === binding.runtime.runtimeId) {
-      const oldKey = bindingDraftKey(previous)
-      const nextKey = bindingDraftKey(binding)
-      if (oldKey !== nextKey) {
-        this.draftAliases.set(oldKey, nextKey)
-        if (this.drafts.has(oldKey)) {
-          this.drafts.set(nextKey, this.drafts.get(oldKey)!)
-          this.drafts.delete(oldKey)
-        }
-      }
-    }
-    if (previous && binding && previous.version === binding.version && previous.runtime.runtimeId === binding.runtime.runtimeId) {
+    const sameRuntime = !!previous && !!binding && previous.runtime.runtimeId === binding.runtime.runtimeId
+    if (sameRuntime && previous.version === binding.version) {
       const activity = binding.runtime.activity
-      this.patch({ binding, busy: activity === 'working' || activity === 'needs-approval' ? true : activity === 'completed' || activity === 'failed' ? false : this.state.busy })
-      // A same-version status change (e.g. stopped -> starting -> running, or
-      // the session file appearing) may carry the runtime's real model/thinking
-      // now that the engine answers get_state. Refresh so the snapshot taken
-      // after set_model lands instead of staying null forever.
+      const settled = activity === 'completed' || activity === 'failed'
+      this.patch({ binding, busy: isRuntimeBusy(activity) || (!settled && this.state.busy) })
+      // The engine may answer get_state only now (it just started), so its real model shows.
       void this.reloadSnapshot()
       return
     }
     this.generation++
-    this.eventRevision++
-    this.approvalRevision++
-    this.streamBoundary++
-    this.deltas = []
+    this.touch('busy', 'request')
+    this.fenceStream()
     this.reloadRequested = false
-    const draftKey = binding ? bindingDraftKey(binding) : `new:${this.state.workspaceId ?? ''}`
+    const draftKey = binding ? bindingDraftKey(binding) : newDraftKey(this.state.workspaceId)
     const draftEntry = this.drafts.get(draftKey)
+    const draft = binding || this.enteringNewDraft ? draftEntry?.text ?? '' : this.state.draft
+    const error = this.enteringNewDraft ? null
+      : binding ? binding.runtime.error ?? this.sessionErrors.get(draftKey) ?? null
+        : previous ? t('quickChat.targetUnavailable') : null
     this.patch({
       binding, mode: binding ? 'session' : this.enteringNewDraft ? 'new' : this.state.mode,
       workspaceId: binding?.runtime.workspaceId ?? this.state.workspaceId,
-      messages: [], content: '', thinking: '', tools: new Map(), request: null, notify: null,
+      // A restart of the same runtime keeps its transcript until the next
+      // snapshot replaces it, and keeps its toast until its own timer ends it.
+      messages: sameRuntime ? this.state.messages : [], ...idleStream(), request: null,
+      notify: sameRuntime ? this.state.notify : null,
       history: this.histories.get(draftKey) ?? [],
       // Real runtime state is unconfirmed until the next snapshot arrives; the
       // draft's prepared config carries over so a stopped session keeps its
@@ -244,11 +257,12 @@ export class QuickChatController {
       model: null, thinkingLevel: null, permissionMode: null,
       preparedModel: draftEntry?.model ?? null,
       preparedThinkingLevel: draftEntry?.thinkingLevel ?? null,
-      busy: binding?.runtime.activity === 'working' || binding?.runtime.activity === 'needs-approval',
-      draft: binding ? (draftEntry?.text ?? '') : this.enteringNewDraft ? (this.drafts.get(`new:${this.state.workspaceId ?? ''}`)?.text ?? '') : this.state.draft,
+      busy: isRuntimeBusy(binding?.runtime.activity),
+      draft,
       attachments: draftEntry?.attachments ?? [],
-      loading: previous && previous.runtime.runtimeId === binding?.runtime.runtimeId ? false : !!binding, sending: !!this.creatingSession || !!binding && this.sendingRuntimes.has(binding.runtime.runtimeId),
-      answering: false, stopping: false, switching: false, status: '', error: this.enteringNewDraft ? null : binding ? binding.runtime.error ?? this.sessionErrors.get(bindingDraftKey(binding)) ?? null : previous ? t('quickChat.targetUnavailable') : null,
+      loading: !sameRuntime && !!binding,
+      sending: !!this.creatingSession || !!binding && this.sendingRuntimes.has(binding.runtime.runtimeId),
+      answering: false, stopping: false, switching: false, status: '', error,
     })
     if (binding) void this.reloadSnapshot()
   }
@@ -266,35 +280,25 @@ export class QuickChatController {
     }
   }
   setWorkspace(workspaceId: string): void {
+    if (this.state.context?.workspaces.some((workspace) => workspace.id === workspaceId)) this.enterNewDraft(workspaceId)
+  }
+  setNoProject(): void {
+    this.enterNewDraft(null)
+  }
+  /** Switch the new-task target; a draft follows between a project and "No project" when the target has none. */
+  private enterNewDraft(workspaceId: string | null): void {
     if (this.state.mode !== 'new' || this.creatingSession || this.state.selecting) return
-    if (!this.state.context?.workspaces.some((workspace) => workspace.id === workspaceId)) return
     this.selection++
-    const oldKey = this.draftKey()
-    const nextKey = `new:${workspaceId}`
-    if (this.state.workspaceId === null && !this.drafts.has(nextKey) && this.drafts.has(oldKey)) {
+    const oldKey = this.getScopeKey()
+    const nextKey = newDraftKey(workspaceId)
+    const crossesNoProject = (this.state.workspaceId === null) !== (workspaceId === null)
+    if (crossesNoProject && !this.drafts.has(nextKey) && this.drafts.has(oldKey)) {
       this.drafts.set(nextKey, this.drafts.get(oldKey)!)
       this.drafts.delete(oldKey)
     }
     const nextDraft = this.drafts.get(nextKey)
     this.patch({
       workspaceId, draft: nextDraft?.text ?? '', attachments: nextDraft?.attachments ?? [], error: null,
-      history: this.histories.get(nextKey) ?? [],
-      preparedModel: nextDraft?.model ?? null, preparedThinkingLevel: nextDraft?.thinkingLevel ?? null,
-    })
-  }
-  setNoProject(): void {
-    if (this.state.mode !== 'new' || this.creatingSession || this.state.selecting) return
-    this.selection++
-    const oldKey = this.draftKey()
-    const nextKey = `new:`
-    // Keep an existing unassigned draft rather than clobbering it on navigation.
-    if (this.state.workspaceId !== null && !this.drafts.has(nextKey) && this.drafts.has(oldKey)) {
-      this.drafts.set(nextKey, this.drafts.get(oldKey)!)
-      this.drafts.delete(oldKey)
-    }
-    const nextDraft = this.drafts.get(nextKey)
-    this.patch({
-      workspaceId: null, draft: nextDraft?.text ?? '', attachments: nextDraft?.attachments ?? [], error: null,
       history: this.histories.get(nextKey) ?? [],
       preparedModel: nextDraft?.model ?? null, preparedThinkingLevel: nextDraft?.thinkingLevel ?? null,
     })
@@ -320,8 +324,8 @@ export class QuickChatController {
     if (this.state.pickingWorkspace || this.creatingSession || this.state.selecting || this.state.mode !== 'new') return false
     const generation = this.generation
     const selection = this.selection
-    const key = this.draftKey()
-    const isCurrent = (): boolean => !this.disposed && generation === this.generation && selection === this.selection && key === this.draftKey()
+    const key = this.getScopeKey()
+    const isCurrent = (): boolean => !this.disposed && generation === this.generation && selection === this.selection && key === this.getScopeKey()
     this.patch({ pickingWorkspace: true, error: null })
     try {
       const workspace = await this.api.pickWorkspace()
@@ -349,12 +353,6 @@ export class QuickChatController {
       if (generation === this.generation) this.patch({ stopping: false })
     }
   }
-  setDraft(text: string): void {
-    const key = this.draftKey()
-    const previous = this.drafts.get(key)
-    this.drafts.set(key, { ...(previous ?? { text, revision: 0 }), text, revision: (previous?.revision ?? 0) + 1 })
-    this.patch({ draft: text })
-  }
   /** Keep config picks with their draft unless an idle runtime can apply them. */
   private async changeConfig(
     command: (version: number) => Promise<unknown>,
@@ -363,7 +361,7 @@ export class QuickChatController {
   ): Promise<boolean> {
     const { binding, busy, request, stopping, switching, mode, sending } = this.state
     if (switching || sending || request || stopping) return false
-    const key = this.draftKey()
+    const key = this.getScopeKey()
     const write = (config: Pick<Draft, 'model' | 'thinkingLevel'>): void => {
       const entry = { ...(this.drafts.get(key) ?? { text: this.state.draft, revision: 0 }), ...config }
       this.drafts.set(key, entry)
@@ -374,12 +372,12 @@ export class QuickChatController {
       return true
     }
     const generation = this.generation
-    this.configRevision++
+    this.touch('config')
     this.patch({ switching: true, error: null })
     try {
       await command(binding.version)
       if (generation !== this.generation) return false
-      this.configRevision++
+      this.touch('config')
       write(applied)
       await this.reloadSnapshot()
       return true
@@ -421,28 +419,19 @@ export class QuickChatController {
       return false
     }
     let generation = this.generation
-    let key = this.draftKey()
+    let key = this.getScopeKey()
+    let textKey = key
     const revision = this.drafts.get(key)?.revision ?? 0
     let runtimeId: string | null = null
     this.patch({ sending: true, error: null })
     try {
       if (mode === 'new') {
-        // No implicit Home runtime: a no-project send requires an explicit folder.
-        if (!workspaceId) {
-          if (!await this.pickWorkspace()) return false
-          key = this.draftKey()
-        }
-        const targetId = this.state.workspaceId!
-        const creation: NonNullable<typeof this.creatingSession> = { workspaceId: targetId, key }
-        this.creatingSession = creation
-        const created = await this.api.createSession(targetId)
-        if (this.disposed) return false
-        if (creation.runtimeId && this.state.binding?.runtime.runtimeId !== creation.runtimeId) throw new Error(t('quickChat.targetUnavailable'))
-        if (this.state.binding?.runtime.runtimeId !== created.runtime.runtimeId) this.bind(created)
-        binding = this.state.binding!
+        const created = await this.createSessionForSend(key)
+        if (!created) return false
+        binding = created.binding
+        key = created.key
+        textKey = created.textKey
         generation = this.generation
-        key = bindingDraftKey(binding)
-        this.creatingSession = null
       }
       if (!binding) return false
       runtimeId = binding.runtime.runtimeId
@@ -452,11 +441,8 @@ export class QuickChatController {
       if (!busy) this.latestPrompt = prompt
       this.sessionErrors.delete(key)
       this.sendingRuntimes.add(runtimeId)
-      // Pending config from the draft rides this send (new-task first send and
-      // stopped-session resume; a running-idle session's choice was already
-      // applied live, so its draft carries none). It stays in the draft until
-      // the engine's own state confirms it took effect — a busy steer must not
-      // lose it.
+      // A draft's pending model or thinking level rides this send; an idle running
+      // session applied its choice live, so its draft carries none.
       const draftEntry = this.drafts.get(key)
       const pendingModel = draftEntry?.model ?? null
       const pendingThinking = draftEntry?.thinkingLevel ?? null
@@ -476,37 +462,10 @@ export class QuickChatController {
       if (refusal) throw new Error(refusal.reason || t('quickChat.sendRejected'))
       if (prompt.refusal !== undefined) throw new Error(prompt.refusal || t('quickChat.sendRejected'))
       if (this.disposed) return false
-      const sentKey = this.draftAliases.get(key) ?? key
-      const history = appendPromptHistory(this.histories.get(sentKey) ?? [], draft)
-      this.histories.set(sentKey, history)
-      if (this.draftKey() === sentKey) this.patch({ history })
-      const current = this.drafts.get(sentKey)
-      if (current) {
-        const textUnchanged = current.revision === revision && current.text === draft
-        const remaining = (current.attachments ?? []).filter((item) => !attachments.includes(item))
-        const next = {
-          ...current,
-          text: textUnchanged ? '' : current.text,
-          attachments: remaining,
-          revision: textUnchanged ? revision + 1 : current.revision,
-        }
-        this.drafts.set(sentKey, next)
-        if (this.draftKey() === sentKey) this.patch({ draft: next.text, attachments: remaining, draftVersion: this.state.draftVersion + 1 })
-      }
-      // A non-steer send was the runtime's first: the draft config was applied
-      // and the engine accepted the send, so it is no longer pending. This
-      // must not depend on `generation`: the runtime-start binding events
-      // (starting -> running) bump it mid-send, and the applied config is a
-      // fact of this runtime regardless. A target switch mid-send leaves the
-      // old draft's flag alone (the guard below compares the current key).
-      if (!busy && response?.success && (pendingModel || pendingThinking)) {
-        const clearedKey = this.draftAliases.get(key) ?? key
-        const currentDraft = this.drafts.get(clearedKey)
-        if (currentDraft) {
-          this.drafts.set(clearedKey, { ...currentDraft, model: null, thinkingLevel: null })
-          if (this.draftKey() === clearedKey) this.patch({ preparedModel: null, preparedThinkingLevel: null })
-        }
-      }
+      // Main applies the draft config only to a prompt; a send it turned into a
+      // steer leaves the config pending for the next prompt.
+      const configApplied = !!response?.success && response.command !== STEER_COMMAND && !!(pendingModel || pendingThinking)
+      this.settleSentDraft({ key, textKey, text: draft, attachments, revision }, configApplied)
       if (generation === this.generation) {
         if (promptRanWithoutAgent(response) && starts === this.agentStarts) this.patch({ busy: false })
         void this.reloadSnapshot()
@@ -515,12 +474,56 @@ export class QuickChatController {
     } catch (error) {
       const sentKey = this.draftAliases.get(key) ?? key
       this.sessionErrors.set(sentKey, errorText(error))
-      if (this.draftKey() === sentKey || mode === 'new' && runtimeId === null) this.patch({ error: errorText(error) })
+      if (this.getScopeKey() === sentKey || mode === 'new' && runtimeId === null) this.patch({ error: errorText(error) })
       return false
     } finally {
       this.creatingSession = null
       if (runtimeId) this.sendingRuntimes.delete(runtimeId)
       if (!runtimeId || this.state.binding?.runtime.runtimeId === runtimeId) this.patch({ sending: false })
+    }
+  }
+  /**
+   * Creates the runtime a new-task send goes to. A no-project send first asks for
+   * a folder; the sent text may then stay in the no-project draft (`textKey`).
+   */
+  private async createSessionForSend(key: string): Promise<{ binding: QuickChatBinding; key: string; textKey: string } | null> {
+    let textKey = key
+    if (!this.state.workspaceId) {
+      if (!await this.pickWorkspace()) return null
+      key = this.getScopeKey()
+      if (!this.drafts.has(textKey)) textKey = key
+    }
+    const creation: NonNullable<typeof this.creatingSession> = { workspaceId: this.state.workspaceId!, key }
+    this.creatingSession = creation
+    const created = await this.api.createSession(creation.workspaceId)
+    if (this.disposed) return null
+    if (creation.runtimeId && this.state.binding?.runtime.runtimeId !== creation.runtimeId) throw new Error(t('quickChat.targetUnavailable'))
+    if (this.state.binding?.runtime.runtimeId !== created.runtime.runtimeId) this.bind(created)
+    this.creatingSession = null
+    const binding = this.state.binding!
+    const sessionKey = bindingDraftKey(binding)
+    return { binding, key: sessionKey, textKey: textKey === key ? sessionKey : textKey }
+  }
+  /** After an accepted send: record it in history, clear the sent text, and drop config the engine applied. */
+  private settleSentDraft(sent: { key: string; textKey: string; text: string; attachments: ComposerAttachment[]; revision: number }, configApplied: boolean): void {
+    const sentKey = this.draftAliases.get(sent.key) ?? sent.key
+    const history = appendPromptHistory(this.histories.get(sentKey) ?? [], sent.text)
+    this.histories.set(sentKey, history)
+    if (this.getScopeKey() === sentKey) this.patch({ history })
+    const textKey = this.draftAliases.get(sent.textKey) ?? sent.textKey
+    const current = this.drafts.get(textKey)
+    if (current) {
+      // Text typed during the send is kept; only the sent text is cleared.
+      const textUnchanged = current.revision === sent.revision && current.text === sent.text
+      const remaining = (current.attachments ?? []).filter((item) => !sent.attachments.includes(item))
+      const next = { ...current, text: textUnchanged ? '' : current.text, attachments: remaining, revision: textUnchanged ? sent.revision + 1 : current.revision }
+      this.drafts.set(textKey, next)
+      if (this.getScopeKey() === textKey) this.patch({ draft: next.text, attachments: remaining, draftVersion: this.state.draftVersion + 1 })
+    }
+    const sessionDraft = configApplied ? this.drafts.get(sentKey) : undefined
+    if (sessionDraft) {
+      this.drafts.set(sentKey, { ...sessionDraft, model: null, thinkingLevel: null })
+      if (this.getScopeKey() === sentKey) this.patch({ preparedModel: null, preparedThinkingLevel: null })
     }
   }
   async answer(response: Record<string, unknown>): Promise<boolean> {
@@ -565,26 +568,23 @@ export class QuickChatController {
       return this.snapshotFlight.promise
     }
     const boundary = this.streamBoundary
-    const eventRevision = this.eventRevision
-    const approvalRevision = this.approvalRevision
-    const bindingRevision = this.updateRevision
-    const configRevision = this.configRevision
+    const touched = this.openRead()
     const deltaStart = this.deltas.length
     const messagesAtStart = new Map(this.state.messages.map((message) => [message.id, message]))
     const promise = this.api.getSnapshot(binding.version).then((snapshot) => {
-      if (this.disposed || generation !== this.generation || snapshot.binding.version < binding.version || snapshot.binding.runtime.runtimeId !== binding.runtime.runtimeId) return
-      const busy = eventRevision === this.eventRevision ? snapshot.binding.runtime.activity === 'working' || snapshot.streaming !== null : this.state.busy
+      if (!snapshot || this.disposed || generation !== this.generation || snapshot.binding.version < binding.version || snapshot.binding.runtime.runtimeId !== binding.runtime.runtimeId) return
+      const busy = !touched.has('busy') ? snapshot.binding.runtime.activity === 'working' || snapshot.streaming !== null : this.state.busy
       const newerMessages = new Map(this.state.messages.filter((message) => messagesAtStart.get(message.id) !== message).map((message) => [message.id, message]))
       const history = parseChatMessages(snapshot.messages).map((message) => newerMessages.get(message.id) ?? message)
       const patch: Partial<QuickChatState> = {
-        binding: bindingRevision === this.updateRevision ? snapshot.binding : this.state.binding,
-        messages: mergeChatMessages(busy ? markUnansweredToolCallsRunning(history) : history, this.state.messages), loading: false,
+        binding: touched.has('binding') ? this.state.binding : snapshot.binding,
+        messages: keepNoticesInPlace(mergeChatMessages(busy ? markUnansweredToolCallsRunning(history) : history, this.state.messages), this.state.messages, isNotice), loading: false,
       }
-      if (approvalRevision === this.approvalRevision) patch.request = snapshot.request
-      if (eventRevision === this.eventRevision) patch.busy = snapshot.binding.runtime.activity === 'working' || snapshot.streaming !== null
+      if (!touched.has('request')) patch.request = snapshot.request
+      if (!touched.has('busy')) patch.busy = busy
       // Stream and settlement events do not change engine configuration.
       // Only a config switch or process transition invalidates these fields.
-      if (configRevision === this.configRevision) {
+      if (!touched.has('config')) {
         patch.model = snapshot.model
         patch.thinkingLevel = snapshot.thinkingLevel
         patch.permissionMode = snapshot.permissionMode
@@ -606,6 +606,7 @@ export class QuickChatController {
     }).catch((error: unknown) => {
       if (generation === this.generation) this.patch({ error: errorText(error), loading: false })
     }).finally(() => {
+      this.openReads.delete(touched)
       if (this.snapshotFlight?.promise !== promise) return
       this.snapshotFlight = null
       if (this.reloadRequested && generation === this.generation) {
@@ -626,6 +627,13 @@ export class QuickChatController {
       ? [...this.state.messages, message]
       : mergeChatMessages(this.state.messages, [message]) })
   }
+  /** Engine notices use the main chat's shared wording and rules. */
+  private addNotice(event: PiRpcEvent): void {
+    const content = chatEventNotice(event)
+    if (!content) return
+    this.noticeCount++
+    this.patch({ messages: [...this.state.messages, { id: `${NOTICE_ID_PREFIX}${this.noticeCount}`, role: 'system', content, timestamp: Date.now() }] })
+  }
   private applyPromptResult(prompt: PendingPrompt, event: PiPromptResultEvent): void {
     if (event.agentInvoked || prompt.generation !== this.generation || prompt.starts !== this.agentStarts) return
     const refusal = promptResultRefusal(event)
@@ -641,22 +649,15 @@ export class QuickChatController {
           ...retained,
         ]
         this.drafts.set(key, { ...current, text: prompt.text, attachments, revision: current.revision + 1 })
-        if (this.draftKey() === key) this.patch({ draft: prompt.text, attachments, draftVersion: this.state.draftVersion + 1 })
+        if (this.getScopeKey() === key) this.patch({ draft: prompt.text, attachments, draftVersion: this.state.draftVersion + 1 })
       }
       this.patch({ error: refusal.reason || t('quickChat.sendRejected') })
     }
-    this.streamBoundary++
-    this.deltas = []
-    this.patch({ busy: false, content: '', thinking: '', tools: new Map() })
+    this.fenceStream()
+    this.patch({ busy: false, ...idleStream() })
     if (this.latestPrompt === prompt) this.latestPrompt = null
   }
   private onUpdate(update: QuickChatUpdate): void {
-    if (update.type === 'pinned') {
-      this.pinnedRevision++
-      if (this.state.context) this.patch({ context: { ...this.state.context, pinned: update.pinned } })
-      else this.pendingPinned = update.pinned
-      return
-    }
     if (update.type === 'visibility') {
       this.patch({ visible: update.visible })
       if (update.visible) {
@@ -677,33 +678,32 @@ export class QuickChatController {
       return
     }
     if (update.type === 'runtime-state') {
-      // A model/thinking switch made in the main window changed engine state
-      // for that runtime. Only the bound view refreshes; the snapshot re-reads
-      // get_state, so the label follows what the engine actually runs now.
+      // A model or thinking switch made in main: re-read what the engine runs now.
       if (this.state.binding?.runtime.runtimeId === update.runtimeId) {
-        this.configRevision++
+        this.touch('config')
         void this.reloadSnapshot()
       }
       return
     }
     if (update.type === 'binding') {
       const previous = this.state.binding
-      if (previous?.runtime.status !== update.binding?.runtime.status) this.configRevision++
-      this.updateRevision++
-      this.eventRevision++
+      if (previous?.runtime.status !== update.binding?.runtime.status) this.touch('config')
+      this.touch('binding', 'busy')
       this.bind(update.binding)
       if (!previous || !update.binding || previous.runtime.runtimeId !== update.binding.runtime.runtimeId || previous.runtime.sessionPath !== update.binding.runtime.sessionPath) void this.refreshContext()
       else if (this.state.context) this.patch({ context: { ...this.state.context, runtimes: this.state.context.runtimes.map((runtime) => runtime.runtimeId === update.binding!.runtime.runtimeId ? update.binding!.runtime : runtime) } })
+    } else if (update.type === 'themes') {
+      if (this.state.context) this.patch({ context: { ...this.state.context, themes: update.themes } })
     } else if (update.type === 'settings') {
       if (this.state.context) this.patch({ context: { ...this.state.context, settings: update.settings } })
       void this.refreshContext()
     } else if (update.type === 'approval') {
       if (update.version !== this.state.binding?.version) return
-      this.approvalRevision++
+      this.touch('request')
       this.patch({ request: update.request })
     } else {
       if (update.version !== this.state.binding?.version || update.runtimeId !== this.state.binding.runtime.runtimeId) return
-      this.eventRevision++
+      this.touch('busy')
       this.onEvent(update.event)
     }
   }
@@ -711,9 +711,8 @@ export class QuickChatController {
     switch (event.type) {
       case 'agent_start':
         this.agentStarts++
-        this.streamBoundary++
-        this.deltas = []
-        this.patch({ busy: true, content: '', thinking: '', tools: new Map(), status: '', error: null })
+        this.fenceStream()
+        this.patch({ busy: true, ...idleStream(), status: '', error: null })
         break
       case 'message_start':
         if (event.message.role === 'user') this.addMessage(event.message, true)
@@ -734,10 +733,10 @@ export class QuickChatController {
       case 'message_end':
         this.addMessage(event.message, event.message.role !== 'user')
         if (event.message.role === 'assistant') {
-          this.streamBoundary++
-          this.deltas = []
+          this.fenceStream()
           this.patch({ content: '', thinking: '' })
         }
+        this.addNotice(event)
         break
       case 'tool_execution_start':
       case 'tool_execution_update':
@@ -751,20 +750,18 @@ export class QuickChatController {
         break
       case 'agent_end':
         this.patch({ messages: mergeChatMessages(this.state.messages, parseChatMessages(event.messages)) })
-        this.streamBoundary++
-        this.deltas = []
-        this.patch({ busy: false, content: '', thinking: '', tools: new Map(), status: '' })
+        this.fenceStream()
+        this.patch({ busy: false, ...idleStream(), status: '' })
         void this.reloadSnapshot()
         break
       case 'status_change': {
         const binding = this.state.binding!
-        if (event.status !== binding.runtime.status) this.configRevision++
+        if (event.status !== binding.runtime.status) this.touch('config')
         if (event.status === 'stopped' || event.status === 'error') {
-          this.streamBoundary++
-          this.deltas = []
+          this.fenceStream()
           void this.reloadSnapshot()
         }
-        this.patch({ binding: { ...binding, runtime: { ...binding.runtime, ...event } }, ...(event.status === 'stopped' || event.status === 'error' ? { busy: false, content: '', thinking: '', tools: new Map<string, ChatToolCall>() } : {}), ...(event.error ? { error: event.error } : {}) })
+        this.patch({ binding: { ...binding, runtime: { ...binding.runtime, ...event } }, ...(event.status === 'stopped' || event.status === 'error' ? { busy: false, ...idleStream() } : {}), ...(event.error ? { error: event.error } : {}) })
         break
       }
       case 'prompt_result': {
@@ -784,19 +781,14 @@ export class QuickChatController {
         this.patch({ error: event.error })
         break
       case 'command_output':
-        this.patch({ messages: [...this.state.messages, { id: `command-${this.eventRevision}`, role: 'system', content: stripAnsi(event.text), timestamp: Date.now() }] })
-        break
       case 'compaction_start':
-        this.patch({ status: t('quickChat.compacting') })
-        break
       case 'compaction_end':
-        this.patch({ status: '', ...(event.errorMessage ? { error: event.errorMessage } : {}) })
-        break
       case 'auto_retry_start':
-        this.patch({ status: t('quickChat.retrying', { attempt: event.attempt, total: event.maxAttempts }) })
+        this.addNotice(event)
         break
       case 'auto_retry_end':
-        this.patch({ status: '', ...(event.finalError ? { error: event.finalError } : {}) })
+        // The failed attempt's message_end already showed its error.
+        if (!event.success) this.patch({ busy: false })
         break
       case 'extension_ui_request':
         // Blocking ownership comes only from the dedicated approval update, not the raw engine event.

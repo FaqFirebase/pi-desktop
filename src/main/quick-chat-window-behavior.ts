@@ -5,20 +5,20 @@ export interface WindowRectangle {
   height: number
 }
 
-/** Explicit Ozone selection wins over the login session's inherited environment. */
-export function isQuickChatWayland(input: {
-  platform: string
-  ozonePlatform: string
-  ozonePlatformHint: string
-  waylandDisplay?: string
-  sessionType?: string
-}): boolean {
-  if (input.platform !== 'linux') return false
-  if (input.ozonePlatform === 'x11') return false
-  if (input.ozonePlatform === 'wayland') return true
-  if (input.ozonePlatformHint === 'x11') return false
-  if (input.ozonePlatformHint === 'wayland') return true
-  return Boolean(input.waylandDisplay) || input.sessionType === 'wayland'
+interface PreferredLength {
+  share: number
+  min: number
+  max: number
+}
+
+/** The default popup takes a share of the work area, kept between a floor and a ceiling. */
+const PREFERRED_WIDTH: PreferredLength = { share: 0.42, min: 640, max: 960 }
+const PREFERRED_HEIGHT: PreferredLength = { share: 0.55, min: 420, max: 720 }
+/** The default popup sits a third of the way down, above the visual center. */
+const VERTICAL_PLACEMENT_DIVISOR = 3
+
+export function sameRectangle(a: WindowRectangle, b: WindowRectangle): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
 }
 
 /** Work-area coordinates are already in Electron's device-independent pixels. */
@@ -32,19 +32,23 @@ export function clampQuickChatBounds(bounds: WindowRectangle, workArea: WindowRe
     y: Math.min(Math.max(bounds.y, workArea.y), workArea.y + workArea.height - height),
   }
 }
-export function adaptiveQuickChatSize(workArea: WindowRectangle): { width: number; height: number } {
-  return {
-    width: Math.round(Math.min(Math.max(640, workArea.width * 0.42), 960, workArea.width)),
-    height: Math.round(Math.min(Math.max(420, workArea.height * 0.55), 720, workArea.height)),
-  }
+
+function preferredLength(available: number, preferred: PreferredLength): number {
+  return Math.round(Math.min(Math.max(preferred.min, available * preferred.share), preferred.max, available))
 }
 
+export function adaptiveQuickChatSize(workArea: WindowRectangle): { width: number; height: number } {
+  return {
+    width: preferredLength(workArea.width, PREFERRED_WIDTH),
+    height: preferredLength(workArea.height, PREFERRED_HEIGHT),
+  }
+}
 
 export function positionQuickChatBounds(size: { width: number; height: number }, workArea: WindowRectangle): WindowRectangle {
   return clampQuickChatBounds({
     ...size,
     x: Math.round(workArea.x + (workArea.width - size.width) / 2),
-    y: Math.round(workArea.y + (workArea.height - size.height) / 3),
+    y: Math.round(workArea.y + (workArea.height - size.height) / VERTICAL_PLACEMENT_DIVISOR),
   }, workArea)
 }
 
@@ -58,17 +62,4 @@ export function resolveQuickChatBounds(input: {
     return clampQuickChatBounds(input.lastCustomBounds ?? input.currentBounds, input.workArea)
   }
   return positionQuickChatBounds(adaptiveQuickChatSize(input.workArea), input.workArea)
-}
-
-/** Native child dialogs and IME/menu focus transfers are not outside clicks. */
-export function shouldHideQuickChatOnBlur(input: {
-  visible: boolean
-  focused: boolean
-  ownedInteraction: boolean
-  composing: boolean
-  applicationDeactivated: boolean
-  pinned?: boolean
-}): boolean {
-  if (input.pinned) return false
-  return input.visible && (input.applicationDeactivated || (!input.focused && !input.ownedInteraction && !input.composing))
 }

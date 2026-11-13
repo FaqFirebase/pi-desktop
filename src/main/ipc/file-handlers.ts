@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { IPC_CHANNELS } from '../../shared/ipc-contracts'
+import { IPC_CHANNELS, isRuntimeBusy } from '../../shared/ipc-contracts'
 import { readAttachment } from '../attachment-reader'
 import { isAuthorizedAttachmentPath } from '../path-authorization'
 import { assertTrustedSender, isString } from './validation'
@@ -80,7 +80,7 @@ export function registerFileHandlers(ctx: IpcContext): void {
     const fs = workspaceManager.getFileService(workspaceId)
     if (!fs) throw new Error(t('errors.workspace.noneActive'))
     const active = workspaceManager.getSessionRuntimes(workspaceId)
-      .some((runtime) => runtime.activity === 'working' || runtime.activity === 'needs-approval')
+      .some((runtime) => isRuntimeBusy(runtime.activity))
     if (active) throw new Error(t('diff.discard.agentWorking'))
     await fs.discardFileDiff(patches)
   })

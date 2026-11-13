@@ -1055,7 +1055,6 @@
     "chooseProject": "Proje seç",
     "chooseProjectFirst": "Göndermeden önce bir proje klasörü seçin.",
     "chooseSession": "Oturum seç",
-    "compacting": "Bağlam sıkıştırılıyor…",
     "completed": "Tamamlandı",
     "errors": {
       "runtimeBusy": "Oturum meşgulken, durdurulmuşken veya yanıt beklerken değiştirilemez.",
@@ -1076,10 +1075,8 @@
     "open": "Aç",
     "openInMain": "Ana pencerede göster",
     "pickWorkspace": "Proje klasörü aç…",
-    "pin": "Üstte sabitle (odak kaybolduğunda görünür kal)",
     "ready": "Hazır",
     "retry": "Yeniden dene",
-    "retrying": "Yeniden deneniyor ({{attempt}}/{{total}})…",
     "savedSession": "Kayıtlı oturum",
     "searchSessions": "Oturum ara",
     "sendRejected": "Motor bu mesajı kabul etmedi.",
@@ -1091,7 +1088,6 @@
     "stopped": "Sizin tarafınızdan durduruldu",
     "targetUnavailable": "Bu oturum artık kullanılamıyor. Yeniden bir oturum seçin; taslağınız korundu.",
     "title": "Hızlı sohbet",
-    "unpin": "Sabitlemeyi kaldır",
     "untitledSession": "Adsız oturum",
     "working": "Çalışıyor"
   },

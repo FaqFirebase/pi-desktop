@@ -1,7 +1,7 @@
 import type { SessionRuntimeInfo } from '../../shared/ipc-contracts'
 import type { WorkspaceManager } from '../workspace-manager'
 import { PiRpcManager } from '../pi-rpc-manager'
-import { trimGetMessagesResponse } from '../get-messages-trim'
+import { trimGetMessagesResponse, trimMessagesForUi } from '../get-messages-trim'
 import { withStoppedAnswers } from '../omp-stopped-answers'
 import { readSessionEntries } from '../session-jsonl'
 import { isObject } from './validation'
@@ -61,10 +61,5 @@ export async function readStoppedRuntimeMessages(runtime: SessionRuntimeInfo): P
   if (!runtime.sessionPath) return []
   const entries = await readSessionEntries(runtime.sessionPath, MAX_STOPPED_SESSION_BYTES)
   if (!entries) return []
-  const messages = entries
-    .filter((entry) => entry.type === 'message' && isObject(entry.message))
-    .map((entry) => entry.message)
-  const trimmed = trimGetMessagesResponse({ data: { messages } })
-  const data = isObject(trimmed) && isObject(trimmed.data) ? trimmed.data : null
-  return Array.isArray(data?.messages) ? data.messages : []
+  return trimMessagesForUi(entries.filter((entry) => entry.type === 'message' && isObject(entry.message)).map((entry) => entry.message))
 }

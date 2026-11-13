@@ -11,7 +11,6 @@ const electronPath = require.resolve('electron')
 require('electron')
 const electronModule = require.cache[electronPath]!
 const originalExports = electronModule.exports
-const switches = new Map<string, string>()
 const windows: PopupWindow[] = []
 const area = { x: 0, y: 0, width: 1280, height: 800 }
 
@@ -22,6 +21,7 @@ class PopupWindow extends EventEmitter {
   })
   readonly urls: string[] = []
   visible = false
+  focused = true
   destroyed = false
   shows = 0
   bounds: WindowRectangle
@@ -32,30 +32,24 @@ class PopupWindow extends EventEmitter {
   }
   isDestroyed(): boolean { return this.destroyed }
   isVisible(): boolean { return this.visible }
-  isFocused(): boolean { return this.visible }
-  getParentWindow(): null { return null }
+  isFocused(): boolean { return this.visible && this.focused }
   getBounds(): WindowRectangle { return this.bounds }
   setBounds(bounds: WindowRectangle): void { this.bounds = bounds }
   setMinimumSize(): void {}
   setMenuBarVisibility(): void {}
-  setVisibleOnAllWorkspaces(): void {}
-  focus(): void {}
+  focus(): void { this.focused = true }
   show(): void { this.visible = true; this.shows++; this.emit('show') }
   hide(): void { this.visible = false; this.emit('hide') }
   destroy(): void { this.destroyed = true; this.emit('closed') }
   async loadURL(url: string): Promise<void> { this.urls.push(url) }
 }
 
-const app = Object.assign(new EventEmitter(), {
-  commandLine: { getSwitchValue: (name: string) => switches.get(name) ?? '' },
-  dock: { isVisible: () => true },
-})
 const screen = Object.assign(new EventEmitter(), {
   getDisplayNearestPoint: () => ({ workArea: area }),
   getDisplayMatching: () => ({ workArea: area }),
   getCursorScreenPoint: () => ({ x: 100, y: 100 }),
 })
-electronModule.exports = { app, screen, BrowserWindow: PopupWindow, Menu: { getApplicationMenu: () => null } }
+electronModule.exports = { screen, BrowserWindow: PopupWindow }
 // The actual window module must bind Electron only after the native boundary stub.
 let popup: typeof PopupModule
 before(async () => { popup = await import('./quick-chat-window') })
@@ -64,7 +58,6 @@ function reset(): void {
   popup.destroyQuickChatWindow()
   popup.setQuickChatQuittingHandler(() => false)
   popup.setQuickChatVisibilityHandler(() => {})
-  switches.clear()
   windows.length = 0
 }
 
@@ -98,20 +91,8 @@ test('production popup loads the canonical trusted URL and waits for readiness',
   assert.equal(navigation('https://untrusted.example/#quick-chat'), true)
 })
 
-test('Wayland load readiness is first-wins and pinning remains unavailable unless X11 is explicit', (t) => {
-  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
-  const display = process.env.WAYLAND_DISPLAY
-  Object.defineProperty(process, 'platform', { ...platform, value: 'linux' })
-  process.env.WAYLAND_DISPLAY = 'wayland-0'
-  t.after(() => {
-    reset()
-    Object.defineProperty(process, 'platform', platform)
-    if (display === undefined) delete process.env.WAYLAND_DISPLAY
-    else process.env.WAYLAND_DISPLAY = display
-  })
-  popup.setQuickChatPinned(true)
-  assert.equal(popup.canPinQuickChatWindow(), false)
-  assert.equal(popup.isQuickChatPinned(), false)
+test('load readiness is first-wins on every platform and respects hide', (t) => {
+  t.after(reset)
   popup.openQuickChatWindow()
   const window = windows[0]
   window.webContents.emit('did-finish-load')
@@ -125,15 +106,19 @@ test('Wayland load readiness is first-wins and pinning remains unavailable unles
   hidden.webContents.emit('did-finish-load')
   hidden.emit('ready-to-show')
   assert.equal(hidden.shows, 0)
-  popup.destroyQuickChatWindow()
-  switches.set('ozone-platform', 'x11')
-  assert.equal(popup.canPinQuickChatWindow(), true)
-  popup.setQuickChatPinned(true)
-  assert.equal(popup.isQuickChatPinned(), true)
+})
+
+test('the popup is an ordinary window: focus loss never hides it, and the shortcut raises it from behind', (t) => {
+  t.after(reset)
   popup.openQuickChatWindow()
-  const x11 = windows[2]
-  x11.webContents.emit('did-finish-load')
-  assert.equal(x11.shows, 0, 'X11 waits for native readiness rather than the Wayland fallback')
-  x11.emit('ready-to-show')
-  assert.equal(x11.shows, 1)
+  const window = windows[0]
+  window.emit('ready-to-show')
+  window.focused = false
+  window.emit('blur')
+  assert.equal(window.isVisible(), true, 'a click outside leaves the popup open')
+  popup.toggleQuickChatWindow()
+  assert.equal(window.isVisible(), true, 'the shortcut brings a popup behind other windows to the front')
+  assert.equal(window.isFocused(), true)
+  popup.toggleQuickChatWindow()
+  assert.equal(window.isVisible(), false, 'the shortcut hides a popup that is in front')
 })

@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { IPC_CHANNELS, WHOLE_WORKSPACE_CHANGE_PATH } from '../../shared/ipc-contracts'
+import { IPC_CHANNELS, isRuntimeBusy, WHOLE_WORKSPACE_CHANGE_PATH } from '../../shared/ipc-contracts'
 import type { LinkedShipRequest, LinkedTaskMode, LinkedTaskOptions, RepoSetDraft, RepoSetMember } from '../../shared/ipc-contracts'
 import { assertTrustedSender, isObject, isOptionalString, isOptionalStringArray, isString } from './validation'
 import { loadAppSettings } from './settings'
@@ -115,7 +115,7 @@ export function registerLinkedTaskHandlers(ctx: IpcContext): void {
     if (!workspace?.linkedTask) throw new Error(t('repoSets.errors.notLinkedTask'))
     // A commit taken while the agent still edits would ship half a change.
     const working = workspaceManager.getSessionRuntimes(workspaceId)
-      .some((runtime) => runtime.activity === 'working' || runtime.activity === 'needs-approval')
+      .some((runtime) => isRuntimeBusy(runtime.activity))
     if (working) throw new Error(t('repoSets.ship.errors.agentWorking'))
     const result = await shipLinkedTask(workspace.linkedTask.repos, request)
     if (workspaceManager.getActiveWorkspaceId() === workspaceId) {

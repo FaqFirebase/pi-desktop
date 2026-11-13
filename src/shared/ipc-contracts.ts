@@ -275,6 +275,11 @@ export interface PiStatus {
 
 export type SessionRuntimeActivity = 'working' | 'needs-approval' | 'completed' | 'failed'
 
+/** A turn is running or waiting on an answer. */
+export function isRuntimeBusy(activity: SessionRuntimeActivity | null | undefined): boolean {
+  return activity === 'working' || activity === 'needs-approval'
+}
+
 /** Live runtime for one Pi session. Multiple runtimes may share one workspace cwd. */
 export interface SessionRuntimeInfo extends PiStatus {
   runtimeId: string

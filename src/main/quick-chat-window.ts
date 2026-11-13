@@ -1,40 +1,32 @@
-import { app, BrowserWindow, Menu, screen } from 'electron'
+import { BrowserWindow, screen } from 'electron'
 import { join } from 'path'
 import { isTrustedRendererUrl, RENDERER_INDEX_PATH, RENDERER_INDEX_URL } from './renderer-origin'
-import { adaptiveQuickChatSize, clampQuickChatBounds, isQuickChatWayland, positionQuickChatBounds, resolveQuickChatBounds, shouldHideQuickChatOnBlur, type WindowRectangle } from './quick-chat-window-behavior'
+import { WINDOW_BACKGROUND_COLOR } from './window-appearance'
+import {
+  adaptiveQuickChatSize,
+  clampQuickChatBounds,
+  positionQuickChatBounds,
+  resolveQuickChatBounds,
+  sameRectangle,
+  type WindowRectangle,
+} from './quick-chat-window-behavior'
+
+/** Must match the hash src/renderer/src/main.tsx checks to render the popup. */
+const QUICK_CHAT_ROUTE = 'quick-chat'
+const QUICK_CHAT_MIN_WIDTH = 480
+const QUICK_CHAT_MIN_HEIGHT = 320
 
 let quickChatWindow: BrowserWindow | null = null
 let visibleRequested = false
 let readyWindow: BrowserWindow | null = null
 let visibilityHandler: (visible: boolean) => void = () => {}
+let focusHandler: () => void = () => {}
 let quittingHandler: () => boolean = () => false
-// While a native modal parented to the popup is open (the folder picker), the
-// popup loses OS focus but that focus transfer is owned, not an outside click.
-let nativeModalOpen = 0
 
 let userPositioned = false
 let lastCustomBounds: WindowRectangle | null = null
 let automaticBounds: WindowRectangle | null = null
 let applyingBounds = false
-let pinned = false
-
-export function canPinQuickChatWindow(): boolean {
-  return !isQuickChatWayland({
-    platform: process.platform,
-    ozonePlatform: app.commandLine.getSwitchValue('ozone-platform'),
-    ozonePlatformHint: app.commandLine.getSwitchValue('ozone-platform-hint'),
-    waylandDisplay: process.env.WAYLAND_DISPLAY,
-    sessionType: process.env.XDG_SESSION_TYPE,
-  })
-}
-
-export function setQuickChatPinned(value: boolean): void {
-  pinned = canPinQuickChatWindow() && value
-}
-
-export function isQuickChatPinned(): boolean {
-  return canPinQuickChatWindow() && pinned
-}
 
 export function getQuickChatWindow(): BrowserWindow | null {
   return quickChatWindow && !quickChatWindow.isDestroyed() ? quickChatWindow : null
@@ -44,11 +36,6 @@ export function isQuickChatOpenRequested(): boolean {
   return visibleRequested
 }
 
-/** Mark a parented native modal (folder picker) open/closed around its await. */
-export function markQuickChatNativeModal(open: boolean): void {
-  nativeModalOpen = open ? nativeModalOpen + 1 : Math.max(0, nativeModalOpen - 1)
-}
-
 /** Shares the main lifecycle's real-quit flag, including cancelled editor guards. */
 export function setQuickChatQuittingHandler(handler: () => boolean): void {
   quittingHandler = handler
@@ -56,6 +43,10 @@ export function setQuickChatQuittingHandler(handler: () => boolean): void {
 
 export function setQuickChatVisibilityHandler(handler: (visible: boolean) => void): void {
   visibilityHandler = handler
+}
+
+export function setQuickChatFocusHandler(handler: () => void): void {
+  focusHandler = handler
 }
 
 export function hideQuickChatWindow(): void {
@@ -83,14 +74,49 @@ export function openQuickChatWindow(): void {
   else if (readyWindow === window) showQuickChatWindow(window)
 }
 
+/**
+ * The popup is an ordinary window on every platform: it never floats on top
+ * and never hides on its own. The shortcut hides it only when it is in front;
+ * behind other windows, the shortcut brings it back.
+ */
 export function toggleQuickChatWindow(): void {
   if (quittingHandler()) return
   const window = getQuickChatWindow()
-  if (visibleRequested || window?.isVisible()) {
+  if (window?.isVisible() && window.isFocused()) {
     hideQuickChatWindow()
     return
   }
+  if (window?.isVisible()) {
+    bringToFront(window)
+    return
+  }
   openQuickChatWindow()
+}
+
+function bringToFront(window: BrowserWindow): void {
+  window.show()
+  window.focus()
+  window.webContents.focus()
+}
+
+function minimumSizeWithin(workArea: WindowRectangle): { width: number; height: number } {
+  return {
+    width: Math.min(QUICK_CHAT_MIN_WIDTH, workArea.width),
+    height: Math.min(QUICK_CHAT_MIN_HEIGHT, workArea.height),
+  }
+}
+
+/** Programmatic bounds changes must not count as the user moving the popup. */
+function applyBounds(window: BrowserWindow, current: WindowRectangle, next: WindowRectangle, workArea: WindowRectangle): void {
+  automaticBounds = next
+  applyingBounds = true
+  try {
+    const minimum = minimumSizeWithin(workArea)
+    window.setMinimumSize(minimum.width, minimum.height)
+    if (!sameRectangle(current, next)) window.setBounds(next)
+  } finally {
+    applyingBounds = false
+  }
 }
 
 function showQuickChatWindow(window: BrowserWindow): void {
@@ -106,31 +132,21 @@ function showQuickChatWindow(window: BrowserWindow): void {
     userPositioned,
     workArea,
   })
-  automaticBounds = next
-  applyingBounds = true
-  try {
-    window.setMinimumSize(Math.min(480, workArea.width), Math.min(320, workArea.height))
-    window.setBounds(next)
-  } finally {
-    applyingBounds = false
-  }
-  window.show()
-  window.focus()
-  window.webContents.focus()
+  applyBounds(window, currentBounds, next, workArea)
+  bringToFront(window)
 }
 
 function createQuickChatWindow(): void {
   const workArea = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
   const initialSize = adaptiveQuickChatSize(workArea)
+  const minimumSize = minimumSizeWithin(workArea)
   const window = new BrowserWindow({
     ...positionQuickChatBounds(initialSize, workArea),
-    minWidth: Math.min(480, workArea.width),
-    minHeight: Math.min(320, workArea.height),
+    minWidth: minimumSize.width,
+    minHeight: minimumSize.height,
     title: 'Pi Desktop',
-    backgroundColor: '#0a0a0a',
+    backgroundColor: WINDOW_BACKGROUND_COLOR,
     show: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -149,114 +165,32 @@ function createQuickChatWindow(): void {
       webviewTag: false,
     },
   })
-  if (process.platform === 'darwin') {
-    // setVisibleOnAllWorkspaces transforms the process type between
-    // UIElementApplication and ForegroundApplication to set the window's
-    // collection behavior; that transform also hides the app's Dock icon even
-    // though the main window still exists. Capture the prior state and restore
-    // the Dock so a normal app keeps its entry (observed on Electron 43).
-    const dockWasVisible = app.dock?.isVisible() ?? true
-    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-    if (dockWasVisible && app.dock && !app.dock.isVisible()) app.dock.show()
-  }
   quickChatWindow = window
   window.setMenuBarVisibility(false)
 
-  let composing = false
-  let menuOpen = false
   let reportedVisible = false
-  let blurTimer: NodeJS.Timeout | undefined
-  const cancelBlur = (): void => {
-    clearTimeout(blurTimer)
-    blurTimer = undefined
-  }
-  const checkBlur = (applicationDeactivated = false): void => {
-    if (window.isDestroyed() || nativeModalOpen > 0) return
-    const focused = BrowserWindow.getFocusedWindow()
-    const ownsFocusedWindow = focused?.getParentWindow() === window
-    if (shouldHideQuickChatOnBlur({
-      visible: window.isVisible(),
-      focused: window.isFocused(),
-      ownedInteraction: menuOpen || ownsFocusedWindow,
-      composing,
-      applicationDeactivated,
-      pinned,
-    })) hideQuickChatWindow()
-  }
-  const scheduleBlur = (): void => {
-    cancelBlur()
-    // A short focus transfer (native menus, IME candidates, child dialogs) must
-    // settle before deciding whether this was a real click outside the popup.
-    blurTimer = setTimeout(() => {
-      blurTimer = undefined
-      checkBlur()
-    }, 120)
-  }
-  const onApplicationDeactivated = (): void => checkBlur(true)
-  const onOtherWindowFocused = (_event: Electron.Event, focused: BrowserWindow): void => {
-    // Same rule as the blur path: a pinned popup stays up even when another
-    // window (main included) takes focus.
-    if (!pinned && nativeModalOpen === 0 && focused !== window && focused.getParentWindow() !== window) hideQuickChatWindow()
-  }
-  const onMenuShow = (): void => { menuOpen = window.isFocused() || menuOpen }
-  const onMenuClose = (): void => { menuOpen = false; scheduleBlur() }
-  const menus: Menu[] = []
-  const unwatchMenus = (): void => {
-    for (const menu of menus) {
-      menu.removeListener('menu-will-show', onMenuShow)
-      menu.removeListener('menu-will-close', onMenuClose)
-    }
-    menus.length = 0
-  }
-  const watchMenu = (menu: Menu): void => {
-    menus.push(menu)
-    menu.on('menu-will-show', onMenuShow)
-    menu.on('menu-will-close', onMenuClose)
-    for (const item of menu.items) if (item.submenu) watchMenu(item.submenu)
-  }
-  const menu = Menu.getApplicationMenu()
-  if (menu) watchMenu(menu)
-
-  window.on('blur', scheduleBlur)
-  window.on('focus', () => {
-    cancelBlur()
-    // A language change rebuilds the application menu while this window is hidden.
-    const currentMenu = Menu.getApplicationMenu()
-    if (currentMenu === menus[0]) return
-    unwatchMenus()
-    if (currentMenu) watchMenu(currentMenu)
-  })
   window.on('show', () => {
     reportedVisible = true
     visibilityHandler(true)
   })
   window.on('hide', () => {
     reportedVisible = false
-    menuOpen = false
     visibleRequested = false
-    composing = false
-    cancelBlur()
     visibilityHandler(false)
   })
+  window.on('focus', () => focusHandler())
+  window.on('blur', () => focusHandler())
   window.on('close', (event) => {
     if (quittingHandler()) return
     event.preventDefault()
     hideQuickChatWindow()
-  })
-  app.on('did-resign-active', onApplicationDeactivated)
-  app.on('browser-window-focus', onOtherWindowFocused)
-
-  window.webContents.on('before-input-event', (_event, input) => {
-    const wasComposing = composing
-    composing = input.isComposing || input.key === 'Process'
-    if (wasComposing && !composing && !window.isFocused()) scheduleBlur()
   })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   const restrictNavigation = (event: Electron.Event, url: string): void => {
     if (!isTrustedRendererUrl(url, {
       devServerUrl: process.env.ELECTRON_RENDERER_URL,
       rendererIndexPath: RENDERER_INDEX_PATH,
-    }) || new URL(url).hash !== '#quick-chat') event.preventDefault()
+    }) || new URL(url).hash !== `#${QUICK_CHAT_ROUTE}`) event.preventDefault()
   }
   window.webContents.on('will-navigate', restrictNavigation)
   window.webContents.on('will-redirect', restrictNavigation)
@@ -266,20 +200,12 @@ function createQuickChatWindow(): void {
     if (window.isDestroyed()) return
     const bounds = window.getBounds()
     const area = screen.getDisplayMatching(bounds).workArea
-    const changed = !automaticBounds || bounds.x !== automaticBounds.x || bounds.y !== automaticBounds.y
-      || bounds.width !== automaticBounds.width || bounds.height !== automaticBounds.height
+    const changed = !automaticBounds || !sameRectangle(bounds, automaticBounds)
     if (rememberUserChange && changed && window.isVisible()) userPositioned = true
     const next = !rememberUserChange && !userPositioned
       ? positionQuickChatBounds(adaptiveQuickChatSize(area), area)
       : clampQuickChatBounds(bounds, area)
-    automaticBounds = next
-    applyingBounds = true
-    try {
-      window.setMinimumSize(Math.min(480, area.width), Math.min(320, area.height))
-      if (bounds.x !== next.x || bounds.y !== next.y || bounds.width !== next.width || bounds.height !== next.height) window.setBounds(next)
-    } finally {
-      applyingBounds = false
-    }
+    applyBounds(window, bounds, next, area)
     if (userPositioned) lastCustomBounds = next
   }
   const onDisplayChanged = (): void => clampToDisplay()
@@ -289,13 +215,9 @@ function createQuickChatWindow(): void {
   window.on('move', onBoundsChanged)
   window.on('resize', onBoundsChanged)
   window.on('closed', () => {
-    cancelBlur()
     if (reportedVisible) visibilityHandler(false)
-    app.removeListener('did-resign-active', onApplicationDeactivated)
-    app.removeListener('browser-window-focus', onOtherWindowFocused)
     screen.removeListener('display-metrics-changed', onDisplayChanged)
     screen.removeListener('display-removed', onDisplayChanged)
-    unwatchMenus()
     if (quickChatWindow === window) {
       quickChatWindow = null
       readyWindow = null
@@ -309,16 +231,15 @@ function createQuickChatWindow(): void {
   }
   window.once('ready-to-show', markReadyAndShow)
   // Some Wayland compositors never emit ready-to-show (electron/electron#48859).
-  // The shared readiness guard keeps this first-wins and respects hide and quit.
-  if (!canPinQuickChatWindow()) {
-    window.webContents.once('did-finish-load', markReadyAndShow)
-  }
+  // Every platform takes the same first-wins path; the shared readiness guard
+  // also respects hide and quit.
+  window.webContents.once('did-finish-load', markReadyAndShow)
   const devServerUrl = process.env.ELECTRON_RENDERER_URL
   if (devServerUrl) {
     const url = new URL(devServerUrl)
-    url.hash = 'quick-chat'
+    url.hash = QUICK_CHAT_ROUTE
     void window.loadURL(url.toString())
   } else {
-    void window.loadURL(`${RENDERER_INDEX_URL}#quick-chat`)
+    void window.loadURL(`${RENDERER_INDEX_URL}#${QUICK_CHAT_ROUTE}`)
   }
 }

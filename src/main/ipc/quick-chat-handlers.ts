@@ -1,24 +1,25 @@
 import { dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { existsSync } from 'fs'
-import { basename, join } from 'path'
+import { basename } from 'path'
 import type { QuickChatAttachmentBatch, QuickChatBinding, QuickChatContext, QuickChatSnapshot, QuickChatUpdate } from '../../shared/quick-chat'
 import { QUICK_CHAT_CHANNELS } from '../../shared/quick-chat'
-import { IPC_CHANNELS, promptRefusal, SUPPORTED_IMAGE_EXTENSIONS, type ModelInfo, type PiExtensionUiRequest, type PiRpcEvent, type PromptImage, type SessionRuntimeInfo, type Workspace } from '../../shared/ipc-contracts'
+import { IPC_CHANNELS, isRuntimeBusy, promptRefusal, type ModelInfo, type PiExtensionUiRequest, type PiResponseEvent, type PiRpcEvent, type PromptImage, type SessionRuntimeInfo, type UserThemeRecord, type Workspace } from '../../shared/ipc-contracts'
 import { buildPlanningPrompt } from '../../shared/planning-prompt'
 import { pathsEqual } from '../../shared/path-compare'
 import { t } from '../../shared/i18n'
-import type { PiRpcManager } from '../pi-rpc-manager'
+import { getConfiguredEngineKind, type PiRpcManager } from '../pi-rpc-manager'
 import type { PiEventRouter, PiEventRouterDeps } from '../pi-event-router'
-import { canPinQuickChatWindow, getQuickChatWindow, hideQuickChatWindow, isQuickChatPinned, markQuickChatNativeModal, setQuickChatPinned, setQuickChatVisibilityHandler } from '../quick-chat-window'
+import { getQuickChatWindow, hideQuickChatWindow, setQuickChatFocusHandler, setQuickChatVisibilityHandler } from '../quick-chat-window'
 import { getI18nEnvironment } from '../i18n'
-import { getGuiDataDir } from '../app-data-paths'
 import { listUserThemes } from '../theme-store'
 import { engineForBoundSession, isWithinSessionRoots } from '../pi-paths'
 import { assertTrustedSender, isObject, isString } from './validation'
 import { createListSessions } from './session-handlers'
 import { loadAppSettings } from './settings'
+import { themesDir } from './theme-handlers'
 import { ensureSessionRuntimeStarted, readRuntimeMessages, readStoppedRuntimeMessages } from './session-runtime-io'
 import { queryModelCatalog } from './model-catalog-query'
+import { attachmentDialogOptions } from '../../shared/attachment-dialog'
 import { fetchCommands } from './skills-mcp-handlers'
 import { buildVoiceStatus } from './voice-handlers'
 import { readAttachment } from '../attachment-reader'
@@ -29,15 +30,51 @@ export interface QuickChatWindowAccess {
   getWindow: () => Electron.BrowserWindow | null
   hide: () => void
   onVisibility: (handler: (visible: boolean) => void) => void
-  isPinned: () => boolean
-  canPin: () => boolean
-  setPinned: (value: boolean) => void
+  onFocusChange: (handler: () => void) => void
 }
 
 interface ResolvedQueryTarget {
   workspace: Workspace
   runtime: QuickChatBinding | null
   manager: PiRpcManager | null
+}
+
+const MAX_SUBMISSION_TEXT_LENGTH = 1_000_000
+const MENU_SETTINGS_CHANNEL = 'menu:settings'
+
+interface Submission {
+  version: unknown
+  text: string
+  images: PromptImage[] | undefined
+  /** A draft-selected config rides only a prompt, never a busy steer. */
+  model: { provider: string; modelId: string } | null
+  thinkingLevel: string | null
+}
+
+function parseSubmission(input: unknown): Submission {
+  if (!isObject(input)) throw new Error('Invalid Quick Chat submission')
+  const rawImages = Array.isArray(input.images) ? input.images as unknown[] : []
+  if (rawImages.some((image) => !isObject(image) || image.type !== 'image' || typeof image.mimeType !== 'string' || typeof image.data !== 'string')) {
+    throw new Error('Invalid Quick Chat image payload')
+  }
+  const images = rawImages.length > 0 ? rawImages as PromptImage[] : undefined
+  const { text, mode, model, thinkingLevel } = input
+  if (typeof text !== 'string' || (!text.trim() && !images) || text.length > MAX_SUBMISSION_TEXT_LENGTH || (mode !== 'prompt' && mode !== 'steer')) {
+    throw new Error('Invalid Quick Chat submission')
+  }
+  let modelChoice: Submission['model'] = null
+  if (isObject(model) && typeof model.provider === 'string' && typeof model.modelId === 'string') {
+    modelChoice = { provider: model.provider, modelId: model.modelId }
+  } else if (model !== undefined && model !== null) throw new Error('Invalid Quick Chat model config')
+  return {
+    version: input.version, text, images, model: modelChoice,
+    thinkingLevel: typeof thinkingLevel === 'string' && thinkingLevel.length > 0 ? thinkingLevel : null,
+  }
+}
+
+/** A draft's model or thinking choice must reach the engine before its prompt does. */
+function requireApplied(response: PiResponseEvent | null): void {
+  if (!response?.success) throw new Error(response?.error ?? t('quickChat.errors.stateUnavailable'))
 }
 
 /** Main owns the only binding. No popup operation changes the main active session. */
@@ -48,13 +85,12 @@ export function createQuickChatHandlers(
     getWindow: getQuickChatWindow,
     hide: hideQuickChatWindow,
     onVisibility: setQuickChatVisibilityHandler,
-    setPinned: setQuickChatPinned,
-    isPinned: isQuickChatPinned,
-    canPin: canPinQuickChatWindow,
+    onFocusChange: setQuickChatFocusHandler,
   },
 ): {
   routing: Pick<PiEventRouterDeps, 'getSecondaryManager' | 'preferSecondaryView' | 'sendSecondaryEvent' | 'sendSecondaryApproval'>
   register(router: PiEventRouter): void
+  updateThemes(themes: UserThemeRecord[]): void
 } {
   const wm = ctx.workspaceManager
   let binding: QuickChatBinding | null = null
@@ -66,11 +102,11 @@ export function createQuickChatHandlers(
   let persistedPath: string | null = null
   const submitting = new Set<string>()
   let createdRuntimeId: string | null = null
+  // Runtimes the popup opened itself, and of those, the ones it sent work to.
+  const popupOpened = new Set<string>()
+  const popupPrompted = new Set<string>()
   const listSessions = createListSessions(wm)
-  // Recency stamp for each runtime, bumped on any runtime change (creation,
-  // activity, status, session file). Drives the popup's recent-task ordering;
-  // the renderer never needs the raw timestamps beyond ordering, so wall clock
-  // is enough here.
+  // Recency per runtime for the popup's recent-task order; wall clock is enough for ordering.
   const runtimeUpdatedAt = new Map<string, number>()
   for (const runtime of wm.getSessionRuntimes()) stampRuntime(runtime)
 
@@ -93,11 +129,31 @@ export function createQuickChatHandlers(
     for (const id of runtimeUpdatedAt.keys()) {
       if (!live.has(id)) runtimeUpdatedAt.delete(id)
     }
+    for (const ids of [popupOpened, popupPrompted]) {
+      for (const id of ids) if (!live.has(id)) ids.delete(id)
+    }
     if (createdRuntimeId && !live.has(createdRuntimeId)) createdRuntimeId = null
     send({ type: 'runtimes', runtimes, updatedAt: runtimeTimestamps() })
   }
 
+  /**
+   * A runtime the popup opened only to look at, or a new task that never got a
+   * session, would otherwise stay behind as a main tab. Real work stays open,
+   * and so does whatever main is showing.
+   */
+  function closeIfOnlyViewed(runtimeId: string): void {
+    if (!popupOpened.delete(runtimeId)) return
+    const prompted = popupPrompted.delete(runtimeId)
+    const runtime = wm.getSessionRuntime(runtimeId)
+    if (!runtime || runtime.closed || runtime.active) return
+    const emptyNewTask = runtime.sessionPath === null && runtime.status !== 'running' && runtime.status !== 'starting'
+    if (!emptyNewTask && (prompted || runtime.activity !== null)) return
+    void wm.closeSessionRuntime(runtimeId)
+      .catch((error: unknown) => console.error('[quick-chat] Failed to close a runtime the popup opened:', error))
+  }
+
   function bind(runtime: SessionRuntimeInfo | null): void {
+    const left = binding && binding.runtime.runtimeId !== runtime?.runtimeId ? binding.runtime.runtimeId : null
     release?.()
     release = runtime ? wm.retainSessionRuntime(runtime.runtimeId) : null
     binding = runtime ? { version: ++version, runtime } : null
@@ -106,6 +162,7 @@ export function createQuickChatHandlers(
     selection++
     send({ type: 'binding', binding })
     router?.refreshOwners()
+    if (left) closeIfOnlyViewed(left)
   }
 
   function requireBinding(input: unknown): QuickChatBinding {
@@ -132,15 +189,32 @@ export function createQuickChatHandlers(
     const workspaceId = runtime ? runtime.runtime.workspaceId : input.workspaceId
     const workspace = wm.getWorkspaces().find((item) => item.id === workspaceId)
     if (!workspace) throw new Error(t('quickChat.errors.targetUnavailable'))
-    return {
-      workspace, runtime,
-      manager: runtime ? wm.getSessionRuntimeManager(runtime.runtime.runtimeId) : wm.getPiManager(workspace.id),
-    }
+    return { workspace, runtime, manager: runtime ? wm.getSessionRuntimeManager(runtime.runtime.runtimeId) : draftManager(workspace.id) }
+  }
+
+  /**
+   * A new task starts on the configured engine, so main's runtime in the
+   * project can answer for a draft only when it runs that same engine.
+   */
+  function draftManager(workspaceId: string): PiRpcManager | null {
+    const manager = wm.getPiManager(workspaceId)
+    return manager?.getEngineKind() === getConfiguredEngineKind() ? manager : null
   }
 
   function assertQueryCurrent(target: ResolvedQueryTarget): void {
     if (target.runtime) requireBinding(target.runtime.version)
     else if (!wm.getWorkspaces().some((item) => item.id === target.workspace.id)) throw new Error(t('quickChat.errors.targetUnavailable'))
+  }
+
+  function requireManager(runtimeId: string): PiRpcManager {
+    const manager = wm.getSessionRuntimeManager(runtimeId)
+    if (!manager) throw new Error(t('quickChat.errors.targetUnavailable'))
+    return manager
+  }
+
+  /** The popup moved on (another target, or a rebind) since `capturedSelection`. */
+  function isStale(capturedSelection: number, capturedVersion: number): boolean {
+    return selection !== capturedSelection || !binding || binding.version !== capturedVersion
   }
 
   async function ready(captured: QuickChatBinding): Promise<{ binding: QuickChatBinding; manager: PiRpcManager }> {
@@ -153,19 +227,16 @@ export function createQuickChatHandlers(
     if (captured.runtime.status === 'running' && current.version !== captured.version) {
       throw new Error(t('quickChat.errors.staleBinding'))
     }
-    const manager = wm.getSessionRuntimeManager(current.runtime.runtimeId)
-    if (!manager) throw new Error(t('quickChat.errors.targetUnavailable'))
-    return { binding: current, manager }
+    return { binding: current, manager: requireManager(current.runtime.runtimeId) }
   }
 
   async function changeRuntimeConfig(inputVersion: unknown, command: Record<string, unknown>) {
     const captured = requireBinding(inputVersion)
-    const manager = wm.getSessionRuntimeManager(captured.runtime.runtimeId)
-    if (!manager) throw new Error(t('quickChat.errors.targetUnavailable'))
+    const manager = requireManager(captured.runtime.runtimeId)
     // A config pick never starts a stopped runtime or interrupts work/approval.
     if (manager.getStatus().status !== 'running') throw new Error(t('quickChat.errors.runtimeBusy'))
     const current = wm.getSessionRuntime(captured.runtime.runtimeId)
-    if (current?.activity === 'working' || current?.activity === 'needs-approval' || router!.getSecondaryRequest()) {
+    if (isRuntimeBusy(current?.activity) || router!.getSecondaryRequest()) {
       throw new Error(t('quickChat.errors.runtimeBusy'))
     }
     const response = await manager.sendCommand(command)
@@ -210,7 +281,12 @@ export function createQuickChatHandlers(
   return {
     routing: {
       getSecondaryManager: () => binding ? wm.getSessionRuntimeManager(binding.runtime.runtimeId) : null,
-      preferSecondaryView: () => windowAccess.getWindow()?.isVisible() ?? false,
+      // The window in use owns a shared runtime's approval, so a popup behind
+      // the main window never takes a dialog the user cannot see.
+      preferSecondaryView: () => {
+        const window = windowAccess.getWindow()
+        return !!window && window.isVisible() && window.isFocused()
+      },
       sendSecondaryEvent: (manager: PiRpcManager, event: PiRpcEvent) => {
         if (binding && wm.runtimeIdFor(manager) === binding.runtime.runtimeId) {
           send({ type: 'event', version: binding.version, runtimeId: binding.runtime.runtimeId, event })
@@ -222,12 +298,14 @@ export function createQuickChatHandlers(
         }
       },
     },
+    updateThemes: (themes: UserThemeRecord[]) => send({ type: 'themes', themes }),
     register(eventRouter) {
       router = eventRouter
       windowAccess.onVisibility((visible) => {
         send({ type: 'visibility', visible })
         router?.refreshOwners()
       })
+      windowAccess.onFocusChange(() => router?.refreshOwners())
       const handle = (channel: string, handler: (...args: unknown[]) => unknown): void => {
         ipcMain.handle(channel, async (event, ...args: unknown[]) => {
           assertPopup(event)
@@ -236,22 +314,18 @@ export function createQuickChatHandlers(
       }
       handle(QUICK_CHAT_CHANNELS.context, async (): Promise<QuickChatContext> => {
         const [sessions, settings, themeList] = await Promise.all([
-          listSessions(''), loadAppSettings(wm), listUserThemes(join(getGuiDataDir(), 'themes')),
+          listSessions(''), loadAppSettings(wm), listUserThemes(themesDir()),
         ])
         const workspaces = wm.getWorkspaces()
         const defaultWorkspace = wm.getActiveWorkspace() ?? workspaces.reduce<Workspace | null>(
           (latest, workspace) => !latest || workspace.lastActiveAt > latest.lastActiveAt ? workspace : latest, null,
         )
         return {
-          pinned: windowAccess.canPin() && windowAccess.isPinned(),
-          canPin: windowAccess.canPin(),
           binding,
           runtimes: wm.getSessionRuntimes(),
           sessions: sessions.filter((session) => workspaces.some((ws) => pathsEqual(ws.path, session.projectPath))),
           workspaces,
-          // Active workspace when there is one; otherwise the most recently
-          // active folder. The controller remembers the user's own selection
-          // afterward, so this is only the initial default.
+          // Initial default only: the controller keeps the user's own pick afterward.
           defaultWorkspaceId: defaultWorkspace?.id ?? null,
           runtimeUpdatedAt: runtimeTimestamps(),
           settings,
@@ -275,7 +349,10 @@ export function createQuickChatHandlers(
           if (!sessions.some((session) => pathsEqual(session.path, target.sessionPath as string) && pathsEqual(session.projectPath, workspace.path))) {
             throw new Error(t('quickChat.errors.targetUnavailable'))
           }
-          runtime = wm.openSessionRuntime(workspace.id, target.sessionPath)
+          const sessionPath = target.sessionPath
+          const alreadyOpen = wm.getSessionRuntimes().some((item) => item.sessionPath !== null && pathsEqual(item.sessionPath, sessionPath))
+          runtime = wm.openSessionRuntime(workspace.id, sessionPath)
+          if (!alreadyOpen) popupOpened.add(runtime.runtimeId)
         } else throw new Error('Invalid Quick Chat target')
         if (!runtime || runtime.closed) throw new Error(t('quickChat.errors.targetUnavailable'))
         if (attempt !== targetAttempt) throw new Error(t('quickChat.errors.staleBinding'))
@@ -283,32 +360,34 @@ export function createQuickChatHandlers(
         bind(runtime)
         return binding!
       })
-      handle(QUICK_CHAT_CHANNELS.snapshot, async (input): Promise<QuickChatSnapshot> => {
+      // A snapshot is a background read, so a selection change while it is in
+      // flight is normal: it answers null (nothing to apply), not an error.
+      handle(QUICK_CHAT_CHANNELS.snapshot, async (input): Promise<QuickChatSnapshot | null> => {
+        if (!binding || input !== binding.version) return null
         const captured = requireBinding(input)
-        const manager = wm.getSessionRuntimeManager(captured.runtime.runtimeId)
-        if (!manager) throw new Error(t('quickChat.errors.targetUnavailable'))
+        const manager = requireManager(captured.runtime.runtimeId)
         const capturedSelection = selection
-        // A snapshot is a passive read: it must never start a stopped runtime.
-        // Only the user's own submit/steer resumes one, so a status change, an
-        // agent end or a hide/show refill cannot defeat the live-process budget
-        // or retry a startup that keeps failing. History comes from the session
-        // file; a starting runtime still waits on its in-flight start.
+        // A passive read never starts a stopped runtime: that would bypass the live-process budget or retry a failing start. History comes from the session file.
         if (manager.getStatus().status !== 'running' && manager.getStatus().status !== 'starting') {
           const messages = await readStoppedRuntimeMessages(captured.runtime)
-          if (selection !== capturedSelection || !binding || binding.version !== captured.version) throw new Error(t('quickChat.errors.staleBinding'))
-          // The runtime is not answering: the model/thinking it used last are
-          // unconfirmed, and the permission mode stays the one it last started
-          // with (null when it never started through the app's startup path).
+          if (isStale(capturedSelection, captured.version)) return null
+          // A silent runtime's last model and thinking level are unconfirmed; its permission mode is the one it last started with.
           return {
             binding: requireBinding(binding.version), messages, streaming: null, request: router!.getSecondaryRequest(),
             model: null, thinkingLevel: null, permissionMode: wm.getSessionRuntimePermissionMode(captured.runtime.runtimeId),
           }
         }
-        const target = await ready(captured)
+        let target: Awaited<ReturnType<typeof ready>>
+        try {
+          target = await ready(captured)
+        } catch (error) {
+          if (isStale(capturedSelection, captured.version)) return null
+          throw error
+        }
         const [response, state] = await Promise.all([
           readRuntimeMessages(wm, target.manager), target.manager.sendCommand({ type: 'get_state' }),
         ])
-        if (selection !== capturedSelection || !binding || binding.version !== target.binding.version) throw new Error(t('quickChat.errors.staleBinding'))
+        if (isStale(capturedSelection, target.binding.version)) return null
         const data = isObject(response) && isObject(response.data) ? response.data : null
         const stateData = isObject(state?.data) ? state.data : null
         return {
@@ -319,31 +398,8 @@ export function createQuickChatHandlers(
         }
       })
       handle(QUICK_CHAT_CHANNELS.submit, async (input) => {
-        const rawImages = isObject(input) && Array.isArray((input as Record<string, unknown>).images)
-          ? ((input as Record<string, unknown>).images as unknown[])
-          : undefined
-        let images: PromptImage[] | undefined
-        if (rawImages && rawImages.length > 0) {
-          for (const img of rawImages) {
-            if (!isObject(img) || img.type !== 'image' || typeof img.mimeType !== 'string' || typeof img.data !== 'string') {
-              throw new Error('Invalid Quick Chat image payload')
-            }
-          }
-          images = rawImages as PromptImage[]
-        }
-        const hasText = isObject(input) && typeof input.text === 'string' && input.text.trim().length > 0
-        const hasImages = Array.isArray(images) && images.length > 0
-        if (!isObject(input) || typeof input.text !== 'string' || (!hasText && !hasImages) || input.text.length > 1_000_000 || (input.mode !== 'prompt' && input.mode !== 'steer')) throw new Error('Invalid Quick Chat submission')
-        // A draft-selected config is optional; when present it must be well
-        // formed, and a model change is never smuggled into a busy steer.
-        const modelChoice = input.model
-        const thinkingChoice = input.thinkingLevel
-        const hasModel = modelChoice !== undefined && modelChoice !== null
-        const hasThinking = typeof thinkingChoice === 'string' && thinkingChoice.length > 0
-        if (hasModel && (!isObject(modelChoice) || typeof modelChoice.provider !== 'string' || typeof modelChoice.modelId !== 'string')) {
-          throw new Error('Invalid Quick Chat model config')
-        }
-        const captured = requireBinding(input.version)
+        const { version: inputVersion, text, images, model: modelChoice, thinkingLevel: thinkingChoice } = parseSubmission(input)
+        const captured = requireBinding(inputVersion)
         const id = captured.runtime.runtimeId
         if (submitting.has(id)) throw new Error(t('quickChat.errors.submitting'))
         submitting.add(id)
@@ -352,28 +408,23 @@ export function createQuickChatHandlers(
           const target = await ready(captured)
           const capturedSelection = selection
           const [state, settings] = await Promise.all([target.manager.sendCommand({ type: 'get_state' }), loadAppSettings(wm)])
-          if (selection !== capturedSelection || !binding || binding.version !== target.binding.version) throw new Error(t('quickChat.errors.staleBinding'))
+          if (isStale(capturedSelection, target.binding.version)) throw new Error(t('quickChat.errors.staleBinding'))
           const stateData = isObject(state?.data) ? state.data : null
           if (typeof stateData?.isStreaming !== 'boolean') throw new Error(t('quickChat.errors.stateUnavailable'))
-          // The renderer's cached intent (input.mode) can race the session's real
-          // state: a turn may have started since an idle draft, or ended since a
-          // steer. The authoritative snapshot routes the send instead of
-          // rejecting, so the text always lands once on the intended runtime.
+          // input.mode can be stale; the engine's own state picks prompt or steer, so the text lands once.
           const streaming = stateData.isStreaming
-          const message = !streaming && settings.permissionMode === 'plan-readonly' ? buildPlanningPrompt(input.text) : input.text
+          const message = !streaming && settings.permissionMode === 'plan-readonly' ? buildPlanningPrompt(text) : text
           if (streaming) return target.manager.sendCommand({ type: 'steer', message, ...(images ? { images } : {}) })
-          // Apply a draft-selected model/thinking level now that the runtime is
-          // live: the choice was made while the session was stopped or before
-          // its first send, and it must not be silently dropped.
-          if (hasModel) {
-            const applied = await target.manager.sendCommand({ type: 'set_model', provider: modelChoice.provider, modelId: modelChoice.modelId })
-            if (!applied?.success) throw new Error(applied?.error ?? t('quickChat.errors.stateUnavailable'))
+          // A choice made while stopped or before the first send applies now that the engine is live.
+          if (modelChoice) {
+            requireApplied(await target.manager.sendCommand({ type: 'set_model', provider: modelChoice.provider, modelId: modelChoice.modelId }))
           }
-          if (hasThinking) {
-            await target.manager.sendCommand({ type: 'set_thinking_level', level: thinkingChoice })
+          if (thinkingChoice) {
+            requireApplied(await target.manager.sendCommand({ type: 'set_thinking_level', level: thinkingChoice }))
           }
           wm.setSessionRuntimeActivity(id, 'working')
           promptStarted = true
+          if (popupOpened.has(id)) popupPrompted.add(id)
           return await wm.promptSessionRuntime(id, message, images ? { images } : undefined)
         } catch (error) {
           const current = wm.getSessionRuntime(id)
@@ -422,9 +473,9 @@ export function createQuickChatHandlers(
         if (!window || window.isDestroyed()) return
         if (window.webContents.isLoadingMainFrame()) {
           window.webContents.once('did-finish-load', () => {
-            if (!window.isDestroyed()) window.webContents.send('menu:settings')
+            if (!window.isDestroyed()) window.webContents.send(MENU_SETTINGS_CHANNEL)
           })
-        } else window.webContents.send('menu:settings')
+        } else window.webContents.send(MENU_SETTINGS_CHANNEL)
       })
       handle(QUICK_CHAT_CHANNELS.setRuntimeModel, async (input) => {
         if (!isObject(input) || typeof input.provider !== 'string' || typeof input.modelId !== 'string') throw new Error('Invalid Quick Chat model config')
@@ -443,32 +494,23 @@ export function createQuickChatHandlers(
         const runtime = owned && owned.status === 'stopped' && owned.workspaceId === workspaceId && owned.sessionPath === null && !owned.closed
           ? owned : wm.createInactiveSessionRuntime(workspaceId)
         createdRuntimeId = runtime.runtimeId
+        popupOpened.add(runtime.runtimeId)
         bind(runtime)
         return binding!
       })
       handle(QUICK_CHAT_CHANNELS.newDraft, () => {
         ++targetAttempt
         createdRuntimeId = null
-        // Unbind without aborting, closing, denying or creating anything: the
-        // runtime stays alive and owned by nothing, and any pending approval
-        // remains unanswered rather than implicitly denied.
+        // Unbind only: the runtime keeps running and a pending approval stays unanswered.
         if (binding) bind(null)
       })
       handle(QUICK_CHAT_CHANNELS.pickWorkspace, async (): Promise<Workspace | null> => {
         const window = windowAccess.getWindow()
         if (!window || window.isDestroyed()) throw new Error('Quick Chat window unavailable')
-        // The parented native dialog steals OS focus from the popup; the blur
-        // guard treats that as an owned interaction while it is open.
-        markQuickChatNativeModal(true)
-        let result: Electron.OpenDialogReturnValue
-        try {
-          result = await dialog.showOpenDialog(window, {
-            title: t('dialogs.openProject.title'),
-            properties: ['openDirectory', 'createDirectory'],
-          })
-        } finally {
-          markQuickChatNativeModal(false)
-        }
+        const result = await dialog.showOpenDialog(window, {
+          title: t('dialogs.openProject.title'),
+          properties: ['openDirectory', 'createDirectory'],
+        })
         if (result.canceled || result.filePaths.length === 0) return null
         const path = result.filePaths[0]
         if (!path) return null
@@ -480,34 +522,21 @@ export function createQuickChatHandlers(
       handle(QUICK_CHAT_CHANNELS.pickAttachment, async (): Promise<QuickChatAttachmentBatch> => {
         const window = windowAccess.getWindow()
         if (!window || window.isDestroyed()) throw new Error('Quick Chat window unavailable')
-        markQuickChatNativeModal(true)
-        try {
-          const result = await dialog.showOpenDialog(window, {
-            title: t('common.attachFile'),
-            properties: ['openFile', 'multiSelections'],
-            filters: [
-              { name: t('chat.attach.imagesFilter'), extensions: [...SUPPORTED_IMAGE_EXTENSIONS] },
-              { name: t('chat.attach.allFilesFilter'), extensions: ['*'] },
-            ],
-          })
-          const batch: QuickChatAttachmentBatch = { attachments: [], errors: [] }
-          if (result.canceled) return batch
-          for (const filePath of result.filePaths) {
-            try {
-              batch.attachments.push({ ...await readAttachment(filePath), path: filePath })
-            } catch (error) {
-              batch.errors.push(`${basename(filePath)}: ${error instanceof Error ? error.message : String(error)}`)
-            }
+        const result = await dialog.showOpenDialog(window, { ...attachmentDialogOptions(), properties: ['openFile', 'multiSelections'] })
+        const batch: QuickChatAttachmentBatch = { attachments: [], errors: [] }
+        if (result.canceled) return batch
+        for (const filePath of result.filePaths) {
+          try {
+            batch.attachments.push({ ...await readAttachment(filePath), path: filePath })
+          } catch (error) {
+            batch.errors.push(`${basename(filePath)}: ${error instanceof Error ? error.message : String(error)}`)
           }
-          return batch
-        } finally {
-          markQuickChatNativeModal(false)
         }
+        return batch
       })
       handle(QUICK_CHAT_CHANNELS.stop, async (input) => {
         const captured = requireBinding(input)
-        const manager = wm.getSessionRuntimeManager(captured.runtime.runtimeId)
-        if (!manager) throw new Error(t('quickChat.errors.targetUnavailable'))
+        const manager = requireManager(captured.runtime.runtimeId)
         if (manager.getStatus().status !== 'running') return
         const response = await manager.sendCommand({ type: 'abort' })
         const refusal = promptRefusal(response)
@@ -521,11 +550,6 @@ export function createQuickChatHandlers(
         router!.respond(input.id, input.response, 'secondary')
       })
       handle(QUICK_CHAT_CHANNELS.hide, () => windowAccess.hide())
-      handle(QUICK_CHAT_CHANNELS.setPinned, (input) => {
-        if (!isObject(input) || typeof input.pinned !== 'boolean') throw new Error('Invalid Quick Chat pin state')
-        windowAccess.setPinned(windowAccess.canPin() && input.pinned)
-        send({ type: 'pinned', pinned: windowAccess.isPinned() })
-      })
       handle(QUICK_CHAT_CHANNELS.openInMain, () => {
         if (binding) {
           const current = requireBinding(binding.version)

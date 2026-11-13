@@ -11,7 +11,7 @@ import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import type { IpcContext } from './context'
 import type { QuickChatAttachmentBatch, QuickChatBinding, QuickChatContext, QuickChatSnapshot, QuickChatUpdate } from '../../shared/quick-chat'
 import { QUICK_CHAT_CHANNELS } from '../../shared/quick-chat'
-import { IPC_CHANNELS, type ModelInfo, type PiResponseEvent, type PiStartOptions, type SessionRuntimeInfo, type VoiceStatus, type Workspace } from '../../shared/ipc-contracts'
+import { IPC_CHANNELS, type ModelInfo, type PiResponseEvent, type PiStartOptions, type SessionRuntimeInfo, type UserThemeRecord, type VoiceStatus, type Workspace } from '../../shared/ipc-contracts'
 import type { WorkspaceManager } from '../workspace-manager'
 import { configureGuiDataDir } from '../app-data-paths'
 import { RENDERER_INDEX_PATH } from '../renderer-origin'
@@ -53,9 +53,10 @@ interface BridgeFixture {
   event: IpcMainInvokeEvent
   invoke(channel: string, ...args: unknown[]): Promise<unknown>
   getShows(): number
+  setFocused(focused: boolean): void
   setStreaming(busy: boolean): void
   setStateData(data: Record<string, unknown>): void
-  setCanPin(value: boolean): void
+  updateThemes(themes: UserThemeRecord[]): void
 }
 
 async function withBridge(run: (fixture: BridgeFixture) => Promise<void>): Promise<void> {
@@ -75,8 +76,6 @@ async function withBridge(run: (fixture: BridgeFixture) => Promise<void>): Promi
 async function fixture(wm: WorkspaceManager, root: string): Promise<BridgeFixture> {
   // Load only after replacing Electron: the production module binds ipcMain on import.
   const { createQuickChatHandlers } = await import('./quick-chat-handlers')
-  const { isQuickChatPinned, setQuickChatPinned } = await import('../quick-chat-window')
-  setQuickChatPinned(false)
   const { saveAppSettings } = await import('./settings')
   await saveAppSettings({ permissionMode: 'plan-readonly' })
   const workspace = await wm.createWorkspace('Project', root)
@@ -104,7 +103,9 @@ async function fixture(wm: WorkspaceManager, root: string): Promise<BridgeFixtur
           : { type: 'response', command: 'set_model', success: true }
       }
       if (command.type === 'set_thinking_level') {
-        return { type: 'response', command: 'set_thinking_level', success: true }
+        return command.level === 'unsupported'
+          ? { type: 'response', command: 'set_thinking_level', success: false, error: 'thinking level not supported' }
+          : { type: 'response', command: 'set_thinking_level', success: true }
       }
       return {
         type: 'response', command: String(command.type), success: true,
@@ -113,8 +114,9 @@ async function fixture(wm: WorkspaceManager, root: string): Promise<BridgeFixtur
     }
   }
   let visible = true
+  let focused = true
   let visibility: (shown: boolean) => void = () => {}
-  let canPin = true
+  let focusChange: () => void = () => {}
   let shows = 0
   const updates: QuickChatUpdate[] = []
   const broadcasts: Array<{ channel: string; data: unknown }> = []
@@ -122,7 +124,7 @@ async function fixture(wm: WorkspaceManager, root: string): Promise<BridgeFixtur
   const webContents = { mainFrame: frame, send: (_channel: string, update: QuickChatUpdate) => {
     updates.push(update)
   } }
-  const window = { webContents, isDestroyed: () => false, isVisible: () => visible } as unknown as BrowserWindow
+  const window = { webContents, isDestroyed: () => false, isVisible: () => visible, isFocused: () => focused } as unknown as BrowserWindow
   const menuActions: string[] = []
   const mainContents = Object.assign(new EventEmitter(), { isLoadingMainFrame: () => false, send: (channel: string) => menuActions.push(channel) })
   const main = { webContents: mainContents, isDestroyed: () => false, isMinimized: () => false, show: () => {}, focus: () => {} } as unknown as BrowserWindow
@@ -134,9 +136,7 @@ async function fixture(wm: WorkspaceManager, root: string): Promise<BridgeFixtur
     getWindow: () => window,
     hide: () => { visible = false; visibility(false) },
     onVisibility: (listener) => { visibility = listener },
-    isPinned: isQuickChatPinned,
-    canPin: () => canPin,
-    setPinned: setQuickChatPinned,
+    onFocusChange: (listener) => { focusChange = listener },
   })
   const router = createPiEventRouter({
     ...bridge.routing,
@@ -150,31 +150,10 @@ async function fixture(wm: WorkspaceManager, root: string): Promise<BridgeFixtur
   const event = { sender: webContents, senderFrame: frame } as unknown as IpcMainInvokeEvent
   const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)!(event, ...args)
   return { wm, alpha, beta, commands, updates, broadcasts, menuActions, main, event, invoke,
-    getShows: () => shows, setStreaming: (busy: boolean) => { streaming = busy }, setStateData: (data: Record<string, unknown>) => { stateData = data }, setCanPin: (value: boolean) => { canPin = value } }
+    getShows: () => shows, setFocused: (value: boolean) => { focused = value; focusChange() }, setStreaming: (busy: boolean) => { streaming = busy }, setStateData: (data: Record<string, unknown>) => { stateData = data }, updateThemes: bridge.updateThemes }
 }
 
-test('popup context reloads preserve native pin state and the next request unpins it', async () => {
-  await withBridge(async (h) => {
-    // Native preferences bind Electron after the test module boundary.
-    const { isQuickChatPinned } = await import('../quick-chat-window')
-    const original = await h.invoke(QUICK_CHAT_CHANNELS.context) as QuickChatContext
-    assert.equal(original.canPin, true)
-    await h.invoke(QUICK_CHAT_CHANNELS.setPinned, { pinned: !original.pinned })
-    assert.equal(isQuickChatPinned(), true)
-    assert.deepEqual(h.updates.at(-1), { type: 'pinned', pinned: true })
-    await h.invoke(QUICK_CHAT_CHANNELS.hide)
-    assert.equal(isQuickChatPinned(), true, 'hiding preserves the native preference')
-    const reloaded = await h.invoke(QUICK_CHAT_CHANNELS.context) as QuickChatContext
-    assert.equal(reloaded.pinned, true)
-    await h.invoke(QUICK_CHAT_CHANNELS.setPinned, { pinned: !reloaded.pinned })
-    assert.equal(isQuickChatPinned(), false)
-    assert.deepEqual(h.updates.at(-1), { type: 'pinned', pinned: false })
-    const unpinned = await h.invoke(QUICK_CHAT_CHANNELS.context) as QuickChatContext
-    assert.equal(unpinned.pinned, false)
-  })
-})
-
-test('popup operations target their pinned runtime, preserve plan mode, adapt activity races, and navigate only by guarded intent', async () => {
+test('popup operations target their bound runtime, preserve plan mode, adapt activity races, and navigate only by guarded intent', async () => {
   await withBridge(async (h) => {
     const context = await h.invoke(QUICK_CHAT_CHANNELS.context) as QuickChatContext
     assert.equal(context.binding, null, 'the popup starts in new-task mode, never adopting the main runtime')
@@ -259,7 +238,7 @@ test('late history from a previous binding is rejected rather than returned for 
     await reading
     await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: h.beta.runtimeId })
     finish({ type: 'response', command: 'get_messages', success: true, data: { messages: [{ role: 'assistant', content: 'old alpha' }] } })
-    await assert.rejects(history)
+    assert.equal(await history, null, 'a read overtaken by a selection change answers null instead of throwing')
   })
 })
 
@@ -346,6 +325,31 @@ test('newDraft unbinds without aborting, closing, or answering a held approval',
     await assert.rejects(
       h.invoke(QUICK_CHAT_CHANNELS.respond, { version: binding.version, id: 'ask-1', response: { confirmed: false } }),
     )
+  })
+})
+
+test('a shared runtime approval follows the focused window', async () => {
+  await withBridge(async (h) => {
+    const manager = h.wm.getActivePiManager()!
+    const runtimeId = h.wm.runtimeIdFor(manager)!
+    const binding = await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId }) as QuickChatBinding
+    manager.emit('event', { type: 'extension_ui_request', id: 'ask-shared', method: 'confirm', message: 'proceed?', timeout: 60_000 })
+    const popupRequestId = () => {
+      const update = h.updates.filter((u) => u.type === 'approval').at(-1)
+      return update?.type === 'approval' && update.version === binding.version ? update.request?.id ?? null : undefined
+    }
+    const mainRequests = () => h.broadcasts.filter((b) => b.channel === IPC_CHANNELS.EVENT_PI)
+      .map((b) => b.data as { method?: string; id?: string }).filter((data) => data.id === 'ask-shared')
+    assert.equal(popupRequestId(), 'ask-shared', 'the focused popup shows it')
+    assert.equal(mainRequests().length, 0)
+
+    h.setFocused(false)
+    assert.equal(popupRequestId(), null, 'the popup gives it up when it loses focus')
+    assert.equal(mainRequests().at(-1)?.method, 'confirm', 'the main window shows it')
+
+    h.setFocused(true)
+    assert.equal(popupRequestId(), 'ask-shared', 'it moves back to the focused popup')
+    assert.equal(mainRequests().at(-1)?.method, 'cancel', 'and leaves the main window')
   })
 })
 
@@ -492,16 +496,14 @@ test('pickWorkspace on a fresh manager creates the first workspace without activ
   try {
     const frame = { url: pathToFileURL(RENDERER_INDEX_PATH).href + '#quick-chat' }
     const webContents = { mainFrame: frame, send: () => {} }
-    const window = { webContents, isDestroyed: () => false, isVisible: () => true } as unknown as BrowserWindow
+    const window = { webContents, isDestroyed: () => false, isVisible: () => true, isFocused: () => true } as unknown as BrowserWindow
     const main = { isDestroyed: () => false, isMinimized: () => false, show: () => {}, focus: () => {} } as unknown as BrowserWindow
     const ctx = { workspaceManager: fresh, broadcast: () => {} } as unknown as IpcContext
     const bridge = createQuickChatHandlers(ctx, { getWindow: () => main, showWindow: () => {} }, {
       getWindow: () => window,
       hide: () => {},
       onVisibility: () => {},
-      isPinned: () => false,
-      canPin: () => true,
-      setPinned: () => {},
+      onFocusChange: () => {},
     })
     const router = createPiEventRouter({
       ...bridge.routing,
@@ -605,6 +607,16 @@ test('submit rejects a failed set_model with the engine error and never sends th
     }), { message: 'model not found' })
     assert.equal(h.commands.some((item) => item.command.type === 'prompt'), false, 'no prompt without a confirmed model')
     // The draft is preserved: the controller keeps it because the send failed.
+  })
+})
+
+test('submit rejects a refused thinking level with the engine error and never sends the prompt', async () => {
+  await withBridge(async (h) => {
+    const binding = await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: h.alpha.runtimeId }) as QuickChatBinding
+    await assert.rejects(h.invoke(QUICK_CHAT_CHANNELS.submit, {
+      version: binding.version, text: 'first task', mode: 'prompt', thinkingLevel: 'unsupported',
+    }), { message: 'thinking level not supported' })
+    assert.equal(h.commands.some((item) => item.command.type === 'prompt'), false, 'no prompt at a level the engine refused')
   })
 })
 
@@ -722,6 +734,16 @@ for (const configured of ['pi', 'omp'] as const) {
         assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels, { kind: 'draft', workspaceId: workspace.id }), catalog)
         assert.equal(starts[3].engine, configured, 'an unbound fresh draft uses the configured engine')
         assert.equal(starts[3].cwd, project)
+
+        // Main's tab in the project runs a resumed session of the other engine:
+        // a new task still starts on the configured engine, so its list is not used.
+        const mainManager = h.wm.getPiManager(workspace.id)!
+        mainManager.getStatus = () => ({ status: 'running', pid: 321, error: null })
+        mainManager.getEngineKind = () => owner
+        mainManager.sendCommand = async () => { assert.fail('a draft never reads another engine\'s catalog') }
+        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listModels, { kind: 'draft', workspaceId: workspace.id }), catalog)
+        assert.equal(starts[4].engine, configured)
+        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listCommands, { kind: 'draft', workspaceId: workspace.id }), [], 'nor its commands')
       } finally {
         setPiExecutableOverride(null)
         for (const [key, value] of [['PI_CODING_AGENT_DIR', saved.pi], ['OMP_CODING_AGENT_DIR', saved.omp]] as const) {
@@ -733,6 +755,69 @@ for (const configured of ['pi', 'omp'] as const) {
   })
 }
 
+
+/** Records every close the handlers start, so a test can await it or prove none started. */
+function recordCloses(wm: WorkspaceManager): Map<string, Promise<unknown>> {
+  const closes = new Map<string, Promise<unknown>>()
+  const close = wm.closeSessionRuntime.bind(wm)
+  wm.closeSessionRuntime = (runtimeId) => {
+    const closing = close(runtimeId)
+    closes.set(runtimeId, closing)
+    return closing
+  }
+  return closes
+}
+
+test('a session the popup only viewed closes when it moves on; one it sent work to stays open', async () => {
+  await withBridge(async (h) => {
+    const root = h.wm.getActiveWorkspace()!.path
+    const saved = { pi: process.env.PI_CODING_AGENT_DIR }
+    process.env.PI_CODING_AGENT_DIR = join(root, 'pi-store')
+    try {
+      const [directory] = await engineProjectSessionDirs('pi', root)
+      await mkdir(directory, { recursive: true })
+      const savedSession = async (name: string): Promise<string> => {
+        const sessionPath = join(directory, `${name}.jsonl`)
+        await writeFile(sessionPath, [
+          { type: 'session', version: 3, id: name, cwd: root },
+          { type: 'message', message: { role: 'user', content: `${name} question`, timestamp: 1 } },
+        ].map((entry) => JSON.stringify(entry)).join('\n') + '\n')
+        return sessionPath
+      }
+      const closes = recordCloses(h.wm)
+      const viewed = await h.invoke(QUICK_CHAT_CHANNELS.select, { workspaceId: h.alpha.workspaceId, sessionPath: await savedSession('viewed') }) as QuickChatBinding
+      const worked = await h.invoke(QUICK_CHAT_CHANNELS.select, { workspaceId: h.alpha.workspaceId, sessionPath: await savedSession('worked') }) as QuickChatBinding
+      await closes.get(viewed.runtime.runtimeId)
+      assert.equal(h.wm.getSessionRuntime(viewed.runtime.runtimeId), null, 'a session only looked at leaves no main tab')
+      const manager = h.wm.getSessionRuntimeManager(worked.runtime.runtimeId)!
+      manager.getStatus = () => ({ status: 'running', pid: 999, error: null })
+      manager.start = async () => ({ status: 'running', pid: 999, error: null } as never)
+      manager.sendCommand = async (command): Promise<PiResponseEvent> => ({
+        type: 'response', command: String(command.type), success: true, data: { isStreaming: false },
+      })
+      await h.invoke(QUICK_CHAT_CHANNELS.submit, { version: worked.version, text: 'continue', mode: 'prompt' })
+      await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: h.alpha.runtimeId })
+      assert.equal(closes.has(worked.runtime.runtimeId), false, 'real work stays open')
+      await h.invoke(QUICK_CHAT_CHANNELS.newDraft)
+      assert.equal(closes.has(h.alpha.runtimeId), false, 'a runtime the popup did not open is never closed')
+      assert.deepEqual([...closes.keys()], [viewed.runtime.runtimeId])
+    } finally {
+      if (saved.pi === undefined) delete process.env.PI_CODING_AGENT_DIR
+      else process.env.PI_CODING_AGENT_DIR = saved.pi
+    }
+  })
+})
+
+test('an empty new task closes when the popup leaves it', async () => {
+  await withBridge(async (h) => {
+    const closes = recordCloses(h.wm)
+    const created = await h.invoke(QUICK_CHAT_CHANNELS.createSession, h.alpha.workspaceId) as QuickChatBinding
+    assert.equal(created.runtime.sessionPath, null)
+    await h.invoke(QUICK_CHAT_CHANNELS.newDraft)
+    await closes.get(created.runtime.runtimeId)
+    assert.equal(h.wm.getSessionRuntime(created.runtime.runtimeId), null, 'no "Untitled session" is left behind')
+  })
+})
 
 test('saved OMP tasks remain selectable through a project alias after popup runtimes are gone', async () => {
   await withBridge(async (h) => {
@@ -887,12 +972,19 @@ for (const engine of ['pi', 'omp'] as const) {
       workspaceManager.getStatus = () => ({ status: 'running', pid: 789, error: null })
       workspaceManager.getEngineKind = () => engine
       workspaceManager.sendCommand = manager.sendCommand
-      assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listCommands, { kind: 'draft', workspaceId: b.id }), catalog)
-      assert.equal(verbs.length, 2)
-      workspaceManager.getStatus = () => ({ status: 'stopped', pid: null, error: null })
-      workspaceManager.start = async () => assert.fail('draft commands must not start an agent')
-      assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listCommands, { kind: 'draft', workspaceId: b.id }), [])
-      assert.equal(verbs.length, 2)
+      // A new task starts on the configured engine, which here is the same one.
+      const { setPiExecutableOverride } = await import('../pi-rpc-manager')
+      setPiExecutableOverride(null, engine)
+      try {
+        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listCommands, { kind: 'draft', workspaceId: b.id }), catalog)
+        assert.equal(verbs.length, 2)
+        workspaceManager.getStatus = () => ({ status: 'stopped', pid: null, error: null })
+        workspaceManager.start = async () => assert.fail('draft commands must not start an agent')
+        assert.deepEqual(await h.invoke(QUICK_CHAT_CHANNELS.listCommands, { kind: 'draft', workspaceId: b.id }), [])
+        assert.equal(verbs.length, 2)
+      } finally {
+        setPiExecutableOverride(null)
+      }
       assert.equal(h.commands.length, 0, 'main A never receives a command query')
       assert.equal(h.wm.getActiveWorkspaceId(), a.id)
     })
@@ -938,15 +1030,13 @@ test('voice status shares main settings/catalog behavior and Settings leaves bot
   })
 })
 
-test('unsupported pin capability is reported and cannot retain native pin state', async () => {
+test('a snapshot for an old binding version answers null, not an error', async () => {
   await withBridge(async (h) => {
-    await h.invoke(QUICK_CHAT_CHANNELS.setPinned, { pinned: true })
-    h.setCanPin(false)
-    const context = await h.invoke(QUICK_CHAT_CHANNELS.context) as QuickChatContext
-    assert.equal(context.canPin, false)
-    assert.equal(context.pinned, false)
-    await h.invoke(QUICK_CHAT_CHANNELS.setPinned, { pinned: true })
-    assert.deepEqual(h.updates.at(-1), { type: 'pinned', pinned: false })
+    const first = await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: h.alpha.runtimeId }) as QuickChatBinding
+    const second = await h.invoke(QUICK_CHAT_CHANNELS.select, { runtimeId: h.beta.runtimeId }) as QuickChatBinding
+    assert.equal(await h.invoke(QUICK_CHAT_CHANNELS.snapshot, first.version), null)
+    const current = await h.invoke(QUICK_CHAT_CHANNELS.snapshot, second.version) as QuickChatSnapshot
+    assert.equal(current.binding.runtime.runtimeId, h.beta.runtimeId)
   })
 })
 
@@ -1018,5 +1108,12 @@ test('Settings waits for a recreated main renderer and ignores a window closed b
     t.mock.method(h.main, 'isDestroyed', () => true)
     h.main.webContents.emit('did-finish-load')
     assert.deepEqual(h.menuActions, ['menu:settings'])
+  })
+})
+
+test('a theme list change goes to the popup window as one themes update', async () => {
+  await withBridge(async (h) => {
+    h.updateThemes([])
+    assert.deepEqual(h.updates.at(-1), { type: 'themes', themes: [] })
   })
 })

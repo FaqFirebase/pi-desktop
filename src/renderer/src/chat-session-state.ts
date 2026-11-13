@@ -1,6 +1,8 @@
-import type { PiMessageUpdateEvent, PiToolExecutionStartEvent, PiToolExecutionUpdateEvent, PiToolExecutionEndEvent } from '../../shared/ipc-contracts'
+import { t } from '../../shared/i18n'
+import type { PiMessageUpdateEvent, PiRpcEvent, PiToolExecutionStartEvent, PiToolExecutionUpdateEvent, PiToolExecutionEndEvent } from '../../shared/ipc-contracts'
 import { parseAgentMessage, type DisplayMessage } from './message-parsing'
 import { placeStreamedDelta } from './streamed-delta'
+import { stripAnsi } from './utils/strip-ansi'
 
 export interface ChatMessage extends DisplayMessage { sourceId?: string }
 export interface ChatToolCall {
@@ -144,4 +146,79 @@ export function applyChatToolExecution(tools: Map<string, ChatToolCall>, event: 
     })
   }
   return next
+}
+
+// Pi and OMP report a plain user stop with exactly these texts; anything else
+// on an aborted turn is a specific reason worth showing (mirrors Pi's own TUI).
+// Not translated: they are compared against the engines' own (English)
+// output, never shown. The "Stopped" mark already tells the user.
+const GENERIC_ABORT_MESSAGES: ReadonlySet<string> = new Set([
+  'Request was aborted', // Pi
+  'Interrupted by user', // OMP
+])
+
+/**
+ * Error text to surface in chat for a finished assistant message, or null.
+ * A provider that rejects before streaming (e.g. HTTP 402) yields an
+ * assistant message with stopReason 'error', empty content, and the provider
+ * error in errorMessage — without this, the chat shows nothing at all.
+ */
+export function turnErrorText(message?: Record<string, unknown>): string | null {
+  if (!message || message.role !== 'assistant') return null
+  const errorMessage = typeof message.errorMessage === 'string' ? message.errorMessage : ''
+  if (message.stopReason === 'error') return errorMessage || t('store.messages.unknownError')
+  if (message.stopReason === 'aborted' && errorMessage && !GENERIC_ABORT_MESSAGES.has(errorMessage)) {
+    return errorMessage
+  }
+  return null
+}
+
+/**
+ * The system notice an engine event adds to a chat transcript, or null. Every
+ * chat surface shows the same notices, so the wording and rules live here.
+ * turn_end re-delivers the ended message, so a turn error surfaces only on
+ * message_end.
+ */
+export function chatEventNotice(event: PiRpcEvent): string | null {
+  switch (event.type) {
+    case 'message_end': {
+      const turnError = turnErrorText(event.message)
+      return turnError ? t('store.messages.error', { detail: turnError }) : null
+    }
+    case 'compaction_start':
+      return t('store.messages.compactingContext', { reason: event.reason })
+    case 'compaction_end':
+      if (event.aborted) return t('store.messages.compactionAborted')
+      return event.result ? t('store.messages.contextCompacted') : null
+    case 'auto_retry_start':
+      return t('store.messages.retrying', { attempt: event.attempt, maxAttempts: event.maxAttempts, detail: event.errorMessage })
+    case 'command_output': {
+      // OMP writes command output for its terminal UI, colors included.
+      const content = typeof event.text === 'string' ? stripAnsi(event.text) : ''
+      return content.trim() ? content : null
+    }
+    default:
+      return null
+  }
+}
+
+/**
+ * Put local notices back where they were after a history reload. A notice is
+ * never in the engine's history, so a merge appends it after newer messages;
+ * this keeps it after the same number of other messages it followed before.
+ */
+export function keepNoticesInPlace(merged: ChatMessage[], previous: ChatMessage[], isNotice: (message: ChatMessage) => boolean): ChatMessage[] {
+  const others = merged.filter((message) => !isNotice(message))
+  if (others.length === merged.length) return merged
+  const kept = new Set(merged.filter(isNotice).map((message) => message.id))
+  const anchors: Array<{ position: number; notice: ChatMessage }> = []
+  let position = 0
+  for (const message of previous) {
+    if (!isNotice(message)) position++
+    else if (kept.has(message.id)) anchors.push({ position, notice: message })
+  }
+  const result = [...others]
+  // Insert from the last anchor back, so earlier positions stay valid.
+  for (const { position: at, notice } of anchors.reverse()) result.splice(Math.min(at, others.length), 0, notice)
+  return result
 }

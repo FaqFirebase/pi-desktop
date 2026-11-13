@@ -1,6 +1,6 @@
 import { app, ipcMain } from 'electron'
 import { realpath } from 'fs/promises'
-import { IPC_CHANNELS, WHOLE_WORKSPACE_CHANGE_PATH } from '../../shared/ipc-contracts'
+import { IPC_CHANNELS, isRuntimeBusy, WHOLE_WORKSPACE_CHANGE_PATH } from '../../shared/ipc-contracts'
 import type {
   GitBranchSwitchResult,
   GitConveyorCommitOptions,
@@ -92,7 +92,7 @@ export function registerGitConveyorHandlers(ctx: IpcContext): void {
     if (!isString(workspaceId) || !isString(branch)) throw new Error('workspaceId and branch must be strings')
     return changeBranch(ctx, workspaceId, async (cwd) => {
       const active = ctx.workspaceManager.getSessionRuntimes(workspaceId)
-        .some((runtime) => runtime.activity === 'working' || runtime.activity === 'needs-approval')
+        .some((runtime) => isRuntimeBusy(runtime.activity))
       if (active) throw new GitSwitchRefusal(t('conveyor.branches.agentWorking'))
       return switchLocalBranch(cwd, branch)
     })

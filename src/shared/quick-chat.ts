@@ -10,7 +10,6 @@ export const QUICK_CHAT_CHANNELS = {
   setRuntimeThinking: 'quick-chat:set-runtime-thinking',
   searchFiles: 'quick-chat:search-files', listCommands: 'quick-chat:list-commands',
   voiceStatus: 'quick-chat:voice-status', openSettings: 'quick-chat:open-settings',
-  setPinned: 'quick-chat:set-pinned',
   pickAttachment: 'quick-chat:pick-attachment',
 } as const
 export interface QuickChatBinding {
@@ -20,9 +19,6 @@ export interface QuickChatBinding {
 export type QuickChatTarget = { runtimeId: string } | { workspaceId: string; sessionPath: string }
 export type QuickChatQueryTarget = { kind: 'runtime'; version: number } | { kind: 'draft'; workspaceId: string }
 export interface QuickChatContext {
-  /** Native main-process preference, including across renderer reloads. */
-  pinned: boolean
-  canPin: boolean
   binding: QuickChatBinding | null
   runtimes: SessionRuntimeInfo[]
   sessions: SessionListItem[]
@@ -54,10 +50,10 @@ export type QuickChatUpdate =
   | { type: 'event'; version: number; runtimeId: string; event: PiRpcEvent }
   | { type: 'approval'; version: number; request: PiExtensionUiRequest | null }
   | { type: 'settings'; settings: AppSettings }
+  | { type: 'themes'; themes: UserThemeRecord[] }
   | { type: 'runtimes'; runtimes: SessionRuntimeInfo[]; updatedAt: Record<string, number> }
   | { type: 'runtime-state'; runtimeId: string }
   | { type: 'visibility'; visible: boolean }
-  | { type: 'pinned'; pinned: boolean }
 export interface QuickChatAttachmentBatch {
   attachments: Array<AttachmentReadResult & { path: string }>
   errors: string[]
@@ -69,7 +65,8 @@ export interface QuickChatApi {
   newDraft(): Promise<void>
   pickWorkspace(): Promise<Workspace | null>
   stop(version: number): Promise<void>
-  getSnapshot(version: number): Promise<QuickChatSnapshot>
+  /** Null when the binding changed before the read finished. */
+  getSnapshot(version: number): Promise<QuickChatSnapshot | null>
   submitText(input: {
     version: number
     text: string
@@ -94,7 +91,6 @@ export interface QuickChatApi {
   setRuntimeModel(input: { version: number; provider: string; modelId: string }): Promise<PiResponseEvent | null>
   /** Switch the bound runtime's thinking level. Refused under the same guards. */
   setRuntimeThinking(input: { version: number; level: string }): Promise<PiResponseEvent | null>
-  setPinned(pinned: boolean): Promise<void>
   onUpdate(callback: (update: QuickChatUpdate) => void): () => void
 }
 

@@ -25,6 +25,7 @@ import { getVoiceModelsDir } from './voice-model-store'
 import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
 import { getSettingsPath } from './ipc/settings'
 import { disableCwdExecutableSearch } from './windows-exe-search'
+import { WINDOW_BACKGROUND_COLOR } from './window-appearance'
 import { destroyQuickChatWindow, getQuickChatWindow, hideQuickChatWindow, isQuickChatOpenRequested, setQuickChatQuittingHandler, toggleQuickChatWindow } from './quick-chat-window'
 
 // First, before anything spawns: Windows must never run a program from the
@@ -211,7 +212,7 @@ function createMainWindow(): BrowserWindow {
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
     title: 'Pi Desktop',
-    backgroundColor: '#0a0a0a',
+    backgroundColor: WINDOW_BACKGROUND_COLOR,
     icon: appIcon,
     show: false,
     webPreferences: {

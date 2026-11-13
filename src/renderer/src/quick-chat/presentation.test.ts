@@ -3,12 +3,10 @@ import { test } from 'node:test'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import type { QuickChatContext } from '../../../shared/quick-chat'
 import type { DisplayMessage } from '../message-parsing'
-import { targetOptions, transcriptMessages } from './presentation'
+import { boundStatus, quickChatKeyAction, targetOptions, transcriptMessages } from './presentation'
 
 function context(): QuickChatContext {
   return {
-    pinned: false,
-    canPin: true,
     binding: null,
     defaultWorkspaceId: 'project',
     workspaces: [{ id: 'project', name: 'Project', path: '/project', createdAt: 0, lastActiveAt: 0, color: '' }],
@@ -71,4 +69,31 @@ test('recent rows distinguish approval, completed, failed, stopped and starting 
   assert.equal(status(), 'stopped')
   runtime.status = 'starting'
   assert.equal(status(), 'starting')
+})
+
+function chord(key: string, change: Partial<{ ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean }> = {}) {
+  return { key, code: `Key${key.toUpperCase()}`, ctrlKey: true, metaKey: false, altKey: false, shiftKey: false, ...change }
+}
+
+test('inside the popup, the Quick Chat key hides it and the other keys keep their commands', () => {
+  const shortcuts = { ...DEFAULT_SETTINGS.shortcuts, quickChat: 'Mod+Alt+Q' }
+  assert.equal(quickChatKeyAction(chord('q', { altKey: true }), shortcuts, 'linux'), 'hide')
+  assert.equal(quickChatKeyAction(chord('q', { ctrlKey: false, metaKey: true, altKey: true }), shortcuts, 'darwin'), 'hide')
+  assert.equal(quickChatKeyAction(chord('n'), shortcuts, 'linux'), 'newTask')
+  assert.equal(quickChatKeyAction(chord('m', { shiftKey: true }), shortcuts, 'linux'), 'models')
+  assert.equal(quickChatKeyAction(chord('q'), shortcuts, 'linux'), null)
+})
+
+test('with no Quick Chat key set, no chord hides the popup', () => {
+  assert.equal(quickChatKeyAction(chord('q', { altKey: true }), DEFAULT_SETTINGS.shortcuts, 'linux'), null)
+})
+
+test('the bound status line puts an open question and a running turn before the process state', () => {
+  const runtime = context().runtimes[0]
+  assert.equal(boundStatus({ request: true, busy: true, runtime }), 'needs-approval')
+  assert.equal(boundStatus({ request: false, busy: true, runtime: { ...runtime, status: 'stopped' } }), 'working')
+  assert.equal(boundStatus({ request: false, busy: false, runtime: { ...runtime, activity: 'completed' } }), 'ready', 'a finished turn reads as ready, not completed')
+  assert.equal(boundStatus({ request: false, busy: false, runtime: { ...runtime, status: 'starting' } }), 'starting')
+  assert.equal(boundStatus({ request: false, busy: false, runtime: { ...runtime, status: 'error' } }), 'failed')
+  assert.equal(boundStatus({ request: false, busy: false, runtime: undefined }), 'ready')
 })

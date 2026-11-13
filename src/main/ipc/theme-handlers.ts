@@ -7,6 +7,7 @@ import {
 } from '../../shared/theme/theme-file'
 import type {
   ThemesListResult,
+  UserThemeRecord,
   ThemeImportResult,
   ThemeExportResult,
   ThemeGalleryResult,
@@ -23,11 +24,16 @@ function themeFileFilter(): Electron.FileFilter {
   return { name: t('dialogs.theme.fileFilterName'), extensions: ['json'] }
 }
 
-function themesDir(): string {
+export function themesDir(): string {
   return join(getGuiDataDir(), THEMES_DIR_NAME)
 }
 
-export function registerThemeHandlers(): void {
+/** `onThemesChanged` gets the new list after each save, delete or install. */
+export function registerThemeHandlers(onThemesChanged: (themes: UserThemeRecord[]) => void): void {
+  async function announceThemes(): Promise<void> {
+    onThemesChanged((await listUserThemes(themesDir())).themes)
+  }
+
   // ─── Themes ─────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.THEMES_LIST, async (): Promise<ThemesListResult> => {
@@ -38,7 +44,9 @@ export function registerThemeHandlers(): void {
     if (existingId !== undefined && !isString(existingId)) {
       throw new Error('existingId must be a string')
     }
-    return saveUserTheme(themesDir(), file as ThemeFile, existingId)
+    const saved = await saveUserTheme(themesDir(), file as ThemeFile, existingId)
+    await announceThemes()
+    return saved
   })
 
   // Unsupported color forms are ignored rather than thrown: a wrong native
@@ -51,12 +59,14 @@ export function registerThemeHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.THEMES_DELETE, async (_event, id: unknown) => {
     if (!isString(id)) throw new Error('id must be a string')
     await deleteUserTheme(themesDir(), id)
+    await announceThemes()
   })
 
   ipcMain.handle(IPC_CHANNELS.THEMES_INSTALL_URL, async (_event, url: unknown): Promise<ThemeImportResult> => {
     if (!isString(url)) throw new Error('url must be a string')
     try {
       const { id, file } = await installThemeFromUrl(themesDir(), url)
+      await announceThemes()
       return { ok: true, theme: { id, file } }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -104,6 +114,7 @@ export function registerThemeHandlers(): void {
       }
       const file = validateThemeFile(JSON.parse(await readFile(filePath, 'utf8')))
       const { id } = await saveUserTheme(themesDir(), file)
+      await announceThemes()
       return { ok: true, theme: { id, file } }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }

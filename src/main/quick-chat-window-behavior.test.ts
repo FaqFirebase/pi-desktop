@@ -1,28 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { clampQuickChatBounds, isQuickChatWayland, positionQuickChatBounds, resolveQuickChatBounds, shouldHideQuickChatOnBlur } from './quick-chat-window-behavior'
-
-const blurred = { visible: true, focused: false, ownedInteraction: false, composing: false, applicationDeactivated: false }
-
-test('outside focus loss hides, while hidden or refocused windows stay unchanged', () => {
-  assert.equal(shouldHideQuickChatOnBlur(blurred), true)
-  assert.equal(shouldHideQuickChatOnBlur({ ...blurred, visible: false }), false)
-  assert.equal(shouldHideQuickChatOnBlur({ ...blurred, focused: true }), false)
-  assert.equal(shouldHideQuickChatOnBlur({ ...blurred, pinned: true }), false)
-  assert.equal(shouldHideQuickChatOnBlur({ ...blurred, pinned: true, applicationDeactivated: true }), false)
-})
-
-test('native menus, owned dialogs, and IME candidates do not count as outside clicks', () => {
-  assert.equal(shouldHideQuickChatOnBlur({ ...blurred, ownedInteraction: true }), false)
-  assert.equal(shouldHideQuickChatOnBlur({ ...blurred, composing: true }), false)
-  assert.equal(shouldHideQuickChatOnBlur({ ...blurred, composing: false }), true)
-})
-
-test('switching applications hides even during composition or before native focus flags settle', () => {
-  assert.equal(shouldHideQuickChatOnBlur({ ...blurred, composing: true, applicationDeactivated: true }), true)
-  assert.equal(shouldHideQuickChatOnBlur({ ...blurred, ownedInteraction: true, applicationDeactivated: true }), true)
-  assert.equal(shouldHideQuickChatOnBlur({ ...blurred, focused: true, applicationDeactivated: true }), true)
-})
+import { clampQuickChatBounds, positionQuickChatBounds, resolveQuickChatBounds, sameRectangle } from './quick-chat-window-behavior'
 
 test('positioning uses the active display work area, including negative display coordinates', () => {
   assert.deepEqual(positionQuickChatBounds({ width: 480, height: 640 }, { x: -1920, y: -200, width: 1920, height: 1080 }), {
@@ -85,13 +63,10 @@ test('an explicitly positioned popup keeps its custom size and location', () => 
   }), custom)
 })
 
-test('explicit X11 remains pinnable in a Wayland login, while native Wayland does not', () => {
-  const linux = { platform: 'linux', ozonePlatform: '', ozonePlatformHint: '', waylandDisplay: 'wayland-0', sessionType: 'wayland' }
-  assert.equal(isQuickChatWayland(linux), true)
-  assert.equal(isQuickChatWayland({ ...linux, ozonePlatform: 'x11' }), false)
-  assert.equal(isQuickChatWayland({ ...linux, ozonePlatform: 'x11', ozonePlatformHint: 'wayland' }), false)
-  assert.equal(isQuickChatWayland({ ...linux, ozonePlatform: 'wayland', waylandDisplay: undefined, sessionType: 'x11' }), true)
-  assert.equal(isQuickChatWayland({ ...linux, ozonePlatformHint: 'x11' }), false)
-  assert.equal(isQuickChatWayland({ ...linux, platform: 'darwin' }), false)
-  assert.equal(isQuickChatWayland({ ...linux, platform: 'win32' }), false)
+test('rectangles are the same only when every edge matches', () => {
+  const rectangle = { x: 10, y: 20, width: 640, height: 420 }
+  assert.equal(sameRectangle(rectangle, { ...rectangle }), true)
+  for (const key of ['x', 'y', 'width', 'height'] as const) {
+    assert.equal(sameRectangle(rectangle, { ...rectangle, [key]: rectangle[key] + 1 }), false, key)
+  }
 })

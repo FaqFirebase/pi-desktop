@@ -8,9 +8,8 @@ import { composePrompt } from './utils/compose-prompt'
 import { firstQueued, withQueued, withoutQueued, withoutWorkspaceQueue, type SendQueues } from './send-queue'
 import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
 import type { DisplayAttachment, DisplayMessage } from './message-parsing'
-import { appendPromptHistory, applyChatStreamUpdate, applyChatToolExecution, parseChatMessage, retainChatMessageIdentity, type ChatToolCall } from './chat-session-state'
+import { appendPromptHistory, applyChatStreamUpdate, applyChatToolExecution, chatEventNotice, parseChatMessage, retainChatMessageIdentity, turnErrorText, type ChatToolCall } from './chat-session-state'
 import { isStoppedAnswer } from '../../shared/stopped-answer'
-import { stripAnsi } from './utils/strip-ansi'
 import { createStaleGuard } from './utils/stale-guard'
 import { splitClaudeCliMarkers } from './claude-cli-markers'
 import { markUnansweredToolCallsRunning, settleRunningToolCall } from './reattached-tool-calls'
@@ -59,8 +58,6 @@ import type {
   PiToolExecutionEndEvent,
   PiToolExecutionUpdateEvent,
   PiQueueUpdateEvent,
-  PiCompactionStartEvent,
-  PiCompactionEndEvent,
   PiAutoRetryStartEvent,
   PiAutoRetryEndEvent,
   PiExtensionUiRequest,
@@ -91,7 +88,7 @@ import type {
   PiPromptResultEvent,
 } from '../../shared/ipc-contracts'
 import {
-  promptRanWithoutAgent, promptRefusal, promptResultRefusal, reportsNoAgentRun, reportsPromptOutcome,
+  isRuntimeBusy, promptRanWithoutAgent, promptRefusal, promptResultRefusal, reportsNoAgentRun, reportsPromptOutcome,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -1022,6 +1019,63 @@ function scheduleSessionListRefresh(get: () => AppState & AppActions): void {
   }, SESSION_LIST_REFRESH_DELAY_MS)
 }
 
+/**
+ * Show the chat as loading a different session. The runtime being left keeps
+ * running in the background; only the renderer's pointers to it are cleared.
+ */
+function beginSessionLoad(set: ZustandSet, get: StoreGet, extraState: Partial<AppState> = {}): void {
+  set({
+    sessionLoading: true,
+    sessionState: null,
+    sessionStats: null,
+    activeSessionRuntimeId: null,
+    // The dialog belongs to the runtime being left. Main retains its
+    // origin and replays it when the user switches back.
+    extensionUiRequest: null,
+    ...extraState,
+  })
+  get().clearMessages()
+}
+
+/** Point the chat at the runtime main activated and start its hydration. */
+function applyActivatedRuntime(
+  set: ZustandSet,
+  get: StoreGet,
+  runtime: SessionRuntimeInfo | null,
+  workspaceId: string | undefined,
+  extraState: Partial<AppState> = {}
+): void {
+  set({
+    composerFocusRequested: true,
+    sessionLoading: runtime?.status !== 'running',
+    ...(runtime ? {
+      activeSessionRuntimeId: runtime.runtimeId,
+      piStatus: runtime.status,
+      piPid: runtime.pid,
+      piEngine: runtime.engine ?? 'pi',
+      piError: runtime.error,
+    } : {}),
+    ...extraState,
+  })
+  // Main retains a pending dialog until the renderer asks for it, and a
+  // runtime swap inside one workspace emits no workspace-change replay.
+  if (workspaceId) void window.piDesktop.ui.flushPendingPrompts(workspaceId)
+  if (isRuntimeBusy(runtime?.activity)) set({ isStreaming: true, reattachedMidTurn: true })
+  // A runtime still starting is hydrated by handleSessionRuntime on its running event.
+  void get().reloadActiveSession({ refreshList: false })
+  scheduleSessionListRefresh(get)
+}
+
+function failSessionLoad(set: ZustandSet, get: StoreGet, content: string): void {
+  set({ sessionLoading: false, ...idleTurnState() })
+  get().addMessage({ id: generateId(), role: 'system', content, timestamp: Date.now() })
+}
+
+function reportSessionSwitchError(set: ZustandSet, get: StoreGet, gen: number, err: unknown): void {
+  if (gen !== sessionLoadGeneration) return
+  failSessionLoad(set, get, t('store.messages.switchSessionError', { detail: err instanceof Error ? err.message : String(err) }))
+}
+
 const PARSE_CHUNK = 50
 
 /** Parse history in chunks, yielding to the event loop so the UI can paint. */
@@ -1389,9 +1443,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     })
   },
 
-  // Append a sent prompt to the recall history. Blanks and consecutive
-  // duplicates are ignored (shell-style); shared with the quick-chat popup.
-  recordPrompt: (text) => set(() => ({ promptHistory: appendPromptHistory(useAppStore.getState().promptHistory, text) })),
+  recordPrompt: (text) => set((state) => ({ promptHistory: appendPromptHistory(state.promptHistory, text) })),
 
   // ─── Prompts ──────────────────────────────────────────────────────────
 
@@ -1780,7 +1832,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const runtime = get().sessionRuntimes[runtimeId]
     if (!runtime) return
 
-    if (runtime.activity === 'working' || runtime.activity === 'needs-approval') {
+    if (isRuntimeBusy(runtime.activity)) {
       const confirmed = await get().requestConfirm({
         title: t('store.confirm.closeSessionTabTitle'),
         message: t('store.confirm.closeSessionTabMessage'),
@@ -1873,59 +1925,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const run = async (): Promise<void> => {
       if (gen !== sessionLoadGeneration || pendingSwitchPath !== path) return
       try {
-        // Binding a different session is safe: its Pi process continues in the
-        // background. Render the new target immediately; only hydration waits.
-        set({
-          sessionLoading: true,
-          sessionState: null,
-          sessionStats: null,
-          activeSessionRuntimeId: null,
-          // The dialog belongs to the runtime being left. Main retains its
-          // origin and replays it when the user switches back.
-          extensionUiRequest: null,
-        })
-        get().clearMessages()
+        beginSessionLoad(set, get)
         const result = await window.piDesktop.session.switch(path, projectPath) as SessionRuntimeInfo | { success?: boolean; error?: string } | null
         if (gen !== sessionLoadGeneration) return
         if (result && 'success' in result && result.success === false) {
-          set({ sessionLoading: false, ...idleTurnState() })
-          get().addMessage({
-            id: generateId(),
-            role: 'system',
-            content: result.error ?? t('store.messages.cannotActivateSession'),
-            timestamp: Date.now(),
-          })
+          failSessionLoad(set, get, result.error ?? t('store.messages.cannotActivateSession'))
           return
         }
         const runtime = result && 'runtimeId' in result ? result : null
-        const reattaching = runtime?.activity === 'working' || runtime?.activity === 'needs-approval'
-        if (get().activeWorkspace?.id) void window.piDesktop.ui.flushPendingPrompts(get().activeWorkspace!.id)
-        set({
-          currentView: 'chat',
-          composerFocusRequested: true,
-          sessionLoading: runtime?.status !== 'running',
-          ...(runtime ? {
-            activeSessionRuntimeId: runtime.runtimeId,
-            piStatus: runtime.status,
-            piPid: runtime.pid,
-            piEngine: runtime.engine ?? 'pi',
-            piError: runtime.error,
-          } : {}),
-        })
-        // If the runtime is already ready this starts hydration now. If it is
-        // still starting, handleSessionRuntime retries on its running event.
-        void get().reloadActiveSession({ refreshList: false })
-        if (reattaching) set({ isStreaming: true, reattachedMidTurn: true })
-        scheduleSessionListRefresh(get)
+        applyActivatedRuntime(set, get, runtime, get().activeWorkspace?.id, { currentView: 'chat' })
       } catch (err) {
-        if (gen !== sessionLoadGeneration) return
-        set({ sessionLoading: false, ...idleTurnState() })
-        get().addMessage({
-          id: generateId(),
-          role: 'system',
-          content: t('store.messages.switchSessionError', { detail: err instanceof Error ? err.message : String(err) }),
-          timestamp: Date.now(),
-        })
+        reportSessionSwitchError(set, get, gen, err)
       }
     }
 
@@ -1934,85 +1944,36 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   /**
-   * Activate a specific runtime by id — the Quick Chat "Open in Main" path for
-   * a file-less New Session tab, which no path-keyed switch can address. The
-   * runtime keeps running; nothing is torn down, only the renderer's active
-   * pointers move. The dirty-editor confirm runs in every case; a same-workspace
-   * swap additionally confirms an abandoned streaming turn (activateWorkspace
-   * no-ops there, so without this the swap would discard it silently).
+   * Activate a runtime by id. A file-less session has no path for
+   * switchSession, so Quick Chat's "Open in Main" comes here.
    */
   activateRuntime: async (workspaceId, runtimeId) => {
-    // The activation is only an intent until its confirmations pass. Bumping
-    // sessionLoadGeneration here would invalidate the retained session's
-    // in-flight history load the moment the user declines, leaving the
-    // unchanged chat stuck loading; last-intent-wins keeps its own token.
     const intent = ++activationIntentGeneration
-    // Other real navigation (switchSession, new session, workspace switch)
-    // invalidates session I/O while this intent waits on its dialogs. The
-    // snapshot is taken without incrementing: a change means the world moved
-    // on and this stale intent must not commit.
     const loadGen = sessionLoadGeneration
     const superseded = (): boolean => intent !== activationIntentGeneration || loadGen !== sessionLoadGeneration
     if (!(await get().confirmDiscardEditorChanges()) || superseded()) return false
-    // Only a same-workspace swap abandons a running turn; switching workspaces
-    // keeps the old workspace's turn running in the background, so the
-    // 'workspace' semantics (no warning) apply there.
+    // A workspace switch keeps the old turn running in the background; only a
+    // swap inside one workspace abandons it.
     const sameWorkspace = get().activeWorkspace?.id === workspaceId
     if (sameWorkspace && !(await get().confirmSessionChange('switch'))) return false
     if (superseded()) return false
-    // Invalidated only on a committed activation; on a refused one the catch
-    // below still reads gen, so it lives outside the try.
+    // The catch reads gen, so it is declared outside the try.
     let gen = 0
     try {
       if (!sameWorkspace) {
         if (!(await get().activateWorkspace(workspaceId, { awaitingSession: true, skipDirtyConfirm: true }))) return false
-        // The awaited workspace switch can overlap a newer activation
-        // intent; only the newest may commit this far.
         if (intent !== activationIntentGeneration) return false
       }
-      // Confirmations passed and no other activation superseded this one:
-      // now, and only now, the session load of the previous chat is invalid.
       gen = ++sessionLoadGeneration
       const workspace = get().activeWorkspace
       if (!workspace || workspace.id !== workspaceId) return false
-      set({
-        currentView: 'chat',
-        sessionLoading: true,
-        sessionState: null,
-        sessionStats: null,
-        activeSessionRuntimeId: null,
-        extensionUiRequest: null,
-      })
-      get().clearMessages()
+      beginSessionLoad(set, get, { currentView: 'chat' })
       const runtime = await window.piDesktop.session.activateRuntime(workspaceId, runtimeId)
       if (gen !== sessionLoadGeneration || !runtime) return false
-      const reattaching = runtime.activity === 'working' || runtime.activity === 'needs-approval'
-      set({
-        composerFocusRequested: true,
-        sessionLoading: runtime.status !== 'running',
-        activeSessionRuntimeId: runtime.runtimeId,
-        piStatus: runtime.status,
-        piPid: runtime.pid,
-        piEngine: runtime.engine ?? 'pi',
-        piError: runtime.error,
-      })
-      // A same-workspace runtime swap emits no workspace-change replay.
-      // The main process retains the dialog: recover it only after activation
-      // succeeds and survives the generation guard above.
-      void window.piDesktop.ui.flushPendingPrompts(workspaceId)
-      if (reattaching) set({ isStreaming: true, reattachedMidTurn: true })
-      void get().reloadActiveSession({ refreshList: false })
-      scheduleSessionListRefresh(get)
+      applyActivatedRuntime(set, get, runtime, workspaceId)
       return true
     } catch (err) {
-      if (gen !== sessionLoadGeneration) return false
-      set({ sessionLoading: false, ...idleTurnState() })
-      get().addMessage({
-        id: generateId(),
-        role: 'system',
-        content: t('store.messages.switchSessionError', { detail: err instanceof Error ? err.message : String(err) }),
-        timestamp: Date.now(),
-      })
+      reportSessionSwitchError(set, get, gen, err)
       return false
     }
   },
@@ -2372,21 +2333,19 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Thinking ─────────────────────────────────────────────────────────
 
   setThinkingLevel: async (level) => {
-    let applied = false
     try {
       const response = await window.piDesktop.thinking.setLevel(level) as { success?: boolean } | null
       if (!response?.success) return false
-      applied = true
-      try {
-        const updated = await window.piDesktop.settings.save({ defaultThinkingLevel: level })
-        set({ settings: updated })
-      } finally {
-        await get().refreshSessionState()
-      }
     } catch {
-      return applied
+      return false
     }
-    return applied
+    try {
+      set({ settings: await window.piDesktop.settings.save({ defaultThinkingLevel: level }) })
+    } catch {
+      // The level applied; only saving it as the default failed.
+    }
+    await get().refreshSessionState()
+    return true
   },
 
   cycleThinkingLevel: async () => {
@@ -2632,14 +2591,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         // turn_end re-delivers the same message, so errors surface only here.
         const turnError = turnErrorText(endedMessage)
         turnFailed = turnError !== null
-        if (turnError) {
-          get().addMessage({
-            id: generateId(),
-            role: 'system',
-            content: t('store.messages.error', { detail: turnError }),
-            timestamp: Date.now(),
-          })
-        }
+        addEventNotice(event, get)
         get().addTimelineEvent({
           id: generateId(),
           type: 'assistant_message',
@@ -2752,7 +2704,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
       case 'compaction_start':
       case 'compaction_end':
-        handleCompaction(event as PiCompactionStartEvent | PiCompactionEndEvent, set)
+        addEventNotice(event, get)
         get().addTimelineEvent({
           id: generateId(),
           type: 'compaction',
@@ -2764,7 +2716,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
       case 'auto_retry_start':
       case 'auto_retry_end':
-        handleAutoRetry(event as PiAutoRetryStartEvent | PiAutoRetryEndEvent, set, get)
+        addEventNotice(event, get)
+        if (event.type === 'auto_retry_end' && !(event as PiAutoRetryEndEvent).success) {
+          set({ isStreaming: false })
+          get().refreshSessionStats()
+        }
         get().addTimelineEvent({
           id: generateId(),
           type: 'retry',
@@ -2778,15 +2734,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         set({ commands: normalizePiCommands((event as { commands?: unknown }).commands) })
         break
 
-      case 'command_output': {
-        const text = (event as { text?: unknown }).text
-        // OMP writes command output for its terminal UI, colors included.
-        const content = typeof text === 'string' ? stripAnsi(text) : ''
-        if (content.trim()) {
-          get().addMessage({ id: generateId(), role: 'system', content, timestamp: Date.now() })
-        }
+      case 'command_output':
+        addEventNotice(event, get)
         break
-      }
 
       case 'prompt_result': {
         // Before any turn started for it, the prompt ran none: a refusal after
@@ -2978,7 +2928,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     // guard made New Session look stuck forever after Pi was already ready.
     const current = get()
     if (runtime.active && runtime.workspaceId === current.activeWorkspace?.id) {
-      const working = runtime.activity === 'working' || runtime.activity === 'needs-approval'
+      const working = isRuntimeBusy(runtime.activity)
       if ((runtime.status === 'stopped' || runtime.status === 'error') && current.isStreaming) {
         handleTurnComplete(set, undefined, true)
         set({ isStreaming: false, reattachedMidTurn: false })
@@ -3284,7 +3234,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         // advertised). Arm the mid-turn attach so the next turn boundary
         // backfills the prefix the stream buffers never saw.
         const activity = Object.values(get().sessionRuntimes).find((runtime) => runtime.active && runtime.workspaceId === workspaceId)?.activity
-        if (activity === 'working' || activity === 'needs-approval') {
+        if (isRuntimeBusy(activity)) {
           set({ isStreaming: true, reattachedMidTurn: true })
         }
       }
@@ -3934,29 +3884,10 @@ function handleMessageUpdate(
   if (missingPrefix) backfillStreamingText(get, set)
 }
 
-// Pi and OMP report a plain user stop with exactly these texts; anything else
-// on an aborted turn is a specific reason worth showing (mirrors Pi's own TUI).
-// Not translated: they are compared against the engines' own (English)
-// output, never shown. The "Stopped" mark already tells the user.
-const GENERIC_ABORT_MESSAGES: ReadonlySet<string> = new Set([
-  'Request was aborted', // Pi
-  'Interrupted by user', // OMP
-])
-
-/**
- * Error text to surface in chat for a finished assistant message, or null.
- * A provider that rejects before streaming (e.g. HTTP 402) yields an
- * assistant message with stopReason 'error', empty content, and the provider
- * error in errorMessage — without this, the chat shows nothing at all.
- */
-function turnErrorText(message?: Record<string, unknown>): string | null {
-  if (!message || message.role !== 'assistant') return null
-  const errorMessage = typeof message.errorMessage === 'string' ? message.errorMessage : ''
-  if (message.stopReason === 'error') return errorMessage || t('store.messages.unknownError')
-  if (message.stopReason === 'aborted' && errorMessage && !GENERIC_ABORT_MESSAGES.has(errorMessage)) {
-    return errorMessage
-  }
-  return null
+/** Append the shared transcript notice for an engine event, when it has one. */
+function addEventNotice(event: PiRpcEvent, get: () => AppState & AppActions): void {
+  const content = chatEventNotice(event)
+  if (content) get().addMessage({ id: generateId(), role: 'system', content, timestamp: Date.now() })
 }
 
 function handleTurnComplete(
@@ -4135,76 +4066,4 @@ function handleQueueUpdate(
     pendingSteering: event.steering,
     pendingFollowUp: event.followUp,
   })
-}
-
-function handleCompaction(
-  event: PiCompactionStartEvent | PiCompactionEndEvent,
-  set: ZustandSet
-): void {
-  if (event.type === 'compaction_start') {
-    set((state) => ({
-      messages: [
-        ...state.messages,
-        {
-          id: generateId(),
-          role: 'system',
-          content: t('store.messages.compactingContext', { reason: (event as PiCompactionStartEvent).reason }),
-          timestamp: Date.now(),
-        },
-      ],
-    }))
-  } else {
-    const endEvent = event as PiCompactionEndEvent
-    if (endEvent.aborted) {
-      set((state) => ({
-        messages: [
-          ...state.messages,
-          {
-            id: generateId(),
-            role: 'system',
-            content: t('store.messages.compactionAborted'),
-            timestamp: Date.now(),
-          },
-        ],
-      }))
-    } else if (endEvent.result) {
-      set((state) => ({
-        messages: [
-          ...state.messages,
-          {
-            id: generateId(),
-            role: 'system',
-            content: t('store.messages.contextCompacted'),
-            timestamp: Date.now(),
-          },
-        ],
-      }))
-    }
-  }
-}
-
-function handleAutoRetry(
-  event: PiAutoRetryStartEvent | PiAutoRetryEndEvent,
-  set: ZustandSet,
-  get: () => AppState & AppActions
-): void {
-  if (event.type === 'auto_retry_start') {
-    set((state) => ({
-      messages: [
-        ...state.messages,
-        {
-          id: generateId(),
-          role: 'system',
-          content: t('store.messages.retrying', { attempt: event.attempt, maxAttempts: event.maxAttempts, detail: event.errorMessage }),
-          timestamp: Date.now(),
-        },
-      ],
-    }))
-  } else {
-    const endEvent = event as PiAutoRetryEndEvent
-    if (!endEvent.success) {
-      set({ isStreaming: false })
-      get().refreshSessionStats()
-    }
-  }
 }

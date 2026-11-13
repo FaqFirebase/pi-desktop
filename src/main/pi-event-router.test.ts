@@ -339,6 +339,18 @@ test('a dialog arriving after eviction is held again and answers to its own mana
   assert.deepEqual(h.responses, [{ workspaceId: WS_B, id: 'b1', response: { confirmed: true } }])
 })
 
+test('a repeated request shows once, and a restarted process may reuse its id', () => {
+  const h = createHarness([WS_A])
+  const manager = h.managers.get(WS_A)!
+  manager.emit('event', dialogRequest('a1'))
+  manager.emit('event', dialogRequest('a1'))
+  assert.deepEqual(h.router.getPendingCounts(), { [WS_A]: 1 }, 'a repeat is not queued again')
+  h.router.respond('a1', { confirmed: true })
+  manager.emit('exit', { code: 0, signal: null })
+  manager.emit('event', dialogRequest('a1'))
+  assert.deepEqual(h.router.getPendingCounts(), { [WS_A]: 1 }, 'the new process raises its own a1')
+})
+
 // ─── Ghost guard ─────────────────────────────────────────────────────────────
 
 test('deliverNext drops queued prompts whose extension timeout has expired', () => {

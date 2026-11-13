@@ -63,6 +63,15 @@ function detectMention(ta: HTMLTextAreaElement): MentionState | null {
   return { start: pos - query.length - 1, query }
 }
 
+// Composer state that belongs to one scope. `current` turns false when that
+// scope's composer is torn down, so its late async work cannot touch another.
+interface ComposerOwner {
+  scopeKey: string
+  current: boolean
+  pendingReads: number
+  submitting: boolean
+}
+
 interface ChatInputProps {
   /** The chat pane around the composer; file drops anywhere on it attach. */
   dropZoneRef: React.RefObject<HTMLElement | null>
@@ -80,7 +89,15 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
   const engineLabel = agentEngineLabel(session.engine) ?? DEFAULT_AGENT_ENGINE_LABEL
   const bindingsRef = useRef(composer)
   bindingsRef.current = composer
-  const owner = useMemo(() => ({ scopeKey, current: true, pendingReads: 0, submitting: false }), [scopeKey])
+  const ownerRef = useRef<ComposerOwner | null>(null)
+  if (ownerRef.current?.scopeKey !== scopeKey) {
+    ownerRef.current = { scopeKey, current: true, pendingReads: 0, submitting: false }
+  }
+  const owner = ownerRef.current
+  const ownsComposer = useCallback(
+    (): boolean => owner.current && bindingsRef.current.scopeKey === owner.scopeKey,
+    [owner]
+  )
   const textRevision = useRef(0)
 
   // Prompt-history recall (shell-style ↑/↓). `historyIndex` is NO_RECALLED_PROMPT
@@ -108,12 +125,18 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
   const attachmentsRef = useRef(attachments)
   const saveDraft = useCallback(() => {
     const ta = textareaRef.current
-    if (!ta || !owner.current || bindingsRef.current.scopeKey !== owner.scopeKey) return
+    if (!ta || !ownsComposer()) return
     bindingsRef.current.saveDraft({
       text: composerDraftText(ta.value, historyIndex.current, draft.current),
       attachments: attachmentsRef.current,
     })
-  }, [owner])
+  }, [ownsComposer])
+  // Any edit ends prompt-history recall; the box is a fresh draft again.
+  const markDraftEdited = useCallback(() => {
+    textRevision.current += 1
+    historyIndex.current = NO_RECALLED_PROMPT
+    saveDraft()
+  }, [saveDraft])
   const updateAttachments = useCallback((next: ComposerAttachment[]) => {
     attachmentsRef.current = next
     setAttachments(next)
@@ -143,12 +166,9 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     ta.focus()
     ta.setSelectionRange(caret, caret)
     resizeTextarea(ta)
-
-    textRevision.current += 1
-    historyIndex.current = NO_RECALLED_PROMPT
-    saveDraft()
+    markDraftEdited()
     clearPendingInsert?.()
-  }, [pendingInsert, active, clearPendingInsert, resizeTextarea, saveDraft])
+  }, [pendingInsert, active, clearPendingInsert, resizeTextarea, markDraftEdited])
   const [attachError, setAttachError] = useState<string | null>(null)
   const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
   const attachmentDragDepth = useRef(0)
@@ -183,9 +203,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
         ta.focus()
         ta.setSelectionRange(r.caret, r.caret)
         resizeTextarea(ta)
-        historyIndex.current = NO_RECALLED_PROMPT
-        textRevision.current += 1
-        saveDraft()
+        markDraftEdited()
       },
       onFinal: (text: string) => {
         const ta = textareaRef.current
@@ -196,12 +214,10 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
         ta.focus()
         ta.setSelectionRange(r.caret, r.caret)
         resizeTextarea(ta)
-        historyIndex.current = NO_RECALLED_PROMPT
-        textRevision.current += 1
-        saveDraft()
+        markDraftEdited()
       },
     }),
-    [resizeTextarea, saveDraft]
+    [resizeTextarea, markDraftEdited]
   )
   const dictation = useVoiceDictation(voiceHandlers, { active, loadStatus: voice.loadStatus })
   const { cancel: cancelDictation } = dictation
@@ -217,11 +233,9 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     ta.value = ''
     ta.style.height = `${MIN_INPUT_HEIGHT}px`
     setSlashToken(null)
-    textRevision.current += 1
-    historyIndex.current = NO_RECALLED_PROMPT
     draft.current = ''
-    saveDraft()
-  }, [cancelDictation, saveDraft])
+    markDraftEdited()
+  }, [cancelDictation, markDraftEdited])
 
   // @-file mention autocomplete. `mention` is the token being typed (null when
   // inactive); `mentionResults` are the workspace files matching it and
@@ -267,7 +281,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     if (restoredDraft.current === composer.draftVersion) return
     restoredDraft.current = composer.draftVersion
     const ta = textareaRef.current
-    if (!ta || !owner.current || bindingsRef.current.scopeKey !== scopeKey) return
+    if (!ta || !ownsComposer()) return
     const saved = composer.readDraft()
     ta.value = saved.text
     attachmentsRef.current = saved.attachments
@@ -276,7 +290,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     draft.current = ''
     textRevision.current += 1
     resizeTextarea(ta)
-  }, [composer, owner, scopeKey, resizeTextarea])
+  }, [composer, ownsComposer, resizeTextarea])
 
   // Search the workspace for the active mention query (debounced). An empty
   // query yields no results, so the popup stays hidden until the user types.
@@ -294,18 +308,18 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     const timer = setTimeout(async () => {
       try {
         const results = await searchFiles(query)
-        if (!cancelled && owner.current && bindingsRef.current.scopeKey === scopeKey) {
+        if (!cancelled && ownsComposer()) {
           setMentionResults(rankFileResults(results, query).slice(0, MAX_MENTION_RESULTS))
         }
       } catch {
-        if (!cancelled && owner.current && bindingsRef.current.scopeKey === scopeKey) setMentionResults([])
+        if (!cancelled && ownsComposer()) setMentionResults([])
       }
     }, 120)
     return () => {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [mention, scopeKey, owner, searchFiles])
+  }, [mention, ownsComposer, searchFiles])
 
   // Keep the highlight in range as results change.
   useEffect(() => {
@@ -328,11 +342,9 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
       ta.focus()
       setMention(null)
       setMentionResults([])
-      textRevision.current += 1
-      historyIndex.current = NO_RECALLED_PROMPT
-      saveDraft()
+      markDraftEdited()
     },
-    [mention, resizeTextarea, saveDraft]
+    [mention, resizeTextarea, markDraftEdited]
   )
 
   const mentionOpen = mention !== null && mentionResults.length > 0
@@ -372,11 +384,9 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
       ta.setSelectionRange(token.length, token.length)
       resizeTextarea(ta)
       ta.focus()
-      textRevision.current += 1
-      historyIndex.current = NO_RECALLED_PROMPT
-      saveDraft()
+      markDraftEdited()
     },
-    [builtins, resetComposer, resizeTextarea, saveDraft]
+    [builtins, resetComposer, resizeTextarea, markDraftEdited]
   )
 
   // Submit raw text once. The host owns prompt composition and queue/steer policy.
@@ -392,11 +402,10 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
       revision: textRevision.current,
       attachments: attachmentsRef.current,
     }
-    const submitOwner = submitDraft
     owner.submitting = true
     try {
-      const consumed = await submitOwner(message, captured.attachments, intent)
-      if (!consumed || !owner.current || bindingsRef.current.scopeKey !== scopeKey) return
+      const consumed = await submitDraft(message, captured.attachments, intent)
+      if (!consumed || !ownsComposer()) return
       recordPrompt(message)
       const remaining = consumeSubmittedDraft(captured, {
         scopeKey: bindingsRef.current.scopeKey,
@@ -404,11 +413,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
         revision: textRevision.current,
         attachments: attachmentsRef.current,
       })
-      if (remaining.text !== ta.value) {
-        historyIndex.current = NO_RECALLED_PROMPT
-        draft.current = ''
-        resetComposer()
-      }
+      if (remaining.text !== ta.value) resetComposer()
       updateAttachments(remaining.attachments)
     } catch (error) {
       if (owner.current) {
@@ -418,7 +423,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     } finally {
       owner.submitting = false
     }
-  }, [owner, submitDraft, scopeKey, cancelDictation, recordPrompt, resetComposer, updateAttachments, saveDraft])
+  }, [owner, ownsComposer, submitDraft, scopeKey, cancelDictation, recordPrompt, resetComposer, updateAttachments, saveDraft])
   const handleSend = useCallback((message: string) => { void submit(message, 'send') }, [submit])
   const handleSendNow = useCallback((message: string) => { void submit(message, 'send-now') }, [submit])
 
@@ -434,11 +439,9 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
       ta.focus()
       ta.setSelectionRange(prompt.text.length, prompt.text.length)
       for (const attachment of prompt.attachments) addAttachment(attachment)
-      textRevision.current += 1
-      historyIndex.current = NO_RECALLED_PROMPT
-      saveDraft()
+      markDraftEdited()
     },
-    [composer.queue, resizeTextarea, addAttachment, saveDraft]
+    [composer.queue, resizeTextarea, addAttachment, markDraftEdited]
   )
 
   const handleAbort = useCallback(() => {
@@ -461,20 +464,19 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
 
   // A late read can stage files only in the owner that began the batch.
   const stageAttachmentBatch = useCallback(async (sources: AttachmentSource[]): Promise<void> => {
-    const isBatchCurrent = (): boolean => owner.current && bindingsRef.current.scopeKey === scopeKey
     owner.pendingReads += 1
     setIsReadingAttachments(true)
     try {
-      const batch = await readAttachmentBatch(sources, isBatchCurrent)
+      const batch = await readAttachmentBatch(sources, ownsComposer)
       if (!batch) return
       for (const attachment of batch.attachments) addAttachment(attachment)
       if (batch.errors.length) setAttachError(batch.errors.join('\n'))
       textareaRef.current?.focus()
     } finally {
       owner.pendingReads -= 1
-      if (isBatchCurrent()) setIsReadingAttachments(owner.pendingReads > 0)
+      if (ownsComposer()) setIsReadingAttachments(owner.pendingReads > 0)
     }
-  }, [addAttachment, owner, scopeKey])
+  }, [addAttachment, owner, ownsComposer])
 
   const handleAttachFile = useCallback(async () => {
     setAttachError(null)
@@ -482,7 +484,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     setIsReadingAttachments(true)
     try {
       const picked = await pickAttachments()
-      if (!owner.current || bindingsRef.current.scopeKey !== scopeKey) return
+      if (!ownsComposer()) return
       for (const attachment of picked.attachments) addAttachment(attachment)
       if (picked.errors.length) setAttachError(picked.errors.join('\n'))
     } catch (err) {
@@ -491,7 +493,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
       owner.pendingReads -= 1
       if (owner.current) setIsReadingAttachments(owner.pendingReads > 0)
     }
-  }, [pickAttachments, addAttachment, owner, scopeKey, t])
+  }, [pickAttachments, addAttachment, owner, ownsComposer, t])
 
   const attachImageFile = useCallback(async (file: File): Promise<void> => {
     const mime = file.type.toLowerCase()
@@ -512,7 +514,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     setIsReadingAttachments(true)
     try {
       const data = await readFileAsBase64(file)
-      if (!owner.current || bindingsRef.current.scopeKey !== scopeKey) return
+      if (!ownsComposer()) return
       const ext = subtype === 'jpeg' ? 'jpg' : subtype
       const name = file.name && file.name !== 'image.png' ? file.name : `pasted-image.${ext}`
       const path = `clipboard://${name}-${file.size}-${file.lastModified}`
@@ -533,7 +535,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
       owner.pendingReads -= 1
       if (owner.current) setIsReadingAttachments(owner.pendingReads > 0)
     }
-  }, [addAttachment, owner, scopeKey, t])
+  }, [addAttachment, owner, ownsComposer, t])
 
   // A stopped agent stays typable: the first send lazy-starts Pi/OMP.
   // Only transient/error states block input.
@@ -804,16 +806,13 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
           onInput={(e) => {
             const target = e.currentTarget
             resizeTextarea(target)
-            // Any real edit ends history navigation; the box is a fresh draft again.
-            historyIndex.current = NO_RECALLED_PROMPT
             // Offer command suggestions only while the draft is a bare
             // `/token` — once whitespace appears the user is typing arguments
             // after a chosen command, not searching for one (issue #50).
             setSlashToken(isSlashCommandToken(target.value) ? target.value : null)
             // Detect / refine an @-file mention at the caret.
             setMention(detectMention(target))
-            textRevision.current += 1
-            saveDraft()
+            markDraftEdited()
           }}
           onBlur={() => {
             setMention(null)
