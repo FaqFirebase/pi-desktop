@@ -90,6 +90,7 @@ src/
 │   └── theme/                    # Theme-file format, resolver, syntax defaults, tokens
 ├── main/
 │   ├── index.ts                  # App lifecycle, window creation, hardening
+│   ├── window-hints.ts           # Optional title label, taskbar identity and frameless window from the environment
 │   ├── i18n.ts                   # Main-process language: OS language list, pseudo-language gate, apply the setting
 │   ├── ipc-handlers.ts           # IPC composition root (creates context, calls ipc/ modules)
 │   ├── ipc/                      # Domain-specific IPC handler modules (pi, session, files, ...)
@@ -566,6 +567,8 @@ One Pi Desktop runs at a time by default: a second launch focuses the first wind
 | `pi-desktop.boot-language` (renderer `localStorage`) | Last-resolved interface language, shown before Settings loads for the same reason |
 | `pi-desktop.project-tab-order` (renderer `localStorage`) | Project tab order the user set by dragging tabs |
 | `pi-desktop.model-recency` (renderer `localStorage`) | Last time each model was picked, for model picker order |
+
+Optional window hints for a host that starts several instances (`window-hints.ts`): `PI_DESKTOP_WINDOW_TITLE` appends a label to the window title, `PI_DESKTOP_APP_USER_MODEL_ID` gives the instance its own Windows taskbar button and notification identity, and `PI_DESKTOP_FRAMELESS=1` creates the window without the OS frame or a taskbar button, for a host that positions it.
 
 ## Distribution
 
