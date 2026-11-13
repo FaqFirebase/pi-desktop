@@ -1657,6 +1657,8 @@
       "diagnostics": "Діагностика",
       "notes": "Нотатки",
       "packages": "Пакети",
+      "quickChatTitleNoShortcut": "Відкрити швидкий чат. Сполучення клавіш можна задати в Налаштування > Сполучення клавіш.",
+      "quickChatTitleWithShortcut": "Відкрити швидкий чат ({{shortcut}})",
       "sectionLabel": "Інструменти"
     },
     "workflowRunsForSession": "Запуски процесів цієї сесії",

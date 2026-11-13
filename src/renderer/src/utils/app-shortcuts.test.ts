@@ -22,13 +22,18 @@ class Target {
   closest(selector: string): Target | null { return this.within.includes(selector) ? this : null }
 }
 
+// Each Quick Chat open the window asked the main process for.
+let quickChatOpens = 0
+
 function setPlatform(platform: string): void {
   Object.defineProperty(globalThis, 'window', { configurable: true, value: { piDesktop: {
     system: { platform }, ui: { setEditorDirty: () => {} },
+    settings: { openQuickChat: async () => { quickChatOpens += 1 } },
   } } })
 }
 
 beforeEach(() => {
+  quickChatOpens = 0
   useAppStore.setState(initialState, true)
   Object.defineProperty(globalThis, 'Element', { configurable: true, value: Target })
   setPlatform('darwin')
@@ -374,28 +379,43 @@ test('the system-wide dictation key is left to the main process when it reaches 
   unsubscribe()
 })
 
-test('Quick Chat is never dispatched as an in-app command in either listener phase', async () => {
-  const commands: VoiceShortcutCommand[] = []
-  const unsubscribe = onVoiceShortcut((command) => commands.push(command))
+test('the Quick Chat key opens Quick Chat once from any focused element', async () => {
   useAppStore.getState().setSettingsDraft({
     shortcuts: { ...DEFAULT_SETTINGS.shortcuts, quickChat: 'Mod+Alt+Q', globalDictation: 'Mod+Alt+D' },
   })
+  const platforms = ['darwin', 'linux', 'win32']
+  const targets = () => [new Target(), new Target([CODE_EDITOR]), new Target([TERMINAL])]
   const updates = await storeUpdatesDuring(() => {
-    for (const platform of ['darwin', 'linux', 'win32']) {
+    for (const platform of platforms) {
       setPlatform(platform)
-      for (const target of [new Target(), new Target([CODE_EDITOR]), new Target([TERMINAL])]) {
+      for (const target of targets()) {
         const event = keyEvent({
           key: 'q', code: 'KeyQ', altKey: true, metaKey: platform === 'darwin', ctrlKey: platform !== 'darwin', target,
         })
         press(event)
-        assert.equal(event.defaultPrevented, false)
-        assert.equal(event.cancelBubble, false)
+        assert.equal(event.defaultPrevented, true)
+        assert.equal(event.cancelBubble, true)
       }
     }
   })
   assert.equal(updates, 0)
-  assert.deepEqual(commands, [])
-  unsubscribe()
+  assert.equal(quickChatOpens, platforms.length * targets().length)
+})
+
+test('a held Quick Chat key opens Quick Chat only once', () => {
+  useAppStore.getState().setSettingsDraft({ shortcuts: { ...DEFAULT_SETTINGS.shortcuts, quickChat: 'Mod+Alt+Q' } })
+  handleAppShortcut(keyEvent({ key: 'q', code: 'KeyQ', altKey: true }))
+  const repeat = keyEvent({ key: 'q', code: 'KeyQ', altKey: true, repeat: true })
+  handleAppShortcut(repeat)
+  assert.equal(repeat.defaultPrevented, true)
+  assert.equal(quickChatOpens, 1)
+})
+
+test('with no Quick Chat key set, its usual chord stays with the focused element', () => {
+  const event = keyEvent({ key: 'q', code: 'KeyQ', altKey: true })
+  press(event)
+  assert.equal(event.defaultPrevented, false)
+  assert.equal(quickChatOpens, 0)
 })
 
 test('in the terminal, Ctrl+K, Ctrl+B, Ctrl+N, Ctrl+G, Ctrl+[ and Ctrl+] go to the shell on Linux and Windows', async () => {

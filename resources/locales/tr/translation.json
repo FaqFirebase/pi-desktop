@@ -1597,6 +1597,8 @@
       "diagnostics": "Tanılama",
       "notes": "Notlar",
       "packages": "Paketler",
+      "quickChatTitleNoShortcut": "Hızlı sohbeti aç. Kısayolu Ayarlar > Klavye kısayolları bölümünden atayın.",
+      "quickChatTitleWithShortcut": "Hızlı sohbeti aç ({{shortcut}})",
       "sectionLabel": "Araçlar"
     },
     "workflowRunsForSession": "Bu oturumun iş akışı çalıştırmaları",

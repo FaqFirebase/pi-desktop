@@ -145,8 +145,8 @@ function dispatchAppShortcut(event: KeyboardEvent, phase: ShortcutListenerPhase)
   const platform = window.piDesktop.system.platform
   if (shortcutProblem(shortcuts, platform)) return
   const action = SHORTCUT_ACTIONS.find((candidate) => matchesShortcut(event, shortcuts[candidate], platform))
-  // The main process owns system-wide actions; dispatching here would toggle twice.
-  if (!action || action === 'globalDictation' || action === 'quickChat') return
+  // The main process owns the system-wide dictation key.
+  if (!action || action === 'globalDictation') return
   if (shortcutPhase(event, action) !== phase) return
   event.preventDefault()
   event.stopPropagation()
@@ -154,6 +154,13 @@ function dispatchAppShortcut(event: KeyboardEvent, phase: ShortcutListenerPhase)
   if (action === 'pushToTalk') {
     heldPushToTalk = shortcuts.pushToTalk
     emitVoiceShortcut('hold')
+    return
+  }
+  if (action === 'quickChat') {
+    // A desktop that refuses the system-wide key (a Wayland portal without an app id)
+    // never sends it, so the window opens Quick Chat itself. Opening never hides,
+    // so a desktop that also delivers the key here cannot close it again.
+    void window.piDesktop.settings.openQuickChat()
     return
   }
   void runAppShortcut(action)

@@ -1597,6 +1597,8 @@
       "diagnostics": "Diagnostics",
       "notes": "Notes",
       "packages": "Packages",
+      "quickChatTitleNoShortcut": "Open Quick Chat. Set a shortcut in Settings > Keyboard shortcuts.",
+      "quickChatTitleWithShortcut": "Open Quick Chat ({{shortcut}})",
       "sectionLabel": "Tools"
     },
     "workflowRunsForSession": "Workflow runs for this session",

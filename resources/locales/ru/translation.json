@@ -1657,6 +1657,8 @@
       "diagnostics": "Диагностика",
       "notes": "Заметки",
       "packages": "Пакеты",
+      "quickChatTitleNoShortcut": "Открыть быстрый чат. Сочетание клавиш можно задать в Настройки > Сочетания клавиш.",
+      "quickChatTitleWithShortcut": "Открыть быстрый чат ({{shortcut}})",
       "sectionLabel": "Инструменты"
     },
     "workflowRunsForSession": "Запуски процессов этой сессии",

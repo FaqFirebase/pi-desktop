@@ -26,6 +26,7 @@ import {
   Stethoscope,
   Pencil,
   Workflow as WorkflowIcon,
+  Zap,
 } from 'lucide-react'
 import { useMemo, useState, useRef } from 'react'
 import { StatusPopover } from './status-popover'
@@ -39,6 +40,7 @@ import { useGlobalWorkflowOpen } from '../hooks'
 import { clampSidebarWidth, resolveSidebarWidth } from '../../../shared/sidebar-width'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { isImeComposing } from '../utils/ime-composing'
+import { quickChatEntryTitle } from './sidebar-quick-chat'
 
 /** Views reachable from the sidebar's Tools group. */
 type ToolView = 'packages' | 'notes' | 'skills' | 'diagnostics' | 'settings'
@@ -83,6 +85,7 @@ export function Sidebar(): React.JSX.Element {
   const deleteSession = useAppStore((state) => state.deleteSession)
   const setSessionName = useAppStore((state) => state.setSessionName)
   const persistedWidth = useAppStore((state) => state.settings?.sidebarWidth)
+  const quickChatShortcut = useAppStore((state) => state.settings?.shortcuts.quickChat ?? null)
   const saveSidebarWidth = useAppStore((state) => state.saveSidebarWidth)
 
   const { show: showMenu, ContextMenuComponent: SessionMenu } = useContextMenu()
@@ -657,6 +660,14 @@ export function Sidebar(): React.JSX.Element {
       <div className="shrink-0 border-t border-border px-2 py-2">
         <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">{t('sidebar.tools.sectionLabel')}</div>
         <div className="grid grid-cols-2 gap-0.5">
+          <SidebarItem
+            compact
+            icon={<Zap size={13} />}
+            label={t('quickChat.title')}
+            active={false}
+            onClick={() => { void window.piDesktop.settings.openQuickChat() }}
+            title={quickChatEntryTitle(quickChatShortcut, window.piDesktop.system.platform)}
+          />
           <SidebarItem
             compact
             icon={<Package size={13} />}

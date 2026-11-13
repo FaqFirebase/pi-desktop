@@ -1567,6 +1567,8 @@
       "diagnostics": "诊断",
       "notes": "笔记",
       "packages": "包",
+      "quickChatTitleNoShortcut": "打开快捷聊天。可在 设置 > 键盘快捷键 中设置快捷键。",
+      "quickChatTitleWithShortcut": "打开快捷聊天（{{shortcut}}）",
       "sectionLabel": "工具"
     },
     "workflowRunsForSession": "此会话的工作流运行",
