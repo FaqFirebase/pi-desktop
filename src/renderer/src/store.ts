@@ -3,17 +3,18 @@ import { applyThemeSettings, rememberBootTheme, setUserThemes, watchSystemTheme 
 import { applyLanguageSetting } from './i18n'
 import { applyUiFont } from './utils/ui-font'
 import { t } from '../../shared/i18n'
-import { buildPlanningPrompt } from './utils/planning-prompt'
+import { buildPlanningPrompt } from '../../shared/planning-prompt'
 import { composePrompt } from './utils/compose-prompt'
 import { firstQueued, withQueued, withoutQueued, withoutWorkspaceQueue, type SendQueues } from './send-queue'
 import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
-import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
+import type { DisplayAttachment, DisplayMessage } from './message-parsing'
+import { appendPromptHistory, applyChatStreamUpdate, applyChatToolExecution, parseChatMessage, retainChatMessageIdentity, type ChatToolCall } from './chat-session-state'
 import { isStoppedAnswer } from '../../shared/stopped-answer'
 import { stripAnsi } from './utils/strip-ansi'
 import { createStaleGuard } from './utils/stale-guard'
 import { splitClaudeCliMarkers } from './claude-cli-markers'
 import { markUnansweredToolCallsRunning, settleRunningToolCall } from './reattached-tool-calls'
-import type { PiCommand } from '../../shared/pi-command'
+import { normalizePiCommands, type PiCommand } from '../../shared/pi-command'
 import type { SkillGroup } from '../../shared/skill-groups'
 import { forkPointForUserMessage, normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
@@ -309,10 +310,7 @@ interface AppState {
   promptHistory: string[]
   streamingContent: string
   streamingThinking: string
-  streamingToolCalls: Map<
-    string,
-    { name: string; args: string; result?: string; isExecuting: boolean; isError?: boolean; startedAt?: number; durationMs?: number }
-  >
+  streamingToolCalls: Map<string, ChatToolCall>
   isStreaming: boolean
   /**
    * History may be incomplete after a mid-turn attach or a snapshot racing
@@ -535,6 +533,12 @@ interface AppActions {
   closeSessionTab: (runtimeId: string) => Promise<void>
   switchSession: (path: string, projectPath?: string) => Promise<void>
   /**
+   * Activate a specific runtime by id without a session path (Quick Chat
+   * "Open in Main" on a file-less tab). Runs the same dirty-editor and
+   * streaming-turn confirms as any other session change.
+   */
+  activateRuntime: (workspaceId: string, runtimeId: string) => Promise<boolean>
+  /**
    * Open a session row from any surface (sidebar, session panel, quick
    * switcher): auto-switches or creates the owning workspace first, then
    * switches to the session and shows Chat. The previous session runtime keeps
@@ -561,13 +565,13 @@ interface AppActions {
   cloneBranch: () => Promise<void>
 
   // Model
-  setModel: (provider: string, modelId: string) => Promise<void>
+  setModel: (provider: string, modelId: string) => Promise<boolean>
   saveDefaultModel: (provider: string, modelId: string) => Promise<void>
   cycleModel: () => Promise<void>
   listModels: () => Promise<ModelInfo[]>
 
   // Thinking
-  setThinkingLevel: (level: string) => Promise<void>
+  setThinkingLevel: (level: string) => Promise<boolean>
   cycleThinkingLevel: () => Promise<void>
 
   // Context compaction
@@ -732,17 +736,6 @@ function generateId(): string {
   return `msg-${Date.now()}-${++messageCounter}`
 }
 
-function normalizePiCommands(raw: unknown): PiCommand[] {
-  if (!Array.isArray(raw)) return []
-  return raw
-    .filter((command): command is Record<string, unknown> => typeof command === 'object' && command !== null)
-    .map((command) => ({
-      name: String(command.name ?? ''),
-      description: String(command.description ?? ''),
-      source: typeof command.source === 'string' ? command.source : 'extension',
-    }))
-    .filter((command) => command.name.length > 0)
-}
 
 // Navigation invalidates all session I/O. History and state requests also
 // have their own sequence so overlapping loads of one session cannot rewind it.
@@ -750,6 +743,10 @@ let sessionLoadGeneration = 0
 let historyLoadId = 0
 let sessionStateRequestId = 0
 let historyLoadingRuntime: string | null = null
+// Activation intents have their own sequence: a declined or superseded request
+// must not invalidate the retained chat's session I/O, which is what
+// sessionLoadGeneration guards. Last activation intent wins.
+let activationIntentGeneration = 0
 
 /**
  * Texts of prompts this GUI just sent to Pi, awaiting their echo on the RPC
@@ -1037,7 +1034,7 @@ async function parseMessagesChunked(
     if (gen !== sessionLoadGeneration) return null
     const end = Math.min(i + PARSE_CHUNK, raw.length)
     for (let j = i; j < end; j++) {
-      const parsed = parseAgentMessage(raw[j])
+      const parsed = parseChatMessage(raw[j])
       if (parsed) out.push(parsed)
     }
     // Yield so Windows doesn't mark the window "Not Responding".
@@ -1392,18 +1389,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     })
   },
 
-  // Append a sent prompt to the recall history. Ignores blanks and consecutive
-  // duplicates (shell-style), and caps the list so it can't grow unbounded.
-  recordPrompt: (text) =>
-    set((state) => {
-      const trimmed = text.trim()
-      if (!trimmed) return state
-      const history = state.promptHistory
-      if (history[history.length - 1] === trimmed) return state
-      const next = [...history, trimmed]
-      if (next.length > 200) next.shift()
-      return { promptHistory: next }
-    }),
+  // Append a sent prompt to the recall history. Blanks and consecutive
+  // duplicates are ignored (shell-style); shared with the quick-chat popup.
+  recordPrompt: (text) => set(() => ({ promptHistory: appendPromptHistory(useAppStore.getState().promptHistory, text) })),
 
   // ─── Prompts ──────────────────────────────────────────────────────────
 
@@ -1945,6 +1933,90 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     await switchPipeline
   },
 
+  /**
+   * Activate a specific runtime by id — the Quick Chat "Open in Main" path for
+   * a file-less New Session tab, which no path-keyed switch can address. The
+   * runtime keeps running; nothing is torn down, only the renderer's active
+   * pointers move. The dirty-editor confirm runs in every case; a same-workspace
+   * swap additionally confirms an abandoned streaming turn (activateWorkspace
+   * no-ops there, so without this the swap would discard it silently).
+   */
+  activateRuntime: async (workspaceId, runtimeId) => {
+    // The activation is only an intent until its confirmations pass. Bumping
+    // sessionLoadGeneration here would invalidate the retained session's
+    // in-flight history load the moment the user declines, leaving the
+    // unchanged chat stuck loading; last-intent-wins keeps its own token.
+    const intent = ++activationIntentGeneration
+    // Other real navigation (switchSession, new session, workspace switch)
+    // invalidates session I/O while this intent waits on its dialogs. The
+    // snapshot is taken without incrementing: a change means the world moved
+    // on and this stale intent must not commit.
+    const loadGen = sessionLoadGeneration
+    const superseded = (): boolean => intent !== activationIntentGeneration || loadGen !== sessionLoadGeneration
+    if (!(await get().confirmDiscardEditorChanges()) || superseded()) return false
+    // Only a same-workspace swap abandons a running turn; switching workspaces
+    // keeps the old workspace's turn running in the background, so the
+    // 'workspace' semantics (no warning) apply there.
+    const sameWorkspace = get().activeWorkspace?.id === workspaceId
+    if (sameWorkspace && !(await get().confirmSessionChange('switch'))) return false
+    if (superseded()) return false
+    // Invalidated only on a committed activation; on a refused one the catch
+    // below still reads gen, so it lives outside the try.
+    let gen = 0
+    try {
+      if (!sameWorkspace) {
+        if (!(await get().activateWorkspace(workspaceId, { awaitingSession: true, skipDirtyConfirm: true }))) return false
+        // The awaited workspace switch can overlap a newer activation
+        // intent; only the newest may commit this far.
+        if (intent !== activationIntentGeneration) return false
+      }
+      // Confirmations passed and no other activation superseded this one:
+      // now, and only now, the session load of the previous chat is invalid.
+      gen = ++sessionLoadGeneration
+      const workspace = get().activeWorkspace
+      if (!workspace || workspace.id !== workspaceId) return false
+      set({
+        currentView: 'chat',
+        sessionLoading: true,
+        sessionState: null,
+        sessionStats: null,
+        activeSessionRuntimeId: null,
+        extensionUiRequest: null,
+      })
+      get().clearMessages()
+      const runtime = await window.piDesktop.session.activateRuntime(workspaceId, runtimeId)
+      if (gen !== sessionLoadGeneration || !runtime) return false
+      const reattaching = runtime.activity === 'working' || runtime.activity === 'needs-approval'
+      set({
+        composerFocusRequested: true,
+        sessionLoading: runtime.status !== 'running',
+        activeSessionRuntimeId: runtime.runtimeId,
+        piStatus: runtime.status,
+        piPid: runtime.pid,
+        piEngine: runtime.engine ?? 'pi',
+        piError: runtime.error,
+      })
+      // A same-workspace runtime swap emits no workspace-change replay.
+      // The main process retains the dialog: recover it only after activation
+      // succeeds and survives the generation guard above.
+      void window.piDesktop.ui.flushPendingPrompts(workspaceId)
+      if (reattaching) set({ isStreaming: true, reattachedMidTurn: true })
+      void get().reloadActiveSession({ refreshList: false })
+      scheduleSessionListRefresh(get)
+      return true
+    } catch (err) {
+      if (gen !== sessionLoadGeneration) return false
+      set({ sessionLoading: false, ...idleTurnState() })
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: t('store.messages.switchSessionError', { detail: err instanceof Error ? err.message : String(err) }),
+        timestamp: Date.now(),
+      })
+      return false
+    }
+  },
+
   reloadActiveSession: async (options) => {
     const gen = sessionLoadGeneration
     const refreshList = options?.refreshList ?? true
@@ -2002,23 +2074,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
               timestamp: Date.now(),
             })
           }
-          // Preserve React keys and the user's open reasoning blocks when an
-          // idle backfill returns the same messages with fresh parser IDs.
-          const previous = new Map<string, DisplayMessage[]>()
-          const key = (entry: DisplayMessage): string => JSON.stringify([
-            entry.role, entry.content, entry.thinking, entry.toolCallId,
-            !entry.content && !entry.thinking ? entry.toolCalls?.map((call) => call.id) : undefined,
-          ])
-          for (const entry of messagesAtStart) {
-            const identity = key(entry)
-            const matches = previous.get(identity) ?? []
-            matches.push(entry)
-            previous.set(identity, matches)
-          }
-          const messages = loaded.map((entry) => {
-            const existing = previous.get(key(entry))?.shift()
-            return existing ? { ...entry, id: existing.id, initiallyShowThinking: existing.initiallyShowThinking } : entry
-          })
+          const messages = retainChatMessageIdentity(loaded, messagesAtStart)
           // Back in a turn that is still running: its unanswered tools are running.
           const reattached = get().isStreaming && get().reattachedMidTurn
           set({
@@ -2251,9 +2307,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // The runtime stopped after the picker listed: keep the choice for the next start.
       if (get().piStatus !== 'running') {
         await get().saveDefaultModel(provider, modelId)
-        return
+        return true
       }
-      await window.piDesktop.model.set(provider, modelId)
+      const response = await window.piDesktop.model.set(provider, modelId) as { success?: boolean; error?: string } | null
+      if (!response?.success) throw new Error(response?.error ?? t('store.messages.unknownError'))
       try {
         await get().saveDefaultModel(provider, modelId)
       } catch {
@@ -2261,6 +2318,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       }
       set({ composerFocusRequested: true })
       get().refreshSessionState()
+      return true
     } catch (err) {
       get().addMessage({
         id: generateId(),
@@ -2268,6 +2326,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         content: t('store.messages.modelError', { detail: err instanceof Error ? err.message : String(err) }),
         timestamp: Date.now(),
       })
+      return false
     }
   },
 
@@ -2313,9 +2372,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Thinking ─────────────────────────────────────────────────────────
 
   setThinkingLevel: async (level) => {
+    let applied = false
     try {
       const response = await window.piDesktop.thinking.setLevel(level) as { success?: boolean } | null
-      if (!response?.success) return
+      if (!response?.success) return false
+      applied = true
       try {
         const updated = await window.piDesktop.settings.save({ defaultThinkingLevel: level })
         set({ settings: updated })
@@ -2323,8 +2384,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         await get().refreshSessionState()
       }
     } catch {
-      // Silent failure
+      return applied
     }
+    return applied
   },
 
   cycleThinkingLevel: async () => {
@@ -2529,7 +2591,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         // ignored: assistant content renders via message_update / message_end.
         const startedMessage = (event as PiMessageStartEvent).message
         if (startedMessage && (startedMessage as { role?: unknown }).role === 'user') {
-          const parsed = parseAgentMessage(startedMessage)
+          const parsed = parseChatMessage(startedMessage)
           if (parsed && parsed.content.trim() && !consumeLocalEcho(parsed.content)) {
             get().addMessage(parsed)
             // Mirror sendPrompt's turn-start state so the external turn gets
@@ -2855,7 +2917,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       if (extensionUiRequest.method === 'confirm') {
         window.piDesktop.ui.respondConfirm(extensionUiRequest.id, false)
       } else {
-        window.piDesktop.ui.respondInput(extensionUiRequest.id, '')
+        // A cancel is a real answer, not an empty value: an empty string would
+        // be rejected for select (no such option) and submitted as text for
+        // input/editor. The engine resolves cancelled to undefined.
+        window.piDesktop.ui.respondCancel(extensionUiRequest.id)
       }
       set({ extensionUiRequest: null })
     }
@@ -3817,17 +3882,6 @@ useAppStore.subscribe((state, prev) => {
 // Zustand set supports both object and callback forms
 type ZustandSet = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void
 
-/**
- * `current` with one streamed delta placed at its offset, or null when the
- * delta starts past the end of `current`: the view attached in the middle of
- * the message and missed its start. A delta `current` already holds (a
- * snapshot covered it) changes nothing; a delta without an offset appends.
- */
-export function placeStreamedDelta(current: string, delta: string, offset: number | undefined): string | null {
-  if (offset === undefined) return current + delta
-  if (offset > current.length) return null
-  return offset + delta.length <= current.length ? current : current.slice(0, offset) + delta
-}
 
 // Counts committed assistant messages, so a streamed-text snapshot requested
 // for one message is never applied to the next.
@@ -3858,97 +3912,26 @@ function backfillStreamingText(get: () => AppState & AppActions, set: ZustandSet
     .finally(() => { streamingTextBackfill = null })
 }
 
-const STREAMED_DELTA_FIELDS = {
-  text_delta: 'streamingContent',
-  thinking_delta: 'streamingThinking',
-} as const satisfies Record<string, keyof AppState>
-
 function handleMessageUpdate(
   event: PiMessageUpdateEvent,
   set: ZustandSet,
   get: () => AppState & AppActions,
 ): void {
-  const { assistantMessageEvent } = event
-  // Start/delta events identify the call by its index in the partial message;
-  // only toolcall_end carries the finalized toolCall directly.
-  const partialContent = assistantMessageEvent.partial?.content
-  const toolCall = assistantMessageEvent.toolCall ?? (
-    Array.isArray(partialContent) && assistantMessageEvent.contentIndex !== undefined
-      ? partialContent[assistantMessageEvent.contentIndex] as Record<string, unknown> | undefined
-      : undefined
-  )
-
-  switch (assistantMessageEvent.type) {
-    case 'text_delta':
-    case 'thinking_delta': {
-      const field = STREAMED_DELTA_FIELDS[assistantMessageEvent.type]
-      let missedStart = false
-      set((state) => {
-        const placed = placeStreamedDelta(state[field], assistantMessageEvent.delta ?? '', assistantMessageEvent.offset)
-        if (placed !== null) return { [field]: placed }
-        missedStart = true
-        return {}
-      })
-      if (missedStart) backfillStreamingText(get, set)
-      break
+  let missingPrefix = false
+  set((state) => {
+    const next = applyChatStreamUpdate({
+      content: state.streamingContent,
+      thinking: state.streamingThinking,
+      tools: state.streamingToolCalls,
+    }, event.assistantMessageEvent)
+    missingPrefix = next.missingPrefix
+    return {
+      streamingContent: next.content,
+      streamingThinking: next.thinking,
+      streamingToolCalls: next.tools,
     }
-
-    case 'text_end':
-    case 'thinking_end':
-      // Content is finalized in message_end
-      break
-
-    case 'toolcall_start': {
-      if (toolCall) {
-        const callId = String(toolCall.id ?? '')
-        set((state) => {
-          const newMap = new Map(state.streamingToolCalls)
-          newMap.set(callId, {
-            name: String(toolCall.name ?? 'unknown'),
-            args: '',
-            isExecuting: true,
-            startedAt: Date.now(),
-          })
-          return { streamingToolCalls: newMap }
-        })
-      }
-      break
-    }
-
-    case 'toolcall_delta': {
-      if (toolCall?.id) {
-        set((state) => {
-          const newMap = new Map(state.streamingToolCalls)
-          const existing = newMap.get(String(toolCall.id))
-          if (existing) {
-            newMap.set(String(toolCall.id), {
-              ...existing,
-              args: existing.args + (assistantMessageEvent.delta ?? ''),
-            })
-          }
-          return { streamingToolCalls: newMap }
-        })
-      }
-      break
-    }
-
-    case 'toolcall_end': {
-      if (toolCall?.id) {
-        set((state) => {
-          const newMap = new Map(state.streamingToolCalls)
-          const existing = newMap.get(String(toolCall.id))
-          if (existing) {
-            newMap.set(String(toolCall.id), {
-              ...existing,
-              args: JSON.stringify(toolCall.arguments ?? existing.args),
-            })
-          }
-          return { streamingToolCalls: newMap }
-        })
-      }
-      break
-    }
-  }
+  })
+  if (missingPrefix) backfillStreamingText(get, set)
 }
 
 // Pi and OMP report a plain user stop with exactly these texts; anything else
@@ -3986,7 +3969,7 @@ function handleTurnComplete(
     const newMessages = [...state.messages]
     // Final messages contain the full body, including bytes emitted before a
     // mid-turn attach. Deltas alone can only reconstruct the suffix we saw.
-    const final = !completeTools && Array.isArray(message?.content) ? parseAgentMessage(message) : null
+    const final = !completeTools && Array.isArray(message?.content) ? parseChatMessage(message) : null
     const nativeIds = new Set((Array.isArray(message?.content) ? message.content : [])
       .filter((block: Record<string, unknown>) => block?.type === 'toolCall')
       .map((block: Record<string, unknown>) => block.id))
@@ -4089,13 +4072,7 @@ function handleToolStart(
   set: ZustandSet
 ): void {
   set((state) => {
-    const newMap = new Map(state.streamingToolCalls)
-    newMap.set(event.toolCallId, {
-      name: event.toolName,
-      args: JSON.stringify(event.args),
-      isExecuting: true,
-      startedAt: Date.now(),
-    })
+    const newMap = applyChatToolExecution(state.streamingToolCalls, event)
     const subagentTasks = subagentTasksAfterTool(state, event.toolName, {
       toolCallId: event.toolCallId,
       args: event.args,
@@ -4111,18 +4088,8 @@ function handleToolUpdate(
   event: PiToolExecutionUpdateEvent,
   set: ZustandSet
 ): void {
-  const text = event.partialResult.content
-    .filter((c) => c.type === 'text')
-    .map((c) => c.text ?? '')
-    .join('')
-
   set((state) => {
-    const newMap = new Map(state.streamingToolCalls)
-    const existing = newMap.get(event.toolCallId)
-    newMap.set(event.toolCallId, {
-      ...(existing ?? { name: event.toolName, args: JSON.stringify(event.args), isExecuting: true }),
-      result: text || existing?.result,
-    })
+    const newMap = applyChatToolExecution(state.streamingToolCalls, event)
 
     const subagentTasks = subagentTasksAfterTool(state, event.toolName, {
       toolCallId: event.toolCallId,
@@ -4139,23 +4106,9 @@ function handleToolEnd(
   event: PiToolExecutionEndEvent,
   set: ZustandSet
 ): void {
-  const resultText = event.result.content
-    .filter((c) => c.type === 'text')
-    .map((c) => c.text ?? '')
-    .join('')
-
   set((state) => {
-    const newMap = new Map(state.streamingToolCalls)
-    const existing = newMap.get(event.toolCallId)
-    if (existing) {
-      newMap.set(event.toolCallId, {
-        ...existing,
-        isExecuting: false,
-        isError: event.isError,
-        result: resultText || existing.result,
-        durationMs: existing.startedAt ? Date.now() - existing.startedAt : existing.durationMs,
-      })
-    }
+    const existing = state.streamingToolCalls.get(event.toolCallId)
+    const newMap = applyChatToolExecution(state.streamingToolCalls, event)
 
     const subagentTasks = subagentTasksAfterTool(state, event.toolName, {
       toolCallId: event.toolCallId,

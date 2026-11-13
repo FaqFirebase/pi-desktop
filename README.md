@@ -12,6 +12,7 @@ Pi Desktop is in alpha, so expect rough edges.
 - Composer with `@` file mentions, prompt recall with `Up`/`Down`, a model picker you can drive from the keyboard, and file or image attachments (pick, paste, or drop them)
 - Find in the conversation (`Ctrl/Cmd+F`) and a quick switcher (`Ctrl/Cmd+K`) for commands, skills, prompt templates, workspaces, sessions, and files
 - Multiple workspaces with project tabs you can drag to reorder. Each live session runs its own agent process, so a turn keeps running after you switch away. Mission Control and sidebar activity dots show background work, and desktop notifications tell you when a session finishes, fails, or waits for approval
+- [Quick Chat](#quick-chat): an optional system-wide shortcut opens a compact chat window for a new task or an existing session, without leaving your current app
 - New Task starts a fresh session in a project and sends the task right away, optionally in an isolated Git worktree
 - [Linked tasks](#linked-tasks): one task across several Git repositories, shipped as linked pull requests
 - Right-edge tool rail that opens the Review panel, file tree, diff viewer, and terminal
@@ -222,6 +223,10 @@ Local-network model providers also depend on macOS Local Network permission. The
 ### Windows
 
 Download the **installer** (`…-win-x64-setup.exe`, recommended) or the **portable** `…-win-x64.exe` from [Releases](https://github.com/FaqFirebase/pi-desktop/releases). Builds are unsigned, so SmartScreen may warn; choose **More info > Run anyway**. If file edits or saves fail, see the [Controlled Folder Access](#controlled-folder-access-ransomware-protection) note below. Windows is community-tested, so please [open a bug report](https://github.com/FaqFirebase/pi-desktop/issues) if you hit a problem.
+
+## Quick Chat
+
+Quick Chat opens a compact window for a new task or an existing session, using the same chat controls as the main window. Open it from the command palette, or configure an optional global shortcut in **Settings > Keyboard shortcuts**.
 
 ## Keyboard shortcuts
 

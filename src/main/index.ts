@@ -24,6 +24,7 @@ import { getVoiceModelsDir } from './voice-model-store'
 import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
 import { getSettingsPath } from './ipc/settings'
 import { disableCwdExecutableSearch } from './windows-exe-search'
+import { destroyQuickChatWindow, getQuickChatWindow, hideQuickChatWindow, isQuickChatOpenRequested, setQuickChatQuittingHandler, toggleQuickChatWindow } from './quick-chat-window'
 
 // First, before anything spawns: Windows must never run a program from the
 // working directory (usually the workspace) when it is started by bare name.
@@ -84,6 +85,7 @@ let mainWindow: BrowserWindow | null = null
 let isQuitting = false
 let shutdownPending: Promise<void> | null = null
 let shutdownComplete = false
+setQuickChatQuittingHandler(() => isQuitting)
 
 // Guards the renderer's unsaved editor buffer against teardown. The renderer
 // mirrors its dirty flag here (ui:editor-dirty-set); quit, non-tray window
@@ -110,7 +112,13 @@ async function confirmEditorDiscard(window: BrowserWindow | null): Promise<boole
 }
 
 /** Menu Reload / Force Reload: ask a dirty editor first, then reload. */
-async function reloadMainWindowWithGuard(ignoreCache: boolean): Promise<void> {
+async function reloadFocusedWindowWithGuard(ignoreCache: boolean): Promise<void> {
+  const popup = getQuickChatWindow()
+  if (popup?.isFocused()) {
+    if (ignoreCache) popup.webContents.reloadIgnoringCache()
+    else popup.webContents.reload()
+    return
+  }
   const window = mainWindow
   if (!window) return
   if (editorGuard.needsPrompt() && !(await confirmEditorDiscard(window))) return
@@ -220,8 +228,12 @@ function createMainWindow(): BrowserWindow {
 
   // Graceful show (avoid white flash)
   window.once('ready-to-show', () => {
-    window.show()
-    window.focus()
+    // A shortcut can open the popup before the main window's first paint.
+    if (isQuickChatOpenRequested()) window.showInactive()
+    else {
+      window.show()
+      window.focus()
+    }
   })
 
   // Minimize-to-tray: when enabled (Windows/Linux), a window close hides the
@@ -254,7 +266,11 @@ function createMainWindow(): BrowserWindow {
   window.webContents.on('render-process-gone', () => editorGuard.reset())
 
   window.on('closed', () => {
-    if (mainWindow === window) mainWindow = null
+    if (mainWindow !== window) return
+    mainWindow = null
+    // Auxiliary hidden windows must not keep Windows/Linux alive after a real
+    // main-window close. Tray hides never reach this event.
+    if (process.platform !== 'darwin') destroyQuickChatWindow()
   })
 
   // Open external links in default browser
@@ -346,7 +362,7 @@ function createApplicationMenu(): void {
           label: t('common.newSession'),
           click: () => {
             const focusedWindow = BrowserWindow.getFocusedWindow()
-            focusedWindow?.webContents.send('menu:new-session')
+            if (focusedWindow === mainWindow) focusedWindow?.webContents.send('menu:new-session')
           },
         },
         {
@@ -354,7 +370,7 @@ function createApplicationMenu(): void {
           accelerator: 'CmdOrCtrl+Shift+N',
           click: () => {
             const focusedWindow = BrowserWindow.getFocusedWindow()
-            focusedWindow?.webContents.send('menu:new-workspace')
+            if (focusedWindow === mainWindow) focusedWindow?.webContents.send('menu:new-workspace')
           },
         },
         {
@@ -362,7 +378,7 @@ function createApplicationMenu(): void {
           accelerator: 'CmdOrCtrl+O',
           click: () => {
             const focusedWindow = BrowserWindow.getFocusedWindow()
-            focusedWindow?.webContents.send('menu:open-project')
+            if (focusedWindow === mainWindow) focusedWindow?.webContents.send('menu:open-project')
           },
         },
         { type: 'separator' },
@@ -391,12 +407,12 @@ function createApplicationMenu(): void {
         {
           label: t('menu.reload'),
           accelerator: 'CmdOrCtrl+R',
-          click: () => void reloadMainWindowWithGuard(false),
+          click: () => void reloadFocusedWindowWithGuard(false),
         },
         {
           label: t('menu.forceReload'),
           accelerator: 'Shift+CmdOrCtrl+R',
-          click: () => void reloadMainWindowWithGuard(true),
+          click: () => void reloadFocusedWindowWithGuard(true),
         },
         { role: 'toggleDevTools', label: t('menu.toggleDevTools') },
         { type: 'separator' },
@@ -410,6 +426,11 @@ function createApplicationMenu(): void {
     {
       label: t('menu.window'),
       submenu: [
+        {
+          label: t('quickChat.title'),
+          click: () => toggleQuickChatWindow(),
+        },
+        { type: 'separator' },
         { role: 'minimize', label: t('menu.minimize') },
         { role: 'zoom', label: t('menu.zoom') },
         // macOS: Command+W closes the session tab, as in a browser, and the
@@ -420,7 +441,9 @@ function createApplicationMenu(): void {
                 label: t('workspaceTabs.closeSessionTab'),
                 accelerator: 'Command+W',
                 click: () => {
-                  BrowserWindow.getFocusedWindow()?.webContents.send('menu:close-session')
+                  const focused = BrowserWindow.getFocusedWindow()
+                  if (focused === getQuickChatWindow()) hideQuickChatWindow()
+                  else if (focused === mainWindow) focused?.webContents.send('menu:close-session')
                 },
               },
               { role: 'close', label: t('menu.close'), accelerator: 'Shift+Command+W' },
@@ -503,7 +526,8 @@ app.whenReady().then(async () => {
 
   // The renderer mirrors its editor-dirty flag on every transition; the
   // quit/close/reload guards below read the cached value.
-  ipcMain.on(IPC_CHANNELS.UI_EDITOR_DIRTY_SET, (_event, dirty: unknown, fileName: unknown) => {
+  ipcMain.on(IPC_CHANNELS.UI_EDITOR_DIRTY_SET, (event, dirty: unknown, fileName: unknown) => {
+    if (event.sender !== mainWindow?.webContents || !isAllowedMainWindowNavigation(event.senderFrame?.url ?? '')) return
     editorGuard.setDirty(dirty === true, typeof fileName === 'string' ? fileName : null)
   })
 
@@ -525,6 +549,7 @@ app.whenReady().then(async () => {
     onHintShown: () => {
       void saveAppSettings({ hasSeenTrayHint: true })
     },
+    toggleQuickChat: toggleQuickChatWindow,
   })
   setTrayEnabled(settings.minimizeToTrayOnClose)
 
@@ -551,6 +576,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', (event) => {
+  if (isQuitting) return
   // Gate BEFORE isQuitting is set: quitting destroys the renderer and its
   // unsaved editor buffer, and a cancelled dialog must leave the tray-hide
   // behavior (which reads isQuitting) exactly as it was.
@@ -568,6 +594,7 @@ app.on('before-quit', (event) => {
   // the window actually close. This is the single choke point every quit path
   // flows through (menu/tray Quit, Cmd-Ctrl+Q).
   isQuitting = true
+  destroyQuickChatWindow()
 })
 
 // Close the renderer before tearing down the services it can still query.

@@ -118,3 +118,25 @@ test('the system-wide dictation key is off by default and conflicts like any oth
   assert.equal(shortcutProblem({ ...defaults, globalDictation: 'Mod+V' }, 'linux')?.kind, 'reserved')
   assert.equal(shortcutProblem({ ...defaults, globalDictation: 'Mod+Alt+D' }, 'linux'), null)
 })
+
+test('Quick Chat is opt-in, rejects reserved or unsupported keys and conflicts with dictation', () => {
+  const defaults = DEFAULT_SETTINGS.shortcuts
+  assert.equal(defaults.quickChat, null)
+  assert.deepEqual(shortcutProblem({ ...defaults, quickChat: 'Mod+Shift+T' }, 'darwin'),
+    { kind: 'duplicate', action: 'quickChat', other: 'pushToTalk' })
+  assert.deepEqual(shortcutProblem({ ...defaults, globalDictation: 'Mod+Alt+Q', quickChat: 'Mod+Alt+Q' }, 'linux'),
+    { kind: 'duplicate', action: 'quickChat', other: 'globalDictation' })
+  assert.equal(shortcutProblem({ ...defaults, quickChat: 'Mod+W' }, 'darwin')?.kind, 'reserved')
+  assert.equal(shortcutProblem({ ...defaults, quickChat: 'Mod+Alt+Space' }, 'darwin')?.kind, 'invalid')
+  assert.equal(shortcutProblem({ ...defaults, quickChat: 'Mod+Alt+Q' }, 'linux'), null)
+})
+
+test('Quick Chat bindings and explicit disabling survive settings reload; older settings leave it off', () => {
+  const reload = (quickChat: string | null) => normalizeStoredSettings(
+    JSON.parse(JSON.stringify({ shortcuts: { quickChat, globalDictation: 'Mod+Alt+D' } })), ['en'],
+  ).shortcuts
+  assert.equal(reload('Mod+Alt+Q').quickChat, 'Mod+Alt+Q')
+  assert.equal(reload(null).quickChat, null)
+  assert.equal(reload('Mod+Alt+Q').globalDictation, 'Mod+Alt+D')
+  assert.equal(normalizeStoredSettings({ shortcuts: { globalDictation: 'Mod+Alt+D' } }, ['en']).shortcuts.quickChat, null)
+})

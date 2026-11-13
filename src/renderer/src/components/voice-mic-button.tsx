@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Mic, Square, Loader2 } from 'lucide-react'
-import { useAppStore } from '../store'
 import type { VoiceDictation } from '../voice/use-voice-dictation'
 import { VOICE_NEEDS_GPU_ERROR } from '../voice/voice-worker-protocol'
 import { onVoiceShortcut, type VoiceShortcutCommand } from '../voice/voice-shortcut'
@@ -17,25 +16,31 @@ import { onVoiceShortcut, type VoiceShortcutCommand } from '../voice/voice-short
 export function VoiceMicButton({
   dictation,
   disabled,
+  openSettings,
+  globalShortcuts,
 }: {
   dictation: VoiceDictation
   disabled: boolean
+  openSettings: () => Promise<void> | void
+  globalShortcuts: boolean
 }): React.JSX.Element {
   const { t } = useTranslation()
-  const setCurrentView = useAppStore((s) => s.setCurrentView)
   const { phase, ready, error, toggle, hold, release } = dictation
 
   const runShortcut = (command: VoiceShortcutCommand) => {
     // A release always goes through, so a recording never outlives its key.
     if (command === 'release') return release()
     if (disabled) return
-    if (!ready) return setCurrentView('settings')
+    if (!ready) return void openSettings()
     if (command === 'hold') hold()
     else toggle()
   }
   const runShortcutRef = useRef(runShortcut)
   runShortcutRef.current = runShortcut
-  useEffect(() => onVoiceShortcut((command) => runShortcutRef.current(command)), [])
+  useEffect(() => {
+    if (!globalShortcuts) return
+    return onVoiceShortcut((command) => runShortcutRef.current(command))
+  }, [globalShortcuts])
 
   const baseClass =
     'flex items-center justify-center rounded-md p-1.5 transition-colors disabled:opacity-50'
@@ -44,7 +49,7 @@ export function VoiceMicButton({
     return (
       <button
         type="button"
-        onClick={() => setCurrentView('settings')}
+        onClick={() => { void openSettings() }}
         disabled={disabled}
         className={`${baseClass} text-dim hover:bg-highlight-strong hover:text-secondary`}
         title={t('chat.voice.setUpTitle')}

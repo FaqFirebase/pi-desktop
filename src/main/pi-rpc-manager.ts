@@ -627,6 +627,12 @@ export function buildPiRunEnv(needsShell: boolean, base: NodeJS.ProcessEnv = pro
 
 const MAX_PENDING_RESPONSES = 64
 const RESPONSE_TIMEOUT_MS = 30_000
+const BLOCKING_UI_METHODS: Record<string, true> = {
+  select: true,
+  confirm: true,
+  input: true,
+  editor: true,
+}
 
 /**
  * Writable temp directory for the Pi child process on Windows only. Prefer the
@@ -685,9 +691,10 @@ export function cleanupPiChildTempDir(): void {
 }
 
 interface PendingResponse {
+  commandType: string
   resolve: (event: PiResponseEvent) => void
   reject: (error: Error) => void
-  timer: ReturnType<typeof setTimeout>
+  timer?: NodeJS.Timeout
 }
 
 /** A Pi RPC command got no response in time. Callers check the class, not the text. */
@@ -704,6 +711,7 @@ export class PiRpcManager extends EventEmitter {
   private stdoutBuffer = ''
   private stderrBuffer = ''
   private pendingResponses = new Map<string, PendingResponse>()
+  private readonly activeBlockingUiRequests = new Set<string>()
   private nextRequestId = 1
   private decoder = new StringDecoder('utf8')
   private rpcFrameDecoder = new RpcFrameDecoder()
@@ -1075,17 +1083,35 @@ export class PiRpcManager extends EventEmitter {
         return
       }
 
-      const timer = setTimeout(() => {
-        this.pendingResponses.delete(id)
-        reject(new RpcTimeoutError(String(command.type), RESPONSE_TIMEOUT_MS))
-      }, RESPONSE_TIMEOUT_MS)
+      const commandType = String(command.type)
+      const hasBlockingUi = commandType === 'prompt' && this.activeBlockingUiRequests.size > 0
+      const timer = hasBlockingUi
+        ? undefined
+        : setTimeout(() => {
+            this.pendingResponses.delete(id)
+            if (commandType === 'prompt') {
+              let hasPendingPrompt = false
+              for (const p of this.pendingResponses.values()) {
+                if (p.commandType === 'prompt') {
+                  hasPendingPrompt = true
+                  break
+                }
+              }
+              if (!hasPendingPrompt) this.activeBlockingUiRequests.clear()
+            }
+            reject(new RpcTimeoutError(commandType, RESPONSE_TIMEOUT_MS))
+          }, RESPONSE_TIMEOUT_MS)
 
-      this.pendingResponses.set(id, { resolve, reject, timer })
+      this.pendingResponses.set(id, { commandType, resolve, reject, timer })
 
       this.process!.stdin!.write(line, (err) => {
         if (err) {
           clearTimeout(timer)
           this.pendingResponses.delete(id)
+          if (commandType === 'prompt') {
+            const hasPendingPrompt = Array.from(this.pendingResponses.values()).some((p) => p.commandType === 'prompt')
+            if (!hasPendingPrompt) this.activeBlockingUiRequests.clear()
+          }
           reject(err)
         }
       })
@@ -1116,11 +1142,44 @@ export class PiRpcManager extends EventEmitter {
    * Respond to an extension UI request.
    */
   sendExtensionUiResponse(id: string, response: Record<string, unknown>): void {
+    if (this.status !== 'running') return
+    if (this.activeBlockingUiRequests.delete(id) && this.activeBlockingUiRequests.size === 0) {
+      this.resumePromptTimers()
+    }
     this.sendCommandFireAndForget({
       type: 'extension_ui_response',
       id,
       ...response,
     })
+    if (this.status === 'running') this.emit('extension-ui-response', id)
+  }
+
+  private pausePromptTimers(): void {
+    for (const pending of this.pendingResponses.values()) {
+      if (pending.commandType === 'prompt' && pending.timer !== undefined) {
+        clearTimeout(pending.timer)
+        pending.timer = undefined
+      }
+    }
+  }
+
+  private resumePromptTimers(): void {
+    for (const [id, pending] of this.pendingResponses) {
+      if (pending.commandType === 'prompt' && pending.timer === undefined) {
+        pending.timer = setTimeout(() => {
+          this.pendingResponses.delete(id)
+          let hasPendingPrompt = false
+          for (const p of this.pendingResponses.values()) {
+            if (p.commandType === 'prompt') {
+              hasPendingPrompt = true
+              break
+            }
+          }
+          if (!hasPendingPrompt) this.activeBlockingUiRequests.clear()
+          pending.reject(new RpcTimeoutError(pending.commandType, RESPONSE_TIMEOUT_MS))
+        }, RESPONSE_TIMEOUT_MS)
+      }
+    }
   }
 
   private setupStreams(): void {
@@ -1219,8 +1278,37 @@ export class PiRpcManager extends EventEmitter {
         if (pending) {
           clearTimeout(pending.timer)
           this.pendingResponses.delete(responseEvent.id)
+          let hasPendingPrompt = false
+          for (const p of this.pendingResponses.values()) {
+            if (p.commandType === 'prompt') {
+              hasPendingPrompt = true
+              break
+            }
+          }
+          if (!hasPendingPrompt) {
+            this.activeBlockingUiRequests.clear()
+          }
           pending.resolve(responseEvent)
           return
+        }
+      }
+    }
+
+    if (event.type === 'extension_ui_request') {
+      const uiReq = event as { id?: unknown; method?: unknown; targetId?: unknown }
+      const method = typeof uiReq.method === 'string' ? uiReq.method : ''
+      const id = typeof uiReq.id === 'string' ? uiReq.id : ''
+      const targetId = typeof uiReq.targetId === 'string' ? uiReq.targetId : ''
+
+      if (BLOCKING_UI_METHODS[method] && id) {
+        this.activeBlockingUiRequests.add(id)
+        this.pausePromptTimers()
+      } else if (method === 'cancel') {
+        const cancelledId = targetId || id
+        if (cancelledId && this.activeBlockingUiRequests.delete(cancelledId)) {
+          if (this.activeBlockingUiRequests.size === 0) {
+            this.resumePromptTimers()
+          }
         }
       }
     }
@@ -1283,6 +1371,7 @@ export class PiRpcManager extends EventEmitter {
     // Settle any pending startup attempt first — after the listener teardown
     // below it could never settle on its own. No-op when already settled.
     this.abortStartup?.()
+    this.activeBlockingUiRequests.clear()
     for (const [, pending] of this.pendingResponses) {
       clearTimeout(pending.timer)
       pending.reject(new Error(t('errors.pi.processKilled')))
@@ -1347,6 +1436,7 @@ export class PiRpcManager extends EventEmitter {
   }
 
   private rejectAllPending(reason: string): void {
+    this.activeBlockingUiRequests.clear()
     for (const [, pending] of this.pendingResponses) {
       clearTimeout(pending.timer)
       pending.reject(new Error(reason))

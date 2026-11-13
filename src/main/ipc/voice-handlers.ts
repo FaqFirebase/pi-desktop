@@ -20,22 +20,25 @@ function isVoicePrecision(value: unknown): value is VoicePrecision {
   return typeof value === 'string' && (VOICE_PRECISIONS as readonly string[]).includes(value)
 }
 
+/** The same settings/catalog snapshot is used by main and restricted chat views. */
+export async function buildVoiceStatus(workspaceManager: IpcContext['workspaceManager']): Promise<VoiceStatus> {
+  const settings = await loadAppSettings(workspaceManager)
+  return {
+    catalog: [...listVoiceModels()],
+    installed: await listInstalledVoiceModels(),
+    selectedModel: settings.voiceModel,
+    selectedPrecision: settings.voicePrecision,
+    device: settings.voiceDevice,
+    restartRequired: voiceGpuRestartRequired(process.platform, settings.voiceDevice),
+  }
+}
+
 export function registerVoiceHandlers(ctx: IpcContext): void {
   const { workspaceManager, broadcast } = ctx
   // One download at a time; its controller lets VOICE_CANCEL abort it.
   let activeInstall: { modelId: string; controller: AbortController } | null = null
 
-  async function buildStatus(): Promise<VoiceStatus> {
-    const settings = await loadAppSettings(workspaceManager)
-    return {
-      catalog: [...listVoiceModels()],
-      installed: await listInstalledVoiceModels(),
-      selectedModel: settings.voiceModel,
-      selectedPrecision: settings.voicePrecision,
-      device: settings.voiceDevice,
-      restartRequired: voiceGpuRestartRequired(process.platform, settings.voiceDevice),
-    }
-  }
+  const buildStatus = (): Promise<VoiceStatus> => buildVoiceStatus(workspaceManager)
 
   ipcMain.handle(IPC_CHANNELS.VOICE_STATUS, async () => buildStatus())
 

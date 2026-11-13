@@ -1,7 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { I18nextProvider } from 'react-i18next'
-import { App } from './app'
 import { i18n } from '../../shared/i18n'
 import { applyBootLanguage } from './i18n'
 import '@fontsource-variable/inter'
@@ -22,10 +21,16 @@ if (!rootElement) {
   throw new Error('Root element not found')
 }
 
-ReactDOM.createRoot(rootElement).render(
-  <React.StrictMode>
-    <I18nextProvider i18n={i18n}>
-      <App />
-    </I18nextProvider>
-  </React.StrictMode>
-)
+const loadApp = location.hash === '#quick-chat'
+  ? import('./quick-chat/quick-chat-app').then(({ QuickChatApp }) => QuickChatApp)
+  : import('./app').then(({ App }) => App)
+
+void loadApp.then((Application) => {
+  ReactDOM.createRoot(rootElement).render(
+    <React.StrictMode>
+      <I18nextProvider i18n={i18n}>
+        <Application />
+      </I18nextProvider>
+    </React.StrictMode>
+  )
+})

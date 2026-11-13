@@ -447,6 +447,58 @@ if (mode === 'late-ready' || mode === 'never-ready') {
 if (mode === 'late-ready' || mode === 'silent-late-ready') {
   setTimeout(() => emit({ id: '${PROBE_ID}', type: 'response', command: 'get_state', success: true }), readyDelayMs)
 }
+if (mode === 'rpc') {
+  emit({ id: '${PROBE_ID}', type: 'response', command: 'get_state', success: true })
+  let lastHeldPromptId = null
+  let buffer = ''
+  process.stdin.setEncoding('utf8')
+  process.stdin.on('data', (chunk) => {
+    buffer += chunk
+    while (true) {
+      const idx = buffer.indexOf('\\n')
+      if (idx === -1) break
+      const line = buffer.slice(0, idx).trim()
+      buffer = buffer.slice(idx + 1)
+      if (!line) continue
+      try {
+        const msg = JSON.parse(line)
+        if (msg.id === '${PROBE_ID}') {
+          emit({ id: '${PROBE_ID}', type: 'response', command: 'get_state', success: true })
+        } else if (msg.type === 'prompt') {
+          if (msg.message === 'hold-for-input') {
+            lastHeldPromptId = msg.id
+            emit({ type: 'extension_ui_request', id: 'ui-input-1', method: 'input', title: 'Need input' })
+          } else if (msg.message === 'hold-for-sequential') {
+            lastHeldPromptId = msg.id
+            emit({ type: 'extension_ui_request', id: 'seq-1', method: 'input', title: 'Need sequential 1' })
+          } else if (msg.message === 'hold-for-cancel') {
+            lastHeldPromptId = msg.id
+            emit({ type: 'extension_ui_request', id: 'ui-cancel-1', method: 'select', title: 'Need select' })
+          } else if (msg.message === 'hold-with-notify') {
+            emit({ type: 'extension_ui_request', id: 'ui-notify-1', method: 'notify', message: 'Just notify' })
+          } else if (msg.message === 'hold-for-teardown') {
+            lastHeldPromptId = msg.id
+            emit({ type: 'extension_ui_request', id: 'ui-input-teardown', method: 'input', title: 'Teardown input' })
+          } else {
+            emit({ id: msg.id, type: 'response', command: 'prompt', success: true })
+          }
+        } else if (msg.type === 'extension_ui_response') {
+          if (msg.id === 'seq-1') {
+            emit({ type: 'extension_ui_request', id: 'seq-2', method: 'confirm', message: 'Need sequential 2' })
+          } else if (lastHeldPromptId) {
+            emit({ id: lastHeldPromptId, type: 'response', command: 'prompt', success: true, answer: msg })
+            lastHeldPromptId = null
+          }
+        } else if (msg.type === 'trigger-cancel') {
+          emit({ type: 'extension_ui_request', method: 'cancel', targetId: 'ui-cancel-1' })
+          // intentionally do not answer to test timeout
+        } else if (msg.id) {
+          emit({ id: msg.id, type: 'response', command: String(msg.type), success: true })
+        }
+      } catch {}
+    }
+  })
+}
 process.stdin.resume()
 `
 
@@ -546,6 +598,106 @@ test('a Pi that exits before ready fails fast without waiting for the deadline',
     assert.ok(Date.now() - startedAt < TEST_READY_MS, 'a dead process must not inherit the deadline')
   }, { FAKE_PI_MODE: 'exit' })
 })
+test('prompt command survives human extension UI wait, ordinary commands expire, and teardown rejects', SKIP_ON_WINDOWS, async (t) => {
+  await withFakeEngine(async (manager, env) => {
+    const started = await manager.start({ env })
+    assert.equal(started.status, 'running')
+
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    try {
+      // 1. Prompt survives human wait during blocking extension UI, then response settles
+      const uiEventPromise = once(manager, 'extension_ui_request')
+      const promptPromise = manager.sendCommand({ type: 'prompt', message: 'hold-for-input' })
+      const [uiEvent] = (await uiEventPromise) as [Record<string, unknown>]
+      assert.equal(uiEvent.method, 'input')
+      assert.equal(uiEvent.id, 'ui-input-1')
+
+      // Advance past 30s generic transport deadline while human is deciding
+      t.mock.timers.tick(35_000)
+
+      // Submit user response to the blocking UI request
+      manager.sendExtensionUiResponse('ui-input-1', { value: 'user provided text' })
+      const promptResponse = await promptPromise
+      assert.equal(promptResponse?.success, true)
+      // 2. Sequential approvals within one prompt survive multiple waits
+      const seqUi1Promise = once(manager, 'extension_ui_request')
+      const seqPromptPromise = manager.sendCommand({ type: 'prompt', message: 'hold-for-sequential' })
+      const [seqUi1] = (await seqUi1Promise) as [Record<string, unknown>]
+      assert.equal(seqUi1.method, 'input')
+      assert.equal(seqUi1.id, 'seq-1')
+      t.mock.timers.tick(35_000)
+
+      const seqUi2Promise = once(manager, 'extension_ui_request')
+      manager.sendExtensionUiResponse('seq-1', { value: 'first step' })
+      const [seqUi2] = (await seqUi2Promise) as [Record<string, unknown>]
+      assert.equal(seqUi2.method, 'confirm')
+      assert.equal(seqUi2.id, 'seq-2')
+      t.mock.timers.tick(35_000)
+
+      manager.sendExtensionUiResponse('seq-2', { confirmed: true })
+      const seqResponse = await seqPromptPromise
+      assert.equal(seqResponse?.success, true)
+
+      // 3. Ordinary commands still expire at the 30s deadline
+      const hangPromise = manager.sendCommand({ type: 'hang' })
+      t.mock.timers.tick(30_000)
+      await assert.rejects(hangPromise, (err: unknown) => {
+        assert.ok(err instanceof RpcTimeoutError)
+        assert.equal(err.commandType, 'hang')
+        return true
+      })
+
+      // 4. Non-blocking notify does not pause deadlines; prompt expires normally
+      const notifyEventPromise = once(manager, 'extension_ui_request')
+      const notifyPromptPromise = manager.sendCommand({ type: 'prompt', message: 'hold-with-notify' })
+      const [notifyEvent] = (await notifyEventPromise) as [Record<string, unknown>]
+      assert.equal(notifyEvent.method, 'notify')
+      t.mock.timers.tick(30_000)
+      await assert.rejects(notifyPromptPromise, (err: unknown) => {
+        assert.ok(err instanceof RpcTimeoutError)
+        assert.equal(err.commandType, 'prompt')
+        return true
+      })
+
+      // 5. Engine cancellation resumes the deadline timer
+      const cancelUiPromise = once(manager, 'extension_ui_request')
+      const cancelPromptPromise = manager.sendCommand({ type: 'prompt', message: 'hold-for-cancel' })
+      const [cancelUi] = (await cancelUiPromise) as [Record<string, unknown>]
+      assert.equal(cancelUi.method, 'select')
+      assert.equal(cancelUi.id, 'ui-cancel-1')
+      t.mock.timers.tick(35_000)
+
+      // Engine cancels the UI request
+      const cancelEventPromise = once(manager, 'extension_ui_request')
+      manager.sendCommandFireAndForget({ type: 'trigger-cancel' })
+      await cancelEventPromise
+      // With UI cancelled, prompt transport timer resumes and expires after 30s
+      t.mock.timers.tick(30_000)
+      await assert.rejects(cancelPromptPromise, (err: unknown) => {
+        assert.ok(err instanceof RpcTimeoutError)
+        assert.equal(err.commandType, 'prompt')
+        return true
+      })
+
+      // 6. Teardown rejects retained prompt waiting on human UI
+      const teardownUiPromise = once(manager, 'extension_ui_request')
+      const teardownPromptPromise = manager.sendCommand({ type: 'prompt', message: 'hold-for-teardown' })
+      const [teardownUiEvent] = (await teardownUiPromise) as [Record<string, unknown>]
+      assert.equal(teardownUiEvent.method, 'input')
+      t.mock.timers.tick(35_000)
+
+      manager.stop()
+      await assert.rejects(teardownPromptPromise, (err: unknown) => {
+        assert.ok(err instanceof Error)
+        assert.ok(!(err instanceof RpcTimeoutError), 'teardown must reject, not report transport timeout')
+        return true
+      })
+    } finally {
+      t.mock.timers.reset()
+    }
+  }, { FAKE_PI_MODE: 'rpc' })
+})
+
 
 test('the Pi child receives variables from the user env file', SKIP_ON_WINDOWS, async () => {
   const home = mkdtempSync(join(tmpdir(), 'pi-dotenv-home-'))
@@ -666,5 +818,4 @@ test('RpcTimeoutError is identified by class, not by message text', () => {
   assert.ok(error instanceof Error)
   assert.equal(error.name, 'RpcTimeoutError')
   assert.equal(error.commandType, 'get_state')
-  assert.equal(error.message, 'Command get_state timed out after 30000ms')
 })

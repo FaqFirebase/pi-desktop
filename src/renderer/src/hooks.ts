@@ -27,22 +27,49 @@ export function usePiEvents(): void {
     const unsubscribeCounts = window.piDesktop.onPendingPrompts(handlePendingPromptCounts)
     const unsubscribeActivity = window.piDesktop.onWorkspaceActivity(handleWorkspaceActivity)
     const unsubscribeSessionRuntime = window.piDesktop.onSessionRuntime(handleSessionRuntime)
+    const unsubscribeRuntimeState = window.piDesktop.onRuntimeState(({ runtimeId }) => {
+      // A model/thinking switch made in another window (e.g. secondary view) changed
+      // engine state for that runtime. Re-read get_state so the model button
+      // and thinking level of the session this window is viewing stay true.
+      if (useAppStore.getState().activeSessionRuntimeId === runtimeId) {
+        void useAppStore.getState().refreshSessionState()
+      }
+    })
 
     // A desktop-notification click hands the renderer the switch intent so the
     // usual streaming/dirty-editor confirms still run; landing on chat shows
     // the finished (or waiting) turn the notification was about.
     const activateWorkspaceIntent = (intent: WorkspaceActivationIntent): void => {
       const state = useAppStore.getState()
-      const { workspaceId, sessionPath } = intent
-      // A stale intent for a removed workspace must not run confirm dialogs
-      // for a doomed switch. An empty list means it just hasn't loaded yet
-      // (boot) — proceed and let main validate.
-      if (state.workspaces.length > 0 && !state.workspaces.some((ws) => ws.id === workspaceId)) return
+      const { workspaceId, sessionPath, runtimeId } = intent
 
       void (async () => {
+        // A stale intent for a removed workspace must not run confirm dialogs
+        // for a doomed switch. An empty list means it just hasn't loaded yet
+        // (boot); an unknown id means a workspace the popup (or anything
+        // else) created in the background that this window hasn't seen —
+        // re-read the list before deciding, instead of silently dropping the
+        // navigation.
+        let known = state.workspaces.some((ws) => ws.id === workspaceId)
+        if (!known && state.workspaces.length > 0) {
+          try {
+            await useAppStore.getState().loadWorkspaces()
+            known = useAppStore.getState().workspaces.some((ws) => ws.id === workspaceId)
+          } catch {
+            // Fall through: a refresh failure keeps the previous knowledge.
+          }
+        }
+        if (!known && useAppStore.getState().workspaces.length > 0) return
+
+        if (runtimeId && !sessionPath) {
+          if (await useAppStore.getState().activateRuntime(workspaceId, runtimeId)) {
+            useAppStore.getState().setCurrentView('chat')
+          }
+          return
+        }
         if (sessionPath) {
-          if (state.activeWorkspace?.id !== workspaceId) {
-            if (!(await state.activateWorkspace(workspaceId, { awaitingSession: true }))) return
+          if (useAppStore.getState().activeWorkspace?.id !== workspaceId) {
+            if (!(await useAppStore.getState().activateWorkspace(workspaceId, { awaitingSession: true }))) return
           }
           const workspace = useAppStore.getState().activeWorkspace
           if (!workspace) return
@@ -50,11 +77,12 @@ export function usePiEvents(): void {
           useAppStore.getState().setCurrentView('chat')
           return
         }
-        if (state.activeWorkspace?.id === workspaceId) {
-          if (state.currentView !== 'chat') state.setCurrentView('chat')
+        const current = useAppStore.getState()
+        if (current.activeWorkspace?.id === workspaceId) {
+          if (current.currentView !== 'chat') current.setCurrentView('chat')
           return
         }
-        const switched = await state.activateWorkspace(workspaceId)
+        const switched = await current.activateWorkspace(workspaceId)
         if (switched) useAppStore.getState().setCurrentView('chat')
       })()
     }
@@ -85,6 +113,7 @@ export function usePiEvents(): void {
       unsubscribeCounts()
       unsubscribeActivity()
       unsubscribeSessionRuntime()
+      unsubscribeRuntimeState()
       unsubscribeActivate()
     }
   }, [handlePiEvent, handlePendingPromptCounts, handleWorkspaceActivity, handleSessionRuntime, recoverPendingPrompts])
@@ -109,6 +138,9 @@ export function useMenuActions(): void {
           if (runtimeId) void state.closeSessionTab(runtimeId)
           break
         }
+        case 'menu:settings':
+          setCurrentView('settings')
+          break
         case 'menu:new-workspace':
           setCurrentView('settings') // Open settings where workspace creation lives
           break
@@ -462,35 +494,36 @@ export function isAbortShortcut(event: { key: string; defaultPrevented: boolean 
 export function useChatKeyboard(
   onSend: (message: string) => void,
   onSendNow: (message: string) => void,
-  onAbort: () => void,
-  inputRef: React.RefObject<HTMLTextAreaElement | null>
+  inputRef: React.RefObject<HTMLTextAreaElement | null>,
+  { active, streaming, escape, onEscape }: {
+    active: boolean
+    streaming: boolean
+    escape: 'abort' | 'hide'
+    onEscape: () => void
+  }
 ): void {
-  const isStreaming = useAppStore((state) => state.isStreaming)
-
   useEffect(() => {
+    if (!active) return
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isImeComposing(e)) return
-      if (isAbortShortcut(e, isStreaming)) {
+      if (e.defaultPrevented || isImeComposing(e)) return
+      if (e.key === 'Escape' && (escape === 'hide' || isAbortShortcut(e, streaming))) {
         e.preventDefault()
-        onAbort()
+        onEscape()
         return
       }
 
       // Enter: send message (without Shift)
       if (e.key === 'Enter' && !e.shiftKey && document.activeElement === inputRef.current) {
         e.preventDefault()
-        const value = inputRef.current?.value.trim()
-        if (value) {
-          if (e.ctrlKey || e.metaKey) onSendNow(value)
-          else onSend(value)
-          if (inputRef.current) inputRef.current.value = ''
-        }
+        const value = inputRef.current?.value ?? ''
+        if (e.ctrlKey || e.metaKey) onSendNow(value)
+        else onSend(value)
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isStreaming, onSend, onSendNow, onAbort, inputRef])
+  }, [active, streaming, escape, onSend, onSendNow, onEscape, inputRef])
 }
 
 /** A Pi built-in that maps to a GUI action rather than being inserted as text. */
@@ -542,6 +575,7 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
       { name: 'resume', description: t('commands.resume.description'), run: () => setCurrentView('sessions') },
       { name: 'fork', description: t('commands.fork.description'), run: () => setCurrentView('timeline') },
       { name: 'settings', description: t('commands.settings.description'), run: () => setCurrentView('settings') },
+      { name: 'quick-chat', description: t('quickChat.title'), run: () => { void window.piDesktop.settings.openQuickChat() } },
     ],
     [
       compactContext, cloneBranch, createNewSession, setTaskLauncherOpen, setLinkedTaskDialog, addRepoToLinkedTask,
