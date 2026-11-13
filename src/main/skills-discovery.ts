@@ -3,6 +3,7 @@ import { extname, join } from 'path'
 import { existsSync } from 'fs'
 import { RPC_SKILL_PATH_PREFIX, isRpcSkillPath, type InstalledSkill } from '../shared/ipc-contracts'
 import { skillDisplayName } from '../shared/pi-command'
+import { currentOmpProfile, ompAgentDirIn } from './omp-paths'
 
 /**
  * Per-engine skill discovery for the Skills panel.
@@ -38,7 +39,8 @@ function skillScanPlan(cwd: string, homeDir: string, engine: 'pi' | 'omp'): Skil
     return {
       dirs: [
         { dir: join(cwd, '.omp', 'skills'), source: 'project' },
-        { dir: join(homeDir, '.omp', 'agent', 'skills'), source: 'global' },
+        // The global skills of the profile OMP runs under (OMP_PROFILE).
+        { dir: join(ompAgentDirIn(homeDir, currentOmpProfile()), 'skills'), source: 'global' },
         { dir: join(cwd, '.claude', 'skills'), source: 'project' },
         { dir: join(homeDir, '.claude', 'skills'), source: 'global' },
         { dir: agentsSkillsDir(cwd), source: 'project' },

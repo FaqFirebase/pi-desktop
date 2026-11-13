@@ -1,6 +1,7 @@
 import { join } from 'path'
 import { isPathWithin } from '../../resources/path-within'
 import type { AgentEngineKind } from '../shared/ipc-contracts'
+import { currentOmpProfile, ompAgentDirIn } from './omp-paths'
 
 /**
  * Absolute path to Pi's on-disk session store (`~/.pi/agent/sessions`).
@@ -13,16 +14,20 @@ export function getSessionsRoot(): string {
 }
 
 /**
- * Absolute path to OMP's session store (`~/.omp/agent/sessions`).
+ * Absolute path to OMP's session store (`~/.omp/agent/sessions`, or
+ * `~/.omp/profiles/<name>/agent/sessions` when OMP runs under a named profile
+ * via `OMP_PROFILE`; see omp-paths.ts).
  *
  * Each engine keeps its own sessions: OMP writes here, Pi writes under
  * `~/.pi`, and neither is pointed at the other's tree. Both stores use the
  * same per-project directory naming and the same JSONL record shape, so the
- * index can read them side by side.
+ * index can read them side by side. `OMP_CODING_AGENT_DIR` relocates the
+ * default profile's store only.
  */
 export function getOmpSessionsRoot(): string {
-  const agentDir = process.env.OMP_CODING_AGENT_DIR ||
-    join(process.env.HOME ?? process.env.USERPROFILE ?? '', '.omp', 'agent')
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? ''
+  const profile = currentOmpProfile()
+  const agentDir = (!profile && process.env.OMP_CODING_AGENT_DIR) || ompAgentDirIn(home, profile)
   return join(agentDir, 'sessions')
 }
 

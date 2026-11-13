@@ -132,3 +132,21 @@ test('a start with no session has no owning engine', () => {
     assert.equal(engineForBoundSession({ sessionPath: '/tmp/loose.jsonl' }), null)
   })
 })
+
+test('OMP sessions are read from the profile OMP runs under (OMP_PROFILE)', () => {
+  withEnv({ HOME: '/home/tester', OMP_CODING_AGENT_DIR: undefined, OMP_PROFILE: 'work', PI_PROFILE: undefined }, () => {
+    assert.equal(getOmpSessionsRoot(), join('/home/tester', '.omp', 'profiles', 'work', 'agent', 'sessions'))
+    assert.equal(engineForSessionPath(join(getOmpSessionsRoot(), '--p--', 'a.jsonl')), 'omp')
+    // The default profile's store belongs to another account: not listed, not authorized.
+    assert.equal(isWithinSessionRoots(join('/home/tester', '.omp', 'agent', 'sessions', '--p--', 'b.jsonl')), false)
+  })
+})
+
+test('OMP_CODING_AGENT_DIR still moves the default profile only', () => {
+  withEnv({ HOME: '/home/tester', OMP_CODING_AGENT_DIR: '/custom/agent', OMP_PROFILE: undefined, PI_PROFILE: undefined }, () => {
+    assert.equal(getOmpSessionsRoot(), join('/custom/agent', 'sessions'))
+  })
+  withEnv({ HOME: '/home/tester', OMP_CODING_AGENT_DIR: '/custom/agent', OMP_PROFILE: 'work', PI_PROFILE: undefined }, () => {
+    assert.equal(getOmpSessionsRoot(), join('/home/tester', '.omp', 'profiles', 'work', 'agent', 'sessions'))
+  })
+})

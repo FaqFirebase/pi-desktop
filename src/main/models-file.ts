@@ -3,6 +3,7 @@ import { existsSync } from 'fs'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { t } from '../shared/i18n'
 import type { AgentEngineKind, ModelsConfig, ModelsReadFailure } from '../shared/ipc-contracts'
+import { currentOmpProfile, ompAgentDirIn } from './omp-paths'
 
 /**
  * Per-engine custom-models file resolution and (de)serialization.
@@ -32,7 +33,8 @@ export const PI_MODELS_BASENAME = 'models.json'
 
 export function resolveModelsFile(engine: AgentEngineKind, homeDir: string): ModelsFileLocation {
   if (engine === 'omp') {
-    const dir = join(homeDir, '.omp', 'agent')
+    // The profile OMP runs under (OMP_PROFILE) has its own models file.
+    const dir = ompAgentDirIn(homeDir, currentOmpProfile())
     const yaml = OMP_MODELS_BASENAMES.find((name) => existsSync(join(dir, name)))
     if (yaml) return { dir, file: join(dir, yaml), name: yaml, format: 'yaml' }
     if (existsSync(join(dir, PI_MODELS_BASENAME))) {
