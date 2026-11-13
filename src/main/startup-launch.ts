@@ -17,7 +17,7 @@ import {
 // meaningless and points at a path the user's real install won't have.
 
 /** Absolute path to the app icon, mirroring index.ts's getAppIconPath logic. */
-function appIconPath(): string {
+export function appIconPath(): string {
   const base = app.isPackaged
     ? join(process.resourcesPath, 'resources')
     : join(app.getAppPath(), 'resources')

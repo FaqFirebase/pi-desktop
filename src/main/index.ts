@@ -8,6 +8,7 @@ import { isBlockedPreviewRequest, previewGuestPreferences } from './preview-gues
 import { WorkspaceManager } from './workspace-manager'
 import type { WorkspaceTerminals } from './workspace-terminals'
 import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
+import { installLinuxApplicationEntry } from './linux-application-entry'
 import { setPiExecutableOverride, cleanupPiChildTempDir } from './pi-rpc-manager'
 import { applyLanguageSetting } from './i18n'
 import { i18n, t } from '../shared/i18n'
@@ -151,6 +152,14 @@ configureGuiDataDir(userDataDir)
 // Voice dictation on the GPU needs WebGPU, which Chromium keeps off on Linux
 // unless it starts with extra switches. Set them now, before the app is ready.
 applyVoiceGpuSwitches(app.commandLine, process.platform, readVoiceDeviceSync(getSettingsPath()))
+
+// Before the first desktop portal call, which fixes the app id that the Linux
+// portal checks for system-wide shortcuts.
+try {
+  installLinuxApplicationEntry()
+} catch (err) {
+  console.error('[startup] Failed to install the Linux application entry:', err)
+}
 
 // ─── Window Creation ─────────────────────────────────────────────────────────
 
