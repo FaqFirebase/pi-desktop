@@ -139,9 +139,6 @@ export function SettingsPanel(): React.JSX.Element {
   const [resumeLastSession, setResumeLastSession] = useState(draft0.resumeLastSession ?? settings?.resumeLastSession ?? DEFAULT_SETTINGS.resumeLastSession)
   const [openToHomeOnLaunch, setOpenToHomeOnLaunch] = useState(draft0.openToHomeOnLaunch ?? settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch)
   const [runOnStartup, setRunOnStartup] = useState(draft0.runOnStartup ?? settings?.runOnStartup ?? DEFAULT_SETTINGS.runOnStartup)
-  const [allowMultipleInstances, setAllowMultipleInstances] = useState(
-    draft0.allowMultipleInstances ?? settings?.allowMultipleInstances ?? DEFAULT_SETTINGS.allowMultipleInstances
-  )
   const [minimizeToTrayOnClose, setMinimizeToTrayOnClose] = useState(draft0.minimizeToTrayOnClose ?? settings?.minimizeToTrayOnClose ?? DEFAULT_SETTINGS.minimizeToTrayOnClose)
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
     draft0.permissionMode ?? settings?.permissionMode ?? DEFAULT_SETTINGS.permissionMode,
@@ -194,6 +191,16 @@ export function SettingsPanel(): React.JSX.Element {
     const installation = detectedAgentInstalls.find((candidate) => candidate.path === piPath)
     if (installation && installation.kind === piEngine) setCustomAgentPathMode(false)
   }, [detectedAgentInstalls, piEngine, piPath])
+
+  // A launch with a data folder of its own cannot run on startup.
+  const [runOnStartupAvailable, setRunOnStartupAvailable] = useState(true)
+  useEffect(() => {
+    let cancelled = false
+    void window.piDesktop.settings.isRunOnStartupAvailable().then((available) => {
+      if (!cancelled) setRunOnStartupAvailable(available)
+    })
+    return () => { cancelled = true }
+  }, [])
 
   // Detect available council agents on mount
   useEffect(() => {
@@ -329,7 +336,6 @@ export function SettingsPanel(): React.JSX.Element {
     setResumeLastSession(draft.resumeLastSession ?? settings.resumeLastSession)
     setOpenToHomeOnLaunch(draft.openToHomeOnLaunch ?? settings.openToHomeOnLaunch)
     setRunOnStartup(draft.runOnStartup ?? settings.runOnStartup)
-    setAllowMultipleInstances(draft.allowMultipleInstances ?? settings.allowMultipleInstances)
     setMinimizeToTrayOnClose(draft.minimizeToTrayOnClose ?? settings.minimizeToTrayOnClose)
     setPermissionMode(draft.permissionMode ?? settings.permissionMode)
     setLanguage(draft.language ?? settings.language)
@@ -589,7 +595,6 @@ export function SettingsPanel(): React.JSX.Element {
       resumeLastSession,
       openToHomeOnLaunch,
       runOnStartup,
-      allowMultipleInstances,
       minimizeToTrayOnClose,
       permissionMode,
       language,
@@ -665,7 +670,6 @@ export function SettingsPanel(): React.JSX.Element {
       resumeLastSession: DEFAULT_SETTINGS.resumeLastSession,
       openToHomeOnLaunch: DEFAULT_SETTINGS.openToHomeOnLaunch,
       runOnStartup: DEFAULT_SETTINGS.runOnStartup,
-      allowMultipleInstances: DEFAULT_SETTINGS.allowMultipleInstances,
       minimizeToTrayOnClose: DEFAULT_SETTINGS.minimizeToTrayOnClose,
       permissionMode: DEFAULT_SETTINGS.permissionMode,
       language: DEFAULT_SETTINGS.language,
@@ -691,7 +695,6 @@ export function SettingsPanel(): React.JSX.Element {
     setResumeLastSession(defaults.resumeLastSession!)
     setOpenToHomeOnLaunch(defaults.openToHomeOnLaunch!)
     setRunOnStartup(defaults.runOnStartup!)
-    setAllowMultipleInstances(defaults.allowMultipleInstances!)
     setMinimizeToTrayOnClose(defaults.minimizeToTrayOnClose!)
     setPermissionMode(defaults.permissionMode!)
     setLanguage(defaults.language!)
@@ -1125,18 +1128,12 @@ export function SettingsPanel(): React.JSX.Element {
 
           <SettingsRow
             label={t('settings.runOnStartup.label')}
-            description={t('settings.runOnStartup.description')}
-          >
-            <Toggle checked={runOnStartup} onChange={(v) => { setRunOnStartup(v); void applyImmediate({ runOnStartup: v }) }} />
-          </SettingsRow>
-
-          <SettingsRow
-            label={t('settings.allowMultipleInstances.label')}
-            description={t('settings.allowMultipleInstances.description')}
+            description={runOnStartupAvailable ? t('settings.runOnStartup.description') : t('settings.runOnStartup.ownDataFolder')}
           >
             <Toggle
-              checked={allowMultipleInstances}
-              onChange={(v) => { setAllowMultipleInstances(v); setSettingsDraft({ allowMultipleInstances: v }) }}
+              checked={runOnStartupAvailable && runOnStartup}
+              disabled={!runOnStartupAvailable}
+              onChange={(v) => { setRunOnStartup(v); void applyImmediate({ runOnStartup: v }) }}
             />
           </SettingsRow>
 
@@ -1480,14 +1477,17 @@ function LanguageSelect({
 function Toggle({
   checked,
   onChange,
+  disabled = false,
 }: {
   checked: boolean
   onChange: (value: boolean) => void
+  disabled?: boolean
 }): React.JSX.Element {
   return (
     <button
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 align-middle transition-colors ${
+      disabled={disabled}
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 align-middle transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
         checked ? 'bg-accent' : 'bg-elevated'
       }`}
     >

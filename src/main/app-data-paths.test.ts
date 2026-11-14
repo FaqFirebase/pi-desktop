@@ -13,6 +13,7 @@ import {
   getLegacyGuiDataPath,
   getLegacyGuiDataDirs,
   migrateLegacyGuiData,
+  usesOwnInstanceLock,
 } from './app-data-paths'
 
 test('getCanonicalUserDataDir appends the canonical dir name', () => {
@@ -49,6 +50,25 @@ test('getExternalGuiDataDir returns the externally-set override as an absolute p
     getExternalGuiDataDir({ [GUI_DATA_ENV_VAR]: 'scratch-profile' }),
     resolve('scratch-profile')
   )
+})
+
+test('usesOwnInstanceLock: only a data folder of its own gets a lock of its own', () => {
+  const canonical = '/home/test/.config/pi-desktop'
+  // A normal launch shares the one lock, as it always did.
+  assert.equal(usesOwnInstanceLock(undefined, canonical, 'linux'), false)
+  // A launcher's own folder gets its own lock.
+  assert.equal(usesOwnInstanceLock('/home/test/accounts/work', canonical, 'linux'), true)
+  // Pointed at the canonical folder, it must share the lock a normal launch holds.
+  assert.equal(usesOwnInstanceLock(canonical, canonical, 'linux'), false)
+  assert.equal(usesOwnInstanceLock(`${canonical}/`, canonical, 'linux'), false)
+  // A folder inside the canonical one is a different folder.
+  assert.equal(usesOwnInstanceLock(`${canonical}/work`, canonical, 'linux'), true)
+})
+
+test('usesOwnInstanceLock compares folders by the platform rules', () => {
+  const canonical = 'C:\\Users\\test\\AppData\\Roaming\\pi-desktop'
+  assert.equal(usesOwnInstanceLock('c:\\users\\TEST\\appdata\\roaming\\Pi-Desktop', canonical, 'win32'), false)
+  assert.equal(usesOwnInstanceLock('/home/test/.config/Pi-Desktop', '/home/test/.config/pi-desktop', 'linux'), true)
 })
 
 test('getGuiDataPath / getLegacyGuiDataPath resolve under the right root', () => {

@@ -1313,10 +1313,6 @@
       "scanningStatus": "Yaygın kurulum konumları ve PATH taranıyor…",
       "selectDialogTitle": "Ajan çalıştırılabilir dosyasını veya dizinini seç"
     },
-    "allowMultipleInstances": {
-      "description": "",
-      "label": ""
-    },
     "autoScroll": {
       "description": "Yeni mesajlara otomatik kaydır",
       "label": "Otomatik kaydırma"
@@ -1408,7 +1404,8 @@
     },
     "runOnStartup": {
       "description": "Bilgisayarda oturum açılınca Pi Desktop'ı otomatik başlat (kurulu sürümlerde geçerli olur)",
-      "label": "Başlangıçta çalıştır"
+      "label": "Başlangıçta çalıştır",
+      "ownDataFolder": "Bu pencere kendi veri klasörünü kullanıyor. Oturum açılınca yalnızca ana Pi Desktop başlatılabilir."
     },
     "sections": {
       "agentConfiguration": "Ajan yapılandırması",

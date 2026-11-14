@@ -1313,10 +1313,6 @@
       "scanningStatus": "Scanning common install locations and PATH…",
       "selectDialogTitle": "Select Agent Executable or Directory"
     },
-    "allowMultipleInstances": {
-      "description": "Let other Pi Desktop windows that use their own data folder (for example one per account, opened by a launcher) run at the same time as this one. Windows that share a data folder still open as one. Takes effect the next time Pi Desktop starts.",
-      "label": "Allow Multiple Instances"
-    },
     "autoScroll": {
       "description": "Automatically scroll to new messages",
       "label": "Auto Scroll"
@@ -1408,7 +1404,8 @@
     },
     "runOnStartup": {
       "description": "Automatically start Pi Desktop when you log in to your computer (takes effect in installed builds)",
-      "label": "Run on Startup"
+      "label": "Run on Startup",
+      "ownDataFolder": "This window uses its own data folder. Only the main Pi Desktop can start when you log in."
     },
     "sections": {
       "agentConfiguration": "Agent Configuration",

@@ -51,7 +51,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   openToHomeOnLaunch: true,
   runOnStartup: false,
-  allowMultipleInstances: false,
   minimizeToTrayOnClose: false,
   hasSeenTrayHint: false,
   desktopNotifications: true,

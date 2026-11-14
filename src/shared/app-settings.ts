@@ -43,9 +43,5 @@ export function normalizeStoredSettings(stored: Record<string, unknown>, languag
   }
   if (!isVoicePrecision(merged.voicePrecision)) merged.voicePrecision = DEFAULT_SETTINGS.voicePrecision
   if (!isVoiceDevice(merged.voiceDevice)) merged.voiceDevice = DEFAULT_SETTINGS.voiceDevice
-  // Startup reads this key on its own (main/instance-mode.ts) with the same rule.
-  if (typeof merged.allowMultipleInstances !== 'boolean') {
-    merged.allowMultipleInstances = DEFAULT_SETTINGS.allowMultipleInstances
-  }
   return merged
 }

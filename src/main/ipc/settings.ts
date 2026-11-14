@@ -11,7 +11,7 @@ import { shortcutAccelerator, shortcutProblem } from '../../shared/keyboard-shor
 import { availableLanguages } from '../../shared/i18n'
 import { normalizeStoredSettings } from '../../shared/app-settings'
 import { applyLanguageSetting, getI18nEnvironment, isPseudoLanguageEnabled } from '../i18n'
-import { applyRunOnStartup } from '../startup-launch'
+import { applyRunOnStartup, runOnStartupAvailable } from '../startup-launch'
 import { setOmpLaunchArgs } from '../omp-paths'
 import { setTrayEnabled } from '../tray-manager'
 import { readFile, writeFile, mkdir } from 'fs/promises'
@@ -23,8 +23,7 @@ import type { IpcContext } from './context'
 
 // ─── App Settings Persistence ────────────────────────────────────────────────
 
-/** Also read at startup, before the data folder is applied (see index.ts). */
-export const SETTINGS_FILE_NAME = 'settings.json'
+const SETTINGS_FILE_NAME = 'settings.json'
 
 /** Also consumed by the diagnostics report. */
 export function getSettingsPath(): string {
@@ -154,6 +153,11 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
   })
 
   ipcMain.handle(IPC_CHANNELS.I18N_GET_ENVIRONMENT, () => getI18nEnvironment())
+
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_RUN_ON_STARTUP_AVAILABLE, (event) => {
+    ctx.assertMainSender(event)
+    return runOnStartupAvailable()
+  })
 
   ipcMain.handle(IPC_CHANNELS.QUICK_CHAT_SHORTCUT_STATUS, async (event) => {
     ctx.assertMainSender(event)

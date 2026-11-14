@@ -175,6 +175,8 @@ interface PiDesktopAPI {
     getAll(): Promise<AppSettings>
     save(settings: Partial<AppSettings>): Promise<AppSettings>
     getQuickChatShortcutStatus(): Promise<QuickChatShortcutStatus>
+    /** False when this launch has a data folder of its own, which cannot run on startup. */
+    isRunOnStartupAvailable(): Promise<boolean>
     openQuickChat(): Promise<void>
   }
 
@@ -529,6 +531,7 @@ const api: PiDesktopAPI = {
     getAll: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_ALL),
     save: (settings) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SAVE, settings),
     getQuickChatShortcutStatus: () => ipcRenderer.invoke(IPC_CHANNELS.QUICK_CHAT_SHORTCUT_STATUS),
+    isRunOnStartupAvailable: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_RUN_ON_STARTUP_AVAILABLE),
     openQuickChat: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_OPEN_QUICK_CHAT),
   },
 

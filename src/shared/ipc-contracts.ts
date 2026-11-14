@@ -19,6 +19,7 @@ export const IPC_CHANNELS = {
   PI_STATUS: 'pi:status',
   PI_DETECT_INSTALLATIONS: 'pi:detect-installations',
   QUICK_CHAT_SHORTCUT_STATUS: 'quick-chat:shortcut-status',
+  SETTINGS_RUN_ON_STARTUP_AVAILABLE: 'settings:run-on-startup-available',
 
   // Pi commands
   PI_PROMPT: 'pi:prompt',
@@ -1467,11 +1468,6 @@ export interface AppSettings {
   // Applied at the OS level: login items on macOS/Windows, a freedesktop
   // autostart entry on Linux. Only effective in packaged builds.
   runOnStartup: boolean
-  // Let other Pi Desktop instances with their own data folder (for example one
-  // per account, started by a launcher) run beside this one. Off: one Pi
-  // Desktop at a time, and a second launch focuses this window. Read at
-  // startup, so a change applies from the next start (see main/instance-mode.ts).
-  allowMultipleInstances: boolean
   // Hide the window to the system tray when closed instead of quitting, keeping
   // the app running in the background. Windows/Linux only; on macOS the window
   // close already keeps the app alive in the Dock (native equivalent).

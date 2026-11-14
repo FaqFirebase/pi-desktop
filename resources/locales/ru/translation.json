@@ -1369,10 +1369,6 @@
       "scanningStatus": "Поиск в стандартных папках установки и PATH…",
       "selectDialogTitle": "Выберите файл или папку агента"
     },
-    "allowMultipleInstances": {
-      "description": "",
-      "label": ""
-    },
     "autoScroll": {
       "description": "Автоматически прокручивать к новым сообщениям",
       "label": "Автопрокрутка"
@@ -1464,7 +1460,8 @@
     },
     "runOnStartup": {
       "description": "Запускать Pi Desktop при входе в систему (действует в установленных сборках)",
-      "label": "Запускать при входе"
+      "label": "Запускать при входе",
+      "ownDataFolder": "Это окно использует собственную папку данных. При входе в систему может запускаться только основной Pi Desktop."
     },
     "sections": {
       "agentConfiguration": "Настройки агента",

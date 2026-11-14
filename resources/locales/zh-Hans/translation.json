@@ -1285,10 +1285,6 @@
       "scanningStatus": "正在扫描常见安装位置和 PATH…",
       "selectDialogTitle": "选择智能体可执行文件或目录"
     },
-    "allowMultipleInstances": {
-      "description": "",
-      "label": ""
-    },
     "autoScroll": {
       "description": "自动滚动到新消息",
       "label": "自动滚动"
@@ -1380,7 +1376,8 @@
     },
     "runOnStartup": {
       "description": "登录计算机时自动启动 Pi Desktop（在已安装的版本中生效）",
-      "label": "开机启动"
+      "label": "开机启动",
+      "ownDataFolder": "此窗口使用自己的数据文件夹。登录时只能启动主 Pi Desktop。"
     },
     "sections": {
       "agentConfiguration": "智能体配置",

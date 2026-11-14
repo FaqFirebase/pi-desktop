@@ -132,7 +132,6 @@ src/
 │   ├── auto-tag.ts               # Machine-derived session tags
 │   ├── archived-sessions.ts      # Archived session persistence
 │   ├── app-data-paths.ts         # Resolve app data directories
-│   ├── instance-mode.ts          # Opt-in multiple instances: setting/env read before the single-instance lock
 │   ├── attachment-reader.ts      # Read chat attachments (image base64 / text)
 │   ├── fs-errors.ts              # Friendly file-system error messages
 │   ├── models-file.ts            # Per-engine models file (Pi models.json / OMP models.yml) resolve + parse
@@ -171,7 +170,6 @@ src/
 │   ├── autostart-linux.ts        # Linux freedesktop autostart entry helpers
 │   ├── editor-guard.ts           # Unsaved-editor guard for quit/close/reload
 │   ├── windows-exe-search.ts     # Windows: no program starts from the working folder by bare name; child env for direct and cmd.exe launches
-│   ├── env-flag.ts               # On/off parsing for environment flags a host sets
 │   └── cmd-escape.ts             # cmd.exe escaping for Windows shell:true spawns
 ├── preload/
 │   └── index.ts                  # contextBridge API
@@ -498,7 +496,6 @@ Click the status icon in the sidebar header to see:
 - Chat width: Normal (readable middle column) or Full width (messages and composer fill the chat area)
 - Show thinking blocks, auto-scroll
 - Run on startup, Minimize to tray on close (Windows/Linux), Resume last session, desktop notifications
-- Allow multiple instances (`allowMultipleInstances`, default off; read at startup, so a change applies from the next start; see Data storage)
 - Keyboard shortcuts (see Keyboard shortcuts above)
 - Custom theme editor: create, edit, import/export, install from URL, browse the community gallery (theme files live in the GUI data dir `themes/`)
 - Voice dictation: speech model, precision, and device; models download into `<GUI data dir>/speech-models/`
@@ -536,7 +533,7 @@ Renderer → preload (contextBridge) → IPC → main handlers → Pi RPC / File
 
 The GUI data dir is `<appData>/pi-desktop` (on Linux, `~/.config/pi-desktop`). `PI_DESKTOP_USER_DATA_DIR` overrides it. Without the override, startup migrates files still in the legacy `~/.pi-desktop-gui` directory (`migrateLegacyGuiData` in `app-data-paths.ts`).
 
-One Pi Desktop runs at a time by default: a second launch focuses the first window, whatever data dir it was given. With `allowMultipleInstances` on (Settings › Behavior, stored in that data dir's `settings.json`) or `PI_DESKTOP_ALLOW_MULTIPLE_INSTANCES=1`, instances with different data dirs run side by side (for example one per account, started by a launcher); two launches on the same data dir still fold into one. Electron keys the single-instance lock on `userData` when it is requested, so `index.ts` applies the data dir before the lock in that mode and after it otherwise (`instance-mode.ts`). The environment flag also saves the setting into the data dir, so later launches of that dir without the flag take the same lock.
+One Pi Desktop runs per data dir. A launch without `PI_DESKTOP_USER_DATA_DIR`, or with it set to the canonical dir, shares one single-instance lock, so a second launch focuses the first window. A launch with a data dir of its own takes that dir's lock: launches on different data dirs run side by side (for example one per account, started by a launcher), and two launches on the same data dir still fold into one. Electron keys the lock on `userData` when it is requested, so `index.ts` applies a data dir of its own before the lock and the canonical dir after it (`usesOwnInstanceLock` in `app-data-paths.ts`). The rule reads only how the app was launched, never a stored setting, so a running copy and a new launch always agree on the lock. Only a launch on the canonical dir owns "Run on startup": the login item cannot carry `PI_DESKTOP_USER_DATA_DIR` on every platform, so a launch with a data dir of its own leaves the entry alone and Settings shows the toggle off and disabled (`runOnStartupAvailable` in `startup-launch.ts`).
 
 | Path | Purpose |
 |------|---------|

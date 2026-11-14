@@ -1,6 +1,7 @@
 import { copyFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import { dirname, join, resolve } from 'path'
+import { isPathWithin } from '../../resources/path-within'
 
 export const GUI_DATA_ENV_VAR = 'PI_DESKTOP_USER_DATA_DIR'
 export const CANONICAL_GUI_DATA_DIR_NAME = 'pi-desktop'
@@ -46,6 +47,30 @@ export function getExternalGuiDataDir(env: NodeJS.ProcessEnv = process.env): str
 
 export function getCanonicalUserDataDir(appDataDir: string): string {
   return join(appDataDir, CANONICAL_GUI_DATA_DIR_NAME)
+}
+
+/**
+ * Whether this launch takes a single-instance lock of its own data folder.
+ * Electron keys the lock on the userData path at the moment it is requested,
+ * so startup applies the folder before the lock when this is true.
+ *
+ * A data folder set by the launching process (PI_DESKTOP_USER_DATA_DIR) gets
+ * its own lock: launches on different folders run side by side (for example
+ * one per account, started by a launcher), and launches on the same folder
+ * still fold into one. Every other launch, including one pointed at the
+ * canonical folder itself, shares the one lock it always had, so a running
+ * copy of the default folder is never joined by a second process. The rule
+ * reads only how the app was launched, never a stored setting, so a running
+ * copy and a new launch always agree on the lock.
+ */
+export function usesOwnInstanceLock(
+  externalDir: string | undefined,
+  canonicalDir: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (!externalDir) return false
+  const sameFolder = isPathWithin(canonicalDir, externalDir, platform) && isPathWithin(externalDir, canonicalDir, platform)
+  return !sameFolder
 }
 
 export function getLegacyGuiDataDirs(options?: PathOptions): string[] {
