@@ -8,8 +8,9 @@ Pi Desktop is in alpha, so expect rough edges.
 
 ## What it does
 
-- Streaming chat with thinking blocks and tool calls. Consecutive tool calls fold into groups, file reads show as line-numbered code, and edits show as diffs. SVG blocks render inline, and file names in replies open a preview pane
+- Streaming chat with thinking blocks and tool calls. Consecutive tool calls fold into groups, file reads show as line-numbered code, and edits show as diffs. SVG blocks and LaTeX math render inline, and file names in replies open a preview pane
 - Composer with `@` file mentions, prompt recall with `Up`/`Down`, a model picker you can drive from the keyboard, and file or image attachments (pick, paste, or drop them)
+- While a turn runs, new messages wait in a queue and send when it ends. The composer shows how long the turn has run, and offers Stop when the model has sent nothing for 30 seconds. After a reply, the agent can suggest up to three next steps; click one to put it in the message box
 - Find in the conversation (`Ctrl/Cmd+F`) and a quick switcher (`Ctrl/Cmd+K`) for commands, skills, prompt templates, workspaces, sessions, and files
 - Multiple workspaces with project tabs you can drag to reorder. Each live session runs its own agent process, so a turn keeps running after you switch away. Mission Control and sidebar activity dots show background work, and desktop notifications tell you when a session finishes, fails, or waits for approval
 - [Quick Chat](#quick-chat): an optional system-wide shortcut opens a compact chat window for a new task or an existing session, without leaving your current app
@@ -22,7 +23,7 @@ Pi Desktop is in alpha, so expect rough edges.
 - Resizable terminal, one per workspace
 - [Permission modes and custom allow/deny rules](#permissions), global or per workspace
 - Workflow runs viewer for the pi-dynamic-workflows extension, with Abort and Resume
-- Skills browser, session fork/branch tree, session tags, inline session rename, and one-click context compaction
+- Skills browser with search and your own skill groups, session fork/branch tree, session tags, inline session rename, and one-click context compaction
 - Home dashboard with usage stats: messages, tokens, active-day streaks, peak hour, and a per-model breakdown
 - Diagnostics view: Pi/OMP install and PATH resolution, provider configuration, permissions, and recent errors
 - Package browser for pi.dev/packages, with local search and update checks for installed packages
@@ -53,6 +54,10 @@ Changed files use these status badges:
 Pi Desktop speaks Pi's RPC protocol, so it can run either the standard `pi` CLI or the compatible `omp` binary from [oh-my-pi](https://github.com/can1357/oh-my-pi). **Settings > Agent Configuration > Agent Installation** finds installed engines and lets you pick one, or point it at a custom executable or install directory.
 
 Each engine keeps its own sessions: Pi writes to `~/.pi/agent/sessions`, OMP to `~/.omp/agent/sessions`. The app reads both, so switching engines never hides your history. When sessions from both appear in one list, each row is tagged `Pi` or `OMP`, and opening one starts the engine that wrote it. Under OMP, package actions use OMP's plugin commands.
+
+Under OMP, the status popover also lists your usage limits per provider and account, with reset times. **Refresh** fetches them again.
+
+OMP named profiles work too. The app uses the profile OMP runs under: `--profile` in `defaultArgs` in `settings.json` first, then `OMP_PROFILE`. Sessions, models, skills, MCP servers, and plugins all come from that profile.
 
 If `~/.pi/.env` exists, its variables (provider API keys, for example) are passed to every Pi or OMP process and to the terminal. A variable already set in the environment wins.
 
@@ -226,7 +231,17 @@ Download the **installer** (`…-win-x64-setup.exe`, recommended) or the **porta
 
 ## Quick Chat
 
-Quick Chat opens a compact window for a new task or an existing session, using the same chat controls as the main window. Open it from the command palette, or configure an optional global shortcut in **Settings > Keyboard shortcuts**.
+Quick Chat opens a compact window for a new task or an existing session, using the same chat controls as the main window. Open it from the command palette, the **Quick Chat** button under **Tools** in the sidebar, or the tray menu. You can also set an optional global shortcut in **Settings > Keyboard shortcuts**.
+
+## Several windows
+
+Pi Desktop keeps its settings, workspaces, and notes in one data folder, and normally only one copy runs. To run separate copies side by side, for example one per account, start each one with its own folder in `PI_DESKTOP_USER_DATA_DIR`. `PI_DESKTOP_WINDOW_TITLE` adds a label to its window title and tray tooltip:
+
+```bash
+PI_DESKTOP_USER_DATA_DIR="$HOME/.config/pi-desktop-work" PI_DESKTOP_WINDOW_TITLE=Work ./Pi-Desktop-*.AppImage
+```
+
+Launching again with the same folder brings that window to the front. Only one window at a time runs an agent on a session, so opening a session that another window is using shows an error. Only the copy on the normal data folder can start at login. To keep accounts apart under OMP, give each copy its own `OMP_PROFILE` as well.
 
 ## Keyboard shortcuts
 
@@ -256,7 +271,8 @@ These shortcuts are fixed:
 
 | Shortcut | What it does |
 |----------|-------------|
-| `Enter` | Send message |
+| `Enter` | Send message (queued while a turn runs) |
+| `Ctrl/Cmd+Enter` | Send into the running turn without waiting |
 | `Shift+Enter` | New line |
 | `Up` / `Down` | Recall prompts sent in this session |
 | `@` | Mention a workspace file |
