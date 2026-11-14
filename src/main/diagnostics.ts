@@ -17,7 +17,7 @@ import { getOmpSessionsRoot, getSessionsRoot } from './pi-paths'
 import { getGuiDataDir } from './app-data-paths'
 import { appLog } from './app-log'
 import { validatePermissionRulesFile } from '../../resources/permission-rules'
-import { runPiCli } from './ipc/run-pi-cli'
+import { accountCommandCwd, runPiCli } from './ipc/run-pi-cli'
 import { getGlobalPermissionRulesPath } from './ipc/pi-start-options'
 import { getSettingsPath, loadAppSettings } from './ipc/settings'
 import { buildWorkspaceRulesStatus } from './ipc/permission-rules-handlers'
@@ -43,13 +43,7 @@ export async function collectDiagnostics(
   const cli = getPiCli()
   const resolution = getPiResolution()
 
-  const activeWorkspace = workspaceManager.getActiveWorkspace()
-  // A stale workspace path (folder deleted/renamed outside the app) would make
-  // the spawn itself fail on cwd — fall back rather than reporting no version.
-  const versionCwd =
-    activeWorkspace && existsSync(activeWorkspace.path)
-      ? activeWorkspace.path
-      : (process.env.HOME ?? process.cwd())
+  const versionCwd = accountCommandCwd(workspaceManager.getActiveWorkspace()?.path)
   const piVersionResult = cli.found
     ? await runPiCli(['--version'], versionCwd, PI_VERSION_TIMEOUT_MS)
     : { success: false, output: '' }

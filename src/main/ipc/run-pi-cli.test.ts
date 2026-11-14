@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runPiCli } from './run-pi-cli'
+import { accountCommandCwd, runPiCli } from './run-pi-cli'
 import { getPiCli, setPiExecutableOverride } from '../pi-rpc-manager'
 import { describePiStartFailure } from '../pi-binary-resolution'
 import { t } from '../../shared/i18n'
@@ -33,6 +33,20 @@ test('a package command with no engine installed reports it instead of starting 
     process.env.PATH = saved.PATH
     if (saved.SHELL === undefined) delete process.env.SHELL
     else process.env.SHELL = saved.SHELL
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('an account command runs in the workspace folder while it exists, else in home', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pi-cli-cwd-'))
+  try {
+    const file = join(dir, 'not-a-folder')
+    writeFileSync(file, '')
+    assert.equal(accountCommandCwd(dir), dir)
+    assert.equal(accountCommandCwd(join(dir, 'deleted')), homedir())
+    assert.equal(accountCommandCwd(file), homedir())
+    assert.equal(accountCommandCwd(undefined), homedir())
+  } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })

@@ -1,9 +1,12 @@
 import type {
   OmpUsageAccount,
   OmpUsageCapacity,
+  OmpUsageDisabledAccount,
   OmpUsageLimit,
+  OmpUsageProvider,
   OmpUsageReport,
   OmpUsageResets,
+  OmpUsageResult,
   OmpUsageStatus,
 } from '../shared/ipc-contracts'
 import { parseCliJsonObject } from './cli-json'
@@ -15,11 +18,20 @@ import { parseCliJsonObject } from './cli-json'
  * Shape as OMP 18 emits it:
  *   `{ generatedAt, reports: UsageReport[], accountsWithoutUsage, disabledCredentials,
  *      capacity: { [provider]: [{ window, meter?, accounts, usedAccounts, ... }] } }`
- * One report is one account. A report's `limits[].amount` may carry any of
- * `usedFraction`, `used`/`limit`, a percent-unit `used`, or `remainingFraction`;
- * the used fraction is resolved in that order, as OMP's own views do.
+ * One report is one account; it may carry `notes` about its provider (for
+ * example that the provider has no quota API). `accountsWithoutUsage` lists
+ * signed-in accounts the provider gives no usage data for, and
+ * `disabledCredentials` the logins OMP disabled, which need a new sign-in.
+ * `omp usage` groups all of it by provider; so does the parsed report.
+ *
+ * A report's `limits[].amount` may carry any of `usedFraction`, `used`/`limit`,
+ * a percent-unit `used`, or `remainingFraction`; the used fraction is resolved
+ * in that order, as OMP's own views do.
  */
 export const OMP_USAGE_ARGS = ['usage', '--json']
+
+/** Drops OMP's cached usage reports, so the next read asks every provider again. */
+export const OMP_USAGE_INVALIDATE_ARGS = ['usage', 'invalidate']
 
 const STATUSES: readonly OmpUsageStatus[] = ['ok', 'warning', 'exhausted', 'unknown']
 
@@ -27,31 +39,105 @@ const STATUSES: readonly OmpUsageStatus[] = ['ok', 'warning', 'exhausted', 'unkn
 export function parseOmpUsage(output: string): OmpUsageReport | null {
   const parsed = parseCliJsonObject(output)
   if (!parsed || !Array.isArray(parsed.reports)) return null
-  const accounts: OmpUsageAccount[] = []
+
+  const groups = new Map<string, OmpUsageProvider>()
+  const providerGroup = (provider: string): OmpUsageProvider => {
+    let group = groups.get(provider)
+    if (!group) {
+      group = { provider, notes: [], accounts: [], accountsWithoutUsage: 0, disabled: [], capacity: [] }
+      groups.set(provider, group)
+    }
+    return group
+  }
+
   let fetchedAt: number | null = null
   for (const entry of parsed.reports) {
-    const account = usageAccount(entry)
-    if (!account) continue
-    accounts.push(account)
-    const accountFetchedAt = finiteNumber(asRecord(entry)?.fetchedAt)
+    const report = asRecord(entry)
+    const provider = nonEmptyString(report?.provider)
+    if (!report || !provider) continue
+    const group = providerGroup(provider)
+    group.accounts.push(usageAccount(report))
+    for (const note of nonEmptyStrings(report.notes)) {
+      if (!group.notes.includes(note)) group.notes.push(note)
+    }
+    const accountFetchedAt = finiteNumber(report.fetchedAt)
     if (accountFetchedAt !== null && (fetchedAt === null || accountFetchedAt < fetchedAt)) fetchedAt = accountFetchedAt
   }
-  return { accounts, capacity: usageCapacity(parsed.capacity), fetchedAt }
+  for (const entry of records(parsed.accountsWithoutUsage)) {
+    const provider = nonEmptyString(entry.provider)
+    if (provider) providerGroup(provider).accountsWithoutUsage += 1
+  }
+  for (const entry of records(parsed.disabledCredentials)) {
+    const provider = nonEmptyString(entry.provider)
+    if (provider) providerGroup(provider).disabled.push(disabledAccount(entry))
+  }
+  for (const [provider, rows] of Object.entries(asRecord(parsed.capacity) ?? {})) {
+    const capacity = usageCapacity(rows)
+    if (capacity.length > 0) providerGroup(provider).capacity.push(...capacity)
+  }
+
+  const providers = [...groups.values()].sort((a, b) => a.provider.localeCompare(b.provider))
+  return { providers, fetchedAt }
 }
 
-function usageAccount(value: unknown): OmpUsageAccount | null {
-  const report = asRecord(value)
-  const provider = nonEmptyString(report?.provider)
-  if (!report || !provider) return null
-  const metadata = asRecord(report.metadata)
+export interface OmpUsageLoaderSteps {
+  /** One `omp usage --json` run. */
+  read(): Promise<OmpUsageResult>
+  /** Drops OMP's cached reports; a failure only leaves the next read cached. */
+  invalidate(): Promise<void>
+}
+
+/**
+ * Runs one usage read at a time. Opening the popover and Refresh share a run.
+ * OMP answers from its cache, so a refresh first drops that cache; a refresh
+ * asked during a cached read waits for it, then reads again, so Refresh always
+ * shows new data.
+ */
+export function createOmpUsageLoader(steps: OmpUsageLoaderSteps): (refresh: boolean) => Promise<OmpUsageResult> {
+  let inFlight: { refresh: boolean; result: Promise<OmpUsageResult> } | null = null
+  return (refresh) => {
+    if (inFlight && (inFlight.refresh || !refresh)) return inFlight.result
+    const previous = inFlight?.result
+    const result = (async () => {
+      await previous?.then(ignore, ignore)
+      if (refresh) await steps.invalidate()
+      return steps.read()
+    })()
+    const run = { refresh, result }
+    inFlight = run
+    const clear = (): void => {
+      if (inFlight === run) inFlight = null
+    }
+    result.then(clear, clear)
+    return result
+  }
+}
+
+function ignore(): void {}
+
+function usageAccount(report: Record<string, unknown>): OmpUsageAccount {
   return {
-    provider,
-    account: nonEmptyString(metadata?.email) ?? nonEmptyString(metadata?.accountId),
-    org: nonEmptyString(metadata?.orgName),
+    ...accountIdentity(asRecord(report.metadata)),
     limits: Array.isArray(report.limits)
       ? report.limits.map(usageLimit).filter((limit) => limit !== null)
       : [],
     resets: usageResets(report.resetCredits),
+  }
+}
+
+function disabledAccount(credential: Record<string, unknown>): OmpUsageDisabledAccount {
+  return {
+    ...accountIdentity(credential),
+    disabledAt: finiteNumber(credential.disabledAtMs),
+    cause: nonEmptyString(credential.cause),
+  }
+}
+
+/** Email, else account id, and org name, as OMP names an account. */
+function accountIdentity(source: Record<string, unknown> | null): { account: string | null; org: string | null } {
+  return {
+    account: nonEmptyString(source?.email) ?? nonEmptyString(source?.accountId),
+    org: nonEmptyString(source?.orgName),
   }
 }
 
@@ -86,9 +172,8 @@ function usageResets(value: unknown): OmpUsageResets | null {
   const available = finiteNumber(credits?.availableCount)
   if (!credits || available === null) return null
   let soonestExpiresAt: number | null = null
-  for (const entry of Array.isArray(credits.credits) ? credits.credits : []) {
-    const credit = asRecord(entry)
-    if (!credit || credit.remainingCount === 0) continue
+  for (const credit of records(credits.credits)) {
+    if (credit.remainingCount === 0) continue
     const expiresAt = typeof credit.expiresAt === 'string' ? Date.parse(credit.expiresAt) : NaN
     if (Number.isFinite(expiresAt) && (soonestExpiresAt === null || expiresAt < soonestExpiresAt)) {
       soonestExpiresAt = expiresAt
@@ -97,20 +182,14 @@ function usageResets(value: unknown): OmpUsageResets | null {
   return { available, usable: finiteNumber(credits.redeemableCount) ?? 0, soonestExpiresAt }
 }
 
-function usageCapacity(value: unknown): OmpUsageCapacity[] {
-  const byProvider = asRecord(value)
-  if (!byProvider) return []
+function usageCapacity(rows: unknown): OmpUsageCapacity[] {
   const capacity: OmpUsageCapacity[] = []
-  for (const [provider, rows] of Object.entries(byProvider)) {
-    if (!Array.isArray(rows)) continue
-    for (const entry of rows) {
-      const row = asRecord(entry)
-      const window = nonEmptyString(row?.window)
-      const accounts = finiteNumber(row?.accounts)
-      const usedAccounts = finiteNumber(row?.usedAccounts)
-      if (!window || accounts === null || usedAccounts === null) continue
-      capacity.push({ provider, window, meter: nonEmptyString(row?.meter), accounts, usedAccounts })
-    }
+  for (const row of records(rows)) {
+    const window = nonEmptyString(row.window)
+    const accounts = finiteNumber(row.accounts)
+    const usedAccounts = finiteNumber(row.usedAccounts)
+    if (!window || accounts === null || usedAccounts === null) continue
+    capacity.push({ window, meter: nonEmptyString(row.meter), accounts, usedAccounts })
   }
   return capacity
 }
@@ -121,8 +200,17 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null
 }
 
+/** The object entries of `value` when it is an array; anything else is skipped. */
+function records(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.map(asRecord).filter((entry) => entry !== null) : []
+}
+
 function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function nonEmptyStrings(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(nonEmptyString).filter((entry) => entry !== null) : []
 }
 
 function finiteNumber(value: unknown): number | null {

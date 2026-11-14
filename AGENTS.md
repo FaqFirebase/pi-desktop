@@ -219,6 +219,7 @@ src/
         │   ├── debounced-buffer.ts # Debounced editor text buffer
         │   ├── format-relative-time.ts # Relative-time labels capped at days
         │   ├── format-duration.ts # Short countdowns ("4d 10h") in the interface language
+        │   ├── format-number.ts # Decimals and percents in the interface language
         │   ├── relative-time.tsx # Shared ticking "now" for relative labels
         │   ├── stale-guard.ts    # Last-write-wins guard for overlapping loads
         │   ├── preview-load-error.ts # Preview load/save failure kept as data, translated at render
@@ -485,7 +486,7 @@ Click the status icon in the sidebar header to see:
 - Agent status, PID, model, provider, thinking level, session
 - Context usage with a progress bar
 - Message count, tokens, and cost, with a compact button
-- Under OMP, Usage Limits: each signed-in account's limit windows from `omp usage --json` (used %, reset countdown), saved resets, and cross-account capacity when a provider has several accounts. Main runs the CLI (`ipc/omp-usage-handlers.ts`) on open and on Refresh, one run at a time, and answers null under Pi, which hides the section
+- Under OMP, Usage Limits: everything `omp usage --json` reports, grouped by provider like `omp usage`: OMP's notes, each signed-in account's limit windows (used %, reset countdown) or "No limits reported", saved resets, accounts without usage data, disabled logins that need a new sign-in, and cross-account capacity when a provider has several accounts. Main runs the CLI (`ipc/omp-usage-handlers.ts`) one run at a time: opening the popover reads OMP's cache, and Refresh runs `omp usage invalidate` first. It answers null under Pi, which hides the section
 - Workspace info
 - Extensions, skills, MCP servers, prompt templates, and skill commands
 

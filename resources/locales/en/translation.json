@@ -1753,10 +1753,16 @@
       "title": "System status"
     },
     "usage": {
+      "accountNumber": "Account {{number}}",
+      "accountsWithoutUsage_one": "{{count}} account without usage data",
+      "accountsWithoutUsage_other": "{{count}} accounts without usage data",
       "capacity_one": "{{used}} of {{count}} account used",
       "capacity_other": "{{used}} of {{count}} accounts used",
+      "disabled": "Disabled. Sign in again to restore it.",
+      "disabledSince": "Disabled {{time}}. Sign in again to restore it.",
       "fetched": "Fetched {{time}}",
       "noAccounts": "No signed-in account reports usage",
+      "noLimits": "No limits reported",
       "resetsExpire": "soonest expires in {{duration}}",
       "resetsIn": "resets in {{duration}}",
       "savedResets_one": "{{count}} saved reset",

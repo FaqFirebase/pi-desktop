@@ -1753,10 +1753,16 @@
       "title": "Sistem durumu"
     },
     "usage": {
+      "accountNumber": "Hesap {{number}}",
+      "accountsWithoutUsage_one": "Kullanım verisi olmayan {{count}} hesap",
+      "accountsWithoutUsage_other": "Kullanım verisi olmayan {{count}} hesap",
       "capacity_one": "{{count}} hesaptan {{used}} kullanıldı",
       "capacity_other": "{{count}} hesaptan {{used}} kullanıldı",
+      "disabled": "Devre dışı. Geri yüklemek için yeniden oturum açın.",
+      "disabledSince": "{{time}} devre dışı bırakıldı. Geri yüklemek için yeniden oturum açın.",
       "fetched": "{{time}} alındı",
       "noAccounts": "Oturum açılmış hiçbir hesap kullanım bildirmiyor",
+      "noLimits": "Bildirilen limit yok",
       "resetsExpire": "en yakını {{duration}} içinde sona eriyor",
       "resetsIn": "{{duration}} içinde sıfırlanır",
       "savedResets_one": "{{count}} kayıtlı sıfırlama",

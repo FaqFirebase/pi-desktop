@@ -1,29 +1,32 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS, type OmpUsageResult } from '../../shared/ipc-contracts'
 import { t } from '../../shared/i18n'
-import { OMP_USAGE_ARGS, parseOmpUsage } from '../omp-usage'
+import { OMP_USAGE_ARGS, OMP_USAGE_INVALIDATE_ARGS, createOmpUsageLoader, parseOmpUsage } from '../omp-usage'
 import { activeEngineKind } from './active-engine'
-import { runPiCli } from './run-pi-cli'
+import { accountCommandCwd, runPiCli } from './run-pi-cli'
 import type { IpcContext } from './context'
 
 // OMP caches reports, but a cold fetch calls every provider's usage endpoint.
 const USAGE_TIMEOUT_MS = 30_000
+// Dropping the cache is local to OMP's store.
+const INVALIDATE_TIMEOUT_MS = 10_000
 
 export function registerOmpUsageHandlers(ctx: IpcContext): void {
   const { workspaceManager } = ctx
-  // Opening the status popover and pressing Refresh share one CLI run.
-  let inFlight: Promise<OmpUsageResult> | null = null
+  // Usage belongs to the account, so a deleted workspace folder must not fail it.
+  const cwd = (): string => accountCommandCwd(workspaceManager.getActiveWorkspace()?.path)
+  const loadUsage = createOmpUsageLoader({
+    read: () => readOmpUsage(cwd()),
+    invalidate: async () => {
+      await runPiCli(OMP_USAGE_INVALIDATE_ARGS, cwd(), INVALIDATE_TIMEOUT_MS, 'omp')
+    },
+  })
 
-  // Null when the engine in view is Pi, which has no usage command.
-  ipcMain.handle(IPC_CHANNELS.OMP_USAGE_GET, async (): Promise<OmpUsageResult | null> => {
+  // Null when the engine in view is Pi, which has no usage command. Only a
+  // literal `true` asks for a refresh; any other payload reads the cache.
+  ipcMain.handle(IPC_CHANNELS.OMP_USAGE_GET, async (_event, refresh: unknown): Promise<OmpUsageResult | null> => {
     if (activeEngineKind(workspaceManager) !== 'omp') return null
-    if (!inFlight) {
-      const cwd = workspaceManager.getActiveWorkspace()?.path ?? process.cwd()
-      inFlight = readOmpUsage(cwd).finally(() => {
-        inFlight = null
-      })
-    }
-    return inFlight
+    return loadUsage(refresh === true)
   })
 }
 

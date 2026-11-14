@@ -309,8 +309,8 @@ interface PiDesktopAPI {
     list(): Promise<unknown[]>
   }
   ompUsage: {
-    /** `omp usage --json` for the engine in view; null under Pi. */
-    get(): Promise<OmpUsageResult | null>
+    /** `omp usage --json` for the engine in view; null under Pi. `refresh` drops OMP's cached reports first. */
+    get(options?: { refresh?: boolean }): Promise<OmpUsageResult | null>
   }
   tags: {
     get(sessionId: string): Promise<string[]>
@@ -652,7 +652,7 @@ const api: PiDesktopAPI = {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.MCP_SERVERS_LIST),
   },
   ompUsage: {
-    get: () => ipcRenderer.invoke(IPC_CHANNELS.OMP_USAGE_GET),
+    get: (options?: { refresh?: boolean }) => ipcRenderer.invoke(IPC_CHANNELS.OMP_USAGE_GET, options?.refresh === true),
   },
   tags: {
     get: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.TAG_GET, sessionId),

@@ -4,10 +4,17 @@ import { findSessionPreview, getSessionTitle } from '../utils/session-title'
 import { processStatusLabel } from '../utils/process-status-label'
 import { formatDurationShort } from '../utils/format-duration'
 import { formatRelativeTime } from '../utils/format-relative-time'
+import { formatDecimal, formatPercent } from '../utils/format-number'
 import { useAppStore } from '../store'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { invocationToken } from '../../../shared/pi-command'
-import type { InstalledSkill, OmpUsageAccount, OmpUsageResult, OmpUsageStatus } from '../../../shared/ipc-contracts'
+import type {
+  InstalledSkill,
+  OmpUsageAccount,
+  OmpUsageProvider,
+  OmpUsageResult,
+  OmpUsageStatus,
+} from '../../../shared/ipc-contracts'
 import { clsx } from 'clsx'
 import {
   Activity,
@@ -110,11 +117,12 @@ export function StatusPopover(): React.JSX.Element {
   }, [isOpen])
 
   // Account usage limits (`omp usage`). Main answers null when the engine in
-  // view is Pi, which has no equivalent, so the section stays hidden.
-  const loadUsage = useCallback(async () => {
+  // view is Pi, which has no equivalent, so the section stays hidden. Opening
+  // reads OMP's cache; Refresh asks OMP to fetch again.
+  const loadUsage = useCallback(async (refresh = false) => {
     setUsageLoading(true)
     try {
-      setUsage(await window.piDesktop.ompUsage.get())
+      setUsage(await window.piDesktop.ompUsage.get({ refresh }))
     } catch (err) {
       setUsage({ ok: false, error: err instanceof Error ? err.message : String(err) })
     } finally {
@@ -311,25 +319,13 @@ export function StatusPopover(): React.JSX.Element {
                   <div className="text-[11px] text-error line-clamp-3 break-words" title={usage.error}>
                     {usage.error}
                   </div>
-                ) : usage.report.accounts.length === 0 ? (
+                ) : usage.report.providers.length === 0 ? (
                   <div className="text-xs text-faint py-1">{t('status.usage.noAccounts')}</div>
                 ) : (
                   <>
-                    {usage.report.accounts.map((account, index) => (
-                      <UsageAccountRows key={`${account.provider}:${account.account ?? index}`} account={account} now={now} />
+                    {usage.report.providers.map((provider) => (
+                      <UsageProviderRows key={provider.provider} provider={provider} now={now} />
                     ))}
-                    {usage.report.capacity
-                      .filter((row) => row.accounts > 1)
-                      .map((row) => (
-                        <StatusRow
-                          key={`${row.provider}:${row.window}:${row.meter ?? ''}`}
-                          label={`${row.provider} ${row.meter ? `${row.window} (${row.meter})` : row.window}`}
-                          value={t('status.usage.capacity', {
-                            used: row.usedAccounts.toFixed(2),
-                            count: row.accounts,
-                          })}
-                        />
-                      ))}
                     {usage.report.fetchedAt !== null && (
                       <div className="text-[10px] text-faint">
                         {t('status.usage.fetched', { time: formatRelativeTime(usage.report.fetchedAt, now) })}
@@ -465,7 +461,7 @@ export function StatusPopover(): React.JSX.Element {
             <button
               onClick={() => {
                 useAppStore.getState().refreshSessionStats()
-                void loadUsage()
+                void loadUsage(true)
               }}
               className="flex items-center gap-1 hover:text-muted transition-colors"
             >
@@ -528,6 +524,10 @@ function StatusSection({
 
 type UsageTone = 'success' | 'warning' | 'error'
 
+const PERCENT_SCALE = 100
+const LIMIT_PERCENT_FRACTION_DIGITS = 1
+const CAPACITY_FRACTION_DIGITS = 2
+
 const TONE_CLASSES = {
   success: 'bg-success',
   warning: 'bg-warning',
@@ -552,24 +552,100 @@ function UsageBar({ percent, tone }: { percent: number; tone: UsageTone }): Reac
   )
 }
 
-// ─── Usage account ───────────────────────────────────────────────────────────
+// ─── Usage provider ──────────────────────────────────────────────────────────
 
-function UsageAccountRows({ account, now }: { account: OmpUsageAccount; now: number }): React.JSX.Element {
+/** One provider as `omp usage` groups it: notes, accounts, accounts without data, disabled logins, capacity. */
+function UsageProviderRows({ provider, now }: { provider: OmpUsageProvider; now: number }): React.JSX.Element {
   const { t } = useTranslation()
-  const { resets } = account
+  // Unnamed accounts are told apart by number, as `omp usage` does, when there are several.
+  const numberAccounts = provider.accounts.length > 1
   return (
     <div className="py-0.5 space-y-1">
-      <div className="flex items-baseline gap-1.5 min-w-0 text-[11px]">
-        <span className="shrink-0 font-medium text-secondary">{account.provider}</span>
-        {account.account && (
-          <span className="truncate text-faint" title={account.account}>{account.account}</span>
-        )}
-        {account.org && (
-          <span className="ml-auto shrink-0 max-w-[40%] truncate text-faint" title={account.org}>{account.org}</span>
-        )}
-      </div>
+      <div className="text-[11px] font-medium text-secondary">{provider.provider}</div>
+      {provider.notes.map((note) => (
+        <div key={note} className="text-[10px] text-faint">{note}</div>
+      ))}
+      {provider.accounts.map((account, index) => (
+        <UsageAccountRows
+          key={account.account ?? index}
+          account={account}
+          fallbackName={numberAccounts ? t('status.usage.accountNumber', { number: index + 1 }) : null}
+          now={now}
+        />
+      ))}
+      {provider.accountsWithoutUsage > 0 && (
+        <div className="text-[11px] text-faint">
+          {t('status.usage.accountsWithoutUsage', { count: provider.accountsWithoutUsage })}
+        </div>
+      )}
+      {provider.disabled.map((login, index) => (
+        <div key={login.account ?? index} className="text-[11px]" title={login.cause ?? undefined}>
+          <UsageAccountName account={login.account} org={login.org} fallbackName={null} />
+          <div className="text-error">
+            {login.disabledAt === null
+              ? t('status.usage.disabled')
+              : t('status.usage.disabledSince', { time: formatRelativeTime(login.disabledAt, now) })}
+          </div>
+        </div>
+      ))}
+      {provider.capacity
+        .filter((row) => row.accounts > 1)
+        .map((row) => (
+          <StatusRow
+            key={`${row.window}:${row.meter ?? ''}`}
+            label={row.meter ? `${row.window} (${row.meter})` : row.window}
+            value={t('status.usage.capacity', {
+              used: formatDecimal(row.usedAccounts, CAPACITY_FRACTION_DIGITS),
+              count: row.accounts,
+            })}
+          />
+        ))}
+    </div>
+  )
+}
+
+/** An account's name line: email or id (else `fallbackName`), and org name. Nothing when there is neither. */
+function UsageAccountName({
+  account,
+  org,
+  fallbackName,
+}: {
+  account: string | null
+  org: string | null
+  fallbackName: string | null
+}): React.JSX.Element | null {
+  const name = account ?? fallbackName
+  if (!name && !org) return null
+  return (
+    <div className="flex items-baseline gap-1.5 min-w-0 text-[11px]">
+      {name && <span className="truncate text-faint" title={name}>{name}</span>}
+      {org && <span className="ml-auto shrink-0 max-w-[40%] truncate text-faint" title={org}>{org}</span>}
+    </div>
+  )
+}
+
+// ─── Usage account ───────────────────────────────────────────────────────────
+
+function UsageAccountRows({
+  account,
+  fallbackName,
+  now,
+}: {
+  account: OmpUsageAccount
+  fallbackName: string | null
+  now: number
+}): React.JSX.Element {
+  const { t } = useTranslation()
+  const { resets } = account
+  const hasResets = resets !== null && resets.available > 0
+  return (
+    <div className="space-y-1">
+      <UsageAccountName account={account.account} org={account.org} fallbackName={fallbackName} />
+      {account.limits.length === 0 && !hasResets && (
+        <div className="text-[11px] text-faint">{t('status.usage.noLimits')}</div>
+      )}
       {account.limits.map((limit) => {
-        const percent = limit.usedFraction === null ? null : Math.round(limit.usedFraction * 1000) / 10
+        const percent = limit.usedFraction === null ? null : limit.usedFraction * PERCENT_SCALE
         return (
           <div key={limit.id}>
             <div className="flex items-center gap-2">
@@ -579,8 +655,8 @@ function UsageAccountRows({ account, now }: { account: OmpUsageAccount; now: num
               ) : (
                 <>
                   <UsageBar percent={percent} tone={usageTone(percent, limit.status)} />
-                  <span className="w-11 shrink-0 text-right text-[11px] tabular-nums text-secondary">
-                    {percent.toFixed(1)}%
+                  <span className="w-12 shrink-0 text-right text-[11px] tabular-nums text-secondary">
+                    {formatPercent(percent / PERCENT_SCALE, LIMIT_PERCENT_FRACTION_DIGITS)}
                   </span>
                 </>
               )}
@@ -593,7 +669,7 @@ function UsageAccountRows({ account, now }: { account: OmpUsageAccount; now: num
           </div>
         )
       })}
-      {resets && resets.available > 0 && (
+      {hasResets && (
         <div className="flex flex-wrap gap-x-2 text-[10px] text-faint">
           <span>{t('status.usage.savedResets', { count: resets.available })}</span>
           <span>{t('status.usage.usableNow', { count: resets.usable })}</span>

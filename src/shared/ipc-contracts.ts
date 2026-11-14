@@ -1019,7 +1019,6 @@ export interface OmpUsageResets {
 
 /** One authenticated account's usage report. */
 export interface OmpUsageAccount {
-  provider: string
   /** Email, else account id; null when the report names neither. */
   account: string | null
   org: string | null
@@ -1029,7 +1028,6 @@ export interface OmpUsageAccount {
 
 /** Quota left across all of a provider's accounts for one window. */
 export interface OmpUsageCapacity {
-  provider: string
   window: string
   /** Separate meter of the window, e.g. a model tier; null for the main one. */
   meter: string | null
@@ -1038,9 +1036,32 @@ export interface OmpUsageCapacity {
   usedAccounts: number
 }
 
-export interface OmpUsageReport {
+/** A login OMP disabled (for example a failed token refresh); it needs a new sign-in. */
+export interface OmpUsageDisabledAccount {
+  /** Email, else account id; null when OMP names neither. */
+  account: string | null
+  org: string | null
+  /** Epoch ms OMP disabled it, when reported. */
+  disabledAt: number | null
+  /** OMP's reason, as it reported it. */
+  cause: string | null
+}
+
+/** Everything `omp usage` reports for one provider, as OMP groups it. */
+export interface OmpUsageProvider {
+  provider: string
+  /** OMP's notes about the provider, e.g. that it has no quota API. */
+  notes: string[]
   accounts: OmpUsageAccount[]
+  /** Signed-in accounts for which the provider gives no usage data (e.g. API keys). */
+  accountsWithoutUsage: number
+  disabled: OmpUsageDisabledAccount[]
   capacity: OmpUsageCapacity[]
+}
+
+export interface OmpUsageReport {
+  /** Sorted by provider id, like `omp usage`. */
+  providers: OmpUsageProvider[]
   /**
    * Epoch ms of the oldest account report. OMP caches reports per account, so
    * this is how stale the section can be; null when no report says.
