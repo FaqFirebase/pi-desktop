@@ -39,7 +39,7 @@ function skillScanPlan(cwd: string, homeDir: string, engine: 'pi' | 'omp'): Skil
     return {
       dirs: [
         { dir: join(cwd, '.omp', 'skills'), source: 'project' },
-        // The global skills of the profile OMP runs under (OMP_PROFILE).
+        // The global skills of the profile OMP runs under (see omp-paths.ts).
         { dir: join(ompAgentDirIn(homeDir, currentOmpProfile()), 'skills'), source: 'global' },
         { dir: join(cwd, '.claude', 'skills'), source: 'project' },
         { dir: join(homeDir, '.claude', 'skills'), source: 'global' },

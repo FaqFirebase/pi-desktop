@@ -112,7 +112,7 @@ function homeDir(): string {
   return process.env.HOME ?? process.env.USERPROFILE ?? ''
 }
 
-/** The plugin store of the profile OMP runs under (OMP_PROFILE). */
+/** The plugin store of the profile OMP runs under (see omp-paths.ts). */
 function ompPluginsDir(): string {
   return ompPluginsDirIn(homeDir(), currentOmpProfile())
 }

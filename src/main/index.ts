@@ -13,7 +13,6 @@ import { setPiExecutableOverride, cleanupPiChildTempDir } from './pi-rpc-manager
 import { applyLanguageSetting } from './i18n'
 import { i18n, t } from '../shared/i18n'
 import { fetchAllCatalogPackages } from './package-catalog'
-import { ompProfileFromEnv } from './omp-paths'
 import { activityStatsStore } from './activity-stats'
 import { configureGuiDataDir, getCanonicalUserDataDir, getExternalGuiDataDir, migrateLegacyGuiData } from './app-data-paths'
 import { setupTray, setTrayEnabled, isTrayEnabled, isTrayAvailable, destroyTray, notifyFirstHide } from './tray-manager'
@@ -25,7 +24,7 @@ import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { VOICE_PROTOCOL_SCHEME, handleVoiceProtocolRequest } from './voice-protocol'
 import { getVoiceModelsDir } from './voice-model-store'
 import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
-import { getSettingsPath, SETTINGS_FILE_NAME } from './ipc/settings'
+import { applyOmpLaunchArgs, getSettingsPath, SETTINGS_FILE_NAME } from './ipc/settings'
 import { resolveMultipleInstances } from './instance-mode'
 import { disableCwdExecutableSearch } from './windows-exe-search'
 import { WINDOW_BACKGROUND_COLOR } from './window-appearance'
@@ -180,13 +179,6 @@ try {
   installLinuxApplicationEntry()
 } catch (err) {
   console.error('[startup] Failed to install the Linux application entry:', err)
-}
-
-// The agent runs under OMP_PROFILE, and the app reads that profile's files (see
-// omp-paths.ts). A name OMP would refuse makes OMP itself fail to start; say why.
-const ompProfileSelection = ompProfileFromEnv()
-if (ompProfileSelection.invalid !== undefined) {
-  appLog.warn('app', `OMP_PROFILE "${ompProfileSelection.invalid}" is not a valid OMP profile name; showing the default profile's files`)
 }
 
 // ─── Window Creation ─────────────────────────────────────────────────────────
@@ -556,6 +548,9 @@ app.whenReady().then(async () => {
   // binary before this setting is applied.
   const settings = await loadAppSettings(workspaceManager)
   setPiExecutableOverride(settings.piExecutablePath, settings.piEngine)
+  // The agent runs under the profile OMP_PROFILE or a `--profile` in the
+  // default args selects, and the app reads that profile's files.
+  applyOmpLaunchArgs(settings.defaultArgs)
 
   // Before the menu, window, and tray exist, so they are built in the saved language.
   applyLanguageSetting(settings.language)

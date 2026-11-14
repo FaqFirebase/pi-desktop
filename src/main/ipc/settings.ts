@@ -12,6 +12,7 @@ import { availableLanguages } from '../../shared/i18n'
 import { normalizeStoredSettings } from '../../shared/app-settings'
 import { applyLanguageSetting, getI18nEnvironment, isPseudoLanguageEnabled } from '../i18n'
 import { applyRunOnStartup } from '../startup-launch'
+import { setOmpLaunchArgs } from '../omp-paths'
 import { setTrayEnabled } from '../tray-manager'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
@@ -84,6 +85,17 @@ export async function saveAppSettings(settings: Partial<AppSettings>): Promise<v
   }
 }
 
+/**
+ * Apply the "default args" setting to the OMP profile the app reads (see
+ * omp-paths.ts). A name OMP would refuse makes OMP itself fail to start; say why.
+ */
+export function applyOmpLaunchArgs(args: readonly string[]): void {
+  const { invalid } = setOmpLaunchArgs(args)
+  if (invalid !== undefined) {
+    appLog.warn('app', `OMP profile "${invalid}" is not a valid OMP profile name; showing the default profile's files`)
+  }
+}
+
 export function registerSettingsHandlers(ctx: IpcContext): void {
   const { workspaceManager, globalDictationShortcut, quickChatShortcut } = ctx
 
@@ -116,6 +128,9 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
     const updated = await loadAppSettings(workspaceManager)
     if ('piExecutablePath' in settings || 'piEngine' in settings) {
       setPiExecutableOverride(updated.piExecutablePath, updated.piEngine)
+    }
+    if ('defaultArgs' in settings) {
+      applyOmpLaunchArgs(updated.defaultArgs)
     }
     if ('language' in settings) {
       applyLanguageSetting(updated.language)

@@ -87,7 +87,7 @@ async function listMcpServers(wsPath?: string): Promise<McpServerInfo[]> {
   const servers: McpServerInfo[] = []
   const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
   const omp = getPiCli().kind === 'omp'
-  // OMP's global MCP servers belong to the profile it runs under (OMP_PROFILE).
+  // OMP's global MCP servers belong to the profile it runs under (see omp-paths.ts).
   const ompAgentDir = ompAgentDirIn(homeDir, currentOmpProfile())
   const globalSettingsPaths = omp
     ? [

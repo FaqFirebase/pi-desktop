@@ -33,7 +33,7 @@ export const PI_MODELS_BASENAME = 'models.json'
 
 export function resolveModelsFile(engine: AgentEngineKind, homeDir: string): ModelsFileLocation {
   if (engine === 'omp') {
-    // The profile OMP runs under (OMP_PROFILE) has its own models file.
+    // The profile OMP runs under (see omp-paths.ts) has its own models file.
     const dir = ompAgentDirIn(homeDir, currentOmpProfile())
     const yaml = OMP_MODELS_BASENAMES.find((name) => existsSync(join(dir, name)))
     if (yaml) return { dir, file: join(dir, yaml), name: yaml, format: 'yaml' }

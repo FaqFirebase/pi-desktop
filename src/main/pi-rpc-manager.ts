@@ -27,6 +27,7 @@ import { StreamingTextTracker } from './streaming-text-tracker'
 import { appLog } from './app-log'
 import { getGuiDataPath } from './app-data-paths'
 import { loadPiDotenv } from './pi-dotenv'
+import { ompProfileArgEnv } from './omp-paths'
 import { childProcessEnv } from './windows-exe-search'
 import { t, tEnglish } from '../shared/i18n'
 
@@ -617,12 +618,14 @@ export function buildPiInvocation(
 
 /**
  * The environment of one Pi or OMP run: ~/.pi/.env under `base`, the app's
- * own environment by default. `needsShell` is the run's PiCli.needsShell: the
- * app's current-folder search switch reaches the run only when cmd.exe starts
- * it (see childProcessEnv).
+ * own environment by default. A `--profile` in the "default args" setting is
+ * set as OMP_PROFILE over both, so a run that does not get those arguments (a
+ * CLI command, a commit message, a council run) uses the agent's profile.
+ * `needsShell` is the run's PiCli.needsShell: the app's current-folder search
+ * switch reaches the run only when cmd.exe starts it (see childProcessEnv).
  */
 export function buildPiRunEnv(needsShell: boolean, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return childProcessEnv(needsShell, { ...loadPiDotenv(), ...base })
+  return childProcessEnv(needsShell, { ...loadPiDotenv(), ...base, ...ompProfileArgEnv() })
 }
 
 const MAX_PENDING_RESPONSES = 64

@@ -16,7 +16,7 @@ export function getSessionsRoot(): string {
 /**
  * Absolute path to OMP's session store (`~/.omp/agent/sessions`, or
  * `~/.omp/profiles/<name>/agent/sessions` when OMP runs under a named profile
- * via `OMP_PROFILE`; see omp-paths.ts).
+ * via `OMP_PROFILE` or a `--profile` in the default args; see omp-paths.ts).
  *
  * Each engine keeps its own sessions: OMP writes here, Pi writes under
  * `~/.pi`, and neither is pointed at the other's tree. Both stores use the
