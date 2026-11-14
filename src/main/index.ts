@@ -18,7 +18,7 @@ import { activityStatsStore } from './activity-stats'
 import { configureGuiDataDir, getCanonicalUserDataDir, getExternalGuiDataDir, migrateLegacyGuiData } from './app-data-paths'
 import { setupTray, setTrayEnabled, isTrayEnabled, isTrayAvailable, destroyTray, notifyFirstHide } from './tray-manager'
 import { shouldHideToTray } from './tray-decision'
-import { DEFAULT_APP_USER_MODEL_ID, readWindowHints, windowTitle } from './window-hints'
+import { readWindowHints, windowTitle } from './window-hints'
 import { createEditorGuard } from './editor-guard'
 import { appLog } from './app-log'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
@@ -44,10 +44,9 @@ const WORKSPACE_ENV_VAR = 'PI_DESKTOP_WORKSPACE'
 const windowHints = readWindowHints(process.env)
 
 // Electron's development executable otherwise registers as Electron on Windows,
-// which makes the taskbar and notification identity use Electron branding. A
-// host may give each instance its own identity, so each gets its own button.
+// which makes the taskbar and notification identity use Electron branding.
 app.setName('Pi Desktop')
-if (process.platform === 'win32') app.setAppUserModelId(windowHints.appUserModelId ?? DEFAULT_APP_USER_MODEL_ID)
+if (process.platform === 'win32') app.setAppUserModelId('dev.pi.desktop-gui')
 
 // Suppress EPIPE errors from closed subprocess pipes
 process.on('uncaughtException', (err) => {
@@ -243,8 +242,6 @@ function createMainWindow(): BrowserWindow {
     backgroundColor: WINDOW_BACKGROUND_COLOR,
     icon: appIcon,
     show: false,
-    // A host that lays out its instances itself asks for a bare window.
-    ...(windowHints.frameless ? { frame: false, skipTaskbar: true } : {}),
     webPreferences: {
       preload: PRELOAD_PATH,
       contextIsolation: true,
@@ -593,6 +590,7 @@ app.whenReady().then(async () => {
     getWindow: () => mainWindow,
     quit: () => app.quit(),
     iconPath: getAppIconPath(),
+    tooltip: windowTitle(app.getName(), windowHints),
     hasSeenHint: settings.hasSeenTrayHint,
     onHintShown: () => {
       void saveAppSettings({ hasSeenTrayHint: true })

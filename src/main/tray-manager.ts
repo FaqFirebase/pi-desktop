@@ -1,4 +1,4 @@
-import { app, Tray, Menu, Notification, nativeImage, type BrowserWindow } from 'electron'
+import { Tray, Menu, Notification, nativeImage, type BrowserWindow } from 'electron'
 import { execFile } from 'child_process'
 import { trayIsSupported, parseDbusBoolean } from './tray-decision'
 import { i18n, t } from '../shared/i18n'
@@ -21,6 +21,8 @@ interface TrayDeps {
   getWindow: () => BrowserWindow | null
   quit: () => void
   iconPath: string
+  // The product name, with the instance label when one is set (window-hints.ts).
+  tooltip: string
   // Whether the one-time hint has already been shown in a previous run.
   hasSeenHint: boolean
   // Persist that the hint has now been shown (fire-and-forget).
@@ -56,7 +58,7 @@ function showWindow(): void {
 
 // Tooltip is the product name (not translated); the menu follows the language.
 function applyTrayText(target: Tray): void {
-  target.setToolTip(app.getName())
+  if (deps) target.setToolTip(deps.tooltip)
   const items: Electron.MenuItemConstructorOptions[] = [
     { label: t('tray.show'), click: () => showWindow() },
   ]
