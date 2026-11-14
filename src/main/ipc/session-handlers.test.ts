@@ -265,17 +265,29 @@ test('the resume target is the project runtime session, else its newest used fil
       JSON.stringify({ type: 'message', message: { role: 'user', content: 'hi' } }),
     ].join('\n'))
     let current: { sessionPath: string | null } | null = null
+    // Whether another Pi Desktop holds the newest file, and what this one reserved.
+    let claimedElsewhere = false
+    const reserved: string[] = []
     registerSessionHandlers({
       workspaceManager: {
         getActiveWorkspace: () => ({ id: 'workspace', path: project }),
         getWorkspaces: () => [{ id: 'workspace', path: project }],
         getWorkspaceSessionRuntime: (id: string) => id === 'workspace' ? current : null,
+        reserveSessionForResume: (sessionPath: string) => {
+          if (claimedElsewhere) return false
+          reserved.push(sessionPath)
+          return true
+        },
       },
     } as unknown as IpcContext)
     const resumeTarget = handlers.get(IPC_CHANNELS.SESSION_RESUME_TARGET)!
     const { saveAppSettings } = await import('./settings')
 
     assert.equal(await resumeTarget(null, project), onDisk)
+    assert.deepEqual(reserved, [onDisk], 'the resumed file is reserved for this window')
+    claimedElsewhere = true
+    assert.equal(await resumeTarget(null, project), null, 'a file another Pi Desktop holds leaves a new session')
+    claimedElsewhere = false
     await saveAppSettings({ resumeLastSession: false })
     assert.equal(await resumeTarget(null, project), null, 'the setting off never resumes a file')
     assert.equal(await resumeTarget(null, join(root, 'unregistered')), null)

@@ -141,6 +141,7 @@ src/
 │   ├── omp-usage.ts              # Parse `omp usage --json` (account usage limits, saved resets) for the status popover
 │   ├── cli-json.ts               # The JSON object an engine CLI printed with `--json`, behind any warnings
 │   ├── skills-discovery.ts       # Per-engine skill roots scan + catalog merge
+│   ├── session-claims.ts         # Cross-instance claims: one Pi Desktop runs an agent on a session file at a time
 │   ├── session-metadata.ts       # Bounded reader: session name, header, first-message preview; header-only (disposable) means metadata only
 │   ├── session-jsonl.ts          # Session JSONL text -> entries (a partial last line is skipped)
 │   ├── session-lineage-reader.ts # Parent links and labels across the session store
@@ -535,6 +536,8 @@ The GUI data dir is `<appData>/pi-desktop` (on Linux, `~/.config/pi-desktop`). `
 
 One Pi Desktop runs per data dir. A launch without `PI_DESKTOP_USER_DATA_DIR`, or with it set to the canonical dir, shares one single-instance lock, so a second launch focuses the first window. A launch with a data dir of its own takes that dir's lock: launches on different data dirs run side by side (for example one per account, started by a launcher), and two launches on the same data dir still fold into one. Electron keys the lock on `userData` when it is requested, so `index.ts` applies a data dir of its own before the lock and the canonical dir after it (`usesOwnInstanceLock` in `app-data-paths.ts`). The rule reads only how the app was launched, never a stored setting, so a running copy and a new launch always agree on the lock. Only a launch on the canonical dir owns "Run on startup": the login item cannot carry `PI_DESKTOP_USER_DATA_DIR` on every platform, so a launch with a data dir of its own leaves the entry alone and Settings shows the toggle off and disabled (`runOnStartupAvailable` in `startup-launch.ts`).
 
+Instances on different data dirs can read one session store, and two agents on one session file split the conversation. So while a runtime runs an agent on a session file, `WorkspaceManager` holds a claim on it in `<canonical data dir>/session-claims/` (`session-claims.ts`): before a start that resumes a known file, and when the engine reports a new file (new session, `--continue`, fork, switch). Another instance does not start an agent on a claimed file; its start ends with the error "This session is open in another Pi Desktop window" and no process. The one exception is "Resume last session", which names no file the user chose: when the latest session is claimed (two windows resuming on launch), the window starts a new session instead. Both resume paths follow this rule: the renderer's resume target claims the latest session as it picks it (`reserveSessionForResume`, given back after 30 s when no start takes it over), so of two windows launched together the first gets it and the other gets no file and starts a new session; a `--continue` start in `WorkspaceManager` that resolves to a claimed file restarts as a new session. A claim is released when the runtime's process has exited (and no other runtime here maps the file), and holds only while its owner's pid is alive and the owner refreshes it (every 20 s, stale after 60 s), so a crash never locks a session for good. Inside one instance the session-to-runtime index already enforces the same rule.
+
 | Path | Purpose |
 |------|---------|
 | `<GUI data dir>/workspaces.json` | Workspace list and active workspace |
@@ -547,6 +550,7 @@ One Pi Desktop runs per data dir. A launch without `PI_DESKTOP_USER_DATA_DIR`, o
 | `<GUI data dir>/archived-sessions.json` | Archived sessions |
 | `<GUI data dir>/session-auto-tags.json` | Machine-derived session tags |
 | `<GUI data dir>/permission-rules.json` | Global permission rules |
+| `<canonical data dir>/session-claims/` | One claim file per session an instance runs an agent on (shared by every instance, whatever its data dir) |
 | `<GUI data dir>/repo-sets.json` | Saved repo sets for linked tasks |
 | `<GUI data dir>/repo-maps/` | One repo map per running linked task, read by the agent extensions |
 | `<GUI data dir>/themes/` | User theme files |

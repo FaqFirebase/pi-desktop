@@ -717,6 +717,7 @@
       "alreadyAttached": "Файл сесії вже підключений до запущеного процесу",
       "attachedToDifferentWorkspace": "Сесія вже підключена до процесу іншого проєкту",
       "ompNoClone": "Рушій OMP не підтримує клонування сесії",
+      "openInAnotherWindow": "Ця сесія відкрита в іншому вікні Pi Desktop. Спочатку закрийте її там.",
       "pathMustExist": "{{field}} має вказувати на наявний файл сесії Pi",
       "projectMismatch": "Проєкт сесії не збігається з активним проєктом",
       "runtimeNotFound": "Процес сесії не знайдено: {{runtimeId}}"

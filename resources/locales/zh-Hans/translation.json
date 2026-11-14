@@ -675,6 +675,7 @@
       "alreadyAttached": "会话文件已绑定到活动运行时",
       "attachedToDifferentWorkspace": "会话已绑定到另一个工作区的运行时",
       "ompNoClone": "OMP 引擎不支持克隆会话",
+      "openInAnotherWindow": "此会话已在另一个 Pi Desktop 窗口中打开。请先在那里关闭它。",
       "pathMustExist": "{{field}} 必须指向一个已存在的 Pi 会话文件",
       "projectMismatch": "会话所属项目与当前工作区不匹配",
       "runtimeNotFound": "未找到会话运行时：{{runtimeId}}"

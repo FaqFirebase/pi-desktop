@@ -722,6 +722,8 @@ export class PiRpcManager extends EventEmitter {
   private startInFlight: Promise<PiStatus> | null = null
   private runningEngine: 'pi' | 'omp' | null = null
   private readonly exitWaiters = new Map<ChildProcess, Set<() => void>>()
+  /** Settles when the last process stop() signalled has exited. */
+  private lastProcessExit: Promise<void> = Promise.resolve()
   // Set while a spawn attempt awaits readiness; handleLine invokes it when the
   // startup probe's correlated response arrives. Cleared once the attempt settles.
   private markReady: (() => void) | null = null
@@ -795,13 +797,13 @@ export class PiRpcManager extends EventEmitter {
     // clear message instead of letting spawn die with a cryptic ENOENT.
     const { failureReason } = resolveStartCli(options)
     if (failureReason) {
-      return this.failPreflight(
+      return this.failStart(
         describePiStartFailure(failureReason, t),
         describePiStartFailure(failureReason, tEnglish)
       )
     }
     if (options.cwd && (!existsSync(options.cwd) || !statSync(options.cwd).isDirectory())) {
-      return this.failPreflight(
+      return this.failStart(
         t('errors.pi.cwdMissing', { cwd: options.cwd }),
         tEnglish('errors.pi.cwdMissing', { cwd: options.cwd })
       )
@@ -848,7 +850,12 @@ export class PiRpcManager extends EventEmitter {
    * UI shows; `englishReason` is the same message for the log, which stays
    * English.
    */
-  private failPreflight(reason: string, englishReason: string): PiStatus {
+  /**
+   * End a start before any process is spawned: status `error` with `reason`
+   * as the error the user sees. Also used by a caller that refuses the start
+   * itself (a session claimed by another Pi Desktop).
+   */
+  failStart(reason: string, englishReason: string): PiStatus {
     this.stderrBuffer = reason
     this.setStatus('error')
     console.error('[Pi] Pre-flight failed:', englishReason)
@@ -1028,6 +1035,15 @@ export class PiRpcManager extends EventEmitter {
   stop(): void {
     this.kill()
     this.setStatus('stopped')
+  }
+
+  /**
+   * Settles once the process the last stop() signalled has exited: a stopped
+   * status is set at once, while the child can take up to the force-kill
+   * timeout to end. Settled when no process was running.
+   */
+  processExited(): Promise<void> {
+    return this.lastProcessExit
   }
 
   /**
@@ -1386,6 +1402,12 @@ export class PiRpcManager extends EventEmitter {
       proc.removeAllListeners()
       proc.stdout?.removeAllListeners()
       proc.stderr?.removeAllListeners()
+      this.lastProcessExit = proc.exitCode !== null || proc.signalCode !== null
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+          proc.once('exit', () => resolve())
+          proc.once('close', () => resolve())
+        })
       const waiters = this.exitWaiters.get(proc)
       if (waiters?.size) {
         const settle = (): void => {

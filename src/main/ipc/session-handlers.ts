@@ -230,7 +230,10 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     // a restart: only this one session starts again.
     const settings = await loadAppSettings(workspaceManager)
     if (!settings.resumeLastSession) return null
-    return findLatestProjectSession(await engineProjectSessionDirs(getConfiguredEngineKind(), workspace.path))
+    const latest = await findLatestProjectSession(await engineProjectSessionDirs(getConfiguredEngineKind(), workspace.path))
+    // Two windows resuming on launch race for it: the first one reserves it,
+    // and the other starts a new session instead.
+    return latest && !workspaceManager.reserveSessionForResume(latest) ? null : latest
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_STATE, async () => {

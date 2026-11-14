@@ -689,6 +689,7 @@
       "alreadyAttached": "Oturum dosyası zaten çalışan bir çalışma zamanına bağlı",
       "attachedToDifferentWorkspace": "Oturum zaten başka bir çalışma alanının çalışma zamanına bağlı",
       "ompNoClone": "OMP motoru oturum klonlamayı desteklemiyor",
+      "openInAnotherWindow": "Bu oturum başka bir Pi Desktop penceresinde açık. Önce orada kapatın.",
       "pathMustExist": "{{field}} var olan bir Pi oturum dosyasını göstermeli",
       "projectMismatch": "Oturumun projesi etkin çalışma alanıyla eşleşmiyor",
       "runtimeNotFound": "Oturum çalışma zamanı bulunamadı: {{runtimeId}}"

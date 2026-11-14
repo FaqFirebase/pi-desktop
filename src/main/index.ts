@@ -33,6 +33,7 @@ import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches
 import { applyOmpLaunchArgs, getSettingsPath } from './ipc/settings'
 import { disableCwdExecutableSearch } from './windows-exe-search'
 import { WINDOW_BACKGROUND_COLOR } from './window-appearance'
+import { configureSessionClaims, SESSION_CLAIMS_DIR_NAME } from './session-claims'
 import { destroyQuickChatWindow, getQuickChatWindow, hideQuickChatWindow, isQuickChatOpenRequested, setQuickChatQuittingHandler, toggleQuickChatWindow } from './quick-chat-window'
 
 // First, before anything spawns: Windows must never run a program from the
@@ -173,6 +174,11 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 if (!ownInstanceLock) applyUserDataDir()
+
+// Instances on different data folders can read one session store. The claims
+// that keep two of them off one session file live in the canonical folder,
+// which every launch of this user resolves the same way.
+configureSessionClaims(join(canonicalUserDataDir, SESSION_CLAIMS_DIR_NAME))
 
 // Voice dictation on the GPU needs WebGPU, which Chromium keeps off on Linux
 // unless it starts with extra switches. Set them now, before the app is ready.

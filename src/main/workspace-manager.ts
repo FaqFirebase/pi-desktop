@@ -34,6 +34,7 @@ import { pathsEqual, pathGroupKey } from './session-paths'
 import { isPathWithin, resolveRealPath } from '../../resources/path-within'
 import { appLog } from './app-log'
 import { inspectSessionContent } from './session-metadata'
+import { claimSession, releaseSession } from './session-claims'
 import {
   createGitWorktree,
   describeGitFailure,
@@ -131,6 +132,22 @@ interface SessionRuntimeEntry {
   runlessPromptRuns: number | null
 }
 
+/** How long a resume reservation waits for its runtime to start. */
+const RESUME_RESERVATION_MS = 30_000
+
+/** The data of a get_state response, when it has one. */
+function stateData(response: unknown): { sessionFile?: unknown; sessionId?: unknown } | undefined {
+  return response && typeof response === 'object' && 'data' in response
+    ? response.data as { sessionFile?: unknown; sessionId?: unknown }
+    : undefined
+}
+
+/** The session file a get_state response reports the engine is writing. */
+function reportedSessionFile(response: unknown): string | undefined {
+  const sessionFile = stateData(response)?.sessionFile
+  return typeof sessionFile === 'string' ? sessionFile : undefined
+}
+
 /**
  * The ONLY condition under which this app deletes a session file the user never
  * asked it to delete. Every clause has to hold:
@@ -169,6 +186,13 @@ export class WorkspaceManager {
   // process, even when several sessions share the same workspace cwd.
   private sessionRuntimes = new Map<string, SessionRuntimeEntry>()
   private runtimeBySessionPath = new Map<string, string>()
+  /**
+   * The session file each live runtime claimed for this app (session-claims.ts),
+   * so a Pi Desktop on another data folder does not run an agent on it too.
+   */
+  private claimedSessionByRuntime = new Map<string, string>()
+  /** Sessions claimed for a resume that no runtime has started yet, by session key. */
+  private resumeReservations = new Map<string, ReturnType<typeof setTimeout>>()
   private runtimeReferences = new Map<string, number>()
   private activeRuntimeByWorkspace = new Map<string, string>()
   private activeRuntimeId: string | null = null
@@ -394,6 +418,79 @@ export class WorkspaceManager {
   }
 
   /**
+   * Claim `sessionPath` for a runtime that runs (or is about to run) an agent
+   * on it, giving up the file it claimed before. False when another Pi Desktop
+   * runs an agent on that file.
+   */
+  private claimSessionFor(entry: SessionRuntimeEntry, sessionPath: string): boolean {
+    const runtimeId = entry.info.runtimeId
+    const claimed = this.claimedSessionByRuntime.get(runtimeId)
+    if (claimed !== undefined && pathsEqual(claimed, sessionPath)) return true
+    if (!claimSession(sessionPath)) return false
+    this.claimedSessionByRuntime.set(runtimeId, sessionPath)
+    if (claimed !== undefined) this.releaseUnusedClaim(claimed)
+    this.endResumeReservation(sessionPath)
+    return true
+  }
+
+  /**
+   * Give a session claim back once nothing in this app uses it: the store holds
+   * one claim per file, while a second runtime here can map the same file for a
+   * moment (a --continue that lands on another tab's session, then stops).
+   */
+  private releaseUnusedClaim(sessionPath: string): void {
+    if (this.runtimeClaims(sessionPath) || this.resumeReservations.has(pathGroupKey(sessionPath))) return
+    releaseSession(sessionPath)
+  }
+
+  /**
+   * Claim the session a window is about to resume, before its runtime starts,
+   * so two windows resuming on launch cannot both pick it. False when another
+   * Pi Desktop holds it. A reservation no start takes over is given back after
+   * RESUME_RESERVATION_MS.
+   */
+  reserveSessionForResume(sessionPath: string): boolean {
+    if (!claimSession(sessionPath)) return false
+    if (this.runtimeClaims(sessionPath)) return true
+    const key = pathGroupKey(sessionPath)
+    clearTimeout(this.resumeReservations.get(key))
+    const timer = setTimeout(() => {
+      this.resumeReservations.delete(key)
+      this.releaseUnusedClaim(sessionPath)
+    }, RESUME_RESERVATION_MS)
+    timer.unref()
+    this.resumeReservations.set(key, timer)
+    return true
+  }
+
+  private endResumeReservation(sessionPath: string): void {
+    const key = pathGroupKey(sessionPath)
+    clearTimeout(this.resumeReservations.get(key))
+    this.resumeReservations.delete(key)
+  }
+
+  private runtimeClaims(sessionPath: string): boolean {
+    return [...this.claimedSessionByRuntime.values()].some((claimed) => pathsEqual(claimed, sessionPath))
+  }
+
+  private releaseSessionClaim(entry: SessionRuntimeEntry): void {
+    const claimed = this.claimedSessionByRuntime.get(entry.info.runtimeId)
+    if (claimed === undefined) return
+    this.claimedSessionByRuntime.delete(entry.info.runtimeId)
+    this.releaseUnusedClaim(claimed)
+  }
+
+  /** End a start that would put a second agent on a session another Pi Desktop runs. */
+  private refuseClaimedSession(entry: SessionRuntimeEntry, sessionPath: string): SessionRuntimeInfo {
+    appLog.warn('workspaces', `Session ${sessionPath} is open in another Pi Desktop; runtime ${entry.info.runtimeId} did not start on it`)
+    if (this.isRuntimeLive(entry)) entry.manager.stop()
+    entry.manager.failStart(t('errors.session.openInAnotherWindow'), tEnglish('errors.session.openInAnotherWindow'))
+    entry.info = { ...entry.info, ...entry.manager.getStatus() }
+    this.emitSessionRuntime(entry)
+    return this.snapshotRuntime(entry)
+  }
+
+  /**
    * Stop background runtimes until one more live process fits within
    * MAX_LIVE_SESSION_RUNTIMES. Only the process is stopped: the tab stays open
    * and its session file stays on disk, so selecting the tab again starts a
@@ -448,7 +545,14 @@ export class WorkspaceManager {
     }
     manager.on('status-change', () => {
       entry.info = { ...entry.info, ...manager.getStatus() }
-      if (entry.info.status !== 'running' && entry.info.status !== 'starting') pendingUi.clear()
+      if (entry.info.status !== 'running' && entry.info.status !== 'starting') {
+        pendingUi.clear()
+        // The child can outlive its stopped status by the force-kill timeout,
+        // so the claim waits for it. A start in the meantime keeps the claim.
+        void manager.processExited().then(() => {
+          if (!this.isRuntimeLive(entry)) this.releaseSessionClaim(entry)
+        })
+      }
       if (entry.info.status === 'running' && entry.info.activity === 'failed') {
         entry.info = { ...entry.info, activity: null }
       }
@@ -737,6 +841,7 @@ export class WorkspaceManager {
       // no file of its own; once it has one, the merged --session outranks it
       // (see buildPiArgs) and the runtime re-opens what it created.
       (options.continueSession === true && entry.info.sessionPath === null)
+    const appCreatedBefore = entry.appCreated
     if (bindsExistingFile) entry.appCreated = false
     // The engine names a new session's file at once but writes it only after
     // its first answer. A restart before then (a permission mode change)
@@ -777,6 +882,12 @@ export class WorkspaceManager {
       startOptions.args = [...(startOptions.args ?? []), '-e', this.resolveAgentResource(REPO_SET_EXTENSION_FILE)]
       startOptions.env = { ...startOptions.env, [REPO_MAP_ENV]: await this.writeRepoMap(workspace) }
     }
+    // The file the agent resumes is known now, and a refused start must not
+    // stop another tab for room; a new or forked session's file
+    // is named by the engine and claimed once it reports it (applySessionRuntimeState).
+    if (startOptions.sessionPath && !this.claimSessionFor(entry, startOptions.sessionPath)) {
+      return this.refuseClaimedSession(entry, startOptions.sessionPath)
+    }
     // Re-activating an evicted tab spawns a process again, so the budget has to
     // hold here too; an already-live runtime spawns nothing and needs no room.
     if (!this.isRuntimeLive(entry)) this.enforceLiveRuntimeBudget(runtimeId)
@@ -806,14 +917,23 @@ export class WorkspaceManager {
     if (this.sessionRuntimes.get(runtimeId) !== entry) {
       return { ...entry.info, ...entry.manager.getStatus(), active: false, closed: true }
     }
+    // --continue picks "the latest session", not one the user chose. When
+    // another Pi Desktop runs that one (two windows resuming on launch), start
+    // a new session here instead of ending on an error.
+    const resumedLatest = startOptions.continueSession === true && !startOptions.sessionPath && !startOptions.forkSessionPath
+    const reportedPath = reportedSessionFile(response)
+    if (resumedLatest && reportedPath && this.isRuntimeLive(entry) && !this.claimSessionFor(entry, reportedPath)) {
+      appLog.info('workspaces', `The latest session ${reportedPath} is open in another Pi Desktop; runtime ${runtimeId} starts a new session`)
+      entry.manager.stop()
+      entry.appCreated = appCreatedBefore
+      return this.startSessionRuntime(runtimeId, { ...options, continueSession: false })
+    }
     return this.applySessionRuntimeState(entry, response)
   }
 
   private applySessionRuntimeState(entry: SessionRuntimeEntry, response: unknown): SessionRuntimeInfo {
-    const data = response && typeof response === 'object' && 'data' in response
-      ? response.data as { sessionFile?: unknown; sessionId?: unknown }
-      : undefined
-    const sessionPath = typeof data?.sessionFile === 'string' ? data.sessionFile : entry.info.sessionPath
+    const data = stateData(response)
+    const sessionPath = reportedSessionFile(response) ?? entry.info.sessionPath
     if (sessionPath && sessionPath !== entry.info.sessionPath) {
       const owner = this.runtimeOwningSessionPath(sessionPath)
       if (owner && owner.info.runtimeId !== entry.info.runtimeId) {
@@ -831,6 +951,12 @@ export class WorkspaceManager {
         this.emitRuntimeActivity(entry, 'failed')
         return this.snapshotRuntime(entry)
       }
+    }
+    // The same rule across Pi Desktop instances, whose runtimes this index cannot see.
+    if (sessionPath && this.isRuntimeLive(entry) && !this.claimSessionFor(entry, sessionPath)) {
+      return this.refuseClaimedSession(entry, sessionPath)
+    }
+    if (sessionPath && sessionPath !== entry.info.sessionPath) {
       if (entry.info.sessionPath) this.runtimeBySessionPath.delete(pathGroupKey(entry.info.sessionPath))
       this.runtimeBySessionPath.set(pathGroupKey(sessionPath), entry.info.runtimeId)
     }

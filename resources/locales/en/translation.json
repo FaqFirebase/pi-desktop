@@ -689,6 +689,7 @@
       "alreadyAttached": "Session file is already attached to a live runtime",
       "attachedToDifferentWorkspace": "Session is already attached to a different workspace runtime",
       "ompNoClone": "The OMP engine does not support cloning a session",
+      "openInAnotherWindow": "This session is open in another Pi Desktop window. Close it there first.",
       "pathMustExist": "{{field}} must point to an existing Pi session file",
       "projectMismatch": "Session project does not match the active workspace",
       "runtimeNotFound": "Session runtime not found: {{runtimeId}}"

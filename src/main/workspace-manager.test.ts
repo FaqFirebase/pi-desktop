@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { mock, test } from 'node:test'
 import { mkdir, mkdtemp, readFile, writeFile, access, realpath, symlink } from 'fs/promises'
 import { existsSync } from 'fs'
 import { spawnSync } from 'child_process'
@@ -20,6 +20,8 @@ import { REPO_MAP_ENV, parseRepoMap } from '../../resources/repo-set-map'
 import { getOmpSessionsRoot, getSessionsRoot } from './pi-paths'
 import { PiRpcManager, setPiExecutableOverride } from './pi-rpc-manager'
 import { isDisposableSessionFile, MAX_LIVE_SESSION_RUNTIMES, WorkspaceManager } from './workspace-manager'
+import { configureSessionClaims, isProcessAlive, SessionClaimStore } from './session-claims'
+import { t } from '../shared/i18n'
 
 async function freshDataDir(): Promise<void> {
   configureGuiDataDir(await mkdtemp(join(tmpdir(), 'pi-ws-')))
@@ -118,12 +120,22 @@ function fakePiProcess(
 ): FakePiProcess {
   const state: FakePiProcess = { stopped: false, starts: 0, lastStartOptions: null }
   let status = initial
+  let refusal: string | null = null
   const setStatus = (next: PiProcessStatus): void => {
     if (status === next) return
     status = next
     manager.emit('status-change', status)
   }
-  manager.getStatus = () => ({ status, pid: status === 'stopped' ? null : pid, error: null })
+  manager.getStatus = () => ({
+    status,
+    pid: status === 'stopped' || status === 'error' ? null : pid,
+    error: status === 'error' ? refusal : null,
+  })
+  manager.failStart = (reason: string) => {
+    refusal = reason
+    setStatus('error')
+    return manager.getStatus()
+  }
   manager.stop = (): void => {
     state.stopped = true
     setStatus('stopped')
@@ -1676,5 +1688,280 @@ test('opening saved history preserves the live budget until its runtime starts',
     assert.equal(live.at(-1)?.stopped, false, 'the active main session is never evicted')
     assert.equal(liveRuntimeCount(mgr), MAX_LIVE_SESSION_RUNTIMES)
     assert.equal(mgr.getActiveSessionRuntime()?.runtimeId, active)
+  })
+})
+
+/** Let a stopped fake process finish exiting (its processExited() settles at once). */
+function processExits(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve))
+}
+
+/**
+ * Run with a shared claim folder and a second Pi Desktop that claims sessions
+ * in it. The second app is a live process (this test runner's parent), so its
+ * claims hold the way a running app's do.
+ */
+async function withOtherPiDesktop(fn: (otherApp: SessionClaimStore) => Promise<void>): Promise<void> {
+  const dir = await mkdtemp(join(tmpdir(), 'pi-session-claims-'))
+  configureSessionClaims(dir)
+  try {
+    await fn(new SessionClaimStore(dir, { pid: process.ppid, now: Date.now, isProcessAlive }))
+  } finally {
+    configureSessionClaims(null)
+  }
+}
+
+test('a session another Pi Desktop runs is not started a second time', async () => {
+  await freshDataDir()
+
+  await withSessionStores(async (roots) => {
+    await withOtherPiDesktop(async (otherApp) => {
+      await withManager(async (mgr) => {
+        const workspace = await mgr.createWorkspace('Alpha', await project())
+        const sessionPath = await storedSession(roots.pi, 'shared.jsonl', { type: 'session', id: 'shared' })
+        assert.equal(otherApp.claim(sessionPath), true)
+
+        const runtime = await mgr.activateSession(workspace.id, sessionPath)
+        const manager = mgr.getActivePiManager()
+        assert.ok(manager)
+        const process_ = fakePiProcess(manager, 801, 'stopped')
+        const refused = await mgr.startSessionRuntime(runtime.runtimeId, { sessionPath })
+        assert.equal(process_.starts, 0, 'no second agent runs on the file')
+        assert.equal(refused.status, 'error')
+        assert.equal(refused.error, t('errors.session.openInAnotherWindow'))
+
+        // Once the other app lets go, this app runs it and holds the claim.
+        otherApp.release(sessionPath)
+        const started = await mgr.startSessionRuntime(runtime.runtimeId, { sessionPath })
+        assert.equal(started.status, 'running')
+        assert.equal(otherApp.claim(sessionPath), false)
+
+        // Stopping the agent gives the session back once the process has exited.
+        mgr.stopSessionRuntime(runtime.runtimeId)
+        await processExits()
+        assert.equal(otherApp.claim(sessionPath), true)
+        otherApp.release(sessionPath)
+      })
+    })
+  })
+})
+
+test('a session file the engine reports is claimed, and given up when another Pi Desktop runs it', async () => {
+  await freshDataDir()
+
+  await withSessionStores(async (roots) => {
+    await withOtherPiDesktop(async (otherApp) => {
+      await withManager(async (mgr) => {
+        const workspace = await mgr.createWorkspace('Alpha', await project())
+
+        // A new session: the engine names its file only after it starts.
+        const ownPath = join(roots.pi, '--tmp-app--', 'own.jsonl')
+        const own = await mgr.createNewSessionRuntime(workspace.id)
+        const ownManager = mgr.getActivePiManager()
+        assert.ok(ownManager)
+        fakePiProcess(ownManager, 802, 'stopped')
+        reportsSessionFile(ownManager, ownPath, 'own')
+        const ownStarted = await mgr.startSessionRuntime(own.runtimeId)
+        assert.equal(ownStarted.status, 'running')
+        assert.equal(otherApp.claim(ownPath), false, 'the reported file is claimed')
+
+        // The engine reports a file the other app already runs (a session switch).
+        const sharedPath = await storedSession(roots.pi, 'shared.jsonl', { type: 'session', id: 'shared' })
+        assert.equal(otherApp.claim(sharedPath), true)
+        const resumed = await mgr.createNewSessionRuntime(workspace.id)
+        const resumedManager = mgr.getActivePiManager()
+        assert.ok(resumedManager)
+        const resumedProcess = fakePiProcess(resumedManager, 803, 'stopped')
+        reportsSessionFile(resumedManager, sharedPath, 'shared')
+        const refused = await mgr.startSessionRuntime(resumed.runtimeId, { continueSession: false })
+        assert.equal(resumedProcess.starts, 1, 'a file the user did not leave to --continue is not replaced')
+        assert.equal(resumedProcess.stopped, true, 'the second agent is stopped')
+        assert.equal(refused.status, 'error')
+        assert.equal(refused.error, t('errors.session.openInAnotherWindow'))
+        assert.equal(refused.sessionPath, null, 'the runtime does not take the file over')
+        otherApp.release(sharedPath)
+      })
+    })
+  })
+})
+
+test('a launch whose latest session runs in another Pi Desktop starts a new session', async () => {
+  await freshDataDir()
+
+  await withSessionStores(async (roots) => {
+    await withOtherPiDesktop(async (otherApp) => {
+      await withManager(async (mgr) => {
+        const workspace = await mgr.createWorkspace('Alpha', await project())
+        const latestPath = await storedSession(roots.pi, 'latest.jsonl', { type: 'session', id: 'latest' })
+        assert.equal(otherApp.claim(latestPath), true)
+
+        const runtime = await mgr.createNewSessionRuntime(workspace.id)
+        const manager = mgr.getActivePiManager()
+        assert.ok(manager)
+        const process_ = fakePiProcess(manager, 804, 'stopped')
+        // --continue resolves to the latest session; a new session gets its own file.
+        const newPath = join(roots.pi, '--tmp-app--', 'new.jsonl')
+        manager.sendCommand = async () => ({
+          type: 'response',
+          command: 'get_state',
+          success: true,
+          data: process_.lastStartOptions?.continueSession === true
+            ? { sessionFile: latestPath, sessionId: 'latest' }
+            : { sessionFile: newPath, sessionId: 'new' },
+        })
+
+        const started = await mgr.startSessionRuntime(runtime.runtimeId, { continueSession: true })
+        assert.equal(process_.starts, 2, 'the resume is replaced by a new session')
+        assert.equal(process_.lastStartOptions?.continueSession, false)
+        assert.equal(started.status, 'running')
+        assert.equal(started.error, null)
+        assert.equal(started.sessionPath, newPath)
+        assert.equal(otherApp.claim(newPath), false, 'the new session is claimed')
+        assert.equal(otherApp.claim(latestPath), true, 'the other app keeps its session')
+
+        // The new file is this run's own, so an empty one may still be discarded on close.
+        const closed = await mgr.closeSessionRuntime(runtime.runtimeId)
+        assert.equal(closed?.appCreated, true)
+        otherApp.release(latestPath)
+      })
+    })
+  })
+})
+
+test('the session a window resumes on launch is reserved, so a second window starts a new one', async () => {
+  await freshDataDir()
+
+  await withSessionStores(async (roots) => {
+    await withOtherPiDesktop(async (otherApp) => {
+      await withManager(async (mgr) => {
+        const workspace = await mgr.createWorkspace('Alpha', await project())
+        const latestPath = await storedSession(roots.pi, 'latest.jsonl', { type: 'session', id: 'latest' })
+
+        // The other window picked it first.
+        assert.equal(otherApp.claim(latestPath), true)
+        assert.equal(mgr.reserveSessionForResume(latestPath), false)
+        otherApp.release(latestPath)
+
+        // This window picks it first; the reservation carries over to its runtime.
+        assert.equal(mgr.reserveSessionForResume(latestPath), true)
+        assert.equal(otherApp.claim(latestPath), false)
+        const runtime = await mgr.activateSession(workspace.id, latestPath)
+        const manager = mgr.getActivePiManager()
+        assert.ok(manager)
+        fakePiProcess(manager, 805, 'stopped')
+        const started = await mgr.startSessionRuntime(runtime.runtimeId, { sessionPath: latestPath })
+        assert.equal(started.status, 'running')
+        mgr.stopSessionRuntime(runtime.runtimeId)
+        await processExits()
+        assert.equal(otherApp.claim(latestPath), true, 'stopping gives it back')
+        otherApp.release(latestPath)
+      })
+    })
+  })
+})
+
+test('a resume reservation that no start takes over is given back', async () => {
+  await freshDataDir()
+
+  await withSessionStores(async (roots) => {
+    await withOtherPiDesktop(async (otherApp) => {
+      await withManager(async (mgr) => {
+        const latestPath = await storedSession(roots.pi, 'latest.jsonl', { type: 'session', id: 'latest' })
+        mock.timers.enable({ apis: ['setTimeout'] })
+        try {
+          assert.equal(mgr.reserveSessionForResume(latestPath), true)
+          mock.timers.tick(29_999)
+          assert.equal(otherApp.claim(latestPath), false, 'still reserved')
+          mock.timers.tick(1)
+          assert.equal(otherApp.claim(latestPath), true, 'given back')
+          otherApp.release(latestPath)
+        } finally {
+          mock.timers.reset()
+        }
+      })
+    })
+  })
+})
+
+test('a claim is kept until the stopped process has exited', async () => {
+  await freshDataDir()
+
+  await withSessionStores(async (roots) => {
+    await withOtherPiDesktop(async (otherApp) => {
+      await withManager(async (mgr) => {
+        const workspace = await mgr.createWorkspace('Alpha', await project())
+        const sessionPath = await storedSession(roots.pi, 'slow-exit.jsonl', { type: 'session', id: 'slow-exit' })
+        const runtime = await mgr.activateSession(workspace.id, sessionPath)
+        const manager = mgr.getActivePiManager()
+        assert.ok(manager)
+        fakePiProcess(manager, 806, 'stopped')
+        let exited: () => void = () => undefined
+        manager.processExited = () => new Promise<void>((resolve) => { exited = resolve })
+        await mgr.startSessionRuntime(runtime.runtimeId, { sessionPath })
+
+        mgr.stopSessionRuntime(runtime.runtimeId)
+        await processExits()
+        assert.equal(otherApp.claim(sessionPath), false, 'the old process may still write')
+        exited()
+        await processExits()
+        assert.equal(otherApp.claim(sessionPath), true)
+        otherApp.release(sessionPath)
+      })
+    })
+  })
+})
+
+test('a second tab that lands on a running tab\'s file does not give its claim away', async () => {
+  await freshDataDir()
+
+  await withSessionStores(async (roots) => {
+    await withOtherPiDesktop(async (otherApp) => {
+      await withManager(async (mgr) => {
+        const workspace = await mgr.createWorkspace('Alpha', await project())
+        const sessionPath = await storedSession(roots.pi, 'busy.jsonl', { type: 'session', id: 'busy' })
+        const owner = await mgr.activateSession(workspace.id, sessionPath)
+        const ownerManager = mgr.getActivePiManager()
+        assert.ok(ownerManager)
+        fakePiProcess(ownerManager, 807, 'stopped')
+        await mgr.startSessionRuntime(owner.runtimeId, { sessionPath })
+
+        // --continue in another tab resolves to the same file; that tab is stopped.
+        const second = await mgr.createNewSessionRuntime(workspace.id)
+        const secondManager = mgr.getActivePiManager()
+        assert.ok(secondManager)
+        const secondProcess = fakePiProcess(secondManager, 808, 'stopped')
+        reportsSessionFile(secondManager, sessionPath, 'busy')
+        await mgr.startSessionRuntime(second.runtimeId, { continueSession: true })
+        await processExits()
+        assert.equal(secondProcess.stopped, true)
+        assert.equal(otherApp.claim(sessionPath), false, 'the running tab still holds it')
+      })
+    })
+  })
+})
+
+test('a refused start does not stop another tab to make room', async () => {
+  await freshDataDir()
+
+  await withSessionStores(async (roots) => {
+    await withOtherPiDesktop(async (otherApp) => {
+      await withManager(async (mgr) => {
+        const workspace = await mgr.createWorkspace('Alpha', await project())
+        for (let index = 0; index < MAX_LIVE_SESSION_RUNTIMES; index += 1) {
+          await liveRuntime(mgr, workspace.id, 900 + index)
+        }
+        const sessionPath = await storedSession(roots.pi, 'taken.jsonl', { type: 'session', id: 'taken' })
+        assert.equal(otherApp.claim(sessionPath), true)
+        // Opened from saved history: no room is made until it starts.
+        const runtime = mgr.openSessionRuntime(workspace.id, sessionPath)
+        const manager = mgr.getSessionRuntimeManager(runtime.runtimeId)
+        assert.ok(manager)
+        fakePiProcess(manager, 950, 'stopped')
+        const refused = await mgr.startSessionRuntime(runtime.runtimeId, { sessionPath })
+        assert.equal(refused.status, 'error')
+        assert.equal(liveRuntimeCount(mgr), MAX_LIVE_SESSION_RUNTIMES, 'no other tab was stopped')
+        otherApp.release(sessionPath)
+      })
+    })
   })
 })
