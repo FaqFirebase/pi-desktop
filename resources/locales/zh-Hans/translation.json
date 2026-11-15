@@ -450,6 +450,9 @@
       "chromium": "Chromium",
       "electron": "Electron",
       "engineVersion": "{{agent}} 版本",
+      "gitFailed": "未能运行：{{detail}}",
+      "gitNotFound": "未找到",
+      "gitVersion": "Git 版本",
       "globalRules": "全局规则",
       "globalRulesInvalid": "文件无效：{{error}}",
       "guiDataDir": "GUI 数据目录",
@@ -497,6 +500,7 @@
     "sections": {
       "application": "应用",
       "binaryTitle": "{{agent}} 可执行文件",
+      "git": "Git",
       "permissions": "权限",
       "providers": "提供商",
       "recentErrors": "最近错误",
@@ -612,6 +616,7 @@
       "localBranchRequired": "请选择一个现有的本地分支",
       "namedBranchRequired": "创建 PR 需要一个具名分支",
       "newFileNotCommittable": "无法提交 {{path}}：它不是所选更改中的新文件，或被 Git 忽略",
+      "notInstalled": "未安装 Git",
       "noTrackedChanges": "本工作区没有可提交的已跟踪更改。请先暂存未跟踪的文件以将其包含进来。",
       "operationInProgressCommit": "Git {{operation}} 进行中，无法提交",
       "operationInProgressCreateBranch": "Git {{operation}} 进行中，无法创建分支",
@@ -758,6 +763,15 @@
       "folderNotFound": "未找到文件夹",
       "noWorkspaceHint": "通过侧边栏的工作区切换器切换到一个项目文件夹。",
       "noWorkspaceOpen": "未打开工作区"
+    }
+  },
+  "gitCheck": {
+    "banner": {
+      "checkAgain": "重新检查",
+      "dismissAriaLabel": "关闭 Git 提示",
+      "failedTitle": "Git 未能运行",
+      "howToInstall": "如何安装",
+      "missingDescription": "提交、分支、差异和工作树都需要 Git。请安装 Git，然后重新检查。"
     }
   },
   "home": {

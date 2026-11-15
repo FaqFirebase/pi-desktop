@@ -480,6 +480,9 @@
       "chromium": "Chromium",
       "electron": "Electron",
       "engineVersion": "Версия {{agent}}",
+      "gitFailed": "Не запустился: {{detail}}",
+      "gitNotFound": "Не найден",
+      "gitVersion": "Версия Git",
       "globalRules": "Глобальные правила",
       "globalRulesInvalid": "ошибка в файле: {{error}}",
       "guiDataDir": "Папка данных интерфейса",
@@ -530,6 +533,7 @@
     "sections": {
       "application": "Приложение",
       "binaryTitle": "Исполняемый файл {{agent}}",
+      "git": "Git",
       "permissions": "Разрешения",
       "providers": "Провайдеры",
       "recentErrors": "Последние ошибки",
@@ -654,6 +658,7 @@
       "localBranchRequired": "Выберите существующую локальную ветку",
       "namedBranchRequired": "Для пул-реквеста нужна именованная ветка",
       "newFileNotCommittable": "Нельзя включить {{path}} в коммит: файл не является новым в выбранных изменениях или игнорируется Git",
+      "notInstalled": "Git не установлен",
       "noTrackedChanges": "В проекте нет отслеживаемых изменений для коммита. Сначала добавьте новые файлы в индекс, чтобы включить их.",
       "operationInProgressCommit": "Нельзя создать коммит во время операции Git {{operation}}",
       "operationInProgressCreateBranch": "Нельзя создать ветку во время операции Git {{operation}}",
@@ -803,6 +808,15 @@
       "folderNotFound": "Папка не найдена",
       "noWorkspaceHint": "Выберите папку проекта в переключателе проектов на боковой панели.",
       "noWorkspaceOpen": "Нет открытого проекта"
+    }
+  },
+  "gitCheck": {
+    "banner": {
+      "checkAgain": "Проверить снова",
+      "dismissAriaLabel": "Скрыть уведомление о Git",
+      "failedTitle": "Git не запустился",
+      "howToInstall": "Как установить",
+      "missingDescription": "Для коммитов, веток, просмотра изменений и рабочих деревьев нужен Git. Установите его и проверьте снова."
     }
   },
   "home": {

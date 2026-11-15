@@ -25,6 +25,7 @@ import { registerGitConveyorHandlers } from './ipc/git-conveyor-handlers'
 import { registerSystemHandlers } from './ipc/system-handlers'
 import { registerUpdateHandlers } from './ipc/update-handlers'
 import { registerDiagnosticsHandlers } from './ipc/diagnostics-handlers'
+import { registerGitAvailabilityHandlers } from './ipc/git-availability-handlers'
 import { registerVoiceHandlers } from './ipc/voice-handlers'
 import { registerTypeSafeHandlers } from './ipc/typesafe-handlers'
 import { registerWorkflowHandlers } from './ipc/workflow-handlers'
@@ -76,6 +77,7 @@ export function registerIpcHandlers(
   registerSystemHandlers(ctx)
   registerUpdateHandlers()
   registerDiagnosticsHandlers(ctx)
+  registerGitAvailabilityHandlers(ctx)
   registerWorkflowHandlers(ctx)
   registerSubagentHandlers(ctx)
   registerVoiceHandlers(ctx)

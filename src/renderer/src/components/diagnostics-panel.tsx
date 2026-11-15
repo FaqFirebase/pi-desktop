@@ -12,6 +12,7 @@ import {
 import type {
   AppLogEntry,
   DiagnosticsReport,
+  GitAvailability,
   PermissionMode,
   PiResolutionSource,
   ProviderKeyState,
@@ -194,6 +195,10 @@ export function DiagnosticsPanel(): React.JSX.Element {
               <DiagRow label={t('diagnostics.fields.pathEntriesSearched')} value={String(report.piBinary.pathEntryCount)} />
             </DiagSection>
 
+            <DiagSection title={t('diagnostics.sections.git')}>
+              <GitVersionRow git={report.git} />
+            </DiagSection>
+
             <DiagSection title={t('diagnostics.sections.workspaces')}>
               {report.workspaces.length === 0 ? (
                 <p className="text-xs text-dim">{t('diagnostics.noWorkspaces')}</p>
@@ -326,6 +331,19 @@ function DiagSection({ title, children }: { title: string; children: React.React
       <div className="rounded-md border border-border bg-surface/50 px-3 py-2">{children}</div>
     </section>
   )
+}
+
+function GitVersionRow({ git }: { git: GitAvailability }): React.JSX.Element {
+  const { t } = useTranslation()
+  const label = t('diagnostics.fields.gitVersion')
+  switch (git.status) {
+    case 'found':
+      return <DiagRow label={label} value={git.version} mono />
+    case 'missing':
+      return <DiagRow label={label} value={t('diagnostics.fields.gitNotFound')} tone="fail" />
+    case 'failed':
+      return <DiagRow label={label} value={t('diagnostics.fields.gitFailed', { detail: git.detail })} tone="warn" />
+  }
 }
 
 function DiagRow({

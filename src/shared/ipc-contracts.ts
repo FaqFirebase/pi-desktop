@@ -187,6 +187,8 @@ export const IPC_CHANNELS = {
   GIT_CONVEYOR_COMMIT: 'git:conveyor-commit',
   GIT_CONVEYOR_PUSH: 'git:conveyor-push',
   GIT_CONVEYOR_CREATE_PR: 'git:conveyor-create-pr',
+  GIT_AVAILABILITY_GET: 'git:availability-get',
+  GIT_AVAILABILITY_RECHECK: 'git:availability-recheck',
 
   // Terminal
   TERMINAL_START: 'terminal:start',
@@ -1945,6 +1947,13 @@ export type PiResolutionSource =
   | 'omp'
   | 'fallback'
 
+/** Result of `git --version`, run by bare name the way every git action runs. */
+export type GitAvailability =
+  | { status: 'found'; version: string }
+  | { status: 'missing' }
+  /** git started but did not report a version; `detail` is its own first output line. */
+  | { status: 'failed'; detail: string }
+
 /** Everything the Diagnostics view shows, assembled in one main-side pass. */
 export interface DiagnosticsReport {
   generatedAt: number
@@ -1970,6 +1979,8 @@ export interface DiagnosticsReport {
   }
   /** `pi --version` output (first line), or null when it could not run. */
   piVersion: string | null
+  /** `git --version`, cached from the startup check or the last Check again. */
+  git: GitAvailability
   workspaces: DiagnosticsWorkspaceInfo[]
   /** Null when models.json is missing or unreadable — see providersError. */
   providers: DiagnosticsProviderInfo[] | null

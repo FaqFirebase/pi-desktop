@@ -22,6 +22,7 @@ import { getGlobalPermissionRulesPath } from './ipc/pi-start-options'
 import { getSettingsPath, loadAppSettings } from './ipc/settings'
 import { buildWorkspaceRulesStatus } from './ipc/permission-rules-handlers'
 import { readModelsConfigFile } from './ipc/models-config-handlers'
+import { getGitAvailability } from './ipc/git-availability-handlers'
 
 const PI_VERSION_TIMEOUT_MS = 10_000
 
@@ -86,6 +87,7 @@ export async function collectDiagnostics(
       pathEntryCount: countPathEntries(resolution.pathEnv, process.platform === 'win32'),
     },
     piVersion: piVersionResult.success ? extractVersionLine(piVersionResult.output) : null,
+    git: await getGitAvailability(),
     workspaces,
     providers,
     providersError,

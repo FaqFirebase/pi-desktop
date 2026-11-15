@@ -100,6 +100,7 @@ src/
 │   ├── notify-decision.ts        # Pure should-we-notify decision (focus/active-workspace aware)
 │   ├── diagnostics.ts            # Assembles the Diagnostics view's report
 │   ├── diagnostics-report.ts     # Pure report helpers (provider key classification etc.)
+│   ├── git-availability.ts       # git --version at start and on Check again, cached; missing / failed / found
 │   ├── pi-rpc-manager.ts         # Agent subprocess management (pi or omp), startup readiness probe, descendant-tree kill
 │   ├── pi-binary-resolution.ts   # Locate and identify installed pi/omp executables
 │   ├── pi-paths.ts               # Per-engine session-store roots; which engine owns a session file
@@ -151,7 +152,7 @@ src/
 │   ├── extension-ui-ipc.ts       # Extension-UI half of the IPC surface
 │   ├── pi-event-router.ts        # Routes every runtime's Pi events to the renderer
 │   ├── subagent-transcripts.ts   # Subagent transcripts: OMP RPC, pi-subagents inspect command, foreground session files
-│   ├── git-worktree.ts           # Isolated Git worktrees for New Task
+│   ├── git-worktree.ts           # Isolated Git worktrees for New Task; a missing git binary is GitNotInstalledError
 │   ├── git-head-watcher.ts       # Reports a HEAD or local branch change made outside the app; always on for the active workspace
 │   ├── repo-sets.ts              # Saved repo sets (repo-sets.json); a picked folder resolves to the top of its checkout
 │   ├── linked-worktrees.ts       # Worktrees of an isolated linked task, one shared branch
@@ -242,6 +243,7 @@ src/
             ├── task-launcher.tsx  # New-task modal that starts a real background session
             ├── mission-control.tsx # Global live-session and workflow inbox
             ├── git-conveyor-actions.tsx # Git bar: Commit, Commit + Push, Push, PR / Open PR #N, commit dialog
+            ├── git-missing-banner.tsx # Git missing or not running: Home and workspace banner, How to install, Check again
             ├── project-branch-selector.tsx # Status-bar branch menu: switch branch, New branch
             ├── stats-panel.tsx    # Activity stats dashboard on Home
             ├── chat-panel.tsx     # Main streaming chat; empty session = center prompt + project picker
@@ -441,7 +443,7 @@ resources/
 
 ### Diagnostics
 
-- Sidebar > Diagnostics: Pi binary resolution (path, source, node binary, PATH), `pi --version`, per-workspace path/trust/process status, provider key classification from the engine's models file (never evaluates secrets), permission mode and rule counts, storage paths, and recent warnings/errors from the app log
+- Sidebar > Diagnostics: Pi binary resolution (path, source, node binary, PATH), `pi --version`, git version (or not found), per-workspace path/trust/process status, provider key classification from the engine's models file (never evaluates secrets), permission mode and rule counts, storage paths, and recent warnings/errors from the app log
 - App log: `app-log.jsonl` in the GUI data dir (ring-buffered in memory, size-capped rotation), so packaged-build errors survive for the Diagnostics view
 
 ### File and project

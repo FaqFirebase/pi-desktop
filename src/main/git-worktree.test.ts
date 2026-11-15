@@ -8,6 +8,7 @@ import {
   describeGitFailure,
   GIT_FATAL_EXIT_CODE,
   GitCommandError,
+  GitNotInstalledError,
   isMissingRepositoryError,
   parseGitWorktrees,
   runGit,
@@ -51,6 +52,40 @@ test('runGit rejects with the exit code and streams of the failed command', asyn
         assert.equal(isMissingRepositoryError(error), true)
         return true
       }
+    )
+  } finally {
+    await rm(folder, { recursive: true, force: true })
+  }
+})
+
+test('runGit reports a missing git binary as GitNotInstalledError', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'pi-git-worktree-'))
+  try {
+    // PATH holds only an empty folder, so the bare name `git` resolves nowhere.
+    await assert.rejects(
+      () => runGit(['--version'], folder, { PATH: folder }),
+      (error: unknown) => {
+        assert.ok(error instanceof GitNotInstalledError)
+        assert.equal(error.message, tEnglish('errors.git.notInstalled'))
+        assert.equal(isMissingRepositoryError(error), false)
+        return true
+      },
+    )
+  } finally {
+    await rm(folder, { recursive: true, force: true })
+  }
+})
+
+test('runGit keeps the raw error when the working folder is missing', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'pi-git-worktree-'))
+  try {
+    await assert.rejects(
+      () => runGit(['--version'], join(folder, 'deleted')),
+      (error: unknown) => {
+        assert.ok(!(error instanceof GitNotInstalledError))
+        assert.equal((error as NodeJS.ErrnoException).code, 'ENOENT')
+        return true
+      },
     )
   } finally {
     await rm(folder, { recursive: true, force: true })

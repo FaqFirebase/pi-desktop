@@ -52,6 +52,7 @@ import type {
   PromptImage,
   ActivityStatsResult,
   DiagnosticsReport,
+  GitAvailability,
   ThemesListResult,
   ThemeImportResult,
   ThemeExportResult,
@@ -420,6 +421,12 @@ interface PiDesktopAPI {
     get(): Promise<DiagnosticsReport>
   }
 
+  /** Startup git check; `recheck` runs `git --version` again */
+  gitCheck: {
+    get(): Promise<GitAvailability>
+    recheck(): Promise<GitAvailability>
+  }
+
   // Update check (GitHub releases)
   updates: {
     check(): Promise<UpdateCheckResult>
@@ -737,6 +744,11 @@ const api: PiDesktopAPI = {
 
   diagnostics: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_GET),
+  },
+
+  gitCheck: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_AVAILABILITY_GET),
+    recheck: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_AVAILABILITY_RECHECK),
   },
 
   updates: {

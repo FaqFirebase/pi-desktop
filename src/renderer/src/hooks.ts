@@ -648,6 +648,7 @@ export function useInitialize(): void {
       void useAppStore.getState().loadNotes()
       void useAppStore.getState().loadCustomModels()
       void useAppStore.getState().checkForUpdates()
+      void useAppStore.getState().loadGitAvailability()
 
       // "Resume Last Session" opens the project's last conversation in the
       // background, Home included, so the chat shows what the next start

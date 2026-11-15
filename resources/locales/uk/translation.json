@@ -480,6 +480,9 @@
       "chromium": "Chromium",
       "electron": "Electron",
       "engineVersion": "Версія {{agent}}",
+      "gitFailed": "Не запустився: {{detail}}",
+      "gitNotFound": "Не знайдено",
+      "gitVersion": "Версія Git",
       "globalRules": "Глобальні правила",
       "globalRulesInvalid": "помилка у файлі: {{error}}",
       "guiDataDir": "Папка даних інтерфейсу",
@@ -530,6 +533,7 @@
     "sections": {
       "application": "Застосунок",
       "binaryTitle": "Виконуваний файл {{agent}}",
+      "git": "Git",
       "permissions": "Дозволи",
       "providers": "Провайдери",
       "recentErrors": "Останні помилки",
@@ -654,6 +658,7 @@
       "localBranchRequired": "Виберіть наявну локальну гілку",
       "namedBranchRequired": "Для пул-реквесту потрібна іменована гілка",
       "newFileNotCommittable": "Не можна додати {{path}} до коміту: файл не є новим у вибраних змінах або ігнорується Git",
+      "notInstalled": "Git не встановлено",
       "noTrackedChanges": "У проєкті немає відстежуваних змін для коміту. Спочатку додайте нові файли до індексу, щоб включити їх.",
       "operationInProgressCommit": "Не можна створити коміт під час операції Git {{operation}}",
       "operationInProgressCreateBranch": "Не можна створити гілку під час операції Git {{operation}}",
@@ -803,6 +808,15 @@
       "folderNotFound": "Папку не знайдено",
       "noWorkspaceHint": "Виберіть папку проєкту в перемикачі проєктів на бічній панелі.",
       "noWorkspaceOpen": "Немає відкритого проєкту"
+    }
+  },
+  "gitCheck": {
+    "banner": {
+      "checkAgain": "Перевірити знову",
+      "dismissAriaLabel": "Приховати сповіщення про Git",
+      "failedTitle": "Git не запустився",
+      "howToInstall": "Як установити",
+      "missingDescription": "Для комітів, гілок, перегляду змін і робочих дерев потрібен Git. Установіть його й перевірте знову."
     }
   },
   "home": {

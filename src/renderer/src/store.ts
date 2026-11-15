@@ -73,6 +73,7 @@ import type {
   NoteInput,
   NoteUpdate,
   UpdateCheckResult,
+  GitAvailability,
   PromptImage,
   CouncilArbiterRequest,
   PermissionRule,
@@ -490,6 +491,11 @@ interface AppState {
   updateInfo: UpdateCheckResult | null
   updateDismissed: boolean
 
+  // Git check. Dismiss is memory-only, so it lasts until the next app start.
+  gitAvailability: GitAvailability | null
+  gitBannerDismissed: boolean
+  gitCheckRunning: boolean
+
   // Cross-session lineage tree
   lineage: LineageNode[]
 }
@@ -727,6 +733,11 @@ interface AppActions {
   // Update check
   checkForUpdates: () => Promise<void>
   dismissUpdate: () => void
+
+  // Git check
+  loadGitAvailability: () => Promise<void>
+  recheckGitAvailability: () => Promise<void>
+  dismissGitBanner: () => void
 
   // Lineage
   loadLineage: () => Promise<void>
@@ -1198,6 +1209,8 @@ let latestPackageUpdateCheck = 0
 
 // Engine changes can start reads of two models files at once; the last one wins.
 const customModelsLoads = createStaleGuard()
+// The startup check can end after a Check again; only the newest result is kept.
+const gitAvailabilityLoads = createStaleGuard()
 
 export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Initial State ────────────────────────────────────────────────────
@@ -1328,6 +1341,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   noteDraft: null,
   updateInfo: null,
   updateDismissed: false,
+  gitAvailability: null,
+  gitBannerDismissed: false,
+  gitCheckRunning: false,
 
   lineage: [],
 
@@ -3749,6 +3765,33 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   dismissUpdate: () => set({ updateDismissed: true }),
+
+  // ─── Git check ────────────────────────────────────────────────────────
+
+  loadGitAvailability: async () => {
+    const isLatest = gitAvailabilityLoads.begin()
+    try {
+      const gitAvailability = await window.piDesktop.gitCheck.get()
+      if (isLatest()) set({ gitAvailability })
+    } catch {
+      // Best effort, like the update check: the banner stays as it was
+    }
+  },
+
+  recheckGitAvailability: async () => {
+    set({ gitCheckRunning: true })
+    const isLatest = gitAvailabilityLoads.begin()
+    try {
+      const gitAvailability = await window.piDesktop.gitCheck.recheck()
+      if (isLatest()) set({ gitAvailability })
+    } catch {
+      // Best effort, like the update check: the banner stays as it was
+    } finally {
+      set({ gitCheckRunning: false })
+    }
+  },
+
+  dismissGitBanner: () => set({ gitBannerDismissed: true }),
 
   // ─── Lineage ──────────────────────────────────────────────────────────
 

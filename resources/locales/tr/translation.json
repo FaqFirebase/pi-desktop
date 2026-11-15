@@ -460,6 +460,9 @@
       "chromium": "Chromium",
       "electron": "Electron",
       "engineVersion": "{{agent}} sürümü",
+      "gitFailed": "Çalışmadı: {{detail}}",
+      "gitNotFound": "Bulunamadı",
+      "gitVersion": "Git sürümü",
       "globalRules": "Genel kurallar",
       "globalRulesInvalid": "geçersiz dosya: {{error}}",
       "guiDataDir": "Arayüz veri dizini",
@@ -508,6 +511,7 @@
     "sections": {
       "application": "Uygulama",
       "binaryTitle": "{{agent}} ikili dosyası",
+      "git": "Git",
       "permissions": "İzinler",
       "providers": "Sağlayıcılar",
       "recentErrors": "Son hatalar",
@@ -626,6 +630,7 @@
       "localBranchRequired": "Var olan bir yerel dal seçin",
       "namedBranchRequired": "Pull request oluşturmak için adlandırılmış bir dal gerekli",
       "newFileNotCommittable": "{{path}} commit edilemez: seçili değişikliklerde yeni bir dosya değil ya da Git onu yok sayıyor",
+      "notInstalled": "Git kurulu değil",
       "noTrackedChanges": "Bu çalışma alanında commit edilecek izlenen değişiklik yok. İzlenmeyen dosyaları dahil etmek için önce hazırlayın.",
       "operationInProgressCommit": "Bir Git {{operation}} işlemi sürerken commit edilemez",
       "operationInProgressCreateBranch": "Bir Git {{operation}} işlemi sürerken dal oluşturulamaz",
@@ -773,6 +778,15 @@
       "folderNotFound": "Klasör bulunamadı",
       "noWorkspaceHint": "Kenar çubuğundaki çalışma alanı değiştiriciden bir proje klasörüne geçin.",
       "noWorkspaceOpen": "Açık çalışma alanı yok"
+    }
+  },
+  "gitCheck": {
+    "banner": {
+      "checkAgain": "Yeniden denetle",
+      "dismissAriaLabel": "Git bildirimini kapat",
+      "failedTitle": "Git çalışmadı",
+      "howToInstall": "Nasıl kurulur",
+      "missingDescription": "Commit, dal, fark ve worktree işlemleri için Git gerekir. Git'i kurun, sonra yeniden denetleyin."
     }
   },
   "home": {

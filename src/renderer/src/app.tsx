@@ -19,6 +19,7 @@ import { ExtensionUiDialog, AppConfirmDialog } from './components/extension-ui-d
 import { ChatToolRail } from './components/chat-tool-rail'
 import { WorkspaceTabs } from './components/workspace-tabs'
 import { RepoBar } from './components/repo-bar'
+import { GitMissingBanner } from './components/git-missing-banner'
 import { LinkedTaskDialog } from './components/linked-task-dialog'
 import { WorkflowNavigator } from './components/workflow-navigator'
 import { useContextMenu, buildDefaultContextMenu } from './components/context-menu'
@@ -161,6 +162,7 @@ export function App(): React.JSX.Element {
         <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           {showChrome && <WorkspaceTabs />}
           {showChrome && <RepoBar />}
+          {showChrome && <GitMissingBanner placement="workspace" />}
           <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
               <div className={globalWorkflowOpen ? 'hidden' : 'contents'}>
