@@ -64,3 +64,19 @@ test('reset clears every run', () => {
   assert.equal(runs.runningCount(), 0)
   assert.equal(runs.reset(), false)
 })
+
+test('any status but running ends the runs, a restart included', () => {
+  for (const status of ['starting', 'stopped', 'error'] as const) {
+    const runs = createBackgroundSubagentRuns()
+    runs.handleEvent({ type: 'subagent_lifecycle', payload: { id: 't1', status: 'started' } })
+    assert.equal(runs.handleStatus(status), true, status)
+    assert.equal(runs.runningCount(), 0, status)
+  }
+})
+
+test('a running status keeps the runs', () => {
+  const runs = createBackgroundSubagentRuns()
+  runs.handleEvent({ type: 'subagent_lifecycle', payload: { id: 't1', status: 'started' } })
+  assert.equal(runs.handleStatus('running'), false)
+  assert.equal(runs.runningCount(), 1)
+})

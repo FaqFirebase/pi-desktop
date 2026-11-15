@@ -14,6 +14,7 @@ import type {
   AgentInstallation,
   StreamingTextSnapshot,
 } from '../shared/ipc-contracts'
+import { BLOCKING_UI_METHODS } from '../shared/ipc-contracts'
 import type { CaptureOptions, PiEngine, PiResolution, PiStartFailure, ResolutionDeps } from './pi-binary-resolution'
 import {
   describePiStartFailure,
@@ -630,12 +631,6 @@ export function buildPiRunEnv(needsShell: boolean, base: NodeJS.ProcessEnv = pro
 
 const MAX_PENDING_RESPONSES = 64
 const RESPONSE_TIMEOUT_MS = 30_000
-const BLOCKING_UI_METHODS: Record<string, true> = {
-  select: true,
-  confirm: true,
-  input: true,
-  editor: true,
-}
 
 /**
  * Writable temp directory for the Pi child process on Windows only. Prefer the
@@ -1319,7 +1314,7 @@ export class PiRpcManager extends EventEmitter {
       const id = typeof uiReq.id === 'string' ? uiReq.id : ''
       const targetId = typeof uiReq.targetId === 'string' ? uiReq.targetId : ''
 
-      if (BLOCKING_UI_METHODS[method] && id) {
+      if (BLOCKING_UI_METHODS.has(method) && id) {
         this.activeBlockingUiRequests.add(id)
         this.pausePromptTimers()
       } else if (method === 'cancel') {

@@ -631,6 +631,14 @@ export interface PiExtensionUiRequest {
   targetId?: string
 }
 
+/** Extension UI methods that stop the turn until the user answers. */
+export const BLOCKING_UI_METHODS: ReadonlySet<string> = new Set<PiExtensionUiRequest['method']>([
+  'select',
+  'confirm',
+  'input',
+  'editor',
+])
+
 /**
  * Blocking extension-UI prompts held in the main process, keyed by workspace
  * id. Zero entries are omitted, so an empty object means nothing is waiting.

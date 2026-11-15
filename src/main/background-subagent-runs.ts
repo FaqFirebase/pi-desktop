@@ -1,4 +1,4 @@
-import type { PiRpcEvent } from '../shared/ipc-contracts'
+import type { PiProcessStatus, PiRpcEvent } from '../shared/ipc-contracts'
 import {
   applyOmpLifecycle,
   applyOmpProgress,
@@ -9,8 +9,13 @@ import {
 } from '../shared/subagent-task'
 
 export interface BackgroundSubagentRuns {
-  /** Both return whether `runningCount()` changed. */
+  /** Each handler returns whether `runningCount()` changed. */
   handleEvent(event: PiRpcEvent): boolean
+  /**
+   * Any status but 'running' means the process is gone or a new one starts
+   * (a restart moves straight to 'starting' with no exit event), so its runs end.
+   */
+  handleStatus(status: PiProcessStatus): boolean
   /** Forget every run, for a process that stopped or crashed. */
   reset(): boolean
   runningCount(): number
@@ -36,6 +41,12 @@ export function createBackgroundSubagentRuns(): BackgroundSubagentRuns {
     return runningCount() !== before
   }
 
+  const reset = (): boolean =>
+    track(() => {
+      ompTasks = []
+      asyncSnapshot = []
+    })
+
   return {
     runningCount,
 
@@ -49,11 +60,10 @@ export function createBackgroundSubagentRuns(): BackgroundSubagentRuns {
       })
     },
 
-    reset() {
-      return track(() => {
-        ompTasks = []
-        asyncSnapshot = []
-      })
+    handleStatus(status) {
+      return status === 'running' ? false : reset()
     },
+
+    reset,
   }
 }

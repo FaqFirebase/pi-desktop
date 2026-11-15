@@ -72,10 +72,16 @@ test('a stop, an error or a crash ends the turn and clears prompts', () => {
   }
 })
 
-test('a running or starting status keeps the turn', () => {
+test('a running status keeps the turn', () => {
   const turns = createRuntimeTurnState()
   turns.handleEvent(AGENT_START)
   assert.equal(turns.handleStatus('running'), false)
-  assert.equal(turns.handleStatus('starting'), false)
   assert.equal(turns.isRunningTurn(), true)
+})
+
+test('a restart that goes straight to starting ends the turn', () => {
+  const turns = createRuntimeTurnState()
+  turns.handleEvent(AGENT_START)
+  assert.equal(turns.handleStatus('starting'), true)
+  assert.equal(turns.isRunningTurn(), false)
 })

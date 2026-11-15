@@ -5,6 +5,7 @@ import type {
   PiProcessStatus,
   PiRpcEvent,
 } from '../shared/ipc-contracts'
+import { BLOCKING_UI_METHODS } from '../shared/ipc-contracts'
 
 /**
  * Routes Pi events from every workspace's PiRpcManager to the renderer.
@@ -27,13 +28,6 @@ import type {
  * Electron-free factory: all I/O goes through injected deps, so tests drive it
  * with bare emitters and an injected clock.
  */
-
-const BLOCKING_UI_METHODS: ReadonlySet<PiExtensionUiRequest['method']> = new Set([
-  'select',
-  'confirm',
-  'input',
-  'editor',
-])
 
 interface QueuedPrompt {
   event: PiExtensionUiRequest

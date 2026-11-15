@@ -6,9 +6,6 @@ import { createRuntimeTurnState } from '../runtime-turn-state'
 import { createBackgroundSubagentRuns } from '../background-subagent-runs'
 import type { IpcContext } from './context'
 
-/** Statuses after which a process holds no subagent runs. */
-const ENDED_STATUSES: ReadonlySet<PiProcessStatus> = new Set(['stopped', 'error'])
-
 let nextManagerNumber = 0
 
 export function registerKeepAwakeHandlers(ctx: IpcContext): void {
@@ -41,7 +38,7 @@ export function registerKeepAwakeHandlers(ctx: IpcContext): void {
     manager.on('extension-ui-response', (id: string) => reportTurn(turns.handleUiResponse(id)))
     manager.on('status-change', (status: PiProcessStatus) => {
       reportTurn(turns.handleStatus(status))
-      if (ENDED_STATUSES.has(status)) reportRuns(runs.reset())
+      reportRuns(runs.handleStatus(status))
     })
     manager.on('exit', () => {
       reportTurn(turns.handleExit())

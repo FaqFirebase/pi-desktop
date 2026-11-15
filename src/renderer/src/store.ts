@@ -88,7 +88,7 @@ import type {
   PiPromptResultEvent,
 } from '../../shared/ipc-contracts'
 import {
-  isRuntimeBusy, promptRanWithoutAgent, promptRefusal, promptResultRefusal, reportsNoAgentRun, reportsPromptOutcome,
+  BLOCKING_UI_METHODS, isRuntimeBusy, promptRanWithoutAgent, promptRefusal, promptResultRefusal, reportsNoAgentRun, reportsPromptOutcome,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -2798,7 +2798,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           // Toast slot: kept apart from the dialog slot so a notification can
           // never clobber an unanswered blocking prompt.
           set({ extensionNotify: uiEvent })
-        } else if (uiEvent.method === 'select' || uiEvent.method === 'confirm' || uiEvent.method === 'input' || uiEvent.method === 'editor') {
+        } else if (BLOCKING_UI_METHODS.has(uiEvent.method)) {
           set({ extensionUiRequest: uiEvent })
         }
         break

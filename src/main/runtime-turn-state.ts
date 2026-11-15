@@ -1,10 +1,4 @@
-import type { PiExtensionUiRequest, PiProcessStatus, PiRpcEvent } from '../shared/ipc-contracts'
-
-/** Extension UI that stops the turn until the user answers. */
-const USER_PROMPT_METHODS: ReadonlySet<PiExtensionUiRequest['method']> = new Set(['select', 'confirm', 'input', 'editor'])
-
-/** Statuses of a live process; any other status means the process is gone. */
-const LIVE_STATUSES: ReadonlySet<PiProcessStatus> = new Set(['running', 'starting'])
+import { BLOCKING_UI_METHODS, type PiProcessStatus, type PiRpcEvent } from '../shared/ipc-contracts'
 
 export interface RuntimeTurnState {
   /** Each handler returns whether `isRunningTurn()` changed. */
@@ -19,8 +13,8 @@ export interface RuntimeTurnState {
 /**
  * Whether one agent runtime runs a turn now. A turn with an open user prompt
  * does not count: it only waits, and sleep only pauses it. The events and the
- * prompt rule are the ones `WorkspaceManager.attachSessionRuntime` follows, so
- * "waits on the user" means the same thing in both places.
+ * prompt rule (`BLOCKING_UI_METHODS`) are the ones `WorkspaceManager.attachSessionRuntime`
+ * follows, so "waits on the user" means the same thing in both places.
  */
 export function createRuntimeTurnState(): RuntimeTurnState {
   let turnActive = false
@@ -47,7 +41,7 @@ export function createRuntimeTurnState(): RuntimeTurnState {
         if (event.type === 'agent_start') turnActive = true
         else if (event.type === 'agent_end') endTurn()
         else if (event.type === 'extension_ui_request') {
-          if (USER_PROMPT_METHODS.has(event.method)) openPrompts.add(event.id)
+          if (BLOCKING_UI_METHODS.has(event.method)) openPrompts.add(event.id)
           else if (event.method === 'cancel' && event.targetId) openPrompts.delete(event.targetId)
         }
       })
@@ -58,8 +52,10 @@ export function createRuntimeTurnState(): RuntimeTurnState {
     },
 
     handleStatus(status) {
+      // Any status but 'running' means the process is gone or a new one
+      // starts (a restart moves straight to 'starting' with no exit event).
       return track(() => {
-        if (!LIVE_STATUSES.has(status)) endTurn()
+        if (status !== 'running') endTurn()
       })
     },
 
