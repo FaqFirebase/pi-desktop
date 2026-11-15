@@ -56,6 +56,7 @@ export type OpenPathRefusal =
   | 'not-found'
   | 'runnable-file'
   | 'launch-failed'
+  | 'system-open-failed'
   | 'no-terminal-workspace'
   | 'editor-running'
 

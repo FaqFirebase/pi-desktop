@@ -19,6 +19,7 @@ interface Options {
   activeWorkspaceId?: string | null
   editorRunning?: boolean
   launchOk?: boolean
+  systemOk?: boolean
 }
 
 function setup(options: Options = {}) {
@@ -59,7 +60,7 @@ function setup(options: Options = {}) {
     terminalProgram: (file, args) => ({ file, args }),
     openWithSystem: async (path) => {
       calls.system.push(path)
-      return true
+      return options.systemOk ?? true
     },
     reveal: (path) => { calls.reveal.push(path) },
   }
@@ -154,4 +155,15 @@ test('a failed launch clears the editor cache', async () => {
   const { open, calls } = setup({ ...VSCODE, launchOk: false })
   assert.deepEqual(await open({ action: 'editor', path: '/w/a.ts' }), { ok: false, refusal: 'launch-failed' })
   assert.equal(calls.forgetInstalls, 1)
+})
+
+test('a failed system open is its own refusal, not an editor failure', async () => {
+  const { open, calls } = setup({ systemOk: false })
+  assert.deepEqual(await open({ action: 'system', path: '/w/a.ts' }), { ok: false, refusal: 'system-open-failed' })
+  assert.equal(calls.forgetInstalls, 0)
+})
+
+test('System default that fails to open is a system refusal too', async () => {
+  const { open } = setup({ preferred: null, systemOk: false })
+  assert.deepEqual(await open({ action: 'editor', path: '/w/a.ts' }), { ok: false, refusal: 'system-open-failed' })
 })

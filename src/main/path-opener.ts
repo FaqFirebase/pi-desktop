@@ -47,7 +47,7 @@ export function createPathOpener(deps: PathOpenerDeps): (request: OpenPathReques
 
   async function openWithSystem(target: string, facts: PathFacts): Promise<OpenPathResult> {
     if (isRunnableTarget([target, deps.realPath(target) ?? target], facts, deps.platform)) return refused('runnable-file')
-    return (await deps.openWithSystem(target)) ? OPENED : refused('launch-failed')
+    return (await deps.openWithSystem(target)) ? OPENED : refused('system-open-failed')
   }
 
   function openInTerminalEditor(install: EditorInstall, args: string[]): OpenPathResult {

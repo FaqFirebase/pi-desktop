@@ -15,6 +15,8 @@ export function openPathRefusalPrompt(refusal: OpenPathRefusal, t: Translate): {
       return { message: t('openPath.refusal.runnableFile'), followUp: 'reveal' }
     case 'launch-failed':
       return { message: t('openPath.refusal.launchFailed'), followUp: 'system' }
+    case 'system-open-failed':
+      return { message: t('openPath.refusal.systemOpenFailed'), followUp: 'reveal' }
     case 'no-terminal-workspace':
       return { message: t('openPath.refusal.noTerminalWorkspace'), followUp: null }
     case 'editor-running':

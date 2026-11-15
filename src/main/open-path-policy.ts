@@ -7,12 +7,20 @@ export const RUNNABLE_EXTENSIONS: ReadonlySet<string> = new Set([
   '.exe', '.bat', '.cmd', '.com', '.msi', '.scr', '.ps1', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh',
   '.hta', '.cpl', '.msc', '.lnk', '.url', '.jar', '.app', '.command', '.tool', '.terminal', '.workflow',
   '.action', '.pkg', '.mpkg', '.scpt', '.applescript', '.desktop', '.appimage', '.sh',
+  // More Windows types that run code when opened.
+  '.pif', '.scf', '.application', '.appref-ms', '.vb', '.ws', '.wsc', '.msp', '.reg',
+  '.settingcontent-ms', '.library-ms',
+  // More macOS types that run code when opened.
+  '.fileloc', '.prefpane',
 ])
 
 // Any of the owner, group or other execute bits.
 const EXECUTE_BITS = 0o111
 // Windows drops trailing dots and spaces from a file name, so `run.bat.` runs `run.bat`.
 const TRAILING_DOTS_AND_SPACES = /[. ]+$/
+// Text after a colon names an NTFS stream (`run.bat::$DATA` runs `run.bat`).
+// Cut it on every OS: elsewhere it only makes the check stricter.
+const STREAM_SEPARATOR = ':'
 
 /** Folders "Open in editor", "Open with system app" and "Show in folder" may act in. */
 export function openPathRoots(
@@ -47,11 +55,11 @@ export function resolveOpenPathTarget(
 
 /**
  * The lower-case extension of a path's last part, read the way Windows reads
- * it (trailing dots and spaces dropped). Both separators count, so a Windows
- * path is read the same on every OS.
+ * it (stream name and trailing dots and spaces dropped). Both separators
+ * count, so a Windows path is read the same on every OS.
  */
 export function extensionForPolicy(path: string): string {
-  const name = win32Path.basename(path).replace(TRAILING_DOTS_AND_SPACES, '')
+  const name = win32Path.basename(path).split(STREAM_SEPARATOR)[0].replace(TRAILING_DOTS_AND_SPACES, '')
   return win32Path.extname(name).toLowerCase()
 }
 

@@ -997,7 +997,8 @@
       "noTerminalWorkspace": "Open a project first. Terminal editors open in the project's terminal panel.",
       "notFound": "This file or folder no longer exists.",
       "outsideRoots": "This path is outside the open projects.",
-      "runnableFile": "This file can run as a program, so it is not opened with the system app."
+      "runnableFile": "This file can run as a program, so it is not opened with the system app.",
+      "systemOpenFailed": "The system could not open this file or folder."
     },
     "refusalTitle": "Could not open",
     "showInFolder": "Show in Folder"

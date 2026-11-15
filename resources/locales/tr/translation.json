@@ -997,7 +997,8 @@
       "noTerminalWorkspace": "Önce bir proje açın. Terminal düzenleyicileri projenin terminal panelinde açılır.",
       "notFound": "Bu dosya veya klasör artık yok.",
       "outsideRoots": "Bu yol açık projelerin dışında.",
-      "runnableFile": "Bu dosya program olarak çalışabilir, bu yüzden sistem uygulamasıyla açılmadı."
+      "runnableFile": "Bu dosya program olarak çalışabilir, bu yüzden sistem uygulamasıyla açılmadı.",
+      "systemOpenFailed": "Sistem bu dosyayı veya klasörü açamadı."
     },
     "refusalTitle": "Açılamadı",
     "showInFolder": "Klasörde göster"

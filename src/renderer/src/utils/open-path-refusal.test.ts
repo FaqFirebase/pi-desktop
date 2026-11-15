@@ -10,7 +10,15 @@ test('a runnable file offers Show in folder with a reason', () => {
 })
 
 test('a failed editor launch offers the system app', () => {
-  assert.equal(openPathRefusalPrompt('launch-failed', t).followUp, 'system')
+  const prompt = openPathRefusalPrompt('launch-failed', t)
+  assert.equal(prompt.followUp, 'system')
+  assert.equal(prompt.message, 'The editor did not start.')
+})
+
+test('a failed system open offers Show in folder, not the system app again', () => {
+  const prompt = openPathRefusalPrompt('system-open-failed', t)
+  assert.equal(prompt.followUp, 'reveal')
+  assert.equal(prompt.message, 'The system could not open this file or folder.')
 })
 
 test('other refusals offer no follow-up and have text', () => {

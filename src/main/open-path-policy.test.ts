@@ -17,6 +17,20 @@ test('every spec extension is on the blocklist', () => {
   }
 })
 
+test('Windows and macOS types that run through the system are on the blocklist', () => {
+  for (const ext of ['.pif', '.scf', '.application', '.appref-ms', '.vb', '.ws', '.wsc', '.msp', '.reg', '.settingcontent-ms', '.library-ms', '.fileloc', '.prefpane']) {
+    assert.equal(RUNNABLE_EXTENSIONS.has(ext), true, ext)
+    assert.equal(isRunnableTarget([`/p/a${ext}`], plainFile, 'linux'), true, ext)
+  }
+})
+
+test('a stream name after a colon does not hide the extension', () => {
+  assert.equal(extensionForPolicy('C:\\p\\run.bat::$DATA'), '.bat')
+  assert.equal(extensionForPolicy('/p/run.sh:notes.txt'), '.sh')
+  assert.equal(isRunnableTarget(['C:\\p\\run.bat::$DATA'], plainFile, 'win32'), true)
+  assert.equal(isRunnableTarget(['/p/run.sh:x.txt'], plainFile, 'linux'), true)
+})
+
 test('extensionForPolicy drops trailing dots and spaces and folds case', () => {
   assert.equal(extensionForPolicy('C:\\p\\SETUP.EXE'), '.exe')
   assert.equal(extensionForPolicy('/p/run.bat. .'), '.bat')

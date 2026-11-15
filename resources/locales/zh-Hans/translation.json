@@ -980,7 +980,8 @@
       "noTerminalWorkspace": "请先打开一个项目。终端编辑器会在项目的终端面板中打开。",
       "notFound": "此文件或文件夹已不存在。",
       "outsideRoots": "此路径不在已打开的项目中。",
-      "runnableFile": "此文件可作为程序运行，因此不会用系统应用打开。"
+      "runnableFile": "此文件可作为程序运行，因此不会用系统应用打开。",
+      "systemOpenFailed": "系统无法打开此文件或文件夹。"
     },
     "refusalTitle": "无法打开",
     "showInFolder": "在文件夹中显示"
