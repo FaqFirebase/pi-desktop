@@ -137,6 +137,9 @@ src/
 │   ├── package-updates.ts        # npm-registry update check + OMP npm-plugin update spec
 │   ├── auto-tag.ts               # Machine-derived session tags
 │   ├── archived-sessions.ts      # Archived session persistence
+│   ├── session-timestamp-store.ts # {sessionId: epochMs} registry file behind archived, pinned and unread sessions
+│   ├── pinned-sessions.ts        # Pinned sessions file; pinned rows stay listed past the list cap
+│   ├── session-unread.ts         # Unread sessions: a turn ended while the session was not on screen
 │   ├── app-data-paths.ts         # Resolve app data directories
 │   ├── attachment-reader.ts      # Read chat attachments (image base64 / text)
 │   ├── fs-errors.ts              # Friendly file-system error messages
@@ -225,6 +228,7 @@ src/
         │   ├── quick-switcher.ts # Token filters for the palette's workspace/session/file sections
         │   ├── rank-file-results.ts # Basename-tiered ranking for file search hits
         │   ├── session-title.ts  # Distinguishable fallback session titles
+        │   ├── session-pin-order.ts # Pinned rows first in pin order, then newest first
         │   ├── session-diff.ts   # Filter diff files to those the session's edit/write calls touched
         │   ├── heatmap-grid.ts   # Weeks/intensity layout for the stats mini-heatmap
         │   ├── model-search.ts   # Tokenized model-picker search (treats -_./: as spaces)
@@ -315,6 +319,7 @@ src/
             ├── line-numbered-code.tsx # Line-numbered highlighted code rows
             ├── resize-handle.tsx  # Drag handle reporting deltas along one axis
             ├── session-runtime-indicator.tsx # Per-session engine/status indicator
+            ├── session-row-markers.tsx # Session row pin icon and unread dot
             ├── theme-editor.tsx   # Custom theme editor
             ├── theme-editor-helpers.ts # Pure theme-editor helpers
             ├── theme-gallery.tsx  # Theme gallery browser
@@ -380,6 +385,7 @@ resources/
 - Delete asks in an in-app themed dialog, not the native OS dialog
 - Branch/fork tree, clone, and cross-session lineage in the Timeline; one-click context compaction (status bar and status popover)
 - An answer the user stopped keeps a "Stopped" mark (`shared/stopped-answer.ts`)
+- **Pinned and unread**: right-click > Pin keeps a session at the top of its folder group in the sidebar and the Sessions view, first pinned on top; archive unpins, delete drops the pin. A session gets a dot when a turn in it ends (completed, failed or stopped) while it is not on screen, which means shown in the main view of the focused main window. The renderer reports the shown session (`session:set-visible`), main knows focus and keeps the state (`session-unread.ts`); viewing the session clears the dot. In-app only, no OS badge
 
 ### Chat
 
@@ -536,7 +542,7 @@ Right-click for:
 - Messages: Copy Message, Copy Selection, Add Message (or Selection) to Notes
 - Code blocks: Copy Code Block, Search Selection
 - Links: Open Link, Copy Link
-- Session rows: Open Session, Workflow Runs, Archive/Unarchive, Rename…, Delete…
+- Session rows: Open Session, Workflow Runs, Pin/Unpin, Archive/Unarchive, Rename…, Delete…
 - Terminal: Copy, Paste, Select All, Clear
 
 ## IPC architecture
@@ -569,6 +575,8 @@ Instances on different data dirs can read one session store, and two agents on o
 | `<GUI data dir>/app-log.jsonl` | Main-process app log (warnings/errors for the Diagnostics view) |
 | `<GUI data dir>/notes.json` | Reusable prompts/notes |
 | `<GUI data dir>/archived-sessions.json` | Archived sessions |
+| `<GUI data dir>/pinned-sessions.json` | Pinned sessions |
+| `<GUI data dir>/unread-sessions.json` | Sessions with unseen finished turns |
 | `<GUI data dir>/session-auto-tags.json` | Machine-derived session tags |
 | `<GUI data dir>/permission-rules.json` | Global permission rules |
 | `<canonical data dir>/session-claims/` | One claim file per session an instance runs an agent on (shared by every instance, whatever its data dir) |

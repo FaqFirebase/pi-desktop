@@ -303,6 +303,7 @@
     "deleteSessionLabel": "删除…",
     "openLink": "打开链接",
     "openSession": "打开会话",
+    "pin": "置顶",
     "rename": "重命名…",
     "searchSelection": "搜索选中内容",
     "shortcuts": {
@@ -313,6 +314,7 @@
       "selectAll": "Ctrl+A"
     },
     "unarchive": "取消归档",
+    "unpin": "取消置顶",
     "workflowRuns": "工作流运行"
   },
   "conveyor": {
@@ -1261,6 +1263,7 @@
       "projectCount_other": "{{count}} 个项目",
       "sessionCount_other": "{{count}} 个会话"
     },
+    "pinnedBadge": "已置顶",
     "runtime": {
       "completed": "{{agent}} 已完成",
       "failed": "{{agent}} 因错误而停止",
@@ -1292,7 +1295,8 @@
       "minutes_other": "{{count}} 分钟前"
     },
     "title": "会话",
-    "unknownProject": "未知"
+    "unknownProject": "未知",
+    "unreadDot": "有新动态"
   },
   "settings": {
     "actions": {
@@ -1870,6 +1874,7 @@
       "notAFolder": "无法作为项目打开 — 不是文件夹：{{path}}",
       "notGitRepository": "此项目不是 Git 仓库。要另开对话请使用“新建会话”，或打开 Git 项目以使用隔离标签页。",
       "openFolderError": "打开文件夹错误：{{detail}}",
+      "pinError": "置顶错误：{{detail}}",
       "removedPackage": "已移除 {{spec}}",
       "removePackageFailed": "移除失败",
       "removeWorkspaceError": "移除工作区错误：{{detail}}",
@@ -1884,6 +1889,7 @@
       "truncatedHistory_other": "为提升性能，仅显示最近 {{count}}/{{total}} 条消息。较早的对话仍保存在会话文件中。",
       "unarchiveError": "取消归档错误：{{detail}}",
       "unknownError": "未知错误",
+      "unpinError": "取消置顶错误：{{detail}}",
       "updatedAllPackages": "已更新包。重启 Pi 以加载它们。",
       "updatedPackage": "已更新 {{spec}}。重启 Pi 以加载它。",
       "updatePackageFailed": "更新失败",

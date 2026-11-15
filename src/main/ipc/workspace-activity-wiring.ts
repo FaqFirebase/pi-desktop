@@ -138,6 +138,9 @@ export function wireWorkspaceActivity(
     now: () => Date.now(),
     onChange: (map) => ctx.broadcast(IPC_CHANNELS.EVENT_WORKSPACE_ACTIVITY, map),
     onNotify: (notification) => {
+      void ctx.unreadSessions.handleActivityNotification(notification).catch((err) => {
+        appLog.warn('sessions', 'Failed to record an unread session', err)
+      })
       void showNotification(notification).catch((err) => {
         appLog.warn('notifications', 'Failed to show desktop notification', err)
       })

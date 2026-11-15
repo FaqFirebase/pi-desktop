@@ -8,11 +8,12 @@ import {
   mkdirSync,
   existsSync,
 } from 'fs'
-import { basename, dirname, join } from 'path'
+import { dirname, join } from 'path'
 import { getSessionRoots } from './pi-paths'
 import { getConfiguredEngineKind } from './pi-rpc-manager'
 import { parseModelsFile, resolveModelsFile, type ModelsFileFormat } from './models-file'
 import { getGuiDataPath } from './app-data-paths'
+import { JSONL_EXTENSION, sessionIdFromPath } from './session-paths'
 import { addTokenUsage, emptyTokenUsage, totalTokenUsage, type TokenUsage } from '../shared/token-usage'
 import type {
   ActivityStatsResult,
@@ -35,7 +36,6 @@ const STORE_FILE_NAME = 'activity-stats.json'
 const STORE_VERSION = 2
 // mtime that never matches a real file, so the next scan re-parses the entry.
 const STALE_MTIME_MS = -1
-const JSONL_EXTENSION = '.jsonl'
 const MESSAGE_RECORD_TYPE = 'message'
 const MS_PER_DAY = 86_400_000
 const SAVE_DEBOUNCE_MS = 2000
@@ -92,11 +92,6 @@ function localDayKey(d: Date): string {
 function toFiniteNumber(value: unknown): number {
   const n = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(n) ? n : 0
-}
-
-function sessionIdFromPath(filePath: string): string {
-  const base = basename(filePath)
-  return base.endsWith(JSONL_EXTENSION) ? base.slice(0, -JSONL_EXTENSION.length) : base
 }
 
 /** Reduce one session file's JSONL content into a per-day bucket map. */

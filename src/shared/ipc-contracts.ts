@@ -53,6 +53,11 @@ export const IPC_CHANNELS = {
   SESSION_ARCHIVE: 'session:archive',
   SESSION_UNARCHIVE: 'session:unarchive',
   SESSION_LIST_ARCHIVED: 'session:list-archived',
+  SESSION_PIN: 'session:pin',
+  SESSION_UNPIN: 'session:unpin',
+  SESSION_LIST_PINNED: 'session:list-pinned',
+  SESSION_LIST_UNREAD: 'session:list-unread',
+  SESSION_SET_VISIBLE: 'session:set-visible',
   SESSION_GET_LINEAGE: 'session:get-lineage',
   SESSION_COMPACT: 'session:compact',
 
@@ -234,6 +239,7 @@ export const IPC_CHANNELS = {
   EVENT_WORKSPACE_ACTIVITY: 'event:workspace-activity',
   EVENT_KEEP_AWAKE_STATUS: 'event:keep-awake-status',
   EVENT_SESSION_RUNTIME: 'event:session-runtime',
+  EVENT_UNREAD_SESSIONS: 'event:unread-sessions',
   /** A model/thinking switch changed a runtime's engine state; views bound to it refresh. */
   EVENT_RUNTIME_STATE_CHANGED: 'event:runtime-state-changed',
   EVENT_ACTIVATE_WORKSPACE: 'event:activate-workspace',
@@ -1170,6 +1176,8 @@ export interface SessionDeleteResult {
 }
 
 export type ArchivedSessionsMap = Record<string, number>
+export type PinnedSessionsMap = Record<string, number>
+export type UnreadSessionsMap = Record<string, number>
 
 // File extensions Pi accepts as inline images (matches Pi's RPC image support).
 export const SUPPORTED_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'] as const

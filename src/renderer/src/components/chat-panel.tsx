@@ -33,7 +33,7 @@ import { ImageViewer } from './image-viewer'
 import { DiffViewer } from './diff-viewer'
 import { SubagentPanel } from './subagent-panel'
 import { TerminalPanel } from './terminal'
-import { isFileWatchDemanded, useChatScroll, useChatVisible, useChatWidth } from '../hooks'
+import { isFileWatchDemanded, useChatScroll, useChatVisible, useChatWidth, visibleSessionPath } from '../hooks'
 import { messageColumnClass } from '../utils/chat-width'
 import { createMeasureRef } from '../utils/element-measure'
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
@@ -196,6 +196,16 @@ export function ChatPanel(): React.JSX.Element {
       void window.piDesktop.files.setWatchDemand(false).catch(() => {})
     }
   }, [fileWatchDemanded])
+
+  // Main marks a session unread when a turn ends while it is not on screen,
+  // so it must know which session this view shows.
+  const visibleSession = useAppStore(visibleSessionPath)
+  useEffect(() => {
+    void window.piDesktop.session.setVisible(visibleSession).catch(() => {})
+    return () => {
+      void window.piDesktop.session.setVisible(null).catch(() => {})
+    }
+  }, [visibleSession])
 
   const sidePanelPane = showSidePanel ? (
     <div

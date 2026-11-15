@@ -324,6 +324,7 @@
     "deleteSessionLabel": "Удалить…",
     "openLink": "Открыть ссылку",
     "openSession": "Открыть сессию",
+    "pin": "Закрепить",
     "rename": "Переименовать…",
     "searchSelection": "Найти выделенное",
     "shortcuts": {
@@ -334,6 +335,7 @@
       "selectAll": "Ctrl+A"
     },
     "unarchive": "Из архива",
+    "unpin": "Открепить",
     "workflowRuns": "Запуски процессов"
   },
   "conveyor": {
@@ -1333,6 +1335,7 @@
       "sessionCount_many": "{{count}} сессий",
       "sessionCount_other": "{{count}} сессии"
     },
+    "pinnedBadge": "Закреплена",
     "runtime": {
       "completed": "{{agent}} завершил работу",
       "failed": "{{agent}} остановился с ошибкой",
@@ -1373,7 +1376,8 @@
       "minutes_other": "{{count}} мин. назад"
     },
     "title": "Сессии",
-    "unknownProject": "Неизвестный"
+    "unknownProject": "Неизвестный",
+    "unreadDot": "Новые события"
   },
   "settings": {
     "actions": {
@@ -1987,6 +1991,7 @@
       "notAFolder": "Нельзя открыть как проект — это не папка: {{path}}",
       "notGitRepository": "Проект не является Git-репозиторием. Выберите «Новая сессия» для другого чата или откройте Git-проект для изолированной вкладки.",
       "openFolderError": "Ошибка открытия папки: {{detail}}",
+      "pinError": "Ошибка закрепления: {{detail}}",
       "removedPackage": "Удалён {{spec}}",
       "removePackageFailed": "Ошибка удаления",
       "removeWorkspaceError": "Ошибка удаления проекта: {{detail}}",
@@ -2004,6 +2009,7 @@
       "truncatedHistory_other": "Для быстродействия показаны последние {{count}} из {{total}} сообщений. Более ранние ходы остаются в файле сессии на диске.",
       "unarchiveError": "Ошибка извлечения из архива: {{detail}}",
       "unknownError": "Неизвестная ошибка",
+      "unpinError": "Ошибка открепления: {{detail}}",
       "updatedAllPackages": "Пакеты обновлены. Перезапустите Pi для загрузки.",
       "updatedPackage": "Обновлён {{spec}}. Перезапустите Pi для загрузки.",
       "updatePackageFailed": "Ошибка обновления",

@@ -310,6 +310,7 @@
     "deleteSessionLabel": "Delete…",
     "openLink": "Open Link",
     "openSession": "Open Session",
+    "pin": "Pin",
     "rename": "Rename…",
     "searchSelection": "Search Selection",
     "shortcuts": {
@@ -320,6 +321,7 @@
       "selectAll": "Ctrl+A"
     },
     "unarchive": "Unarchive",
+    "unpin": "Unpin",
     "workflowRuns": "Workflow Runs"
   },
   "conveyor": {
@@ -1285,6 +1287,7 @@
       "sessionCount_one": "{{count}} session",
       "sessionCount_other": "{{count}} sessions"
     },
+    "pinnedBadge": "Pinned",
     "runtime": {
       "completed": "{{agent}} finished",
       "failed": "{{agent}} stopped with an error",
@@ -1319,7 +1322,8 @@
       "minutes_other": "{{count}}m ago"
     },
     "title": "Sessions",
-    "unknownProject": "Unknown"
+    "unknownProject": "Unknown",
+    "unreadDot": "New activity"
   },
   "settings": {
     "actions": {
@@ -1909,6 +1913,7 @@
       "notAFolder": "Cannot open as project — not a folder: {{path}}",
       "notGitRepository": "This project is not a Git repository. Use New session for another conversation, or open a Git project for an isolated tab.",
       "openFolderError": "Open folder error: {{detail}}",
+      "pinError": "Pin error: {{detail}}",
       "removedPackage": "Removed {{spec}}",
       "removePackageFailed": "Remove failed",
       "removeWorkspaceError": "Remove workspace error: {{detail}}",
@@ -1924,6 +1929,7 @@
       "truncatedHistory_other": "Showing the latest {{count}} of {{total}} messages for performance. Older turns are still on disk in the session file.",
       "unarchiveError": "Unarchive error: {{detail}}",
       "unknownError": "Unknown error",
+      "unpinError": "Unpin error: {{detail}}",
       "updatedAllPackages": "Updated packages. Restart Pi to load them.",
       "updatedPackage": "Updated {{spec}}. Restart Pi to load it.",
       "updatePackageFailed": "Update failed",

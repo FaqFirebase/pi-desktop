@@ -8,6 +8,7 @@ import {
   isSessionArtifactDir,
   projectNameFromPath,
   JSONL_EXTENSION,
+  sessionIdFromPath,
 } from '../session-paths'
 import { pathGroupKey as workspaceMatchKey, pathsEqual } from '../../shared/path-compare'
 import { readSessionMetadataCached } from '../session-metadata'
@@ -17,6 +18,8 @@ import { readForkPointsCached } from '../omp-fork-points'
 import { mapWithConcurrency } from '../map-concurrent'
 import { readSessionLineage } from '../session-lineage-reader'
 import { activityStatsStore } from '../activity-stats'
+import { selectListedSessions } from '../pinned-sessions'
+import type { SessionTimestampMap } from '../session-timestamp-store'
 import type { SessionDeleteResult, SessionListItem, SessionRuntimeCloseResult, SessionRuntimeInfo } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { readdir, stat, unlink } from 'fs/promises'
@@ -30,15 +33,6 @@ import type { IpcContext } from './context'
 import { t } from '../../shared/i18n'
 
 const MAX_SESSION_LIST = 100
-
-const SESSION_FILE_EXTENSION = '.jsonl'
-
-function sessionIdFromPath(sessionPath: string): string {
-  const base = basename(sessionPath)
-  return base.endsWith(SESSION_FILE_EXTENSION)
-    ? base.slice(0, -SESSION_FILE_EXTENSION.length)
-    : base
-}
 
 /**
  * Delete a session file. Mirrors Pi's own session-selector deletion path:
@@ -71,7 +65,17 @@ async function deleteSessionFile(sessionPath: string): Promise<SessionDeleteResu
 }
 
 export function registerSessionHandlers(ctx: IpcContext): void {
-  const { workspaceManager, getActivePi, tagManager, archivedSessions } = ctx
+  const { workspaceManager, getActivePi, tagManager, archivedSessions, pinnedSessions, unreadSessions } = ctx
+  const getPinned = (): Promise<SessionTimestampMap> => pinnedSessions.getAll()
+
+  // Every GUI-side registry keyed by a deleted session, so none keeps a stale entry.
+  async function forgetSessionRegistries(sessionId: string): Promise<void> {
+    await archivedSessions.forget(sessionId)
+    await tagManager.setTags(sessionId, [])
+    await tagManager.forgetAuto(sessionId)
+    await pinnedSessions.remove(sessionId)
+    await unreadSessions.forget(sessionId)
+  }
 
   // ─── Session Management ─────────────────────────────────────────────────
 
@@ -136,12 +140,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       activityStatsStore.captureBeforeDelete(result.sessionPath)
       const deleteResult = await deleteSessionFile(result.sessionPath)
       deleted = deleteResult.ok
-      if (deleted) {
-        const sessionId = sessionIdFromPath(result.sessionPath)
-        await archivedSessions.forget(sessionId)
-        await tagManager.setTags(sessionId, [])
-        await tagManager.forgetAuto(sessionId)
-      }
+      if (deleted) await forgetSessionRegistries(sessionIdFromPath(result.sessionPath))
     }
     return { ...result, deleted }
   })
@@ -204,13 +203,13 @@ export function registerSessionHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async (_event, cwd?: unknown) => {
     const ws = workspaceManager.getActiveWorkspace()
-    const listSessions = createListSessions(workspaceManager)
+    const listSessions = createListSessions(workspaceManager, getPinned)
     return listSessions(isString(cwd) ? cwd : ws?.path ?? process.cwd())
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST_ALL, async (_event, cwd?: unknown) => {
     const ws = workspaceManager.getActiveWorkspace()
-    const listAllSessions = createListAllSessions(workspaceManager)
+    const listAllSessions = createListAllSessions(workspaceManager, getPinned)
     return listAllSessions(isString(cwd) ? cwd : ws?.path ?? process.cwd())
   })
 
@@ -287,7 +286,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, async (event, sessionPath: unknown): Promise<SessionDeleteResult> => {
     assertTrustedSender(event)
     if (!isString(sessionPath)) throw new Error('sessionPath must be a string')
-    if (!sessionPath.endsWith(SESSION_FILE_EXTENSION)) {
+    if (!sessionPath.endsWith(JSONL_EXTENSION)) {
       throw new Error('sessionPath must point to a .jsonl session file')
     }
     // Confine deletion to Pi's session store so a renderer cannot delete an
@@ -310,19 +309,15 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     activityStatsStore.captureBeforeDelete(sessionPath)
 
     const result = await deleteSessionFile(sessionPath)
-    if (result.ok) {
-      const sessionId = sessionIdFromPath(sessionPath)
-      // Clean up registries so deleted sessions don't accumulate stale entries
-      await archivedSessions.forget(sessionId)
-      await tagManager.setTags(sessionId, [])
-      await tagManager.forgetAuto(sessionId)
-    }
+    if (result.ok) await forgetSessionRegistries(sessionIdFromPath(sessionPath))
     return { ...result, replacementSessionPath: closed?.replacementSessionPath ?? null }
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_ARCHIVE, async (_event, sessionId: unknown) => {
     if (!isString(sessionId)) throw new Error('sessionId must be a string')
     await archivedSessions.archive(sessionId)
+    // An archived session leaves the list, so it is no longer pinned.
+    await pinnedSessions.remove(sessionId)
     return archivedSessions.getAll()
   })
 
@@ -334,6 +329,24 @@ export function registerSessionHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST_ARCHIVED, async () => {
     return archivedSessions.getAll()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_PIN, async (event, sessionId: unknown) => {
+    ctx.assertMainSender(event)
+    if (!isString(sessionId)) throw new Error('sessionId must be a string')
+    await pinnedSessions.add(sessionId)
+    return pinnedSessions.getAll()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_UNPIN, async (event, sessionId: unknown) => {
+    ctx.assertMainSender(event)
+    if (!isString(sessionId)) throw new Error('sessionId must be a string')
+    await pinnedSessions.remove(sessionId)
+    return pinnedSessions.getAll()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_LIST_PINNED, async () => {
+    return pinnedSessions.getAll()
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_LINEAGE, async () => {
@@ -398,7 +411,7 @@ async function fillSessionLabels(
   })
 }
 
-export function createListSessions(wm: WorkspaceManager) {
+export function createListSessions(wm: WorkspaceManager, getPinned: () => Promise<SessionTimestampMap>) {
   return async function listSessions(_cwd: string): Promise<SessionEntry[]> {
     try {
       await wm.pruneEmptySessionRuntimes()
@@ -430,7 +443,7 @@ export function createListSessions(wm: WorkspaceManager) {
       entries.sort((a, b) => b.lastModified - a.lastModified)
       // Only read names for the sessions we actually return (avoids reading the
       // whole store), then surface each session's latest session_info name.
-      const top = entries.slice(0, MAX_SESSION_LIST)
+      const top = selectListedSessions(entries, MAX_SESSION_LIST, await getPinned())
       await fillSessionLabels(top, workspaceMatched)
       // Pi creates the JSONL header before the first user turn. Only hide rows
       // proven to be header-only; image-only, unreadable, malformed, and
@@ -442,8 +455,8 @@ export function createListSessions(wm: WorkspaceManager) {
   }
 }
 
-function createListAllSessions(wm: WorkspaceManager) {
-  const listSessions = createListSessions(wm)
+function createListAllSessions(wm: WorkspaceManager, getPinned: () => Promise<SessionTimestampMap>) {
+  const listSessions = createListSessions(wm, getPinned)
   return async function listAllSessions(cwd: string): Promise<SessionEntry[]> {
     return listSessions(cwd)
   }
@@ -513,7 +526,7 @@ async function collectSessionFiles(
                 path: fullPath,
                 name: null,
                 preview: null,
-                sessionId: item.name.replace(JSONL_EXTENSION, ''),
+                sessionId: sessionIdFromPath(item.name),
                 engine,
                 lastModified: fileStat.mtimeMs,
                 messageCount: 0,

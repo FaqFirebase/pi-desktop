@@ -32,6 +32,7 @@ import { registerTypeSafeHandlers } from './ipc/typesafe-handlers'
 import { registerWorkflowHandlers } from './ipc/workflow-handlers'
 import { registerSubagentHandlers } from './ipc/subagent-handlers'
 import { wireWorkspaceActivity, type WindowControls } from './ipc/workspace-activity-wiring'
+import { wireSessionUnread } from './ipc/session-unread-wiring'
 import type { WorkspaceTerminals } from './workspace-terminals'
 import { createQuickChatHandlers } from './ipc/quick-chat-handlers'
 
@@ -60,6 +61,7 @@ export function registerIpcHandlers(
   registerPiHandlers(ctx)
   registerTerminalHandlers(ctx)
   registerSessionHandlers(ctx)
+  wireSessionUnread(ctx, windowControls)
   registerModelHandlers(ctx)
   registerSettingsHandlers(ctx)
   registerKeepAwakeHandlers(ctx)

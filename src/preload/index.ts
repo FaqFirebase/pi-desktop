@@ -8,6 +8,8 @@ import type {
   SessionListItem,
   SessionDeleteResult,
   ArchivedSessionsMap,
+  PinnedSessionsMap,
+  UnreadSessionsMap,
   AppSettings,
   AgentDetectionOptions,
   AgentInstallationsResult,
@@ -157,6 +159,12 @@ interface PiDesktopAPI {
     archive(sessionId: string): Promise<ArchivedSessionsMap>
     unarchive(sessionId: string): Promise<ArchivedSessionsMap>
     listArchived(): Promise<ArchivedSessionsMap>
+    pin(sessionId: string): Promise<PinnedSessionsMap>
+    unpin(sessionId: string): Promise<PinnedSessionsMap>
+    listPinned(): Promise<PinnedSessionsMap>
+    listUnread(): Promise<UnreadSessionsMap>
+    /** The session file the main view shows, or null when it shows none. */
+    setVisible(sessionPath: string | null): Promise<void>
     getLineage(): Promise<SessionLineageRecord[]>
     compact(customInstructions?: string): Promise<unknown>
   }
@@ -479,6 +487,7 @@ interface PiDesktopAPI {
   onEvent(callback: (event: PiRpcEvent) => void): () => void
   onPendingPrompts(callback: (counts: PendingPromptCounts) => void): () => void
   onWorkspaceActivity(callback: (map: WorkspaceActivityMap) => void): () => void
+  onUnreadSessions(callback: (map: UnreadSessionsMap) => void): () => void
   onKeepAwakeStatus(callback: (status: KeepAwakeStatus) => void): () => void
   onSessionRuntime(callback: (runtime: SessionRuntimeInfo) => void): () => void
   onRuntimeState(callback: (payload: { runtimeId: string }) => void): () => void
@@ -533,6 +542,11 @@ const api: PiDesktopAPI = {
     archive: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_ARCHIVE, sessionId),
     unarchive: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_UNARCHIVE, sessionId),
     listArchived: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_ARCHIVED),
+    pin: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_PIN, sessionId),
+    unpin: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_UNPIN, sessionId),
+    listPinned: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_PINNED),
+    listUnread: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_UNREAD),
+    setVisible: (sessionPath) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SET_VISIBLE, sessionPath),
   },
 
   model: {
@@ -823,6 +837,14 @@ const api: PiDesktopAPI = {
     ipcRenderer.on(IPC_CHANNELS.EVENT_WORKSPACE_ACTIVITY, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.EVENT_WORKSPACE_ACTIVITY, handler)
+    }
+  },
+
+  onUnreadSessions: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: UnreadSessionsMap) => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.EVENT_UNREAD_SESSIONS, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.EVENT_UNREAD_SESSIONS, handler)
     }
   },
 

@@ -310,6 +310,7 @@
     "deleteSessionLabel": "Sil…",
     "openLink": "Bağlantıyı aç",
     "openSession": "Oturumu aç",
+    "pin": "Sabitle",
     "rename": "Yeniden adlandır…",
     "searchSelection": "Seçimi ara",
     "shortcuts": {
@@ -320,6 +321,7 @@
       "selectAll": "Ctrl+A"
     },
     "unarchive": "Arşivden çıkar",
+    "unpin": "Sabitlemeyi kaldır",
     "workflowRuns": "İş akışı çalıştırmaları"
   },
   "conveyor": {
@@ -1285,6 +1287,7 @@
       "sessionCount_one": "{{count}} oturum",
       "sessionCount_other": "{{count}} oturum"
     },
+    "pinnedBadge": "Sabitlendi",
     "runtime": {
       "completed": "{{agent}} tamamladı",
       "failed": "{{agent}} bir hatayla durdu",
@@ -1319,7 +1322,8 @@
       "minutes_other": "{{count}} dk önce"
     },
     "title": "Oturumlar",
-    "unknownProject": "Bilinmiyor"
+    "unknownProject": "Bilinmiyor",
+    "unreadDot": "Yeni etkinlik"
   },
   "settings": {
     "actions": {
@@ -1909,6 +1913,7 @@
       "notAFolder": "Proje olarak açılamıyor — klasör değil: {{path}}",
       "notGitRepository": "Bu proje bir Git deposu değil. Başka bir konuşma için Yeni oturum'u kullanın ya da yalıtılmış sekme için bir Git projesi açın.",
       "openFolderError": "Klasör açma hatası: {{detail}}",
+      "pinError": "Sabitleme hatası: {{detail}}",
       "removedPackage": "{{spec}} kaldırıldı",
       "removePackageFailed": "Kaldırma başarısız",
       "removeWorkspaceError": "Çalışma alanı kaldırma hatası: {{detail}}",
@@ -1924,6 +1929,7 @@
       "truncatedHistory_other": "Performans için {{total}} mesajın son {{count}} tanesi gösteriliyor. Eski turlar oturum dosyasında diskte duruyor.",
       "unarchiveError": "Arşivden çıkarma hatası: {{detail}}",
       "unknownError": "Bilinmeyen hata",
+      "unpinError": "Sabitlemeyi kaldırma hatası: {{detail}}",
       "updatedAllPackages": "Paketler güncellendi. Yüklemek için Pi'yi yeniden başlatın.",
       "updatedPackage": "{{spec}} güncellendi. Yüklemek için Pi'yi yeniden başlatın.",
       "updatePackageFailed": "Güncelleme başarısız",

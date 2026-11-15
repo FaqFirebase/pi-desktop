@@ -87,6 +87,8 @@ import type {
   ModelsFileInfo,
   ModelInfo,
   PiPromptResultEvent,
+  PinnedSessionsMap,
+  UnreadSessionsMap,
 } from '../../shared/ipc-contracts'
 import {
   BLOCKING_UI_METHODS, isRuntimeBusy, promptRanWithoutAgent, promptRefusal, promptResultRefusal, reportsNoAgentRun, reportsPromptOutcome,
@@ -443,6 +445,11 @@ interface AppState {
   archivedSessions: Record<string, number>
   showArchived: boolean
 
+  // Pinned sessions sort to the top of their folder group (GUI-only registry)
+  pinnedSessions: PinnedSessionsMap
+  // Sessions whose last turn ended out of view; main owns this map
+  unreadSessions: UnreadSessionsMap
+
   // Notes (reusable prompts / commands)
   notes: Note[]
   notePickerOpen: boolean
@@ -714,6 +721,13 @@ interface AppActions {
   deleteSession: (session: SessionListItem) => Promise<SessionDeleteResult>
   toggleShowArchived: () => void
 
+  // Pinned / unread
+  loadPinnedSessions: () => Promise<void>
+  pinSession: (sessionId: string) => Promise<void>
+  unpinSession: (sessionId: string) => Promise<void>
+  loadUnreadSessions: () => Promise<void>
+  handleUnreadSessions: (map: UnreadSessionsMap) => void
+
   // Notes
   loadNotes: () => Promise<void>
   saveNote: (input: NoteInput) => Promise<void>
@@ -748,6 +762,13 @@ interface AppActions {
 let messageCounter = 0
 function generateId(): string {
   return `msg-${Date.now()}-${++messageCounter}`
+}
+
+/** A session registry map without one session's entry (a new object). */
+function withoutSession(map: Record<string, number>, sessionId: string): Record<string, number> {
+  const next = { ...map }
+  delete next[sessionId]
+  return next
 }
 
 
@@ -1301,6 +1322,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   archivedSessions: {},
   showArchived: false,
+
+  pinnedSessions: {},
+  unreadSessions: {},
 
   notes: [],
   notePickerOpen: false,
@@ -3629,7 +3653,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   archiveSession: async (sessionId) => {
     try {
       const archived = await window.piDesktop.session.archive(sessionId)
-      set({ archivedSessions: archived })
+      // Main unpins an archived session; mirror that without another round trip.
+      set((state) => ({ archivedSessions: archived, pinnedSessions: withoutSession(state.pinnedSessions, sessionId) }))
     } catch (err) {
       get().addMessage({
         id: generateId(),
@@ -3658,12 +3683,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       const result = await window.piDesktop.session.delete(session.path)
       if (result.ok) {
-        // Refresh list and prune archive entry locally
-        set((state) => {
-          const next = { ...state.archivedSessions }
-          delete next[session.sessionId]
-          return { archivedSessions: next }
-        })
+        // Refresh list and prune the archive and pin entries locally
+        set((state) => ({
+          archivedSessions: withoutSession(state.archivedSessions, session.sessionId),
+          pinnedSessions: withoutSession(state.pinnedSessions, session.sessionId),
+        }))
 
         await get().refreshSessionList()
 
@@ -3696,6 +3720,52 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   toggleShowArchived: () => set((state) => ({ showArchived: !state.showArchived })),
+
+  // ─── Pinned / Unread ──────────────────────────────────────────────────
+
+  loadPinnedSessions: async () => {
+    try {
+      set({ pinnedSessions: await window.piDesktop.session.listPinned() })
+    } catch {
+      // Silent failure — the pin registry is best-effort
+    }
+  },
+
+  pinSession: async (sessionId) => {
+    try {
+      set({ pinnedSessions: await window.piDesktop.session.pin(sessionId) })
+    } catch (err) {
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: t('store.messages.pinError', { detail: err instanceof Error ? err.message : String(err) }),
+        timestamp: Date.now(),
+      })
+    }
+  },
+
+  unpinSession: async (sessionId) => {
+    try {
+      set({ pinnedSessions: await window.piDesktop.session.unpin(sessionId) })
+    } catch (err) {
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: t('store.messages.unpinError', { detail: err instanceof Error ? err.message : String(err) }),
+        timestamp: Date.now(),
+      })
+    }
+  },
+
+  loadUnreadSessions: async () => {
+    try {
+      set({ unreadSessions: await window.piDesktop.session.listUnread() })
+    } catch {
+      // Silent failure — the next change event carries the full map
+    }
+  },
+
+  handleUnreadSessions: (map) => set({ unreadSessions: map }),
 
   // ─── Notes ────────────────────────────────────────────────────────────
 

@@ -13,6 +13,8 @@ import {
   MessageSquare,
   StickyNote,
   Pencil,
+  Pin,
+  PinOff,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
 import type { Terminal as XTerm } from '@xterm/xterm'
@@ -371,6 +373,41 @@ export interface SessionContextMenuActions {
   // must open scoped to Pi's header UUID — the identifier runs carry — never
   // the session filename stem.
   onRuns?: (session: SessionListItem) => void
+  // Optional: when provided, a Pin or Unpin item is shown (above Archive) for a
+  // session that is not archived.
+  pin?: {
+    isPinned: boolean
+    onPin: (sessionId: string) => void
+    onUnpin: (sessionId: string) => void
+  }
+}
+
+/** The pin actions of a session row's menu, bound to the store. */
+export function useSessionPinActions(): (sessionId: string) => NonNullable<SessionContextMenuActions['pin']> {
+  const pinnedSessions = useAppStore((state) => state.pinnedSessions)
+  const pinSession = useAppStore((state) => state.pinSession)
+  const unpinSession = useAppStore((state) => state.unpinSession)
+  return (sessionId) => ({
+    isPinned: sessionId in pinnedSessions,
+    onPin: (id) => { void pinSession(id) },
+    onUnpin: (id) => { void unpinSession(id) },
+  })
+}
+
+function sessionPinItem(session: SessionListItem, pin: NonNullable<SessionContextMenuActions['pin']>): ContextMenuItem {
+  return pin.isPinned
+    ? {
+        id: 'session-unpin',
+        label: t('contextMenu.unpin'),
+        icon: <PinOff size={14} />,
+        action: () => pin.onUnpin(session.sessionId),
+      }
+    : {
+        id: 'session-pin',
+        label: t('contextMenu.pin'),
+        icon: <Pin size={14} />,
+        action: () => pin.onPin(session.sessionId),
+      }
 }
 
 export function buildSessionContextMenu(
@@ -400,6 +437,7 @@ export function buildSessionContextMenu(
       divider: true,
       action: () => {},
     },
+    ...(actions.pin && !isArchived ? [sessionPinItem(session, actions.pin)] : []),
     isArchived
       ? {
           id: 'session-unarchive',

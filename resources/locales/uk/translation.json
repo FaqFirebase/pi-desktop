@@ -324,6 +324,7 @@
     "deleteSessionLabel": "Видалити…",
     "openLink": "Відкрити посилання",
     "openSession": "Відкрити сесію",
+    "pin": "Закріпити",
     "rename": "Перейменувати…",
     "searchSelection": "Знайти виділене",
     "shortcuts": {
@@ -334,6 +335,7 @@
       "selectAll": "Ctrl+A"
     },
     "unarchive": "З архіву",
+    "unpin": "Відкріпити",
     "workflowRuns": "Запуски процесів"
   },
   "conveyor": {
@@ -1333,6 +1335,7 @@
       "sessionCount_many": "{{count}} сесій",
       "sessionCount_other": "{{count}} сесії"
     },
+    "pinnedBadge": "Закріплена",
     "runtime": {
       "completed": "{{agent}} завершив роботу",
       "failed": "{{agent}} зупинився з помилкою",
@@ -1373,7 +1376,8 @@
       "minutes_other": "{{count}} хв. тому"
     },
     "title": "Сесії",
-    "unknownProject": "Невідомий"
+    "unknownProject": "Невідомий",
+    "unreadDot": "Нові події"
   },
   "settings": {
     "actions": {
@@ -1987,6 +1991,7 @@
       "notAFolder": "Не можна відкрити як проєкт — це не папка: {{path}}",
       "notGitRepository": "Проєкт не є Git-репозиторієм. Виберіть «Нова сесія» для іншого чату або відкрийте Git-проєкт для ізольованої вкладки.",
       "openFolderError": "Помилка відкриття папки: {{detail}}",
+      "pinError": "Помилка закріплення: {{detail}}",
       "removedPackage": "Видалено {{spec}}",
       "removePackageFailed": "Помилка видалення",
       "removeWorkspaceError": "Помилка видалення проєкту: {{detail}}",
@@ -2004,6 +2009,7 @@
       "truncatedHistory_other": "Для швидкодії показано останні {{count}} із {{total}} повідомлень. Попередні ходи залишаються у файлі сесії на диску.",
       "unarchiveError": "Помилка відновлення з архіву: {{detail}}",
       "unknownError": "Невідома помилка",
+      "unpinError": "Помилка відкріплення: {{detail}}",
       "updatedAllPackages": "Пакети оновлено. Перезапустіть Pi для завантаження.",
       "updatedPackage": "Оновлено {{spec}}. Перезапустіть Pi для завантаження.",
       "updatePackageFailed": "Помилка оновлення",

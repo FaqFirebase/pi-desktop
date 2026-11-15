@@ -8,7 +8,9 @@ import {
   isSessionArtifactDir,
   projectNameFromPath,
   pathsEqual,
+  sessionIdFromPath,
 } from './session-paths'
+import { join } from 'path'
 
 /**
  * OMP writes each subagent's transcript into `<timestamp>_<uuid>/` beside the
@@ -120,4 +122,9 @@ test('OMP names home and temporary-directory projects by their relative path, ot
   )
   assert.equal(ompSessionDirName('/mnt/data/Projects/App Test', '/home/alice', '/tmp'), '--mnt-data-Projects-App Test--')
   assert.equal(ompSessionDirName('/home/alicex/app', '/home/alice', '/tmp'), '--home-alicex-app--')
+})
+
+test('sessionIdFromPath strips the directory and .jsonl only', () => {
+  assert.equal(sessionIdFromPath(join('a', 'b', '2026-01-01T00-00-00-000Z_abc.jsonl')), '2026-01-01T00-00-00-000Z_abc')
+  assert.equal(sessionIdFromPath('name'), 'name')
 })
