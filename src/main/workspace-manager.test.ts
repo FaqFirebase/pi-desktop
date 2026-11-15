@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { mock, test } from 'node:test'
-import { mkdir, mkdtemp, readdir, readFile, writeFile, access, realpath, symlink } from 'fs/promises'
+import { mkdir, readdir, readFile, writeFile, access, realpath, symlink } from 'fs/promises'
 import { existsSync } from 'fs'
 import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
@@ -24,13 +24,14 @@ import { configureSessionClaims, isProcessAlive, SessionClaimStore } from './ses
 import { t } from '../shared/i18n'
 import { appLog } from './app-log'
 import { TEMP_FILE_SUFFIX } from './atomic-file-write'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 async function freshDataDir(): Promise<void> {
-  configureGuiDataDir(await mkdtemp(join(tmpdir(), 'pi-ws-')))
+  configureGuiDataDir(makeTempDir('pi-ws-'))
 }
 
 async function project(): Promise<string> {
-  return mkdtemp(join(tmpdir(), 'pi-proj-'))
+  return makeTempDir('pi-proj-')
 }
 
 /**
@@ -38,7 +39,7 @@ async function project(): Promise<string> {
  * the app's own data paths spell the same checkout two ways.
  */
 async function symlinkedDataDir(): Promise<void> {
-  const data = await mkdtemp(join(tmpdir(), 'pi-ws-'))
+  const data = makeTempDir('pi-ws-')
   const alias = join(await project(), 'gui-data')
   await symlink(data, alias, 'junction')
   configureGuiDataDir(alias)
@@ -55,8 +56,8 @@ async function withSessionStores(
     pi: process.env.PI_CODING_AGENT_DIR,
     omp: process.env.OMP_CODING_AGENT_DIR,
   }
-  process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), 'pi-agent-'))
-  process.env.OMP_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), 'omp-agent-'))
+  process.env.PI_CODING_AGENT_DIR = makeTempDir('pi-agent-')
+  process.env.OMP_CODING_AGENT_DIR = makeTempDir('omp-agent-')
   try {
     await fn({ pi: getSessionsRoot(), omp: getOmpSessionsRoot() })
   } finally {
@@ -666,7 +667,7 @@ test('an OMP session subscribes to subagent progress when it starts; a Pi sessio
 
 test('an OMP runtime in the home directory opts into --allow-home; Pi and other folders do not', async () => {
   await freshDataDir()
-  const home = await mkdtemp(join(tmpdir(), 'pi-home-'))
+  const home = makeTempDir('pi-home-')
   const savedHome = process.env.HOME
   process.env.HOME = home
   try {
@@ -1805,7 +1806,7 @@ function processExits(): Promise<void> {
  * claims hold the way a running app's do.
  */
 async function withOtherPiDesktop(fn: (otherApp: SessionClaimStore) => Promise<void>): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-session-claims-'))
+  const dir = makeTempDir('pi-session-claims-')
   configureSessionClaims(dir)
   try {
     await fn(new SessionClaimStore(dir, { pid: process.ppid, now: Date.now, isProcessAlive }))

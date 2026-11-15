@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from 'fs/promises'
+import { mkdir, readFile, readdir, stat, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { basename, dirname, join } from 'path'
-import { tmpdir } from 'os'
 import { TypeSafeKeyStore, typeSafeKeyEnv } from './typesafe-key-store'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 const OWNER_ONLY_MODE = 0o600
 const PERMISSION_BITS = 0o777
 
 async function tempKeyPath(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-typesafe-key-'))
+  const dir = makeTempDir('pi-typesafe-key-')
   return join(dir, 'typesafe-api-key')
 }
 

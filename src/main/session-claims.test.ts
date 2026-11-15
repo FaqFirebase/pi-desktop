@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CLAIM_STALE_MS, SessionClaimStore, type SessionClaimDeps } from './session-claims'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 const SESSION = join(tmpdir(), 'sessions', 'project', 'session-a.jsonl')
 const OTHER_SESSION = join(tmpdir(), 'sessions', 'project', 'session-b.jsonl')
@@ -20,7 +21,7 @@ interface World {
 }
 
 function world(): World {
-  const dir = mkdtempSync(join(tmpdir(), 'pi-session-claims-'))
+  const dir = makeTempDir('pi-session-claims-')
   const alive = new Set([APP_A_PID, APP_B_PID])
   const clock = { now: Date.now() }
   const app = (pid: number): SessionClaimStore => {

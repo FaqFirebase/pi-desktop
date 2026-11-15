@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, mkdir, writeFile, rm, utimes, stat } from 'fs/promises'
-import { tmpdir } from 'os'
+import { mkdir, writeFile, rm, utimes, stat } from 'fs/promises'
 import { join } from 'path'
 import { ActivityStatsStore } from './activity-stats'
 import { IMPORTED_MESSAGE_MODEL, IMPORTED_MESSAGE_PROVIDER } from '../shared/chat-import'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 // Fixed reference instant so window math is deterministic.
 const NOW = new Date('2026-07-05T12:00:00')
@@ -36,7 +36,7 @@ function messageLine(day: string, opts: MsgOpts = {}): string {
 }
 
 async function makeDirs(): Promise<{ root: string; storePath: string }> {
-  const base = await mkdtemp(join(tmpdir(), 'stats-'))
+  const base = makeTempDir('stats-')
   const root = join(base, 'sessions')
   await mkdir(root, { recursive: true })
   return { root, storePath: join(base, 'activity-stats.json') }

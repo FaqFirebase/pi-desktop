@@ -24,6 +24,7 @@ import {
   pushBranch,
   readCommitDiff,
 } from './git-conveyor'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 type GitRunner = (args: string[], cwd?: string) => string
 
@@ -1017,7 +1018,7 @@ test('push keeps an upstream that is not the base branch, under whatever name it
 })
 
 test('listChangedPaths reads tracked and untracked files from a checkout', async () => {
-  const repo = await mkdtemp(join(tmpdir(), 'pi-changed-'))
+  const repo = makeTempDir('pi-changed-')
   await writeFile(join(repo, 'tracked.txt'), 'one\n', 'utf-8')
   const git = (args: string[]): void => {
     const result = spawnSync('git', ['-c', 'user.email=t@example.test', '-c', 'user.name=T', ...args], { cwd: repo, encoding: 'utf-8' })

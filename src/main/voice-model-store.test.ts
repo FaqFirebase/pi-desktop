@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, writeFile, mkdir } from 'fs/promises'
+import { writeFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { tmpdir } from 'os'
 import type { VoiceModelManifest } from '../shared/voice-models'
 import {
   getVoiceModelsDir,
@@ -14,9 +13,10 @@ import {
   listInstalledVoiceModels,
   removeVoiceModel,
 } from './voice-model-store'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 async function tempStore(): Promise<{ userDataDir: string }> {
-  const userDataDir = await mkdtemp(join(tmpdir(), 'pi-voice-store-'))
+  const userDataDir = makeTempDir('pi-voice-store-')
   return { userDataDir }
 }
 

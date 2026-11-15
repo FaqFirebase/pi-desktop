@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join, resolve } from 'path'
-import { tmpdir } from 'os'
 import {
   GUI_DATA_ENV_VAR,
   GUI_DATA_FILES,
@@ -15,6 +14,7 @@ import {
   migrateLegacyGuiData,
   usesOwnInstanceLock,
 } from './app-data-paths'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 test('getCanonicalUserDataDir appends the canonical dir name', () => {
   assert.equal(getCanonicalUserDataDir('/home/test/.config'), '/home/test/.config/pi-desktop')
@@ -54,7 +54,7 @@ test('getLegacyGuiDataDirs also checks HOME when it differs from the home direct
 })
 
 test('migrateLegacyGuiData finds legacy data under HOME when the home directory differs', async () => {
-  const tmp = await mkdtemp(join(tmpdir(), 'pi-desktop-app-data-'))
+  const tmp = makeTempDir('pi-desktop-app-data-')
   const homeDir = join(tmp, 'profile')
   const envHomeDir = join(tmp, 'msys-home')
   const userDataDir = join(tmp, 'config', 'pi-desktop')
@@ -118,7 +118,7 @@ test('getGuiDataPath / getLegacyGuiDataPath resolve under the right root', () =>
 })
 
 test('migrateLegacyGuiData copies legacy files but never overwrites existing', async () => {
-  const tmp = await mkdtemp(join(tmpdir(), 'pi-desktop-app-data-'))
+  const tmp = makeTempDir('pi-desktop-app-data-')
   const homeDir = join(tmp, 'home')
   const appDataDir = join(tmp, 'config')
   const userDataDir = getCanonicalUserDataDir(appDataDir)

@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, readFile, writeFile, stat } from 'fs/promises'
-import { tmpdir } from 'os'
+import { readFile, writeFile, stat } from 'fs/promises'
 import { join } from 'path'
 import { AppLog, MAX_LOG_BYTES, RECENT_LIMIT, ROTATED_LOG_SUFFIX, describeLogDetail } from './app-log'
 import type { AppLogEntry } from '../shared/ipc-contracts'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 async function makeLogPath(): Promise<string> {
-  const base = await mkdtemp(join(tmpdir(), 'app-log-'))
+  const base = makeTempDir('app-log-')
   return join(base, 'app-log.jsonl')
 }
 

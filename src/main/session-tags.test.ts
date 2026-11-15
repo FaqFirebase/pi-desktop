@@ -1,13 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp } from 'fs/promises'
-import { tmpdir } from 'os'
-import { join } from 'path'
 import { configureGuiDataDir } from './app-data-paths'
 import { SessionTagManager } from './session-tags'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 async function freshManager(): Promise<SessionTagManager> {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-tags-'))
+  const dir = makeTempDir('pi-tags-')
   configureGuiDataDir(dir)
   return new SessionTagManager()
 }

@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createHash } from 'crypto'
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'fs/promises'
+import { mkdir, readFile, readdir, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { tmpdir } from 'os'
 import {
   TYPESAFE_SKILL_FILES,
   TYPESAFE_SKILL_VERSION,
@@ -15,6 +14,7 @@ import {
   typeSafeSkillFileUrl,
   type SkillFile,
 } from './typesafe-skill'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 const HTTP_OK = 200
 const HTTP_NOT_FOUND = 404
@@ -46,7 +46,7 @@ function fakeFetch(overrides: Record<string, { status: number; body: string }> =
 }
 
 async function tempHome(): Promise<string> {
-  return mkdtemp(join(tmpdir(), 'pi-typesafe-skill-'))
+  return makeTempDir('pi-typesafe-skill-')
 }
 
 test('the skill installs into the .agents root both engines read', async () => {

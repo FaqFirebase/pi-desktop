@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, readFile, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
+import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { configureGuiDataDir, getGuiDataPath } from './app-data-paths'
 import { SessionTimestampStore } from './session-timestamp-store'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 const TEST_FILE_NAME = 'test-sessions.json'
 const FIRST_TIME = 100
@@ -12,7 +12,7 @@ const SECOND_TIME = 200
 const KEPT_TIME = 5
 
 async function freshDir(): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-timestamps-'))
+  const dir = makeTempDir('pi-timestamps-')
   configureGuiDataDir(dir)
 }
 
@@ -79,7 +79,7 @@ test('saves at once all reach the file', async () => {
 })
 
 test('a change that cannot be saved is not reported and not kept', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-timestamps-'))
+  const dir = makeTempDir('pi-timestamps-')
   const blocker = join(dir, 'file')
   await writeFile(blocker, 'x', 'utf-8')
   configureGuiDataDir(join(blocker, 'data'))

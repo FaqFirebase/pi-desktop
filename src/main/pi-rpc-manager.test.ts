@@ -27,6 +27,7 @@ import { piDotenvPath } from './pi-dotenv'
 import { NO_CWD_EXE_SEARCH_VARIABLE, disableCwdExecutableSearch } from './windows-exe-search'
 import { i18n } from '../shared/i18n'
 import { PSEUDO_LANGUAGE, SOURCE_LANGUAGE } from '../shared/i18n/languages'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 /** A pseudo-language string: bracketed and padded with "~" (see pseudo.ts). */
 const PSEUDO_MARKED = /^\[[^]*~+\]$/
@@ -228,7 +229,7 @@ test('a start resolves the engine that owns the session, without moving the conf
 })
 
 test('a session whose engine is not installed still opens under the configured one', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'pi-engine-missing-'))
+  const dir = makeTempDir('pi-engine-missing-')
   const saved = { HOME: process.env.HOME, PATH: process.env.PATH, SHELL: process.env.SHELL }
   try {
     process.env.HOME = dir

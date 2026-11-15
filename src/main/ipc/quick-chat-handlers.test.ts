@@ -18,6 +18,7 @@ import { RENDERER_INDEX_PATH } from '../renderer-origin'
 import { createPiEventRouter } from '../pi-event-router'
 import { stripInjectedPreamble } from '../../shared/session-preview'
 import { engineProjectSessionDirs } from '../latest-project-session'
+import { makeTempDir } from '../../shared/temp-dir.test-helper'
 
 // Electron names are bound when a main-process module first imports them, so
 // the stub must be in place before any module that touches Electron loads.
@@ -467,7 +468,7 @@ test('pickWorkspace never moves the main active pointers and keeps the popup ope
     assert.equal(h.wm.getSessionRuntimes().length, 2, 'cancel creates nothing')
 
     // Picking a new folder creates it but does not activate it.
-    const pickedDir = await mkdtemp(join(tmpdir(), 'quick-chat-pick-'))
+    const pickedDir = makeTempDir('quick-chat-pick-')
     pickerResult.canceled = false
     pickerResult.filePaths = [pickedDir]
     const workspace = await h.invoke(QUICK_CHAT_CHANNELS.pickWorkspace) as Workspace
@@ -518,7 +519,7 @@ test('pickWorkspace on a fresh manager creates the first workspace without activ
     })
     fresh.onPiManager((manager) => router.attachManager(manager))
     bridge.register(router)
-    const dir = await mkdtemp(join(tmpdir(), 'quick-chat-first-pick-'))
+    const dir = makeTempDir('quick-chat-first-pick-')
     pickerResult.canceled = false
     pickerResult.filePaths = [dir]
     const picked = await handlers.get(QUICK_CHAT_CHANNELS.pickWorkspace)!({ sender: webContents, senderFrame: frame } as unknown as IpcMainInvokeEvent) as Workspace

@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, writeFile } from 'fs/promises'
+import { writeFile } from 'fs/promises'
 import { join } from 'path'
-import { tmpdir } from 'os'
 import { readAttachment } from './attachment-reader'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 // ─── readAttachment ─────────────────────────────────────────────────────────
 
 test('readAttachment returns base64 image payload for an image file', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-attach-img-'))
+  const dir = makeTempDir('pi-attach-img-')
   const file = join(dir, 'pixel.png')
   const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
   await writeFile(file, bytes)
@@ -23,7 +23,7 @@ test('readAttachment returns base64 image payload for an image file', async () =
 })
 
 test('readAttachment returns UTF-8 text for a non-image file', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-attach-txt-'))
+  const dir = makeTempDir('pi-attach-txt-')
   const file = join(dir, 'notes.md')
   await writeFile(file, '# Hello\nworld')
 
@@ -35,7 +35,7 @@ test('readAttachment returns UTF-8 text for a non-image file', async () => {
 })
 
 test('readAttachment rejects a binary non-image file', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-attach-bin-'))
+  const dir = makeTempDir('pi-attach-bin-')
   const file = join(dir, 'document.pdf')
   await writeFile(file, '%PDF-1.7\n')
 

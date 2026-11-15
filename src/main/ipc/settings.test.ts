@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 import { createRequire } from 'node:module'
-import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { WorkspaceManager } from '../workspace-manager'
 import { configureGuiDataDir } from '../app-data-paths'
 import { t } from '../../shared/i18n'
+import { makeTempDir } from '../../shared/temp-dir.test-helper'
 
 const SETTINGS_FILE_NAME = 'settings.json'
 const UNREADABLE_SETTINGS = '{ "language": "en", '
@@ -37,7 +37,7 @@ after(() => {
 })
 
 async function freshDataDir(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-settings-'))
+  const dir = makeTempDir('pi-settings-')
   configureGuiDataDir(dir)
   return dir
 }

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
+import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import { deriveAutoTag } from './auto-tag'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 async function sessionFile(userText: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-autotag-'))
+  const dir = makeTempDir('pi-autotag-')
   const path = join(dir, 'session.jsonl')
   const record = {
     type: 'message',
@@ -31,7 +31,7 @@ test('missing file yields null', async () => {
 })
 
 test('a session with no user text yields null', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-autotag-'))
+  const dir = makeTempDir('pi-autotag-')
   const path = join(dir, 'session.jsonl')
   await writeFile(path, JSON.stringify({ type: 'message', message: { role: 'assistant', content: [] } }) + '\n')
   assert.equal(await deriveAutoTag(path), null)
