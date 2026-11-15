@@ -42,3 +42,21 @@ test('redactLogEntry redacts message and detail only', () => {
   assert.deepEqual(redactLogEntry(entry, []), { ts: 1, level: 'warn', scope: 'git', message: 'x token=[redacted]', detail: '[redacted]' })
   assert.equal('detail' in redactLogEntry({ ts: 1, level: 'info', scope: 's', message: 'm' }, []), false)
 })
+
+test('a quoted value is redacted up to its closing quote', () => {
+  assert.equal(redactSecrets('{"password": "two words here", "ok": 1}', []), '{"password": "[redacted]", "ok": 1}')
+  assert.equal(redactSecrets("secret='a b c' next", []), "secret='[redacted]' next")
+  assert.equal(redactSecrets('{"token":"a\\"b c"}', []), '{"token":"[redacted]"}')
+})
+
+test('url credentials are redacted up to the last @ before the host', () => {
+  assert.equal(redactSecrets('https://me:p@ss@w0rd@github.com/o/r.git', []), 'https://[redacted]@github.com/o/r.git')
+  assert.equal(redactSecrets('see https://example.com/a@b', []), 'see https://example.com/a@b')
+})
+
+test('numeric token counters stay readable', () => {
+  const text = '{"inputTokens":1200,"maxTokens": 4096,"max_tokens=8192","tokenCount":12}'
+  assert.equal(redactSecrets(text, []), text)
+  assert.equal(redactSecrets('maxTokens=abcdefgh', []), 'maxTokens=[redacted]')
+  assert.equal(redactSecrets('token=12345678', []), 'token=[redacted]')
+})
