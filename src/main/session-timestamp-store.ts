@@ -1,7 +1,10 @@
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import { join } from 'path'
-import { existsSync } from 'fs'
+import { readFile } from 'fs/promises'
+import { appLog } from './app-log'
 import { getGuiDataPath } from './app-data-paths'
+import { writeJsonFileAtomic } from './atomic-file-write'
+
+/** Log scope of the session registries and their wiring. */
+export const SESSIONS_LOG_SCOPE = 'sessions'
 
 /**
  * A GUI-side registry of sessions, each with the time it entered the registry.
@@ -27,8 +30,9 @@ function parseTimestampMap(parsed: unknown): SessionTimestampMap {
 
 export class SessionTimestampStore {
   private readonly path: string
-  private cache: SessionTimestampMap = {}
-  private loaded = false
+  private loading: Promise<SessionTimestampMap> | null = null
+  // Saves run one at a time, each writing the latest map.
+  private saving: Promise<boolean> = Promise.resolve(true)
 
   constructor(
     private readonly fileName: string,
@@ -38,54 +42,52 @@ export class SessionTimestampStore {
   }
 
   async has(sessionId: string): Promise<boolean> {
-    await this.ensureLoaded()
-    return sessionId in this.cache
+    return sessionId in (await this.load())
   }
 
   async getAll(): Promise<SessionTimestampMap> {
-    await this.ensureLoaded()
-    return { ...this.cache }
+    return { ...(await this.load()) }
   }
 
-  /** True when the entry is new; an existing entry keeps its first timestamp. */
+  /** True when the entry is new and saved; an existing entry keeps its first timestamp. */
   async add(sessionId: string): Promise<boolean> {
-    await this.ensureLoaded()
-    if (sessionId in this.cache) return false
-    this.cache[sessionId] = this.now()
-    await this.save()
-    return true
+    const cache = await this.load()
+    if (sessionId in cache) return false
+    cache[sessionId] = this.now()
+    if (await this.save()) return true
+    delete cache[sessionId]
+    return false
   }
 
-  /** True when an entry was removed. */
+  /** True when an entry was removed and the removal saved. */
   async remove(sessionId: string): Promise<boolean> {
-    await this.ensureLoaded()
-    if (!(sessionId in this.cache)) return false
-    delete this.cache[sessionId]
-    await this.save()
-    return true
+    const cache = await this.load()
+    if (!(sessionId in cache)) return false
+    const timestamp = cache[sessionId]
+    delete cache[sessionId]
+    if (await this.save()) return true
+    cache[sessionId] = timestamp
+    return false
   }
 
-  private async ensureLoaded(): Promise<void> {
-    if (this.loaded) return
-    try {
-      if (existsSync(this.path)) {
-        this.cache = parseTimestampMap(JSON.parse(await readFile(this.path, 'utf-8')))
-      }
-    } catch {
-      this.cache = {}
-    }
-    this.loaded = true
+  private load(): Promise<SessionTimestampMap> {
+    this.loading ??= readFile(this.path, 'utf-8')
+      .then((text) => parseTimestampMap(JSON.parse(text)))
+      // Missing or damaged: start empty; the next save repairs the file.
+      .catch(() => ({}))
+    return this.loading
   }
 
-  private async save(): Promise<void> {
-    try {
-      const dir = join(this.path, '..')
-      if (!existsSync(dir)) {
-        await mkdir(dir, { recursive: true })
+  private save(): Promise<boolean> {
+    this.saving = this.saving.then(async () => {
+      try {
+        await writeJsonFileAtomic(this.path, await this.load())
+        return true
+      } catch (err) {
+        appLog.warn(SESSIONS_LOG_SCOPE, `Failed to save ${this.fileName}`, err)
+        return false
       }
-      await writeFile(this.path, JSON.stringify(this.cache, null, 2), 'utf-8')
-    } catch (err) {
-      console.error(`Failed to save ${this.fileName}:`, err)
-    }
+    })
+    return this.saving
   }
 }

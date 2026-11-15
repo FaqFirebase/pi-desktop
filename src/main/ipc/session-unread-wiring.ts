@@ -1,6 +1,7 @@
 import { app, ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { appLog } from '../app-log'
+import { SESSIONS_LOG_SCOPE } from '../session-timestamp-store'
 import { isWithinSessionRoots } from '../pi-paths'
 import { JSONL_EXTENSION } from '../session-paths'
 import { isString } from './validation'
@@ -18,14 +19,14 @@ export function wireSessionUnread(ctx: IpcContext, windowControls: WindowControl
 
   workspaceManager.onSessionRuntime((runtime) => {
     void unreadSessions.handleRuntimeSession(runtime).catch((err) => {
-      appLog.warn('sessions', 'Failed to record an unread session', err)
+      appLog.warn(SESSIONS_LOG_SCOPE, 'Failed to record an unread session', err)
     })
   })
 
   app.on('browser-window-focus', (_event, window) => {
     if (window !== windowControls.getWindow()) return
     void unreadSessions.handleMainWindowFocus().catch((err) => {
-      appLog.warn('sessions', 'Failed to clear an unread session', err)
+      appLog.warn(SESSIONS_LOG_SCOPE, 'Failed to clear an unread session', err)
     })
   })
 

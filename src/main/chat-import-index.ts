@@ -1,9 +1,9 @@
 import { existsSync } from 'fs'
-import { mkdir, readFile, rename, writeFile } from 'fs/promises'
-import { dirname } from 'path'
+import { readFile } from 'fs/promises'
 import type { AgentEngineKind } from '../shared/ipc-contracts'
 import type { ChatImportSource } from '../shared/chat-import'
 import { getGuiDataPath } from './app-data-paths'
+import { writeJsonFileAtomic } from './atomic-file-write'
 
 /**
  * Chats already imported, per engine, in the GUI data dir. A chat counts as
@@ -13,8 +13,6 @@ import { getGuiDataPath } from './app-data-paths'
 
 export const CHAT_IMPORT_INDEX_FILE = 'chat-imports.json'
 const CHAT_IMPORT_INDEX_VERSION = 1
-const JSON_INDENT = 2
-const TEMP_SUFFIX = '.tmp'
 
 interface ChatImportIndexEntry {
   sessionPath: string
@@ -42,7 +40,7 @@ function parseEntries(value: unknown): Record<string, ChatImportIndexEntry> {
 }
 
 export class ChatImportIndex {
-  private entries: Record<string, ChatImportIndexEntry> | null = null
+  private loading: Promise<Record<string, ChatImportIndexEntry>> | null = null
 
   constructor(private readonly filePath: string = getGuiDataPath(CHAT_IMPORT_INDEX_FILE)) {}
 
@@ -56,20 +54,14 @@ export class ChatImportIndex {
     const entries = await this.load()
     entries[key] = { sessionPath, importedAt: Date.now() }
     const file: ChatImportIndexFile = { version: CHAT_IMPORT_INDEX_VERSION, entries }
-    await mkdir(dirname(this.filePath), { recursive: true })
-    const tempPath = `${this.filePath}${TEMP_SUFFIX}`
-    await writeFile(tempPath, JSON.stringify(file, null, JSON_INDENT), 'utf8')
-    await rename(tempPath, this.filePath)
+    await writeJsonFileAtomic(this.filePath, file)
   }
 
-  private async load(): Promise<Record<string, ChatImportIndexEntry>> {
-    if (this.entries) return this.entries
-    try {
-      this.entries = parseEntries(JSON.parse(await readFile(this.filePath, 'utf8')))
-    } catch {
+  private load(): Promise<Record<string, ChatImportIndexEntry>> {
+    this.loading ??= readFile(this.filePath, 'utf8')
+      .then((text) => parseEntries(JSON.parse(text)))
       // Missing or damaged: start empty; the next record rewrites the file.
-      this.entries = {}
-    }
-    return this.entries
+      .catch(() => ({}))
+    return this.loading
   }
 }

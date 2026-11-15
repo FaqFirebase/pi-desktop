@@ -14,6 +14,7 @@ import type {
 } from '../shared/chat-import'
 import type { AgentEngineKind } from '../shared/ipc-contracts'
 import { appLog } from './app-log'
+import { TEMP_FILE_SUFFIX } from './atomic-file-write'
 import { ClaudeCodeScanner, claudeCodeRecordEvents } from './chat-import-claude-code'
 import { codexRecordEvents } from './chat-import-codex'
 import { chatImportKey, type ChatImportIndex } from './chat-import-index'
@@ -39,7 +40,6 @@ export interface ChatImportRunOptions {
   onProgress: (progress: ChatImportProgress) => void
 }
 
-const TEMP_SUFFIX = '.tmp'
 const EXCLUSIVE_WRITE_FLAG = 'wx'
 const LOG_SCOPE = 'chat-import'
 
@@ -153,7 +153,7 @@ export async function runChatImport(options: ChatImportRunOptions): Promise<Chat
     const targetPath = join(targetDir, sessionFileName(startedAt, sessionId))
     if (!isPathWithin(engineSessionsRoot(engine), targetPath)) return { kind: 'failed', title, code: 'invalid-path' }
 
-    const tempPath = `${targetPath}${TEMP_SUFFIX}`
+    const tempPath = `${targetPath}${TEMP_FILE_SUFFIX}`
     const writer = createSessionRecordWriter(engine, { sessionId, cwd, startedAt, title, writtenAt: new Date().toISOString() })
     try {
       await mkdir(targetDir, { recursive: true })

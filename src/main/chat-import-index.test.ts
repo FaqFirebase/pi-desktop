@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ChatImportIndex, chatImportKey } from './chat-import-index'
@@ -68,5 +68,18 @@ test('a damaged index file reads as empty', async () => {
     assert.equal(await index.importedPath('pi:codex:a'), null)
     await writeFile(file, 'not json')
     assert.equal(await new ChatImportIndex(file).importedPath('pi:codex:a'), null)
+  })
+})
+
+test('records at once share one load and keep every entry', async () => {
+  await withTempDir(async (dir) => {
+    const session = join(dir, 'session.jsonl')
+    await writeFile(session, '{}\n')
+    const path = join(dir, 'chat-imports.json')
+    const index = new ChatImportIndex(path)
+    await Promise.all([index.record('pi:codex:a', session), index.record('pi:codex:b', session)])
+    const saved = JSON.parse(await readFile(path, 'utf8'))
+    assert.deepEqual(Object.keys(saved.entries).sort(), ['pi:codex:a', 'pi:codex:b'])
+    assert.deepEqual(await readdir(dir), ['chat-imports.json', 'session.jsonl'])
   })
 })
