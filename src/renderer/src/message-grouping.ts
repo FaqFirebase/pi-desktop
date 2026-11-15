@@ -88,7 +88,8 @@ function shorten(s: string): string {
 }
 
 // Pull the value a single-op label should show from the tool call's arguments.
-function extractArg(kind: TargetToolKind, argumentsJson: string): string | null {
+/** A tool call's arguments as an object; null when they are not a JSON object. */
+function parseArgsObject(argumentsJson: string): Record<string, unknown> | null {
   let parsed: unknown
   try {
     parsed = JSON.parse(argumentsJson)
@@ -96,7 +97,12 @@ function extractArg(kind: TargetToolKind, argumentsJson: string): string | null 
     return null
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
-  const obj = parsed as Record<string, unknown>
+  return parsed as Record<string, unknown>
+}
+
+function extractArg(kind: TargetToolKind, argumentsJson: string): string | null {
+  const obj = parseArgsObject(argumentsJson)
+  if (!obj) return null
   for (const key of TOOL_ARG_KEYS[kind]) {
     const val = obj[key]
     if (typeof val === 'string' && val.trim()) return val.trim()
@@ -147,15 +153,11 @@ const COMMAND_ARG_KEYS = ['command', 'cmd', 'script'] as const
 
 /** The command line a shell-style call ran, when its arguments carry one. */
 export function toolCommand(argumentsJson: string): string | null {
-  try {
-    const parsed: unknown = JSON.parse(argumentsJson)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
-    for (const key of COMMAND_ARG_KEYS) {
-      const value = (parsed as Record<string, unknown>)[key]
-      if (typeof value === 'string' && value.length > 0) return value
-    }
-  } catch {
-    // Not JSON: no command to show.
+  const obj = parseArgsObject(argumentsJson)
+  if (!obj) return null
+  for (const key of COMMAND_ARG_KEYS) {
+    const value = obj[key]
+    if (typeof value === 'string' && value.length > 0) return value
   }
   return null
 }
@@ -266,6 +268,17 @@ export function toolCallFile(name: string, argumentsJson: string): string | null
   return extractArg(kind, argumentsJson)
 }
 
+// The read argument that names the first line read (1-based).
+const READ_LINE_ARG = 'offset'
+const FIRST_LINE = 1
+
+/** The line a read tool call started at, or null. */
+export function toolCallLine(name: string, argumentsJson: string): number | null {
+  if (toolKind(name) !== 'read') return null
+  const line = parseArgsObject(argumentsJson)?.[READ_LINE_ARG]
+  return typeof line === 'number' && Number.isSafeInteger(line) && line >= FIRST_LINE ? line : null
+}
+
 /** Edit/write results fold onto the call badge instead of a separate row. */
 function resultFoldsIntoBadge(name: string): boolean {
   const kind = toolKind(name)
@@ -289,14 +302,8 @@ function stringField(obj: Record<string, unknown>, keys: string[]): string | und
 
 /** Edit blocks from tool args ({ edits: [...] } or old_string/new_string). */
 export function parseEdits(argumentsJson: string): EditBlock[] | null {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(argumentsJson)
-  } catch {
-    return null
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
-  const obj = parsed as Record<string, unknown>
+  const obj = parseArgsObject(argumentsJson)
+  if (!obj) return null
 
   const edits = obj.edits
   if (Array.isArray(edits)) {

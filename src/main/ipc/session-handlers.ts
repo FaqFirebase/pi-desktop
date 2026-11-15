@@ -23,7 +23,7 @@ import type { SessionTimestampMap } from '../session-timestamp-store'
 import type { SessionDeleteResult, SessionListItem, SessionRuntimeCloseResult, SessionRuntimeInfo } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { readdir, stat, unlink } from 'fs/promises'
-import { basename, join, resolve } from 'path'
+import { basename, isAbsolute, join, resolve } from 'path'
 import { existsSync } from 'fs'
 import { moveToTrash } from '../session-trash'
 import { assertTrustedSender, isObject, isString } from './validation'
@@ -201,16 +201,26 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     return response
   })
 
+  // A listed session's project folder is one the user can see, so the
+  // open-path actions may act in it.
+  function rememberSessionFolders(entries: readonly SessionListItem[]): void {
+    for (const { projectPath } of entries) if (isAbsolute(projectPath)) ctx.knownSessionFolders.add(projectPath)
+  }
+
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async (_event, cwd?: unknown) => {
     const ws = workspaceManager.getActiveWorkspace()
     const listSessions = createListSessions(workspaceManager, getPinned)
-    return listSessions(isString(cwd) ? cwd : ws?.path ?? process.cwd())
+    const entries = await listSessions(isString(cwd) ? cwd : ws?.path ?? process.cwd())
+    rememberSessionFolders(entries)
+    return entries
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST_ALL, async (_event, cwd?: unknown) => {
     const ws = workspaceManager.getActiveWorkspace()
     const listAllSessions = createListAllSessions(workspaceManager, getPinned)
-    return listAllSessions(isString(cwd) ? cwd : ws?.path ?? process.cwd())
+    const entries = await listAllSessions(isString(cwd) ? cwd : ws?.path ?? process.cwd())
+    rememberSessionFolders(entries)
+    return entries
   })
 
   // The session the renderer shows for a project whose runtime is not live, so

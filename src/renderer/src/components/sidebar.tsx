@@ -29,7 +29,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState, useRef } from 'react'
 import { StatusPopover } from './status-popover'
-import { useContextMenu, buildSessionContextMenu, useSessionPinActions } from './context-menu'
+import { useContextMenu, buildOpenPathMenuItems, buildSessionContextMenu, useSessionPinActions } from './context-menu'
 import { SessionRowIcon, SessionUnreadDot } from './session-row-markers'
 import { orderSessionsPinnedFirst } from '../utils/session-pin-order'
 import { getSessionEngineLabel, getSessionRowLabels, hasMixedSessionEngines } from './sidebar-session-labels'
@@ -57,6 +57,9 @@ interface RecentSessionGroup {
   sessions: SessionListItem[]
   latest: SessionListItem
 }
+
+// Group path of sessions whose project folder is not known.
+const UNKNOWN_PROJECT_PATH = 'unknown'
 
 export function Sidebar(): React.JSX.Element {
   const { t } = useTranslation()
@@ -180,7 +183,7 @@ export function Sidebar(): React.JSX.Element {
     // Group key is case-fold only on win32 (shared path-compare helper).
     const byProject = new Map<string, { displayPath: string; sessions: SessionListItem[] }>()
     for (const session of activeSessions) {
-      const displayPath = session.projectPath || 'unknown'
+      const displayPath = session.projectPath || UNKNOWN_PROJECT_PATH
       const key = pathGroupKey(displayPath)
       const existing = byProject.get(key)
       if (existing) existing.sessions.push(session)
@@ -217,7 +220,7 @@ export function Sidebar(): React.JSX.Element {
   const activeProjectKey = useMemo(() => {
     if (!sessionState?.sessionFile) return null
     const active = activeSessions.find((s) => s.path === sessionState.sessionFile)
-    return active ? pathGroupKey(active.projectPath || 'unknown') : null
+    return active ? pathGroupKey(active.projectPath || UNKNOWN_PROJECT_PATH) : null
   }, [activeSessions, sessionState?.sessionFile])
 
   const isGroupExpanded = (projectPath: string): boolean => {
@@ -395,6 +398,9 @@ export function Sidebar(): React.JSX.Element {
         <button
           type="button"
           onClick={() => toggleGroup(group.projectPath)}
+          onContextMenu={group.projectPath === UNKNOWN_PROJECT_PATH ? undefined : (e) => {
+            showMenu(e, buildOpenPathMenuItems(async () => group.projectPath))
+          }}
           title={group.projectPath}
           aria-expanded={expanded}
           className={clsx(
@@ -803,6 +809,10 @@ function WorkspaceSwitcher({ onOpenProject }: { onOpenProject: () => void }): Re
           void handleChangeFolder()
         },
       },
+      ...(activeWorkspace ? [
+        { id: 'open-path-divider', label: '', divider: true, action: () => {} },
+        ...buildOpenPathMenuItems(async () => activeWorkspace.path),
+      ] : []),
     ])
   }
 

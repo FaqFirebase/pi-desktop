@@ -15,6 +15,8 @@ import {
   Pencil,
   Pin,
   PinOff,
+  SquarePen,
+  FolderOpen,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
 import type { Terminal as XTerm } from '@xterm/xterm'
@@ -22,6 +24,8 @@ import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { useAppStore } from '../store'
 import { getSessionTitle } from '../utils/session-title'
 import { t } from '../../../shared/i18n'
+import type { OpenPathAction } from '../../../shared/editors'
+import { runOpenPath } from '../utils/open-path-action'
 
 /**
  * Events that close the menu because the user scrolls. A plain `scroll` event
@@ -561,5 +565,21 @@ export function buildLinkContextMenu(url: string): ContextMenuItem[] {
       action: () => {},
     },
     ...buildDefaultContextMenu(),
+  ]
+}
+
+/**
+ * "Open in editor", "Open with system app" and "Show in folder" for a path,
+ * read when an item is picked. A null path does nothing.
+ */
+export function buildOpenPathMenuItems(resolvePath: () => Promise<string | null>, line?: number): ContextMenuItem[] {
+  const run = (action: OpenPathAction) => async (): Promise<void> => {
+    const path = await resolvePath()
+    if (path) await runOpenPath({ action, path, ...(line === undefined ? {} : { line }) })
+  }
+  return [
+    { id: 'open-in-editor', label: t('openPath.openInEditor'), icon: <SquarePen size={14} />, action: run('editor') },
+    { id: 'open-with-system', label: t('openPath.openWithSystem'), icon: <ExternalLink size={14} />, action: run('system') },
+    { id: 'show-in-folder', label: t('openPath.showInFolder'), icon: <FolderOpen size={14} />, action: run('reveal') },
   ]
 }

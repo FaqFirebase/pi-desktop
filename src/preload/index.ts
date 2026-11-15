@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { KeepAwakeStatus } from '../shared/keep-awake'
+import type { TerminalSlot } from '../shared/terminal-slot'
+import type { DetectedEditor, OpenPathRequest, OpenPathResult } from '../shared/editors'
 import type {
   AgentEngineKind,
   PiRpcEvent,
@@ -400,6 +402,14 @@ interface PiDesktopAPI {
      * win32 case-folding.
      */
     platform: NodeJS.Platform
+    /** Open in editor, open with the system app, or show in the file manager. */
+    openPath(request: OpenPathRequest): Promise<OpenPathResult>
+  }
+
+  // Editors found on this computer
+  editors: {
+    /** `force` searches again instead of returning the cached list. */
+    detect(force?: boolean): Promise<DetectedEditor[]>
   }
 
   // Activity stats
@@ -451,9 +461,9 @@ interface PiDesktopAPI {
 
   terminal: {
     start(workspaceId: string, options?: TerminalStartOptions): Promise<TerminalStartResult>
-    input(workspaceId: string, data: string): Promise<void>
-    resize(workspaceId: string, cols: number, rows: number): Promise<void>
-    stop(workspaceId: string): Promise<void>
+    input(workspaceId: string, data: string, slot?: TerminalSlot): Promise<void>
+    resize(workspaceId: string, cols: number, rows: number, slot?: TerminalSlot): Promise<void>
+    stop(workspaceId: string, slot?: TerminalSlot): Promise<void>
     onData(callback: (event: TerminalDataEvent) => void): () => void
     onExit(callback: (event: TerminalExitEvent) => void): () => void
   }
@@ -747,6 +757,11 @@ const api: PiDesktopAPI = {
     platform: process.platform,
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, url),
     getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_VERSION),
+    openPath: (request) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_PATH, request),
+  },
+
+  editors: {
+    detect: (force) => ipcRenderer.invoke(IPC_CHANNELS.EDITORS_DETECT, force),
   },
 
   activity: {
@@ -785,9 +800,9 @@ const api: PiDesktopAPI = {
 
   terminal: {
     start: (workspaceId, options) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_START, workspaceId, options),
-    input: (workspaceId, data) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_INPUT, workspaceId, data),
-    resize: (workspaceId, cols, rows) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESIZE, workspaceId, { cols, rows }),
-    stop: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_STOP, workspaceId),
+    input: (workspaceId, data, slot) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_INPUT, workspaceId, data, slot),
+    resize: (workspaceId, cols, rows, slot) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESIZE, workspaceId, { cols, rows }, slot),
+    stop: (workspaceId, slot) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_STOP, workspaceId, slot),
     onData: (callback) => {
       const handler = (_event: Electron.IpcRendererEvent, data: TerminalDataEvent) => callback(data)
       ipcRenderer.on(IPC_CHANNELS.EVENT_TERMINAL_DATA, handler)

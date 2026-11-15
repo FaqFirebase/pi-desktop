@@ -63,4 +63,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   voiceModel: null,
   voicePrecision: 'int8',
   voiceDevice: 'auto',
+  preferredEditor: null,
 }

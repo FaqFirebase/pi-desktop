@@ -23,6 +23,7 @@ import { registerNotesHandlers } from './ipc/notes-handlers'
 import { registerFileHandlers } from './ipc/file-handlers'
 import { registerGitConveyorHandlers } from './ipc/git-conveyor-handlers'
 import { registerSystemHandlers } from './ipc/system-handlers'
+import { registerEditorHandlers } from './ipc/editor-handlers'
 import { registerUpdateHandlers } from './ipc/update-handlers'
 import { registerDiagnosticsHandlers } from './ipc/diagnostics-handlers'
 import { registerRendererErrorHandlers } from './ipc/renderer-error-handlers'
@@ -78,6 +79,7 @@ export function registerIpcHandlers(
   registerFileHandlers(ctx)
   registerGitConveyorHandlers(ctx)
   registerSystemHandlers(ctx)
+  registerEditorHandlers(ctx)
   registerUpdateHandlers()
   registerDiagnosticsHandlers(ctx)
   registerRendererErrorHandlers()

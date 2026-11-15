@@ -27,7 +27,7 @@ const MISSING_PATH_CODES = new Set(['ENOENT', 'ENOTDIR'])
  * True when a file system error says a part of the path is missing, false for
  * any other file system error. Anything else is not expected and is rethrown.
  */
-function isMissingPathError(error: unknown): boolean {
+export function isMissingPathError(error: unknown): boolean {
   const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined
   if (typeof code !== 'string') throw error
   return MISSING_PATH_CODES.has(code)

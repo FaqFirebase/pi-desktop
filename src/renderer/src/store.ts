@@ -6,6 +6,8 @@ import { t } from '../../shared/i18n'
 import { buildPlanningPrompt } from '../../shared/planning-prompt'
 import { composePrompt } from './utils/compose-prompt'
 import { firstQueued, withQueued, withoutQueued, withoutWorkspaceQueue, type SendQueues } from './send-queue'
+import { withEditorTerminal, withoutEditorTerminal } from './editor-terminal-state'
+import type { TerminalSlot } from '../../shared/terminal-slot'
 import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
 import type { DisplayAttachment, DisplayMessage } from './message-parsing'
 import { appendPromptHistory, applyChatStreamUpdate, applyChatToolExecution, chatEventNotice, parseChatMessage, retainChatMessageIdentity, turnErrorText, type ChatToolCall } from './chat-session-state'
@@ -348,6 +350,10 @@ interface AppState {
   chatSidePanel: ChatSidePanel | null
   sidebarOpen: boolean
   terminalOpen: boolean
+  // Workspaces with a terminal editor in their editor slot, and the slot each
+  // workspace's terminal panel shows (see editor-terminal-state.ts).
+  editorTerminalWorkspaces: string[]
+  shownTerminalSlot: Record<string, TerminalSlot>
   reviewOpen: boolean
   settings: AppSettings | null
   // Unsaved edits from the Settings panel (theme, piPath, permission mode,
@@ -606,6 +612,11 @@ interface AppActions {
   setChatSidePanel: (panel: ChatSidePanel | null) => Promise<boolean>
   toggleSidebar: () => void
   toggleTerminal: () => void
+  // Show the editor slot of a workspace's terminal panel in the chat view.
+  showEditorTerminal: (workspaceId: string) => void
+  // The terminal editor exited: drop its slot and show the shell again.
+  closeEditorTerminal: (workspaceId: string) => void
+  setShownTerminalSlot: (workspaceId: string, slot: TerminalSlot) => void
   toggleReview: () => void
   loadSettings: () => Promise<void>
   setSettingsDraft: (patch: Partial<AppSettings>) => void
@@ -1272,6 +1283,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   chatSidePanel: null,
   sidebarOpen: true,
   terminalOpen: false,
+  editorTerminalWorkspaces: [],
+  shownTerminalSlot: {},
   reviewOpen: false,
   settings: null,
   settingsDraft: {},
@@ -2475,6 +2488,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
 
   toggleTerminal: () => set((state) => ({ terminalOpen: !state.terminalOpen })),
+
+  showEditorTerminal: (workspaceId) =>
+    set((state) => ({ ...withEditorTerminal(state, workspaceId), terminalOpen: true, currentView: 'chat' })),
+
+  closeEditorTerminal: (workspaceId) => set((state) => withoutEditorTerminal(state, workspaceId)),
+
+  setShownTerminalSlot: (workspaceId, slot) =>
+    set((state) => ({ shownTerminalSlot: { ...state.shownTerminalSlot, [workspaceId]: slot } })),
 
   toggleReview: () => set((state) => ({ reviewOpen: !state.reviewOpen })),
 

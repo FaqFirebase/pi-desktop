@@ -33,6 +33,7 @@ The project is in **alpha**. APIs, IPC contracts, on-disk config formats, and pa
 - Per-workspace trust gate: until the user trusts a workspace, the allow rules in its own `.pi-desktop/permission-rules.json` are ignored and its HTML preview runs without scripts or network
 - Programs the app starts by bare name resolve from PATH only, not from the working folder (`windows-exe-search.ts`; Windows)
 - Attachment reads are limited to picked or in-workspace paths; session deletion is confined to the session stores; package specs are validated before the Pi CLI runs
+- Open with system app refuses runnable files (extension blocklist, execute bit on macOS/Linux); every open-path action is limited to open workspaces, session stores and listed session folders
 
 ### Interface text
 
@@ -84,6 +85,8 @@ src/
 │   ├── sidebar-width.ts          # Bounds/resolution for the user-adjustable sidebar width
 │   ├── chat-width.ts             # Chat column width setting values (normal / full)
 │   ├── keep-awake.ts             # Keep-awake modes (off / while agents work / always) and status values
+│   ├── editors.ts                # Editor ids, open-path request/result types, preferred-editor fallback rule
+│   ├── terminal-slot.ts          # Terminal slots (shell, editor) of a workspace and their PTY pool keys
 │   ├── terminal-height.ts        # Default and bounds for the resizable terminal
 │   ├── typesafe.ts               # TypeSafe (Jev) values shared by both processes
 │   ├── voice-models.ts           # On-device speech-to-text model catalog (other voice-*.ts hold dictation helpers)
@@ -95,6 +98,7 @@ src/
 │   ├── i18n.ts                   # Main-process language: OS language list, pseudo-language gate, apply the setting
 │   ├── ipc-handlers.ts           # IPC composition root (creates context, calls ipc/ modules)
 │   ├── ipc/                      # Domain-specific IPC handler modules (pi, session, files, ...)
+│   │   └── editor-handlers.ts    # SYSTEM_OPEN_PATH and EDITORS_DETECT, main-sender checked
 │   ├── app-log.ts                # Main-process log: ring buffer + JSONL file in the GUI data dir
 │   ├── log-redaction.ts          # Remove tokens, URL credentials and secret env values from log text
 │   ├── log-export.ts             # Export logs file: report + both log files, redacted; dated file name
@@ -126,6 +130,10 @@ src/
 │   ├── file-service.ts           # File tree, search, git status, read/write
 │   ├── terminal-service.ts       # node-pty PTY management
 │   ├── workspace-terminals.ts    # One PTY per workspace, independent of the visible panel
+│   ├── terminal-program.ts       # The program an editor PTY starts: direct, or through cmd.exe for a Windows shim
+│   ├── editor-detection.ts       # Editor table, install paths, PATH probe, line arguments per editor family
+│   ├── open-path-policy.ts       # Open-path roots, containment, runnable-file check
+│   ├── path-opener.ts            # Open in editor / with system app / show in folder, effects injected
 │   ├── agent-detection.ts        # Detect claude/codex/pi CLIs (council)
 │   ├── council-manager.ts        # Council consultant fan-out + streaming
 │   ├── notes-manager.ts          # Reusable prompts/notes persistence
@@ -207,6 +215,7 @@ src/
         ├── message-grouping.ts   # Tool-name labels and message grouping
         ├── next-steps.ts         # Hide next-steps calls from the chat; the latest turn's suggested steps
         ├── send-queue.ts         # Messages sent while the agent works, per workspace; the store sends the oldest at turn end
+        ├── editor-terminal-state.ts # Store reducers for a workspace's Editor terminal tab
         ├── turn-activity.ts      # Running-turn elapsed time and the "no event for 30 s" stall rule
         ├── reattached-tool-calls.ts # Mark unfinished tool calls as running when a view returns mid-turn
         ├── claude-cli-markers.ts # Parse pi-claude-cli tool markers into tool cards
@@ -245,6 +254,8 @@ src/
         │   ├── preview-load-error.ts # Preview load/save failure kept as data, translated at render
         │   ├── chat-width.ts     # Chat column width setting -> message/composer max-width classes
         │   ├── process-status-label.ts # Translated agent process status (status popover, Diagnostics)
+        │   ├── open-path-action.ts # Run an open-path action: show the Editor tab, or the refusal with its follow-up
+        │   ├── open-path-refusal.ts # Open-path refusal -> message and follow-up action
         │   └── workflow-runs.ts  # Session id used to scope workflow runs
         └── components/
             ├── sidebar.tsx        # Workspace switcher, nav, sessions grouped by folder, inline rename
@@ -285,6 +296,8 @@ src/
             ├── status-popover.tsx # System status popup
             ├── settings-panel.tsx # Language, theme, font, behavior, shortcuts, council settings (live-preview draft)
             ├── shortcut-settings.tsx # Settings > Keyboard shortcuts recorder
+            ├── editor-settings.tsx # Settings > Editor: detected editors, System default, Rescan
+            ├── settings-controls.tsx # Settings rows and select fields shared by the Settings sections
             ├── voice-settings.tsx # Settings > Voice dictation
             ├── typesafe-settings.tsx # Settings > TypeSafe Jev
             ├── custom-models-editor.tsx # Custom models/providers editor
@@ -486,6 +499,7 @@ resources/
 - One PTY per workspace (`workspace-terminals.ts`); hiding the panel keeps the shell running
 - The panel resizes by dragging its top edge (`shared/terminal-height.ts` sets the bounds) and can be maximized
 - PTY managed by `terminal-service.ts`; IPC channels relay input/output/resize
+- "Open in editor" with a terminal editor (nvim, vim, hx) starts it directly in the workspace's second PTY slot (`shared/terminal-slot.ts`), shown in an Editor tab; nothing is typed into the shell, and the tab closes when the editor exits
 
 ### Home / activity dashboard
 

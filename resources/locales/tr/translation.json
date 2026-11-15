@@ -984,6 +984,24 @@
     "needs-approval": "Pi onayınızı bekliyor.",
     "withSession": "{{body}} Biten oturumu açmak için tıklayın."
   },
+  "openPath": {
+    "followUp": {
+      "reveal": "Klasörde göster",
+      "system": "Sistem uygulamasıyla aç"
+    },
+    "openInEditor": "Düzenleyicide aç",
+    "openWithSystem": "Sistem uygulamasıyla aç",
+    "refusal": {
+      "editorRunning": "Bu projenin terminalinde zaten bir düzenleyici açık. Onu kapatın, sonra tekrar deneyin.",
+      "launchFailed": "Düzenleyici başlamadı.",
+      "noTerminalWorkspace": "Önce bir proje açın. Terminal düzenleyicileri projenin terminal panelinde açılır.",
+      "notFound": "Bu dosya veya klasör artık yok.",
+      "outsideRoots": "Bu yol açık projelerin dışında.",
+      "runnableFile": "Bu dosya program olarak çalışabilir, bu yüzden sistem uygulamasıyla açılmadı."
+    },
+    "refusalTitle": "Açılamadı",
+    "showInFolder": "Klasörde göster"
+  },
   "packages": {
     "catalog": {
       "emptyHint": "Göz atmak için <link>pi.dev/packages</link> adresini ziyaret edin",
@@ -1400,6 +1418,15 @@
       "description": "Bakılmayan bir çalışma alanında Pi bitirdiğinde, hata verdiğinde veya onay beklediğinde bildir",
       "label": "Masaüstü bildirimleri"
     },
+    "editor": {
+      "description": "Bu bilgisayarda bulunan düzenleyiciler. Terminal düzenleyicileri projenin terminal panelindeki Düzenleyici sekmesinde açılır.",
+      "label": "Dosyaları şununla aç",
+      "missingNote": "Kayıtlı düzenleyici bulunamadı. Dosyalar sistem varsayılanıyla açılır.",
+      "rescan": "Yeniden tara",
+      "systemDefault": "Sistem varsayılanı",
+      "terminalOption": "{{name}} ({{tag}})",
+      "terminalTag": "terminal"
+    },
     "keepAwake": {
       "description": "Bu bilgisayarın uyku moduna geçmesini engelle. Ekran yine de kapanabilir. Dizüstü bilgisayarın kapağı kapatılınca bilgisayar yine uyku moduna geçer.",
       "label": "Bu bilgisayarı uyanık tut",
@@ -1464,6 +1491,7 @@
       "appearance": "Görünüm",
       "behavior": "Davranış",
       "customModels": "Özel modeller",
+      "editor": "Düzenleyici",
       "multiAgentCouncilPlanning": "Çok ajanlı konsey planlaması",
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "Sesli dikte"
@@ -1959,6 +1987,10 @@
     "maximizeLabel": "Terminali büyüt",
     "restartHint": "Yeni bir kabuk başlatmak için herhangi bir tuşa basın",
     "restoreLabel": "Terminali geri yükle",
+    "tabs": {
+      "editor": "Düzenleyici",
+      "shell": "Terminal"
+    },
     "title": "Terminal"
   },
   "themes": {

@@ -984,6 +984,24 @@
     "needs-approval": "Pi is waiting for your approval.",
     "withSession": "{{body}} Click to open the finished session."
   },
+  "openPath": {
+    "followUp": {
+      "reveal": "Show in Folder",
+      "system": "Open with System App"
+    },
+    "openInEditor": "Open in Editor",
+    "openWithSystem": "Open with System App",
+    "refusal": {
+      "editorRunning": "An editor is already open in this project's terminal. Close it, then try again.",
+      "launchFailed": "The editor did not start.",
+      "noTerminalWorkspace": "Open a project first. Terminal editors open in the project's terminal panel.",
+      "notFound": "This file or folder no longer exists.",
+      "outsideRoots": "This path is outside the open projects.",
+      "runnableFile": "This file can run as a program, so it is not opened with the system app."
+    },
+    "refusalTitle": "Could not open",
+    "showInFolder": "Show in Folder"
+  },
   "packages": {
     "catalog": {
       "emptyHint": "Visit <link>pi.dev/packages</link> to browse",
@@ -1400,6 +1418,15 @@
       "description": "Notify when Pi finishes, fails, or waits for approval in a workspace you are not looking at",
       "label": "Desktop Notifications"
     },
+    "editor": {
+      "description": "Editors found on this computer. Terminal editors open in an Editor tab of the project's terminal panel.",
+      "label": "Open files in",
+      "missingNote": "The saved editor was not found. Files open with the system default.",
+      "rescan": "Rescan",
+      "systemDefault": "System default",
+      "terminalOption": "{{name}} ({{tag}})",
+      "terminalTag": "terminal"
+    },
     "keepAwake": {
       "description": "Stop this computer from going to sleep. The screen can still turn off. A closed laptop lid still puts the computer to sleep.",
       "label": "Keep This Computer Awake",
@@ -1464,6 +1491,7 @@
       "appearance": "Appearance",
       "behavior": "Behavior",
       "customModels": "Custom Models",
+      "editor": "Editor",
       "multiAgentCouncilPlanning": "Multi-Agent Council Planning",
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "Voice dictation"
@@ -1959,6 +1987,10 @@
     "maximizeLabel": "Maximize terminal",
     "restartHint": "Press any key to start a new shell",
     "restoreLabel": "Restore terminal",
+    "tabs": {
+      "editor": "Editor",
+      "shell": "Terminal"
+    },
     "title": "Terminal"
   },
   "themes": {

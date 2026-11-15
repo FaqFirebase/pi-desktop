@@ -7,6 +7,7 @@
 import type { PermissionRule } from '../../resources/permission-rules'
 import type { LinkedTaskMode, RepoRole } from '../../resources/repo-set-map'
 import type { TokenUsage } from './token-usage'
+import type { TerminalSlot } from './terminal-slot'
 
 // ─── IPC Channel Names ──────────────────────────────────────────────────────
 
@@ -100,6 +101,8 @@ export const IPC_CHANNELS = {
   SYSTEM_PATH_KIND: 'system:path-kind',
   SYSTEM_OPEN_EXTERNAL: 'system:open-external',
   SYSTEM_GET_VERSION: 'system:get-version',
+  SYSTEM_OPEN_PATH: 'system:open-path',
+  EDITORS_DETECT: 'editors:detect',
   UPDATE_CHECK: 'update:check',
 
   // Activity
@@ -473,6 +476,8 @@ export interface TerminalStartOptions {
   cwd?: string
   cols?: number
   rows?: number
+  /** Which of the workspace's PTYs to start; the shell when left out. */
+  slot?: TerminalSlot
 }
 
 export interface TerminalStartResult {
@@ -483,11 +488,13 @@ export interface TerminalStartResult {
 
 export interface TerminalDataEvent {
   workspaceId: string
+  slot: TerminalSlot
   data: string
 }
 
 export interface TerminalExitEvent {
   workspaceId: string
+  slot: TerminalSlot
   exitCode: number
   signal?: number
 }
@@ -1279,6 +1286,7 @@ import type { VoicePrecision, VoiceModel, VoiceModelManifest, VoiceDownloadProgr
 import type { VoiceDevice } from './voice-device'
 import type { ChatWidth } from './chat-width'
 import type { KeepAwakeMode } from './keep-awake'
+import type { EditorId } from './editors'
 /** Result of the MODELS_READ IPC call. */
 /**
  * Where the custom-models config was read from. Main resolves the engine and
@@ -1527,6 +1535,9 @@ export interface AppSettings {
   // 'gpu'. It picks which precision Settings downloads. Unknown values reset
   // to 'auto' on load.
   voiceDevice: VoiceDevice
+  // Editor that "Open in editor" uses; null = System default. Unknown ids
+  // reset to null on load.
+  preferredEditor: EditorId | null
 }
 
 // ─── Voice Dictation Types ──────────────────────────────────────────────────

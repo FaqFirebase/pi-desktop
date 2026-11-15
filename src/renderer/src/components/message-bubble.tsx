@@ -10,6 +10,7 @@ import {
   toolCallStatusLabel,
   toolKind,
   toolCallFile,
+  toolCallLine,
   parseEdits,
   editStats,
   splitReadTruncationNote,
@@ -22,7 +23,7 @@ import { LineNumberedCode } from './line-numbered-code'
 import { MarkdownRenderer } from './markdown-renderer'
 import { ReadOnlyChatContext } from './read-only-chat-context'
 import { CopyButton } from './copy-button'
-import { useContextMenu, buildMessageContextMenu } from './context-menu'
+import { useContextMenu, buildMessageContextMenu, buildOpenPathMenuItems } from './context-menu'
 import { RelativeTime } from '../utils/relative-time'
 import { isImeComposing } from '../utils/ime-composing'
 import { clsx } from 'clsx'
@@ -641,9 +642,10 @@ function ToolCallBadge({
   // Edit diffs open expanded so the change is visible without a second result pill.
   const edits = toolKind(toolCall.name) === 'edit' ? parseEdits(toolCall.arguments) : null
   const stats = edits ? editStats(edits) : null
-  const editFile = edits ? toolCallFile(toolCall.name, toolCall.arguments) : null
-  const editLang = editFile ? getCodeEditorLanguageName(editFile) : 'plain text'
+  const targetFile = toolCallFile(toolCall.name, toolCall.arguments)
+  const editLang = edits && targetFile ? getCodeEditorLanguageName(targetFile) : 'plain text'
   const [expanded, setExpanded] = useState(() => Boolean(edits))
+  const { show: showContextMenu, ContextMenuComponent: ToolCallContextMenu } = useContextMenu()
 
   const status = toolCall.isExecuting
     ? 'running'
@@ -659,6 +661,9 @@ function ToolCallBadge({
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
+        onContextMenu={targetFile ? (e) => {
+          showContextMenu(e, buildOpenPathMenuItems(async () => targetFile, toolCallLine(toolCall.name, toolCall.arguments) ?? undefined))
+        } : undefined}
         className="flex w-full min-w-0 items-center gap-2 py-2 pl-3 pr-9 text-xs text-muted hover:text-secondary transition-colors"
       >
         <span className="font-jetbrains min-w-0 truncate">
@@ -709,6 +714,7 @@ function ToolCallBadge({
           )}
         </div>
       )}
+      {ToolCallContextMenu}
     </div>
   )
 }

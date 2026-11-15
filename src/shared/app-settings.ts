@@ -6,6 +6,7 @@ import { getVoiceModel, type VoicePrecision } from './voice-models'
 import { isVoiceDevice } from './voice-device'
 import { isChatWidth } from './chat-width'
 import { isKeepAwakeMode } from './keep-awake'
+import { isEditorId } from './editors'
 import { normalizeKeyboardShortcuts } from './keyboard-shortcuts'
 import { normalizeSkillGroups } from './skill-groups'
 
@@ -45,5 +46,6 @@ export function normalizeStoredSettings(stored: Record<string, unknown>, languag
   }
   if (!isVoicePrecision(merged.voicePrecision)) merged.voicePrecision = DEFAULT_SETTINGS.voicePrecision
   if (!isVoiceDevice(merged.voiceDevice)) merged.voiceDevice = DEFAULT_SETTINGS.voiceDevice
+  if (!isEditorId(merged.preferredEditor)) merged.preferredEditor = DEFAULT_SETTINGS.preferredEditor
   return merged
 }

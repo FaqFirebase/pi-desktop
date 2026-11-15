@@ -967,6 +967,24 @@
     "needs-approval": "Pi 正在等待你的批准。",
     "withSession": "{{body}} 点击打开已完成的会话。"
   },
+  "openPath": {
+    "followUp": {
+      "reveal": "在文件夹中显示",
+      "system": "用系统应用打开"
+    },
+    "openInEditor": "在编辑器中打开",
+    "openWithSystem": "用系统应用打开",
+    "refusal": {
+      "editorRunning": "此项目的终端中已打开一个编辑器。请先关闭它，然后重试。",
+      "launchFailed": "编辑器未能启动。",
+      "noTerminalWorkspace": "请先打开一个项目。终端编辑器会在项目的终端面板中打开。",
+      "notFound": "此文件或文件夹已不存在。",
+      "outsideRoots": "此路径不在已打开的项目中。",
+      "runnableFile": "此文件可作为程序运行，因此不会用系统应用打开。"
+    },
+    "refusalTitle": "无法打开",
+    "showInFolder": "在文件夹中显示"
+  },
   "packages": {
     "catalog": {
       "emptyHint": "访问 <link>pi.dev/packages</link> 浏览",
@@ -1372,6 +1390,15 @@
       "description": "当 Pi 在你未查看的工作区中完成、失败或等待批准时通知你",
       "label": "桌面通知"
     },
+    "editor": {
+      "description": "在此电脑上找到的编辑器。终端编辑器会在项目终端面板的“编辑器”标签页中打开。",
+      "label": "打开文件所用的程序",
+      "missingNote": "未找到已保存的编辑器。文件将用系统默认应用打开。",
+      "rescan": "重新扫描",
+      "systemDefault": "系统默认",
+      "terminalOption": "{{name}}（{{tag}}）",
+      "terminalTag": "终端"
+    },
     "keepAwake": {
       "description": "阻止这台电脑进入睡眠。屏幕仍可能关闭。合上笔记本电脑的盖子仍会让电脑进入睡眠。",
       "label": "保持这台电脑唤醒",
@@ -1436,6 +1463,7 @@
       "appearance": "外观",
       "behavior": "行为",
       "customModels": "自定义模型",
+      "editor": "编辑器",
       "multiAgentCouncilPlanning": "多智能体委员会规划",
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "语音听写"
@@ -1918,6 +1946,10 @@
     "maximizeLabel": "最大化终端",
     "restartHint": "按任意键启动新的 Shell",
     "restoreLabel": "还原终端",
+    "tabs": {
+      "editor": "编辑器",
+      "shell": "终端"
+    },
     "title": "终端"
   },
   "themes": {

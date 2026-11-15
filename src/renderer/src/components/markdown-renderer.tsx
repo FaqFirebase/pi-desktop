@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import 'katex/dist/katex.min.css'
-import { useContextMenu, buildCodeBlockContextMenu, buildLinkContextMenu } from './context-menu'
+import { useContextMenu, buildCodeBlockContextMenu, buildLinkContextMenu, buildOpenPathMenuItems } from './context-menu'
 import { CopyButton } from './copy-button'
 import { LineNumberedCode } from './line-numbered-code'
 import { splitReadTruncationNote } from '../message-grouping'
-import { looksLikeFilePath, openFileFromChat } from './chat-file-link'
+import { looksLikeFilePath, openFileFromChat, resolveChatFileTarget } from './chat-file-link'
 import { ErrorBoundary } from './error-boundary'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
@@ -121,7 +121,11 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
               void openFileFromChat(inlineText)
             }}
             onContextMenu={(e) => {
-              show(e, buildCodeBlockContextMenu(inlineText))
+              show(e, [
+                ...buildOpenPathMenuItems(async () => (await resolveChatFileTarget(inlineText))?.path ?? null),
+                { id: 'open-path-divider', label: '', divider: true, action: () => {} },
+                ...buildCodeBlockContextMenu(inlineText),
+              ])
             }}
           >
             {children}

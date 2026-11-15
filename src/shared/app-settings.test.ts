@@ -96,3 +96,10 @@ test('normalizeStoredSettings resets an invalid keep-awake mode', () => {
   for (const keepAwakeMode of ['on', true, null, 3])
     assert.equal(normalizeStoredSettings({ keepAwakeMode }, LANGUAGES).keepAwakeMode, DEFAULT_SETTINGS.keepAwakeMode)
 })
+
+test('preferredEditor defaults to null and drops unknown ids', () => {
+  assert.equal(normalizeStoredSettings({}, LANGUAGES).preferredEditor, null)
+  assert.equal(normalizeStoredSettings({ preferredEditor: 'helix' }, LANGUAGES).preferredEditor, 'helix')
+  assert.equal(normalizeStoredSettings({ preferredEditor: 'emacs' }, LANGUAGES).preferredEditor, null)
+  assert.equal(normalizeStoredSettings({ preferredEditor: 7 }, LANGUAGES).preferredEditor, null)
+})
