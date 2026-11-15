@@ -23,6 +23,7 @@ import {
 } from './app-data-paths'
 import { setupTray, setTrayEnabled, isTrayEnabled, isTrayAvailable, destroyTray, notifyFirstHide } from './tray-manager'
 import { shouldHideToTray } from './tray-decision'
+import { applyKeepAwakeMode } from './keep-awake-service'
 import { readWindowHints, windowTitle } from './window-hints'
 import { createEditorGuard } from './editor-guard'
 import { appLog } from './app-log'
@@ -604,6 +605,9 @@ app.whenReady().then(async () => {
     toggleQuickChat: toggleQuickChatWindow,
   })
   setTrayEnabled(settings.minimizeToTrayOnClose)
+  void applyKeepAwakeMode(settings.keepAwakeMode).catch((err) => {
+    appLog.error('power', 'Failed to apply the keep-awake setting', err)
+  })
 
   // Warm the package catalog cache in the background so the Catalog tab is
   // instant when first opened. Non-blocking; failures are ignored (offline etc).

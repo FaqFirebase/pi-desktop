@@ -1,6 +1,6 @@
 import { Tray, Menu, Notification, nativeImage, type BrowserWindow } from 'electron'
-import { execFile } from 'child_process'
 import { trayIsSupported, parseDbusBoolean } from './tray-decision'
+import { dbusSend, dbusNameHasOwner } from './dbus-probe'
 import { i18n, t } from '../shared/i18n'
 
 // System-tray lifecycle for "minimize to tray on close" (Windows/Linux; macOS
@@ -14,8 +14,6 @@ import { i18n, t } from '../shared/i18n'
 // available (KDE, GNOME's AppIndicator extension, sni-qt, snixembed, etc.).
 const SNI_WATCHER_NAME = 'org.kde.StatusNotifierWatcher'
 const SNI_WATCHER_PATH = '/StatusNotifierWatcher'
-// Bound the D-Bus probe so a missing/slow session bus can't hang enabling.
-const DBUS_PROBE_TIMEOUT_MS = 2_000
 
 interface TrayDeps {
   getWindow: () => BrowserWindow | null
@@ -95,15 +93,6 @@ function createTray(): boolean {
   }
 }
 
-/** Run a `dbus-send --print-reply` and resolve its stdout, or null on error. */
-function dbusSend(args: string[]): Promise<string | null> {
-  return new Promise((resolve) => {
-    execFile('dbus-send', args, { timeout: DBUS_PROBE_TIMEOUT_MS }, (err, stdout) => {
-      resolve(err ? null : stdout)
-    })
-  })
-}
-
 /**
  * Probe the session bus for a StatusNotifierItem host. Resolves false when no
  * host is present (GNOME without the AppIndicator extension, a minimal WM), when
@@ -118,15 +107,7 @@ function dbusSend(args: string[]): Promise<string | null> {
  * false negative that needlessly disables a working tray.
  */
 async function detectLinuxTrayHost(): Promise<boolean> {
-  const ownerReply = await dbusSend([
-    '--session',
-    '--print-reply',
-    '--dest=org.freedesktop.DBus',
-    '/org/freedesktop/DBus',
-    'org.freedesktop.DBus.NameHasOwner',
-    `string:${SNI_WATCHER_NAME}`,
-  ])
-  if (parseDbusBoolean(ownerReply ?? '') !== true) return false
+  if (!(await dbusNameHasOwner(SNI_WATCHER_NAME))) return false
 
   const hostReply = await dbusSend([
     '--session',

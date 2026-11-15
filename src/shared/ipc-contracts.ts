@@ -20,6 +20,7 @@ export const IPC_CHANNELS = {
   PI_DETECT_INSTALLATIONS: 'pi:detect-installations',
   QUICK_CHAT_SHORTCUT_STATUS: 'quick-chat:shortcut-status',
   SETTINGS_RUN_ON_STARTUP_AVAILABLE: 'settings:run-on-startup-available',
+  SETTINGS_KEEP_AWAKE_STATUS: 'settings:keep-awake-status',
 
   // Pi commands
   PI_PROMPT: 'pi:prompt',
@@ -225,6 +226,7 @@ export const IPC_CHANNELS = {
   EVENT_PI: 'event:pi',
   EVENT_PENDING_PROMPTS: 'event:pending-prompts',
   EVENT_WORKSPACE_ACTIVITY: 'event:workspace-activity',
+  EVENT_KEEP_AWAKE_STATUS: 'event:keep-awake-status',
   EVENT_SESSION_RUNTIME: 'event:session-runtime',
   /** A model/thinking switch changed a runtime's engine state; views bound to it refresh. */
   EVENT_RUNTIME_STATE_CHANGED: 'event:runtime-state-changed',
@@ -1254,6 +1256,7 @@ import type { CouncilConfig } from './council-config'
 import type { VoicePrecision, VoiceModel, VoiceModelManifest, VoiceDownloadProgress } from './voice-models'
 import type { VoiceDevice } from './voice-device'
 import type { ChatWidth } from './chat-width'
+import type { KeepAwakeMode } from './keep-awake'
 /** Result of the MODELS_READ IPC call. */
 /**
  * Where the custom-models config was read from. Main resolves the engine and
@@ -1472,6 +1475,10 @@ export interface AppSettings {
   // the app running in the background. Windows/Linux only; on macOS the window
   // close already keeps the app alive in the Dock (native equivalent).
   minimizeToTrayOnClose: boolean
+  // Stop idle sleep: always, or only while agent work runs. The screen may
+  // still turn off. A closed laptop lid, a manual sleep command and a low
+  // battery stay under the operating system's control.
+  keepAwakeMode: KeepAwakeMode
   // Internal: whether the one-time "still running in the tray" hint has been
   // shown. Not exposed in the Settings UI.
   hasSeenTrayHint: boolean

@@ -1364,6 +1364,21 @@
       "description": "Bakılmayan bir çalışma alanında Pi bitirdiğinde, hata verdiğinde veya onay beklediğinde bildir",
       "label": "Masaüstü bildirimleri"
     },
+    "keepAwake": {
+      "description": "Bu bilgisayarın uyku moduna geçmesini engelle. Ekran yine de kapanabilir. Dizüstü bilgisayarın kapağı kapatılınca bilgisayar yine uyku moduna geçer.",
+      "label": "Bu bilgisayarı uyanık tut",
+      "modes": {
+        "always": "Her zaman",
+        "off": "Kapalı",
+        "whileWorking": "Ajanlar çalışırken"
+      },
+      "status": {
+        "holding": "Durum: bu bilgisayar uyanık tutuluyor",
+        "off": "Durum: kapalı",
+        "unsupported": "Durum: Pi Desktop bu sistemde uykuyu engelleyemiyor. Güç yöneticisi ya da systemd uyku kilidi bulunamadı.",
+        "waitingForWork": "Durum: iş bekleniyor"
+      }
+    },
     "language": {
       "description": "Menü, düğme ve mesajların dili",
       "label": "Dil",

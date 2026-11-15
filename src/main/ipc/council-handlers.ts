@@ -10,6 +10,7 @@ import { COUNCIL_AGENT_IDS, clampTimeoutSeconds } from '../../shared/council-con
 import type { CouncilAgentId, ConsensusMode, ConsultantResult } from '../../shared/council-config'
 import { detectAgents } from '../agent-detection'
 import { runConsultants, runArbiter, defaultSpawnConsultant, type ArbiterRequest } from '../council-manager'
+import { agentWork } from '../keep-awake-service'
 import { access } from 'fs/promises'
 import { isString, isObject } from './validation'
 import type { IpcContext } from './context'
@@ -57,6 +58,7 @@ export function registerCouncilHandlers(ctx: IpcContext): void {
       if (payload.consensusMode !== 'arbiter' && payload.consensusMode !== 'debate') {
         throw new Error('Council run consensusMode must be "arbiter" or "debate"')
       }
+      const request = payload.request
       const members = payload.members as CouncilAgentId[]
       const consensusMode = payload.consensusMode as ConsensusMode
       const timeoutSeconds = clampTimeoutSeconds(Number(payload.timeoutSeconds))
@@ -65,13 +67,13 @@ export function registerCouncilHandlers(ctx: IpcContext): void {
       // input — consultants must plan against the real project tree.
       const cwd = await resolveCouncilCwd(workspaceManager)
 
-      const results = await runConsultants(
-        { request: payload.request, members, cwd, timeoutSeconds, consensusMode },
+      const results = await agentWork.runWhileWorking(() => runConsultants(
+        { request, members, cwd, timeoutSeconds, consensusMode },
         {
           spawnConsultant: defaultSpawnConsultant,
           onProgress: (id, chunk) => broadcast(IPC_CHANNELS.EVENT_COUNCIL_PROGRESS, { id, chunk }),
         },
-      )
+      ))
       return { results }
     },
   )
@@ -113,10 +115,10 @@ export function registerCouncilHandlers(ctx: IpcContext): void {
       }
 
       const cwd = await resolveCouncilCwd(workspaceManager)
-      const outcome = await runArbiter(input, cwd, timeoutSeconds, {
+      const outcome = await agentWork.runWhileWorking(() => runArbiter(input, cwd, timeoutSeconds, {
         spawnConsultant: defaultSpawnConsultant,
         onProgress: (chunk) => broadcast(IPC_CHANNELS.EVENT_COUNCIL_PROGRESS, { id: 'pi', chunk }),
-      })
+      }))
       if (!outcome.ok) {
         throw new Error(outcome.timedOut ? t('errors.council.arbiterTimedOut') : outcome.error ?? t('errors.council.arbiterFailed'))
       }

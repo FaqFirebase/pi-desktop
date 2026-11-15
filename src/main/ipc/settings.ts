@@ -14,6 +14,7 @@ import { applyLanguageSetting, getI18nEnvironment, isPseudoLanguageEnabled } fro
 import { applyRunOnStartup, runOnStartupAvailable } from '../startup-launch'
 import { setOmpLaunchArgs } from '../omp-paths'
 import { setTrayEnabled } from '../tray-manager'
+import { applyKeepAwakeMode } from '../keep-awake-service'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { existsSync } from 'fs'
@@ -125,6 +126,9 @@ export function registerSettingsHandlers(ctx: IpcContext): void {
     // Re-resolve the Pi binary so a corrected executable path or explicit engine
     // takes effect on the next runtime start without relying on filename sniffing.
     const updated = await loadAppSettings(workspaceManager)
+    // Take or release the sleep block at once, with the normalized mode.
+    // Awaited so the status the Settings panel reads next is the new one.
+    if ('keepAwakeMode' in settings) await applyKeepAwakeMode(updated.keepAwakeMode)
     if ('piExecutablePath' in settings || 'piEngine' in settings) {
       setPiExecutableOverride(updated.piExecutablePath, updated.piEngine)
     }

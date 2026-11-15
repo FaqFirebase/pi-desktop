@@ -83,6 +83,7 @@ src/
 │   ├── stopped-answer.ts         # The one rule for an answer the user stopped (stopReason "aborted")
 │   ├── sidebar-width.ts          # Bounds/resolution for the user-adjustable sidebar width
 │   ├── chat-width.ts             # Chat column width setting values (normal / full)
+│   ├── keep-awake.ts             # Keep-awake modes (off / while agents work / always) and status values
 │   ├── terminal-height.ts        # Default and bounds for the resizable terminal
 │   ├── typesafe.ts               # TypeSafe (Jev) values shared by both processes
 │   ├── voice-models.ts           # On-device speech-to-text model catalog (other voice-*.ts hold dictation helpers)
@@ -167,6 +168,15 @@ src/
 │   ├── workflow-monitor.ts       # ~/.pi/workflows run and project discovery
 │   ├── tray-manager.ts           # System-tray lifecycle (minimize to tray on close)
 │   ├── tray-decision.ts          # Pure tray-availability decision
+│   ├── dbus-probe.ts             # Session-bus probes shared by tray and keep-awake
+│   ├── keep-awake.ts             # Sleep-block layer: Electron power-save blocker
+│   ├── keep-awake-system-inhibitor.ts # Sleep-block layer: systemd sleep lock for Linux desktops with no power service
+│   ├── keep-awake-coordinator.ts # Picks the sleep-block layer that works on this system
+│   ├── keep-awake-controller.ts  # Mode + work -> hold, release delay, status
+│   ├── keep-awake-service.ts     # Keep-awake Electron singletons
+│   ├── runtime-turn-state.ts     # Is one runtime running a turn (not waiting on the user)
+│   ├── agent-work-tracker.ts     # Is any agent work running (turns, council, background subagents)
+│   ├── background-subagent-runs.ts # Subagent runs that outlive a turn
 │   ├── startup-launch.ts         # Cross-platform "Run on startup"
 │   ├── autostart-linux.ts        # Linux freedesktop autostart entry helpers
 │   ├── editor-guard.ts           # Unsaved-editor guard for quit/close/reload

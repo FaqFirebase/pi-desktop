@@ -8,6 +8,7 @@ import { registerTerminalHandlers } from './ipc/terminal-handlers'
 import { registerSessionHandlers } from './ipc/session-handlers'
 import { registerModelHandlers } from './ipc/model-handlers'
 import { registerSettingsHandlers } from './ipc/settings'
+import { registerKeepAwakeHandlers } from './ipc/keep-awake-handlers'
 import { registerPermissionRulesHandlers } from './ipc/permission-rules-handlers'
 import { registerThemeHandlers } from './ipc/theme-handlers'
 import { registerWorkspaceHandlers } from './ipc/workspace-handlers'
@@ -59,6 +60,7 @@ export function registerIpcHandlers(
   registerSessionHandlers(ctx)
   registerModelHandlers(ctx)
   registerSettingsHandlers(ctx)
+  registerKeepAwakeHandlers(ctx)
   registerPermissionRulesHandlers(ctx)
   registerWorkspaceHandlers(ctx)
   registerLinkedTaskHandlers(ctx)

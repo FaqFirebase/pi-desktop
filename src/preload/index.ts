@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { KeepAwakeStatus } from '../shared/keep-awake'
 import type {
   AgentEngineKind,
   PiRpcEvent,
@@ -178,6 +179,7 @@ interface PiDesktopAPI {
     /** False when this launch has a data folder of its own, which cannot run on startup. */
     isRunOnStartupAvailable(): Promise<boolean>
     openQuickChat(): Promise<void>
+    getKeepAwakeStatus(): Promise<KeepAwakeStatus>
   }
 
   // Interface language
@@ -461,6 +463,7 @@ interface PiDesktopAPI {
   onEvent(callback: (event: PiRpcEvent) => void): () => void
   onPendingPrompts(callback: (counts: PendingPromptCounts) => void): () => void
   onWorkspaceActivity(callback: (map: WorkspaceActivityMap) => void): () => void
+  onKeepAwakeStatus(callback: (status: KeepAwakeStatus) => void): () => void
   onSessionRuntime(callback: (runtime: SessionRuntimeInfo) => void): () => void
   onRuntimeState(callback: (payload: { runtimeId: string }) => void): () => void
   onActivateWorkspace(callback: (payload: WorkspaceActivationIntent) => void): () => void
@@ -533,6 +536,7 @@ const api: PiDesktopAPI = {
     getQuickChatShortcutStatus: () => ipcRenderer.invoke(IPC_CHANNELS.QUICK_CHAT_SHORTCUT_STATUS),
     isRunOnStartupAvailable: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_RUN_ON_STARTUP_AVAILABLE),
     openQuickChat: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_OPEN_QUICK_CHAT),
+    getKeepAwakeStatus: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_KEEP_AWAKE_STATUS),
   },
 
   i18n: {
@@ -793,6 +797,14 @@ const api: PiDesktopAPI = {
     ipcRenderer.on(IPC_CHANNELS.EVENT_WORKSPACE_ACTIVITY, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.EVENT_WORKSPACE_ACTIVITY, handler)
+    }
+  },
+
+  onKeepAwakeStatus: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: KeepAwakeStatus) => callback(status)
+    ipcRenderer.on(IPC_CHANNELS.EVENT_KEEP_AWAKE_STATUS, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.EVENT_KEEP_AWAKE_STATUS, handler)
     }
   },
 

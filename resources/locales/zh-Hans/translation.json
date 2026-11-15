@@ -1336,6 +1336,21 @@
       "description": "当 Pi 在你未查看的工作区中完成、失败或等待批准时通知你",
       "label": "桌面通知"
     },
+    "keepAwake": {
+      "description": "阻止这台电脑进入睡眠。屏幕仍可能关闭。合上笔记本电脑的盖子仍会让电脑进入睡眠。",
+      "label": "保持这台电脑唤醒",
+      "modes": {
+        "always": "始终",
+        "off": "关闭",
+        "whileWorking": "智能体工作时"
+      },
+      "status": {
+        "holding": "状态：正在保持这台电脑唤醒",
+        "off": "状态：关闭",
+        "unsupported": "状态：Pi Desktop 无法在此系统上阻止睡眠。未找到电源管理器，也没有 systemd 睡眠锁。",
+        "waitingForWork": "状态：等待工作"
+      }
+    },
     "language": {
       "description": "菜单、按钮和消息的语言",
       "label": "语言",
