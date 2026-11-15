@@ -8,6 +8,12 @@
     "workingInAnotherWorkspace": "Pi is working in another workspace"
   },
   "app": {
+    "crashScreen": {
+      "copyDetails": "Copy details",
+      "message": "{{product}} hit an error and stopped drawing this window. Your sessions keep running. Reload to continue.",
+      "reload": "Reload",
+      "title": "Something went wrong"
+    },
     "dropFolder": {
       "description": "Opens that folder as a workspace (creates one if needed)",
       "title": "Drop folder to open as project"
@@ -424,6 +430,11 @@
       "working": "working…"
     }
   },
+  "crashRecovery": {
+    "detail": "Reason: {{reason}}",
+    "message": "The {{product}} window stopped again soon after it reloaded.",
+    "title": "Window stopped"
+  },
   "customModels": {
     "addModelButton": "Add model",
     "addProviderButton": "Add provider",
@@ -454,6 +465,9 @@
     "visionLabel": "vision"
   },
   "diagnostics": {
+    "exportLogs": "Export logs",
+    "exportLogsFailed": "Could not export logs: {{error}}",
+    "exportLogsSaved": "Logs saved to {{path}}",
     "fields": {
       "appVersion": "App version",
       "binaryFound": "Binary found",
@@ -524,6 +538,10 @@
     "workspaceTrustedBadge": "trusted"
   },
   "dialogs": {
+    "logExport": {
+      "fileFilterName": "JSON",
+      "title": "Export logs"
+    },
     "openFolder": {
       "title": "Open Folder"
     },

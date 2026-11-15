@@ -9,6 +9,7 @@ import type { WorkspaceActivationIntent } from '../../shared/ipc-contracts'
 import type { ChatWidth } from '../../shared/chat-width'
 import { t } from '../../shared/i18n'
 import { isImeComposing } from './utils/ime-composing'
+import { currentNavigationType, launchView } from './utils/launch-view'
 
 /**
  * Subscribes to Pi events from the main process and routes them to the store.
@@ -610,7 +611,10 @@ export function useInitialize(): void {
       // background matches from the start.
       subscribeAppliedTheme(syncWindowBackground)
       await loadSettings()
-      const openToHome = useAppStore.getState().settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch
+      const openToHome = launchView({
+        openToHomeOnLaunch: useAppStore.getState().settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch,
+        navigationType: currentNavigationType(),
+      }) === 'home'
 
       // Workspaces are needed for the shell chrome; land the UI immediately after.
       await loadWorkspaces()

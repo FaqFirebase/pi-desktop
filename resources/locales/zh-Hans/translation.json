@@ -8,6 +8,12 @@
     "workingInAnotherWorkspace": "Pi 正在另一个工作区工作"
   },
   "app": {
+    "crashScreen": {
+      "copyDetails": "复制详细信息",
+      "message": "{{product}} 遇到错误，已停止绘制此窗口。你的会话仍在运行。请重新加载以继续。",
+      "reload": "重新加载",
+      "title": "出现问题"
+    },
     "dropFolder": {
       "description": "将该文件夹作为工作区打开（必要时会创建）",
       "title": "拖放文件夹以作为项目打开"
@@ -414,6 +420,11 @@
       "working": "工作中…"
     }
   },
+  "crashRecovery": {
+    "detail": "原因：{{reason}}",
+    "message": "{{product}} 窗口在重新加载后不久再次停止。",
+    "title": "窗口已停止"
+  },
   "customModels": {
     "addModelButton": "添加模型",
     "addProviderButton": "添加提供商",
@@ -444,6 +455,9 @@
     "visionLabel": "视觉"
   },
   "diagnostics": {
+    "exportLogs": "导出日志",
+    "exportLogsFailed": "无法导出日志：{{error}}",
+    "exportLogsSaved": "日志已保存到 {{path}}",
     "fields": {
       "appVersion": "应用版本",
       "binaryFound": "已找到可执行文件",
@@ -513,6 +527,10 @@
     "workspaceTrustedBadge": "已信任"
   },
   "dialogs": {
+    "logExport": {
+      "fileFilterName": "JSON",
+      "title": "导出日志"
+    },
     "openFolder": {
       "title": "打开文件夹"
     },

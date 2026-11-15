@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { mkdtemp, readFile, writeFile, stat } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { AppLog, MAX_LOG_BYTES, RECENT_LIMIT, describeLogDetail } from './app-log'
+import { AppLog, MAX_LOG_BYTES, RECENT_LIMIT, ROTATED_LOG_SUFFIX, describeLogDetail } from './app-log'
 import type { AppLogEntry } from '../shared/ipc-contracts'
 
 async function makeLogPath(): Promise<string> {
@@ -100,6 +100,23 @@ test('rotates the file to .1 when it exceeds the size cap', async () => {
   const freshLines = fresh.trim().split('\n')
   assert.equal(freshLines.length, 1)
   assert.match(freshLines[0], /after rotation/)
+})
+
+test('readLogFiles flushes pending entries and reads the current and rotated files', async () => {
+  const logPath = await makeLogPath()
+  const old: AppLogEntry = { ts: 1, level: 'error', scope: 'app', message: 'old' }
+  await writeFile(`${logPath}${ROTATED_LOG_SUFFIX}`, entryLine(old) + 'not json{\n', 'utf-8')
+  const log = new AppLog({ logPath })
+  log.error('a', 'fresh')
+
+  const { current, previous } = await log.readLogFiles()
+  assert.deepEqual(current.map((e) => e.message), ['fresh'])
+  assert.deepEqual(previous.map((e) => e.message), ['old'])
+})
+
+test('readLogFiles returns empty lists when no log file exists', async () => {
+  const log = new AppLog({ logPath: await makeLogPath() })
+  assert.deepEqual(await log.readLogFiles(), { current: [], previous: [] })
 })
 
 test('describeLogDetail stringifies errors, objects, and passthrough strings', () => {

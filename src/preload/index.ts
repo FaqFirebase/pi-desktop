@@ -52,6 +52,8 @@ import type {
   PromptImage,
   ActivityStatsResult,
   DiagnosticsReport,
+  LogExportResult,
+  RendererErrorRecord,
   GitAvailability,
   ThemesListResult,
   ThemeImportResult,
@@ -419,6 +421,13 @@ interface PiDesktopAPI {
   // Diagnostics report
   diagnostics: {
     get(): Promise<DiagnosticsReport>
+    /** Save dialog, then one JSON file: the report and both log files, secrets redacted. */
+    exportLogs(): Promise<LogExportResult>
+  }
+
+  /** Renderer errors for the app log; main rate-limits them. */
+  rendererErrors: {
+    report(record: RendererErrorRecord): Promise<void>
   }
 
   /** Startup git check; `recheck` runs `git --version` again */
@@ -744,6 +753,11 @@ const api: PiDesktopAPI = {
 
   diagnostics: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_GET),
+    exportLogs: () => ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_EXPORT_LOGS),
+  },
+
+  rendererErrors: {
+    report: (record) => ipcRenderer.invoke(IPC_CHANNELS.RENDERER_ERROR_REPORT, record),
   },
 
   gitCheck: {

@@ -96,6 +96,10 @@ src/
 │   ├── ipc-handlers.ts           # IPC composition root (creates context, calls ipc/ modules)
 │   ├── ipc/                      # Domain-specific IPC handler modules (pi, session, files, ...)
 │   ├── app-log.ts                # Main-process log: ring buffer + JSONL file in the GUI data dir
+│   ├── log-redaction.ts          # Remove tokens, URL credentials and secret env values from log text
+│   ├── log-export.ts             # Export logs file: report + both log files, redacted; dated file name
+│   ├── renderer-error-log.ts     # Renderer error records -> app log, checked, capped and rate limited
+│   ├── renderer-crash-recovery.ts # Renderer gone: ignore, reload once, or ask Reload/Quit
 │   ├── workspace-activity.ts     # Per-workspace activity state machine (working/approval/completed/failed)
 │   ├── notify-decision.ts        # Pure should-we-notify decision (focus/active-workspace aware)
 │   ├── diagnostics.ts            # Assembles the Diagnostics view's report
@@ -216,6 +220,8 @@ src/
         │   ├── planning-prompt.ts # Plan/read-only prompt wrapper
         │   ├── compose-prompt.ts # Typed text + staged files -> prompt (text files inlined as data, images as blocks)
         │   ├── ipc-error.ts      # Strip Electron's remote-method prefix from IPC errors
+        │   ├── renderer-error-report.ts # Window errors, rejections and boundary catches -> main; crash details text
+        │   ├── launch-view.ts    # First view after load: a reload returns to Chat
         │   ├── quick-switcher.ts # Token filters for the palette's workspace/session/file sections
         │   ├── rank-file-results.ts # Basename-tiered ranking for file search hits
         │   ├── session-title.ts  # Distinguishable fallback session titles
@@ -300,6 +306,7 @@ src/
             ├── terminal-clipboard.ts # Ctrl+C / Ctrl+V copy and paste rules per OS
             ├── context-menu.tsx   # Right-click context menu, themed confirm dialog
             ├── error-boundary.tsx # Renderer error boundary
+            ├── app-crash-screen.tsx # Root boundary fallback: Reload and Copy details
             ├── extension-ui-dialog.tsx # Extension UI protocol + AppConfirmDialog
             ├── chat-search.tsx    # Ctrl/Cmd+F find in conversation
             ├── chat-panel-widths.ts # Width math for the chat side panel
@@ -445,6 +452,8 @@ resources/
 
 - Sidebar > Diagnostics: Pi binary resolution (path, source, node binary, PATH), `pi --version`, git version (or not found), per-workspace path/trust/process status, provider key classification from the engine's models file (never evaluates secrets), permission mode and rule counts, storage paths, and recent warnings/errors from the app log
 - App log: `app-log.jsonl` in the GUI data dir (ring-buffered in memory, size-capped rotation), so packaged-build errors survive for the Diagnostics view
+- Export logs: one JSON file with the report, `app-log.jsonl` and `app-log.jsonl.1`, secrets redacted (also in the copied report)
+- Renderer errors (root boundary, window errors, rejections) go to the app log under `renderer`, rate limited; a crashed main window reloads once, then asks Reload/Quit
 
 ### File and project
 

@@ -8,6 +8,12 @@
     "workingInAnotherWorkspace": "Pi работает в другом проекте"
   },
   "app": {
+    "crashScreen": {
+      "copyDetails": "Копировать подробности",
+      "message": "В {{product}} произошла ошибка, и окно перестало отображаться. Ваши сессии продолжают работать. Перезагрузите окно, чтобы продолжить.",
+      "reload": "Перезагрузить",
+      "title": "Что-то пошло не так"
+    },
     "dropFolder": {
       "description": "Открывает папку как проект (при необходимости создаёт его)",
       "title": "Перетащите папку, чтобы открыть проект"
@@ -444,6 +450,11 @@
       "working": "в работе…"
     }
   },
+  "crashRecovery": {
+    "detail": "Причина: {{reason}}",
+    "message": "Окно {{product}} снова остановилось вскоре после перезагрузки.",
+    "title": "Окно остановилось"
+  },
   "customModels": {
     "addModelButton": "Добавить модель",
     "addProviderButton": "Добавить провайдера",
@@ -474,6 +485,9 @@
     "visionLabel": "зрение"
   },
   "diagnostics": {
+    "exportLogs": "Экспорт журналов",
+    "exportLogsFailed": "Не удалось экспортировать журналы: {{error}}",
+    "exportLogsSaved": "Журналы сохранены в {{path}}",
     "fields": {
       "appVersion": "Версия приложения",
       "binaryFound": "Исполняемый файл найден",
@@ -546,6 +560,10 @@
     "workspaceTrustedBadge": "доверенный"
   },
   "dialogs": {
+    "logExport": {
+      "fileFilterName": "JSON",
+      "title": "Экспорт журналов"
+    },
     "openFolder": {
       "title": "Открыть папку"
     },

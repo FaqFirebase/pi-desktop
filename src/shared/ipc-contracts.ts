@@ -112,6 +112,10 @@ export const IPC_CHANNELS = {
 
   // Diagnostics
   DIAGNOSTICS_GET: 'diagnostics:get',
+  DIAGNOSTICS_EXPORT_LOGS: 'diagnostics:export-logs',
+
+  // Renderer errors
+  RENDERER_ERROR_REPORT: 'renderer:error-report',
 
   // Workspaces
   WORKSPACE_LIST: 'workspace:list',
@@ -1911,6 +1915,22 @@ export interface AppLogEntry {
   detail?: string
 }
 
+export type RendererErrorKind = 'window-error' | 'unhandled-rejection' | 'render-error'
+
+/** One renderer error, sent to main for the app log. */
+export interface RendererErrorRecord {
+  kind: RendererErrorKind
+  name: string
+  message: string
+  stack: string | null
+  componentStack: string | null
+  /** The store's currentView, or null outside the main app (Quick Chat). */
+  view: string | null
+  sessionId: string | null
+  /** True when nothing local handled it: window errors, rejections, the root boundary. */
+  unhandled: boolean
+}
+
 // ─── Diagnostics Types ──────────────────────────────────────────────────────
 
 export interface DiagnosticsWorkspaceInfo {
@@ -2000,6 +2020,21 @@ export interface DiagnosticsReport {
   }
   recentErrors: AppLogEntry[]
 }
+
+export const LOG_EXPORT_FORMAT = 'pi-desktop-log-export/v1'
+
+/** The Export logs file: the report plus both log files, secrets redacted. */
+export interface LogExportFile {
+  format: typeof LOG_EXPORT_FORMAT
+  exportedAt: number
+  diagnostics: DiagnosticsReport
+  log: { current: AppLogEntry[]; previous: AppLogEntry[] }
+}
+
+export type LogExportResult =
+  | { ok: true; path: string }
+  | { ok: false; error: string }
+  | { ok: false; canceled: true }
 
 // ─── File Types ────────────────────────────────────────────────────────────
 

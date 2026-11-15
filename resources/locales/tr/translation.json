@@ -8,6 +8,12 @@
     "workingInAnotherWorkspace": "Pi başka bir çalışma alanında çalışıyor"
   },
   "app": {
+    "crashScreen": {
+      "copyDetails": "Ayrıntıları kopyala",
+      "message": "{{product}} bir hatayla karşılaştı ve bu pencereyi çizmeyi durdurdu. Oturumlarınız çalışmaya devam ediyor. Devam etmek için yeniden yükleyin.",
+      "reload": "Yeniden yükle",
+      "title": "Bir şeyler ters gitti"
+    },
     "dropFolder": {
       "description": "Klasörü çalışma alanı olarak açar (gerekirse oluşturur)",
       "title": "Proje olarak açmak için klasörü bırakın"
@@ -424,6 +430,11 @@
       "working": "çalışıyor…"
     }
   },
+  "crashRecovery": {
+    "detail": "Neden: {{reason}}",
+    "message": "{{product}} penceresi yeniden yüklendikten kısa süre sonra yine durdu.",
+    "title": "Pencere durdu"
+  },
   "customModels": {
     "addModelButton": "Model ekle",
     "addProviderButton": "Sağlayıcı ekle",
@@ -454,6 +465,9 @@
     "visionLabel": "vision"
   },
   "diagnostics": {
+    "exportLogs": "Günlükleri dışa aktar",
+    "exportLogsFailed": "Günlükler dışa aktarılamadı: {{error}}",
+    "exportLogsSaved": "Günlükler şuraya kaydedildi: {{path}}",
     "fields": {
       "appVersion": "Uygulama sürümü",
       "binaryFound": "İkili dosya bulundu",
@@ -524,6 +538,10 @@
     "workspaceTrustedBadge": "güvenilir"
   },
   "dialogs": {
+    "logExport": {
+      "fileFilterName": "JSON",
+      "title": "Günlükleri dışa aktar"
+    },
     "openFolder": {
       "title": "Klasör aç"
     },

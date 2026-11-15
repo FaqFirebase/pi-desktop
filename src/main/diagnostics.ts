@@ -16,6 +16,7 @@ import { workspaceTrustStore } from './workspace-trust'
 import { getOmpSessionsRoot, getSessionsRoot } from './pi-paths'
 import { getGuiDataDir } from './app-data-paths'
 import { appLog } from './app-log'
+import { redactLogEntry, secretValuesFromEnv } from './log-redaction'
 import { validatePermissionRulesFile } from '../../resources/permission-rules'
 import { accountCommandCwd, runPiCli } from './ipc/run-pi-cli'
 import { getGlobalPermissionRulesPath } from './ipc/pi-start-options'
@@ -25,6 +26,11 @@ import { readModelsConfigFile } from './ipc/models-config-handlers'
 import { getGitAvailability } from './ipc/git-availability-handlers'
 
 const PI_VERSION_TIMEOUT_MS = 10_000
+
+/** The environment agents run with: ~/.pi/.env under the app's own. */
+export function diagnosticsEnv(): NodeJS.ProcessEnv {
+  return { ...loadPiDotenv(), ...process.env }
+}
 
 async function readGlobalRuleCount(): Promise<{ count: number | null; error: string | null }> {
   const rulesPath = getGlobalPermissionRulesPath()
@@ -43,6 +49,8 @@ export async function collectDiagnostics(
   const settings = await loadAppSettings(workspaceManager)
   const cli = getPiCli()
   const resolution = getPiResolution()
+  const env = diagnosticsEnv()
+  const secretValues = secretValuesFromEnv(env)
 
   const versionCwd = accountCommandCwd(workspaceManager.getActiveWorkspace()?.path)
   const piVersionResult = cli.found
@@ -59,7 +67,7 @@ export async function collectDiagnostics(
   }))
 
   const modelsRead = await readModelsConfigFile(getConfiguredEngineKind())
-  const providers = 'config' in modelsRead ? summarizeProviders(modelsRead.config, { ...loadPiDotenv(), ...process.env }) : null
+  const providers = 'config' in modelsRead ? summarizeProviders(modelsRead.config, env) : null
   const providersError = 'failure' in modelsRead ? reportModelsReadFailure(modelsRead.location.name, modelsRead.failure) : null
 
   const globalRules = await readGlobalRuleCount()
@@ -103,6 +111,8 @@ export async function collectDiagnostics(
       sessionsRoot,
       sessionsRootExists: existsSync(sessionsRoot),
     },
-    recentErrors: appLog.getRecent().filter((entry) => entry.level !== 'info'),
+    recentErrors: appLog.getRecent()
+      .filter((entry) => entry.level !== 'info')
+      .map((entry) => redactLogEntry(entry, secretValues)),
   }
 }

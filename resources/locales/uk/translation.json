@@ -8,6 +8,12 @@
     "workingInAnotherWorkspace": "Pi працює в іншому проєкті"
   },
   "app": {
+    "crashScreen": {
+      "copyDetails": "Копіювати подробиці",
+      "message": "У {{product}} сталася помилка, і вікно перестало відображатися. Ваші сесії продовжують працювати. Перезавантажте вікно, щоб продовжити.",
+      "reload": "Перезавантажити",
+      "title": "Щось пішло не так"
+    },
     "dropFolder": {
       "description": "Відкриває папку як проєкт (за потреби створює його)",
       "title": "Перетягніть папку, щоб відкрити проєкт"
@@ -444,6 +450,11 @@
       "working": "у роботі…"
     }
   },
+  "crashRecovery": {
+    "detail": "Причина: {{reason}}",
+    "message": "Вікно {{product}} знову зупинилося невдовзі після перезавантаження.",
+    "title": "Вікно зупинилося"
+  },
   "customModels": {
     "addModelButton": "Додати модель",
     "addProviderButton": "Додати провайдера",
@@ -474,6 +485,9 @@
     "visionLabel": "зір"
   },
   "diagnostics": {
+    "exportLogs": "Експорт журналів",
+    "exportLogsFailed": "Не вдалося експортувати журнали: {{error}}",
+    "exportLogsSaved": "Журнали збережено в {{path}}",
     "fields": {
       "appVersion": "Версія застосунку",
       "binaryFound": "Виконуваний файл знайдено",
@@ -546,6 +560,10 @@
     "workspaceTrustedBadge": "довірений"
   },
   "dialogs": {
+    "logExport": {
+      "fileFilterName": "JSON",
+      "title": "Експорт журналів"
+    },
     "openFolder": {
       "title": "Відкрити папку"
     },

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import {
   AlertTriangle,
   CheckCircle2,
+  Download,
   Loader2,
   RefreshCw,
   Stethoscope,
@@ -13,6 +14,7 @@ import type {
   AppLogEntry,
   DiagnosticsReport,
   GitAvailability,
+  LogExportResult,
   PermissionMode,
   PiResolutionSource,
   ProviderKeyState,
@@ -78,6 +80,8 @@ export function DiagnosticsPanel(): React.JSX.Element {
   const [report, setReport] = useState<DiagnosticsReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const [exportResult, setExportResult] = useState<LogExportResult | null>(null)
   // The report describes whichever CLI resolved, so labelling it "Pi version"
   // while OMP is configured reports the wrong program's version number.
   const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
@@ -98,6 +102,18 @@ export function DiagnosticsPanel(): React.JSX.Element {
     void load()
   }, [load])
 
+  // Independent of the shown report: main collects a fresh one for the file.
+  const exportLogs = async (): Promise<void> => {
+    setExporting(true)
+    try {
+      setExportResult(await window.piDesktop.diagnostics.exportLogs())
+    } catch (err) {
+      setExportResult({ ok: false, error: formatIpcError(err) })
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -113,6 +129,14 @@ export function DiagnosticsPanel(): React.JSX.Element {
             />
           )}
           <button
+            onClick={() => void exportLogs()}
+            disabled={exporting}
+            className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-dim hover:bg-surface-hover hover:text-secondary transition-colors disabled:cursor-default disabled:opacity-50"
+          >
+            <Download size={14} />
+            {t('diagnostics.exportLogs')}
+          </button>
+          <button
             onClick={() => void load()}
             title={t('common.refresh')}
             aria-label={t('diagnostics.refreshAriaLabel')}
@@ -122,6 +146,17 @@ export function DiagnosticsPanel(): React.JSX.Element {
           </button>
         </div>
       </div>
+
+      {exportResult && !('canceled' in exportResult) && (
+        <p
+          role="status"
+          className={clsx('break-words border-b border-border px-4 py-2 text-xs', exportResult.ok ? 'text-success' : 'text-error')}
+        >
+          {exportResult.ok
+            ? t('diagnostics.exportLogsSaved', { path: exportResult.path })
+            : t('diagnostics.exportLogsFailed', { error: exportResult.error })}
+        </p>
+      )}
 
       <div className="flex-1 overflow-y-auto p-4">
         {loading && !report ? (

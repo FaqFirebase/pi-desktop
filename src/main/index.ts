@@ -27,6 +27,9 @@ import { applyKeepAwakeMode } from './keep-awake-service'
 import { readWindowHints, windowTitle } from './window-hints'
 import { createEditorGuard } from './editor-guard'
 import { appLog } from './app-log'
+import { CLEAN_EXIT_REASON, crashRecoveryAction } from './renderer-crash-recovery'
+import { RENDERER_LOG_SCOPE } from './renderer-error-log'
+import { PI_DESKTOP_PRODUCT_NAME } from '../shared/product-name'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { VOICE_PROTOCOL_SCHEME, handleVoiceProtocolRequest } from './voice-protocol'
 import { getVoiceModelsDir } from './voice-model-store'
@@ -63,6 +66,7 @@ process.on('uncaughtException', (err) => {
   console.error('Uncaught exception:', err)
   appLog.error('app', 'Uncaught exception', err)
 })
+process.on('unhandledRejection', (reason) => appLog.error('app', 'Unhandled rejection', reason))
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -106,11 +110,19 @@ setQuickChatQuittingHandler(() => isQuitting)
 // close, and the reload menu items all pause on the same discard dialog.
 const editorGuard = createEditorGuard()
 
+// When the main window's renderer last reloaded after a crash; a second crash
+// soon after asks instead of reloading again (renderer-crash-recovery.ts).
+let lastCrashReloadAt: number | null = null
+
+// A dialog can be due while the window is hidden in the tray; surface it so
+// the dialog (and what it is asking about) is actually visible.
+function showWindowForDialog(window: BrowserWindow | null): void {
+  if (window && !window.isDestroyed() && !window.isVisible()) window.show()
+}
+
 /** Native confirm matching the in-app discard dialog's wording. */
 async function confirmEditorDiscard(window: BrowserWindow | null): Promise<boolean> {
-  // Tray Quit can arrive while the window is hidden; surface it so the
-  // dialog (and the edits it is asking about) are actually visible.
-  if (window && !window.isDestroyed() && !window.isVisible()) window.show()
+  showWindowForDialog(window)
   const options = {
     type: 'warning' as const,
     title: t('editorGuard.title'),
@@ -123,6 +135,27 @@ async function confirmEditorDiscard(window: BrowserWindow | null): Promise<boole
     ? await dialog.showMessageBox(window, options)
     : await dialog.showMessageBox(options)
   return response === 0
+}
+
+/** The renderer crashed again soon after a reload: Reload (true) or Quit (false). */
+async function confirmCrashReload(window: BrowserWindow, reason: string): Promise<boolean> {
+  showWindowForDialog(window)
+  const { response } = await dialog.showMessageBox(window, {
+    type: 'error',
+    title: t('crashRecovery.title'),
+    message: t('crashRecovery.message', { product: PI_DESKTOP_PRODUCT_NAME }),
+    detail: t('crashRecovery.detail', { reason }),
+    buttons: [t('menu.reload'), t('app.quit')],
+    defaultId: 0,
+    cancelId: 1,
+  })
+  return response === 0
+}
+
+function reloadAfterCrash(window: BrowserWindow): void {
+  if (window.isDestroyed()) return
+  lastCrashReloadAt = Date.now()
+  window.webContents.reload()
 }
 
 /** Menu Reload / Force Reload: ask a dirty editor first, then reload. */
@@ -312,7 +345,26 @@ function createMainWindow(): BrowserWindow {
   // A reloaded (or crashed-and-recovered) renderer starts with a clean
   // editor; a stale dirty flag here would make quit nag forever.
   window.webContents.on('did-start-loading', () => editorGuard.reset())
-  window.webContents.on('render-process-gone', () => editorGuard.reset())
+  window.webContents.on('render-process-gone', (_event, details) => {
+    editorGuard.reset()
+    if (details.reason !== CLEAN_EXIT_REASON) {
+      appLog.error(RENDERER_LOG_SCOPE, 'Renderer process gone', { reason: details.reason, exitCode: details.exitCode })
+    }
+    const action = crashRecoveryAction({
+      reason: details.reason,
+      isQuitting,
+      windowDestroyed: window.isDestroyed(),
+      now: Date.now(),
+      lastReloadAt: lastCrashReloadAt,
+    })
+    if (action === 'reload') reloadAfterCrash(window)
+    else if (action === 'ask') {
+      void confirmCrashReload(window, details.reason).then((reload) => {
+        if (reload) reloadAfterCrash(window)
+        else app.quit()
+      })
+    }
+  })
 
   window.on('closed', () => {
     if (mainWindow !== window) return

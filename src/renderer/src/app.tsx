@@ -29,6 +29,7 @@ import { useAppStore } from './store'
 import { MainChatProvider } from './main-chat-provider'
 import { handleAppShortcut, handleAppShortcutAfterTarget, handleAppShortcutRelease, releasePushToTalk } from './utils/app-shortcuts'
 import { emitVoiceShortcut } from './voice/voice-shortcut'
+import { setRendererErrorContextSource } from './utils/renderer-error-report'
 import { useEffect } from 'react'
 import { ArrowUpCircle, FolderOpen, PanelLeft, X } from 'lucide-react'
 
@@ -48,6 +49,12 @@ export function App(): React.JSX.Element {
   const workflowPanelOpen = useAppStore((state) => state.workflowPanelOpen)
   const workflowPanelFilter = useAppStore((state) => state.workflowPanelFilter)
   const workflowPanelWorkspaceId = useAppStore((state) => state.workflowPanelWorkspaceId)
+
+  // Renderer error records name the view and session they happened in.
+  useEffect(() => setRendererErrorContextSource(() => {
+    const state = useAppStore.getState()
+    return { view: state.currentView, sessionId: state.sessionState?.sessionId ?? null }
+  }), [])
 
   // Global context menu
   const { show, ContextMenuComponent } = useContextMenu()
