@@ -771,10 +771,12 @@ app.on('will-quit', (event) => {
     // stopAll() reaches them too. stopAll() waits a bounded time for each
     // agent to exit, then force-kills every stopped process tree still alive.
     // See process-tree-kill.ts for what that reaches on each platform.
-    councilRuns.cancelAll()
     // The executor turns a synchronous throw into a rejection, so a failed
     // teardown is logged and the quit still resumes instead of hanging.
-    shutdownPending ??= new Promise<void>((resolve) => resolve(workspaceManager?.stopAll()))
+    shutdownPending ??= new Promise<void>((resolve) => {
+      councilRuns.cancelAll()
+      resolve(workspaceManager?.stopAll())
+    })
       .catch((error) => appLog.warn('app', 'Failed to stop workspaces on quit', error))
       .then(() => {
         shutdownComplete = true
