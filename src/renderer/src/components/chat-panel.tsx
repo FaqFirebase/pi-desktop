@@ -1,9 +1,10 @@
-import { sidePanelHidesPreview, useAppStore } from '../store'
+import { councilRunOnScreen, sidePanelHidesPreview, useAppStore } from '../store'
 import { agentEngineLabel } from '../../../shared/agent-engine-label'
 import { PI_DESKTOP_PRODUCT_NAME } from '../../../shared/product-name'
 import { ChatComposerDock } from './chat-composer-dock'
 import { ChatProjectPicker } from './chat-project-picker'
 import { CouncilPanels } from './council-panels'
+import { isEmptyChatView } from './chat-empty-view'
 import { MessageBubble, ToolGroupBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
 import { ChatSearch } from './chat-search'
@@ -62,6 +63,7 @@ export function ChatPanel(): React.JSX.Element {
   const sessionLoading = useAppStore((state) => state.sessionLoading)
   const isStreaming = useAppStore((state) => state.isStreaming)
   const reattachedMidTurn = useAppStore((state) => state.reattachedMidTurn)
+  const councilOnScreen = useAppStore((state) => councilRunOnScreen(state) !== null)
   // Drive message-list bottom padding from the real floating composer height so
   // a tall draft / attachments row never permanently covers the last message.
   // The floating frame exists only once the empty chat has messages, hence the ref.
@@ -317,8 +319,12 @@ export function ChatPanel(): React.JSX.Element {
               />
             )}
             {(() => {
-              const isEmptyChat =
-                !sessionLoading && messages.length === 0 && !isStreaming
+              const isEmptyChat = isEmptyChatView({
+                sessionLoading,
+                messageCount: messages.length,
+                isStreaming,
+                councilOnScreen,
+              })
 
               // Empty session: Codex-style center prompt + project picker (sidebar chrome).
               const centeredLead = (
