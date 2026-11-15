@@ -18,8 +18,9 @@ export const RUNNABLE_EXTENSIONS: ReadonlySet<string> = new Set([
 const EXECUTE_BITS = 0o111
 // Windows drops trailing dots and spaces from a file name, so `run.bat.` runs `run.bat`.
 const TRAILING_DOTS_AND_SPACES = /[. ]+$/
-// Text after a colon names an NTFS stream (`run.bat::$DATA` runs `run.bat`).
-// Cut it on every OS: elsewhere it only makes the check stricter.
+// On Windows, text after a colon names an NTFS stream (`run.bat::$DATA` runs
+// `run.bat`); elsewhere a colon is a plain name character. Both readings are
+// checked on every OS.
 const STREAM_SEPARATOR = ':'
 
 /** Folders "Open in editor", "Open with system app" and "Show in folder" may act in. */
@@ -53,14 +54,24 @@ export function resolveOpenPathTarget(
   return roots.some((root) => isPathWithin(root, resolved, platform)) ? resolved : null
 }
 
+function extensionOf(name: string): string {
+  return win32Path.extname(name.replace(TRAILING_DOTS_AND_SPACES, '')).toLowerCase()
+}
+
 /**
- * The lower-case extension of a path's last part, read the way Windows reads
- * it (stream name and trailing dots and spaces dropped). Both separators
- * count, so a Windows path is read the same on every OS.
+ * The lower-case extensions a path's last part can run as: that of the full
+ * name, and that of the part before a colon (a stream name), each read the way
+ * Windows reads it (trailing dots and spaces dropped). Both separators count,
+ * so a Windows path is read the same on every OS.
  */
-export function extensionForPolicy(path: string): string {
-  const name = win32Path.basename(path).split(STREAM_SEPARATOR)[0].replace(TRAILING_DOTS_AND_SPACES, '')
-  return win32Path.extname(name).toLowerCase()
+export function extensionsForPolicy(path: string): string[] {
+  const name = win32Path.basename(path)
+  const extensions = [extensionOf(name)]
+  if (name.includes(STREAM_SEPARATOR)) {
+    const beforeStream = extensionOf(name.split(STREAM_SEPARATOR)[0])
+    if (!extensions.includes(beforeStream)) extensions.push(beforeStream)
+  }
+  return extensions
 }
 
 export interface PathFacts {
@@ -76,6 +87,6 @@ export interface PathFacts {
  * match by extension.
  */
 export function isRunnableTarget(paths: readonly string[], facts: PathFacts, platform: NodeJS.Platform): boolean {
-  if (paths.some((path) => RUNNABLE_EXTENSIONS.has(extensionForPolicy(path)))) return true
+  if (paths.some((path) => extensionsForPolicy(path).some((extension) => RUNNABLE_EXTENSIONS.has(extension)))) return true
   return platform !== 'win32' && facts.isFile && (facts.mode & EXECUTE_BITS) !== 0
 }

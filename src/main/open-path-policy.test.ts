@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { Workspace } from '../shared/ipc-contracts'
 import {
   RUNNABLE_EXTENSIONS,
-  extensionForPolicy,
+  extensionsForPolicy,
   isRunnableTarget,
   openPathRoots,
   resolveOpenPathTarget,
@@ -25,16 +25,24 @@ test('Windows and macOS types that run through the system are on the blocklist',
 })
 
 test('a stream name after a colon does not hide the extension', () => {
-  assert.equal(extensionForPolicy('C:\\p\\run.bat::$DATA'), '.bat')
-  assert.equal(extensionForPolicy('/p/run.sh:notes.txt'), '.sh')
+  assert.deepEqual(extensionsForPolicy('C:\\p\\run.bat::$DATA'), ['.bat::$data', '.bat'])
+  assert.deepEqual(extensionsForPolicy('/p/run.sh:notes.txt'), ['.txt', '.sh'])
   assert.equal(isRunnableTarget(['C:\\p\\run.bat::$DATA'], plainFile, 'win32'), true)
   assert.equal(isRunnableTarget(['/p/run.sh:x.txt'], plainFile, 'linux'), true)
 })
 
-test('extensionForPolicy drops trailing dots and spaces and folds case', () => {
-  assert.equal(extensionForPolicy('C:\\p\\SETUP.EXE'), '.exe')
-  assert.equal(extensionForPolicy('/p/run.bat. .'), '.bat')
-  assert.equal(extensionForPolicy('/p/README'), '')
+test('a colon in a POSIX name does not hide the full name extension', () => {
+  assert.equal(isRunnableTarget(['/p/notes:run.sh'], plainFile, 'linux'), true)
+  assert.equal(isRunnableTarget(['/p/a:b.jar'], plainFile, 'linux'), true)
+  assert.equal(isRunnableTarget(['/p/x:y.desktop'], plainFile, 'linux'), true)
+  assert.equal(isRunnableTarget(['/Apps/X:Y.app'], { isFile: false, mode: 0o755 }, 'darwin'), true)
+  assert.equal(isRunnableTarget(['/p/notes:draft.txt'], plainFile, 'linux'), false)
+})
+
+test('extensionsForPolicy drops trailing dots and spaces and folds case', () => {
+  assert.deepEqual(extensionsForPolicy('C:\\p\\SETUP.EXE'), ['.exe'])
+  assert.deepEqual(extensionsForPolicy('/p/run.bat. .'), ['.bat'])
+  assert.deepEqual(extensionsForPolicy('/p/README'), [''])
 })
 
 test('Windows name tricks are still runnable', () => {
