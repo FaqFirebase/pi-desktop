@@ -9,6 +9,7 @@ import { hardenBrowserPaneSession, isBrowserPaneGuest, watchBrowserPaneGuest } f
 import { browserPaneGuestPreferences } from './browser-pane-guest'
 import { isBrowserPaneUrl } from '../shared/browser-pane'
 import { WorkspaceManager } from './workspace-manager'
+import { councilRuns } from './council-manager'
 import type { WorkspaceTerminals } from './workspace-terminals'
 import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
 import { installLinuxApplicationEntry } from './linux-application-entry'
@@ -766,9 +767,11 @@ app.on('before-quit', (event) => {
 app.on('will-quit', (event) => {
   if (!shutdownComplete) {
     event.preventDefault()
-    // stopAll() waits a bounded time for each agent to exit, then force-kills
-    // every stopped process tree still alive. See process-tree-kill.ts for
-    // what that reaches on each platform.
+    // Council consultants are stopped first, so the force-kill at the end of
+    // stopAll() reaches them too. stopAll() waits a bounded time for each
+    // agent to exit, then force-kills every stopped process tree still alive.
+    // See process-tree-kill.ts for what that reaches on each platform.
+    councilRuns.cancelAll()
     // The executor turns a synchronous throw into a rejection, so a failed
     // teardown is logged and the quit still resumes instead of hanging.
     shutdownPending ??= new Promise<void>((resolve) => resolve(workspaceManager?.stopAll()))

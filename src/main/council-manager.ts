@@ -13,6 +13,7 @@ import {
   parsePiStreamLine,
 } from '../shared/council-config'
 import { detectAgents } from './agent-detection'
+import { stopProcessTree } from './process-tree-kill'
 import { escapeCmdSpawn } from './cmd-escape'
 import { describePiStartFailure, isCmdShim } from './pi-binary-resolution'
 import { buildPiInvocation, buildPiRunEnv, getPiCli, type PiCli } from './pi-rpc-manager'
@@ -21,7 +22,6 @@ import { t } from '../shared/i18n'
 
 const IS_WINDOWS = process.platform === 'win32'
 const MS_PER_SECOND = 1000
-const FORCE_KILL_TIMEOUT_MS = 3000
 
 export interface SpawnOutcome {
   ok: boolean
@@ -168,7 +168,18 @@ export class CouncilRuns {
     this.running.delete(runId)
     for (const controller of steps) controller.abort()
   }
+
+  /** Stop every running step of every run, as a quit must. */
+  cancelAll(): void {
+    for (const runId of [...this.running.keys()]) this.cancel(runId)
+  }
 }
+
+/**
+ * The app's council runs. One registry, so a quit reaches the consultants of
+ * every run, and not only the run the renderer asks to cancel.
+ */
+export const councilRuns = new CouncilRuns()
 
 /** Where a consultant's CLI was found: the engine resolution for Pi, detection for the others. */
 export type ConsultantInstall =
@@ -253,6 +264,10 @@ export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeout
       shell: launch.shell,
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
+      // POSIX: the consultant leads its own process group, so a stop reaches
+      // the tools it started too (see stopProcessTree). Windows walks the tree
+      // with taskkill instead, and a detached shell would open a console.
+      detached: !IS_WINDOWS,
     })
     // Ignore EPIPE if the child exits before consuming stdin; write then close
     // so the CLI sees a complete prompt and does not block waiting for more.
@@ -312,18 +327,13 @@ export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeout
       resolve(outcome)
     }
 
-    const stopChild = (): void => {
-      child.kill('SIGTERM')
-      setTimeout(() => child.kill('SIGKILL'), FORCE_KILL_TIMEOUT_MS)
-    }
-
     const timer = setTimeout(() => {
-      stopChild()
+      stopProcessTree(child)
       finish({ ok: false, output: planText, timedOut: true })
     }, timeoutMs)
 
     function cancel(): void {
-      stopChild()
+      stopProcessTree(child)
       finish({ ok: false, output: planText, error: t('errors.council.cancelled') })
     }
     signal?.addEventListener('abort', cancel, { once: true })

@@ -266,6 +266,20 @@ test('a cancel aborts every running step of that run and leaves other runs alone
   assert.equal(other.signal.aborted, false)
 })
 
+test('a quit cancel aborts every running step of every run, and leaves ended steps alone', () => {
+  const runs = new CouncilRuns()
+  const ended = runs.begin('run-1')
+  ended.end()
+  const consultants = runs.begin('run-1')
+  const arbiter = runs.begin('run-2')
+  runs.cancelAll()
+  assert.equal(consultants.signal.aborted, true)
+  assert.equal(arbiter.signal.aborted, true)
+  assert.equal(ended.signal.aborted, false)
+  const next = runs.begin('run-1')
+  assert.equal(next.signal.aborted, false)
+})
+
 test('a run that ended is not cancelled, and a later step of the same run starts fresh', () => {
   const runs = new CouncilRuns()
   const first = runs.begin('run-1')

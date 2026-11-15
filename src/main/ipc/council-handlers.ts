@@ -11,7 +11,7 @@ import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { COUNCIL_AGENT_IDS, clampTimeoutSeconds } from '../../shared/council-config'
 import type { CouncilAgentId, ConsensusMode, ConsultantResult } from '../../shared/council-config'
 import { detectAgents } from '../agent-detection'
-import { runConsultants, runArbiter, defaultSpawnConsultant, CouncilRuns, type ArbiterRequest, type SpawnOutcome } from '../council-manager'
+import { runConsultants, runArbiter, defaultSpawnConsultant, councilRuns, type ArbiterRequest, type SpawnOutcome } from '../council-manager'
 import { agentWork } from '../keep-awake-service'
 import { access } from 'fs/promises'
 import { isString, isObject } from './validation'
@@ -45,7 +45,6 @@ function councilRunId(payload: Record<string, unknown>): string {
 
 export function registerCouncilHandlers(ctx: IpcContext): void {
   const { workspaceManager, broadcast } = ctx
-  const councilRuns = new CouncilRuns()
   const broadcastProgress = (runId: string, id: CouncilAgentId, chunk: string): void => {
     const event: CouncilProgressEvent = { runId, id, chunk }
     broadcast(IPC_CHANNELS.EVENT_COUNCIL_PROGRESS, event)
