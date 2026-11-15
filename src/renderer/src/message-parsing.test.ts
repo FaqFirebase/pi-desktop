@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { parseAgentMessage } from './message-parsing'
+import { IMPORTED_MESSAGE_API, IMPORTED_MESSAGE_MODEL, IMPORTED_MESSAGE_PROVIDER } from '../../shared/chat-import'
 
 test('parses user image blocks into named attachments', () => {
   const parsed = parseAgentMessage({
@@ -90,4 +91,16 @@ test('a reloaded answer the user stopped keeps its stopped mark', () => {
   assert.equal(stopped?.stopped, true)
   const finished = parseAgentMessage({ role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: 'All' }] })
   assert.equal(finished?.stopped, undefined)
+})
+
+test('imported assistant messages have no model', () => {
+  const parsed = parseAgentMessage({
+    role: 'assistant',
+    content: [{ type: 'text', text: 'from an imported chat' }],
+    api: IMPORTED_MESSAGE_API,
+    provider: IMPORTED_MESSAGE_PROVIDER,
+    model: IMPORTED_MESSAGE_MODEL,
+  })
+  assert.equal(parsed?.content, 'from an imported chat')
+  assert.equal(parsed?.model, undefined)
 })

@@ -617,6 +617,9 @@
       "pathNotPermitted": "附件路径未被允许",
       "tooLarge": "附件过大（最大 {{limit}} MB）"
     },
+    "chatImport": {
+      "busy": "已有聊天导入正在进行。"
+    },
     "council": {
       "agentNotFound": "未找到 {{agent}}。请安装它，或在设置中将其从委员会成员中移除。",
       "arbiterFailed": "仲裁者失败",
@@ -1362,6 +1365,32 @@
       "description": "自动滚动到新消息",
       "label": "自动滚动"
     },
+    "chatImport": {
+      "alreadyImported": "已导入",
+      "empty": "未找到聊天。",
+      "engine": "导入为",
+      "failure": {
+        "folderMissing": "该聊天的项目文件夹已不存在。",
+        "invalidPath": "此文件不在聊天文件夹中。",
+        "noMessages": "该聊天没有可导入的消息。",
+        "unreadable": "无法读取聊天文件。",
+        "writeFailed": "无法写入会话文件。"
+      },
+      "folderMissing": "文件夹不存在",
+      "import_other": "导入 {{count}} 个聊天",
+      "intro": "将聊天复制为 {{agent}} 会话。原始文件只会被读取。",
+      "loading": "正在查找聊天…",
+      "progress": "{{done}} / {{total}}",
+      "results": {
+        "failed_other": "失败：{{count}}",
+        "imported_other": "已导入：{{count}}",
+        "skipped_other": "已跳过（已导入）：{{count}}"
+      },
+      "selectFolder": "选择此文件夹中的所有聊天",
+      "sourceRoot": "读取 {{path}}",
+      "unknownFolder": "未知文件夹",
+      "untitled": "未命名聊天"
+    },
     "chatWidth": {
       "description": "消息和输入框可以扩展的宽度",
       "fullOption": "全宽",
@@ -1480,6 +1509,7 @@
       "agentConfiguration": "智能体配置",
       "appearance": "外观",
       "behavior": "行为",
+      "chatImport": "导入聊天",
       "customModels": "自定义模型",
       "editor": "编辑器",
       "multiAgentCouncilPlanning": "多智能体委员会规划",

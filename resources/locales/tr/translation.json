@@ -631,6 +631,9 @@
       "pathNotPermitted": "Ek yoluna izin verilmiyor",
       "tooLarge": "Ek çok büyük (en fazla {{limit}} MB)"
     },
+    "chatImport": {
+      "busy": "Bir sohbet içe aktarma işlemi zaten çalışıyor."
+    },
     "council": {
       "agentNotFound": "{{agent}} bulunamadı. Kurun ya da Ayarlar'daki konsey üyelerinden çıkarın.",
       "arbiterFailed": "Hakem başarısız oldu",
@@ -1390,6 +1393,36 @@
       "description": "Yeni mesajlara otomatik kaydır",
       "label": "Otomatik kaydırma"
     },
+    "chatImport": {
+      "alreadyImported": "İçe aktarıldı",
+      "empty": "Sohbet bulunamadı.",
+      "engine": "Şu olarak içe aktar",
+      "failure": {
+        "folderMissing": "Sohbetin proje klasörü artık yok.",
+        "invalidPath": "Bu dosya sohbet klasöründe değil.",
+        "noMessages": "Sohbette içe aktarılacak mesaj yok.",
+        "unreadable": "Sohbet dosyası okunamadı.",
+        "writeFailed": "Oturum dosyası yazılamadı."
+      },
+      "folderMissing": "Klasör yok",
+      "import_one": "{{count}} sohbeti içe aktar",
+      "import_other": "{{count}} sohbeti içe aktar",
+      "intro": "Sohbetleri {{agent}} oturumlarına kopyalar. Özgün dosyalar yalnızca okunur.",
+      "loading": "Sohbetler aranıyor…",
+      "progress": "{{done}} / {{total}}",
+      "results": {
+        "failed_one": "Başarısız: {{count}}",
+        "failed_other": "Başarısız: {{count}}",
+        "imported_one": "İçe aktarılan: {{count}}",
+        "imported_other": "İçe aktarılan: {{count}}",
+        "skipped_one": "Atlanan, zaten içe aktarılmış: {{count}}",
+        "skipped_other": "Atlanan, zaten içe aktarılmış: {{count}}"
+      },
+      "selectFolder": "Bu klasördeki tüm sohbetleri seç",
+      "sourceRoot": "Okunan yer: {{path}}",
+      "unknownFolder": "Bilinmeyen klasör",
+      "untitled": "Adsız sohbet"
+    },
     "chatWidth": {
       "description": "Mesajların ve istem kutusunun ne kadar genişleyebileceği",
       "fullOption": "Tam genişlik",
@@ -1508,6 +1541,7 @@
       "agentConfiguration": "Ajan yapılandırması",
       "appearance": "Görünüm",
       "behavior": "Davranış",
+      "chatImport": "Sohbetleri içe aktar",
       "customModels": "Özel modeller",
       "editor": "Düzenleyici",
       "multiAgentCouncilPlanning": "Çok ajanlı konsey planlaması",

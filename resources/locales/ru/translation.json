@@ -659,6 +659,9 @@
       "pathNotPermitted": "Путь вложения не разрешён",
       "tooLarge": "Вложение слишком большое (макс. {{limit}} МБ)"
     },
+    "chatImport": {
+      "busy": "Импорт чатов уже выполняется."
+    },
     "council": {
       "agentNotFound": "{{agent}} не найден. Установите его или удалите из состава совета в настройках.",
       "arbiterFailed": "Ошибка арбитра",
@@ -1446,6 +1449,44 @@
       "description": "Автоматически прокручивать к новым сообщениям",
       "label": "Автопрокрутка"
     },
+    "chatImport": {
+      "alreadyImported": "Импортирован",
+      "empty": "Чаты не найдены.",
+      "engine": "Импортировать в",
+      "failure": {
+        "folderMissing": "Папка проекта этого чата больше не существует.",
+        "invalidPath": "Этот файл не находится в папке чатов.",
+        "noMessages": "В чате нет сообщений для импорта.",
+        "unreadable": "Не удалось прочитать файл чата.",
+        "writeFailed": "Не удалось записать файл сеанса."
+      },
+      "folderMissing": "Папка не найдена",
+      "import_one": "Импортировать {{count}} чат",
+      "import_few": "Импортировать {{count}} чата",
+      "import_many": "Импортировать {{count}} чатов",
+      "import_other": "Импортировать {{count}} чата",
+      "intro": "Копирует чаты в сеансы {{agent}}. Исходные файлы только читаются.",
+      "loading": "Поиск чатов…",
+      "progress": "{{done}} из {{total}}",
+      "results": {
+        "failed_one": "С ошибкой: {{count}}",
+        "failed_few": "С ошибкой: {{count}}",
+        "failed_many": "С ошибкой: {{count}}",
+        "failed_other": "С ошибкой: {{count}}",
+        "imported_one": "Импортировано: {{count}}",
+        "imported_few": "Импортировано: {{count}}",
+        "imported_many": "Импортировано: {{count}}",
+        "imported_other": "Импортировано: {{count}}",
+        "skipped_one": "Пропущено, уже импортированы: {{count}}",
+        "skipped_few": "Пропущено, уже импортированы: {{count}}",
+        "skipped_many": "Пропущено, уже импортированы: {{count}}",
+        "skipped_other": "Пропущено, уже импортированы: {{count}}"
+      },
+      "selectFolder": "Выбрать все чаты в этой папке",
+      "sourceRoot": "Чтение из {{path}}",
+      "unknownFolder": "Неизвестная папка",
+      "untitled": "Чат без названия"
+    },
     "chatWidth": {
       "description": "Максимальная ширина сообщений и поля ввода",
       "fullOption": "На всю ширину",
@@ -1564,6 +1605,7 @@
       "agentConfiguration": "Настройки агента",
       "appearance": "Оформление",
       "behavior": "Поведение",
+      "chatImport": "Импорт чатов",
       "customModels": "Свои модели",
       "editor": "Редактор",
       "multiAgentCouncilPlanning": "Планирование с советом агентов",

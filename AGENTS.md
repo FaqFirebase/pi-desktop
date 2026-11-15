@@ -73,6 +73,7 @@ src/
 │   ├── file-url.ts               # file:// URLs for local paths, every segment percent-encoded (drive and UNC paths)
 │   ├── preview-partitions.ts     # File-preview <webview> partition names, the ones main hardens; the Browser pane partition
 │   ├── browser-pane.ts           # Browser pane: address-bar URL rule (http/https only), fixed pane keys, zoom steps, saved URLs
+│   ├── chat-import.ts            # Chat import contracts: sources, source labels, imported-message markers
 │   ├── browser-pick.ts           # Element picker: selector, label, caps, pick payload check, capture rect
 │   ├── repo-set-draft.ts         # Repo set editing: unique names; the first repository is the main one
 │   ├── subagent-task.ts          # Subagent rows for the Subagents panel, rail badge and composer strip: parsers and reducers
@@ -101,7 +102,8 @@ src/
 │   ├── i18n.ts                   # Main-process language: OS language list, pseudo-language gate, apply the setting
 │   ├── ipc-handlers.ts           # IPC composition root (creates context, calls ipc/ modules)
 │   ├── ipc/                      # Domain-specific IPC handler modules (pi, session, files, ...)
-│   │   └── editor-handlers.ts    # SYSTEM_OPEN_PATH and EDITORS_DETECT, main-sender checked
+│   │   ├── editor-handlers.ts    # SYSTEM_OPEN_PATH and EDITORS_DETECT, main-sender checked
+│   │   └── chat-import-handlers.ts # CHAT_IMPORT_LIST and CHAT_IMPORT_RUN, main-sender checked, one run at a time
 │   ├── app-log.ts                # Main-process log: ring buffer + JSONL file in the GUI data dir
 │   ├── log-redaction.ts          # Remove tokens, URL credentials and secret env values from log text
 │   ├── log-export.ts             # Export logs file: report + both log files, redacted; dated file name
@@ -166,6 +168,13 @@ src/
 │   ├── session-claims.ts         # Cross-instance claims: one Pi Desktop runs an agent on a session file at a time
 │   ├── session-metadata.ts       # Bounded reader: session name, header, first-message preview; header-only (disposable) means metadata only
 │   ├── session-jsonl.ts          # Session JSONL text -> entries (a partial last line is skipped)
+│   ├── chat-import-turns.ts      # Chat import: neutral events and turns, the assembler between converters and writers
+│   ├── chat-import-writer.ts     # Chat import: session v3 lines per engine (OMP title slot, Pi session_info, built-in tools)
+│   ├── chat-import-claude-code.ts # Chat import: Claude Code records -> events; active-branch scan
+│   ├── chat-import-codex.ts      # Chat import: Codex records -> events; shell and patch calls, index titles
+│   ├── chat-import-sources.ts    # Chat import: source roots, file layout check, the chat list
+│   ├── chat-import-index.ts      # Chat import: chats already imported per engine (chat-imports.json)
+│   ├── chat-import-runner.ts     # Chat import: stream each source, write a temp file, rename into the engine's store
 │   ├── session-lineage-reader.ts # Parent links and labels across the session store
 │   ├── get-messages-trim.ts      # Shrink a get_messages response before IPC
 │   ├── map-concurrent.ts         # Bounded-concurrency mapper
@@ -307,6 +316,7 @@ src/
             ├── settings-controls.tsx # Settings rows and select fields shared by the Settings sections
             ├── voice-settings.tsx # Settings > Voice dictation
             ├── typesafe-settings.tsx # Settings > TypeSafe Jev
+            ├── chat-import-settings.tsx # Settings > Import chats (Claude Code and Codex chats into Pi or OMP)
             ├── custom-models-editor.tsx # Custom models/providers editor
             ├── permission-selector.tsx # Permission mode selector
             ├── permission-mode.ts # Permission mode helpers
@@ -408,6 +418,7 @@ resources/
 - Branch/fork tree, clone, and cross-session lineage in the Timeline; one-click context compaction (status bar and status popover)
 - An answer the user stopped keeps a "Stopped" mark (`shared/stopped-answer.ts`)
 - **Pinned and unread**: right-click > Pin keeps a session at the top of its folder group in the sidebar and the Sessions view, first pinned on top; archive unpins, delete drops the pin. A session gets a dot when a turn in it ends (completed, failed or stopped) while it is not on screen, which means shown in the main view of the focused main window. The renderer reports the shown session (`session:set-visible`), main knows focus and keeps the state (`session-unread.ts`); viewing the session clears the dot. In-app only, no OS badge
+- **Import chats** (Settings): Claude Code and Codex chats become real, resumable Pi or OMP sessions in the chat's own project folder. Imports read the source files only, write session v3 files to the chosen engine's store, drop thinking, and mark imported answers with the import provider so the engine treats them as another model's history
 
 ### Chat
 
@@ -601,6 +612,7 @@ Instances on different data dirs can read one session store, and two agents on o
 | `<GUI data dir>/archived-sessions.json` | Archived sessions |
 | `<GUI data dir>/pinned-sessions.json` | Pinned sessions |
 | `<GUI data dir>/unread-sessions.json` | Sessions with unseen finished turns |
+| `<GUI data dir>/chat-imports.json` | Chats imported from Claude Code and Codex, per engine (duplicate check) |
 | `<GUI data dir>/session-auto-tags.json` | Machine-derived session tags |
 | `<GUI data dir>/permission-rules.json` | Global permission rules |
 | `<canonical data dir>/session-claims/` | One claim file per session an instance runs an agent on (shared by every instance, whatever its data dir) |

@@ -267,6 +267,11 @@ export const IPC_CHANNELS = {
   TYPESAFE_CLEAR_KEY: 'typesafe:clear-key',
   TYPESAFE_INSTALL_SKILL: 'typesafe:install-skill',
   TYPESAFE_REMOVE_SKILL: 'typesafe:remove-skill',
+
+  // Chat import (Claude Code and Codex chats into Pi/OMP sessions)
+  CHAT_IMPORT_LIST: 'chat-import:list',
+  CHAT_IMPORT_RUN: 'chat-import:run',
+  EVENT_CHAT_IMPORT_PROGRESS: 'event:chat-import-progress',
 } as const
 
 // ─── Pi Process Types ───────────────────────────────────────────────────────
@@ -1419,6 +1424,9 @@ export interface PermissionRulesWorkspaceStatus {
 export type AgentEngineKind = 'pi' | 'omp'
 
 const AGENT_ENGINE_KINDS = { pi: true, omp: true } as const satisfies Record<AgentEngineKind, true>
+
+/** Every concrete engine, for pickers. */
+export const AGENT_ENGINE_KIND_LIST = Object.keys(AGENT_ENGINE_KINDS) as AgentEngineKind[]
 
 /** Payload check for an engine named over IPC. */
 export function isAgentEngineKind(value: unknown): value is AgentEngineKind {

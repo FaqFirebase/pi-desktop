@@ -631,6 +631,9 @@
       "pathNotPermitted": "Attachment path is not permitted",
       "tooLarge": "Attachment is too large (max {{limit}} MB)"
     },
+    "chatImport": {
+      "busy": "A chat import is already running."
+    },
     "council": {
       "agentNotFound": "{{agent}} was not found. Install it, or remove it from the council members in Settings.",
       "arbiterFailed": "Arbiter failed",
@@ -1390,6 +1393,36 @@
       "description": "Automatically scroll to new messages",
       "label": "Auto Scroll"
     },
+    "chatImport": {
+      "alreadyImported": "Imported",
+      "empty": "No chats found.",
+      "engine": "Import as",
+      "failure": {
+        "folderMissing": "The chat's project folder no longer exists.",
+        "invalidPath": "This file is not in the chat folder.",
+        "noMessages": "The chat has no messages to import.",
+        "unreadable": "The chat file could not be read.",
+        "writeFailed": "The session file could not be written."
+      },
+      "folderMissing": "Folder missing",
+      "import_one": "Import {{count}} chat",
+      "import_other": "Import {{count}} chats",
+      "intro": "Copy chats into {{agent}} sessions. The original files are only read.",
+      "loading": "Looking for chats…",
+      "progress": "{{done}} of {{total}}",
+      "results": {
+        "failed_one": "Failed: {{count}}",
+        "failed_other": "Failed: {{count}}",
+        "imported_one": "Imported: {{count}}",
+        "imported_other": "Imported: {{count}}",
+        "skipped_one": "Skipped, already imported: {{count}}",
+        "skipped_other": "Skipped, already imported: {{count}}"
+      },
+      "selectFolder": "Select all chats in this folder",
+      "sourceRoot": "Reads {{path}}",
+      "unknownFolder": "Unknown folder",
+      "untitled": "Untitled chat"
+    },
     "chatWidth": {
       "description": "How wide messages and the prompt box can grow",
       "fullOption": "Full width",
@@ -1508,6 +1541,7 @@
       "agentConfiguration": "Agent Configuration",
       "appearance": "Appearance",
       "behavior": "Behavior",
+      "chatImport": "Import chats",
       "customModels": "Custom Models",
       "editor": "Editor",
       "multiAgentCouncilPlanning": "Multi-Agent Council Planning",

@@ -104,6 +104,7 @@ import type { SubagentListResult, SubagentTranscriptRef, SubagentTranscriptResul
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import type { QuickChatShortcutStatus } from '../shared/quick-chat'
 import type { BrowserPaneGuestEvent } from '../shared/browser-pane'
+import type { ChatImportListing, ChatImportListRequest, ChatImportProgress, ChatImportRequest, ChatImportResult } from '../shared/chat-import'
 
 // Quick Chat can open Settings before the main renderer's hooks have mounted.
 let pendingSettingsMenu = false
@@ -312,6 +313,13 @@ interface PiDesktopAPI {
     clearKey(): Promise<TypeSafeStatus>
     installSkill(): Promise<TypeSafeStatus>
     removeSkill(): Promise<TypeSafeStatus>
+  }
+
+  // Chat import: Claude Code and Codex chats into Pi or OMP sessions.
+  chatImport: {
+    list(request: ChatImportListRequest): Promise<ChatImportListing>
+    run(request: ChatImportRequest): Promise<ChatImportResult>
+    onProgress(callback: (progress: ChatImportProgress) => void): () => void
   }
 
   // Browser pane: pane keys and refused downloads that main caught in a guest page.
@@ -692,6 +700,16 @@ const api: PiDesktopAPI = {
     clearKey: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_CLEAR_KEY),
     installSkill: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_INSTALL_SKILL),
     removeSkill: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_REMOVE_SKILL),
+  },
+
+  chatImport: {
+    list: (request) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_IMPORT_LIST, request),
+    run: (request) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_IMPORT_RUN, request),
+    onProgress: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: ChatImportProgress) => callback(data)
+      ipcRenderer.on(IPC_CHANNELS.EVENT_CHAT_IMPORT_PROGRESS, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.EVENT_CHAT_IMPORT_PROGRESS, handler)
+    },
   },
 
   browserPane: {

@@ -659,6 +659,9 @@
       "pathNotPermitted": "Шлях вкладення не дозволений",
       "tooLarge": "Вкладення завелике (макс. {{limit}} МБ)"
     },
+    "chatImport": {
+      "busy": "Імпорт чатів уже виконується."
+    },
     "council": {
       "agentNotFound": "{{agent}} не знайдено. Установіть його або видаліть зі складу ради в налаштуваннях.",
       "arbiterFailed": "Помилка арбітра",
@@ -1446,6 +1449,44 @@
       "description": "Автоматично прокручувати до нових повідомлень",
       "label": "Автопрокручування"
     },
+    "chatImport": {
+      "alreadyImported": "Імпортовано",
+      "empty": "Чатів не знайдено.",
+      "engine": "Імпортувати в",
+      "failure": {
+        "folderMissing": "Папки проєкту цього чату більше не існує.",
+        "invalidPath": "Цей файл не міститься в папці чатів.",
+        "noMessages": "У чаті немає повідомлень для імпорту.",
+        "unreadable": "Не вдалося прочитати файл чату.",
+        "writeFailed": "Не вдалося записати файл сеансу."
+      },
+      "folderMissing": "Папку не знайдено",
+      "import_one": "Імпортувати {{count}} чат",
+      "import_few": "Імпортувати {{count}} чати",
+      "import_many": "Імпортувати {{count}} чатів",
+      "import_other": "Імпортувати {{count}} чату",
+      "intro": "Копіює чати в сеанси {{agent}}. Вихідні файли лише читаються.",
+      "loading": "Пошук чатів…",
+      "progress": "{{done}} з {{total}}",
+      "results": {
+        "failed_one": "З помилкою: {{count}}",
+        "failed_few": "З помилкою: {{count}}",
+        "failed_many": "З помилкою: {{count}}",
+        "failed_other": "З помилкою: {{count}}",
+        "imported_one": "Імпортовано: {{count}}",
+        "imported_few": "Імпортовано: {{count}}",
+        "imported_many": "Імпортовано: {{count}}",
+        "imported_other": "Імпортовано: {{count}}",
+        "skipped_one": "Пропущено, уже імпортовані: {{count}}",
+        "skipped_few": "Пропущено, уже імпортовані: {{count}}",
+        "skipped_many": "Пропущено, уже імпортовані: {{count}}",
+        "skipped_other": "Пропущено, уже імпортовані: {{count}}"
+      },
+      "selectFolder": "Вибрати всі чати в цій папці",
+      "sourceRoot": "Читання з {{path}}",
+      "unknownFolder": "Невідома папка",
+      "untitled": "Чат без назви"
+    },
     "chatWidth": {
       "description": "Максимальна ширина повідомлень і поля введення",
       "fullOption": "На всю ширину",
@@ -1564,6 +1605,7 @@
       "agentConfiguration": "Налаштування агента",
       "appearance": "Оформлення",
       "behavior": "Поведінка",
+      "chatImport": "Імпорт чатів",
       "customModels": "Власні моделі",
       "editor": "Редактор",
       "multiAgentCouncilPlanning": "Планування з радою агентів",

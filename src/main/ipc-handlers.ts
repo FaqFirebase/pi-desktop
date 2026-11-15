@@ -30,6 +30,7 @@ import { registerRendererErrorHandlers } from './ipc/renderer-error-handlers'
 import { registerGitAvailabilityHandlers } from './ipc/git-availability-handlers'
 import { registerVoiceHandlers } from './ipc/voice-handlers'
 import { registerTypeSafeHandlers } from './ipc/typesafe-handlers'
+import { registerChatImportHandlers } from './ipc/chat-import-handlers'
 import { registerWorkflowHandlers } from './ipc/workflow-handlers'
 import { registerSubagentHandlers } from './ipc/subagent-handlers'
 import { wireWorkspaceActivity, type WindowControls } from './ipc/workspace-activity-wiring'
@@ -88,6 +89,7 @@ export function registerIpcHandlers(
   registerSubagentHandlers(ctx)
   registerVoiceHandlers(ctx)
   registerTypeSafeHandlers()
+  registerChatImportHandlers(ctx)
 
   // ─── Extension UI Responses and Pi Event Forwarding ─────────────────────
 

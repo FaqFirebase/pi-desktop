@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm, utimes, stat } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { ActivityStatsStore } from './activity-stats'
+import { IMPORTED_MESSAGE_MODEL } from '../shared/chat-import'
 
 // Fixed reference instant so window math is deterministic.
 const NOW = new Date('2026-07-05T12:00:00')
@@ -348,6 +349,21 @@ test('a version 1 store re-parses present files and keeps deleted ones', async (
   assert.equal(year.sessions, 2)
   assert.equal(year.totalTokens, 1170 + 5)
   assert.equal(year.models[0].cacheRead, 1000)
+
+  await rm(root, { recursive: true, force: true })
+})
+
+test('imported assistant messages count but add no model bucket', async () => {
+  const { root, storePath } = await makeDirs()
+  await writeFile(
+    join(root, 's1.jsonl'),
+    messageLine('2026-07-04', { role: 'assistant', model: IMPORTED_MESSAGE_MODEL })
+  )
+
+  const store = new ActivityStatsStore({ sessionsRoots: [root], storePath })
+  const year = (await store.computeStats(NOW)).ranges['365']
+  assert.equal(year.messages, 1)
+  assert.equal(year.models.some((m) => m.model === IMPORTED_MESSAGE_MODEL), false)
 
   await rm(root, { recursive: true, force: true })
 })

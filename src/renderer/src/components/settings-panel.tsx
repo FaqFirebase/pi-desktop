@@ -22,6 +22,7 @@ import { VoiceSettings } from './voice-settings'
 import { ShortcutSettings } from './shortcut-settings'
 import { shortcutProblem } from '../../../shared/keyboard-shortcuts'
 import { TypeSafeSettings } from './typesafe-settings'
+import { ChatImportSettings } from './chat-import-settings'
 import { EditorSettings } from './editor-settings'
 import { SelectField, SettingsRow } from './settings-controls'
 import { Settings, Save, RotateCcw, FolderOpen, RefreshCw, Check } from 'lucide-react'
@@ -1202,6 +1203,10 @@ export function SettingsPanel(): React.JSX.Element {
 
         <SettingsSection title={t('settings.sections.typesafe')}>
           <TypeSafeSettings />
+        </SettingsSection>
+
+        <SettingsSection title={t('settings.sections.chatImport')}>
+          <ChatImportSettings />
         </SettingsSection>
 
         {/* Multi-Agent Council Planning */}
