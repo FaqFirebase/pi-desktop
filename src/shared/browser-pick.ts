@@ -33,6 +33,9 @@ const DELETE_CODE = 0x7f
 const FIRST_NON_ASCII_CODE = 0x80
 const IDENTIFIER_CHARACTER = /^[-_0-9A-Za-z]$/
 const DIGIT = /^[0-9]$/
+// The label names the attachment, and the name sits on the untrusted-data
+// marker lines; a line break or other control character would split them.
+const LABEL_UNSAFE_CHARACTERS = /[\s\p{Cc}\p{Cf}]/gu
 
 /** An element as the selector and label rules see it. */
 export interface PickNode {
@@ -95,13 +98,18 @@ export function capText(value: string, max: number): string {
   return value.slice(0, max - TRUNCATION_MARKER.length) + TRUNCATION_MARKER
 }
 
-/** A short display name: `tag#id`, else `tag.class1.class2`, else `tag`. */
+/** `value` on one line with no spaces or control characters, capped to MAX_PICK_LABEL_LENGTH. */
+function safeLabel(value: string): string {
+  return capText(value.replace(LABEL_UNSAFE_CHARACTERS, ''), MAX_PICK_LABEL_LENGTH)
+}
+
+/** A short display name: `tag#id`, else `tag.class1.class2`, else `tag`, with id and classes escaped. */
 export function elementLabel(node: PickNode): string {
   const tag = node.tagName.toLowerCase()
   const label = node.id
-    ? `${tag}#${node.id}`
-    : [tag, ...node.classNames.slice(0, MAX_SELECTOR_CLASSES)].join('.')
-  return capText(label, MAX_PICK_LABEL_LENGTH)
+    ? `${tag}#${escapeCssIdentifier(node.id)}`
+    : [tag, ...node.classNames.slice(0, MAX_SELECTOR_CLASSES).map(escapeCssIdentifier)].join('.')
+  return safeLabel(label)
 }
 
 function joinSegments(segments: readonly string[]): string {
@@ -171,6 +179,7 @@ export function parseBrowserPick(value: unknown): BrowserPick | null {
     if (typeof field !== 'string') return null
     strings[key] = capText(field, max)
   }
+  strings.label = safeLabel(strings.label)
   const rect = finiteNumbers(value.rect, RECT_KEYS)
   const viewport = finiteNumbers(value.viewport, VIEWPORT_KEYS)
   if (!rect || rect.width < 0 || rect.height < 0) return null

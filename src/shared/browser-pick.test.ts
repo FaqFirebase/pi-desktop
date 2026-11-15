@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   MAX_PICK_HTML_LENGTH,
+  MAX_PICK_LABEL_LENGTH,
   MAX_PICK_SELECTOR_LENGTH,
   MAX_PICK_TEXT_LENGTH,
   MAX_SELECTOR_DEPTH,
@@ -97,4 +98,21 @@ test('captureRectForPick clips to the viewport and scales by zoom', () => {
   assert.deepEqual(captureRectForPick({ rect: { x: 10.4, y: 10.6, width: 10.2, height: 10.2 }, viewport }, 1), { x: 10, y: 10, width: 11, height: 11 })
   assert.equal(captureRectForPick({ rect: { x: 900, y: 0, width: 50, height: 50 }, viewport }, 1), null)
   assert.equal(captureRectForPick({ rect: { x: 10, y: 10, width: 0, height: 50 }, viewport }, 1), null)
+})
+
+const CONTROL_ID = 'a\nb\rc\td\u0001e\u2028f g'
+
+test('elementLabel keeps a page id with control and space characters on one line', () => {
+  const label = elementLabel(node('DIV', { id: CONTROL_ID }, null))
+  assert.match(label, /^div#\S+$/)
+  assert.equal(/[\s\p{Cc}]/u.test(label), false)
+  const classLabel = elementLabel(node('DIV', { classNames: ['x\ny', 'a b'] }, null))
+  assert.equal(/[\s\p{Cc}]/u.test(classLabel), false)
+})
+
+test('parseBrowserPick strips control and space characters from a forged label', () => {
+  const pick = parseBrowserPick({ ...VALID_PICK, label: `x${CONTROL_ID}`.repeat(10) })
+  assert.ok(pick)
+  assert.equal(/[\s\p{Cc}]/u.test(pick.label), false)
+  assert.equal(pick.label.length <= MAX_PICK_LABEL_LENGTH, true)
 })

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { NO_RECALLED_PROMPT, composerDraftText, consumeSubmittedDraft, type SubmittedComposerDraft } from './composer-draft'
+import { NO_RECALLED_PROMPT, composerDraftText, composerInsertEdit, consumeSubmittedDraft, type SubmittedComposerDraft } from './composer-draft'
 
 const RECALLED_PROMPT_INDEX = 0
 
@@ -49,4 +49,16 @@ test('retyping identical text during a send preserves the new edit', () => {
 test('a late accepted send cannot consume another target even with identical text', () => {
   const otherTarget = { ...submitted, scopeKey: 'runtime:second' }
   assert.equal(consumeSubmittedDraft(submitted, otherTarget), otherTarget)
+})
+
+test('an empty insert leaves the composer text and selection alone', () => {
+  assert.equal(composerInsertEdit('keep this draft', 5, 9, { text: '' }), null)
+})
+
+test('text inserts at the selection and puts the caret after it', () => {
+  assert.deepEqual(composerInsertEdit('hello world', 6, 11, { text: 'there' }), { value: 'hello there', caret: 11 })
+})
+
+test('a replace insert replaces the whole composer', () => {
+  assert.deepEqual(composerInsertEdit('/mo', 3, 3, { text: '/model ', replace: true }), { value: '/model ', caret: 7 })
 })

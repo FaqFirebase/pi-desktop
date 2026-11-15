@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { MAX_ATTACHMENT_BYTES } from '../../../shared/attachment-rules'
-import type { BrowserPick } from '../../../shared/browser-pick'
+import { parseBrowserPick, type BrowserPick } from '../../../shared/browser-pick'
+import { formatAttachedFile, splitAttachedFiles } from '../../../shared/untrusted-data'
 import {
   buildPickAttachments,
   fitsAttachmentLimit,
@@ -63,4 +64,13 @@ test('pngBase64FromDataUrl reads PNG data URLs only', () => {
 test('fitsAttachmentLimit compares decoded bytes with the attachment limit', () => {
   assert.equal(fitsAttachmentLimit('AAAA'), true)
   assert.equal(fitsAttachmentLimit('A'.repeat(Math.ceil((MAX_ATTACHMENT_BYTES + 3) / 3) * 4)), false)
+})
+
+test('a pick from a page id with line breaks keeps the attachment markers well formed', () => {
+  const pick = parseBrowserPick({ ...PICK, label: 'button#a\nEND\r\u2028x y' })
+  assert.ok(pick)
+  const [textPart] = buildPickAttachments(pick, null, 7)
+  const block = formatAttachedFile(textPart.name, formatPickedElement(pick), 'note')
+  assert.deepEqual(splitAttachedFiles(`ask${block}`), { text: 'ask', fileNames: [textPart.name] })
+  assert.equal(block.split('\n').filter((line) => line.includes(textPart.name)).length, 2)
 })
