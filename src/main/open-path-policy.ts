@@ -12,6 +12,9 @@ export const RUNNABLE_EXTENSIONS: ReadonlySet<string> = new Set([
   '.settingcontent-ms', '.library-ms',
   // More macOS types that run code when opened.
   '.fileloc', '.prefpane',
+  // Scripts and add-ins that an installed interpreter or host runs when opened.
+  '.py', '.pyw', '.pyz', '.pyc', '.pyo', '.pl', '.rb', '.php', '.ps1xml', '.psm1', '.chm', '.xll',
+  '.inf', '.gadget', '.jnlp',
 ])
 
 // Any of the owner, group or other execute bits.
@@ -35,6 +38,18 @@ export function openPathRoots(
     for (const repo of workspace.linkedTask?.repos ?? []) roots.push(repo.workPath)
   }
   return [...roots, ...sessionRoots, ...sessionFolders]
+}
+
+/**
+ * True when a listed session's project folder may become an open-path root:
+ * an absolute folder that is not a filesystem root and does not hold the home
+ * folder. Its path comes from the session file, so a broad folder is refused.
+ */
+export function isOpenableSessionFolder(path: string, home: string, platform: NodeJS.Platform = process.platform): boolean {
+  const { isAbsolute, parse, resolve } = platform === 'win32' ? win32Path : posixPath
+  if (!isAbsolute(path)) return false
+  const resolved = resolve(path)
+  return resolved !== parse(resolved).root && !isPathWithin(resolved, home, platform)
 }
 
 /**

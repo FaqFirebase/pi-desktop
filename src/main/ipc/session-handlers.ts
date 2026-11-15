@@ -23,8 +23,10 @@ import type { SessionTimestampMap } from '../session-timestamp-store'
 import type { SessionDeleteResult, SessionListItem, SessionRuntimeCloseResult, SessionRuntimeInfo } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { readdir, stat, unlink } from 'fs/promises'
-import { basename, isAbsolute, join, resolve } from 'path'
+import { basename, join, resolve } from 'path'
 import { existsSync } from 'fs'
+import { homedir } from 'os'
+import { isOpenableSessionFolder } from '../open-path-policy'
 import { moveToTrash } from '../session-trash'
 import { assertTrustedSender, isObject, isString } from './validation'
 import { ensureSessionRuntimeStarted, readRuntimeMessages } from './session-runtime-io'
@@ -202,9 +204,10 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   })
 
   // A listed session's project folder is one the user can see, so the
-  // open-path actions may act in it.
+  // open-path actions may act in it, unless it is home, a parent of home or a root.
   function rememberSessionFolders(entries: readonly SessionListItem[]): void {
-    for (const { projectPath } of entries) if (isAbsolute(projectPath)) ctx.knownSessionFolders.add(projectPath)
+    const home = homedir()
+    for (const { projectPath } of entries) if (isOpenableSessionFolder(projectPath, home)) ctx.knownSessionFolders.add(projectPath)
   }
 
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async (_event, cwd?: unknown) => {

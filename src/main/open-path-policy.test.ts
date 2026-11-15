@@ -5,6 +5,7 @@ import {
   RUNNABLE_EXTENSIONS,
   extensionsForPolicy,
   isRunnableTarget,
+  isOpenableSessionFolder,
   openPathRoots,
   resolveOpenPathTarget,
 } from './open-path-policy'
@@ -21,6 +22,14 @@ test('Windows and macOS types that run through the system are on the blocklist',
   for (const ext of ['.pif', '.scf', '.application', '.appref-ms', '.vb', '.ws', '.wsc', '.msp', '.reg', '.settingcontent-ms', '.library-ms', '.fileloc', '.prefpane']) {
     assert.equal(RUNNABLE_EXTENSIONS.has(ext), true, ext)
     assert.equal(isRunnableTarget([`/p/a${ext}`], plainFile, 'linux'), true, ext)
+  }
+})
+
+test('script and add-in types that an installed program runs are on the blocklist', () => {
+  for (const ext of ['.py', '.pyw', '.pyz', '.pyc', '.pyo', '.pl', '.rb', '.php', '.ps1xml', '.psm1', '.chm', '.xll', '.inf', '.gadget', '.jnlp']) {
+    assert.equal(RUNNABLE_EXTENSIONS.has(ext), true, ext)
+    assert.equal(isRunnableTarget([`/p/a${ext}`], plainFile, 'linux'), true, ext)
+    assert.equal(isRunnableTarget([`C:\\p\\A${ext.toUpperCase()}`], plainFile, 'win32'), true, ext)
   }
 })
 
@@ -94,4 +103,24 @@ test('Windows containment folds case', () => {
 test('roots include linked repos, session stores and session folders', () => {
   const ws = { id: 'w', name: 'w', path: '/w', createdAt: 0, lastActiveAt: 0, color: '', linkedTask: { setId: 's', setName: 's', mode: 'worktree', repos: [{ workPath: '/r2' }] } } as unknown as Workspace
   assert.deepEqual(openPathRoots([ws], ['/h/.pi/agent/sessions'], new Set(['/f'])), ['/w', '/r2', '/h/.pi/agent/sessions', '/f'])
+})
+
+test('a session folder may be an open-path root only when it is narrower than home', () => {
+  assert.equal(isOpenableSessionFolder('/home/me/project', '/home/me', 'linux'), true)
+  assert.equal(isOpenableSessionFolder('/srv/app', '/home/me', 'linux'), true)
+  assert.equal(isOpenableSessionFolder('/home/me', '/home/me', 'linux'), false)
+  assert.equal(isOpenableSessionFolder('/home/me/', '/home/me', 'linux'), false)
+  assert.equal(isOpenableSessionFolder('/home', '/home/me', 'linux'), false)
+  assert.equal(isOpenableSessionFolder('/', '/home/me', 'linux'), false)
+  assert.equal(isOpenableSessionFolder('relative/dir', '/home/me', 'linux'), false)
+})
+
+test('Windows drive roots, home and its parents are not openable session folders', () => {
+  const home = 'C:\\Users\\Me'
+  assert.equal(isOpenableSessionFolder('C:\\Users\\Me\\code', home, 'win32'), true)
+  assert.equal(isOpenableSessionFolder('c:\\users\\me', home, 'win32'), false)
+  assert.equal(isOpenableSessionFolder('C:\\Users', home, 'win32'), false)
+  assert.equal(isOpenableSessionFolder('D:\\', home, 'win32'), false)
+  assert.equal(isOpenableSessionFolder('\\\\server\\share\\', home, 'win32'), false)
+  assert.equal(isOpenableSessionFolder('D:\\work', home, 'win32'), true)
 })
