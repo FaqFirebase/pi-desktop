@@ -38,6 +38,7 @@ import { VOICE_PROTOCOL_SCHEME, handleVoiceProtocolRequest } from './voice-proto
 import { getVoiceModelsDir } from './voice-model-store'
 import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
 import { applyOmpLaunchArgs, getSettingsPath } from './ipc/settings'
+import { isAppWindowSender, restrictIpcToAppWindows } from './ipc-sender-guard'
 import { disableCwdExecutableSearch } from './windows-exe-search'
 import { WINDOW_BACKGROUND_COLOR } from './window-appearance'
 import { configureSessionClaims, SESSION_CLAIMS_DIR_NAME } from './session-claims'
@@ -631,6 +632,14 @@ app.whenReady().then(async () => {
 
   // Before the menu, window, and tray exist, so they are built in the saved language.
   applyLanguageSetting(settings.language)
+
+  // Every IPC channel serves the main and Quick Chat windows only. Installed
+  // before the first handler is registered, so no channel is left out.
+  const guestSessions = [...PREVIEW_PARTITIONS, BROWSER_PANE_PARTITION].map((partition) => session.fromPartition(partition))
+  restrictIpcToAppWindows(ipcMain, (sender) => isAppWindowSender(sender, {
+    appWindowContents: () => [mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null, getQuickChatWindow()?.webContents],
+    guestSessions,
+  }))
 
   // Register IPC handlers before creating windows. The window getter is a
   // lazy closure — mainWindow is created later and the notification wiring

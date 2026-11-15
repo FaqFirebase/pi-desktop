@@ -30,6 +30,7 @@ The project is in **alpha**. APIs, IPC contracts, on-disk config formats, and pa
 - All IPC channels use typed contracts and validate their payloads
 - The renderer has no access to Node APIs
 - Main-window navigation is pinned to the packaged renderer; privileged IPC checks that the sender frame is the app renderer
+- Every IPC channel serves the main and Quick Chat windows only: `ipc-sender-guard.ts` wraps `ipcMain.handle` and `ipcMain.on` before any handler is registered and refuses `<webview>` guests and preview/Browser pane partitions
 - The Browser pane `<webview>` uses its own in-memory partition: http/https main-frame loads only, no permissions, no downloads, a picker preload that exposes nothing to the page; the file-preview rules are unchanged
 - Per-workspace trust gate: until the user trusts a workspace, the allow rules in its own `.pi-desktop/permission-rules.json` are ignored and its HTML preview runs without scripts or network
 - Programs the app starts by bare name resolve from PATH only, not from the working folder (`windows-exe-search.ts`; Windows)
@@ -125,6 +126,7 @@ src/
 │   ├── session-trash.ts          # Deleted sessions go to the desktop trash (trash-cli, then gio)
 │   ├── path-authorization.ts     # Path containment checks (attachment/session IPC)
 │   ├── renderer-origin.ts        # Trusted-renderer URL check (navigation + IPC sender)
+│   ├── ipc-sender-guard.ts       # Every IPC channel: main and Quick Chat windows only, guests refused
 │   ├── preview-guest.ts          # File-preview guest rules: which guest is the PDF preview, scripts, per-partition request block
 │   ├── browser-pane-guest.ts     # Browser pane guest rules: web preferences, pop-up decision, main-frame request block
 │   ├── browser-pane-session.ts   # Browser pane partition hardening and per-guest rules (pop-ups, navigation, pane keys)
