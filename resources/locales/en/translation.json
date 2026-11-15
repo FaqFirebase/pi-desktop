@@ -322,7 +322,7 @@
     "copyLink": "Copy Link",
     "copyMessage": "Copy Message",
     "copySelection": "Copy Selection",
-    "deleteSessionConfirmMessage": "Delete session \"{{name}}\"?\n\nWill use the system 'trash' CLI if installed (recoverable); otherwise the .jsonl session file is permanently removed.",
+    "deleteSessionConfirmMessage": "Delete session \"{{name}}\"?\n\nThe .jsonl session file moves to the system trash, so you can restore it. If the trash is not available, the file is permanently removed.",
     "deleteSessionConfirmTitle": "Delete session",
     "deleteSessionLabel": "Delete…",
     "openLink": "Open Link",
@@ -1313,7 +1313,7 @@
     "currentProjectBadge": "current",
     "currentWorkspaceLabel": "Current workspace:",
     "deleteConfirm": {
-      "message": "Delete this session? Will use <code>trash</code> if available, otherwise permanent."
+      "message": "Delete this session? It moves to the system trash, or is permanently removed if the trash is not available."
     },
     "deleteEllipsis": "Delete...",
     "empty": {

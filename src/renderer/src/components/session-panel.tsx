@@ -3,7 +3,7 @@ import { getSessionTitle } from '../utils/session-title'
 import { FolderOpen, Plus, Search, ChevronRight, ChevronDown, FolderTree, Tag, X, MoreVertical, Archive, ArchiveRestore, Trash2, Sparkles, Workflow as WorkflowIcon } from 'lucide-react'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { useTranslation, Trans } from 'react-i18next'
+import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { pathsEqual } from '../../../shared/path-compare'
@@ -667,7 +667,7 @@ function SessionEntry({
         <div className="mt-2 flex items-center gap-2 rounded border border-error-bg bg-error-bg px-2 py-1.5 text-[11px] text-error">
           <Trash2 size={12} className="shrink-0" />
           <span className="flex-1">
-            <Trans i18nKey="sessions.deleteConfirm.message" components={{ code: <code className="text-error" /> }} />
+            {t('sessions.deleteConfirm.message')}
           </span>
           <button
             onClick={() => setConfirmingDelete(false)}

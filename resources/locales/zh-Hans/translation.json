@@ -315,7 +315,7 @@
     "copyLink": "复制链接",
     "copyMessage": "复制消息",
     "copySelection": "复制选中内容",
-    "deleteSessionConfirmMessage": "删除会话“{{name}}”？\n\n若系统已安装 'trash' 命令则使用它（可恢复）；否则 .jsonl 会话文件将被永久删除。",
+    "deleteSessionConfirmMessage": "删除会话“{{name}}”？\n\n.jsonl 会话文件将移到系统回收站，可以恢复。若回收站不可用，文件将被永久删除。",
     "deleteSessionConfirmTitle": "删除会话",
     "deleteSessionLabel": "删除…",
     "openLink": "打开链接",
@@ -1291,7 +1291,7 @@
     "currentProjectBadge": "当前",
     "currentWorkspaceLabel": "当前工作区：",
     "deleteConfirm": {
-      "message": "删除此会话？装有 <code>trash</code> 命令时用它删除，否则永久删除。"
+      "message": "删除此会话？它将移到系统回收站；若回收站不可用，则永久删除。"
     },
     "deleteEllipsis": "删除…",
     "empty": {

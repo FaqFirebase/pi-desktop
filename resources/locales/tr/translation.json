@@ -322,7 +322,7 @@
     "copyLink": "Bağlantıyı kopyala",
     "copyMessage": "Mesajı kopyala",
     "copySelection": "Seçimi kopyala",
-    "deleteSessionConfirmMessage": "\"{{name}}\" oturumu silinsin mi?\n\nKuruluysa sistemin 'trash' CLI aracı kullanılır (geri alınabilir); değilse .jsonl oturum dosyası kalıcı olarak silinir.",
+    "deleteSessionConfirmMessage": "\"{{name}}\" oturumu silinsin mi?\n\n.jsonl oturum dosyası sistemin çöp kutusuna taşınır ve geri yüklenebilir. Çöp kutusu kullanılamıyorsa dosya kalıcı olarak silinir.",
     "deleteSessionConfirmTitle": "Oturumu sil",
     "deleteSessionLabel": "Sil…",
     "openLink": "Bağlantıyı aç",
@@ -1313,7 +1313,7 @@
     "currentProjectBadge": "geçerli",
     "currentWorkspaceLabel": "Geçerli çalışma alanı:",
     "deleteConfirm": {
-      "message": "Bu oturum silinsin mi? Varsa <code>trash</code> kullanılır, yoksa kalıcı olarak silinir."
+      "message": "Bu oturum silinsin mi? Sistemin çöp kutusuna taşınır; çöp kutusu kullanılamıyorsa kalıcı olarak silinir."
     },
     "deleteEllipsis": "Sil...",
     "empty": {
