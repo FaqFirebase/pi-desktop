@@ -10,7 +10,9 @@ import type { ImportImage, ImportToolCall, ImportTurn } from './chat-import-turn
  * `session_info` record), in user attribution, and in the built-in tool
  * arguments. A tool result is written as a `toolResult` only while its call is
  * still open in the latest assistant message: a result with no open call breaks
- * the next model request, so it becomes assistant text instead.
+ * the next model request, so it becomes assistant text instead. Text for a
+ * result is held while other calls of its batch are open, so it never splits
+ * the batch from its results.
  */
 
 export const SESSION_FORMAT_VERSION = 3
@@ -57,6 +59,8 @@ export interface SessionRecordWriter {
   preamble(): string[]
   /** Zero or more JSONL lines (no trailing \n) for one turn. */
   appendTurn(turn: ImportTurn): string[]
+  /** Lines still held after the last turn. */
+  finish(): string[]
   /** Message records written so far. */
   readonly messageCount: number
 }
@@ -183,6 +187,9 @@ class EngineSessionRecordWriter implements SessionRecordWriter {
   private readonly usedCallIds = new Set<string>()
   /** Source call id -> written call id and tool name, for calls the next result may answer. */
   private openCalls = new Map<string, { id: string; name: string }>()
+  /** Fallback result texts waiting for the open calls of their batch to close. */
+  private heldTexts: string[] = []
+  private heldTimestamp = 0
   /** Time of the last record, for a source record with no readable time. */
   private lastTimestamp: number
 
@@ -210,12 +217,21 @@ class EngineSessionRecordWriter implements SessionRecordWriter {
     const timestamp = this.lastTimestamp
     switch (turn.role) {
       case 'user':
-        return this.userMessage(turn.text, turn.images, timestamp)
+        return [...this.finish(), ...this.userMessage(turn.text, turn.images, timestamp)]
       case 'assistant':
-        return this.assistantTurn(turn, timestamp)
+        return [...this.finish(), ...this.assistantTurn(turn, timestamp)]
       case 'tool-result':
         return this.toolResult(turn, timestamp)
     }
+  }
+
+  finish(): string[] {
+    if (this.heldTexts.length === 0) return []
+    const content = this.heldTexts.map((text) => ({ type: 'text', text }))
+    this.heldTexts = []
+    // A message between a call and its result orphans the call, so no call stays open.
+    this.openCalls.clear()
+    return [this.assistantMessage(content, STOP_REASON_STOP, this.heldTimestamp)]
   }
 
   private userMessage(text: string, images: readonly ImportImage[], timestamp: number): string[] {
@@ -260,19 +276,18 @@ class EngineSessionRecordWriter implements SessionRecordWriter {
     if (open) {
       this.openCalls.delete(turn.id)
       const content: ContentBlock[] = [{ type: 'text', text: turn.text }, ...imageBlocks(turn.images)]
-      return [
-        this.message(
-          { role: 'toolResult', toolCallId: open.id, toolName: open.name, content, isError: turn.isError, timestamp },
-          timestamp,
-        ),
-      ]
+      const line = this.message(
+        { role: 'toolResult', toolCallId: open.id, toolName: open.name, content, isError: turn.isError, timestamp },
+        timestamp,
+      )
+      return this.openCalls.size === 0 ? [line, ...this.finish()] : [line]
     }
     const name = turn.call?.sourceName ?? UNKNOWN_TOOL_NAME
     const label = turn.isError ? IMPORTED_TOOL_ERROR_LABEL(name) : IMPORTED_TOOL_RESULT_LABEL(name)
     const note = turn.images.length > 0 ? `\n${IMAGES_NOT_IMPORTED_NOTE(turn.images.length)}` : ''
-    // A message between a call and its result orphans the call, so no call stays open.
-    this.openCalls.clear()
-    return [this.assistantMessage([{ type: 'text', text: `${label}\n${fenced(turn.text)}${note}` }], STOP_REASON_STOP, timestamp)]
+    if (this.heldTexts.length === 0) this.heldTimestamp = timestamp
+    this.heldTexts.push(`${label}\n${fenced(turn.text)}${note}`)
+    return this.openCalls.size === 0 ? this.finish() : []
   }
 
   private assistantMessage(content: ContentBlock[], stopReason: string, timestamp: number): string {

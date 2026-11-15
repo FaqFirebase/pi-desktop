@@ -115,6 +115,7 @@ async function* sessionLines(
     await records.return(undefined)
   }
   for (const turn of assembler.finish()) for (const line of writer.appendTurn(turn)) yield `${line}\n`
+  for (const line of writer.finish()) yield `${line}\n`
 }
 
 export async function runChatImport(options: ChatImportRunOptions): Promise<ChatImportResult> {

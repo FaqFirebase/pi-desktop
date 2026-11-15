@@ -327,3 +327,33 @@ test('runner streams and yields on a large synthetic file', async () => {
     }
   })
 })
+
+test('a held fallback result at the end of a chat is still written', async () => {
+  await withSandbox(async (sandbox) => {
+    const base = { isSidechain: false, sessionId: 'tail', cwd: sandbox.cwd, timestamp: TIME }
+    const source = await writeSource(join(sandbox.claudeRoot, 'p', 'tail.jsonl'), [
+      { type: 'user', uuid: 'u1', parentUuid: null, ...base, message: { role: 'user', content: 'look' } },
+      {
+        type: 'assistant',
+        uuid: 'a1',
+        parentUuid: 'u1',
+        ...base,
+        message: {
+          id: 'm1',
+          role: 'assistant',
+          model: 'm',
+          content: [
+            { type: 'tool_use', id: 'g1', name: 'Grep', input: { pattern: 'x' } },
+            { type: 'tool_use', id: 'b1', name: 'Bash', input: { command: 'ls' } },
+          ],
+        },
+      },
+      { type: 'user', uuid: 'r1', parentUuid: 'a1', ...base, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'g1', content: 'hit' }] } },
+    ])
+    const result = await run(sandbox, 'claude-code', 'pi', [source])
+    const entries = (await readSessionEntries(result.imported[0].sessionPath, MAX_SESSION_BYTES)) as Row[]
+    const last = entries.at(-1)!.message
+    assert.equal(last.role, 'assistant')
+    assert.ok(last.content[0].text.startsWith('[Imported tool result: Grep]'))
+  })
+})

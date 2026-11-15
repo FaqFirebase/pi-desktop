@@ -42,7 +42,7 @@ function result(id: string, call: ImportToolCall | null, text = 'out', isError =
 /** Every line the writer produces for `turns`, parsed. */
 function write(engine: AgentEngineKind, turns: ImportTurn[], header: ImportSessionHeader = HEADER): Row[] {
   const writer = createSessionRecordWriter(engine, header)
-  const lines = [...writer.preamble(), ...turns.flatMap((turn) => writer.appendTurn(turn))]
+  const lines = [...writer.preamble(), ...turns.flatMap((turn) => writer.appendTurn(turn)), ...writer.finish()]
   return lines.map((line) => JSON.parse(line) as Row)
 }
 
@@ -260,4 +260,32 @@ test('messageCount counts message records only', () => {
 test('a turn with no readable time reuses the last time', () => {
   const rows = messages(write('pi', [{ role: 'user', text: 'a', images: [], timestamp: Number.NaN }, user('b'), { role: 'user', text: 'c', images: [], timestamp: Number.NaN }]))
   assert.deepEqual(rows.map((message) => message.timestamp), [Date.parse(HEADER.startedAt), 1000, 1000])
+})
+
+test('a fallback result in a parallel batch waits for the open calls', () => {
+  const grep: ImportToolCall = { kind: 'other', sourceName: 'Grep', sourceInput: 'x' }
+  const ordered = messages(write('pi', [assistant(tool('g1', grep), tool('b1', SHELL)), result('g1', grep, 'found'), result('b1', SHELL, 'done'), user('next')]))
+  assert.deepEqual(ordered.map((message) => message.role), ['assistant', 'toolResult', 'assistant', 'user'])
+  assert.equal(ordered[1].toolCallId, 'b1')
+  assert.ok(firstText(ordered[2]).startsWith('[Imported tool result: Grep]'))
+
+  const two: ImportToolCall = { kind: 'other', sourceName: 'Glob', sourceInput: 'y' }
+  const merged = messages(write('pi', [assistant(tool('g1', grep), tool('g2', two), tool('b1', SHELL)), result('g1', grep), result('g2', two), result('b1', SHELL)]))
+  assert.deepEqual(merged.map((message) => message.role), ['assistant', 'toolResult', 'assistant'])
+  assert.equal(merged[2].content.length, 2)
+})
+
+test('held fallback results are written before the next turn and at finish', () => {
+  const grep: ImportToolCall = { kind: 'other', sourceName: 'Grep', sourceInput: 'x' }
+  const beforeUser = messages(write('pi', [assistant(tool('g1', grep), tool('b1', SHELL)), result('g1', grep), user('stop')]))
+  assert.deepEqual(beforeUser.map((message) => message.role), ['assistant', 'assistant', 'user'])
+
+  const writer = createSessionRecordWriter('pi', { ...HEADER, title: null })
+  writer.preamble()
+  writer.appendTurn(assistant(tool('g1', grep), tool('b1', SHELL)))
+  assert.deepEqual(writer.appendTurn(result('g1', grep)), [])
+  const [held] = writer.finish().map((line) => JSON.parse(line) as Row)
+  assert.ok(firstText(held.message).startsWith('[Imported tool result: Grep]'))
+  assert.deepEqual(writer.finish(), [])
+  assert.equal(writer.messageCount, 2)
 })
