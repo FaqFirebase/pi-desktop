@@ -4,6 +4,7 @@ import { clsx } from 'clsx'
 import { ArrowLeft, ArrowRight, Crosshair, ExternalLink, RotateCw, X } from 'lucide-react'
 import { useAppStore } from '../store'
 import { createStaleGuard } from '../utils/stale-guard'
+import { claimEscape } from '../utils/escape-key'
 import { buildPickAttachments, fitsAttachmentLimit, pngBase64FromDataUrl } from '../utils/browser-pick-attachments'
 import { BROWSER_PANE_PARTITION } from '../../../shared/preview-partitions'
 import { nextZoomLevel, normalizeAddressInput, type BrowserPaneGuestEvent } from '../../../shared/browser-pane'
@@ -12,7 +13,6 @@ import { Webview, type WebviewElement } from './webview-tag'
 
 // Chromium's net error for a load that a newer navigation replaced; not a failure to show.
 const ERR_ABORTED = -3
-const ESCAPE_KEY = 'Escape'
 // Present (empty) means on: pop-ups reach main's window-open handler, which
 // loads a clicked one in the pane and never opens a window.
 const ALLOW_POPUPS = ''
@@ -184,7 +184,7 @@ function BrowserPaneView({
   }
 
   const onPaneKeyDown = (event: React.KeyboardEvent): void => {
-    if (picking && event.key === ESCAPE_KEY) setPickMode(false)
+    if (picking && claimEscape(event.nativeEvent)) setPickMode(false)
   }
 
   return (

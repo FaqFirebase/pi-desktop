@@ -705,7 +705,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
         {composer.queue && (
           <SendQueueList
             prompts={composer.queue.prompts}
-            held={composer.queue.held}
+            hold={composer.queue.hold}
             onSendNow={(prompt) => void composer.queue?.sendNow(prompt.id)}
             onEdit={editQueuedPrompt}
             onRemove={(prompt) => composer.queue?.remove(prompt.id)}

@@ -16,6 +16,7 @@ import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import { getSessionEngineLabel, hasMixedSessionEngines } from './sidebar-session-labels'
 import type { Translate } from '../../../shared/i18n'
 import { isImeComposing } from '../utils/ime-composing'
+import { claimEscape } from '../utils/escape-key'
 
 export function SessionPanel(): React.JSX.Element {
   const { t, i18n } = useTranslation()
@@ -695,7 +696,7 @@ function SessionEntry({
                 onKeyDown={(e) => {
                   if (isImeComposing(e.nativeEvent)) return
                   if (e.key === 'Enter') handleAddTag()
-                  if (e.key === 'Escape') setShowTagInput(false)
+                  if (claimEscape(e.nativeEvent)) setShowTagInput(false)
                 }}
                 placeholder={t('sessions.tags.addPlaceholder')}
                 className="flex-1 rounded border border-border-strong bg-card px-2 py-0.5 text-[10px] text-secondary placeholder:text-faint focus:border-focus focus:outline-none"

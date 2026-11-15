@@ -113,6 +113,24 @@ test('listSkills for OMP sees .omp, .claude and .agents roots, one level deep', 
   })
 })
 
+test('listSkills for Pi reads global skills from PI_CODING_AGENT_DIR', async () => {
+  await withSkillTree(async (home, cwd) => {
+    const agentDir = join(home, 'relocated-pi-agent')
+    await writeSkill(join(agentDir, 'skills'), 'relocated')
+    const saved = process.env.PI_CODING_AGENT_DIR
+    process.env.PI_CODING_AGENT_DIR = agentDir
+    try {
+      // ~/.pi/agent/skills is no longer Pi's global root; the relocated one is.
+      assert.deepEqual(names(await listSkills(cwd, 'pi', home)), ['proj-pi', 'relocated', 'shared'])
+      // OMP keeps its own global root.
+      assert.equal((await listSkills(cwd, 'omp', home)).some((s) => s.name === 'omp-global'), true)
+    } finally {
+      if (saved === undefined) delete process.env.PI_CODING_AGENT_DIR
+      else process.env.PI_CODING_AGENT_DIR = saved
+    }
+  })
+})
+
 test('listSkills returns [] when no roots exist', async () => {
   const base = await mkdtemp(join(tmpdir(), 'skills-discovery-empty-'))
   try {

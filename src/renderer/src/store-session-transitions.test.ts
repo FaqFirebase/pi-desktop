@@ -35,6 +35,8 @@ let workspaceActivityFailure: string | null = null
 let workspaceActivitySnapshot: Record<string, { state: 'working' | 'needs-approval' | 'completed' | 'failed'; since: number }> = {}
 let activeWorkspaceResult: Workspace | null = null
 let permissionModeRestartedRuntimeIds: string[] = []
+// Non-null holds the stubbed pi.restart until the test opens the gate.
+let restartGate: Promise<void> | null = null
 let workspaceListResult: Workspace[] = []
 // Results the stubbed files.search returns; the hook runs while the "IPC" is
 // in flight so tests can interleave state changes with the await.
@@ -52,6 +54,10 @@ let sessionStateResult: SessionState | null = null
 let sessionDeleteResult: SessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: null }
 // The fork candidates the stubbed session.getForkMessages lists.
 let forkMessagesResult: Array<{ entryId: string; text: string }> = []
+// What the stubbed session.fork and session.clone report; an Error makes the call throw.
+const SESSION_COMMAND_OK = { success: true }
+let forkResult: { success: boolean; error?: string } | Error = SESSION_COMMAND_OK
+let cloneResult: { success: boolean; error?: string } | Error = SESSION_COMMAND_OK
 
 // Only sessionFile is read by the code under test; the cast keeps this
 // fixture from churning as SessionState grows fields.
@@ -166,6 +172,7 @@ const piDesktopStub = {
     },
     restart: async () => {
       calls.push('pi.restart')
+      if (restartGate) await restartGate
       return { status: 'running' as const, pid: 1, error: null }
     },
     applyPermissionMode: async () => {
@@ -248,7 +255,8 @@ const piDesktopStub = {
     },
     fork: async (entryId: string) => {
       calls.push(`fork:${entryId}`)
-      return { success: true }
+      if (forkResult instanceof Error) throw forkResult
+      return forkResult
     },
     getForkMessages: async () => forkMessagesResult,
     setName: async (name: string) => {
@@ -257,7 +265,8 @@ const piDesktopStub = {
     },
     clone: async () => {
       calls.push('clone')
-      return { success: true }
+      if (cloneResult instanceof Error) throw cloneResult
+      return cloneResult
     },
     getMessages: async () => {
       calls.push('getMessages')
@@ -342,6 +351,7 @@ beforeEach(() => {
   switchResult = { success: true }
   activateRuntimeResult = null
   permissionModeRestartedRuntimeIds = []
+  restartGate = null
   activateRuntimeError = null
   setActiveFailure = null
   pendingPromptsSnapshot = {}
@@ -354,6 +364,8 @@ beforeEach(() => {
   sessionStateResult = null
   sessionDeleteResult = { ok: true, method: 'trash', replacementSessionPath: null }
   forkMessagesResult = []
+  forkResult = SESSION_COMMAND_OK
+  cloneResult = SESSION_COMMAND_OK
   useAppStore.setState({
     isStreaming: false,
     streamingContent: '',
@@ -1029,6 +1041,73 @@ test('edit & resend sends nothing when the session does not hold the message', a
   const last = useAppStore.getState().messages.at(-1)
   assert.equal(last?.role, 'system')
   assert.match(last?.content ?? '', /does not contain this message/)
+})
+
+/** The newest chat message: where a failed action reports its reason. */
+function lastChatMessage() {
+  return useAppStore.getState().messages.at(-1)
+}
+
+test('Branch from here forks the session at that user message', async () => {
+  useAppStore.setState({
+    piStatus: 'running',
+    messages: [
+      { id: 'u1', role: 'user', content: 'first', timestamp: 0 },
+      { id: 'a1', role: 'assistant', content: 'one', timestamp: 0 },
+      { id: 'u2', role: 'user', content: 'second', timestamp: 0 },
+    ],
+  })
+  forkMessagesResult = [{ entryId: 'e1', text: 'first' }, { entryId: 'e2', text: 'second' }]
+
+  assert.equal(await useAppStore.getState().branchFromMessage('u2'), true)
+
+  assert.equal(calls[0], 'fork:e2')
+  assert.equal(calls.includes('getMessages'), true, 'the chat reloads into the fork')
+  assert.equal(calls.some((c) => c.startsWith('prompt:') || c.startsWith('setName:')), false,
+    'a branch only forks: it sends and renames nothing')
+})
+
+test('Branch from here reports a message the saved session does not hold', async () => {
+  useAppStore.setState({
+    piStatus: 'running',
+    messages: [{ id: 'u1', role: 'user', content: 'not saved yet', timestamp: 0 }],
+  })
+
+  assert.equal(await useAppStore.getState().branchFromMessage('u1'), false)
+
+  assert.deepEqual(calls, [])
+  assert.equal(lastChatMessage()?.role, 'system')
+  assert.match(lastChatMessage()?.content ?? '', /Could not branch the session: The saved session does not contain this message/)
+})
+
+test('a fork the agent refuses shows the reason in the chat', async () => {
+  useAppStore.setState({ piStatus: 'running', messages: [] })
+  forkResult = { success: false, error: 'Entry not found' }
+
+  assert.equal(await useAppStore.getState().forkFrom(FORK_ENTRY_ID), false)
+
+  assert.equal(calls.includes('getMessages'), false, 'a refused fork must not reload the session')
+  assert.equal(lastChatMessage()?.role, 'system')
+  assert.equal(lastChatMessage()?.content, 'Could not branch the session: Entry not found')
+})
+
+test('a fork that fails because no agent runs shows the reason instead of throwing', async () => {
+  useAppStore.setState({ piStatus: 'stopped', messages: [] })
+  forkResult = new Error("Error invoking remote method 'session:fork': Error: Pi is not running")
+
+  assert.equal(await useAppStore.getState().forkFrom(FORK_ENTRY_ID), false)
+
+  assert.equal(lastChatMessage()?.content, 'Could not branch the session: Pi is not running')
+})
+
+test('a clone that fails shows the reason in the chat', async () => {
+  useAppStore.setState({ piStatus: 'stopped', messages: [] })
+  cloneResult = new Error("Error invoking remote method 'session:clone': Error: Pi is not running")
+
+  await useAppStore.getState().cloneBranch()
+
+  assert.equal(calls.includes('getMessages'), false, 'a failed clone must not reload the session')
+  assert.equal(lastChatMessage()?.content, 'Could not clone the session: Pi is not running')
 })
 
 test('a declined fork warning keeps the edit from being sent', async () => {
@@ -2112,6 +2191,27 @@ test('changing the permission mode on an idle Pi restarts it without a dialog', 
     [`saveSettings:${TRUSTED_MODE}`, 'pi.restart', 'pi.applyPermissionMode'],
     'Pi reads the permission mode at spawn — without a restart the old mode stays in force'
   )
+})
+
+// A restart that never finishes must fail the test, not hang it.
+const RESTART_TEST_DEADLINE_MS = 5000
+
+test('a restart that ends after a workspace switch leaves the new workspace stopped', { timeout: RESTART_TEST_DEADLINE_MS }, async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  useAppStore.setState({ activeWorkspace: WORKSPACE_ONE, workspaces: [WORKSPACE_ONE, WORKSPACE_TWO], piStatus: 'running', piPid: 1 })
+  let openRestartGate: () => void = () => undefined
+  restartGate = new Promise((resolve) => { openRestartGate = resolve })
+
+  const restart = useAppStore.getState().restartPi()
+  assert.equal(await useAppStore.getState().activateWorkspace(WORKSPACE_TWO.id), true)
+  openRestartGate()
+  await restart
+
+  const state = useAppStore.getState()
+  assert.equal(state.activeWorkspace?.id, WORKSPACE_TWO.id)
+  assert.equal(state.piStatus, 'stopped', "workspace one's restarted process is not workspace two's")
+  assert.equal(state.piPid, null)
 })
 
 const ACTIVE_RUNTIME: SessionRuntimeInfo = {

@@ -105,7 +105,6 @@
       "insertHint": "↑↓ 选择 · Enter/Tab 插入路径 · Esc 关闭"
     },
     "message": {
-      "branchedFrom": "分支自：“{{excerpt}}”",
       "branchFromHere": "从此处创建分支",
       "editAndResend": "编辑并重新发送",
       "stopped": "已停止"
@@ -148,6 +147,7 @@
       "edit": "编辑",
       "files_other": "{{count}} 个文件",
       "held": "已暂停。你的下一条消息或“立即发送”会让队列继续",
+      "heldOffScreen": "你离开时已暂停。按“立即发送”发送",
       "next": "智能体完成后发送",
       "sendNow": "立即发送",
       "sendNowHint": "现在把这条消息发送到正在运行的回合中",
@@ -624,6 +624,7 @@
       "agentNotFound": "未找到 {{agent}}。请安装它，或在设置中将其从委员会成员中移除。",
       "arbiterFailed": "仲裁者失败",
       "arbiterTimedOut": "仲裁者超时",
+      "cancelled": "委员会运行已取消",
       "notEnoughMembers": "委员会至少需要 {{min}} 个智能体。请安装或启用 Pi、Claude 或 Codex，或关闭委员会规划。",
       "planningDisabled": "设置中已禁用委员会规划。",
       "timeoutNotNumber": "委员会超时必须是有限数值",
@@ -724,6 +725,9 @@
       "pathMustExist": "{{field}} 必须指向一个已存在的 Pi 会话文件",
       "projectMismatch": "会话所属项目与当前工作区不匹配",
       "runtimeNotFound": "未找到会话运行时：{{runtimeId}}"
+    },
+    "settings": {
+      "unreadable": "设置未保存：无法读取“{{path}}”。请修复或移除该文件，然后重新保存。"
     },
     "system": {
       "externalUrlHttpOnly": "仅允许 http(s) URL"
@@ -1618,6 +1622,11 @@
       "description": "聊天、面板和侧边栏 — 不包括终端和代码编辑器",
       "label": "界面字体大小"
     },
+    "unreadableFile": {
+      "detail": "文件：{{path}}\n\n请修复此文件，或将其移除以恢复默认设置。",
+      "message": "{{product}} 无法读取设置文件。当前使用默认设置，且无法保存对设置的更改。",
+      "title": "设置文件有问题"
+    },
     "voice": {
       "device": {
         "auto": "自动",
@@ -1926,23 +1935,26 @@
       "cannotActivateSession": "无法激活会话",
       "cannotCreateSession": "无法创建会话",
       "changeFolderError": "更改文件夹错误：{{detail}}",
+      "cloneError": "无法克隆会话：{{detail}}",
       "closeSessionError": "关闭会话错误：{{detail}}",
       "compactingContext": "正在压缩上下文（{{reason}}）…",
       "compactionAborted": "已中止压缩。",
       "contextCompacted": "上下文已压缩。",
       "councilFailed": "委员会失败：{{detail}}",
       "councilNoQuorum": "没有顾问产出计划（全部超时或出错）。委员会已中止。",
+      "councilOpenElsewhere": "另一个聊天中有一个进行中的委员会。请先在那里批准或取消它。",
       "createWorkspaceError": "创建工作区错误：{{detail}}",
       "defaultTaskLabel": "任务",
       "deleteError": "删除错误：{{detail}}",
       "editedSessionName": "{{title}}（已编辑）",
-      "editNotInSession": "已保存的会话中没有这条消息。",
       "editResendError": "无法编辑并重新发送该消息：{{detail}}",
       "error": "错误：{{detail}}",
       "followUpError": "追问发送错误：{{detail}}",
+      "forkError": "无法创建会话分支：{{detail}}",
       "imageFallbackName": "图片 {{index}}",
       "installedPackage": "已安装 {{spec}}。重启 Pi 以加载它。",
       "installFailed": "安装失败",
+      "messageNotInSession": "已保存的会话中没有这条消息。",
       "modelError": "模型错误：{{detail}}",
       "modelsFileNotLoaded": "模型文件尚未加载，请重试。",
       "newIsolatedTabError": "新建隔离标签页错误：{{detail}}",

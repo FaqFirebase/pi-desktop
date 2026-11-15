@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { IPC_CHANNELS, isRuntimeBusy, type AppSettings, type PiStartOptions } from '../../shared/ipc-contracts'
 import { runtimeNeedsPermissionRestart } from '../../shared/permission-mode'
 import { access } from 'fs/promises'
+import { homedir } from 'os'
 import { isString, isObject } from './validation'
 import { validateStartOptions, applyModelDefaults, applyResumePreference, applyPermissionModeToStartOptions } from './pi-start-options'
 import { loadAppSettings } from './settings'
@@ -32,7 +33,7 @@ export function registerPiHandlers(ctx: IpcContext): void {
     try {
       await access(cwd)
     } catch {
-      cwd = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()
+      cwd = homedir()
     }
 
     await workspaceManager.startPiForWorkspace(

@@ -26,6 +26,7 @@ import { getSessionTitle } from '../utils/session-title'
 import { t } from '../../../shared/i18n'
 import type { OpenPathAction } from '../../../shared/editors'
 import { runOpenPath } from '../utils/open-path-action'
+import { claimEscape, useEscapeSurface } from '../utils/escape-key'
 
 /**
  * Events that close the menu because the user scrolls. A plain `scroll` event
@@ -99,6 +100,8 @@ export function useContextMenu(): {
     setState((prev) => ({ ...prev, visible: false }))
   }, [])
 
+  const escapeSurface = useEscapeSurface(state.visible)
+
   // Close on click outside
   useEffect(() => {
     if (!state.visible) return
@@ -111,7 +114,9 @@ export function useContextMenu(): {
 
     const handleEscape = (e: KeyboardEvent) => {
       // Escape closes; Tab dismisses so focus isn't trapped behind the menu.
-      if (e.key === 'Escape' || e.key === 'Tab') hide()
+      // Document listeners run before the chat's window-level Escape handler,
+      // which skips the claimed press instead of stopping the running turn.
+      if (e.key === 'Tab' || claimEscape(e, escapeSurface)) hide()
     }
 
     // Delay to avoid immediate close from the same right-click
@@ -125,7 +130,7 @@ export function useContextMenu(): {
       document.removeEventListener('click', handleClick)
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [state.visible, hide])
+  }, [state.visible, hide, escapeSurface])
 
   // Close when the user scrolls
   useEffect(() => {

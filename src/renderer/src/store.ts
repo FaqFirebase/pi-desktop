@@ -5,7 +5,7 @@ import { applyUiFont } from './utils/ui-font'
 import { t } from '../../shared/i18n'
 import { buildPlanningPrompt } from '../../shared/planning-prompt'
 import { composePrompt } from './utils/compose-prompt'
-import { firstQueued, withQueued, withoutQueued, withoutWorkspaceQueue, type SendQueues } from './send-queue'
+import { firstQueued, withQueued, withoutQueued, withoutChats, type SendQueueHold, type SendQueueHolds, type SendQueues } from './send-queue'
 import { withEditorTerminal, withoutEditorTerminal } from './editor-terminal-state'
 import type { TerminalSlot } from '../../shared/terminal-slot'
 import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
@@ -13,6 +13,7 @@ import type { DisplayAttachment, DisplayMessage } from './message-parsing'
 import { appendPromptHistory, applyChatStreamUpdate, applyChatToolExecution, chatEventNotice, parseChatMessage, retainChatMessageIdentity, turnErrorText, type ChatToolCall } from './chat-session-state'
 import { isStoppedAnswer } from '../../shared/stopped-answer'
 import { createStaleGuard } from './utils/stale-guard'
+import { formatIpcError } from './utils/ipc-error'
 import { splitClaudeCliMarkers } from './claude-cli-markers'
 import { markUnansweredToolCallsRunning, settleRunningToolCall } from './reattached-tool-calls'
 import { normalizePiCommands, type PiCommand } from '../../shared/pi-command'
@@ -144,7 +145,19 @@ export const EMPTY_COMPOSER_DRAFT: ComposerDraft = { text: '', attachments: [] }
 
 export type CouncilPhase = 'detecting' | 'consulting' | 'merging' | 'awaiting-approval' | 'refused'
 
-export interface CouncilRunState {
+/** The chat a council run was started in: its workspace and session runtime id. */
+export interface CouncilOwner {
+  workspaceId: string
+  chatId: string
+}
+
+/** Which council run a state belongs to, so a cancelled or replaced run never writes over a newer one. */
+interface CouncilRunIdentity {
+  id: string
+  owner: CouncilOwner
+}
+
+export interface CouncilRunState extends CouncilRunIdentity {
   phase: CouncilPhase
   request: string
   results: ConsultantResult[]
@@ -424,7 +437,12 @@ interface AppState {
    */
   customModelsEdited: boolean
 
-  // Council run UI state (null when no council run is active)
+  /**
+   * The council run (null when none is open). One run at a time: its progress
+   * events carry no run id. It belongs to the chat it was started in and is
+   * kept while the user is elsewhere, so no consultant work is lost; only
+   * that chat shows it (see councilRunOnScreen) and can approve its plan.
+   */
   councilRun: CouncilRunState | null
 
   // File preview. A single target drives the side-panel preview; `kind` selects
@@ -474,18 +492,17 @@ interface AppState {
   // draft into another.
   composerDrafts: Record<string, ComposerDraft>
   saveComposerDraft: (workspaceId: string, draft: ComposerDraft) => void
-  /** Messages sent while the agent was busy, per workspace (see send-queue.ts). */
-  sendQueues: SendQueues
   /**
-   * Workspaces whose queue waits for the user: the turn was stopped, refused
-   * or failed, so sending the next message by itself would surprise the user
-   * or fail again. The user's next send releases it.
+   * Messages sent while the agent was busy, per chat (session runtime id, see
+   * send-queue.ts). A chat's queue shows and goes out only in that chat.
    */
-  heldSendQueues: string[]
-  queuePrompt: (workspaceId: string, text: string, attachments: ComposerAttachment[]) => void
-  removeQueuedPrompt: (workspaceId: string, promptId: string) => void
-  /** Send one queued message at once: into the running turn, or as a new prompt when idle. */
-  sendQueuedPromptNow: (workspaceId: string, promptId: string) => Promise<void>
+  sendQueues: SendQueues
+  /** Chats whose queue waits for the user, and why (see SendQueueHold). */
+  heldSendQueues: SendQueueHolds
+  queuePrompt: (chatId: string, text: string, attachments: ComposerAttachment[]) => void
+  removeQueuedPrompt: (chatId: string, promptId: string) => void
+  /** Send one queued message of the chat on screen at once: into the running turn, or as a new prompt when idle. */
+  sendQueuedPromptNow: (chatId: string, promptId: string) => Promise<void>
   // Set by the diff shortcuts; the diff viewer or Git actions consume and clear it.
   diffShortcutRequest: 'review' | 'commitPush' | null
   // A prompt queued for insertion into the chat input. The nonce lets the
@@ -578,8 +595,18 @@ interface AppActions {
   refreshSessionList: () => Promise<void>
   setSessionName: (name: string) => Promise<void>
   loadForkMessages: () => Promise<void>
-  /** True once the session continues from just before the entry. */
+  /**
+   * True once the session continues from just before the entry. False when
+   * the user or an extension cancelled it, or, with the reason in the chat,
+   * when the agent refused it.
+   */
   forkFrom: (entryId: string) => Promise<boolean>
+  /**
+   * Branch from here: continue the session from just before the sent user
+   * message `messageId`, the same fork as the Timeline makes. False, with the
+   * reason in the chat, when the session could not branch there.
+   */
+  branchFromMessage: (messageId: string) => Promise<boolean>
   /**
    * Replace a sent user message: continue the session from just before it
    * (the same fork as Branch from here), then send `text`. False, with the
@@ -866,6 +893,17 @@ function enqueueAttachBackfill(get: () => AppState & AppActions): Promise<void> 
 }
 
 /**
+ * A check that an async step still serves the chat it started in: no session
+ * load or workspace switch happened since. Main answers for the workspace
+ * active when the call went out, so a stale answer must not land on another.
+ */
+function captureChatScope(get: () => AppState & AppActions): () => boolean {
+  const gen = sessionLoadGeneration
+  const workspaceId = get().activeWorkspace?.id
+  return () => gen === sessionLoadGeneration && workspaceId === get().activeWorkspace?.id
+}
+
+/**
  * Agent runs the chat on screen saw start. A prompt reads it before it is sent,
  * so its answer can tell whether a run followed it.
  */
@@ -906,32 +944,69 @@ function activeWorkspaceId(get: () => AppState & AppActions): string {
   return get().activeWorkspace?.id ?? ''
 }
 
-function holdSendQueue(set: ZustandSet, get: () => AppState & AppActions): void {
-  const workspaceId = activeWorkspaceId(get)
-  set((state) => state.heldSendQueues.includes(workspaceId) ? state : { heldSendQueues: [...state.heldSendQueues, workspaceId] })
+/**
+ * Hold a chat's queue; a null chat (none bound yet) has no queue to hold. An
+ * 'ended-off-screen' hold stays: an interruption after it must not let the
+ * user's next send release messages older than that send.
+ */
+function holdSendQueue(set: ZustandSet, chatId: string | null, hold: SendQueueHold): void {
+  if (chatId === null) return
+  set((state) => state.heldSendQueues[chatId] === 'ended-off-screen' || state.heldSendQueues[chatId] === hold
+    ? state
+    : { heldSendQueues: { ...state.heldSendQueues, [chatId]: hold } })
 }
 
-function releaseSendQueue(set: ZustandSet, get: () => AppState & AppActions): void {
-  const workspaceId = activeWorkspaceId(get)
-  set((state) => state.heldSendQueues.includes(workspaceId)
-    ? { heldSendQueues: state.heldSendQueues.filter((id) => id !== workspaceId) }
+/** The user sends again: an interrupted queue may go on after this turn. */
+function releaseInterruptedSendQueue(set: ZustandSet, chatId: string | null): void {
+  set((state) => chatId !== null && state.heldSendQueues[chatId] === 'interrupted'
+    ? { heldSendQueues: withoutChats(state.heldSendQueues, [chatId]) }
     : state)
 }
 
 /**
- * The active turn is over: send the oldest queued message, unless the turn
- * failed (then hold the queue: the next one would likely fail too) or the
- * queue is already held (the user stopped the turn).
+ * The turn of the chat on screen is over: send its oldest queued message,
+ * unless the turn failed (then hold the queue: the next one would likely fail
+ * too) or the queue is already held (the user stopped the turn).
  */
 function settleSendQueue(set: ZustandSet, get: () => AppState & AppActions, failed: boolean): void {
+  const chatId = get().activeSessionRuntimeId
   if (failed) {
-    holdSendQueue(set, get)
+    holdSendQueue(set, chatId, 'interrupted')
     return
   }
-  const workspaceId = activeWorkspaceId(get)
-  if (get().heldSendQueues.includes(workspaceId)) return
-  const next = firstQueued(get().sendQueues, workspaceId)
-  if (next) void get().sendQueuedPromptNow(workspaceId, next.id)
+  if (chatId === null || chatId in get().heldSendQueues) return
+  const next = firstQueued(get().sendQueues, chatId)
+  if (next) void get().sendQueuedPromptNow(chatId, next.id)
+}
+
+/**
+ * A chat off screen finished its turn. The renderer never sees that turn's
+ * end, so its queue cannot go out in order; hold it until the user is back
+ * and sends it. A chat that only leaves the screen while idle keeps the hold
+ * it has: no turn ended off screen, so an 'interrupted' hold stays.
+ */
+function holdQueueOfIdleBackgroundChat(set: ZustandSet, get: () => AppState & AppActions, runtime: SessionRuntimeInfo): void {
+  if (runtime.active || isRuntimeBusy(runtime.activity)) return
+  if (!get().sendQueues[runtime.runtimeId]) return
+  const turnEnded = isRuntimeBusy(get().sessionRuntimes[runtime.runtimeId]?.activity)
+  if (!turnEnded && runtime.runtimeId in get().heldSendQueues) return
+  holdSendQueue(set, runtime.runtimeId, 'ended-off-screen')
+}
+
+/**
+ * Drop what the store keeps for chats that are gone: their queues, their holds
+ * and a council run they own, whose consultants main then stops.
+ */
+function forgetChats(set: ZustandSet, get: StoreGet, chatIds: readonly string[]): void {
+  if (chatIds.length === 0) return
+  const run = get().councilRun
+  const droppedRun = run && chatIds.includes(run.owner.chatId) ? run : null
+  set((state) => ({
+    sendQueues: withoutChats(state.sendQueues, chatIds),
+    heldSendQueues: withoutChats(state.heldSendQueues, chatIds),
+    ...(droppedRun ? { councilRun: null } : {}),
+  }))
+  if (droppedRun) stopCouncilRun(droppedRun)
 }
 
 // ─── Turn Activity ──────────────────────────────────────────────────────────
@@ -1186,6 +1261,34 @@ interface ArbiterStepBase {
   results: ConsultantResult[]
 }
 
+type CouncilRunStep = Omit<CouncilRunState, keyof CouncilRunIdentity>
+
+/**
+ * Tell main to stop the consultant and arbiter processes of a run the store
+ * dropped, so it spends no more model credits. Main ignores a run that is
+ * already over, and the run is gone from the store either way.
+ */
+function stopCouncilRun(run: CouncilRunIdentity): void {
+  void window.piDesktop.council.cancel({ runId: run.id }).catch(() => undefined)
+}
+
+/** Show a step of that council run, unless it was cancelled or replaced meanwhile. */
+function showCouncilStep(get: StoreGet, set: StoreSet, identity: CouncilRunIdentity, step: CouncilRunStep): void {
+  if (get().councilRun?.id !== identity.id) return
+  set({ councilRun: { ...identity, ...step } })
+}
+
+/** Whether the chat on screen is the one that owns the council run. */
+function isCouncilOwnerOnScreen(state: AppState, owner: CouncilOwner): boolean {
+  return owner.workspaceId === state.activeWorkspace?.id && owner.chatId === state.activeSessionRuntimeId
+}
+
+/** The council run of the chat on screen; a run another chat owns stays out of sight. */
+export function councilRunOnScreen(state: AppState): CouncilRunState | null {
+  const run = state.councilRun
+  return run && isCouncilOwnerOnScreen(state, run.owner) ? run : null
+}
+
 /**
  * Drive one arbiter round (merge or revise) through the isolated read-only Pi
  * subprocess, streaming its output live into councilRun.consensus. Returns the
@@ -1195,13 +1298,14 @@ interface ArbiterStepBase {
 async function runArbiterStep(
   payload: CouncilArbiterRequest,
   base: ArbiterStepBase,
+  identity: CouncilRunIdentity,
   get: StoreGet,
   set: StoreSet,
 ): Promise<{ plan?: string; error?: string }> {
-  set({ councilRun: { phase: 'merging', request: base.request, results: base.results, consensus: '' } })
-  const unsubscribe = window.piDesktop.council.onProgress(({ chunk }) => {
+  showCouncilStep(get, set, identity, { phase: 'merging', request: base.request, results: base.results, consensus: '' })
+  const unsubscribe = window.piDesktop.council.onProgress(({ runId, chunk }) => {
     const run = get().councilRun
-    if (!run || run.phase !== 'merging') return
+    if (runId !== identity.id || !run || run.id !== identity.id || run.phase !== 'merging') return
     set({ councilRun: { ...run, consensus: (run.consensus ?? '') + chunk } })
   })
   try {
@@ -1231,6 +1335,46 @@ async function applyPinChange(
       timestamp: Date.now(),
     })
   }
+}
+
+/** Put the reason an action failed in the chat as a system message. */
+function reportChatError(get: StoreGet, errorText: (detail: string) => string, err: unknown): void {
+  get().addMessage({ id: generateId(), role: 'system', content: errorText(formatIpcError(err)), timestamp: Date.now() })
+}
+
+/** The reply of a session command (fork, clone) the agent can refuse. */
+interface SessionCommandResult {
+  success?: boolean
+  error?: string
+  data?: { cancelled?: boolean }
+}
+
+/**
+ * Run a session command (fork, clone). A refusal (`{ success: false, error }`)
+ * or a failed call (no agent running, for example) puts the reason in the
+ * chat and gives null.
+ */
+async function runSessionCommand(
+  get: StoreGet,
+  command: () => Promise<unknown>,
+  errorText: (detail: string) => string,
+): Promise<SessionCommandResult | null> {
+  try {
+    const result = (await command()) as SessionCommandResult | null
+    if (!result?.success) throw new Error(result?.error ?? t('store.messages.unknownError'))
+    return result
+  } catch (err) {
+    reportChatError(get, errorText, err)
+    return null
+  }
+}
+
+/** The fork point of the sent user message `messageId`; throws when the saved session does not hold it. */
+async function forkPointOfMessage(get: StoreGet, messageId: string): Promise<ForkPoint> {
+  await get().loadForkMessages()
+  const point = forkPointForUserMessage(get().messages, messageId, get().forkMessages)
+  if (!point) throw new Error(t('store.messages.messageNotInSession'))
+  return point
 }
 
 /** Keep a git check result unless a newer check started meanwhile. */
@@ -1394,17 +1538,23 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     return { composerDrafts }
   }),
   sendQueues: {},
-  heldSendQueues: [],
-  queuePrompt: (workspaceId, text, attachments) =>
-    set((state) => ({ sendQueues: withQueued(state.sendQueues, workspaceId, { id: generateId(), text, attachments }) })),
-  removeQueuedPrompt: (workspaceId, promptId) =>
-    set((state) => ({ sendQueues: withoutQueued(state.sendQueues, workspaceId, promptId) })),
-  sendQueuedPromptNow: async (workspaceId, promptId) => {
-    // sendPrompt reaches the active workspace's agent only.
-    if (workspaceId !== (get().activeWorkspace?.id ?? '')) return
-    const queued = get().sendQueues[workspaceId]?.find((prompt) => prompt.id === promptId)
+  heldSendQueues: {},
+  queuePrompt: (chatId, text, attachments) =>
+    set((state) => ({ sendQueues: withQueued(state.sendQueues, chatId, { id: generateId(), text, attachments }) })),
+  removeQueuedPrompt: (chatId, promptId) =>
+    set((state) => {
+      const sendQueues = withoutQueued(state.sendQueues, chatId, promptId)
+      // A hold on an emptied queue holds nothing; the next queued message starts fresh.
+      return chatId in sendQueues
+        ? { sendQueues }
+        : { sendQueues, heldSendQueues: withoutChats(state.heldSendQueues, [chatId]) }
+    }),
+  sendQueuedPromptNow: async (chatId, promptId) => {
+    // sendPrompt reaches the agent of the chat on screen only.
+    if (chatId !== get().activeSessionRuntimeId) return
+    const queued = get().sendQueues[chatId]?.find((prompt) => prompt.id === promptId)
     if (!queued) return
-    get().removeQueuedPrompt(workspaceId, promptId)
+    get().removeQueuedPrompt(chatId, promptId)
     const { message, options } = composePrompt(queued.text, queued.attachments)
     await get().sendPrompt(message, options)
   },
@@ -1427,9 +1577,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (pendingLastSessionOpen) await pendingLastSessionOpen
     // Don't start if already running
     if (get().piStatus === 'running') return
-    const gen = sessionLoadGeneration
-    const workspaceId = get().activeWorkspace?.id
-    const isCurrent = (): boolean => gen === sessionLoadGeneration && workspaceId === get().activeWorkspace?.id
+    const isCurrent = captureChatScope(get)
 
     try {
       // The renderer starts only what the chat shows. A resumed session is
@@ -1497,18 +1645,26 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   restartPi: async (options) => {
+    // Main restarts the workspace active when the call starts and answers
+    // with that workspace's status; a chat switched to meanwhile is not it.
+    const isCurrent = captureChatScope(get)
     try {
-      await adoptRestartedPi(set, get, await window.piDesktop.pi.restart(options as Record<string, unknown> | undefined))
+      const status = await window.piDesktop.pi.restart(options as Record<string, unknown> | undefined)
+      if (isCurrent()) await adoptRestartedPi(set, get, status, isCurrent)
     } catch (err) {
+      if (!isCurrent()) return
       set({ piStatus: 'error', piStartupPhase: null, piError: err instanceof Error ? err.message : String(err) })
     }
   },
 
   applyPermissionModeToSessions: async () => {
+    const isCurrent = captureChatScope(get)
     const restartedRuntimeIds = await window.piDesktop.pi.applyPermissionMode()
+    if (!isCurrent()) return
     const activeRuntime = Object.values(get().sessionRuntimes).find((runtime) => runtime.active)
     if (activeRuntime && restartedRuntimeIds.includes(activeRuntime.runtimeId)) {
-      await adoptRestartedPi(set, get, await window.piDesktop.pi.getStatus())
+      const status = await window.piDesktop.pi.getStatus()
+      if (isCurrent()) await adoptRestartedPi(set, get, status, isCurrent)
     }
   },
 
@@ -1557,8 +1713,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       await get().startPi()
       if (get().piStatus !== 'running') return
     }
-    // The user sends again, so a held queue may go on after this turn.
-    releaseSendQueue(set, get)
+    releaseInterruptedSendQueue(set, get().activeSessionRuntimeId)
 
     const { sessionState, settings } = get()
 
@@ -1660,39 +1815,48 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   runCouncil: async (request) => {
-    const { piStatus, settings } = get()
-    if (piStatus !== 'running' || !request.trim()) return
+    const { piStatus, settings, activeWorkspace, activeSessionRuntimeId: chatId } = get()
+    if (piStatus !== 'running' || !request.trim() || !activeWorkspace || chatId === null) return
     const config = settings?.council
     if (!config) return
+    // One run at a time, and a run another chat owns is that chat's work:
+    // replacing it from here would throw its consultants' plans away.
+    const openRun = get().councilRun
+    if (openRun && !isCouncilOwnerOnScreen(get(), openRun.owner)) {
+      get().addMessage({ id: generateId(), role: 'system', content: t('store.messages.councilOpenElsewhere'), timestamp: Date.now() })
+      return
+    }
 
-    set({ councilRun: { phase: 'detecting', request, results: [] } })
+    const identity: CouncilRunIdentity = { id: generateId(), owner: { workspaceId: activeWorkspace.id, chatId } }
+    set({ councilRun: { ...identity, phase: 'detecting', request, results: [] } })
+    const show = (step: CouncilRunStep): void => showCouncilStep(get, set, identity, step)
 
     try {
       const detectResult = await window.piDesktop.council.detect()
       const detected = { pi: false, claude: false, codex: false } as Record<CouncilAgentId, boolean>
       for (const a of detectResult.agents) detected[a.id] = a.found
+      // Cancelled or replaced while detecting: start no consultant for it.
+      if (get().councilRun?.id !== identity.id) return
 
       const resolution = resolveActiveMembers(config, detected)
       if (!resolution.canRun) {
-        set({ councilRun: { phase: 'refused', request, results: [], reason: resolution.reason } })
+        show({ phase: 'refused', request, results: [], reason: resolution.reason })
         return
       }
 
-      set({
-        councilRun: {
-          phase: 'consulting',
-          request,
-          results: [],
-          members: resolution.active,
-          partials: {},
-          startedAt: Date.now(),
-        },
+      show({
+        phase: 'consulting',
+        request,
+        results: [],
+        members: resolution.active,
+        partials: {},
+        startedAt: Date.now(),
       })
 
       // Stream live consultant output into councilRun.partials while consulting.
-      const unsubscribe = window.piDesktop.council.onProgress(({ id, chunk }) => {
+      const unsubscribe = window.piDesktop.council.onProgress(({ runId, id, chunk }) => {
         const run = get().councilRun
-        if (!run || run.phase !== 'consulting') return
+        if (runId !== identity.id || !run || run.id !== identity.id || run.phase !== 'consulting') return
         const partials = { ...(run.partials ?? {}) }
         partials[id] = (partials[id] ?? '') + chunk
         set({ councilRun: { ...run, partials } })
@@ -1701,6 +1865,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       let results: ConsultantResult[]
       try {
         ;({ results } = await window.piDesktop.council.runConsultants({
+          runId: identity.id,
+          workspaceId: identity.owner.workspaceId,
           request,
           members: resolution.active,
           timeoutSeconds: config.timeoutSeconds,
@@ -1709,15 +1875,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       } finally {
         unsubscribe()
       }
+      if (get().councilRun?.id !== identity.id) return
 
       if (!hasQuorum(results)) {
-        set({
-          councilRun: {
-            phase: 'refused',
-            request,
-            results,
-            reason: t('store.messages.councilNoQuorum'),
-          },
+        show({
+          phase: 'refused',
+          request,
+          results,
+          reason: t('store.messages.councilNoQuorum'),
         })
         return
       }
@@ -1726,23 +1891,26 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // are untrusted input, so they are never fed to the live (writable) session —
       // only the vetted consensus plan is, and only after the user approves it.
       const merged = await runArbiterStep(
-        { kind: 'merge', request, results, timeoutSeconds: config.timeoutSeconds },
+        { kind: 'merge', runId: identity.id, workspaceId: identity.owner.workspaceId, request, results, timeoutSeconds: config.timeoutSeconds },
         { request, results },
+        identity,
         get,
         set,
       )
       if (merged.error) {
-        set({ councilRun: { phase: 'refused', request, results, reason: merged.error } })
+        show({ phase: 'refused', request, results, reason: merged.error })
         return
       }
-      set({ councilRun: { phase: 'awaiting-approval', request, results, consensus: merged.plan } })
+      show({ phase: 'awaiting-approval', request, results, consensus: merged.plan })
     } catch (error) {
-      set({ councilRun: { phase: 'refused', request, results: [], reason: councilErrorMessage(error) } })
+      show({ phase: 'refused', request, results: [], reason: councilErrorMessage(error) })
     }
   },
 
   approveCouncilPlan: async () => {
-    const run = get().councilRun
+    // Only the chat that started the run may send its plan: the plan was made
+    // for that workspace, and sendPrompt reaches the chat on screen.
+    const run = councilRunOnScreen(get())
     if (!run || run.phase !== 'awaiting-approval' || !run.consensus?.trim()) return
     const plan = run.consensus
     set({ councilRun: null })
@@ -1752,30 +1920,37 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   reviseCouncilPlan: async (feedback) => {
-    const run = get().councilRun
+    const run = councilRunOnScreen(get())
     if (!run || run.phase !== 'awaiting-approval' || !feedback.trim() || !run.consensus) return
-    const { request, results, consensus } = run
+    const { request, results, consensus, id, owner } = run
+    const identity: CouncilRunIdentity = { id, owner }
     const config = get().settings?.council
     if (!config) return
     const revised = await runArbiterStep(
-      { kind: 'revise', request, plan: consensus, feedback, timeoutSeconds: config.timeoutSeconds },
+      { kind: 'revise', runId: id, workspaceId: owner.workspaceId, request, plan: consensus, feedback, timeoutSeconds: config.timeoutSeconds },
       { request, results },
+      identity,
       get,
       set,
     )
     if (revised.error) {
       // Keep the previous plan at the approval gate and surface the failure.
-      set({ councilRun: { phase: 'awaiting-approval', request, results, consensus, reason: revised.error } })
+      showCouncilStep(get, set, identity, { phase: 'awaiting-approval', request, results, consensus, reason: revised.error })
       return
     }
-    set({ councilRun: { phase: 'awaiting-approval', request, results, consensus: revised.plan } })
+    showCouncilStep(get, set, identity, { phase: 'awaiting-approval', request, results, consensus: revised.plan })
   },
 
-  cancelCouncil: () => set({ councilRun: null }),
+  cancelCouncil: () => {
+    const run = get().councilRun
+    if (!run) return
+    set({ councilRun: null })
+    stopCouncilRun(run)
+  },
 
   abort: async () => {
     // The user stopped this turn: its end must not send the next queued message.
-    holdSendQueue(set, get)
+    holdSendQueue(set, get().activeSessionRuntimeId, 'interrupted')
     try {
       await window.piDesktop.commands.abort()
       set({ isStreaming: false })
@@ -1944,6 +2119,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
       // The main process broadcasts the closed marker, but remove locally too
       // so a renderer that races that event cannot leave a ghost tab behind.
+      forgetChats(set, get, [runtimeId])
       set((state) => {
         const { [runtimeId]: _closed, ...remaining } = state.sessionRuntimes
         return {
@@ -2314,19 +2490,28 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   forkFrom: async (entryId) => {
     if (!(await get().confirmSessionChange('fork'))) return false
-    const result = (await window.piDesktop.session.fork(entryId)) as
-      { success?: boolean; data?: { cancelled?: boolean } } | null
-    if (!result?.success) return false
+    const result = await runSessionCommand(get, () => window.piDesktop.session.fork(entryId),
+      (detail) => t('store.messages.forkError', { detail }))
+    if (!result) return false
     await get().reloadActiveSession()
     // An extension can cancel the fork; the session then stays where it was.
     return result.data?.cancelled !== true
   },
 
+  branchFromMessage: async (messageId) => {
+    let point: ForkPoint
+    try {
+      point = await forkPointOfMessage(get, messageId)
+    } catch (err) {
+      reportChatError(get, (detail) => t('store.messages.forkError', { detail }), err)
+      return false
+    }
+    return get().forkFrom(point.entryId)
+  },
+
   editAndResend: async (messageId, text) => {
     try {
-      await get().loadForkMessages()
-      const point = forkPointForUserMessage(get().messages, messageId, get().forkMessages)
-      if (!point) throw new Error(t('store.messages.editNotInSession'))
+      const point = await forkPointOfMessage(get, messageId)
       const title = sessionTitleForFork(get().sessionState?.sessionName, get().messages)
       if (!(await get().forkFrom(point.entryId))) return false
       // The fork starts with the same first message, so unnamed it would list
@@ -2335,12 +2520,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         await get().setSessionName(t('store.messages.editedSessionName', { title: truncateTitle(title, EDITED_TITLE_MAX_CHARS) }))
       }
     } catch (err) {
-      get().addMessage({
-        id: generateId(),
-        role: 'system',
-        content: t('store.messages.editResendError', { detail: err instanceof Error ? err.message : String(err) }),
-        timestamp: Date.now(),
-      })
+      reportChatError(get, (detail) => t('store.messages.editResendError', { detail }), err)
       return false
     }
     await get().sendPrompt(text)
@@ -2349,10 +2529,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   cloneBranch: async () => {
     if (!(await get().confirmSessionChange('clone'))) return
-    const result = (await window.piDesktop.session.clone()) as { success?: boolean } | null
-    if (result?.success) {
-      await get().reloadActiveSession()
-    }
+    const result = await runSessionCommand(get, () => window.piDesktop.session.clone(),
+      (detail) => t('store.messages.cloneError', { detail }))
+    if (result) await get().reloadActiveSession()
   },
 
   // ─── Model ────────────────────────────────────────────────────────────
@@ -2404,9 +2583,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   listModels: async () => {
-    const gen = sessionLoadGeneration
-    const workspaceId = get().activeWorkspace?.id
-    const isCurrent = (): boolean => gen === sessionLoadGeneration && workspaceId === get().activeWorkspace?.id
+    const isCurrent = captureChatScope(get)
     // The picker is also usable on a fresh composer. Starting the runtime
     // discovers the engine's real catalog without sending a prompt; like every
     // renderer start it opens what the chat shows (see startPi).
@@ -3008,6 +3185,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const refusalArrived = runtime.promptRefusal !== undefined &&
       runtime.promptRefusal !== get().sessionRuntimes[runtime.runtimeId]?.promptRefusal
     if (runtime.closed) {
+      forgetChats(set, get, [runtime.runtimeId])
       set((current) => {
         const { [runtime.runtimeId]: _closed, ...remaining } = current.sessionRuntimes
         return {
@@ -3017,6 +3195,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       })
       return
     }
+    holdQueueOfIdleBackgroundChat(set, get, runtime)
     set((current) => ({
       sessionRuntimes: { ...current.sessionRuntimes, [runtime.runtimeId]: runtime },
       activeSessionRuntimeId: runtime.active
@@ -3393,10 +3572,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       const result = await window.piDesktop.workspace.remove(workspaceId)
       await get().loadWorkspaces()
       get().saveComposerDraft(workspaceId, EMPTY_COMPOSER_DRAFT)
-      set((state) => ({
-        sendQueues: withoutWorkspaceQueue(state.sendQueues, workspaceId),
-        heldSendQueues: state.heldSendQueues.filter((id) => id !== workspaceId),
-      }))
+      // Main stops the workspace's chats without a closed marker for each.
+      forgetChats(set, get, Object.values(get().sessionRuntimes)
+        .filter((runtime) => runtime.workspaceId === workspaceId)
+        .map((runtime) => runtime.runtimeId))
       adoptMainSideActivation(get, set, previousActiveId)
       if (result.preservedWorktreePaths) {
         get().addMessage({
@@ -3999,14 +4178,16 @@ let committedStreamCount = 0
 let streamingTextBackfill: Promise<void> | null = null
 
 /**
- * Fill the start of a message this view missed: after switching back to a
- * project whose turn kept running, the deltas resume in the middle of the
- * message. Main keeps what the message streamed so far; take it, and the
- * following deltas continue from its end. When it cannot be had, nothing
- * mid-sentence is shown: the "still working" banner stands in until the turn
- * ends and the attach backfill loads the full answer.
+ * Show the status of the restarted process. The caller checked `isCurrent`
+ * before this: the status belongs to the chat on screen. A chat switched to
+ * during the refresh below keeps its own state.
  */
-async function adoptRestartedPi(set: ZustandSet, get: () => AppState & AppActions, status: PiStatus): Promise<void> {
+async function adoptRestartedPi(
+  set: ZustandSet,
+  get: () => AppState & AppActions,
+  status: PiStatus,
+  isCurrent: () => boolean
+): Promise<void> {
   set({ piStatus: status.status, piStartupPhase: status.startupPhase ?? null, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
 
   // Re-read session state after a restart so the status bar's model label
@@ -4014,11 +4195,21 @@ async function adoptRestartedPi(set: ZustandSet, get: () => AppState & AppAction
   // the label keeps the pre-restart model.
   if (status.status === 'running') {
     await get().refreshSessionState()
+    if (!isCurrent()) return
     await get().refreshSessionStats()
+    if (!isCurrent()) return
     await get().refreshSessionList()
   }
 }
 
+/**
+ * Fill the start of a message this view missed: after switching back to a
+ * project whose turn kept running, the deltas resume in the middle of the
+ * message. Main keeps what the message streamed so far; take it, and the
+ * following deltas continue from its end. When it cannot be had, nothing
+ * mid-sentence is shown: the "still working" banner stands in until the turn
+ * ends and the attach backfill loads the full answer.
+ */
 function backfillStreamingText(get: () => AppState & AppActions, set: ZustandSet): void {
   if (streamingTextBackfill) return
   const scope = { streamed: committedStreamCount, gen: sessionLoadGeneration, runtimeId: get().activeSessionRuntimeId }

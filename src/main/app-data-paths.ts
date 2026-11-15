@@ -1,5 +1,6 @@
 import { copyFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
+import { homedir } from 'os'
 import { dirname, join, resolve } from 'path'
 import { isPathWithin } from '../../resources/path-within'
 
@@ -20,7 +21,13 @@ export const GUI_DATA_FILES = [
 export type GuiDataFileName = typeof GUI_DATA_FILES[number]
 
 interface PathOptions {
+  /** The home directory; `os.homedir()` when unset. */
   homeDir?: string
+  /**
+   * The HOME variable as earlier versions read it. Only read when `homeDir` is
+   * set (tests); otherwise it is process.env.HOME.
+   */
+  envHomeDir?: string
   appDataDir?: string
   userDataDir?: string
 }
@@ -30,7 +37,7 @@ interface MigrationOptions extends PathOptions {
 }
 
 function getHomeDir(options?: PathOptions): string {
-  return options?.homeDir ?? process.env.HOME ?? process.env.USERPROFILE ?? ''
+  return options?.homeDir ?? homedir()
 }
 
 export function configureGuiDataDir(userDataDir: string): void {
@@ -73,8 +80,21 @@ export function usesOwnInstanceLock(
   return !sameFolder
 }
 
+/**
+ * Homes that may hold the legacy folder. Earlier versions took HOME before
+ * USERPROFILE, so on Windows with HOME set (Git Bash, MSYS, Cygwin) the folder
+ * can sit under HOME instead of under `os.homedir()`. HOME comes first because
+ * that is where those versions wrote; both are checked when they differ, and
+ * a file is still copied only when the new data folder lacks it.
+ */
+function legacyHomeDirs(options?: PathOptions): string[] {
+  const envHome = options?.homeDir === undefined ? process.env.HOME : options.envHomeDir
+  const homes = [envHome, getHomeDir(options)].filter((dir): dir is string => Boolean(dir))
+  return [...new Set(homes)]
+}
+
 export function getLegacyGuiDataDirs(options?: PathOptions): string[] {
-  const dirs = [join(getHomeDir(options), LEGACY_GUI_DATA_DIR_NAME)]
+  const dirs = legacyHomeDirs(options).map((home) => join(home, LEGACY_GUI_DATA_DIR_NAME))
 
   if (options?.appDataDir) {
     for (const dirName of LEGACY_ELECTRON_GUI_DATA_DIR_NAMES) {

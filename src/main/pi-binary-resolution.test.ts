@@ -5,11 +5,13 @@ import {
   PI_CLI_REL,
   PI_FALLBACK_BINARY_POSIX,
   PI_FALLBACK_BINARY_WINDOWS,
+  OMP_FALLBACK_BINARY_WINDOWS,
   SHELL_PATH_END,
   SHELL_PATH_START,
   buildLoginShellArgs,
   compareVersionsDesc,
   describePiResolutionFailure,
+  homeDirFromEnv,
   loginShellPath,
   mergePathEntries,
   normalizeOverride,
@@ -363,6 +365,26 @@ test('resolvePiBinary finds an npm-global OMP shim outside PATH', () => {
     files: [omp],
     dirs: [prefix],
     captures: { 'npm prefix -g': `${prefix}\n` },
+  })
+  assert.equal(resolvePiBinary(deps, null, 'omp').script, omp)
+})
+
+test('homeDirFromEnv reads the variable os.homedir reads on each platform', () => {
+  // Git Bash and MSYS set HOME on Windows too, often to another folder.
+  const env = { HOME: '/msys/home/tester', USERPROFILE: WINDOWS_HOME }
+  assert.equal(homeDirFromEnv(env, true), WINDOWS_HOME)
+  assert.equal(homeDirFromEnv(env, false), '/msys/home/tester')
+  assert.equal(homeDirFromEnv({ HOME: POSIX_HOME }, true), undefined, 'Windows never falls back to HOME')
+  assert.equal(homeDirFromEnv({ USERPROFILE: WINDOWS_HOME }, false), undefined, 'POSIX never falls back to USERPROFILE')
+  assert.equal(homeDirFromEnv({ HOME: '' }, false), undefined)
+})
+
+test('resolvePiBinary looks for a Windows OMP under USERPROFILE even when HOME is set', () => {
+  const omp = join(WINDOWS_HOME, '.bun', 'bin', OMP_FALLBACK_BINARY_WINDOWS)
+  const deps = fakeDeps({
+    isWindows: true,
+    env: { HOME: '/msys/home/tester', USERPROFILE: WINDOWS_HOME, PATH: '' },
+    files: [omp],
   })
   assert.equal(resolvePiBinary(deps, null, 'omp').script, omp)
 })

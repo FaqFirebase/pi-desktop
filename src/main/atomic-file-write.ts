@@ -13,17 +13,22 @@ export function uniqueTempPath(path: string): string {
 }
 
 /**
- * Write `value` as JSON to `path` through a unique temp file and a rename, so
- * a reader sees the old file or the new one, never a part of one.
+ * Write `text` to `path` through a unique temp file and a rename, so a reader
+ * sees the old file or the new one, never a part of one.
  */
-export async function writeJsonFileAtomic(path: string, value: unknown): Promise<void> {
+export async function writeTextFileAtomic(path: string, text: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
   const tempPath = uniqueTempPath(path)
   try {
-    await writeFile(tempPath, JSON.stringify(value, null, JSON_FILE_INDENT), 'utf8')
+    await writeFile(tempPath, text, 'utf8')
     await rename(tempPath, path)
   } catch (err) {
     await rm(tempPath, { force: true })
     throw err
   }
+}
+
+/** Write `value` as indented JSON to `path`, atomically (see writeTextFileAtomic). */
+export async function writeJsonFileAtomic(path: string, value: unknown): Promise<void> {
+  await writeTextFileAtomic(path, JSON.stringify(value, null, JSON_FILE_INDENT))
 }

@@ -16,7 +16,7 @@ import { applyThemeVars } from '../theme/engine'
 import { applyTheme, registerThemes, setThemePreviewActive } from '../utils/theme'
 import { themeDisplayName } from '../themes'
 import { forkTheme, withOverride, withSeed, withSyntax } from './theme-editor-helpers'
-import { isImeComposing } from '../utils/ime-composing'
+import { useEscapeToClose } from '../hooks'
 
 export { forkTheme, withOverride, withSeed, withSyntax }
 
@@ -149,16 +149,7 @@ export function ThemeEditor({
     onClose()
   }, [settingsThemeId, onClose])
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && !isImeComposing(event)) {
-        event.preventDefault()
-        cancel()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [cancel])
+  useEscapeToClose(true, cancel)
 
   const save = async () => {
     if (draft.name.trim().length === 0) return

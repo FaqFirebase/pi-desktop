@@ -1,6 +1,6 @@
 import { posix as posixPath, win32 as win32Path } from 'node:path'
 import type { DetectedEditor, EditorId } from '../shared/editors'
-import { whichInPath, type ResolutionDeps } from './pi-binary-resolution'
+import { homeDirFromEnv, whichInPath, type ResolutionDeps } from './pi-binary-resolution'
 
 /**
  * How an editor takes a line number: `--goto file:line`, `file:line`,
@@ -202,18 +202,18 @@ export const KNOWN_EDITORS: readonly EditorDefinition[] = [
   },
 ]
 
-function tokenValue(token: string, env: NodeJS.ProcessEnv): string | undefined {
-  if (token === HOME_TOKEN) return env.HOME ?? env.USERPROFILE
+function tokenValue(token: string, env: NodeJS.ProcessEnv, isWindows: boolean): string | undefined {
+  if (token === HOME_TOKEN) return homeDirFromEnv(env, isWindows)
   if (token === LOCALAPPDATA_TOKEN) return env.LOCALAPPDATA
   if (token === PROGRAMFILES_TOKEN) return env.ProgramFiles
   return undefined
 }
 
 /** Fill the tokens of an install path; null when a token's variable is missing or empty. */
-export function expandInstallPath(template: string, env: NodeJS.ProcessEnv): string | null {
+export function expandInstallPath(template: string, env: NodeJS.ProcessEnv, isWindows: boolean): string | null {
   let missing = false
   const expanded = template.replace(INSTALL_PATH_TOKEN_PATTERN, (token) => {
-    const value = tokenValue(token, env)
+    const value = tokenValue(token, env, isWindows)
     if (!value) missing = true
     return value ?? ''
   })
@@ -226,7 +226,7 @@ function findExecutable(deps: ResolutionDeps, editor: EditorDefinition, platform
     if (onPath) return onPath
   }
   for (const template of editor.installPaths[platform] ?? []) {
-    const candidate = expandInstallPath(template, deps.env)
+    const candidate = expandInstallPath(template, deps.env, deps.isWindows)
     if (candidate && deps.exists(candidate) && !deps.isDirectory(candidate)) return candidate
   }
   return null

@@ -88,8 +88,17 @@ export interface PiResolution {
   pathEnv: string
 }
 
-function homeDir(env: NodeJS.ProcessEnv): string {
-  return env.HOME ?? env.USERPROFILE ?? ''
+/**
+ * The home directory as `os.homedir()` reads it, from an injected env so tests
+ * can stand in for another platform: USERPROFILE on Windows, HOME elsewhere.
+ * Undefined when that variable is missing or empty.
+ */
+export function homeDirFromEnv(env: NodeJS.ProcessEnv, isWindows: boolean): string | undefined {
+  return (isWindows ? env.USERPROFILE : env.HOME) || undefined
+}
+
+function homeDir(env: NodeJS.ProcessEnv, isWindows: boolean): string {
+  return homeDirFromEnv(env, isWindows) ?? ''
 }
 
 function pathDelimiterFor(isWindows: boolean): string {
@@ -211,7 +220,7 @@ interface VersionRoot {
 }
 
 function posixVersionRoots(env: NodeJS.ProcessEnv): VersionRoot[] {
-  const home = homeDir(env)
+  const home = homeDir(env, false)
   const fnmDir = env.FNM_DIR ?? ''
   const asdfDir = env.ASDF_DATA_DIR ?? join(home, '.asdf')
   const roots: VersionRoot[] = [
@@ -393,16 +402,15 @@ function ompShimCandidates(deps: ResolutionDeps, prefix: string): string[] {
 
 function ompLocations(deps: ResolutionDeps): string[] {
   const { env } = deps
-  const home = homeDir(env)
+  const home = homeDir(env, deps.isWindows)
   if (deps.isWindows) {
     const appData = env.APPDATA ?? ''
     const localAppData = env.LOCALAPPDATA ?? ''
-    const userProfile = env.USERPROFILE ?? home
     return [
       appData ? join(appData, 'npm', OMP_FALLBACK_BINARY_WINDOWS) : '',
       localAppData ? join(localAppData, 'npm', OMP_FALLBACK_BINARY_WINDOWS) : '',
       localAppData ? join(localAppData, 'omp', OMP_FALLBACK_BINARY_WINDOWS) : '',
-      join(userProfile, '.bun', 'bin', OMP_FALLBACK_BINARY_WINDOWS),
+      join(home, '.bun', 'bin', OMP_FALLBACK_BINARY_WINDOWS),
     ].filter(Boolean)
   }
   return [
@@ -479,7 +487,6 @@ export function isOmpExecutable(script: string): boolean {
 
 function commonLocations(deps: ResolutionDeps): string[] {
   const { env } = deps
-  const home = homeDir(env)
   if (deps.isWindows) {
     const appData = env.APPDATA ?? ''
     const localAppData = env.LOCALAPPDATA ?? ''
@@ -492,6 +499,7 @@ function commonLocations(deps: ResolutionDeps): string[] {
     paths.push(join(programFiles, 'nodejs', PI_CLI_REL))
     return paths
   }
+  const home = homeDir(env, false)
   return [
     join(home, '.npm-global', PI_CLI_REL),
     join(home, '.npm-packages', PI_CLI_REL),

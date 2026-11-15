@@ -6,6 +6,7 @@ import { formatDurationShort } from '../utils/format-duration'
 import { formatRelativeTime } from '../utils/format-relative-time'
 import { formatDecimal, formatPercent } from '../utils/format-number'
 import { useAppStore } from '../store'
+import { useEscapeToClose } from '../hooks'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { invocationToken } from '../../../shared/pi-command'
 import type {
@@ -151,17 +152,12 @@ export function StatusPopover(): React.JSX.Element {
       }
     }
 
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsOpen(false)
-    }
-
     document.addEventListener('mousedown', handleClick)
-    document.addEventListener('keydown', handleEscape)
-    return () => {
-      document.removeEventListener('mousedown', handleClick)
-      document.removeEventListener('keydown', handleEscape)
-    }
+    return () => document.removeEventListener('mousedown', handleClick)
   }, [isOpen])
+
+  const close = useCallback(() => setIsOpen(false), [])
+  useEscapeToClose(isOpen, close)
 
   // Group commands by source
   const extensionCommands = commands.filter((c) => c.source === 'extension')

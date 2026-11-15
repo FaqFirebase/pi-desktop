@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { mock, test } from 'node:test'
-import { mkdir, mkdtemp, readFile, writeFile, access, realpath, symlink } from 'fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, writeFile, access, realpath, symlink } from 'fs/promises'
 import { existsSync } from 'fs'
 import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
-import { basename, join, resolve } from 'path'
+import { basename, dirname, join, resolve } from 'path'
 import {
   WHOLE_WORKSPACE_CHANGE_PATH,
   type AgentEngineKind,
@@ -22,6 +22,8 @@ import { PiRpcManager, setPiExecutableOverride } from './pi-rpc-manager'
 import { isDisposableSessionFile, MAX_LIVE_SESSION_RUNTIMES, WorkspaceManager } from './workspace-manager'
 import { configureSessionClaims, isProcessAlive, SessionClaimStore } from './session-claims'
 import { t } from '../shared/i18n'
+import { appLog } from './app-log'
+import { TEMP_FILE_SUFFIX } from './atomic-file-write'
 
 async function freshDataDir(): Promise<void> {
   configureGuiDataDir(await mkdtemp(join(tmpdir(), 'pi-ws-')))
@@ -97,7 +99,7 @@ async function withManager(fn: (mgr: WorkspaceManager) => Promise<void>): Promis
   try {
     await fn(mgr)
   } finally {
-    mgr.stopAll()
+    await mgr.stopAll()
   }
 }
 
@@ -203,6 +205,87 @@ test('saveWorkspaces writes atomically (no leftover .tmp) and round-trips', asyn
       reloaded.getWorkspaces().some((w) => w.name === 'Alpha'),
       'reloaded manager should see the persisted workspace'
     )
+  })
+})
+
+test('fast tab switches save every time and the last switch wins', async () => {
+  await freshDataDir()
+  const cfg = getGuiDataPath('workspaces.json')
+  const SWITCH_COUNT = 10
+
+  await withManager(async (mgr) => {
+    const alpha = await mgr.createWorkspace('Alpha', await project())
+    const beta = await mgr.createWorkspace('Beta', await project())
+    const saveErrors = mock.method(appLog, 'error')
+    try {
+      await Promise.all(Array.from({ length: SWITCH_COUNT }, (_, index) =>
+        mgr.setActiveWorkspace(index % 2 === 0 ? alpha.id : beta.id)))
+      assert.equal(saveErrors.mock.callCount(), 0, 'no overlapping save may fail')
+    } finally {
+      saveErrors.mock.restore()
+    }
+    const saved = JSON.parse(await readFile(cfg, 'utf-8')) as { activeWorkspaceId: string }
+    assert.equal(saved.activeWorkspaceId, mgr.getActiveWorkspace()?.id)
+    assert.deepEqual((await readdir(dirname(cfg))).filter((name) => name.endsWith(TEMP_FILE_SUFFIX)), [])
+  })
+})
+
+/** Make a workspace's Pi manager hold its stop until the returned release is called. */
+function holdStop(mgr: WorkspaceManager, workspaceId: string): () => void {
+  const manager = mgr.getPiManager(workspaceId)
+  assert.ok(manager, 'each workspace should own a Pi manager')
+  let release!: () => void
+  const stopped = new Promise<void>((resolve) => { release = resolve })
+  manager.stopAndWait = () => stopped
+  return release
+}
+
+test('closing two tabs fast removes exactly those two tabs', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const alpha = await mgr.createWorkspace('Alpha', await project())
+    const beta = await mgr.createWorkspace('Beta', await project())
+    const gamma = await mgr.createWorkspace('Gamma', await project())
+    const releaseBeta = holdStop(mgr, beta.id)
+
+    const closingBeta = mgr.removeWorkspace(beta.id)
+    await mgr.removeWorkspace(alpha.id)
+    releaseBeta()
+    await closingBeta
+
+    assert.deepEqual(mgr.getWorkspaces().map((w) => w.id), [gamma.id])
+  })
+})
+
+test('closing the same tab twice at once removes only that tab, and its worktree once', async () => {
+  await freshDataDir()
+  const repo = await project()
+  await writeFile(join(repo, 'README.md'), 'double close\n', 'utf-8')
+  gitRepo(repo)
+
+  await withManager(async (mgr) => {
+    const source = await mgr.createWorkspace('Repo', repo)
+    const tab = await mgr.createWorktreeWorkspace()
+    const releaseTab = holdStop(mgr, tab.id)
+    const warn = mock.method(appLog, 'warn')
+
+    try {
+      const closes = [mgr.removeWorkspace(tab.id), mgr.removeWorkspace(tab.id)]
+      releaseTab()
+      const [first, second] = await Promise.all(closes)
+
+      assert.deepEqual(mgr.getWorkspaces().map((w) => w.id), [source.id])
+      assert.deepEqual(first, { worktreeRemoved: true }, 'a joined close must not report a preserved worktree')
+      assert.equal(second, first, 'the second close joins the first and gets its result')
+      assert.equal(existsSync(tab.path), false)
+      const preservedWarnings = warn.mock.calls
+        .map((call) => call.arguments)
+        .filter(([scope, message]) => scope === 'workspaces' && String(message).startsWith('Preserved managed worktree'))
+      assert.deepEqual(preservedWarnings, [], 'git worktree remove runs only once')
+    } finally {
+      warn.mock.restore()
+    }
   })
 })
 
@@ -1380,8 +1463,28 @@ test('stopAll stops the watcher', async () => {
     mgr.setFileWatchDemand(true)
     assert.equal(mgr.getWatchedWorkspaceId(), workspace.id)
 
-    mgr.stopAll()
+    await mgr.stopAll()
     assert.equal(mgr.getWatchedWorkspaceId(), null, 'quit must leave no watcher attached')
+  })
+})
+
+test('stopAll settles only after every agent process has stopped', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const alpha = await mgr.createWorkspace('Alpha', await project())
+    const beta = await mgr.createWorkspace('Beta', await project())
+    const releaseAlpha = holdStop(mgr, alpha.id)
+    const releaseBeta = holdStop(mgr, beta.id)
+    let settled = false
+
+    const stopping = mgr.stopAll().then(() => { settled = true })
+    releaseAlpha()
+    await processExits()
+    assert.equal(settled, false, 'quit must wait for the process that is still stopping')
+    releaseBeta()
+    await stopping
+    assert.equal(settled, true)
   })
 })
 
@@ -1487,7 +1590,7 @@ test('a linked task gets one worktree per repository on one branch, and the agen
     const reopened = new WorkspaceManager()
     await reopened.initialize()
     assert.equal(reopened.getWorkspaces().find((item) => item.id === task.id)?.linkedTask?.repos.length, 3)
-    reopened.stopAll()
+    await reopened.stopAll()
 
     // Closing removes the clean worktrees and keeps the one with changes.
     await writeFile(join(lib.workPath, 'edit.txt'), 'work in progress\n', 'utf-8')

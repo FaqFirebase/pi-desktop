@@ -1,14 +1,16 @@
 import { ipcMain } from 'electron'
-import { IPC_CHANNELS, type InstalledSkill } from '../../shared/ipc-contracts'
+import { IPC_CHANNELS, type AgentEngineKind, type InstalledSkill } from '../../shared/ipc-contracts'
 import { isString } from './validation'
 import { readFile } from 'fs/promises'
+import { homedir } from 'os'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import type { IpcContext } from './context'
-import { getPiCli } from '../pi-rpc-manager'
+import { getConfiguredEngineKind, getPiCli } from '../pi-rpc-manager'
 import { listSkills, mergeRpcSkills, readListedSkillFile } from '../skills-discovery'
 import { isPiBuiltInExtensionCommand } from '../../shared/pi-command'
 import { currentOmpProfile, ompAgentDirIn } from '../omp-paths'
+import { getPiAgentDir } from '../pi-paths'
 
 export function registerSkillsMcpHandlers(ctx: IpcContext): void {
   const { workspaceManager } = ctx
@@ -46,7 +48,7 @@ export function registerSkillsMcpHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC_CHANNELS.MCP_SERVERS_LIST, async () => {
     const ws = workspaceManager.getActiveWorkspace()
-    return listMcpServers(ws?.path)
+    return listMcpServers(ws?.path, getConfiguredEngineKind())
   })
 }
 
@@ -83,20 +85,22 @@ interface McpServerInfo {
   status: 'configured' | 'unknown'
 }
 
-async function listMcpServers(wsPath?: string): Promise<McpServerInfo[]> {
+/** The MCP servers `engine` loads, its own config files first. */
+export async function listMcpServers(wsPath: string | undefined, engine: AgentEngineKind): Promise<McpServerInfo[]> {
   const servers: McpServerInfo[] = []
-  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-  const omp = getPiCli().kind === 'omp'
+  const homeDir = homedir()
+  const omp = engine === 'omp'
   // OMP's global MCP servers belong to the profile it runs under (see omp-paths.ts).
   const ompAgentDir = ompAgentDirIn(homeDir, currentOmpProfile())
+  const piSettingsPath = join(getPiAgentDir(), 'settings.json')
   const globalSettingsPaths = omp
     ? [
         join(ompAgentDir, 'mcp.json'),
         join(ompAgentDir, '.mcp.json'),
-        join(homeDir, '.pi', 'agent', 'settings.json'),
+        piSettingsPath,
       ]
     : [
-        join(homeDir, '.pi', 'agent', 'settings.json'),
+        piSettingsPath,
         join(ompAgentDir, 'mcp.json'),
         join(ompAgentDir, '.mcp.json'),
       ]

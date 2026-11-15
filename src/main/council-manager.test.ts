@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import {
   buildConsultantLaunch,
+  CouncilRuns,
   runConsultants,
   runArbiter,
   type ConsultantLaunch,
@@ -252,4 +253,53 @@ test('runArbiter forwards streamed chunks to onProgress', async () => {
     { spawnConsultant: spawn, onProgress: (chunk) => chunks.push(chunk) },
   )
   assert.deepEqual(chunks, ['partial plan'])
+})
+
+test('a cancel aborts every running step of that run and leaves other runs alone', () => {
+  const runs = new CouncilRuns()
+  const consultants = runs.begin('run-1')
+  const arbiter = runs.begin('run-1')
+  const other = runs.begin('run-2')
+  runs.cancel('run-1')
+  assert.equal(consultants.signal.aborted, true)
+  assert.equal(arbiter.signal.aborted, true)
+  assert.equal(other.signal.aborted, false)
+})
+
+test('a run that ended is not cancelled, and a later step of the same run starts fresh', () => {
+  const runs = new CouncilRuns()
+  const first = runs.begin('run-1')
+  first.end()
+  runs.cancel('run-1')
+  assert.equal(first.signal.aborted, false)
+  runs.cancel('run-1')
+  const next = runs.begin('run-1')
+  assert.equal(next.signal.aborted, false)
+})
+
+test('the consultants get the run signal, and a cancelled debate starts no second round', async () => {
+  const controller = new AbortController()
+  const signals: Array<AbortSignal | undefined> = []
+  const spawn: SpawnConsultant = async (id, _prompt, _cwd, _ms, _onChunk, signal) => {
+    signals.push(signal)
+    controller.abort()
+    return { ok: true, output: `PLAN ${id}` }
+  }
+  const results = await runConsultants(
+    { request: 'r', members: ['claude', 'codex'], cwd: '/tmp', timeoutSeconds: 1, consensusMode: 'debate' },
+    { spawnConsultant: spawn, signal: controller.signal },
+  )
+  assert.deepEqual(signals, [controller.signal, controller.signal])
+  assert.deepEqual(results.map((result) => result.plan), ['PLAN claude', 'PLAN codex'])
+})
+
+test('runArbiter passes the run signal to its Pi spawn', async () => {
+  const controller = new AbortController()
+  let received: AbortSignal | undefined
+  const spawn: SpawnConsultant = async (_id, _prompt, _cwd, _ms, _onChunk, signal) => {
+    received = signal
+    return { ok: true, output: 'DONE' }
+  }
+  await runArbiter({ kind: 'merge', request: 'r', results: [] }, '/tmp', 1, { spawnConsultant: spawn, signal: controller.signal })
+  assert.equal(received, controller.signal)
 })

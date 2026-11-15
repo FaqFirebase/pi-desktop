@@ -1,12 +1,14 @@
 import { existsSync } from 'fs'
-import { copyFile, mkdir, readFile, rename, writeFile } from 'fs/promises'
-import { basename, dirname, resolve } from 'path'
+import { copyFile, readFile } from 'fs/promises'
+import { basename, resolve } from 'path'
 import type { RepoFolderInfo, RepoSet, RepoSetDraft, RepoSetMember } from '../shared/ipc-contracts'
 import { pathGroupKey } from '../shared/path-compare'
 import { describeRepoSetDraftProblem, repoSetDraftProblem } from '../shared/repo-set-draft'
 import { t } from '../shared/i18n'
 import { getGuiDataPath } from './app-data-paths'
 import { appLog } from './app-log'
+import { writeJsonFileAtomic } from './atomic-file-write'
+import { createSerialQueue } from './serial-queue'
 import { inspectGitRepository, isMissingRepositoryError, runGit } from './git-worktree'
 
 const REPO_SETS_FILE = 'repo-sets.json'
@@ -87,6 +89,7 @@ export async function resolveRepoSetDraft(draft: RepoSetDraft): Promise<RepoSetD
 /** Saved repo sets, persisted in the GUI data directory. */
 export class RepoSetStore {
   private sets: RepoSet[] | null = null
+  private readonly runFileTask = createSerialQueue()
 
   constructor(private readonly filePath: string = getGuiDataPath(REPO_SETS_FILE)) {}
 
@@ -102,28 +105,39 @@ export class RepoSetStore {
 
   async save(draft: RepoSetDraft): Promise<RepoSet> {
     const resolved = await resolveRepoSetDraft(draft)
-    const sets = await this.load()
-    const now = Date.now()
-    const existing = resolved.id ? sets.find((item) => item.id === resolved.id) : undefined
-    if (resolved.id && !existing) throw new Error(t('repoSets.errors.notFound'))
-    const saved: RepoSet = existing
-      ? { ...existing, name: resolved.name, members: resolved.members, updatedAt: now }
-      : {
-        id: `rs-${now}-${Math.random().toString(36).slice(2, 8)}`,
-        name: resolved.name,
-        members: resolved.members,
-        createdAt: now,
-        updatedAt: now,
-      }
-    this.sets = existing ? sets.map((item) => item.id === saved.id ? saved : item) : [...sets, saved]
-    await this.persist()
-    return saved
+    return this.change((sets) => {
+      const now = Date.now()
+      const existing = resolved.id ? sets.find((item) => item.id === resolved.id) : undefined
+      if (resolved.id && !existing) throw new Error(t('repoSets.errors.notFound'))
+      const saved: RepoSet = existing
+        ? { ...existing, name: resolved.name, members: resolved.members, updatedAt: now }
+        : {
+          id: `rs-${now}-${Math.random().toString(36).slice(2, 8)}`,
+          name: resolved.name,
+          members: resolved.members,
+          createdAt: now,
+          updatedAt: now,
+        }
+      return { sets: existing ? sets.map((item) => item.id === saved.id ? saved : item) : [...sets, saved], result: saved }
+    })
   }
 
   async delete(id: string): Promise<void> {
-    const sets = await this.load()
-    this.sets = sets.filter((item) => item.id !== id)
-    await this.persist()
+    await this.change((sets) => ({ sets: sets.filter((item) => item.id !== id), result: undefined }))
+  }
+
+  /**
+   * Apply `edit` to the current sets and write the result. Changes run one at
+   * a time, so each one starts from the sets the previous one wrote and a fast
+   * second change never drops the first.
+   */
+  private change<T>(edit: (sets: RepoSet[]) => { sets: RepoSet[]; result: T }): Promise<T> {
+    return this.runFileTask(async () => {
+      const { sets, result } = edit(await this.load())
+      this.sets = sets
+      await this.writeSetsFile()
+      return result
+    })
   }
 
   private async load(): Promise<RepoSet[]> {
@@ -144,14 +158,11 @@ export class RepoSetStore {
   }
 
   /** Atomic write with a backup of the last good file, like workspaces.json. */
-  private async persist(): Promise<void> {
+  private async writeSetsFile(): Promise<void> {
     const file: RepoSetsFile = { version: REPO_SETS_FILE_VERSION, sets: this.sets ?? [] }
     try {
-      await mkdir(dirname(this.filePath), { recursive: true })
       if (existsSync(this.filePath)) await copyFile(this.filePath, `${this.filePath}.bak`)
-      const tmpPath = `${this.filePath}.tmp`
-      await writeFile(tmpPath, JSON.stringify(file, null, 2), 'utf-8')
-      await rename(tmpPath, this.filePath)
+      await writeJsonFileAtomic(this.filePath, file)
     } catch (error) {
       appLog.error('repo-sets', 'Failed to save repo-sets.json', error)
       throw error

@@ -105,7 +105,6 @@
       "insertHint": "↑↓ navigate · Enter/Tab insert path · Esc close"
     },
     "message": {
-      "branchedFrom": "Branched from: \"{{excerpt}}\"",
       "branchFromHere": "Branch from here",
       "editAndResend": "Edit & resend",
       "stopped": "Stopped"
@@ -150,6 +149,7 @@
       "files_one": "{{count}} file",
       "files_other": "{{count}} files",
       "held": "Paused. Your next message, or Send now, starts it again",
+      "heldOffScreen": "Paused while you were away. Press Send now to send it",
       "next": "Sends when the agent finishes",
       "sendNow": "Send now",
       "sendNowHint": "Send this message into the running turn now",
@@ -638,6 +638,7 @@
       "agentNotFound": "{{agent}} was not found. Install it, or remove it from the council members in Settings.",
       "arbiterFailed": "Arbiter failed",
       "arbiterTimedOut": "Arbiter timed out",
+      "cancelled": "Council run cancelled",
       "notEnoughMembers": "Council needs at least {{min}} agents. Install or enable Pi, Claude, or Codex, or turn the council off.",
       "planningDisabled": "Council planning is disabled in Settings.",
       "timeoutNotNumber": "Council timeout must be a finite number",
@@ -738,6 +739,9 @@
       "pathMustExist": "{{field}} must point to an existing Pi session file",
       "projectMismatch": "Session project does not match the active workspace",
       "runtimeNotFound": "Session runtime not found: {{runtimeId}}"
+    },
+    "settings": {
+      "unreadable": "The settings were not saved: \"{{path}}\" cannot be read. Fix or remove that file, then save again."
     },
     "system": {
       "externalUrlHttpOnly": "Only http(s) URLs are allowed"
@@ -1650,6 +1654,11 @@
       "description": "Chat, panels, and sidebar — not the terminal or code editor",
       "label": "UI Font Size"
     },
+    "unreadableFile": {
+      "detail": "File: {{path}}\n\nFix this file, or remove it to start again with the default settings.",
+      "message": "{{product}} cannot read its settings file. It uses the default settings, and it cannot save changes to settings.",
+      "title": "Settings file problem"
+    },
     "voice": {
       "device": {
         "auto": "Auto",
@@ -1969,23 +1978,26 @@
       "cannotActivateSession": "Cannot activate session",
       "cannotCreateSession": "Cannot create session",
       "changeFolderError": "Change folder error: {{detail}}",
+      "cloneError": "Could not clone the session: {{detail}}",
       "closeSessionError": "Close session error: {{detail}}",
       "compactingContext": "Compacting context ({{reason}})...",
       "compactionAborted": "Compaction aborted.",
       "contextCompacted": "Context compacted.",
       "councilFailed": "Council failed: {{detail}}",
       "councilNoQuorum": "No consultant produced a plan (all timed out or errored). Council aborted.",
+      "councilOpenElsewhere": "A council run is open in another chat. Approve or cancel it there first.",
       "createWorkspaceError": "Create workspace error: {{detail}}",
       "defaultTaskLabel": "Task",
       "deleteError": "Delete error: {{detail}}",
       "editedSessionName": "{{title}} (edited)",
-      "editNotInSession": "The saved session does not contain this message.",
       "editResendError": "Could not edit and resend the message: {{detail}}",
       "error": "Error: {{detail}}",
       "followUpError": "Follow-up error: {{detail}}",
+      "forkError": "Could not branch the session: {{detail}}",
       "imageFallbackName": "Image {{index}}",
       "installedPackage": "Installed {{spec}}. Restart Pi to load it.",
       "installFailed": "Install failed",
+      "messageNotInSession": "The saved session does not contain this message.",
       "modelError": "Model error: {{detail}}",
       "modelsFileNotLoaded": "The models file has not loaded yet. Try again.",
       "newIsolatedTabError": "New isolated tab error: {{detail}}",

@@ -37,7 +37,7 @@ import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { VOICE_PROTOCOL_SCHEME, handleVoiceProtocolRequest } from './voice-protocol'
 import { getVoiceModelsDir } from './voice-model-store'
 import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
-import { applyOmpLaunchArgs, getSettingsPath } from './ipc/settings'
+import { applyOmpLaunchArgs, getSettingsPath, onUnreadableSettings } from './ipc/settings'
 import { isAppWindowSender, restrictIpcToAppWindows } from './ipc-sender-guard'
 import { disableCwdExecutableSearch } from './windows-exe-search'
 import { WINDOW_BACKGROUND_COLOR } from './window-appearance'
@@ -156,6 +156,39 @@ async function confirmCrashReload(window: BrowserWindow, reason: string): Promis
   })
   return response === 0
 }
+
+/** Main windows past their first paint, so a dialog can be parented to them. */
+const paintedWindows = new WeakSet<BrowserWindow>()
+/** Unreadable settings files found before the main window was painted. */
+let pendingSettingsNotices: string[] = []
+
+/** The settings file cannot be read: say where it is and what to do. */
+function showUnreadableSettingsNotice(window: BrowserWindow, settingsPath: string): void {
+  showWindowForDialog(window)
+  void dialog.showMessageBox(window, {
+    type: 'warning',
+    title: t('settings.unreadableFile.title'),
+    message: t('settings.unreadableFile.message', { product: PI_DESKTOP_PRODUCT_NAME }),
+    detail: t('settings.unreadableFile.detail', { path: settingsPath }),
+    buttons: [t('common.dismiss')],
+  })
+}
+
+/** Startup finds the file before the window (and its language) exist, so it waits. */
+function noticeUnreadableSettings(settingsPath: string): void {
+  const window = mainWindow
+  if (window && !window.isDestroyed() && paintedWindows.has(window)) showUnreadableSettingsNotice(window, settingsPath)
+  else pendingSettingsNotices.push(settingsPath)
+}
+
+function showPendingSettingsNotices(window: BrowserWindow): void {
+  paintedWindows.add(window)
+  const paths = pendingSettingsNotices
+  pendingSettingsNotices = []
+  for (const settingsPath of paths) showUnreadableSettingsNotice(window, settingsPath)
+}
+
+onUnreadableSettings(noticeUnreadableSettings)
 
 function reloadAfterCrash(window: BrowserWindow): void {
   if (window.isDestroyed()) return
@@ -321,6 +354,7 @@ function createMainWindow(): BrowserWindow {
       window.show()
       window.focus()
     }
+    showPendingSettingsNotices(window)
   })
 
   // Minimize-to-tray: when enabled (Windows/Linux), a window close hides the
@@ -674,7 +708,8 @@ app.whenReady().then(async () => {
     tooltip: windowTitle(app.getName(), windowHints),
     hasSeenHint: settings.hasSeenTrayHint,
     onHintShown: () => {
-      void saveAppSettings({ hasSeenTrayHint: true })
+      // saveAppSettings logs a failed save; the hint shows again next time.
+      void saveAppSettings({ hasSeenTrayHint: true }).catch(() => {})
     },
     toggleQuickChat: toggleQuickChatWindow,
   })
@@ -731,8 +766,11 @@ app.on('before-quit', (event) => {
 app.on('will-quit', (event) => {
   if (!shutdownComplete) {
     event.preventDefault()
-    // The executor turns a synchronous stopAll() throw into a rejection, so a
-    // failed teardown is logged and the quit still resumes instead of hanging.
+    // stopAll() waits a bounded time for each agent to exit, then force-kills
+    // every stopped process tree still alive. See process-tree-kill.ts for
+    // what that reaches on each platform.
+    // The executor turns a synchronous throw into a rejection, so a failed
+    // teardown is logged and the quit still resumes instead of hanging.
     shutdownPending ??= new Promise<void>((resolve) => resolve(workspaceManager?.stopAll()))
       .catch((error) => appLog.warn('app', 'Failed to stop workspaces on quit', error))
       .then(() => {

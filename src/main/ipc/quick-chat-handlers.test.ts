@@ -69,7 +69,7 @@ async function withBridge(run: (fixture: BridgeFixture) => Promise<void>): Promi
   const wm = new WorkspaceManager()
   await wm.initialize()
   try { await run(await fixture(wm, root)) } finally {
-    wm.stopAll()
+    await wm.stopAll()
     electronModule.exports = originalExports
     await rm(root, { recursive: true, force: true })
   }
@@ -526,7 +526,7 @@ test('pickWorkspace on a fresh manager creates the first workspace without activ
     assert.equal(fresh.getActiveWorkspace(), null, 'the very first picker folder is not auto-activated')
     assert.ok(fresh.getWorkspaces().some((ws) => ws.id === picked.id))
   } finally {
-    fresh.stopAll()
+    await fresh.stopAll()
     await rm(root, { recursive: true, force: true })
   }
 })

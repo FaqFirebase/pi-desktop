@@ -1,14 +1,17 @@
+import { homedir } from 'os'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { t } from '../shared/i18n'
 import type { AgentEngineKind, ModelsConfig, ModelsReadFailure } from '../shared/ipc-contracts'
 import { currentOmpProfile, ompAgentDirIn } from './omp-paths'
+import { getPiAgentDir } from './pi-paths'
 
 /**
  * Per-engine custom-models file resolution and (de)serialization.
  *
- * Pi keeps `~/.pi/agent/models.json` (JSON). OMP 18 moved to
+ * Pi keeps `~/.pi/agent/models.json` (JSON; the agent directory moves with
+ * `PI_CODING_AGENT_DIR`, see pi-paths.ts). OMP 18 moved to
  * `~/.omp/agent/models.yml` (YAML; `.yaml` also accepted). OMP migrates a
  * legacy `models.json` on startup, but only while no YAML file exists yet, so
  * until OMP has run once after an upgrade the GUI keeps reading and writing
@@ -31,7 +34,7 @@ export interface ModelsFileLocation {
 export const OMP_MODELS_BASENAMES = ['models.yml', 'models.yaml'] as const
 export const PI_MODELS_BASENAME = 'models.json'
 
-export function resolveModelsFile(engine: AgentEngineKind, homeDir: string): ModelsFileLocation {
+export function resolveModelsFile(engine: AgentEngineKind, homeDir: string = homedir()): ModelsFileLocation {
   if (engine === 'omp') {
     // The profile OMP runs under (see omp-paths.ts) has its own models file.
     const dir = ompAgentDirIn(homeDir, currentOmpProfile())
@@ -43,7 +46,7 @@ export function resolveModelsFile(engine: AgentEngineKind, homeDir: string): Mod
     const name = OMP_MODELS_BASENAMES[0]
     return { dir, file: join(dir, name), name, format: 'yaml' }
   }
-  const dir = join(homeDir, '.pi', 'agent')
+  const dir = getPiAgentDir(homeDir)
   return { dir, file: join(dir, PI_MODELS_BASENAME), name: PI_MODELS_BASENAME, format: 'json' }
 }
 

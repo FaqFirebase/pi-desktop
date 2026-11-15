@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdir, mkdtemp, readFile, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join, resolve } from 'path'
 import { tmpdir } from 'os'
@@ -37,6 +37,37 @@ test('getLegacyGuiDataDirs lists home and electron legacy dirs', () => {
       '/home/test/.config/pi-desktop-gui',
     ]
   )
+})
+
+test('getLegacyGuiDataDirs also checks HOME when it differs from the home directory', () => {
+  // Windows with Git Bash or MSYS: os.homedir() is USERPROFILE, but earlier
+  // versions read HOME first and may have written the legacy folder there.
+  assert.deepEqual(
+    getLegacyGuiDataDirs({ homeDir: 'C:/Users/test', envHomeDir: 'D:/msys/home/test' }),
+    ['D:/msys/home/test/.pi-desktop-gui', 'C:/Users/test/.pi-desktop-gui'],
+  )
+  assert.deepEqual(
+    getLegacyGuiDataDirs({ homeDir: '/home/test', envHomeDir: '/home/test' }),
+    ['/home/test/.pi-desktop-gui'],
+    'one home is listed once',
+  )
+})
+
+test('migrateLegacyGuiData finds legacy data under HOME when the home directory differs', async () => {
+  const tmp = await mkdtemp(join(tmpdir(), 'pi-desktop-app-data-'))
+  const homeDir = join(tmp, 'profile')
+  const envHomeDir = join(tmp, 'msys-home')
+  const userDataDir = join(tmp, 'config', 'pi-desktop')
+  const legacySettings = join(envHomeDir, '.pi-desktop-gui', 'settings.json')
+  await mkdir(join(legacySettings, '..'), { recursive: true })
+  await writeFile(legacySettings, '{"theme":"light"}', 'utf-8')
+
+  try {
+    await migrateLegacyGuiData({ homeDir, envHomeDir, userDataDir, files: ['settings.json'] })
+    assert.equal(await readFile(getGuiDataPath('settings.json', { userDataDir }), 'utf-8'), '{"theme":"light"}')
+  } finally {
+    await rm(tmp, { recursive: true, force: true })
+  }
 })
 
 test('getExternalGuiDataDir returns the externally-set override as an absolute path', () => {

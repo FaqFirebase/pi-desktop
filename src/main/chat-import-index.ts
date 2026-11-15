@@ -4,6 +4,7 @@ import type { AgentEngineKind } from '../shared/ipc-contracts'
 import type { ChatImportSource } from '../shared/chat-import'
 import { getGuiDataPath } from './app-data-paths'
 import { writeJsonFileAtomic } from './atomic-file-write'
+import { createSerialQueue } from './serial-queue'
 
 /**
  * Chats already imported, per engine, in the GUI data dir. A chat counts as
@@ -41,8 +42,14 @@ function parseEntries(value: unknown): Record<string, ChatImportIndexEntry> {
 
 export class ChatImportIndex {
   private loading: Promise<Record<string, ChatImportIndexEntry>> | null = null
+  // Parallel imports record at once: each write must start after the one
+  // before it, or a slower rename of an older snapshot drops a newer entry.
+  private readonly writes = createSerialQueue()
 
-  constructor(private readonly filePath: string = getGuiDataPath(CHAT_IMPORT_INDEX_FILE)) {}
+  constructor(
+    private readonly filePath: string = getGuiDataPath(CHAT_IMPORT_INDEX_FILE),
+    private readonly writeIndex: (path: string, value: ChatImportIndexFile) => Promise<void> = writeJsonFileAtomic,
+  ) {}
 
   /** The written session path when the key is indexed and that file still exists. */
   async importedPath(key: string): Promise<string | null> {
@@ -50,11 +57,13 @@ export class ChatImportIndex {
     return entry && existsSync(entry.sessionPath) ? entry.sessionPath : null
   }
 
-  async record(key: string, sessionPath: string): Promise<void> {
-    const entries = await this.load()
-    entries[key] = { sessionPath, importedAt: Date.now() }
-    const file: ChatImportIndexFile = { version: CHAT_IMPORT_INDEX_VERSION, entries }
-    await writeJsonFileAtomic(this.filePath, file)
+  record(key: string, sessionPath: string): Promise<void> {
+    return this.writes(async () => {
+      const entries = await this.load()
+      entries[key] = { sessionPath, importedAt: Date.now() }
+      const file: ChatImportIndexFile = { version: CHAT_IMPORT_INDEX_VERSION, entries }
+      await this.writeIndex(this.filePath, file)
+    })
   }
 
   private load(): Promise<Record<string, ChatImportIndexEntry>> {

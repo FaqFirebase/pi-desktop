@@ -14,11 +14,6 @@ import {
 import { activeEngineKind } from './active-engine'
 import type { IpcContext } from './context'
 
-function modelsFileLocation(engine: AgentEngineKind): ModelsFileLocation {
-  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-  return resolveModelsFile(engine, homeDir)
-}
-
 function fileInfo(engine: AgentEngineKind, location: ModelsFileLocation): ModelsFileInfo {
   return { engine, file: location.file, name: location.name }
 }
@@ -33,7 +28,7 @@ function failed(
 }
 
 export async function readModelsConfigFile(engine: AgentEngineKind): Promise<ModelsReadResult> {
-  const location = modelsFileLocation(engine)
+  const location = resolveModelsFile(engine)
   const info = fileInfo(engine, location)
   if (!existsSync(location.file)) return { config: { providers: {} }, location: info }
   let raw: string
@@ -74,7 +69,7 @@ export function registerModelsConfigHandlers(ctx: IpcContext): void {
     if (!isAgentEngineKind(engine)) {
       return { success: false, error: 'Invalid models engine' }
     }
-    const location = modelsFileLocation(engine)
+    const location = resolveModelsFile(engine)
     try {
       if (!existsSync(location.dir)) await mkdir(location.dir, { recursive: true })
       await writeFile(location.file, serializeModelsFile(config, location.format), 'utf-8')

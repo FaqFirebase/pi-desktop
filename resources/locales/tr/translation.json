@@ -105,7 +105,6 @@
       "insertHint": "↑↓ gezin · Enter/Tab yolu ekle · Esc kapat"
     },
     "message": {
-      "branchedFrom": "Dallanılan mesaj: \"{{excerpt}}\"",
       "branchFromHere": "Buradan dallan",
       "editAndResend": "Düzenle ve yeniden gönder",
       "stopped": "Durduruldu"
@@ -150,6 +149,7 @@
       "files_one": "{{count}} dosya",
       "files_other": "{{count}} dosya",
       "held": "Duraklatıldı. Sonraki mesaj ya da Şimdi gönder kuyruğu yeniden başlatır",
+      "heldOffScreen": "Siz yokken duraklatıldı. Göndermek için Şimdi gönder'e basın",
       "next": "Ajan bitirince gönderilir",
       "sendNow": "Şimdi gönder",
       "sendNowHint": "Bu mesajı çalışan tura hemen gönder",
@@ -638,6 +638,7 @@
       "agentNotFound": "{{agent}} bulunamadı. Kurun ya da Ayarlar'daki konsey üyelerinden çıkarın.",
       "arbiterFailed": "Hakem başarısız oldu",
       "arbiterTimedOut": "Hakem zaman aşımına uğradı",
+      "cancelled": "Konsey çalışması iptal edildi",
       "notEnoughMembers": "Konsey için en az {{min}} ajan gerekir. Pi, Claude veya Codex'i kurun ya da etkinleştirin veya konseyi kapatın.",
       "planningDisabled": "Konsey planlaması Ayarlar'da devre dışı.",
       "timeoutNotNumber": "Konsey zaman aşımı sonlu bir sayı olmalı",
@@ -738,6 +739,9 @@
       "pathMustExist": "{{field}} var olan bir Pi oturum dosyasını göstermeli",
       "projectMismatch": "Oturumun projesi etkin çalışma alanıyla eşleşmiyor",
       "runtimeNotFound": "Oturum çalışma zamanı bulunamadı: {{runtimeId}}"
+    },
+    "settings": {
+      "unreadable": "Ayarlar kaydedilmedi: \"{{path}}\" okunamıyor. Bu dosyayı düzeltin veya kaldırın, sonra yeniden kaydedin."
     },
     "system": {
       "externalUrlHttpOnly": "Yalnız http(s) URL'lerine izin verilir"
@@ -1650,6 +1654,11 @@
       "description": "Sohbet, paneller ve kenar çubuğu; terminal ve kod düzenleyici hariç",
       "label": "Arayüz yazı tipi boyutu"
     },
+    "unreadableFile": {
+      "detail": "Dosya: {{path}}\n\nBu dosyayı düzeltin veya varsayılan ayarlarla yeniden başlamak için kaldırın.",
+      "message": "{{product}} ayarlar dosyasını okuyamıyor. Varsayılan ayarlar kullanılıyor ve ayar değişiklikleri kaydedilemiyor.",
+      "title": "Ayarlar dosyası sorunu"
+    },
     "voice": {
       "device": {
         "auto": "Otomatik",
@@ -1969,23 +1978,26 @@
       "cannotActivateSession": "Oturum etkinleştirilemiyor",
       "cannotCreateSession": "Oturum oluşturulamıyor",
       "changeFolderError": "Klasör değiştirme hatası: {{detail}}",
+      "cloneError": "Oturum kopyalanamadı: {{detail}}",
       "closeSessionError": "Oturum kapatma hatası: {{detail}}",
       "compactingContext": "Bağlam sıkıştırılıyor ({{reason}})...",
       "compactionAborted": "Sıkıştırma durduruldu.",
       "contextCompacted": "Bağlam sıkıştırıldı.",
       "councilFailed": "Konsey başarısız oldu: {{detail}}",
       "councilNoQuorum": "Hiçbir danışman plan üretmedi (hepsi zaman aşımına uğradı ya da hata verdi). Konsey durduruldu.",
+      "councilOpenElsewhere": "Başka bir sohbette açık bir konsey çalışması var. Önce orada onaylayın ya da iptal edin.",
       "createWorkspaceError": "Çalışma alanı oluşturma hatası: {{detail}}",
       "defaultTaskLabel": "Görev",
       "deleteError": "Silme hatası: {{detail}}",
       "editedSessionName": "{{title}} (düzenlendi)",
-      "editNotInSession": "Kaydedilmiş oturum bu mesajı içermiyor.",
       "editResendError": "Mesaj düzenlenip yeniden gönderilemedi: {{detail}}",
       "error": "Hata: {{detail}}",
       "followUpError": "Ek mesaj hatası: {{detail}}",
+      "forkError": "Oturum dallandırılamadı: {{detail}}",
       "imageFallbackName": "Görsel {{index}}",
       "installedPackage": "{{spec}} kuruldu. Yüklemek için Pi'yi yeniden başlatın.",
       "installFailed": "Kurulum başarısız",
+      "messageNotInSession": "Kaydedilmiş oturum bu mesajı içermiyor.",
       "modelError": "Model hatası: {{detail}}",
       "modelsFileNotLoaded": "Model dosyası henüz yüklenmedi. Yeniden deneyin.",
       "newIsolatedTabError": "Yeni yalıtılmış sekme hatası: {{detail}}",

@@ -83,3 +83,21 @@ test('records at once share one load and keep every entry', async () => {
     assert.deepEqual(await readdir(dir), ['chat-imports.json', 'session.jsonl'])
   })
 })
+
+/** The first write lands this long after it starts; later ones land at once. */
+const SLOW_FIRST_WRITE_MS = 50
+
+test('a slow earlier write never lands over a newer record', async () => {
+  // Each write saves the snapshot it was given; the first one is the slowest,
+  // so writes that run side by side would end with the older snapshot.
+  let landed: string[] = []
+  let writes = 0
+  const write = async (_path: string, value: { entries: Record<string, unknown> }): Promise<void> => {
+    const snapshot = Object.keys(value.entries).sort()
+    if (writes++ === 0) await new Promise((resolve) => setTimeout(resolve, SLOW_FIRST_WRITE_MS))
+    landed = snapshot
+  }
+  const index = new ChatImportIndex(join(tmpdir(), 'pi-chat-import-missing', 'chat-imports.json'), write)
+  await Promise.all([index.record('pi:codex:a', 'a.jsonl'), index.record('pi:codex:b', 'b.jsonl')])
+  assert.deepEqual(landed, ['pi:codex:a', 'pi:codex:b'])
+})

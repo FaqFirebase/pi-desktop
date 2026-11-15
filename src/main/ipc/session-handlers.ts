@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, shell } from 'electron'
 import { isDisposableSessionFile, WorkspaceManager } from '../workspace-manager'
 import { engineForSessionPath, getSessionRoots, isWithinSessionRoots } from '../pi-paths'
 import {
@@ -22,12 +22,12 @@ import { selectListedSessions } from '../pinned-sessions'
 import type { SessionTimestampMap } from '../session-timestamp-store'
 import type { SessionDeleteResult, SessionListItem, SessionRuntimeCloseResult, SessionRuntimeInfo } from '../../shared/ipc-contracts'
 import { IPC_CHANNELS } from '../../shared/ipc-contracts'
-import { readdir, stat, unlink } from 'fs/promises'
+import { readdir, stat } from 'fs/promises'
 import { basename, join, resolve } from 'path'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
 import { isOpenableSessionFolder } from '../open-path-policy'
-import { moveToTrash } from '../session-trash'
+import { deleteSessionFile, type TrashItem } from '../session-trash'
 import { assertTrustedSender, isObject, isString } from './validation'
 import { ensureSessionRuntimeStarted, readRuntimeMessages } from './session-runtime-io'
 import { loadAppSettings } from './settings'
@@ -36,35 +36,8 @@ import { t } from '../../shared/i18n'
 
 const MAX_SESSION_LIST = 100
 
-/**
- * Delete a session file. Mirrors Pi's own session-selector deletion path:
- * move it to the desktop trash (recoverable), and only destroy it with
- * `unlink` when no trash helper is available — see session-trash.ts for why
- * more than one helper is tried.
- *
- * Why this lives in the GUI and not in Pi: Pi's RPC mode exposes no
- * delete_session command (verified against pi.dev/docs/latest/rpc).
- * The official guidance is "Sessions can be removed by deleting their
- * .jsonl files" — that's what this does.
- */
-async function deleteSessionFile(sessionPath: string): Promise<SessionDeleteResult> {
-  // The second test covers a helper that moved the file but still reported a
-  // non-zero status; the session is in the trash either way, not destroyed.
-  if (moveToTrash(sessionPath) || !existsSync(sessionPath)) {
-    return { ok: true, method: 'trash' }
-  }
-
-  try {
-    await unlink(sessionPath)
-    return { ok: true, method: 'unlink' }
-  } catch (err) {
-    return {
-      ok: false,
-      method: 'unlink',
-      error: err instanceof Error ? err.message : String(err),
-    }
-  }
-}
+/** Electron's trash for the session store: the Recycle Bin, the Trash, or the Linux desktop trash. */
+const trashSessionFile: TrashItem = (sessionPath) => shell.trashItem(sessionPath)
 
 export function registerSessionHandlers(ctx: IpcContext): void {
   const { workspaceManager, getActivePi, tagManager, archivedSessions, pinnedSessions, unreadSessions } = ctx
@@ -140,7 +113,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     // and nothing else. isDisposableSessionFile carries the full rule.
     if (isDisposableSessionFile(result)) {
       activityStatsStore.captureBeforeDelete(result.sessionPath)
-      const deleteResult = await deleteSessionFile(result.sessionPath)
+      const deleteResult = await deleteSessionFile(result.sessionPath, trashSessionFile)
       deleted = deleteResult.ok
       if (deleted) await forgetSessionRegistries(sessionIdFromPath(result.sessionPath))
     }
@@ -321,7 +294,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     // file, so its activity survives the deletion (see activity-stats.ts).
     activityStatsStore.captureBeforeDelete(sessionPath)
 
-    const result = await deleteSessionFile(sessionPath)
+    const result = await deleteSessionFile(sessionPath, trashSessionFile)
     if (result.ok) await forgetSessionRegistries(sessionIdFromPath(sessionPath))
     return { ...result, replacementSessionPath: closed?.replacementSessionPath ?? null }
   })

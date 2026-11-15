@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron'
+import { homedir } from 'os'
 import { setPiExecutableOverride } from '../pi-rpc-manager'
 import { WorkspaceManager } from '../workspace-manager'
 import { getGuiDataPath } from '../app-data-paths'
@@ -15,11 +16,13 @@ import { applyRunOnStartup, runOnStartupAvailable } from '../startup-launch'
 import { setOmpLaunchArgs } from '../omp-paths'
 import { setTrayEnabled } from '../tray-manager'
 import { applyKeepAwakeMode } from '../keep-awake-service'
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import { join } from 'path'
+import { readFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { isObject } from './validation'
 import { appLog } from '../app-log'
+import { writeJsonFileAtomic } from '../atomic-file-write'
+import { createSerialQueue } from '../serial-queue'
+import { t } from '../../shared/i18n'
 import type { IpcContext } from './context'
 
 // ─── App Settings Persistence ────────────────────────────────────────────────
@@ -31,43 +34,68 @@ export function getSettingsPath(): string {
   return getGuiDataPath(SETTINGS_FILE_NAME)
 }
 
-export async function loadAppSettings(workspaceManager: WorkspaceManager): Promise<AppSettings> {
+// Every save reads, merges and writes settings.json; running them one at a
+// time makes each save merge onto the file the previous save wrote.
+const runSettingsFileTask = createSerialQueue()
+
+/** Told when settings.json exists but cannot be read; see onUnreadableSettings. */
+export type UnreadableSettingsListener = (settingsPath: string) => void
+
+let unreadableSettingsListener: UnreadableSettingsListener | null = null
+/** Files the listener has been told about, so a user learns of each once per run. */
+const reportedUnreadableSettings = new Set<string>()
+
+/**
+ * Register the one listener that tells the user their settings file cannot
+ * be read. Every load then falls back to the defaults and every save is
+ * refused, and several callers ignore a refused save, so without this the
+ * user would see settings that do not stick and no reason why.
+ */
+export function onUnreadableSettings(listener: UnreadableSettingsListener): void {
+  unreadableSettingsListener = listener
+}
+
+function reportUnreadableSettings(settingsPath: string, err: unknown): void {
+  if (reportedUnreadableSettings.has(settingsPath)) return
+  reportedUnreadableSettings.add(settingsPath)
+  appLog.error('settings', `Cannot read ${settingsPath}; using the default settings`, err)
+  unreadableSettingsListener?.(settingsPath)
+}
+
+/**
+ * The stored settings object, or null when there is no settings file. A file
+ * that exists but does not hold a settings object throws, and the user is
+ * told once.
+ */
+async function readStoredSettings(settingsPath: string): Promise<Record<string, unknown> | null> {
+  if (!existsSync(settingsPath)) return null
   try {
-    const settingsPath = getSettingsPath()
-    if (existsSync(settingsPath)) {
-      const data = await readFile(settingsPath, 'utf-8')
-      return normalizeStoredSettings(JSON.parse(data), availableLanguages(isPseudoLanguageEnabled()))
-    }
+    const stored: unknown = JSON.parse(await readFile(settingsPath, 'utf-8'))
+    if (!isObject(stored)) throw new TypeError('settings.json does not hold an object')
+    return stored
+  } catch (err) {
+    reportUnreadableSettings(settingsPath, err)
+    throw new Error(t('errors.settings.unreadable', { path: settingsPath }), { cause: err })
+  }
+}
+
+export async function loadAppSettings(workspaceManager: WorkspaceManager): Promise<AppSettings> {
+  // Wait for the saves queued before this load, so a caller reads its own save.
+  await runSettingsFileTask(async () => undefined)
+  try {
+    const stored = await readStoredSettings(getSettingsPath())
+    if (stored) return normalizeStoredSettings(stored, availableLanguages(isPseudoLanguageEnabled()))
   } catch {
-    // Fall through to defaults
+    // Fall through to defaults; readStoredSettings has told the user.
   }
 
   return {
     ...DEFAULT_SETTINGS,
-    defaultCwd: workspaceManager.getActiveWorkspace()?.path ?? (process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()),
+    defaultCwd: workspaceManager.getActiveWorkspace()?.path ?? homedir(),
   }
 }
 
-export async function saveAppSettings(settings: Partial<AppSettings>): Promise<void> {
-  const settingsPath = getSettingsPath()
-  const dir = join(settingsPath, '..')
-
-  if (!existsSync(dir)) {
-    await mkdir(dir, { recursive: true })
-  }
-
-  // Merge with existing
-  let existing: AppSettings = { ...DEFAULT_SETTINGS }
-  try {
-    if (existsSync(settingsPath)) {
-      const data = await readFile(settingsPath, 'utf-8')
-      existing = { ...DEFAULT_SETTINGS, ...JSON.parse(data) }
-    }
-  } catch {
-    // Use defaults
-  }
-
-  const merged = { ...existing, ...settings }
+async function mergeIntoSettingsFile(settings: Partial<AppSettings>): Promise<void> {
   if ('shortcuts' in settings) {
     if (!settings.shortcuts || typeof settings.shortcuts !== 'object' || Array.isArray(settings.shortcuts)) {
       throw new Error('Invalid keyboard shortcuts')
@@ -75,14 +103,22 @@ export async function saveAppSettings(settings: Partial<AppSettings>): Promise<v
     const problem = shortcutProblem(settings.shortcuts, process.platform)
     if (problem) throw new Error(`Invalid keyboard shortcut: ${problem.action} (${problem.kind})`)
   }
+  const settingsPath = getSettingsPath()
   try {
-    await writeFile(settingsPath, JSON.stringify(merged, null, 2), 'utf-8')
+    // A file that exists but cannot be read is refused: writing over it would
+    // replace every setting the user has with the defaults.
+    const existing = await readStoredSettings(settingsPath)
+    await writeJsonFileAtomic(settingsPath, { ...DEFAULT_SETTINGS, ...existing, ...settings })
   } catch (err) {
     // Still propagate to the caller (the Settings panel surfaces it); the log
     // keeps a trace for diagnostics in packaged builds.
     appLog.error('settings', 'Failed to save settings.json', err)
     throw err
   }
+}
+
+export function saveAppSettings(settings: Partial<AppSettings>): Promise<void> {
+  return runSettingsFileTask(() => mergeIntoSettingsFile(settings))
 }
 
 /**

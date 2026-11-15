@@ -176,6 +176,7 @@ export const IPC_CHANNELS = {
   COUNCIL_DETECT: 'council:detect',
   COUNCIL_RUN_CONSULTANTS: 'council:run-consultants',
   COUNCIL_ARBITER: 'council:arbiter',
+  COUNCIL_CANCEL: 'council:cancel',
 
   // File operations
   FILE_TREE: 'file:tree',
@@ -1246,10 +1247,14 @@ export interface CouncilDetectResult {
 
 /**
  * Request payload for COUNCIL_RUN_CONSULTANTS. The working directory is NOT
- * part of the payload: the main process resolves it from the active workspace,
- * so consultants always run against the real project tree.
+ * part of the payload: the main process resolves it from `workspaceId`, the
+ * registered workspace the run started in, so consultants always run against
+ * that project's tree even when the user switches away meanwhile.
  */
 export interface CouncilRunRequest {
+  /** The renderer's id of the run; main tags the run's progress events with it. */
+  runId: string
+  workspaceId: string
   request: string
   members: CouncilAgentIdType[]
   timeoutSeconds: number
@@ -1264,12 +1269,20 @@ export interface CouncilRunResult {
 /**
  * Request payload for COUNCIL_ARBITER. Pi merges (`merge`) or revises (`revise`)
  * the consensus plan in an isolated read-only subprocess. As with
- * COUNCIL_RUN_CONSULTANTS, the working directory is resolved from the active
- * workspace in the main process, never from the renderer.
+ * COUNCIL_RUN_CONSULTANTS, the main process resolves the working directory
+ * from the run's registered workspace, never from a renderer path.
  */
 export type CouncilArbiterRequest =
-  | { kind: 'merge'; request: string; results: ConsultantResultType[]; timeoutSeconds: number }
-  | { kind: 'revise'; request: string; plan: string; feedback: string; timeoutSeconds: number }
+  | { kind: 'merge'; runId: string; workspaceId: string; request: string; results: ConsultantResultType[]; timeoutSeconds: number }
+  | { kind: 'revise'; runId: string; workspaceId: string; request: string; plan: string; feedback: string; timeoutSeconds: number }
+
+/**
+ * Request payload for COUNCIL_CANCEL: stop the consultant and arbiter
+ * processes of that run, so a run the user left spends no more model credits.
+ */
+export interface CouncilCancelRequest {
+  runId: string
+}
 
 /** Result of COUNCIL_ARBITER: the merged or revised consensus plan text. */
 export interface CouncilArbiterResult {
@@ -1282,6 +1295,8 @@ export interface CouncilArbiterResult {
  * raw stdout for Codex, parsed text deltas for Claude.
  */
 export interface CouncilProgressEvent {
+  /** The run the chunk belongs to (the runId of its request). */
+  runId: string
   id: CouncilAgentIdType
   chunk: string
 }

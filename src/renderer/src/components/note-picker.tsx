@@ -4,6 +4,7 @@ import { clsx } from 'clsx'
 import { Search } from 'lucide-react'
 import { useAppStore } from '../store'
 import { isImeComposing } from '../utils/ime-composing'
+import { claimEscape, useEscapeSurface } from '../utils/escape-key'
 
 const GLOBAL_SCOPE = 'global'
 
@@ -64,13 +65,13 @@ export function NotePicker(): React.JSX.Element | null {
   useEffect(() => {
     setActiveIndex((i) => Math.min(i, Math.max(0, results.length - 1)))
   }, [results.length])
+  const escapeSurface = useEscapeSurface(open)
 
   if (!open) return null
 
   const handleKeyDown = (e: React.KeyboardEvent): void => {
     if (isImeComposing(e.nativeEvent)) return
-    if (e.key === 'Escape') {
-      e.preventDefault()
+    if (claimEscape(e.nativeEvent, escapeSurface)) {
       setNotePickerOpen(false)
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()

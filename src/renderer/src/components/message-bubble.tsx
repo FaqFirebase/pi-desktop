@@ -59,7 +59,6 @@ function MessageBubbleImpl({
   // suppress this message's own provider · model line to avoid repetition.
   hideModelHeader?: boolean
 }): React.JSX.Element {
-  const { t } = useTranslation()
   const view = useContext(ReadOnlyChatContext)
   const [copied, setCopied] = useState(false)
   const allThinkingExpanded = useAppStore((state) => state.allThinkingExpanded)
@@ -97,14 +96,7 @@ function MessageBubbleImpl({
   }
 
   const handleBranch = () => {
-    // Branch from this message's position
-    const excerpt = message.content.slice(0, 100) + (message.content.length > 100 ? '...' : '')
-    useAppStore.getState().addMessage({
-      id: `branch-${Date.now()}`,
-      role: 'system',
-      content: t('chat.message.branchedFrom', { excerpt }),
-      timestamp: Date.now(),
-    })
+    void useAppStore.getState().branchFromMessage(message.id)
   }
 
   const handleExport = () => {

@@ -45,10 +45,17 @@ test('terminal editors are nvim, vim and hx only', () => {
 })
 
 test('expandInstallPath fills tokens and refuses a missing variable', () => {
-  assert.equal(expandInstallPath('{HOME}/.local/bin/zed', { HOME: '/h' }), '/h/.local/bin/zed')
-  assert.equal(expandInstallPath('{HOME}\\x', { USERPROFILE: 'C:\\U' }), 'C:\\U\\x')
-  assert.equal(expandInstallPath('{LOCALAPPDATA}\\x', {}), null)
-  assert.equal(expandInstallPath('{PROGRAMFILES}\\x', { ProgramFiles: '' }), null)
+  assert.equal(expandInstallPath('{HOME}/.local/bin/zed', { HOME: '/h' }, false), '/h/.local/bin/zed')
+  assert.equal(expandInstallPath('{HOME}\\x', { USERPROFILE: 'C:\\U' }, true), 'C:\\U\\x')
+  assert.equal(expandInstallPath('{LOCALAPPDATA}\\x', {}, true), null)
+  assert.equal(expandInstallPath('{PROGRAMFILES}\\x', { ProgramFiles: '' }, true), null)
+})
+
+test('the home token reads the variable os.homedir reads on each platform', () => {
+  const env = { HOME: '/msys/home/u', USERPROFILE: 'C:\\Users\\u' }
+  assert.equal(expandInstallPath('{HOME}\\x', env, true), 'C:\\Users\\u\\x', 'Windows takes USERPROFILE over HOME')
+  assert.equal(expandInstallPath('{HOME}/x', env, false), '/msys/home/u/x', 'POSIX takes HOME over USERPROFILE')
+  assert.equal(expandInstallPath('{HOME}/x', { USERPROFILE: 'C:\\Users\\u' }, false), null, 'POSIX never falls back to USERPROFILE')
 })
 
 test('a CLI on PATH is found before an install path', () => {

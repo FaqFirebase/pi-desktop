@@ -210,8 +210,7 @@ export class ActivityStatsStore {
         format: /\.ya?ml$/.test(this.modelsConfigPathOverride) ? 'yaml' : 'json',
       }
     }
-    const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? ''
-    const location = resolveModelsFile(getConfiguredEngineKind(), homeDir)
+    const location = resolveModelsFile(getConfiguredEngineKind())
     return { path: location.file, format: location.format }
   }
 

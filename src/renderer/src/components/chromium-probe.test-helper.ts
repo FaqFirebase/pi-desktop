@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { build } from 'vite'
+import { build, type Plugin } from 'vite'
 
 // Exercise mounted production components in Chromium, rather than extracting
 // individual handlers from their source. Uses the same isolated native boundary
@@ -26,6 +26,18 @@ const PROBE_TIMEOUT_MS = 30_000
 const PROBE_TEMP_PREFIX = 'pi-chromium-probe-'
 const PROBE_SCRIPT = 'probe.js'
 const RESULTS_FILE = 'results.json'
+const EMPTY_MODULE_SOURCE = 'export {}'
+
+/**
+ * Probes never start a worker. Building the real voice worker pulls in the
+ * speech libraries and took the composer probe from under 1 GB to 5.8 GB, so
+ * every module of a worker build becomes an empty one.
+ */
+const emptyWorkerBuild: Plugin = {
+  name: 'probe-empty-worker',
+  enforce: 'pre',
+  load: () => EMPTY_MODULE_SOURCE,
+}
 
 /**
  * Bundle `fixture` (a module exporting `run(): Promise<ChromiumProbeResult[]>`)
@@ -40,8 +52,8 @@ export async function runChromiumProbe(fixture: URL, globalName: string): Promis
       logLevel: 'silent',
       esbuild: { jsx: 'automatic' },
       define: { 'process.env.NODE_ENV': JSON.stringify('production') },
-      // The probe page is one IIFE script; a module worker it imports (voice) builds as its own ES file.
-      worker: { format: 'es' },
+      // The probe page is one IIFE script; a module worker it imports (voice) builds as its own, empty, ES file.
+      worker: { format: 'es', plugins: () => [emptyWorkerBuild] },
       build: {
         outDir: dir,
         emptyOutDir: false,
@@ -52,7 +64,8 @@ export async function runChromiumProbe(fixture: URL, globalName: string): Promis
       },
     })
     const resultsPath = join(dir, RESULTS_FILE)
-    writeFileSync(join(dir, 'index.html'), `<!doctype html><div id="root"></div><script src="${PROBE_SCRIPT}"></script>`)
+    // The bundle keeps non-ASCII source text (Unicode regex ranges), so the page must read it as UTF-8.
+    writeFileSync(join(dir, 'index.html'), `<!doctype html><meta charset="utf-8"><div id="root"></div><script src="${PROBE_SCRIPT}"></script>`)
     writeFileSync(join(dir, 'main.cjs'), `
       const { app, BrowserWindow, session } = require('electron');
       app.setPath('userData', ${JSON.stringify(join(dir, 'profile'))});

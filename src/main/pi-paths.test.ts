@@ -4,6 +4,8 @@ import { join } from 'path'
 import {
   engineForBoundSession,
   engineForSessionPath,
+  expandPiPath,
+  getPiAgentDir,
   getSessionsRoot,
   getOmpSessionsRoot,
   getSessionRoots,
@@ -148,5 +150,56 @@ test('OMP_CODING_AGENT_DIR still moves the default profile only', () => {
   })
   withEnv({ HOME: '/home/tester', OMP_CODING_AGENT_DIR: '/custom/agent', OMP_PROFILE: 'work', PI_PROFILE: undefined }, () => {
     assert.equal(getOmpSessionsRoot(), join('/home/tester', '.omp', 'profiles', 'work', 'agent', 'sessions'))
+  })
+})
+
+test('the Pi agent directory follows PI_CODING_AGENT_DIR', () => {
+  withEnv({ HOME: '/home/tester', PI_CODING_AGENT_DIR: '/custom/pi-agent' }, () => {
+    assert.equal(getPiAgentDir(), '/custom/pi-agent')
+    assert.equal(getPiAgentDir('/other/home'), '/custom/pi-agent')
+    assert.equal(getSessionsRoot(), join('/custom/pi-agent', 'sessions'))
+  })
+})
+
+test('without PI_CODING_AGENT_DIR the Pi agent directory is under the home directory', () => {
+  withEnv({ HOME: '/home/tester', PI_CODING_AGENT_DIR: undefined }, () => {
+    assert.equal(getPiAgentDir(), join('/home/tester', '.pi', 'agent'))
+    assert.equal(getPiAgentDir('/other/home'), join('/other/home', '.pi', 'agent'))
+  })
+})
+
+test('PI_CODING_AGENT_DIR expands a leading tilde to the home directory, as Pi does', () => {
+  withEnv({ HOME: '/home/tester', PI_CODING_AGENT_DIR: '~/pi-agent' }, () => {
+    assert.equal(getPiAgentDir(), join('/home/tester', 'pi-agent'))
+    assert.equal(getPiAgentDir('/other/home'), join('/other/home', 'pi-agent'))
+    assert.equal(getSessionsRoot(), join('/home/tester', 'pi-agent', 'sessions'))
+  })
+  withEnv({ HOME: '/home/tester', PI_CODING_AGENT_DIR: '~' }, () => {
+    assert.equal(getPiAgentDir(), '/home/tester')
+  })
+})
+
+test('expandPiPath reads paths the way Pi expandTildePath does', () => {
+  const POSIX_HOME = '/home/tester'
+  const WINDOWS_HOME = 'C:\\Users\\tester'
+  assert.equal(expandPiPath('~/agent', POSIX_HOME, 'linux'), '/home/tester/agent')
+  assert.equal(expandPiPath('~', POSIX_HOME, 'linux'), POSIX_HOME)
+  assert.equal(expandPiPath('~other/agent', POSIX_HOME, 'linux'), '~other/agent', 'only the own home expands')
+  assert.equal(expandPiPath('~\\agent', POSIX_HOME, 'linux'), '~\\agent', 'a backslash is a name character off Windows')
+  assert.equal(expandPiPath('/mnt/c/agent', POSIX_HOME, 'linux'), '/mnt/c/agent', 'drive paths are native off Windows')
+  assert.equal(expandPiPath('file:///opt/agent', POSIX_HOME, 'linux'), '/opt/agent')
+  assert.equal(expandPiPath('/opt/agent', POSIX_HOME, 'linux'), '/opt/agent')
+
+  assert.equal(expandPiPath('~\\agent', WINDOWS_HOME, 'win32'), 'C:\\Users\\tester\\agent')
+  assert.equal(expandPiPath('~/agent', WINDOWS_HOME, 'win32'), 'C:\\Users\\tester\\agent')
+  assert.equal(expandPiPath('/c/Users/tester/agent', WINDOWS_HOME, 'win32'), 'C:\\Users\\tester\\agent')
+  assert.equal(expandPiPath('/mnt/d/agent', WINDOWS_HOME, 'win32'), 'D:\\agent')
+  assert.equal(expandPiPath('/cygdrive/e', WINDOWS_HOME, 'win32'), 'E:\\')
+  assert.equal(expandPiPath('//server/share', WINDOWS_HOME, 'win32'), '//server/share', 'a UNC path is kept')
+})
+
+test('PI_CODING_AGENT_DIR does not move the OMP session store', () => {
+  withEnv({ HOME: '/home/tester', PI_CODING_AGENT_DIR: '/custom/pi-agent', OMP_CODING_AGENT_DIR: undefined }, () => {
+    assert.equal(getOmpSessionsRoot(), join('/home/tester', '.omp', 'agent', 'sessions'))
   })
 })

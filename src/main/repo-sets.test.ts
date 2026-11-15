@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { RepoSetStore, inspectRepoFolder, validateRepoSetDraft } from './repo-sets'
+import { TEMP_FILE_SUFFIX } from './atomic-file-write'
+import type { RepoSetMember } from '../shared/ipc-contracts'
 
 function git(args: string[], cwd: string): void {
   const result = spawnSync('git', args, { cwd, encoding: 'utf-8' })
@@ -78,6 +80,25 @@ test('the store saves, updates, lists, and deletes sets, and keeps them across a
   await reopened.delete(saved.id)
   assert.deepEqual(await new RepoSetStore(file).list(), [])
   await assert.rejects(reopened.get(saved.id), /no longer exists/)
+})
+
+test('overlapping deletes both reach the file and leave no temp files', async () => {
+  const app = await repository('shop-app')
+  const lib = await repository('shop-lib')
+  const dir = await mkdtemp(join(tmpdir(), 'pi-repo-sets-'))
+  const file = join(dir, 'repo-sets.json')
+  const store = new RepoSetStore(file)
+  const members: RepoSetMember[] = [
+    { name: 'shop-app', sourcePath: app, role: 'main' },
+    { name: 'shop-lib', sourcePath: lib, role: 'linked' },
+  ]
+  const shop = await store.save({ name: 'Shop', members })
+  const library = await store.save({ name: 'Library', members })
+
+  await Promise.all([store.delete(shop.id), store.delete(library.id)])
+
+  assert.deepEqual(await new RepoSetStore(file).list(), [])
+  assert.deepEqual((await readdir(dir)).filter((name) => name.endsWith(TEMP_FILE_SUFFIX)), [])
 })
 
 test('two checkouts of one repository cannot be in the same set', async () => {

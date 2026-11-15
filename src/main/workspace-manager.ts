@@ -1,7 +1,9 @@
-import { dirname, basename, join, resolve } from 'path'
-import { readFile, writeFile, mkdir, rename, copyFile, rm } from 'fs/promises'
+import { basename, join, resolve } from 'path'
+import { readFile, copyFile, rm } from 'fs/promises'
 import { existsSync } from 'fs'
+import { homedir } from 'os'
 import { PiRpcManager, getConfiguredEngineKind } from './pi-rpc-manager'
+import { forceKillStoppingProcessTrees } from './process-tree-kill'
 import { FileService } from './file-service'
 import {
   WHOLE_WORKSPACE_CHANGE_PATH,
@@ -57,6 +59,8 @@ import { inspectRepoFolder } from './repo-sets'
 import { checkoutForLinkedTask, checkoutLinkedTask, removeLinkedTaskCheckouts } from './linked-worktrees'
 import { readLinkedRepoStatuses } from './linked-task-status'
 import { uniqueRepoName } from '../shared/repo-set-draft'
+import { writeJsonFileAtomic, writeTextFileAtomic } from './atomic-file-write'
+import { createSerialQueue } from './serial-queue'
 
 /**
  * Manages project workspaces and their independent Pi session runtimes.
@@ -212,6 +216,8 @@ export class WorkspaceManager {
   private activeWorkspaceListeners: ActiveWorkspaceListener[] = []
   private fileChangeListeners: FileChangeListener[] = []
   private workspaceRemovedListeners: WorkspaceRemovedListener[] = []
+  private readonly runWorkspaceFileTask = createSerialQueue()
+  private readonly removalsInFlight = new Map<string, Promise<WorkspaceRemoveResult>>()
   // Repository of a repo set tab the diff, file, and git panels show, by
   // name. In memory only: a reopened app shows the main repository again.
   private focusedRepoByWorkspace = new Map<string, string>()
@@ -871,8 +877,7 @@ export class WorkspaceManager {
     // here rather than checked on the caller's field.
     const actualEngine = startOptions.engine ?? getConfiguredEngineKind()
     if (actualEngine === 'omp') {
-      const home = process.env.HOME ?? process.env.USERPROFILE
-      if (home && pathsEqual(startOptions.cwd ?? workspace.path, home) &&
+      if (pathsEqual(startOptions.cwd ?? workspace.path, homedir()) &&
         !startOptions.args?.includes('--allow-home')) {
         startOptions.args = [...(startOptions.args ?? []), '--allow-home']
       }
@@ -1236,10 +1241,23 @@ export class WorkspaceManager {
     return workspace
   }
 
-  async removeWorkspace(workspaceId: string): Promise<WorkspaceRemoveResult> {
-    const index = this.workspaces.findIndex((w) => w.id === workspaceId)
-    if (index === -1) throw new Error(t('errors.workspace.notFound', { workspaceId }))
-    const workspace = this.workspaces[index]
+  /**
+   * Close a tab. A second close of the same tab while the first still runs
+   * joins it and gets the same result, so the worktree is removed once and a
+   * racing second `git worktree remove` cannot report a false preserved path.
+   */
+  removeWorkspace(workspaceId: string): Promise<WorkspaceRemoveResult> {
+    const inFlight = this.removalsInFlight.get(workspaceId)
+    if (inFlight) return inFlight
+    const removal = this.runWorkspaceRemoval(workspaceId)
+      .finally(() => this.removalsInFlight.delete(workspaceId))
+    this.removalsInFlight.set(workspaceId, removal)
+    return removal
+  }
+
+  private async runWorkspaceRemoval(workspaceId: string): Promise<WorkspaceRemoveResult> {
+    const workspace = this.workspaces.find((w) => w.id === workspaceId)
+    if (!workspace) throw new Error(t('errors.workspace.notFound', { workspaceId }))
     let worktreeRemoved: boolean | undefined
     const preservedWorktreePaths: string[] = []
 
@@ -1286,7 +1304,15 @@ export class WorkspaceManager {
       await rm(this.repoMapPath(workspaceId), { force: true })
     }
 
-    this.workspaces.splice(index, 1)
+    const result: WorkspaceRemoveResult = {
+      worktreeRemoved,
+      ...(preservedWorktreePaths.length > 0 ? { preservedWorktreePaths } : {}),
+    }
+    // The awaits above let other tabs open or close, so the index is read
+    // only now.
+    const currentIndex = this.workspaces.findIndex((w) => w.id === workspaceId)
+    if (currentIndex === -1) return result
+    this.workspaces.splice(currentIndex, 1)
 
     // If removed workspace was active, switch to first available
     let activeChanged = false
@@ -1307,7 +1333,7 @@ export class WorkspaceManager {
     for (const listener of this.workspaceRemovedListeners) {
       listener(workspaceId)
     }
-    return { worktreeRemoved, ...(preservedWorktreePaths.length > 0 ? { preservedWorktreePaths } : {}) }
+    return result
   }
 
   async renameWorkspace(workspaceId: string, name: string): Promise<void> {
@@ -1670,9 +1696,7 @@ export class WorkspaceManager {
   private async writeRepoMap(workspace: Workspace): Promise<string> {
     const task = workspace.linkedTask!
     const path = this.repoMapPath(workspace.id)
-    await mkdir(dirname(path), { recursive: true })
-    const tmpPath = `${path}.tmp`
-    await writeFile(tmpPath, serializeRepoMap({
+    await writeTextFileAtomic(path, serializeRepoMap({
       setName: task.setName,
       mode: task.mode,
       repos: task.repos.map((repo) => ({
@@ -1682,8 +1706,7 @@ export class WorkspaceManager {
         branch: repo.branch,
         trusted: workspaceTrustStore.isTrusted(repo.workPath),
       })),
-    }), 'utf-8')
-    await rename(tmpPath, path)
+    }))
     return path
   }
 
@@ -1712,9 +1735,19 @@ export class WorkspaceManager {
     else this.piManagers.get(workspaceId)?.stop()
   }
 
-  stopAll(): void {
-    for (const [, manager] of this.piManagers) manager.stop()
-    for (const [, entry] of this.sessionRuntimes) entry.manager.stop()
+  /**
+   * Stop every agent process for a quit. Each wait is bounded by stopAndWait
+   * (the stops run side by side, so the whole wait is one such bound), and
+   * then every stopped process tree still alive, from these managers or from
+   * ones dropped earlier, gets the forced kill at once instead of when its
+   * timer would fire after the app has exited.
+   */
+  async stopAll(): Promise<void> {
+    const managers = [
+      ...this.piManagers.values(),
+      ...[...this.sessionRuntimes.values()].map((entry) => entry.manager),
+    ]
+    const stopped = Promise.all(managers.map((manager) => manager.stopAndWait()))
     for (const [, fs] of this.fileServices) {
       fs.stopWatching()
       fs.stopGitWatching()
@@ -1729,6 +1762,8 @@ export class WorkspaceManager {
     this.activeRuntimeByWorkspace.clear()
     this.activeRuntimeId = null
     this.fileServices.clear()
+    await stopped
+    forceKillStoppingProcessTrees()
   }
 
   private async loadWorkspaces(): Promise<void> {
@@ -1774,13 +1809,16 @@ export class WorkspaceManager {
     }
   }
 
-  private async saveWorkspaces(): Promise<void> {
-    try {
-      const dir = dirname(this.configPath)
-      if (!existsSync(dir)) {
-        await mkdir(dir, { recursive: true })
-      }
+  /**
+   * Saves run one at a time, and each writes the state as it is when its turn
+   * comes, so the last save always leaves the latest state on disk.
+   */
+  private saveWorkspaces(): Promise<void> {
+    return this.runWorkspaceFileTask(() => this.writeWorkspaceState())
+  }
 
+  private async writeWorkspaceState(): Promise<void> {
+    try {
       const state: WorkspaceState = {
         workspaces: this.workspaces,
         activeWorkspaceId: this.activeWorkspaceId,
@@ -1790,11 +1828,8 @@ export class WorkspaceManager {
       if (existsSync(this.configPath)) {
         await copyFile(this.configPath, `${this.configPath}.bak`)
       }
-      // Atomic write: write a temp file then rename over the target so a crash
-      // or partial write can never leave a half-written/corrupt config.
-      const tmpPath = `${this.configPath}.tmp`
-      await writeFile(tmpPath, JSON.stringify(state, null, 2), 'utf-8')
-      await rename(tmpPath, this.configPath)
+      // Atomic, so a crash or partial write never leaves a half-written config.
+      await writeJsonFileAtomic(this.configPath, state)
     } catch (err) {
       console.error('Failed to save workspaces:', err)
       appLog.error('workspaces', 'Failed to save workspaces.json', err)

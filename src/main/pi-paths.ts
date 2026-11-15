@@ -1,16 +1,67 @@
-import { join } from 'path'
+import { homedir } from 'os'
+import { join, posix, win32 } from 'path'
+import { fileURLToPath } from 'url'
 import { isPathWithin } from '../../resources/path-within'
 import type { AgentEngineKind } from '../shared/ipc-contracts'
 import { currentOmpProfile, ompAgentDirIn } from './omp-paths'
+
+/** Relocates Pi's whole agent directory, as Pi's own getAgentDir reads it. */
+export const PI_AGENT_DIR_ENV_VAR = 'PI_CODING_AGENT_DIR'
+const PI_HOME_DIR_NAME = '.pi'
+const PI_AGENT_DIR_NAME = 'agent'
+const SESSIONS_DIR_NAME = 'sessions'
+const WINDOWS_PLATFORM: NodeJS.Platform = 'win32'
+const HOME_TILDE = '~'
+const HOME_PREFIX_LENGTH = 2
+const FILE_URL_PATTERN = /^file:\/\//
+/** A Git Bash, MSYS, Cygwin, or WSL drive path: `/c/x`, `/mnt/c/x`, `/cygdrive/c/x`. */
+const WINDOWS_SHELL_DRIVE_PATH = /^\/(?:mnt\/|cygdrive\/)?([a-z])(?:\/(.*))?$/i
+
+/** A shell-style drive path as native Windows APIs take it, as Pi's normalizeWindowsShellPath does. */
+function windowsShellPathToNative(path: string): string {
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) return path
+  const match = WINDOWS_SHELL_DRIVE_PATH.exec(path)
+  if (!match) return path
+  return `${match[1].toUpperCase()}:\\${match[2]?.replaceAll('/', '\\') ?? ''}`
+}
+
+/**
+ * A path from Pi's environment, read the way Pi's expandTildePath reads it:
+ * on Windows a shell drive path becomes a native one, a leading `~` or `~/`
+ * (also `~\\` on Windows) is the home directory, and a `file://` URL becomes
+ * its path. Anything else is kept as it is.
+ */
+export function expandPiPath(path: string, home: string, platform: NodeJS.Platform = process.platform): string {
+  const isWindows = platform === WINDOWS_PLATFORM
+  const normalized = isWindows ? windowsShellPathToNative(path) : path
+  if (normalized === HOME_TILDE) return home
+  if (normalized.startsWith(`${HOME_TILDE}/`) || (isWindows && normalized.startsWith(`${HOME_TILDE}\\`))) {
+    return (isWindows ? win32 : posix).join(home, normalized.slice(HOME_PREFIX_LENGTH))
+  }
+  if (FILE_URL_PATTERN.test(normalized)) return fileURLToPath(normalized)
+  return normalized
+}
+
+/**
+ * Pi's agent directory (`~/.pi/agent`, or `PI_CODING_AGENT_DIR` when set,
+ * expanded by expandPiPath), resolved the way Pi resolves it so every file the
+ * app reads or writes for Pi (settings, models, skills, packages, sessions) is
+ * the one Pi itself uses. The home directory is `os.homedir()`, as in Pi:
+ * `HOME` on POSIX (which is what tests override), `USERPROFILE` on Windows.
+ * `home` replaces it for a caller that scans a given home. Read per call
+ * because tests change the environment.
+ */
+export function getPiAgentDir(home: string = homedir()): string {
+  const configured = process.env[PI_AGENT_DIR_ENV_VAR]
+  return configured ? expandPiPath(configured, home) : join(home, PI_HOME_DIR_NAME, PI_AGENT_DIR_NAME)
+}
 
 /**
  * Absolute path to Pi's on-disk session store (`~/.pi/agent/sessions`).
  * Centralized so session listing, lineage, and activity aggregation agree.
  */
 export function getSessionsRoot(): string {
-  const agentDir = process.env.PI_CODING_AGENT_DIR ||
-    join(process.env.HOME ?? process.env.USERPROFILE ?? '', '.pi', 'agent')
-  return join(agentDir, 'sessions')
+  return join(getPiAgentDir(), SESSIONS_DIR_NAME)
 }
 
 /**
@@ -25,10 +76,9 @@ export function getSessionsRoot(): string {
  * default profile's store only.
  */
 export function getOmpSessionsRoot(): string {
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? ''
   const profile = currentOmpProfile()
-  const agentDir = (!profile && process.env.OMP_CODING_AGENT_DIR) || ompAgentDirIn(home, profile)
-  return join(agentDir, 'sessions')
+  const agentDir = (!profile && process.env.OMP_CODING_AGENT_DIR) || ompAgentDirIn(homedir(), profile)
+  return join(agentDir, SESSIONS_DIR_NAME)
 }
 
 /**

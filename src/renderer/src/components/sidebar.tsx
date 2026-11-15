@@ -41,6 +41,7 @@ import { useGlobalWorkflowOpen } from '../hooks'
 import { clampSidebarWidth, resolveSidebarWidth } from '../../../shared/sidebar-width'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { isImeComposing } from '../utils/ime-composing'
+import { claimEscape } from '../utils/escape-key'
 import { quickChatEntryTitle } from './sidebar-quick-chat'
 
 /** Views reachable from the sidebar's Tools group. */
@@ -770,14 +771,19 @@ function WorkspaceSwitcher({ onOpenProject }: { onOpenProject: () => void }): Re
   const [isOpen, setIsOpen] = useState(false)
   const [isRenaming, setIsRenaming] = useState(false)
   const [newName, setNewName] = useState('')
+  const renameCancelRef = useRef(false)
 
-  const handleRename = async () => {
-    if (!activeWorkspace || !newName.trim()) return
-    await renameWorkspace(activeWorkspace.id, newName.trim())
+  // Single commit path (both Enter and Escape blur the input, which lands here).
+  const finishRenaming = (): void => {
+    const cancelled = renameCancelRef.current
+    renameCancelRef.current = false
     setIsRenaming(false)
+    const trimmed = newName.trim()
+    if (!cancelled && activeWorkspace && trimmed) void renameWorkspace(activeWorkspace.id, trimmed)
   }
 
   const startRenaming = () => {
+    renameCancelRef.current = false
     setNewName(activeWorkspace?.name ?? '')
     setIsRenaming(true)
     setIsOpen(false)
@@ -830,12 +836,13 @@ function WorkspaceSwitcher({ onOpenProject }: { onOpenProject: () => void }): Re
               if (isImeComposing(e.nativeEvent)) return
               if (e.key === 'Enter') {
                 e.preventDefault()
-                handleRename()
-              } else if (e.key === 'Escape') {
-                setIsRenaming(false)
+                e.currentTarget.blur()
+              } else if (claimEscape(e.nativeEvent)) {
+                renameCancelRef.current = true
+                e.currentTarget.blur()
               }
             }}
-            onBlur={handleRename}
+            onBlur={finishRenaming}
             placeholder={t('sidebar.workspaceSwitcher.namePlaceholder')}
             className="min-w-0 flex-1 rounded border border-border-strong bg-card px-2 py-1 text-sm text-primary placeholder:text-faint focus:border-focus focus:outline-none"
             autoFocus

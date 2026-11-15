@@ -38,8 +38,11 @@ export function MainChatProvider({ children }: { children: ReactNode }): React.J
       submit: async (text: string, attachments: ComposerAttachment[], intent: 'send' | 'send-now'): Promise<boolean> => {
         const current = useAppStore.getState()
         if ((current.activeWorkspace?.id ?? '') !== workspaceId) return false
-        if (intent === 'send' && current.isStreaming) {
-          current.queuePrompt(workspaceId, text, attachments)
+        // A queued message belongs to the chat it was typed in. Without a
+        // chat bound yet there is nothing to queue on, so it goes out now.
+        const chatId = current.activeSessionRuntimeId
+        if (intent === 'send' && current.isStreaming && chatId !== null) {
+          current.queuePrompt(chatId, text, attachments)
         } else {
           const prompt = composePrompt(text, attachments)
           await current.sendPrompt(prompt.message, prompt.options)
@@ -58,6 +61,7 @@ export function MainChatProvider({ children }: { children: ReactNode }): React.J
   const bindings = useMemo<ChatSessionBindings>(() => {
     const settings = { ...DEFAULT_SETTINGS, ...state.settings, ...state.settingsDraft }
     const actions = useAppStore.getState()
+    const chatId = state.runtimeId
     return {
       engine: state.engine ?? 'pi', settings, permissionMode: settings.permissionMode,
       setPermissionMode: actions.setPermissionMode,
@@ -97,10 +101,10 @@ export function MainChatProvider({ children }: { children: ReactNode }): React.J
         searchFiles: (query) => window.piDesktop.files.search(query),
         getPathForFile: (file) => window.piDesktop.system.getPathForFile(file),
         commands: allCommands, guiCommands: builtins,
-        queue: {
-          prompts: state.queues[state.workspaceId] ?? [], held: state.heldQueues.includes(state.workspaceId),
-          remove: (id) => useAppStore.getState().removeQueuedPrompt(state.workspaceId, id),
-          sendNow: (id) => useAppStore.getState().sendQueuedPromptNow(state.workspaceId, id),
+        queue: chatId === null ? undefined : {
+          prompts: state.queues[chatId] ?? [], hold: state.heldQueues[chatId],
+          remove: (id) => useAppStore.getState().removeQueuedPrompt(chatId, id),
+          sendNow: (id) => useAppStore.getState().sendQueuedPromptNow(chatId, id),
         },
         openNotes: () => useAppStore.getState().setNotePickerOpen(true),
         searchWorkspace: actions.toggleFileSearch,

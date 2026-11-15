@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { once } from 'node:events'
@@ -21,6 +22,7 @@ import {
 } from './pi-rpc-manager'
 import type { PiResolution, ResolutionDeps } from './pi-binary-resolution'
 import { appLog } from './app-log'
+import { FORCE_KILL_TIMEOUT_MS, forceKillStoppingProcessTrees, windowsTreeKillArgs } from './process-tree-kill'
 import { piDotenvPath } from './pi-dotenv'
 import { NO_CWD_EXE_SEARCH_VARIABLE, disableCwdExecutableSearch } from './windows-exe-search'
 import { i18n } from '../shared/i18n'
@@ -419,6 +421,39 @@ const HEARTBEAT_MS = 100
 /** Late-ready fixtures answer between the notice delay and the deadline. */
 const LATE_READY_DELAY_MS = 900
 const FAKE_EXIT_CODE = 7
+/** Real time past the force-kill delay for its timer to have fired. */
+const FORCE_KILL_SETTLE_MS = 250
+/** Poll step while a test waits for a fixture process to appear or end. */
+const PROCESS_POLL_MS = 50
+/** Upper bound for the stubborn tool child to start and report its pid. */
+const CHILD_START_DEADLINE_MS = 2_000
+/** A quit must end a stubborn child well before the force-kill timer fires. */
+const QUIT_KILL_DEADLINE_MS = 1_000
+/** `ps` marks a zombie (ended, not yet reaped) with this state letter. */
+const ZOMBIE_STATE = 'Z'
+/**
+ * A tool child that ignores SIGTERM. It writes its pid only after the handler
+ * is in place, so a test never signals it before it can ignore the signal.
+ */
+const STUBBORN_CHILD_SOURCE =
+  "process.on('SIGTERM', () => {}); require('fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000)"
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** Rejects instead of hanging when `promise` does not settle within `ms`. */
+async function withinDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Did not settle within ${ms}ms`)), ms)
+  })
+  try {
+    return await Promise.race([promise, deadline])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 const SKIP_ON_WINDOWS = { skip: process.platform === 'win32' ? 'POSIX shebang fixture' : false }
 
 /**
@@ -432,6 +467,9 @@ const SKIP_ON_WINDOWS = { skip: process.platform === 'win32' ? 'POSIX shebang fi
  *  - 'exit'              — exits at once with FAKE_EXIT_CODE.
  * In every mode, the engine also exits at once with FAKE_EXIT_CODE when it
  * inherited the variable FAKE_PI_EXIT_IF_ENV names (in any letter case).
+ * With FAKE_PI_STUBBORN_CHILD_FILE set, it also starts a child that ignores
+ * SIGTERM and writes its pid to that file; FAKE_PI_STUBBORN_CHILD_DETACHED=1
+ * puts that child in its own process group, as OMP does with subagents.
  */
 const FAKE_ENGINE_SOURCE = `#!/usr/bin/env node
 const mode = process.env.FAKE_PI_MODE || 'silent'
@@ -440,6 +478,12 @@ const forbiddenName = (process.env.FAKE_PI_EXIT_IF_ENV || '').toLowerCase()
 const emit = (obj) => process.stdout.write(JSON.stringify(obj) + '\\n')
 if (mode === 'exit') process.exit(${FAKE_EXIT_CODE})
 if (forbiddenName && Object.keys(process.env).some((name) => name.toLowerCase() === forbiddenName)) process.exit(${FAKE_EXIT_CODE})
+if (process.env.FAKE_PI_STUBBORN_CHILD_FILE) {
+  require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(STUBBORN_CHILD_SOURCE)}, process.env.FAKE_PI_STUBBORN_CHILD_FILE], {
+    stdio: 'ignore',
+    detached: process.env.FAKE_PI_STUBBORN_CHILD_DETACHED === '1',
+  })
+}
 if (mode === 'late-ready' || mode === 'never-ready') {
   emit({ type: 'extension_ui_request', id: 'boot', method: 'setStatus', statusKey: 'boot', statusText: 'loading' })
   setInterval(() => emit({ type: 'extension_ui_request', id: 'hb', method: 'setStatus', statusKey: 'hb', statusText: 'busy' }), ${HEARTBEAT_MS})
@@ -598,6 +642,130 @@ test('a Pi that exits before ready fails fast without waiting for the deadline',
     assert.ok(Date.now() - startedAt < TEST_READY_MS, 'a dead process must not inherit the deadline')
   }, { FAKE_PI_MODE: 'exit' })
 })
+test('a start right after a stop during startup spawns a new process with the new options', SKIP_ON_WINDOWS, async () => {
+  await withFakeEngine(async (manager) => {
+    // The first options never become ready, so only a new spawn with the new
+    // options can reach running before the deadline.
+    const first = manager.start({ env: { FAKE_PI_MODE: 'silent' } })
+    const firstPid = manager.getStatus().pid
+    assert.equal(manager.getStatus().status, 'starting')
+
+    manager.stop()
+    const second = await withinDeadline(manager.start({ env: { FAKE_PI_MODE: 'late-ready' } }), TEST_READY_MS)
+
+    assert.equal(second.status, 'running', 'the restart must not join the aborted attempt')
+    assert.notEqual(second.pid, firstPid)
+    assert.notEqual((await withinDeadline(first, TEST_READY_MS)).status, 'error', 'the aborted attempt settles without an error')
+    assert.equal(manager.getStatus().status, 'running', 'the aborted attempt leaves the new process alone')
+  }, {})
+})
+
+test('the force kill never signals a process group that has already ended', SKIP_ON_WINDOWS, async (t) => {
+  await withFakeEngine(async (manager, env) => {
+    const started = await withinDeadline(manager.start({ env }), TEST_READY_MS)
+    assert.equal(started.status, 'running')
+    const groupId = -(started.pid ?? 0)
+
+    // Records every signal and still delivers it, so the child really exits.
+    const kill = t.mock.method(process, 'kill')
+    manager.stop()
+    await withinDeadline(manager.processExited(), FORCE_KILL_TIMEOUT_MS)
+    await delay(FORCE_KILL_TIMEOUT_MS + FORCE_KILL_SETTLE_MS)
+
+    // Compare plain arguments only: a call record holds the whole `process`
+    // object as `this`, and a failing diff of it exhausts memory.
+    const forceKills = kill.mock.calls
+      .map((call) => call.arguments)
+      .filter(([pid, signal]) => pid === groupId && signal === 'SIGKILL')
+    assert.deepEqual(forceKills, [], 'an exited child pid may already belong to another process')
+  }, { FAKE_PI_MODE: 'late-ready' })
+})
+
+/** True while `pid` runs; a zombie has ended and counts as gone. */
+function isRunning(pid: number): boolean {
+  const result = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf-8', timeout: PROCESS_POLL_MS * 20 })
+  if (result.status !== 0) return false
+  return !result.stdout.trim().startsWith(ZOMBIE_STATE)
+}
+
+async function pollUntil(check: () => boolean, ms: number, what: string): Promise<void> {
+  const deadline = Date.now() + ms
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error(`${what} within ${ms}ms`)
+    await delay(PROCESS_POLL_MS)
+  }
+}
+
+async function readStubbornChildPid(file: string): Promise<number> {
+  let pid = Number.NaN
+  await pollUntil(() => {
+    if (existsSync(file)) pid = Number(readFileSync(file, 'utf-8'))
+    return Number.isInteger(pid) && pid > 0
+  }, CHILD_START_DEADLINE_MS, 'The stubborn child did not report its pid')
+  return pid
+}
+
+/** Runs `run` against Pi with a stubborn tool child, and never leaves the child running. */
+async function withStubbornChild(
+  detached: boolean,
+  run: (manager: PiRpcManager, childPid: number) => Promise<void>,
+): Promise<void> {
+  const pidDir = mkdtempSync(join(tmpdir(), 'pi-stubborn-child-'))
+  const pidFile = join(pidDir, 'child.pid')
+  let childPid: number | undefined
+  try {
+    await withFakeEngine(async (manager, env) => {
+      const started = await withinDeadline(manager.start({ env }), TEST_READY_MS)
+      assert.equal(started.status, 'running')
+      childPid = await readStubbornChildPid(pidFile)
+      await run(manager, childPid)
+    }, {
+      FAKE_PI_MODE: 'rpc',
+      FAKE_PI_STUBBORN_CHILD_FILE: pidFile,
+      FAKE_PI_STUBBORN_CHILD_DETACHED: detached ? '1' : '0',
+    })
+  } finally {
+    if (childPid !== undefined) {
+      try { process.kill(childPid, 'SIGKILL') } catch { /* already gone */ }
+    }
+    rmSync(pidDir, { recursive: true, force: true })
+  }
+}
+
+test('a stop force-kills a same-group child that ignores SIGTERM after Pi has exited', SKIP_ON_WINDOWS, async () => {
+  await withStubbornChild(false, async (manager, childPid) => {
+    manager.stop()
+    await withinDeadline(manager.processExited(), FORCE_KILL_TIMEOUT_MS)
+    assert.ok(isRunning(childPid), 'the child outlives the SIGTERM that ended Pi')
+    await pollUntil(
+      () => !isRunning(childPid),
+      FORCE_KILL_TIMEOUT_MS + FORCE_KILL_SETTLE_MS,
+      'The force kill did not reach the child',
+    )
+  })
+})
+
+for (const detached of [false, true]) {
+  const placement = detached ? 'in its own process group' : 'in the Pi process group'
+  test(`a quit kills a stubborn child ${placement} without waiting for the force-kill timer`, SKIP_ON_WINDOWS, async () => {
+    await withStubbornChild(detached, async (manager, childPid) => {
+      const quitStartedAt = Date.now()
+      await withinDeadline(manager.stopAndWait(), QUIT_KILL_DEADLINE_MS)
+      forceKillStoppingProcessTrees()
+      await pollUntil(
+        () => !isRunning(childPid),
+        QUIT_KILL_DEADLINE_MS - (Date.now() - quitStartedAt),
+        'The quit did not end the child',
+      )
+    })
+  })
+}
+
+test('the Windows tree kill ends the child and everything it started, by force', () => {
+  const PID = 4242
+  assert.deepEqual(windowsTreeKillArgs(PID), ['/pid', String(PID), '/T', '/F'])
+})
+
 test('prompt command survives human extension UI wait, ordinary commands expire, and teardown rejects', SKIP_ON_WINDOWS, async (t) => {
   await withFakeEngine(async (manager, env) => {
     const started = await manager.start({ env })

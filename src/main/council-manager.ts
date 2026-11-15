@@ -33,13 +33,14 @@ export interface SpawnOutcome {
 /** Called with each readable text chunk as a consultant produces output. */
 export type ConsultantChunkHandler = (chunk: string) => void
 
-/** Injectable spawn so orchestration is testable without real CLIs. */
+/** Injectable spawn so orchestration is testable without real CLIs. An abort of `signal` stops the consultant. */
 export type SpawnConsultant = (
   id: CouncilAgentId,
   prompt: string,
   cwd: string,
   timeoutMs: number,
   onChunk?: ConsultantChunkHandler,
+  signal?: AbortSignal,
 ) => Promise<SpawnOutcome>
 
 export interface RunConsultantsParams {
@@ -54,6 +55,8 @@ export interface ConsultantDeps {
   spawnConsultant: SpawnConsultant
   /** Notified with live output chunks per consultant, for streaming to the UI. */
   onProgress?: (id: CouncilAgentId, chunk: string) => void
+  /** Aborted when the run is cancelled: running consultants stop and no further round starts. */
+  signal?: AbortSignal
 }
 
 const MIN_DEBATE_PARTICIPANTS = 2
@@ -80,11 +83,11 @@ export async function runConsultants(
 
   const round1 = await Promise.all(
     params.members.map(async (id) =>
-      toResult(id, await deps.spawnConsultant(id, prompt, params.cwd, timeoutMs, forward(id))),
+      toResult(id, await deps.spawnConsultant(id, prompt, params.cwd, timeoutMs, forward(id), deps.signal)),
     ),
   )
 
-  if (params.consensusMode !== 'debate') return round1
+  if (params.consensusMode !== 'debate' || deps.signal?.aborted) return round1
 
   const contributed = round1.filter((r) => r.status === 'contributed')
   if (contributed.length < MIN_DEBATE_PARTICIPANTS) return round1
@@ -94,7 +97,7 @@ export async function runConsultants(
       if (r.status !== 'contributed') return r
       const others = contributed.filter((o) => o.id !== r.id)
       const debatePrompt = buildDebatePrompt(params.request, r.id, others)
-      return toResult(r.id, await deps.spawnConsultant(r.id, debatePrompt, params.cwd, timeoutMs, forward(r.id)))
+      return toResult(r.id, await deps.spawnConsultant(r.id, debatePrompt, params.cwd, timeoutMs, forward(r.id), deps.signal))
     }),
   )
   return round2
@@ -112,6 +115,8 @@ export interface ArbiterDeps {
   spawnConsultant: SpawnConsultant
   /** Notified with live output chunks from the arbiter, for streaming to the UI. */
   onProgress?: ConsultantChunkHandler
+  /** Aborted when the run is cancelled: the arbiter stops. */
+  signal?: AbortSignal
 }
 
 /**
@@ -132,7 +137,37 @@ export async function runArbiter(
       ? buildConsensusPrompt(input.request, input.results)
       : buildArbiterRevisionPrompt(input.request, input.plan, input.feedback)
   const timeoutMs = timeoutSeconds * MS_PER_SECOND
-  return deps.spawnConsultant('pi', prompt, cwd, timeoutMs, deps.onProgress)
+  return deps.spawnConsultant('pi', prompt, cwd, timeoutMs, deps.onProgress, deps.signal)
+}
+
+/**
+ * The council runs in flight, by the renderer's run id. Each step of a run
+ * (consultants, arbiter) holds an abort controller while it runs, so a cancel
+ * stops the processes of every step of that run.
+ */
+export class CouncilRuns {
+  private readonly running = new Map<string, Set<AbortController>>()
+
+  /** Start a step of the run; call the returned `end` when the step is over. */
+  begin(runId: string): { signal: AbortSignal; end: () => void } {
+    const controller = new AbortController()
+    const steps = this.running.get(runId) ?? new Set<AbortController>()
+    steps.add(controller)
+    this.running.set(runId, steps)
+    const end = (): void => {
+      steps.delete(controller)
+      if (steps.size === 0 && this.running.get(runId) === steps) this.running.delete(runId)
+    }
+    return { signal: controller.signal, end }
+  }
+
+  /** Stop every running step of the run; a run that is not running is left alone. */
+  cancel(runId: string): void {
+    const steps = this.running.get(runId)
+    if (!steps) return
+    this.running.delete(runId)
+    for (const controller of steps) controller.abort()
+  }
 }
 
 /** Where a consultant's CLI was found: the engine resolution for Pi, detection for the others. */
@@ -201,8 +236,12 @@ function installedConsultant(id: CouncilAgentId): ConsultantInstall {
 }
 
 /** Default spawn: run the consultant CLI, stream output, enforce timeout. */
-export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeoutMs, onChunk) =>
+export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeoutMs, onChunk, signal) =>
   new Promise<SpawnOutcome>((resolve) => {
+    if (signal?.aborted) {
+      resolve({ ok: false, output: '', error: t('errors.council.cancelled') })
+      return
+    }
     const launch = buildConsultantLaunch(installedConsultant(id), IS_WINDOWS, process.env)
     if ('error' in launch) {
       resolve({ ok: false, output: '', error: launch.error })
@@ -269,14 +308,25 @@ export const defaultSpawnConsultant: SpawnConsultant = (id, prompt, cwd, timeout
       if (settled) return
       settled = true
       clearTimeout(timer)
+      signal?.removeEventListener('abort', cancel)
       resolve(outcome)
     }
 
-    const timer = setTimeout(() => {
+    const stopChild = (): void => {
       child.kill('SIGTERM')
       setTimeout(() => child.kill('SIGKILL'), FORCE_KILL_TIMEOUT_MS)
+    }
+
+    const timer = setTimeout(() => {
+      stopChild()
       finish({ ok: false, output: planText, timedOut: true })
     }, timeoutMs)
+
+    function cancel(): void {
+      stopChild()
+      finish({ ok: false, output: planText, error: t('errors.council.cancelled') })
+    }
+    signal?.addEventListener('abort', cancel, { once: true })
 
     child.stdout?.on('data', (d: Buffer) => {
       const text = outDecoder.write(d)

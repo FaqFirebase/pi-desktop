@@ -1,5 +1,5 @@
 import { useAppStore } from '../store'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, AlertCircle, HelpCircle, EyeOff, Eye } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -9,6 +9,8 @@ import {
   splitPromptText,
 } from './extension-ui-dialog-helpers'
 import { isImeComposing } from '../utils/ime-composing'
+import { claimEscape, useEscapeSurface } from '../utils/escape-key'
+import { useEscapeToClose } from '../hooks'
 import { useChatSession } from '../chat-session-context'
 import type { PiExtensionUiRequest } from '../../../shared/ipc-contracts'
 
@@ -73,29 +75,29 @@ function SessionExtensionUiDialog(): React.JSX.Element | null {
   }
   const show = (): void => setHiddenRequestId(null)
 
+  // Escape hides the shown prompt (or the whole surface that can hide), unless
+  // a surface opened above it takes the press.
+  const escapeSurface = useEscapeSurface(request !== null && (hideSurface !== undefined || !hidden))
   useEffect(() => {
     if (!request) return
     const onKey = (e: KeyboardEvent): void => {
       if (isImeComposing(e)) return
-      if (hideSurface && (isDialogToggleKey(e) || e.key === 'Escape')) {
+      if (isDialogToggleKey(e)) {
         e.preventDefault()
         e.stopPropagation()
-        hideSurface()
-      } else if (isDialogToggleKey(e)) {
-        e.preventDefault()
+        if (hideSurface) hideSurface()
+        else setHiddenRequestId((current) => (current === request.id ? null : request.id))
+      } else if (claimEscape(e, escapeSurface)) {
         e.stopPropagation()
-        setHiddenRequestId((current) => (current === request.id ? null : request.id))
-      } else if (e.key === 'Escape' && hiddenRequestId !== request.id) {
-        e.preventDefault()
-        e.stopPropagation()
-        setHiddenRequestId(request.id)
+        if (hideSurface) hideSurface()
+        else setHiddenRequestId(request.id)
       }
     }
     // Capture phase: the chat's own Escape handler (abort the turn) runs
     // later in the bubble phase and skips a press this handler consumed.
     window.addEventListener('keydown', onKey, KEY_LISTENER_OPTIONS)
     return () => window.removeEventListener('keydown', onKey, KEY_LISTENER_OPTIONS)
-  }, [request, hiddenRequestId, hideSurface])
+  }, [request, hideSurface, escapeSurface])
 
   // The toast lives in its own store slot so it can coexist with a blocking
   // dialog instead of clobbering it; dismissal only touches the toast slot.
@@ -420,17 +422,8 @@ export function AppConfirmDialog(): React.JSX.Element | null {
   const request = useAppStore((state) => state.confirmRequest)
   const resolveConfirm = useAppStore((state) => state.resolveConfirm)
 
-  useEffect(() => {
-    if (!request) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && !isImeComposing(e)) {
-        e.preventDefault()
-        resolveConfirm(false)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [request, resolveConfirm])
+  const decline = useCallback(() => resolveConfirm(false), [resolveConfirm])
+  useEscapeToClose(request !== null, decline)
 
   if (!request) return null
 

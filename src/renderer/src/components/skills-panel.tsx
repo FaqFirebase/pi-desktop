@@ -19,6 +19,7 @@ import { useAppStore } from '../store'
 import { MarkdownRenderer } from './markdown-renderer'
 import { useContextMenu } from './context-menu'
 import { isImeComposing } from '../utils/ime-composing'
+import { claimEscape } from '../utils/escape-key'
 import { isRpcSkillPath } from '../../../shared/ipc-contracts'
 import type { InstalledSkill } from '../../../shared/ipc-contracts'
 import {
@@ -83,7 +84,7 @@ function SkillGroupNameInput({
       onKeyDown={(e) => {
         if (isImeComposing(e.nativeEvent)) return
         if (e.key === 'Enter') submit()
-        if (e.key === 'Escape') finish(onCancel)
+        if (claimEscape(e.nativeEvent)) finish(onCancel)
       }}
       onBlur={submit}
       placeholder={t('skills.groups.namePlaceholder')}

@@ -2,7 +2,7 @@ import { createContext, useContext, type ReactNode } from 'react'
 import type { AgentEngineKind, AppSettings, FileSearchResult, ModelInfo, PermissionMode, PiExtensionUiRequest, PiStatus, VoiceStatus } from '../../shared/ipc-contracts'
 import type { GuiCommand, PiCommand } from '../../shared/pi-command'
 import type { ComposerAttachment, ComposerDraft } from './store'
-import type { QueuedPrompt } from './send-queue'
+import type { QueuedPrompt, SendQueueHold } from './send-queue'
 import type { AttachmentBatch } from './utils/attachment-batch'
 
 export interface ChatModelBindings {
@@ -65,7 +65,8 @@ export interface ChatComposerBindings {
   guiCommands: Array<GuiCommand & { run(): void }>
   queue?: {
     prompts: readonly QueuedPrompt[]
-    held: boolean
+    /** Why the queue waits for the user, or undefined when it sends on its own. */
+    hold: SendQueueHold | undefined
     remove(id: string): void
     sendNow(id: string): Promise<void>
   }

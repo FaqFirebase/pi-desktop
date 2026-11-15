@@ -9,6 +9,7 @@ import type { WorkspaceActivationIntent } from '../../shared/ipc-contracts'
 import type { ChatWidth } from '../../shared/chat-width'
 import { t } from '../../shared/i18n'
 import { isImeComposing } from './utils/ime-composing'
+import { claimEscape, useEscapeSurface } from './utils/escape-key'
 import { currentNavigationType, launchView } from './utils/launch-view'
 
 /**
@@ -499,6 +500,29 @@ export function useChatScroll(active: boolean, bottomPadPx: number): {
  */
 export function isAbortShortcut(event: { key: string; defaultPrevented: boolean }, isStreaming: boolean): boolean {
   return event.key === 'Escape' && isStreaming && !event.defaultPrevented
+}
+
+/** Capture phase: runs before the chat's bubble-phase Escape handler below. */
+const ESCAPE_TO_CLOSE_LISTENER_OPTIONS: AddEventListenerOptions = { capture: true }
+
+/**
+ * Calls `onEscape` for an Escape press while `enabled`, for a surface that
+ * closes on Escape wherever the focus is (a modal, a popover). The window
+ * listener runs in the capture phase and claims the press, so the chat's
+ * Escape handler does not also stop the running turn, whatever order the two
+ * listeners were added in. Only the surface opened last claims a press (see
+ * `EscapeSurface`), so one Escape closes one surface.
+ */
+export function useEscapeToClose(enabled: boolean, onEscape: () => void): void {
+  const surface = useEscapeSurface(enabled)
+  useEffect(() => {
+    if (!enabled) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (claimEscape(event, surface)) onEscape()
+    }
+    window.addEventListener('keydown', onKey, ESCAPE_TO_CLOSE_LISTENER_OPTIONS)
+    return () => window.removeEventListener('keydown', onKey, ESCAPE_TO_CLOSE_LISTENER_OPTIONS)
+  }, [enabled, onEscape, surface])
 }
 
 /**

@@ -18,6 +18,21 @@ test('resolveModelsFile picks Pi models.json', () => {
   assert.equal(location.format, 'json')
 })
 
+test('resolveModelsFile puts Pi models.json in PI_CODING_AGENT_DIR', () => {
+  const saved = process.env.PI_CODING_AGENT_DIR
+  process.env.PI_CODING_AGENT_DIR = '/custom/pi-agent'
+  try {
+    const location = resolveModelsFile('pi', '/home/u')
+    assert.equal(location.dir, '/custom/pi-agent')
+    assert.equal(location.file, join('/custom/pi-agent', 'models.json'))
+    // OMP keeps its own agent directory.
+    assert.equal(resolveModelsFile('omp', '/nonexistent-home').dir, join('/nonexistent-home', '.omp', 'agent'))
+  } finally {
+    if (saved === undefined) delete process.env.PI_CODING_AGENT_DIR
+    else process.env.PI_CODING_AGENT_DIR = saved
+  }
+})
+
 test('resolveModelsFile defaults OMP to models.yml', () => {
   const location = resolveModelsFile('omp', '/nonexistent-home')
   assert.equal(location.file, join('/nonexistent-home', '.omp', 'agent', 'models.yml'))

@@ -43,6 +43,7 @@ import type {
   CouncilRunResult,
   CouncilArbiterRequest,
   CouncilArbiterResult,
+  CouncilCancelRequest,
   CouncilProgressEvent,
   VoiceStatus,
   TypeSafeStatus,
@@ -290,6 +291,7 @@ interface PiDesktopAPI {
     detect(): Promise<CouncilDetectResult>
     runConsultants(payload: CouncilRunRequest): Promise<CouncilRunResult>
     arbiter(payload: CouncilArbiterRequest): Promise<CouncilArbiterResult>
+    cancel(payload: CouncilCancelRequest): Promise<void>
     onProgress(callback: (event: CouncilProgressEvent) => void): () => void
   }
 
@@ -669,6 +671,7 @@ const api: PiDesktopAPI = {
     detect: () => ipcRenderer.invoke(IPC_CHANNELS.COUNCIL_DETECT),
     runConsultants: (payload) => ipcRenderer.invoke(IPC_CHANNELS.COUNCIL_RUN_CONSULTANTS, payload),
     arbiter: (payload) => ipcRenderer.invoke(IPC_CHANNELS.COUNCIL_ARBITER, payload),
+    cancel: (payload) => ipcRenderer.invoke(IPC_CHANNELS.COUNCIL_CANCEL, payload),
     onProgress: (callback) => {
       const handler = (_event: Electron.IpcRendererEvent, data: CouncilProgressEvent) => callback(data)
       ipcRenderer.on(IPC_CHANNELS.EVENT_COUNCIL_PROGRESS, handler)

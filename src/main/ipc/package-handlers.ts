@@ -3,11 +3,13 @@ import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { isValidPackageSpec } from '../../shared/package-spec'
 import { fetchPackageCatalog } from '../package-catalog'
 import { readFile } from 'fs/promises'
+import { homedir } from 'os'
 import { join } from 'path'
 import { assertTrustedSender, isString } from './validation'
 import { runPiCli } from './run-pi-cli'
 import { activeEngineKind } from './active-engine'
 import { currentOmpProfile, ompPluginsDirIn } from '../omp-paths'
+import { getPiAgentDir } from '../pi-paths'
 import { parseOmpPluginList, type OmpNpmPlugin } from '../omp-plugin-list'
 import {
   explainOmpFailure,
@@ -108,18 +110,14 @@ interface PiPackageScope {
   npmRoot: string
 }
 
-function homeDir(): string {
-  return process.env.HOME ?? process.env.USERPROFILE ?? ''
-}
-
 /** The plugin store of the profile OMP runs under (see omp-paths.ts). */
 function ompPluginsDir(): string {
-  return ompPluginsDirIn(homeDir(), currentOmpProfile())
+  return ompPluginsDirIn(homedir(), currentOmpProfile())
 }
 
 /** Pi's package scopes: each has a settings `packages` array and a shared npm project. */
 function piPackageScopes(cwd: string): PiPackageScope[] {
-  const agentDir = join(homeDir(), '.pi', 'agent')
+  const agentDir = getPiAgentDir()
   const projectDir = join(cwd, '.pi')
   return [
     { scope: 'global', settingsPath: join(agentDir, 'settings.json'), npmRoot: join(agentDir, 'npm') },
