@@ -89,3 +89,14 @@ test('clearing sent attachments preserves another project and the outgoing image
   assert.equal(outgoing.length, 1)
   assert.equal(outgoing[0].kind, 'image')
 })
+
+test('a picked element stages attachments for the active workspace only', () => {
+  useAppStore.setState({ activeWorkspace: workspace('project-a'), pendingInsert: null })
+  assert.equal(useAppStore.getState().stagePickedAttachments('project-b', [NOTES_ATTACHMENT]), false)
+  assert.equal(useAppStore.getState().pendingInsert, null)
+  assert.equal(useAppStore.getState().stagePickedAttachments('project-a', [NOTES_ATTACHMENT]), true)
+  assert.deepEqual(useAppStore.getState().pendingInsert?.attachments, [NOTES_ATTACHMENT])
+  assert.equal(useAppStore.getState().pendingInsert?.text, '')
+  // Staging never sends: the draft store and the message list are untouched.
+  assert.deepEqual(useAppStore.getState().composerDrafts, {})
+})

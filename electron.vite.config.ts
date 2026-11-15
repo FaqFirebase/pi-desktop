@@ -104,7 +104,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),
-          'quick-chat': resolve(__dirname, 'src/preload/quick-chat.ts')
+          'quick-chat': resolve(__dirname, 'src/preload/quick-chat.ts'),
+          'browser-pane': resolve(__dirname, 'src/preload/browser-pane.ts')
         }
       }
     }

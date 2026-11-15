@@ -3,8 +3,11 @@ import { existsSync, mkdirSync } from 'fs'
 import { basename, dirname, join, resolve as resolvePath } from 'path'
 import { isTrustedRendererUrl, RENDERER_INDEX_PATH, RENDERER_INDEX_URL } from './renderer-origin'
 import { workspaceTrustStore } from './workspace-trust'
-import { PREVIEW_PARTITIONS } from '../shared/preview-partitions'
+import { BROWSER_PANE_PARTITION, PREVIEW_PARTITIONS } from '../shared/preview-partitions'
 import { isBlockedPreviewRequest, previewGuestPreferences } from './preview-guest'
+import { hardenBrowserPaneSession, isBrowserPaneGuest, watchBrowserPaneGuest } from './browser-pane-session'
+import { browserPaneGuestPreferences } from './browser-pane-guest'
+import { isBrowserPaneUrl } from '../shared/browser-pane'
 import { WorkspaceManager } from './workspace-manager'
 import type { WorkspaceTerminals } from './workspace-terminals'
 import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
@@ -23,14 +26,19 @@ import {
 } from './app-data-paths'
 import { setupTray, setTrayEnabled, isTrayEnabled, isTrayAvailable, destroyTray, notifyFirstHide } from './tray-manager'
 import { shouldHideToTray } from './tray-decision'
+import { applyKeepAwakeMode } from './keep-awake-service'
 import { readWindowHints, windowTitle } from './window-hints'
 import { createEditorGuard } from './editor-guard'
 import { appLog } from './app-log'
+import { CLEAN_EXIT_REASON, crashRecoveryAction } from './renderer-crash-recovery'
+import { RENDERER_LOG_SCOPE } from './renderer-error-log'
+import { PI_DESKTOP_PRODUCT_NAME } from '../shared/product-name'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { VOICE_PROTOCOL_SCHEME, handleVoiceProtocolRequest } from './voice-protocol'
 import { getVoiceModelsDir } from './voice-model-store'
 import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
 import { applyOmpLaunchArgs, getSettingsPath } from './ipc/settings'
+import { isAppWindowSender, restrictIpcToAppWindows } from './ipc-sender-guard'
 import { disableCwdExecutableSearch } from './windows-exe-search'
 import { WINDOW_BACKGROUND_COLOR } from './window-appearance'
 import { configureSessionClaims, SESSION_CLAIMS_DIR_NAME } from './session-claims'
@@ -62,6 +70,7 @@ process.on('uncaughtException', (err) => {
   console.error('Uncaught exception:', err)
   appLog.error('app', 'Uncaught exception', err)
 })
+process.on('unhandledRejection', (reason) => appLog.error('app', 'Unhandled rejection', reason))
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -71,6 +80,7 @@ const MIN_WINDOW_WIDTH = 800
 const MIN_WINDOW_HEIGHT = 600
 const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL
 const PRELOAD_PATH = join(__dirname, '../preload/index.js')
+const BROWSER_PANE_PRELOAD_PATH = join(__dirname, '../preload/browser-pane.js')
 
 // In dev: resources/ sits at the project root (app.getAppPath()).
 // In packaged: extraResources config copies resources/ into process.resourcesPath/resources/.
@@ -105,11 +115,19 @@ setQuickChatQuittingHandler(() => isQuitting)
 // close, and the reload menu items all pause on the same discard dialog.
 const editorGuard = createEditorGuard()
 
+// When the main window's renderer last reloaded after a crash; a second crash
+// soon after asks instead of reloading again (renderer-crash-recovery.ts).
+let lastCrashReloadAt: number | null = null
+
+// A dialog can be due while the window is hidden in the tray; surface it so
+// the dialog (and what it is asking about) is actually visible.
+function showWindowForDialog(window: BrowserWindow | null): void {
+  if (window && !window.isDestroyed() && !window.isVisible()) window.show()
+}
+
 /** Native confirm matching the in-app discard dialog's wording. */
 async function confirmEditorDiscard(window: BrowserWindow | null): Promise<boolean> {
-  // Tray Quit can arrive while the window is hidden; surface it so the
-  // dialog (and the edits it is asking about) are actually visible.
-  if (window && !window.isDestroyed() && !window.isVisible()) window.show()
+  showWindowForDialog(window)
   const options = {
     type: 'warning' as const,
     title: t('editorGuard.title'),
@@ -122,6 +140,27 @@ async function confirmEditorDiscard(window: BrowserWindow | null): Promise<boole
     ? await dialog.showMessageBox(window, options)
     : await dialog.showMessageBox(options)
   return response === 0
+}
+
+/** The renderer crashed again soon after a reload: Reload (true) or Quit (false). */
+async function confirmCrashReload(window: BrowserWindow, reason: string): Promise<boolean> {
+  showWindowForDialog(window)
+  const { response } = await dialog.showMessageBox(window, {
+    type: 'error',
+    title: t('crashRecovery.title'),
+    message: t('crashRecovery.message', { product: PI_DESKTOP_PRODUCT_NAME }),
+    detail: t('crashRecovery.detail', { reason }),
+    buttons: [t('menu.reload'), t('app.quit')],
+    defaultId: 0,
+    cancelId: 1,
+  })
+  return response === 0
+}
+
+function reloadAfterCrash(window: BrowserWindow): void {
+  if (window.isDestroyed()) return
+  lastCrashReloadAt = Date.now()
+  window.webContents.reload()
 }
 
 /** Menu Reload / Force Reload: ask a dirty editor first, then reload. */
@@ -311,7 +350,26 @@ function createMainWindow(): BrowserWindow {
   // A reloaded (or crashed-and-recovered) renderer starts with a clean
   // editor; a stale dirty flag here would make quit nag forever.
   window.webContents.on('did-start-loading', () => editorGuard.reset())
-  window.webContents.on('render-process-gone', () => editorGuard.reset())
+  window.webContents.on('render-process-gone', (_event, details) => {
+    editorGuard.reset()
+    if (details.reason !== CLEAN_EXIT_REASON) {
+      appLog.error(RENDERER_LOG_SCOPE, 'Renderer process gone', { reason: details.reason, exitCode: details.exitCode })
+    }
+    const action = crashRecoveryAction({
+      reason: details.reason,
+      isQuitting,
+      windowDestroyed: window.isDestroyed(),
+      now: Date.now(),
+      lastReloadAt: lastCrashReloadAt,
+    })
+    if (action === 'reload') reloadAfterCrash(window)
+    else if (action === 'ask') {
+      void confirmCrashReload(window, details.reason).then((reload) => {
+        if (reload) reloadAfterCrash(window)
+        else app.quit()
+      })
+    }
+  })
 
   window.on('closed', () => {
     if (mainWindow !== window) return
@@ -341,6 +399,13 @@ function createMainWindow(): BrowserWindow {
   // Defense-in-depth against a renderer XSS trying to attach a guest with
   // elevated webPreferences.
   window.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    // The Browser pane has its own rules: our picker preload, the locked-down
+    // flags, and an http or https start page only.
+    if (params.partition === BROWSER_PANE_PARTITION) {
+      Object.assign(webPreferences, browserPaneGuestPreferences(BROWSER_PANE_PRELOAD_PATH))
+      if (!isBrowserPaneUrl(params.src)) event.preventDefault()
+      return
+    }
     delete webPreferences.preload
     webPreferences.nodeIntegration = false
     webPreferences.nodeIntegrationInSubFrames = false
@@ -547,6 +612,8 @@ app.whenReady().then(async () => {
 
   // Lock both preview partitions to local files before any preview can load.
   hardenPreviewSession()
+  // The Browser pane partition: http/https only, no permissions, no downloads.
+  hardenBrowserPaneSession()
 
   // Serve downloaded speech-model files to the renderer. The handler streams
   // files only from the single speech-models directory and rejects traversal.
@@ -565,6 +632,14 @@ app.whenReady().then(async () => {
 
   // Before the menu, window, and tray exist, so they are built in the saved language.
   applyLanguageSetting(settings.language)
+
+  // Every IPC channel serves the main and Quick Chat windows only. Installed
+  // before the first handler is registered, so no channel is left out.
+  const guestSessions = [...PREVIEW_PARTITIONS, BROWSER_PANE_PARTITION].map((partition) => session.fromPartition(partition))
+  restrictIpcToAppWindows(ipcMain, (sender) => isAppWindowSender(sender, {
+    appWindowContents: () => [mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null, getQuickChatWindow()?.webContents],
+    guestSessions,
+  }))
 
   // Register IPC handlers before creating windows. The window getter is a
   // lazy closure — mainWindow is created later and the notification wiring
@@ -604,6 +679,9 @@ app.whenReady().then(async () => {
     toggleQuickChat: toggleQuickChatWindow,
   })
   setTrayEnabled(settings.minimizeToTrayOnClose)
+  void applyKeepAwakeMode(settings.keepAwakeMode).catch((err) => {
+    appLog.error('power', 'Failed to apply the keep-awake setting', err)
+  })
 
   // Warm the package catalog cache in the background so the Catalog tab is
   // instant when first opened. Non-blocking; failures are ignored (offline etc).
@@ -680,12 +758,17 @@ app.on('will-quit', (event) => {
 
 // Security: prevent new window creation, and stop preview <webview> guests from
 // navigating away from their local file (e.g. a malicious HTML file redirecting
-// itself to a remote URL to phone home).
+// itself to a remote URL to phone home). The Browser pane partition has its
+// own rules instead (browser-pane-session.ts).
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(() => {
     return { action: 'deny' }
   })
   if (contents.getType() === 'webview') {
+    if (isBrowserPaneGuest(contents)) {
+      watchBrowserPaneGuest(contents)
+      return
+    }
     contents.on('will-navigate', (event, url) => {
       // An untrusted preview may not navigate away from its local file (e.g. a
       // malicious page redirecting itself to a remote URL). Trusted previews of

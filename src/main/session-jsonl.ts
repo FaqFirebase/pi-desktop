@@ -1,4 +1,7 @@
+import { createReadStream } from 'fs'
 import { readFile, stat } from 'fs/promises'
+import { createInterface } from 'readline'
+import { setImmediate as yieldToEventLoop } from 'timers/promises'
 import { isObject } from './ipc/validation'
 
 const LINE_BREAK = /\r?\n/
@@ -29,5 +32,36 @@ export async function readSessionEntries(filePath: string, maxBytes: number): Pr
     return parseSessionLines(await readFile(filePath, 'utf8'))
   } catch {
     return null
+  }
+}
+
+/** Lines read between two yields to the event loop. */
+export const JSONL_STREAM_YIELD_LINES = 200
+
+/**
+ * Parsed object records with 0-based line numbers. Opens read-only; yields to
+ * the event loop every JSONL_STREAM_YIELD_LINES lines so a huge file never
+ * blocks the main process; skips bad lines. Rejects when the file cannot be read.
+ */
+export async function* streamJsonlRecords(filePath: string): AsyncGenerator<{ record: Record<string, unknown>; line: number }> {
+  const stream = createReadStream(filePath, { flags: 'r', encoding: 'utf8' })
+  const lines = createInterface({ input: stream, crlfDelay: Infinity })
+  let line = -1
+  try {
+    for await (const text of lines) {
+      line++
+      if (line > 0 && line % JSONL_STREAM_YIELD_LINES === 0) await yieldToEventLoop()
+      if (!text.trim()) continue
+      let value: unknown
+      try {
+        value = JSON.parse(text)
+      } catch {
+        continue
+      }
+      if (isObject(value)) yield { record: value, line }
+    }
+  } finally {
+    lines.close()
+    stream.destroy()
   }
 }

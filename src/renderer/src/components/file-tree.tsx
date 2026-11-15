@@ -11,6 +11,7 @@ import { HTML_PREVIEW_PARTITION, PDF_PREVIEW_PARTITION } from '../../../shared/p
 import { CodeEditor } from './code-editor'
 import { MarkdownRenderer } from './markdown-renderer'
 import { isImagePath } from './chat-file-link'
+import { buildOpenPathMenuItems, useContextMenu } from './context-menu'
 import { clsx } from 'clsx'
 import {
   FolderOpen,
@@ -30,13 +31,7 @@ import {
   ShieldAlert,
 } from 'lucide-react'
 import { isImeComposing } from '../utils/ime-composing'
-
-// `<webview>` (enabled via webviewTag) isn't a typed JSX intrinsic; cast the tag
-// to a component so TS accepts the props we use. It renders the HTML preview in
-// an isolated guest process so its JavaScript runs without touching the app CSP.
-const Webview = 'webview' as unknown as React.FC<
-  React.HTMLAttributes<HTMLElement> & { src: string; partition?: string; plugins?: boolean }
->
+import { Webview } from './webview-tag'
 
 // ─── File Tree ───────────────────────────────────────────────────────────────
 
@@ -58,6 +53,11 @@ export function FileTree(): React.JSX.Element {
   // Path included: "Change folder…" repoints a workspace without changing its
   // id, and the tree must reload for that too.
   const workspaceKey = activeWorkspace ? `${activeWorkspace.id}:${activeWorkspace.path}` : null
+  const { show: showContextMenu, ContextMenuComponent } = useContextMenu()
+  const handleNodeContextMenu = useCallback((e: React.MouseEvent, node: FileTreeNode) => {
+    e.preventDefault()
+    showContextMenu(e, buildOpenPathMenuItems(async () => node.path))
+  }, [showContextMenu])
   // Overlapping loads resolve out of order (a slow pre-switch tree scan can
   // land after a fast post-switch one); only the latest may commit state.
   const loadGuard = useMemo(() => createStaleGuard(), [])
@@ -212,10 +212,12 @@ export function FileTree(): React.JSX.Element {
             gitStatus={gitStatus}
             selectedFile={selectedFile}
             onFileClick={handleFileClick}
+            onContextMenu={handleNodeContextMenu}
             depth={0}
           />
         ))}
       </div>
+      {ContextMenuComponent}
     </div>
   )
 }
@@ -225,12 +227,14 @@ function TreeNodeComponent({
   gitStatus,
   selectedFile,
   onFileClick,
+  onContextMenu,
   depth,
 }: {
   node: FileTreeNode
   gitStatus: Record<string, GitFileStatus>
   selectedFile: string | null
   onFileClick: (path: string, relativePath: string) => Promise<void>
+  onContextMenu: (e: React.MouseEvent, node: FileTreeNode) => void
   depth: number
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState(depth < 1)
@@ -242,6 +246,7 @@ function TreeNodeComponent({
       <div>
         <button
           onClick={() => setExpanded(!expanded)}
+          onContextMenu={(e) => onContextMenu(e, node)}
           className="flex w-full items-center gap-1 py-0.5 px-2 text-sm text-muted hover:bg-surface-hover/50 hover:text-secondary transition-colors"
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
         >
@@ -260,6 +265,7 @@ function TreeNodeComponent({
             gitStatus={gitStatus}
             selectedFile={selectedFile}
             onFileClick={onFileClick}
+            onContextMenu={onContextMenu}
             depth={depth + 1}
           />
         ))}
@@ -270,6 +276,7 @@ function TreeNodeComponent({
   return (
     <button
       onClick={() => void onFileClick(node.path, node.relativePath)}
+      onContextMenu={(e) => onContextMenu(e, node)}
       className={clsx(
         'flex w-full items-center gap-1.5 py-0.5 px-2 text-sm transition-colors',
         isSelected

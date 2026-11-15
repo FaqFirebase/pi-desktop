@@ -90,6 +90,7 @@ function harness(initial: QuickChatBinding | null = binding('A')): {
     setRuntimeThinking: async (input) => { thinkingCalls.push({ level: input.level, version: input.version }); return { type: 'response', command: 'set_thinking_level', success: true } },
     hide: async () => { hides++ }, openInMain: async () => {},
     onUpdate: (callback) => { listener = callback; return () => { listener = null } },
+    reportRendererError: async () => undefined,
   }
   return { api, controller: new QuickChatController(api), context, submissions, answers, creations, stops, hides: () => hides, modelCalls, thinkingCalls, picks: () => picks,
     emit: (update) => { listener?.(update) },

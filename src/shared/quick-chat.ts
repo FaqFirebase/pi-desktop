@@ -1,4 +1,4 @@
-import type { AppSettings, AttachmentReadResult, FileSearchResult, I18nEnvironment, ModelInfo, PermissionMode, PiExtensionUiRequest, PiResponseEvent, PiRpcEvent, PromptImage, SessionListItem, SessionRuntimeInfo, StreamingTextSnapshot, UserThemeRecord, VoiceStatus, Workspace } from './ipc-contracts'
+import type { AppSettings, AttachmentReadResult, FileSearchResult, I18nEnvironment, ModelInfo, PermissionMode, PiExtensionUiRequest, PiResponseEvent, PiRpcEvent, PromptImage, RendererErrorRecord, SessionListItem, SessionRuntimeInfo, StreamingTextSnapshot, UserThemeRecord, VoiceStatus, Workspace } from './ipc-contracts'
 
 export const QUICK_CHAT_CHANNELS = {
   context: 'quick-chat:context', select: 'quick-chat:select', snapshot: 'quick-chat:snapshot',
@@ -11,6 +11,10 @@ export const QUICK_CHAT_CHANNELS = {
   searchFiles: 'quick-chat:search-files', listCommands: 'quick-chat:list-commands',
   voiceStatus: 'quick-chat:voice-status', openSettings: 'quick-chat:open-settings',
   pickAttachment: 'quick-chat:pick-attachment',
+  // Same intake as IPC_CHANNELS.RENDERER_ERROR_REPORT. A separate name keeps
+  // this sandboxed preload free of ipc-contracts: a module both preloads
+  // import becomes a shared chunk, which a sandboxed preload cannot load.
+  rendererError: 'quick-chat:renderer-error',
 } as const
 export interface QuickChatBinding {
   version: number
@@ -92,6 +96,8 @@ export interface QuickChatApi {
   /** Switch the bound runtime's thinking level. Refused under the same guards. */
   setRuntimeThinking(input: { version: number; level: string }): Promise<PiResponseEvent | null>
   onUpdate(callback: (update: QuickChatUpdate) => void): () => void
+  /** The popup's renderer errors, to the same app-log intake as the main window's. */
+  reportRendererError(record: RendererErrorRecord): Promise<void>
 }
 
 export interface QuickChatShortcutStatus {

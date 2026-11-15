@@ -4,6 +4,7 @@ import pty, { type IPty } from 'node-pty'
 import type { TerminalStartOptions, TerminalStartResult } from '../shared/ipc-contracts'
 import { loadPiDotenv } from './pi-dotenv'
 import { childProcessEnv } from './windows-exe-search'
+import type { TerminalProgram } from './terminal-program'
 
 // Classic VT100 grid, used until the renderer reports the fitted size.
 export const DEFAULT_TERMINAL_COLS = 80
@@ -31,18 +32,18 @@ export class TerminalService {
   start(
     options: TerminalStartOptions,
     onData: TerminalDataHandler,
-    onExit: TerminalExitHandler
+    onExit: TerminalExitHandler,
+    program: TerminalProgram = { file: getShell(), args: [] },
   ): TerminalStartResult {
     this.stop()
 
-    const shell = getShell()
     const cwd = getCwd(options.cwd)
 
     this.cwd = cwd
     // node-pty's `encoding` option calls setEncoding() under the hood,
     // which Windows (conpty/winpty) does not support and logs a warning
     // for. Only pass it on POSIX platforms.
-    const terminal = pty.spawn(shell, [], {
+    const terminal = pty.spawn(program.file, program.args, {
       name: TERMINAL_TYPE,
       cols: options.cols ?? DEFAULT_TERMINAL_COLS,
       rows: options.rows ?? DEFAULT_TERMINAL_ROWS,
@@ -64,7 +65,7 @@ export class TerminalService {
 
     return {
       pid: terminal.pid,
-      shell,
+      shell: program.file,
       cwd,
     }
   }

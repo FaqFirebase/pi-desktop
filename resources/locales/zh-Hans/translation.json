@@ -8,6 +8,12 @@
     "workingInAnotherWorkspace": "Pi 正在另一个工作区工作"
   },
   "app": {
+    "crashScreen": {
+      "copyDetails": "复制详细信息",
+      "message": "{{product}} 遇到错误，已停止绘制此窗口。你的会话仍在运行。请重新加载以继续。",
+      "reload": "重新加载",
+      "title": "出现问题"
+    },
     "dropFolder": {
       "description": "将该文件夹作为工作区打开（必要时会创建）",
       "title": "拖放文件夹以作为项目打开"
@@ -24,6 +30,22 @@
       "dismissAriaLabel": "关闭更新通知",
       "downloadButton": "下载"
     }
+  },
+  "browserPane": {
+    "addressLabel": "地址",
+    "addressPlaceholder": "输入网址或 localhost:端口",
+    "back": "后退",
+    "close": "关闭浏览器",
+    "downloadRefused": "浏览器面板已禁用下载。如需下载，请在默认浏览器中打开该页面。",
+    "emptyHint": "输入网址即可在此打开页面。选取不会发送任何内容：它只会把元素添加到你的消息中。",
+    "forward": "前进",
+    "invalidAddress": "此处只能打开 http 和 https 页面。",
+    "loadFailed": "无法加载 {{url}}。",
+    "openExternal": "在默认浏览器中打开",
+    "pick": "选取元素",
+    "pickImageTooLarge": "元素截图过大，无法附加。已添加其文本。",
+    "reload": "重新加载",
+    "stopPicking": "停止选取（Esc）"
   },
   "chat": {
     "activity": {
@@ -169,6 +191,7 @@
       "viewSource": "查看源码"
     },
     "toolbar": {
+      "browser": "浏览器",
       "diffViewer": "差异查看器",
       "fileTree": "文件树",
       "reviewPanel": "审查面板",
@@ -297,6 +320,7 @@
     "deleteSessionLabel": "删除…",
     "openLink": "打开链接",
     "openSession": "打开会话",
+    "pin": "置顶",
     "rename": "重命名…",
     "searchSelection": "搜索选中内容",
     "shortcuts": {
@@ -307,6 +331,7 @@
       "selectAll": "Ctrl+A"
     },
     "unarchive": "取消归档",
+    "unpin": "取消置顶",
     "workflowRuns": "工作流运行"
   },
   "conveyor": {
@@ -414,6 +439,11 @@
       "working": "工作中…"
     }
   },
+  "crashRecovery": {
+    "detail": "原因：{{reason}}",
+    "message": "{{product}} 窗口在重新加载后不久再次停止。",
+    "title": "窗口已停止"
+  },
   "customModels": {
     "addModelButton": "添加模型",
     "addProviderButton": "添加提供商",
@@ -444,12 +474,18 @@
     "visionLabel": "视觉"
   },
   "diagnostics": {
+    "exportLogs": "导出日志",
+    "exportLogsFailed": "无法导出日志：{{error}}",
+    "exportLogsSaved": "日志已保存到 {{path}}",
     "fields": {
       "appVersion": "应用版本",
       "binaryFound": "已找到可执行文件",
       "chromium": "Chromium",
       "electron": "Electron",
       "engineVersion": "{{agent}} 版本",
+      "gitFailed": "未能运行：{{detail}}",
+      "gitNotFound": "未找到",
+      "gitVersion": "Git 版本",
       "globalRules": "全局规则",
       "globalRulesInvalid": "文件无效：{{error}}",
       "guiDataDir": "GUI 数据目录",
@@ -497,6 +533,7 @@
     "sections": {
       "application": "应用",
       "binaryTitle": "{{agent}} 可执行文件",
+      "git": "Git",
       "permissions": "权限",
       "providers": "提供商",
       "recentErrors": "最近错误",
@@ -509,6 +546,10 @@
     "workspaceTrustedBadge": "已信任"
   },
   "dialogs": {
+    "logExport": {
+      "fileFilterName": "JSON",
+      "title": "导出日志"
+    },
     "openFolder": {
       "title": "打开文件夹"
     },
@@ -576,6 +617,9 @@
       "pathNotPermitted": "附件路径未被允许",
       "tooLarge": "附件过大（最大 {{limit}} MB）"
     },
+    "chatImport": {
+      "busy": "已有聊天导入正在进行。"
+    },
     "council": {
       "agentNotFound": "未找到 {{agent}}。请安装它，或在设置中将其从委员会成员中移除。",
       "arbiterFailed": "仲裁者失败",
@@ -612,6 +656,7 @@
       "localBranchRequired": "请选择一个现有的本地分支",
       "namedBranchRequired": "创建 PR 需要一个具名分支",
       "newFileNotCommittable": "无法提交 {{path}}：它不是所选更改中的新文件，或被 Git 忽略",
+      "notInstalled": "未安装 Git",
       "noTrackedChanges": "本工作区没有可提交的已跟踪更改。请先暂存未跟踪的文件以将其包含进来。",
       "operationInProgressCommit": "Git {{operation}} 进行中，无法提交",
       "operationInProgressCreateBranch": "Git {{operation}} 进行中，无法创建分支",
@@ -758,6 +803,15 @@
       "folderNotFound": "未找到文件夹",
       "noWorkspaceHint": "通过侧边栏的工作区切换器切换到一个项目文件夹。",
       "noWorkspaceOpen": "未打开工作区"
+    }
+  },
+  "gitCheck": {
+    "banner": {
+      "checkAgain": "重新检查",
+      "dismissAriaLabel": "关闭 Git 提示",
+      "failedTitle": "Git 未能运行",
+      "howToInstall": "如何安装",
+      "missingDescription": "提交、分支、差异和工作树都需要 Git。请安装 Git，然后重新检查。"
     }
   },
   "home": {
@@ -932,6 +986,25 @@
     "failed": "Pi 因错误而停止。",
     "needs-approval": "Pi 正在等待你的批准。",
     "withSession": "{{body}} 点击打开已完成的会话。"
+  },
+  "openPath": {
+    "followUp": {
+      "reveal": "在文件夹中显示",
+      "system": "用系统应用打开"
+    },
+    "openInEditor": "在编辑器中打开",
+    "openWithSystem": "用系统应用打开",
+    "refusal": {
+      "editorRunning": "此项目的终端中已打开一个编辑器。请先关闭它，然后重试。",
+      "launchFailed": "编辑器未能启动。",
+      "noTerminalWorkspace": "请先打开一个项目。终端编辑器会在项目的终端面板中打开。",
+      "notFound": "此文件或文件夹已不存在。",
+      "outsideRoots": "此路径不在已打开的项目中。",
+      "runnableFile": "此文件可作为程序运行，因此不会用系统应用打开。",
+      "systemOpenFailed": "系统无法打开此文件或文件夹。"
+    },
+    "refusalTitle": "无法打开",
+    "showInFolder": "在文件夹中显示"
   },
   "packages": {
     "catalog": {
@@ -1229,6 +1302,7 @@
       "projectCount_other": "{{count}} 个项目",
       "sessionCount_other": "{{count}} 个会话"
     },
+    "pinnedBadge": "已置顶",
     "runtime": {
       "completed": "{{agent}} 已完成",
       "failed": "{{agent}} 因错误而停止",
@@ -1260,7 +1334,8 @@
       "minutes_other": "{{count}} 分钟前"
     },
     "title": "会话",
-    "unknownProject": "未知"
+    "unknownProject": "未知",
+    "unreadDot": "有新动态"
   },
   "settings": {
     "actions": {
@@ -1289,6 +1364,32 @@
     "autoScroll": {
       "description": "自动滚动到新消息",
       "label": "自动滚动"
+    },
+    "chatImport": {
+      "alreadyImported": "已导入",
+      "empty": "未找到聊天。",
+      "engine": "导入为",
+      "failure": {
+        "folderMissing": "该聊天的项目文件夹已不存在。",
+        "invalidPath": "此文件不在聊天文件夹中。",
+        "noMessages": "该聊天没有可导入的消息。",
+        "unreadable": "无法读取聊天文件。",
+        "writeFailed": "无法写入会话文件。"
+      },
+      "folderMissing": "文件夹不存在",
+      "import_other": "导入 {{count}} 个聊天",
+      "intro": "将聊天复制为 {{agent}} 会话。原始文件只会被读取。",
+      "loading": "正在查找聊天…",
+      "progress": "{{done}} / {{total}}",
+      "results": {
+        "failed_other": "失败：{{count}}",
+        "imported_other": "已导入：{{count}}",
+        "skipped_other": "已跳过（已导入）：{{count}}"
+      },
+      "selectFolder": "选择此文件夹中的所有聊天",
+      "sourceRoot": "读取 {{path}}",
+      "unknownFolder": "未知文件夹",
+      "untitled": "未命名聊天"
     },
     "chatWidth": {
       "description": "消息和输入框可以扩展的宽度",
@@ -1335,6 +1436,30 @@
     "desktopNotifications": {
       "description": "当 Pi 在你未查看的工作区中完成、失败或等待批准时通知你",
       "label": "桌面通知"
+    },
+    "editor": {
+      "description": "在此电脑上找到的编辑器。终端编辑器会在项目终端面板的“编辑器”标签页中打开。",
+      "label": "打开文件所用的程序",
+      "missingNote": "未找到已保存的编辑器。文件将用系统默认应用打开。",
+      "rescan": "重新扫描",
+      "systemDefault": "系统默认",
+      "terminalOption": "{{name}}（{{tag}}）",
+      "terminalTag": "终端"
+    },
+    "keepAwake": {
+      "description": "阻止这台电脑进入睡眠。屏幕仍可能关闭。合上笔记本电脑的盖子仍会让电脑进入睡眠。",
+      "label": "保持这台电脑唤醒",
+      "modes": {
+        "always": "始终",
+        "off": "关闭",
+        "whileWorking": "智能体工作时"
+      },
+      "status": {
+        "holding": "状态：正在保持这台电脑唤醒",
+        "off": "状态：关闭",
+        "unsupported": "状态：Pi Desktop 无法在此系统上阻止睡眠。未找到电源管理器，也没有 systemd 睡眠锁。",
+        "waitingForWork": "状态：等待工作"
+      }
     },
     "language": {
       "description": "菜单、按钮和消息的语言",
@@ -1384,7 +1509,9 @@
       "agentConfiguration": "智能体配置",
       "appearance": "外观",
       "behavior": "行为",
+      "chatImport": "导入聊天",
       "customModels": "自定义模型",
+      "editor": "编辑器",
       "multiAgentCouncilPlanning": "多智能体委员会规划",
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "语音听写"
@@ -1823,6 +1950,7 @@
       "notAFolder": "无法作为项目打开 — 不是文件夹：{{path}}",
       "notGitRepository": "此项目不是 Git 仓库。要另开对话请使用“新建会话”，或打开 Git 项目以使用隔离标签页。",
       "openFolderError": "打开文件夹错误：{{detail}}",
+      "pinError": "置顶错误：{{detail}}",
       "removedPackage": "已移除 {{spec}}",
       "removePackageFailed": "移除失败",
       "removeWorkspaceError": "移除工作区错误：{{detail}}",
@@ -1837,6 +1965,7 @@
       "truncatedHistory_other": "为提升性能，仅显示最近 {{count}}/{{total}} 条消息。较早的对话仍保存在会话文件中。",
       "unarchiveError": "取消归档错误：{{detail}}",
       "unknownError": "未知错误",
+      "unpinError": "取消置顶错误：{{detail}}",
       "updatedAllPackages": "已更新包。重启 Pi 以加载它们。",
       "updatedPackage": "已更新 {{spec}}。重启 Pi 以加载它。",
       "updatePackageFailed": "更新失败",
@@ -1865,6 +1994,10 @@
     "maximizeLabel": "最大化终端",
     "restartHint": "按任意键启动新的 Shell",
     "restoreLabel": "还原终端",
+    "tabs": {
+      "editor": "编辑器",
+      "shell": "终端"
+    },
     "title": "终端"
   },
   "themes": {

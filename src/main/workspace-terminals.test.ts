@@ -2,16 +2,21 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { WorkspaceTerminals } from './workspace-terminals'
 import type { TerminalService } from './terminal-service'
+import type { TerminalProgram } from './terminal-program'
+import { EDITOR_TERMINAL_KEY_SUFFIX } from '../shared/terminal-slot'
+
+const requiresProgram = (key: string) => key.endsWith(EDITOR_TERMINAL_KEY_SUFFIX)
 
 function setup() {
   type ExitHandler = Parameters<TerminalService['start']>[2]
-  const terminals: { inputs: string[]; sizes: number[][]; stops: number; starts: number; emit: (data: string) => void; exit: ExitHandler }[] = []
+  const terminals: { inputs: string[]; sizes: number[][]; stops: number; starts: number; program?: TerminalProgram; emit: (data: string) => void; exit: ExitHandler }[] = []
   const pool = new WorkspaceTerminals(() => {
-    const state = { inputs: [] as string[], sizes: [] as number[][], stops: 0, starts: 0, emit: (_data: string) => {}, exit: ((_event) => {}) as ExitHandler }
+    const state = { inputs: [] as string[], sizes: [] as number[][], stops: 0, starts: 0, program: undefined as TerminalProgram | undefined, emit: (_data: string) => {}, exit: ((_event) => {}) as ExitHandler }
     terminals.push(state)
     return {
-      start: (...[options, onData, onExit]: Parameters<TerminalService['start']>) => {
+      start: (...[options, onData, onExit, program]: Parameters<TerminalService['start']>) => {
         state.starts++
+        state.program = program
         state.emit = onData
         state.exit = onExit
         return { pid: terminals.length, shell: '/bin/sh', cwd: options.cwd ?? '/' }
@@ -20,7 +25,7 @@ function setup() {
       resize: (cols, rows) => { state.sizes.push([cols, rows]) },
       stop: () => { state.stops++ },
     }
-  })
+  }, requiresProgram)
   return { pool, terminals }
 }
 
@@ -101,7 +106,68 @@ test('a failed spawn is not cached', () => {
       return { pid: 1, shell: '/bin/sh', cwd: '/' }
     },
     write: noop, resize: noop, stop: noop,
-  }))
+  }), requiresProgram)
   assert.throws(() => pool.start('a', {}, noop, noop), /spawn failed/)
   assert.equal(pool.start('a', {}, noop, noop).pid, 1)
+})
+
+test('a shell slot starts the default shell program', () => {
+  const { pool, terminals } = setup()
+  pool.start('w', { cwd: '/w' }, noop, noop)
+  assert.equal(terminals[0].program, undefined)
+})
+
+test('an editor slot starts the prepared program, not a shell', () => {
+  const { pool, terminals } = setup()
+  pool.prepare('w#editor', { file: '/usr/bin/vim', args: ['/w/a.ts'] })
+  pool.start('w#editor', { cwd: '/w' }, noop, noop)
+  assert.deepEqual(terminals[0].program, { file: '/usr/bin/vim', args: ['/w/a.ts'] })
+})
+
+test('the newest prepared program wins', () => {
+  const { pool, terminals } = setup()
+  pool.prepare('w#editor', { file: 'vim', args: ['/w/a.ts'] })
+  pool.prepare('w#editor', { file: 'vim', args: ['/w/b.ts'] })
+  pool.start('w#editor', {}, noop, noop)
+  assert.deepEqual(terminals[0].program, { file: 'vim', args: ['/w/b.ts'] })
+})
+
+test('the shell and editor slots of one workspace are separate PTYs', () => {
+  const { pool, terminals } = setup()
+  pool.start('w', {}, noop, noop)
+  pool.prepare('w#editor', { file: 'vim', args: [] })
+  pool.start('w#editor', {}, noop, noop)
+  pool.write('w#editor', ':q\r')
+  assert.equal(terminals.length, 2)
+  assert.deepEqual(terminals[0].inputs, [])
+  assert.deepEqual(terminals[1].inputs, [':q\r'])
+})
+
+test('an editor exit frees the slot', () => {
+  const { pool, terminals } = setup()
+  pool.prepare('w#editor', { file: 'vim', args: [] })
+  pool.start('w#editor', {}, noop, noop)
+  assert.equal(pool.isRunning('w#editor'), true)
+  terminals[0].exit({ exitCode: 0 })
+  assert.equal(pool.isRunning('w#editor'), false)
+})
+
+test('an editor slot with no prepared program does not start', () => {
+  const { pool } = setup()
+  assert.throws(() => pool.start('w#editor', {}, noop, noop), /No editor is waiting to start/)
+})
+
+test('a started editor uses its prepared program once', () => {
+  const { pool, terminals } = setup()
+  pool.prepare('w#editor', { file: 'vim', args: [] })
+  pool.start('w#editor', {}, noop, noop)
+  terminals[0].exit({ exitCode: 0 })
+  assert.throws(() => pool.start('w#editor', {}, noop, noop), /No editor is waiting to start/)
+})
+
+test('stopping a slot drops its prepared program', () => {
+  const { pool } = setup()
+  pool.prepare('w#editor', { file: 'vim', args: [] })
+  pool.stop('w#editor')
+  assert.throws(() => pool.start('w#editor', {}, noop, noop))
 })

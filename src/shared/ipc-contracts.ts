@@ -7,6 +7,7 @@
 import type { PermissionRule } from '../../resources/permission-rules'
 import type { LinkedTaskMode, RepoRole } from '../../resources/repo-set-map'
 import type { TokenUsage } from './token-usage'
+import type { TerminalSlot } from './terminal-slot'
 
 // ─── IPC Channel Names ──────────────────────────────────────────────────────
 
@@ -20,6 +21,7 @@ export const IPC_CHANNELS = {
   PI_DETECT_INSTALLATIONS: 'pi:detect-installations',
   QUICK_CHAT_SHORTCUT_STATUS: 'quick-chat:shortcut-status',
   SETTINGS_RUN_ON_STARTUP_AVAILABLE: 'settings:run-on-startup-available',
+  SETTINGS_KEEP_AWAKE_STATUS: 'settings:keep-awake-status',
 
   // Pi commands
   PI_PROMPT: 'pi:prompt',
@@ -52,6 +54,11 @@ export const IPC_CHANNELS = {
   SESSION_ARCHIVE: 'session:archive',
   SESSION_UNARCHIVE: 'session:unarchive',
   SESSION_LIST_ARCHIVED: 'session:list-archived',
+  SESSION_PIN: 'session:pin',
+  SESSION_UNPIN: 'session:unpin',
+  SESSION_LIST_PINNED: 'session:list-pinned',
+  SESSION_LIST_UNREAD: 'session:list-unread',
+  SESSION_SET_VISIBLE: 'session:set-visible',
   SESSION_GET_LINEAGE: 'session:get-lineage',
   SESSION_COMPACT: 'session:compact',
 
@@ -94,6 +101,8 @@ export const IPC_CHANNELS = {
   SYSTEM_PATH_KIND: 'system:path-kind',
   SYSTEM_OPEN_EXTERNAL: 'system:open-external',
   SYSTEM_GET_VERSION: 'system:get-version',
+  SYSTEM_OPEN_PATH: 'system:open-path',
+  EDITORS_DETECT: 'editors:detect',
   UPDATE_CHECK: 'update:check',
 
   // Activity
@@ -111,6 +120,10 @@ export const IPC_CHANNELS = {
 
   // Diagnostics
   DIAGNOSTICS_GET: 'diagnostics:get',
+  DIAGNOSTICS_EXPORT_LOGS: 'diagnostics:export-logs',
+
+  // Renderer errors
+  RENDERER_ERROR_REPORT: 'renderer:error-report',
 
   // Workspaces
   WORKSPACE_LIST: 'workspace:list',
@@ -186,6 +199,8 @@ export const IPC_CHANNELS = {
   GIT_CONVEYOR_COMMIT: 'git:conveyor-commit',
   GIT_CONVEYOR_PUSH: 'git:conveyor-push',
   GIT_CONVEYOR_CREATE_PR: 'git:conveyor-create-pr',
+  GIT_AVAILABILITY_GET: 'git:availability-get',
+  GIT_AVAILABILITY_RECHECK: 'git:availability-recheck',
 
   // Terminal
   TERMINAL_START: 'terminal:start',
@@ -225,7 +240,9 @@ export const IPC_CHANNELS = {
   EVENT_PI: 'event:pi',
   EVENT_PENDING_PROMPTS: 'event:pending-prompts',
   EVENT_WORKSPACE_ACTIVITY: 'event:workspace-activity',
+  EVENT_KEEP_AWAKE_STATUS: 'event:keep-awake-status',
   EVENT_SESSION_RUNTIME: 'event:session-runtime',
+  EVENT_UNREAD_SESSIONS: 'event:unread-sessions',
   /** A model/thinking switch changed a runtime's engine state; views bound to it refresh. */
   EVENT_RUNTIME_STATE_CHANGED: 'event:runtime-state-changed',
   EVENT_ACTIVATE_WORKSPACE: 'event:activate-workspace',
@@ -235,6 +252,7 @@ export const IPC_CHANNELS = {
   EVENT_COUNCIL_PROGRESS: 'event:council-progress',
   EVENT_VOICE_PROGRESS: 'event:voice-progress',
   EVENT_VOICE_SHORTCUT: 'event:voice-shortcut',
+  EVENT_BROWSER_PANE_GUEST: 'event:browser-pane-guest',
 
   // Voice dictation
   VOICE_STATUS: 'voice:status',
@@ -249,6 +267,11 @@ export const IPC_CHANNELS = {
   TYPESAFE_CLEAR_KEY: 'typesafe:clear-key',
   TYPESAFE_INSTALL_SKILL: 'typesafe:install-skill',
   TYPESAFE_REMOVE_SKILL: 'typesafe:remove-skill',
+
+  // Chat import (Claude Code and Codex chats into Pi/OMP sessions)
+  CHAT_IMPORT_LIST: 'chat-import:list',
+  CHAT_IMPORT_RUN: 'chat-import:run',
+  EVENT_CHAT_IMPORT_PROGRESS: 'event:chat-import-progress',
 } as const
 
 // ─── Pi Process Types ───────────────────────────────────────────────────────
@@ -459,6 +482,8 @@ export interface TerminalStartOptions {
   cwd?: string
   cols?: number
   rows?: number
+  /** Which of the workspace's PTYs to start; the shell when left out. */
+  slot?: TerminalSlot
 }
 
 export interface TerminalStartResult {
@@ -469,11 +494,13 @@ export interface TerminalStartResult {
 
 export interface TerminalDataEvent {
   workspaceId: string
+  slot: TerminalSlot
   data: string
 }
 
 export interface TerminalExitEvent {
   workspaceId: string
+  slot: TerminalSlot
   exitCode: number
   signal?: number
 }
@@ -628,6 +655,14 @@ export interface PiExtensionUiRequest {
   instructions?: string
   targetId?: string
 }
+
+/** Extension UI methods that stop the turn until the user answers. */
+export const BLOCKING_UI_METHODS: ReadonlySet<string> = new Set<PiExtensionUiRequest['method']>([
+  'select',
+  'confirm',
+  'input',
+  'editor',
+])
 
 /**
  * Blocking extension-UI prompts held in the main process, keyed by workspace
@@ -1154,6 +1189,8 @@ export interface SessionDeleteResult {
 }
 
 export type ArchivedSessionsMap = Record<string, number>
+export type PinnedSessionsMap = Record<string, number>
+export type UnreadSessionsMap = Record<string, number>
 
 // File extensions Pi accepts as inline images (matches Pi's RPC image support).
 export const SUPPORTED_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'] as const
@@ -1254,6 +1291,8 @@ import type { CouncilConfig } from './council-config'
 import type { VoicePrecision, VoiceModel, VoiceModelManifest, VoiceDownloadProgress } from './voice-models'
 import type { VoiceDevice } from './voice-device'
 import type { ChatWidth } from './chat-width'
+import type { KeepAwakeMode } from './keep-awake'
+import type { EditorId } from './editors'
 /** Result of the MODELS_READ IPC call. */
 /**
  * Where the custom-models config was read from. Main resolves the engine and
@@ -1386,6 +1425,9 @@ export type AgentEngineKind = 'pi' | 'omp'
 
 const AGENT_ENGINE_KINDS = { pi: true, omp: true } as const satisfies Record<AgentEngineKind, true>
 
+/** Every concrete engine, for pickers. */
+export const AGENT_ENGINE_KIND_LIST = Object.keys(AGENT_ENGINE_KINDS) as AgentEngineKind[]
+
 /** Payload check for an engine named over IPC. */
 export function isAgentEngineKind(value: unknown): value is AgentEngineKind {
   return typeof value === 'string' && Object.hasOwn(AGENT_ENGINE_KINDS, value)
@@ -1458,6 +1500,8 @@ export interface AppSettings {
   collapsedSessionGroups: string[]
   // User-made groups in the Skills panel. Display only: skill files never move.
   skillGroups: import('./skill-groups').SkillGroup[]
+  /** Last Browser pane page per workspace path. Not exposed in the Settings UI. */
+  browserPaneUrls: Record<string, string>
   /** Sidebar width in pixels; clamped by `clampSidebarWidth` on read. */
   sidebarWidth: number
   // Show the Home/launcher screen on launch (Pi starts lazily on first action)
@@ -1472,6 +1516,10 @@ export interface AppSettings {
   // the app running in the background. Windows/Linux only; on macOS the window
   // close already keeps the app alive in the Dock (native equivalent).
   minimizeToTrayOnClose: boolean
+  // Stop idle sleep: always, or only while agent work runs. The screen may
+  // still turn off. A closed laptop lid, a manual sleep command and a low
+  // battery stay under the operating system's control.
+  keepAwakeMode: KeepAwakeMode
   // Internal: whether the one-time "still running in the tray" hint has been
   // shown. Not exposed in the Settings UI.
   hasSeenTrayHint: boolean
@@ -1498,6 +1546,9 @@ export interface AppSettings {
   // 'gpu'. It picks which precision Settings downloads. Unknown values reset
   // to 'auto' on load.
   voiceDevice: VoiceDevice
+  // Editor that "Open in editor" uses; null = System default. Unknown ids
+  // reset to null on load.
+  preferredEditor: EditorId | null
 }
 
 // ─── Voice Dictation Types ──────────────────────────────────────────────────
@@ -1894,6 +1945,22 @@ export interface AppLogEntry {
   detail?: string
 }
 
+export type RendererErrorKind = 'window-error' | 'unhandled-rejection' | 'render-error'
+
+/** One renderer error, sent to main for the app log. */
+export interface RendererErrorRecord {
+  kind: RendererErrorKind
+  name: string
+  message: string
+  stack: string | null
+  componentStack: string | null
+  /** The store's currentView, or null outside the main app (Quick Chat). */
+  view: string | null
+  sessionId: string | null
+  /** True when nothing local handled it: window errors, rejections, the root boundary. */
+  unhandled: boolean
+}
+
 // ─── Diagnostics Types ──────────────────────────────────────────────────────
 
 export interface DiagnosticsWorkspaceInfo {
@@ -1930,6 +1997,13 @@ export type PiResolutionSource =
   | 'omp'
   | 'fallback'
 
+/** Result of `git --version`, run by bare name the way every git action runs. */
+export type GitAvailability =
+  | { status: 'found'; version: string }
+  | { status: 'missing' }
+  /** git started but did not report a version; `detail` is its own first output line. */
+  | { status: 'failed'; detail: string }
+
 /** Everything the Diagnostics view shows, assembled in one main-side pass. */
 export interface DiagnosticsReport {
   generatedAt: number
@@ -1955,6 +2029,8 @@ export interface DiagnosticsReport {
   }
   /** `pi --version` output (first line), or null when it could not run. */
   piVersion: string | null
+  /** `git --version`, cached from the startup check or the last Check again. */
+  git: GitAvailability
   workspaces: DiagnosticsWorkspaceInfo[]
   /** Null when models.json is missing or unreadable — see providersError. */
   providers: DiagnosticsProviderInfo[] | null
@@ -1974,6 +2050,21 @@ export interface DiagnosticsReport {
   }
   recentErrors: AppLogEntry[]
 }
+
+export const LOG_EXPORT_FORMAT = 'pi-desktop-log-export/v1'
+
+/** The Export logs file: the report plus both log files, secrets redacted. */
+export interface LogExportFile {
+  format: typeof LOG_EXPORT_FORMAT
+  exportedAt: number
+  diagnostics: DiagnosticsReport
+  log: { current: AppLogEntry[]; previous: AppLogEntry[] }
+}
+
+export type LogExportResult =
+  | { ok: true; path: string }
+  | { ok: false; error: string }
+  | { ok: false; canceled: true }
 
 // ─── File Types ────────────────────────────────────────────────────────────
 

@@ -8,6 +8,7 @@ import {
 } from '../workspace-activity'
 import { shouldNotify } from '../notify-decision'
 import { appLog } from '../app-log'
+import { SESSIONS_LOG_SCOPE } from '../session-timestamp-store'
 import { loadAppSettings } from './settings'
 import type { IpcContext } from './context'
 import { t } from '../../shared/i18n'
@@ -138,6 +139,9 @@ export function wireWorkspaceActivity(
     now: () => Date.now(),
     onChange: (map) => ctx.broadcast(IPC_CHANNELS.EVENT_WORKSPACE_ACTIVITY, map),
     onNotify: (notification) => {
+      void ctx.unreadSessions.handleActivityNotification(notification).catch((err) => {
+        appLog.warn(SESSIONS_LOG_SCOPE, 'Failed to record an unread session', err)
+      })
       void showNotification(notification).catch((err) => {
         appLog.warn('notifications', 'Failed to show desktop notification', err)
       })

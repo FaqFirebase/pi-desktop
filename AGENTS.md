@@ -30,9 +30,12 @@ The project is in **alpha**. APIs, IPC contracts, on-disk config formats, and pa
 - All IPC channels use typed contracts and validate their payloads
 - The renderer has no access to Node APIs
 - Main-window navigation is pinned to the packaged renderer; privileged IPC checks that the sender frame is the app renderer
+- Every IPC channel serves the main and Quick Chat windows only: `ipc-sender-guard.ts` wraps `ipcMain.handle` and `ipcMain.on` before any handler is registered and refuses `<webview>` guests and preview/Browser pane partitions
+- The Browser pane `<webview>` uses its own in-memory partition: http/https main-frame loads only, no permissions, no downloads, a picker preload that exposes nothing to the page; the file-preview rules are unchanged
 - Per-workspace trust gate: until the user trusts a workspace, the allow rules in its own `.pi-desktop/permission-rules.json` are ignored and its HTML preview runs without scripts or network
 - Programs the app starts by bare name resolve from PATH only, not from the working folder (`windows-exe-search.ts`; Windows)
 - Attachment reads are limited to picked or in-workspace paths; session deletion is confined to the session stores; package specs are validated before the Pi CLI runs
+- Open with system app refuses runnable files (extension blocklist, execute bit on macOS/Linux); every open-path action is limited to open workspaces, session stores and listed session folders
 
 ### Interface text
 
@@ -69,7 +72,10 @@ src/
 │   ├── attachment-rules.ts       # Rules for picked and dropped chat attachments
 │   ├── git-diff.ts               # Diff path model (Git C-quoting), pinned diff options, splitting, repository-root -> workspace path helpers
 │   ├── file-url.ts               # file:// URLs for local paths, every segment percent-encoded (drive and UNC paths)
-│   ├── preview-partitions.ts     # File-preview <webview> partition names, the ones main hardens
+│   ├── preview-partitions.ts     # File-preview <webview> partition names, the ones main hardens; the Browser pane partition
+│   ├── browser-pane.ts           # Browser pane: address-bar URL rule (http/https only), fixed pane keys, zoom steps, saved URLs
+│   ├── chat-import.ts            # Chat import contracts: sources, source labels, imported-message markers
+│   ├── browser-pick.ts           # Element picker: selector, label, caps, pick payload check, capture rect
 │   ├── repo-set-draft.ts         # Repo set editing: unique names; the first repository is the main one
 │   ├── subagent-task.ts          # Subagent rows for the Subagents panel, rail badge and composer strip: parsers and reducers
 │   ├── untrusted-data.ts         # Wrap file/agent text as a labeled untrusted-data block
@@ -83,6 +89,9 @@ src/
 │   ├── stopped-answer.ts         # The one rule for an answer the user stopped (stopReason "aborted")
 │   ├── sidebar-width.ts          # Bounds/resolution for the user-adjustable sidebar width
 │   ├── chat-width.ts             # Chat column width setting values (normal / full)
+│   ├── keep-awake.ts             # Keep-awake modes (off / while agents work / always) and status values
+│   ├── editors.ts                # Editor ids, open-path request/result types, preferred-editor fallback rule
+│   ├── terminal-slot.ts          # Terminal slots (shell, editor) of a workspace and their PTY pool keys
 │   ├── terminal-height.ts        # Default and bounds for the resizable terminal
 │   ├── typesafe.ts               # TypeSafe (Jev) values shared by both processes
 │   ├── voice-models.ts           # On-device speech-to-text model catalog (other voice-*.ts hold dictation helpers)
@@ -94,11 +103,18 @@ src/
 │   ├── i18n.ts                   # Main-process language: OS language list, pseudo-language gate, apply the setting
 │   ├── ipc-handlers.ts           # IPC composition root (creates context, calls ipc/ modules)
 │   ├── ipc/                      # Domain-specific IPC handler modules (pi, session, files, ...)
+│   │   ├── editor-handlers.ts    # SYSTEM_OPEN_PATH and EDITORS_DETECT, main-sender checked
+│   │   └── chat-import-handlers.ts # CHAT_IMPORT_LIST and CHAT_IMPORT_RUN, main-sender checked, one run at a time
 │   ├── app-log.ts                # Main-process log: ring buffer + JSONL file in the GUI data dir
+│   ├── log-redaction.ts          # Remove tokens, URL credentials and secret env values from log text
+│   ├── log-export.ts             # Export logs file: report + both log files, redacted; dated file name
+│   ├── renderer-error-log.ts     # Renderer error records -> app log, checked, capped and rate limited
+│   ├── renderer-crash-recovery.ts # Renderer gone: ignore, reload once, or ask Reload/Quit
 │   ├── workspace-activity.ts     # Per-workspace activity state machine (working/approval/completed/failed)
 │   ├── notify-decision.ts        # Pure should-we-notify decision (focus/active-workspace aware)
 │   ├── diagnostics.ts            # Assembles the Diagnostics view's report
 │   ├── diagnostics-report.ts     # Pure report helpers (provider key classification etc.)
+│   ├── git-availability.ts       # git --version at start and on Check again, cached; missing / failed / found
 │   ├── pi-rpc-manager.ts         # Agent subprocess management (pi or omp), startup readiness probe, descendant-tree kill
 │   ├── pi-binary-resolution.ts   # Locate and identify installed pi/omp executables
 │   ├── pi-paths.ts               # Per-engine session-store roots; which engine owns a session file
@@ -110,7 +126,10 @@ src/
 │   ├── session-trash.ts          # Deleted sessions go to the desktop trash (trash-cli, then gio)
 │   ├── path-authorization.ts     # Path containment checks (attachment/session IPC)
 │   ├── renderer-origin.ts        # Trusted-renderer URL check (navigation + IPC sender)
+│   ├── ipc-sender-guard.ts       # Every IPC channel: main and Quick Chat windows only, guests refused
 │   ├── preview-guest.ts          # File-preview guest rules: which guest is the PDF preview, scripts, per-partition request block
+│   ├── browser-pane-guest.ts     # Browser pane guest rules: web preferences, pop-up decision, main-frame request block
+│   ├── browser-pane-session.ts   # Browser pane partition hardening and per-guest rules (pop-ups, navigation, pane keys)
 │   ├── window-background.ts      # Native window background that follows the theme
 │   ├── workspace-trust.ts        # Per-workspace trust registry (gates allow rules + preview)
 │   ├── workspace-manager.ts      # Multi-workspace management
@@ -120,6 +139,10 @@ src/
 │   ├── file-service.ts           # File tree, search, git status, read/write
 │   ├── terminal-service.ts       # node-pty PTY management
 │   ├── workspace-terminals.ts    # One PTY per workspace, independent of the visible panel
+│   ├── terminal-program.ts       # The program an editor PTY starts: direct, or through cmd.exe for a Windows shim
+│   ├── editor-detection.ts       # Editor table, install paths, PATH probe, line arguments per editor family
+│   ├── open-path-policy.ts       # Open-path roots, containment, runnable-file check
+│   ├── path-opener.ts            # Open in editor / with system app / show in folder, effects injected
 │   ├── agent-detection.ts        # Detect claude/codex/pi CLIs (council)
 │   ├── council-manager.ts        # Council consultant fan-out + streaming
 │   ├── notes-manager.ts          # Reusable prompts/notes persistence
@@ -131,6 +154,9 @@ src/
 │   ├── package-updates.ts        # npm-registry update check + OMP npm-plugin update spec
 │   ├── auto-tag.ts               # Machine-derived session tags
 │   ├── archived-sessions.ts      # Archived session persistence
+│   ├── session-timestamp-store.ts # {sessionId: epochMs} registry file behind archived, pinned and unread sessions
+│   ├── pinned-sessions.ts        # Pinned sessions file; pinned rows stay listed past the list cap
+│   ├── session-unread.ts         # Unread sessions: a turn ended while the session was not on screen
 │   ├── app-data-paths.ts         # Resolve app data directories
 │   ├── attachment-reader.ts      # Read chat attachments (image base64 / text)
 │   ├── fs-errors.ts              # Friendly file-system error messages
@@ -144,13 +170,20 @@ src/
 │   ├── session-claims.ts         # Cross-instance claims: one Pi Desktop runs an agent on a session file at a time
 │   ├── session-metadata.ts       # Bounded reader: session name, header, first-message preview; header-only (disposable) means metadata only
 │   ├── session-jsonl.ts          # Session JSONL text -> entries (a partial last line is skipped)
+│   ├── chat-import-turns.ts      # Chat import: neutral events and turns, the assembler between converters and writers
+│   ├── chat-import-writer.ts     # Chat import: session v3 lines per engine (OMP title slot, Pi session_info, built-in tools)
+│   ├── chat-import-claude-code.ts # Chat import: Claude Code records -> events; active-branch scan
+│   ├── chat-import-codex.ts      # Chat import: Codex records -> events; shell and patch calls, index titles
+│   ├── chat-import-sources.ts    # Chat import: source roots, file layout check, the chat list
+│   ├── chat-import-index.ts      # Chat import: chats already imported per engine (chat-imports.json)
+│   ├── chat-import-runner.ts     # Chat import: stream each source, write a temp file, rename into the engine's store
 │   ├── session-lineage-reader.ts # Parent links and labels across the session store
 │   ├── get-messages-trim.ts      # Shrink a get_messages response before IPC
 │   ├── map-concurrent.ts         # Bounded-concurrency mapper
 │   ├── extension-ui-ipc.ts       # Extension-UI half of the IPC surface
 │   ├── pi-event-router.ts        # Routes every runtime's Pi events to the renderer
 │   ├── subagent-transcripts.ts   # Subagent transcripts: OMP RPC, pi-subagents inspect command, foreground session files
-│   ├── git-worktree.ts           # Isolated Git worktrees for New Task
+│   ├── git-worktree.ts           # Isolated Git worktrees for New Task; a missing git binary is GitNotInstalledError
 │   ├── git-head-watcher.ts       # Reports a HEAD or local branch change made outside the app; always on for the active workspace
 │   ├── repo-sets.ts              # Saved repo sets (repo-sets.json); a picked folder resolves to the top of its checkout
 │   ├── linked-worktrees.ts       # Worktrees of an isolated linked task, one shared branch
@@ -167,13 +200,23 @@ src/
 │   ├── workflow-monitor.ts       # ~/.pi/workflows run and project discovery
 │   ├── tray-manager.ts           # System-tray lifecycle (minimize to tray on close)
 │   ├── tray-decision.ts          # Pure tray-availability decision
+│   ├── dbus-probe.ts             # Session-bus probes shared by tray and keep-awake
+│   ├── keep-awake.ts             # Sleep-block layer: Electron power-save blocker
+│   ├── keep-awake-system-inhibitor.ts # Sleep-block layer: systemd sleep lock for Linux desktops with no power service
+│   ├── keep-awake-coordinator.ts # Picks the sleep-block layer that works on this system
+│   ├── keep-awake-controller.ts  # Mode + work -> hold, release delay, status
+│   ├── keep-awake-service.ts     # Keep-awake Electron singletons
+│   ├── runtime-turn-state.ts     # Is one runtime running a turn (not waiting on the user)
+│   ├── agent-work-tracker.ts     # Is any agent work running (turns, council, background subagents)
+│   ├── background-subagent-runs.ts # Subagent runs that outlive a turn
 │   ├── startup-launch.ts         # Cross-platform "Run on startup"
 │   ├── autostart-linux.ts        # Linux freedesktop autostart entry helpers
 │   ├── editor-guard.ts           # Unsaved-editor guard for quit/close/reload
 │   ├── windows-exe-search.ts     # Windows: no program starts from the working folder by bare name; child env for direct and cmd.exe launches
 │   └── cmd-escape.ts             # cmd.exe escaping for Windows shell:true spawns
 ├── preload/
-│   └── index.ts                  # contextBridge API
+│   ├── index.ts                  # contextBridge API
+│   └── browser-pane.ts           # Browser pane picker preload: overlay, pick on a real click, sendToHost only
 └── renderer/
     ├── index.html                # Entry HTML with CSP
     ├── public/theme-boot.js      # Paints the last theme's colors before the first frame
@@ -189,6 +232,7 @@ src/
         ├── message-grouping.ts   # Tool-name labels and message grouping
         ├── next-steps.ts         # Hide next-steps calls from the chat; the latest turn's suggested steps
         ├── send-queue.ts         # Messages sent while the agent works, per workspace; the store sends the oldest at turn end
+        ├── editor-terminal-state.ts # Store reducers for a workspace's Editor terminal tab
         ├── turn-activity.ts      # Running-turn elapsed time and the "no event for 30 s" stall rule
         ├── reattached-tool-calls.ts # Mark unfinished tool calls as running when a view returns mid-turn
         ├── claude-cli-markers.ts # Parse pi-claude-cli tool markers into tool cards
@@ -204,10 +248,14 @@ src/
         │   ├── tab-navigation.ts # Project/session tab order and next/previous tab
         │   ├── planning-prompt.ts # Plan/read-only prompt wrapper
         │   ├── compose-prompt.ts # Typed text + staged files -> prompt (text files inlined as data, images as blocks)
+        │   ├── browser-pick-attachments.ts # Browser pane pick -> composer attachments (text block + PNG)
         │   ├── ipc-error.ts      # Strip Electron's remote-method prefix from IPC errors
+        │   ├── renderer-error-report.ts # Window errors, rejections and boundary catches -> main; crash details text
+        │   ├── launch-view.ts    # First view after load: a reload returns to Chat
         │   ├── quick-switcher.ts # Token filters for the palette's workspace/session/file sections
         │   ├── rank-file-results.ts # Basename-tiered ranking for file search hits
         │   ├── session-title.ts  # Distinguishable fallback session titles
+        │   ├── session-pin-order.ts # Pinned rows first in pin order, then newest first
         │   ├── session-diff.ts   # Filter diff files to those the session's edit/write calls touched
         │   ├── heatmap-grid.ts   # Weeks/intensity layout for the stats mini-heatmap
         │   ├── model-search.ts   # Tokenized model-picker search (treats -_./: as spaces)
@@ -224,6 +272,8 @@ src/
         │   ├── preview-load-error.ts # Preview load/save failure kept as data, translated at render
         │   ├── chat-width.ts     # Chat column width setting -> message/composer max-width classes
         │   ├── process-status-label.ts # Translated agent process status (status popover, Diagnostics)
+        │   ├── open-path-action.ts # Run an open-path action: show the Editor tab, or the refusal with its follow-up
+        │   ├── open-path-refusal.ts # Open-path refusal -> message and follow-up action
         │   └── workflow-runs.ts  # Session id used to scope workflow runs
         └── components/
             ├── sidebar.tsx        # Workspace switcher, nav, sessions grouped by folder, inline rename
@@ -232,6 +282,7 @@ src/
             ├── task-launcher.tsx  # New-task modal that starts a real background session
             ├── mission-control.tsx # Global live-session and workflow inbox
             ├── git-conveyor-actions.tsx # Git bar: Commit, Commit + Push, Push, PR / Open PR #N, commit dialog
+            ├── git-missing-banner.tsx # Git missing or not running: Home and workspace banner, How to install, Check again
             ├── project-branch-selector.tsx # Status-bar branch menu: switch branch, New branch
             ├── stats-panel.tsx    # Activity stats dashboard on Home
             ├── chat-panel.tsx     # Main streaming chat; empty session = center prompt + project picker
@@ -263,8 +314,11 @@ src/
             ├── status-popover.tsx # System status popup
             ├── settings-panel.tsx # Language, theme, font, behavior, shortcuts, council settings (live-preview draft)
             ├── shortcut-settings.tsx # Settings > Keyboard shortcuts recorder
+            ├── editor-settings.tsx # Settings > Editor: detected editors, System default, Rescan
+            ├── settings-controls.tsx # Settings rows and select fields shared by the Settings sections
             ├── voice-settings.tsx # Settings > Voice dictation
             ├── typesafe-settings.tsx # Settings > TypeSafe Jev
+            ├── chat-import-settings.tsx # Settings > Import chats (Claude Code and Codex chats into Pi or OMP)
             ├── custom-models-editor.tsx # Custom models/providers editor
             ├── permission-selector.tsx # Permission mode selector
             ├── permission-mode.ts # Permission mode helpers
@@ -274,7 +328,7 @@ src/
             ├── session-menu-position.ts # Session menu placement
             ├── timeline.tsx       # Agent activity timeline
             ├── review-rail.tsx    # Review panel: permissions, approvals, changed files, session status
-            ├── chat-tool-rail.tsx # Right-edge icon rail: review, files, diff, and terminal toggles
+            ├── chat-tool-rail.tsx # Right-edge icon rail: review, files, diff, subagents, browser, and terminal toggles
             ├── package-browser.tsx # Package/skill browser, fetch-once + local filter, update check
             ├── skills-panel.tsx   # Skills browser: search, user-made groups (settings `skillGroups`)
             ├── notes-panel.tsx    # Reusable prompts/notes
@@ -283,11 +337,14 @@ src/
             ├── sidebar-activity.ts # Workspace activity dot mapping for the sidebar
             ├── diagnostics-panel.tsx # Diagnostics view (Pi binary, providers, permissions, log)
             ├── file-tree.tsx      # File tree + search + preview
+            ├── webview-tag.tsx    # Typed `<webview>` tag shared by the file preview and the Browser pane
+            ├── browser-pane.tsx   # Browser view of the chat side slot: address bar, history, zoom, element picker
             ├── diff-viewer.tsx    # Git diff viewer: session filter, discard, open file
             ├── terminal.tsx       # ANSI terminal, resizable
             ├── terminal-clipboard.ts # Ctrl+C / Ctrl+V copy and paste rules per OS
             ├── context-menu.tsx   # Right-click context menu, themed confirm dialog
             ├── error-boundary.tsx # Renderer error boundary
+            ├── app-crash-screen.tsx # Root boundary fallback: Reload and Copy details
             ├── extension-ui-dialog.tsx # Extension UI protocol + AppConfirmDialog
             ├── chat-search.tsx    # Ctrl/Cmd+F find in conversation
             ├── chat-panel-widths.ts # Width math for the chat side panel
@@ -296,6 +353,7 @@ src/
             ├── line-numbered-code.tsx # Line-numbered highlighted code rows
             ├── resize-handle.tsx  # Drag handle reporting deltas along one axis
             ├── session-runtime-indicator.tsx # Per-session engine/status indicator
+            ├── session-row-markers.tsx # Session row pin icon and unread dot
             ├── theme-editor.tsx   # Custom theme editor
             ├── theme-editor-helpers.ts # Pure theme-editor helpers
             ├── theme-gallery.tsx  # Theme gallery browser
@@ -361,6 +419,8 @@ resources/
 - Delete asks in an in-app themed dialog, not the native OS dialog
 - Branch/fork tree, clone, and cross-session lineage in the Timeline; one-click context compaction (status bar and status popover)
 - An answer the user stopped keeps a "Stopped" mark (`shared/stopped-answer.ts`)
+- **Pinned and unread**: right-click > Pin keeps a session at the top of its folder group in the sidebar and the Sessions view, first pinned on top; archive unpins, delete drops the pin. A session gets a dot when a turn in it ends (completed, failed or stopped) while it is not on screen, which means shown in the main view of the focused main window. The renderer reports the shown session (`session:set-visible`), main knows focus and keeps the state (`session-unread.ts`); viewing the session clears the dot. In-app only, no OS badge
+- **Import chats** (Settings): Claude Code and Codex chats become real, resumable Pi or OMP sessions in the chat's own project folder. Imports read the source files only, write session v3 files to the chosen engine's store, drop thinking, and mark imported answers with the import provider so the engine treats them as another model's history
 
 ### Chat
 
@@ -402,9 +462,10 @@ resources/
 
 ### Chat tool rail and side panels
 
-- The right-edge tool rail (`chat-tool-rail.tsx`) toggles the Review panel, file tree, diff viewer, and terminal. It has no workflow button
+- The right-edge tool rail (`chat-tool-rail.tsx`) toggles the Review panel, file tree, diff viewer, Subagents panel, Browser view, and terminal. It has no workflow button
 - The Review panel (`review-rail.tsx`) shows the permission mode, pending approvals, changed files, and session status. It is hidden by default
 - Click a workspace file link (chat or file tree) to open it in a side pane: code (CodeMirror), image, PDF, or HTML. HTML runs in a sandboxed `<webview>` (no Node access, isolated partition, `file://` source only). HTML preview runs scripts and network only when the workspace is trusted; an untrusted workspace gets a static preview with a "Trust workspace" banner. A PDF preview gets plugins and scripts only when its URL loads a .pdf file, and for an untrusted workspace its partition loads only PDF files and the built-in viewer's own files (`preview-guest.ts`)
+- The Browser view (rail button) shows any http or https page, one per workspace, and remembers the last page per workspace. Pick highlights an element and adds a text block (page, selector, text, HTML) and a screenshot to the composer; nothing is sent until the user presses Send. A pop-up loads in the pane only right after a click; downloads are refused. Fixed keys while the page has focus: Mod+R, Mod+L, Mod+= / Mod+- / Mod+0, Esc ends picking
 
 ### Workflow runs
 
@@ -431,8 +492,10 @@ resources/
 
 ### Diagnostics
 
-- Sidebar > Diagnostics: Pi binary resolution (path, source, node binary, PATH), `pi --version`, per-workspace path/trust/process status, provider key classification from the engine's models file (never evaluates secrets), permission mode and rule counts, storage paths, and recent warnings/errors from the app log
+- Sidebar > Diagnostics: Pi binary resolution (path, source, node binary, PATH), `pi --version`, git version (or not found), per-workspace path/trust/process status, provider key classification from the engine's models file (never evaluates secrets), permission mode and rule counts, storage paths, and recent warnings/errors from the app log
 - App log: `app-log.jsonl` in the GUI data dir (ring-buffered in memory, size-capped rotation), so packaged-build errors survive for the Diagnostics view
+- Export logs: one JSON file with the report, `app-log.jsonl` and `app-log.jsonl.1`, secrets redacted (also in the copied report)
+- Renderer errors (root boundary, window errors, rejections) go to the app log under `renderer`, rate limited; a crashed main window reloads once, then asks Reload/Quit
 
 ### File and project
 
@@ -459,6 +522,7 @@ resources/
 - One PTY per workspace (`workspace-terminals.ts`); hiding the panel keeps the shell running
 - The panel resizes by dragging its top edge (`shared/terminal-height.ts` sets the bounds) and can be maximized
 - PTY managed by `terminal-service.ts`; IPC channels relay input/output/resize
+- "Open in editor" with a terminal editor (nvim, vim, hx) starts it directly in the workspace's second PTY slot (`shared/terminal-slot.ts`), shown in an Editor tab; nothing is typed into the shell, and the tab closes when the editor exits
 
 ### Home / activity dashboard
 
@@ -515,7 +579,7 @@ Right-click for:
 - Messages: Copy Message, Copy Selection, Add Message (or Selection) to Notes
 - Code blocks: Copy Code Block, Search Selection
 - Links: Open Link, Copy Link
-- Session rows: Open Session, Workflow Runs, Archive/Unarchive, Rename…, Delete…
+- Session rows: Open Session, Workflow Runs, Pin/Unpin, Archive/Unarchive, Rename…, Delete…
 - Terminal: Copy, Paste, Select All, Clear
 
 ## IPC architecture
@@ -548,6 +612,9 @@ Instances on different data dirs can read one session store, and two agents on o
 | `<GUI data dir>/app-log.jsonl` | Main-process app log (warnings/errors for the Diagnostics view) |
 | `<GUI data dir>/notes.json` | Reusable prompts/notes |
 | `<GUI data dir>/archived-sessions.json` | Archived sessions |
+| `<GUI data dir>/pinned-sessions.json` | Pinned sessions |
+| `<GUI data dir>/unread-sessions.json` | Sessions with unseen finished turns |
+| `<GUI data dir>/chat-imports.json` | Chats imported from Claude Code and Codex, per engine (duplicate check) |
 | `<GUI data dir>/session-auto-tags.json` | Machine-derived session tags |
 | `<GUI data dir>/permission-rules.json` | Global permission rules |
 | `<canonical data dir>/session-claims/` | One claim file per session an instance runs an agent on (shared by every instance, whatever its data dir) |

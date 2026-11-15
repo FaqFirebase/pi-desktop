@@ -8,6 +8,12 @@
     "workingInAnotherWorkspace": "Pi başka bir çalışma alanında çalışıyor"
   },
   "app": {
+    "crashScreen": {
+      "copyDetails": "Ayrıntıları kopyala",
+      "message": "{{product}} bir hatayla karşılaştı ve bu pencereyi çizmeyi durdurdu. Oturumlarınız çalışmaya devam ediyor. Devam etmek için yeniden yükleyin.",
+      "reload": "Yeniden yükle",
+      "title": "Bir şeyler ters gitti"
+    },
     "dropFolder": {
       "description": "Klasörü çalışma alanı olarak açar (gerekirse oluşturur)",
       "title": "Proje olarak açmak için klasörü bırakın"
@@ -24,6 +30,22 @@
       "dismissAriaLabel": "Güncelleme bildirimini kapat",
       "downloadButton": "İndir"
     }
+  },
+  "browserPane": {
+    "addressLabel": "Adres",
+    "addressPlaceholder": "Bir web adresi veya localhost:port girin",
+    "back": "Geri",
+    "close": "Tarayıcıyı kapat",
+    "downloadRefused": "Tarayıcı panelinde indirmeler kapalı. İndirmek için sayfayı varsayılan tarayıcınızda açın.",
+    "emptyHint": "Bir sayfayı burada açmak için bir web adresi girin. Seçim hiçbir şey göndermez: öğeyi mesajınıza ekler.",
+    "forward": "İleri",
+    "invalidAddress": "Burada yalnızca http ve https sayfaları açılabilir.",
+    "loadFailed": "{{url}} yüklenemedi.",
+    "openExternal": "Varsayılan tarayıcıda aç",
+    "pick": "Bir öğe seç",
+    "pickImageTooLarge": "Öğenin ekran görüntüsü eklenemeyecek kadar büyük. Metni eklendi.",
+    "reload": "Yeniden yükle",
+    "stopPicking": "Seçmeyi durdur (Esc)"
   },
   "chat": {
     "activity": {
@@ -174,6 +196,7 @@
       "viewSource": "Kaynağı göster"
     },
     "toolbar": {
+      "browser": "Tarayıcı",
       "diffViewer": "Fark görüntüleyici",
       "fileTree": "Dosya ağacı",
       "reviewPanel": "İnceleme paneli",
@@ -304,6 +327,7 @@
     "deleteSessionLabel": "Sil…",
     "openLink": "Bağlantıyı aç",
     "openSession": "Oturumu aç",
+    "pin": "Sabitle",
     "rename": "Yeniden adlandır…",
     "searchSelection": "Seçimi ara",
     "shortcuts": {
@@ -314,6 +338,7 @@
       "selectAll": "Ctrl+A"
     },
     "unarchive": "Arşivden çıkar",
+    "unpin": "Sabitlemeyi kaldır",
     "workflowRuns": "İş akışı çalıştırmaları"
   },
   "conveyor": {
@@ -424,6 +449,11 @@
       "working": "çalışıyor…"
     }
   },
+  "crashRecovery": {
+    "detail": "Neden: {{reason}}",
+    "message": "{{product}} penceresi yeniden yüklendikten kısa süre sonra yine durdu.",
+    "title": "Pencere durdu"
+  },
   "customModels": {
     "addModelButton": "Model ekle",
     "addProviderButton": "Sağlayıcı ekle",
@@ -454,12 +484,18 @@
     "visionLabel": "vision"
   },
   "diagnostics": {
+    "exportLogs": "Günlükleri dışa aktar",
+    "exportLogsFailed": "Günlükler dışa aktarılamadı: {{error}}",
+    "exportLogsSaved": "Günlükler şuraya kaydedildi: {{path}}",
     "fields": {
       "appVersion": "Uygulama sürümü",
       "binaryFound": "İkili dosya bulundu",
       "chromium": "Chromium",
       "electron": "Electron",
       "engineVersion": "{{agent}} sürümü",
+      "gitFailed": "Çalışmadı: {{detail}}",
+      "gitNotFound": "Bulunamadı",
+      "gitVersion": "Git sürümü",
       "globalRules": "Genel kurallar",
       "globalRulesInvalid": "geçersiz dosya: {{error}}",
       "guiDataDir": "Arayüz veri dizini",
@@ -508,6 +544,7 @@
     "sections": {
       "application": "Uygulama",
       "binaryTitle": "{{agent}} ikili dosyası",
+      "git": "Git",
       "permissions": "İzinler",
       "providers": "Sağlayıcılar",
       "recentErrors": "Son hatalar",
@@ -520,6 +557,10 @@
     "workspaceTrustedBadge": "güvenilir"
   },
   "dialogs": {
+    "logExport": {
+      "fileFilterName": "JSON",
+      "title": "Günlükleri dışa aktar"
+    },
     "openFolder": {
       "title": "Klasör aç"
     },
@@ -590,6 +631,9 @@
       "pathNotPermitted": "Ek yoluna izin verilmiyor",
       "tooLarge": "Ek çok büyük (en fazla {{limit}} MB)"
     },
+    "chatImport": {
+      "busy": "Bir sohbet içe aktarma işlemi zaten çalışıyor."
+    },
     "council": {
       "agentNotFound": "{{agent}} bulunamadı. Kurun ya da Ayarlar'daki konsey üyelerinden çıkarın.",
       "arbiterFailed": "Hakem başarısız oldu",
@@ -626,6 +670,7 @@
       "localBranchRequired": "Var olan bir yerel dal seçin",
       "namedBranchRequired": "Pull request oluşturmak için adlandırılmış bir dal gerekli",
       "newFileNotCommittable": "{{path}} commit edilemez: seçili değişikliklerde yeni bir dosya değil ya da Git onu yok sayıyor",
+      "notInstalled": "Git kurulu değil",
       "noTrackedChanges": "Bu çalışma alanında commit edilecek izlenen değişiklik yok. İzlenmeyen dosyaları dahil etmek için önce hazırlayın.",
       "operationInProgressCommit": "Bir Git {{operation}} işlemi sürerken commit edilemez",
       "operationInProgressCreateBranch": "Bir Git {{operation}} işlemi sürerken dal oluşturulamaz",
@@ -773,6 +818,15 @@
       "folderNotFound": "Klasör bulunamadı",
       "noWorkspaceHint": "Kenar çubuğundaki çalışma alanı değiştiriciden bir proje klasörüne geçin.",
       "noWorkspaceOpen": "Açık çalışma alanı yok"
+    }
+  },
+  "gitCheck": {
+    "banner": {
+      "checkAgain": "Yeniden denetle",
+      "dismissAriaLabel": "Git bildirimini kapat",
+      "failedTitle": "Git çalışmadı",
+      "howToInstall": "Nasıl kurulur",
+      "missingDescription": "Commit, dal, fark ve worktree işlemleri için Git gerekir. Git'i kurun, sonra yeniden denetleyin."
     }
   },
   "home": {
@@ -949,6 +1003,25 @@
     "failed": "Pi bir hatayla durdu.",
     "needs-approval": "Pi onayınızı bekliyor.",
     "withSession": "{{body}} Biten oturumu açmak için tıklayın."
+  },
+  "openPath": {
+    "followUp": {
+      "reveal": "Klasörde göster",
+      "system": "Sistem uygulamasıyla aç"
+    },
+    "openInEditor": "Düzenleyicide aç",
+    "openWithSystem": "Sistem uygulamasıyla aç",
+    "refusal": {
+      "editorRunning": "Bu projenin terminalinde zaten bir düzenleyici açık. Onu kapatın, sonra tekrar deneyin.",
+      "launchFailed": "Düzenleyici başlamadı.",
+      "noTerminalWorkspace": "Önce bir proje açın. Terminal düzenleyicileri projenin terminal panelinde açılır.",
+      "notFound": "Bu dosya veya klasör artık yok.",
+      "outsideRoots": "Bu yol açık projelerin dışında.",
+      "runnableFile": "Bu dosya program olarak çalışabilir, bu yüzden sistem uygulamasıyla açılmadı.",
+      "systemOpenFailed": "Sistem bu dosyayı veya klasörü açamadı."
+    },
+    "refusalTitle": "Açılamadı",
+    "showInFolder": "Klasörde göster"
   },
   "packages": {
     "catalog": {
@@ -1253,6 +1326,7 @@
       "sessionCount_one": "{{count}} oturum",
       "sessionCount_other": "{{count}} oturum"
     },
+    "pinnedBadge": "Sabitlendi",
     "runtime": {
       "completed": "{{agent}} tamamladı",
       "failed": "{{agent}} bir hatayla durdu",
@@ -1287,7 +1361,8 @@
       "minutes_other": "{{count}} dk önce"
     },
     "title": "Oturumlar",
-    "unknownProject": "Bilinmiyor"
+    "unknownProject": "Bilinmiyor",
+    "unreadDot": "Yeni etkinlik"
   },
   "settings": {
     "actions": {
@@ -1317,6 +1392,36 @@
     "autoScroll": {
       "description": "Yeni mesajlara otomatik kaydır",
       "label": "Otomatik kaydırma"
+    },
+    "chatImport": {
+      "alreadyImported": "İçe aktarıldı",
+      "empty": "Sohbet bulunamadı.",
+      "engine": "Şu olarak içe aktar",
+      "failure": {
+        "folderMissing": "Sohbetin proje klasörü artık yok.",
+        "invalidPath": "Bu dosya sohbet klasöründe değil.",
+        "noMessages": "Sohbette içe aktarılacak mesaj yok.",
+        "unreadable": "Sohbet dosyası okunamadı.",
+        "writeFailed": "Oturum dosyası yazılamadı."
+      },
+      "folderMissing": "Klasör yok",
+      "import_one": "{{count}} sohbeti içe aktar",
+      "import_other": "{{count}} sohbeti içe aktar",
+      "intro": "Sohbetleri {{agent}} oturumlarına kopyalar. Özgün dosyalar yalnızca okunur.",
+      "loading": "Sohbetler aranıyor…",
+      "progress": "{{done}} / {{total}}",
+      "results": {
+        "failed_one": "Başarısız: {{count}}",
+        "failed_other": "Başarısız: {{count}}",
+        "imported_one": "İçe aktarılan: {{count}}",
+        "imported_other": "İçe aktarılan: {{count}}",
+        "skipped_one": "Atlanan, zaten içe aktarılmış: {{count}}",
+        "skipped_other": "Atlanan, zaten içe aktarılmış: {{count}}"
+      },
+      "selectFolder": "Bu klasördeki tüm sohbetleri seç",
+      "sourceRoot": "Okunan yer: {{path}}",
+      "unknownFolder": "Bilinmeyen klasör",
+      "untitled": "Adsız sohbet"
     },
     "chatWidth": {
       "description": "Mesajların ve istem kutusunun ne kadar genişleyebileceği",
@@ -1363,6 +1468,30 @@
     "desktopNotifications": {
       "description": "Bakılmayan bir çalışma alanında Pi bitirdiğinde, hata verdiğinde veya onay beklediğinde bildir",
       "label": "Masaüstü bildirimleri"
+    },
+    "editor": {
+      "description": "Bu bilgisayarda bulunan düzenleyiciler. Terminal düzenleyicileri projenin terminal panelindeki Düzenleyici sekmesinde açılır.",
+      "label": "Dosyaları şununla aç",
+      "missingNote": "Kayıtlı düzenleyici bulunamadı. Dosyalar sistem varsayılanıyla açılır.",
+      "rescan": "Yeniden tara",
+      "systemDefault": "Sistem varsayılanı",
+      "terminalOption": "{{name}} ({{tag}})",
+      "terminalTag": "terminal"
+    },
+    "keepAwake": {
+      "description": "Bu bilgisayarın uyku moduna geçmesini engelle. Ekran yine de kapanabilir. Dizüstü bilgisayarın kapağı kapatılınca bilgisayar yine uyku moduna geçer.",
+      "label": "Bu bilgisayarı uyanık tut",
+      "modes": {
+        "always": "Her zaman",
+        "off": "Kapalı",
+        "whileWorking": "Ajanlar çalışırken"
+      },
+      "status": {
+        "holding": "Durum: bu bilgisayar uyanık tutuluyor",
+        "off": "Durum: kapalı",
+        "unsupported": "Durum: Pi Desktop bu sistemde uykuyu engelleyemiyor. Güç yöneticisi ya da systemd uyku kilidi bulunamadı.",
+        "waitingForWork": "Durum: iş bekleniyor"
+      }
     },
     "language": {
       "description": "Menü, düğme ve mesajların dili",
@@ -1412,7 +1541,9 @@
       "agentConfiguration": "Ajan yapılandırması",
       "appearance": "Görünüm",
       "behavior": "Davranış",
+      "chatImport": "Sohbetleri içe aktar",
       "customModels": "Özel modeller",
+      "editor": "Düzenleyici",
       "multiAgentCouncilPlanning": "Çok ajanlı konsey planlaması",
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "Sesli dikte"
@@ -1862,6 +1993,7 @@
       "notAFolder": "Proje olarak açılamıyor — klasör değil: {{path}}",
       "notGitRepository": "Bu proje bir Git deposu değil. Başka bir konuşma için Yeni oturum'u kullanın ya da yalıtılmış sekme için bir Git projesi açın.",
       "openFolderError": "Klasör açma hatası: {{detail}}",
+      "pinError": "Sabitleme hatası: {{detail}}",
       "removedPackage": "{{spec}} kaldırıldı",
       "removePackageFailed": "Kaldırma başarısız",
       "removeWorkspaceError": "Çalışma alanı kaldırma hatası: {{detail}}",
@@ -1877,6 +2009,7 @@
       "truncatedHistory_other": "Performans için {{total}} mesajın son {{count}} tanesi gösteriliyor. Eski turlar oturum dosyasında diskte duruyor.",
       "unarchiveError": "Arşivden çıkarma hatası: {{detail}}",
       "unknownError": "Bilinmeyen hata",
+      "unpinError": "Sabitlemeyi kaldırma hatası: {{detail}}",
       "updatedAllPackages": "Paketler güncellendi. Yüklemek için Pi'yi yeniden başlatın.",
       "updatedPackage": "{{spec}} güncellendi. Yüklemek için Pi'yi yeniden başlatın.",
       "updatePackageFailed": "Güncelleme başarısız",
@@ -1906,6 +2039,10 @@
     "maximizeLabel": "Terminali büyüt",
     "restartHint": "Yeni bir kabuk başlatmak için herhangi bir tuşa basın",
     "restoreLabel": "Terminali geri yükle",
+    "tabs": {
+      "editor": "Düzenleyici",
+      "shell": "Terminal"
+    },
     "title": "Terminal"
   },
   "themes": {

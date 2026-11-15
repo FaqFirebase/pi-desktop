@@ -10,6 +10,7 @@ import {
   promptResultRefusal,
   reportsNoAgentRun,
   reportsPromptOutcome,
+  BLOCKING_UI_METHODS,
   type FileChangeEvent,
   type PiExtensionUiRequest,
   type PiPromptResultEvent,
@@ -581,7 +582,7 @@ export class WorkspaceManager {
       if (entry.runlessPromptRuns === entry.agentRunStarts) this.settleRunlessPrompt(entry, promptResultRefusal(event)?.reason)
     })
     manager.on('extension_ui_request', (event: PiExtensionUiRequest) => {
-      if (event.method === 'select' || event.method === 'confirm' || event.method === 'input' || event.method === 'editor') {
+      if (BLOCKING_UI_METHODS.has(event.method)) {
         if (pendingUi.size === 0) activityBeforeApproval = entry.info.activity
         pendingUi.add(event.id)
         this.emitRuntimeActivity(entry, 'needs-approval')

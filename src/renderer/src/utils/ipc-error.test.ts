@@ -9,6 +9,13 @@ test('strips the Electron remote-method prefix and inner Error label', () => {
   )
 })
 
+test('strips the class label of a named main-process error', () => {
+  assert.equal(
+    formatIpcError(new Error("Error invoking remote method 'git:conveyor-status': GitNotInstalledError: Git is not installed")),
+    'Git is not installed',
+  )
+})
+
 test('strips the prefix when no inner Error label is present', () => {
   assert.equal(
     formatIpcError(new Error("Error invoking remote method 'file:diff': No active workspace")),

@@ -8,6 +8,7 @@ import { registerTerminalHandlers } from './ipc/terminal-handlers'
 import { registerSessionHandlers } from './ipc/session-handlers'
 import { registerModelHandlers } from './ipc/model-handlers'
 import { registerSettingsHandlers } from './ipc/settings'
+import { registerKeepAwakeHandlers } from './ipc/keep-awake-handlers'
 import { registerPermissionRulesHandlers } from './ipc/permission-rules-handlers'
 import { registerThemeHandlers } from './ipc/theme-handlers'
 import { registerWorkspaceHandlers } from './ipc/workspace-handlers'
@@ -22,13 +23,18 @@ import { registerNotesHandlers } from './ipc/notes-handlers'
 import { registerFileHandlers } from './ipc/file-handlers'
 import { registerGitConveyorHandlers } from './ipc/git-conveyor-handlers'
 import { registerSystemHandlers } from './ipc/system-handlers'
+import { registerEditorHandlers } from './ipc/editor-handlers'
 import { registerUpdateHandlers } from './ipc/update-handlers'
 import { registerDiagnosticsHandlers } from './ipc/diagnostics-handlers'
+import { registerRendererErrorHandlers } from './ipc/renderer-error-handlers'
+import { registerGitAvailabilityHandlers } from './ipc/git-availability-handlers'
 import { registerVoiceHandlers } from './ipc/voice-handlers'
 import { registerTypeSafeHandlers } from './ipc/typesafe-handlers'
+import { registerChatImportHandlers } from './ipc/chat-import-handlers'
 import { registerWorkflowHandlers } from './ipc/workflow-handlers'
 import { registerSubagentHandlers } from './ipc/subagent-handlers'
 import { wireWorkspaceActivity, type WindowControls } from './ipc/workspace-activity-wiring'
+import { wireSessionUnread } from './ipc/session-unread-wiring'
 import type { WorkspaceTerminals } from './workspace-terminals'
 import { createQuickChatHandlers } from './ipc/quick-chat-handlers'
 
@@ -57,8 +63,10 @@ export function registerIpcHandlers(
   registerPiHandlers(ctx)
   registerTerminalHandlers(ctx)
   registerSessionHandlers(ctx)
+  wireSessionUnread(ctx, windowControls)
   registerModelHandlers(ctx)
   registerSettingsHandlers(ctx)
+  registerKeepAwakeHandlers(ctx)
   registerPermissionRulesHandlers(ctx)
   registerWorkspaceHandlers(ctx)
   registerLinkedTaskHandlers(ctx)
@@ -72,12 +80,16 @@ export function registerIpcHandlers(
   registerFileHandlers(ctx)
   registerGitConveyorHandlers(ctx)
   registerSystemHandlers(ctx)
+  registerEditorHandlers(ctx)
   registerUpdateHandlers()
   registerDiagnosticsHandlers(ctx)
+  registerRendererErrorHandlers()
+  registerGitAvailabilityHandlers(ctx)
   registerWorkflowHandlers(ctx)
   registerSubagentHandlers(ctx)
   registerVoiceHandlers(ctx)
   registerTypeSafeHandlers()
+  registerChatImportHandlers(ctx)
 
   // ─── Extension UI Responses and Pi Event Forwarding ─────────────────────
 

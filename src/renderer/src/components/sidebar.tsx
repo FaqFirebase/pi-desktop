@@ -12,7 +12,6 @@ import {
   FolderOpen,
   Plus,
   PanelLeftClose,
-  Clock,
   Activity,
   LayoutDashboard,
   Package,
@@ -30,7 +29,9 @@ import {
 } from 'lucide-react'
 import { useMemo, useState, useRef } from 'react'
 import { StatusPopover } from './status-popover'
-import { useContextMenu, buildSessionContextMenu } from './context-menu'
+import { useContextMenu, buildOpenPathMenuItems, buildSessionContextMenu, useSessionPinActions } from './context-menu'
+import { SessionRowIcon, SessionUnreadDot } from './session-row-markers'
+import { orderSessionsPinnedFirst } from '../utils/session-pin-order'
 import { getSessionEngineLabel, getSessionRowLabels, hasMixedSessionEngines } from './sidebar-session-labels'
 import { ResizeHandle } from './resize-handle'
 import { formatRelativeTime } from '../utils/format-relative-time'
@@ -57,6 +58,9 @@ interface RecentSessionGroup {
   latest: SessionListItem
 }
 
+// Group path of sessions whose project folder is not known.
+const UNKNOWN_PROJECT_PATH = 'unknown'
+
 export function Sidebar(): React.JSX.Element {
   const { t } = useTranslation()
   const activeEngineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
@@ -80,6 +84,9 @@ export function Sidebar(): React.JSX.Element {
   const setSessionsScope = useAppStore((state) => state.setSessionsScope)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
   const archivedSessions = useAppStore((state) => state.archivedSessions)
+  const pinnedSessions = useAppStore((state) => state.pinnedSessions)
+  const unreadSessions = useAppStore((state) => state.unreadSessions)
+  const sessionPinActions = useSessionPinActions()
   const archiveSession = useAppStore((state) => state.archiveSession)
   const unarchiveSession = useAppStore((state) => state.unarchiveSession)
   const deleteSession = useAppStore((state) => state.deleteSession)
@@ -176,7 +183,7 @@ export function Sidebar(): React.JSX.Element {
     // Group key is case-fold only on win32 (shared path-compare helper).
     const byProject = new Map<string, { displayPath: string; sessions: SessionListItem[] }>()
     for (const session of activeSessions) {
-      const displayPath = session.projectPath || 'unknown'
+      const displayPath = session.projectPath || UNKNOWN_PROJECT_PATH
       const key = pathGroupKey(displayPath)
       const existing = byProject.get(key)
       if (existing) existing.sessions.push(session)
@@ -185,6 +192,8 @@ export function Sidebar(): React.JSX.Element {
 
     const groups: RecentSessionGroup[] = []
     for (const { displayPath, sessions } of byProject.values()) {
+      // The newest session names the folder and orders the groups; pins only
+      // order the rows inside the group.
       const sorted = [...sessions].sort((a, b) => b.lastModified - a.lastModified)
       const latest = sorted[0]
       if (!latest) continue
@@ -195,14 +204,14 @@ export function Sidebar(): React.JSX.Element {
       groups.push({
         projectPath: displayPath,
         projectName: folderName,
-        sessions: sorted.slice(0, MAX_SESSIONS_PER_GROUP),
+        sessions: orderSessionsPinnedFirst(sorted, pinnedSessions).slice(0, MAX_SESSIONS_PER_GROUP),
         latest,
       })
     }
 
     groups.sort((a, b) => b.latest.lastModified - a.latest.lastModified)
     return groups.slice(0, MAX_RECENT_GROUPS)
-  }, [activeSessions])
+  }, [activeSessions, pinnedSessions])
 
   // Explicit expand/collapse overrides. Folders default to collapsed except the
   // one that contains the active session (until the user toggles).
@@ -211,7 +220,7 @@ export function Sidebar(): React.JSX.Element {
   const activeProjectKey = useMemo(() => {
     if (!sessionState?.sessionFile) return null
     const active = activeSessions.find((s) => s.path === sessionState.sessionFile)
-    return active ? pathGroupKey(active.projectPath || 'unknown') : null
+    return active ? pathGroupKey(active.projectPath || UNKNOWN_PROJECT_PATH) : null
   }, [activeSessions, sessionState?.sessionFile])
 
   const isGroupExpanded = (projectPath: string): boolean => {
@@ -236,11 +245,9 @@ export function Sidebar(): React.JSX.Element {
 
   const recentSessionsForWorkspace = useMemo(() => {
     if (!activeWorkspace?.path) return []
-    return activeSessions
-      .filter((session) => pathsEqual(session.projectPath, activeWorkspace.path))
-      .sort((a, b) => b.lastModified - a.lastModified)
-      .slice(0, MAX_SESSIONS_PER_GROUP)
-  }, [activeSessions, activeWorkspace?.path])
+    const projectSessions = activeSessions.filter((session) => pathsEqual(session.projectPath, activeWorkspace.path))
+    return orderSessionsPinnedFirst(projectSessions, pinnedSessions).slice(0, MAX_SESSIONS_PER_GROUP)
+  }, [activeSessions, activeWorkspace?.path, pinnedSessions])
 
   const startNewSession = async (): Promise<void> => {
     if (!activeWorkspace) {
@@ -290,6 +297,7 @@ export function Sidebar(): React.JSX.Element {
         // Rename only offered for the active session (Pi renames the active one).
         onRename: isActive ? () => startSessionRename('recent') : undefined,
         onRuns: (s) => openWorkflowRunsForSession(resolveRunSessionId(s.piSessionId, s.sessionId) ?? s.sessionId),
+        pin: sessionPinActions(session.sessionId),
       })
     )
   }
@@ -307,6 +315,7 @@ export function Sidebar(): React.JSX.Element {
     const isActive = sessionState?.sessionFile === session.path || runtime?.runtimeId === activeSessionRuntimeId
     const nested = options?.nested ?? false
     const engineLabel = showEngineTags ? getSessionEngineLabel(session) : null
+    const pinned = session.sessionId in pinnedSessions
 
     // Inline rename for the active row.
     if (isActive && renamingWhere === 'recent') {
@@ -318,7 +327,7 @@ export function Sidebar(): React.JSX.Element {
             nested && 'pl-2'
           )}
         >
-          <Clock size={12} className="shrink-0 text-muted" />
+          <SessionRowIcon pinned={pinned} className="text-muted" />
           {renderRenameInput()}
         </div>
       )
@@ -345,7 +354,7 @@ export function Sidebar(): React.JSX.Element {
               : 'hover:bg-highlight text-muted hover:text-secondary'
           )}
         >
-          <Clock size={12} className="shrink-0" />
+          <SessionRowIcon pinned={pinned} />
           <div className="min-w-0 flex-1">
             <div className="truncate">{labels.title}</div>
             {/* The title is now the session's name or first message, so the time it
@@ -358,6 +367,7 @@ export function Sidebar(): React.JSX.Element {
               {formatRelativeTime(session.lastModified, Date.now())}
             </div>
           </div>
+          {session.sessionId in unreadSessions && <SessionUnreadDot />}
           {runtime && <SessionRuntimeIndicator runtime={runtime} />}
         </button>
         {/* Sibling (not child) of the row button, so no nested interactive
@@ -388,6 +398,9 @@ export function Sidebar(): React.JSX.Element {
         <button
           type="button"
           onClick={() => toggleGroup(group.projectPath)}
+          onContextMenu={group.projectPath === UNKNOWN_PROJECT_PATH ? undefined : (e) => {
+            showMenu(e, buildOpenPathMenuItems(async () => group.projectPath))
+          }}
           title={group.projectPath}
           aria-expanded={expanded}
           className={clsx(
@@ -796,6 +809,10 @@ function WorkspaceSwitcher({ onOpenProject }: { onOpenProject: () => void }): Re
           void handleChangeFolder()
         },
       },
+      ...(activeWorkspace ? [
+        { id: 'open-path-divider', label: '', divider: true, action: () => {} },
+        ...buildOpenPathMenuItems(async () => activeWorkspace.path),
+      ] : []),
     ])
   }
 

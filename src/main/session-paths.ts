@@ -14,10 +14,16 @@
  * and fall back to `desanitizeSessionDir` only for display.
  */
 
-import { isAbsolute, relative } from 'path'
+import { basename, isAbsolute, relative } from 'path'
 
 /** Extension of a Pi session file. */
 export const JSONL_EXTENSION = '.jsonl'
+
+/** A session's registry key: its file basename without a trailing `.jsonl`. */
+export function sessionIdFromPath(sessionPath: string): string {
+  const base = basename(sessionPath)
+  return base.endsWith(JSONL_EXTENSION) ? base.slice(0, -JSONL_EXTENSION.length) : base
+}
 
 /** OMP's directory name for projects under the home directory: this plus the relative path. */
 const OMP_HOME_DIR_PREFIX = '-'

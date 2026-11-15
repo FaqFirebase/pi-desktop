@@ -105,7 +105,7 @@ export function createQuickChatHandlers(
   // Runtimes the popup opened itself, and of those, the ones it sent work to.
   const popupOpened = new Set<string>()
   const popupPrompted = new Set<string>()
-  const listSessions = createListSessions(wm)
+  const listSessions = createListSessions(wm, () => ctx.pinnedSessions.getAll())
   // Recency per runtime for the popup's recent-task order; wall clock is enough for ordering.
   const runtimeUpdatedAt = new Map<string, number>()
   for (const runtime of wm.getSessionRuntimes()) stampRuntime(runtime)

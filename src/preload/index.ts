@@ -1,4 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { KeepAwakeStatus } from '../shared/keep-awake'
+import type { TerminalSlot } from '../shared/terminal-slot'
+import type { DetectedEditor, OpenPathRequest, OpenPathResult } from '../shared/editors'
 import type {
   AgentEngineKind,
   PiRpcEvent,
@@ -7,6 +10,8 @@ import type {
   SessionListItem,
   SessionDeleteResult,
   ArchivedSessionsMap,
+  PinnedSessionsMap,
+  UnreadSessionsMap,
   AppSettings,
   AgentDetectionOptions,
   AgentInstallationsResult,
@@ -51,6 +56,9 @@ import type {
   PromptImage,
   ActivityStatsResult,
   DiagnosticsReport,
+  LogExportResult,
+  RendererErrorRecord,
+  GitAvailability,
   ThemesListResult,
   ThemeImportResult,
   ThemeExportResult,
@@ -95,6 +103,8 @@ import type { ThemeFile } from '../shared/theme/theme-file'
 import type { SubagentListResult, SubagentTranscriptRef, SubagentTranscriptResult } from '../shared/subagent-task'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import type { QuickChatShortcutStatus } from '../shared/quick-chat'
+import type { BrowserPaneGuestEvent } from '../shared/browser-pane'
+import type { ChatImportListing, ChatImportListRequest, ChatImportProgress, ChatImportRequest, ChatImportResult } from '../shared/chat-import'
 
 // Quick Chat can open Settings before the main renderer's hooks have mounted.
 let pendingSettingsMenu = false
@@ -153,6 +163,12 @@ interface PiDesktopAPI {
     archive(sessionId: string): Promise<ArchivedSessionsMap>
     unarchive(sessionId: string): Promise<ArchivedSessionsMap>
     listArchived(): Promise<ArchivedSessionsMap>
+    pin(sessionId: string): Promise<PinnedSessionsMap>
+    unpin(sessionId: string): Promise<PinnedSessionsMap>
+    listPinned(): Promise<PinnedSessionsMap>
+    listUnread(): Promise<UnreadSessionsMap>
+    /** The session file the main view shows, or null when it shows none. */
+    setVisible(sessionPath: string | null): Promise<void>
     getLineage(): Promise<SessionLineageRecord[]>
     compact(customInstructions?: string): Promise<unknown>
   }
@@ -178,6 +194,7 @@ interface PiDesktopAPI {
     /** False when this launch has a data folder of its own, which cannot run on startup. */
     isRunOnStartupAvailable(): Promise<boolean>
     openQuickChat(): Promise<void>
+    getKeepAwakeStatus(): Promise<KeepAwakeStatus>
   }
 
   // Interface language
@@ -298,6 +315,18 @@ interface PiDesktopAPI {
     removeSkill(): Promise<TypeSafeStatus>
   }
 
+  // Chat import: Claude Code and Codex chats into Pi or OMP sessions.
+  chatImport: {
+    list(request: ChatImportListRequest): Promise<ChatImportListing>
+    run(request: ChatImportRequest): Promise<ChatImportResult>
+    onProgress(callback: (progress: ChatImportProgress) => void): () => void
+  }
+
+  // Browser pane: pane keys and refused downloads that main caught in a guest page.
+  browserPane: {
+    onGuestEvent(callback: (event: BrowserPaneGuestEvent) => void): () => void
+  }
+
   // Skills, Commands, MCP, Tags
   skills: {
     list(): Promise<InstalledSkill[]>
@@ -387,6 +416,14 @@ interface PiDesktopAPI {
      * win32 case-folding.
      */
     platform: NodeJS.Platform
+    /** Open in editor, open with the system app, or show in the file manager. */
+    openPath(request: OpenPathRequest): Promise<OpenPathResult>
+  }
+
+  // Editors found on this computer
+  editors: {
+    /** `force` searches again instead of returning the cached list. */
+    detect(force?: boolean): Promise<DetectedEditor[]>
   }
 
   // Activity stats
@@ -416,6 +453,19 @@ interface PiDesktopAPI {
   // Diagnostics report
   diagnostics: {
     get(): Promise<DiagnosticsReport>
+    /** Save dialog, then one JSON file: the report and both log files, secrets redacted. */
+    exportLogs(): Promise<LogExportResult>
+  }
+
+  /** Renderer errors for the app log; main rate-limits them. */
+  rendererErrors: {
+    report(record: RendererErrorRecord): Promise<void>
+  }
+
+  /** Startup git check; `recheck` runs `git --version` again */
+  gitCheck: {
+    get(): Promise<GitAvailability>
+    recheck(): Promise<GitAvailability>
   }
 
   // Update check (GitHub releases)
@@ -425,9 +475,9 @@ interface PiDesktopAPI {
 
   terminal: {
     start(workspaceId: string, options?: TerminalStartOptions): Promise<TerminalStartResult>
-    input(workspaceId: string, data: string): Promise<void>
-    resize(workspaceId: string, cols: number, rows: number): Promise<void>
-    stop(workspaceId: string): Promise<void>
+    input(workspaceId: string, data: string, slot?: TerminalSlot): Promise<void>
+    resize(workspaceId: string, cols: number, rows: number, slot?: TerminalSlot): Promise<void>
+    stop(workspaceId: string, slot?: TerminalSlot): Promise<void>
     onData(callback: (event: TerminalDataEvent) => void): () => void
     onExit(callback: (event: TerminalExitEvent) => void): () => void
   }
@@ -461,6 +511,8 @@ interface PiDesktopAPI {
   onEvent(callback: (event: PiRpcEvent) => void): () => void
   onPendingPrompts(callback: (counts: PendingPromptCounts) => void): () => void
   onWorkspaceActivity(callback: (map: WorkspaceActivityMap) => void): () => void
+  onUnreadSessions(callback: (map: UnreadSessionsMap) => void): () => void
+  onKeepAwakeStatus(callback: (status: KeepAwakeStatus) => void): () => void
   onSessionRuntime(callback: (runtime: SessionRuntimeInfo) => void): () => void
   onRuntimeState(callback: (payload: { runtimeId: string }) => void): () => void
   onActivateWorkspace(callback: (payload: WorkspaceActivationIntent) => void): () => void
@@ -514,6 +566,11 @@ const api: PiDesktopAPI = {
     archive: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_ARCHIVE, sessionId),
     unarchive: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_UNARCHIVE, sessionId),
     listArchived: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_ARCHIVED),
+    pin: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_PIN, sessionId),
+    unpin: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_UNPIN, sessionId),
+    listPinned: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_PINNED),
+    listUnread: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_UNREAD),
+    setVisible: (sessionPath) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SET_VISIBLE, sessionPath),
   },
 
   model: {
@@ -533,6 +590,7 @@ const api: PiDesktopAPI = {
     getQuickChatShortcutStatus: () => ipcRenderer.invoke(IPC_CHANNELS.QUICK_CHAT_SHORTCUT_STATUS),
     isRunOnStartupAvailable: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_RUN_ON_STARTUP_AVAILABLE),
     openQuickChat: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_OPEN_QUICK_CHAT),
+    getKeepAwakeStatus: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_KEEP_AWAKE_STATUS),
   },
 
   i18n: {
@@ -644,6 +702,26 @@ const api: PiDesktopAPI = {
     removeSkill: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_REMOVE_SKILL),
   },
 
+  chatImport: {
+    list: (request) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_IMPORT_LIST, request),
+    run: (request) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_IMPORT_RUN, request),
+    onProgress: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: ChatImportProgress) => callback(data)
+      ipcRenderer.on(IPC_CHANNELS.EVENT_CHAT_IMPORT_PROGRESS, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.EVENT_CHAT_IMPORT_PROGRESS, handler)
+    },
+  },
+
+  browserPane: {
+    onGuestEvent: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: BrowserPaneGuestEvent) => callback(data)
+      ipcRenderer.on(IPC_CHANNELS.EVENT_BROWSER_PANE_GUEST, handler)
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.EVENT_BROWSER_PANE_GUEST, handler)
+      }
+    },
+  },
+
   skills: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.SKILLS_LIST),
     read: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.SKILLS_READ, filePath),
@@ -713,6 +791,11 @@ const api: PiDesktopAPI = {
     platform: process.platform,
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, url),
     getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_VERSION),
+    openPath: (request) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_PATH, request),
+  },
+
+  editors: {
+    detect: (force) => ipcRenderer.invoke(IPC_CHANNELS.EDITORS_DETECT, force),
   },
 
   activity: {
@@ -733,6 +816,16 @@ const api: PiDesktopAPI = {
 
   diagnostics: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_GET),
+    exportLogs: () => ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_EXPORT_LOGS),
+  },
+
+  rendererErrors: {
+    report: (record) => ipcRenderer.invoke(IPC_CHANNELS.RENDERER_ERROR_REPORT, record),
+  },
+
+  gitCheck: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_AVAILABILITY_GET),
+    recheck: () => ipcRenderer.invoke(IPC_CHANNELS.GIT_AVAILABILITY_RECHECK),
   },
 
   updates: {
@@ -741,9 +834,9 @@ const api: PiDesktopAPI = {
 
   terminal: {
     start: (workspaceId, options) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_START, workspaceId, options),
-    input: (workspaceId, data) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_INPUT, workspaceId, data),
-    resize: (workspaceId, cols, rows) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESIZE, workspaceId, { cols, rows }),
-    stop: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_STOP, workspaceId),
+    input: (workspaceId, data, slot) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_INPUT, workspaceId, data, slot),
+    resize: (workspaceId, cols, rows, slot) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESIZE, workspaceId, { cols, rows }, slot),
+    stop: (workspaceId, slot) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_STOP, workspaceId, slot),
     onData: (callback) => {
       const handler = (_event: Electron.IpcRendererEvent, data: TerminalDataEvent) => callback(data)
       ipcRenderer.on(IPC_CHANNELS.EVENT_TERMINAL_DATA, handler)
@@ -793,6 +886,22 @@ const api: PiDesktopAPI = {
     ipcRenderer.on(IPC_CHANNELS.EVENT_WORKSPACE_ACTIVITY, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.EVENT_WORKSPACE_ACTIVITY, handler)
+    }
+  },
+
+  onUnreadSessions: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: UnreadSessionsMap) => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.EVENT_UNREAD_SESSIONS, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.EVENT_UNREAD_SESSIONS, handler)
+    }
+  },
+
+  onKeepAwakeStatus: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: KeepAwakeStatus) => callback(status)
+    ipcRenderer.on(IPC_CHANNELS.EVENT_KEEP_AWAKE_STATUS, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.EVENT_KEEP_AWAKE_STATUS, handler)
     }
   },
 

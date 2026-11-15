@@ -8,6 +8,7 @@ import {
   toolCallSource,
   toolCommand,
   toolCallFile,
+  toolCallLine,
   parseEdits,
   editStats,
   prepareChatMessages,
@@ -505,4 +506,13 @@ test('a call source falls back to its label when it carries no command', () => {
   assert.equal(toolCallSource('bash', '{}', t), toolCallLabel('bash', '{}', t))
   assert.equal(toolCommand('{"cmd":"npm test"}'), 'npm test')
   assert.equal(toolCommand('not json'), null)
+})
+
+test('toolCallLine reads a read call offset', () => {
+  assert.equal(toolCallLine('read', '{"path":"a.ts","offset":21}'), 21)
+  assert.equal(toolCallLine('read', '{"path":"a.ts"}'), null)
+  assert.equal(toolCallLine('read', '{"path":"a.ts","offset":0}'), null)
+  assert.equal(toolCallLine('read', '{"path":"a.ts","offset":2.5}'), null)
+  assert.equal(toolCallLine('read', 'not json'), null)
+  assert.equal(toolCallLine('edit', '{"path":"a.ts","offset":21}'), null)
 })

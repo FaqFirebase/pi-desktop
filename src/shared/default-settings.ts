@@ -2,6 +2,7 @@ import type { AppSettings } from './ipc-contracts'
 import { DEFAULT_COUNCIL_CONFIG } from './council-config'
 import { DEFAULT_SIDEBAR_WIDTH } from './sidebar-width'
 import { DEFAULT_CHAT_WIDTH } from './chat-width'
+import { DEFAULT_KEEP_AWAKE_MODE } from './keep-awake'
 import { SYSTEM_LANGUAGE } from './i18n/languages'
 import { DEFAULT_KEYBOARD_SHORTCUTS } from './keyboard-shortcuts'
 
@@ -48,10 +49,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   resumeLastSession: true,
   collapsedSessionGroups: [],
   skillGroups: [],
+  browserPaneUrls: {},
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   openToHomeOnLaunch: true,
   runOnStartup: false,
   minimizeToTrayOnClose: false,
+  keepAwakeMode: DEFAULT_KEEP_AWAKE_MODE,
   hasSeenTrayHint: false,
   desktopNotifications: true,
   suggestNextSteps: true,
@@ -61,4 +64,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   voiceModel: null,
   voicePrecision: 'int8',
   voiceDevice: 'auto',
+  preferredEditor: null,
 }

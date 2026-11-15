@@ -6,6 +6,8 @@ import { t } from '../../shared/i18n'
 import { buildPlanningPrompt } from '../../shared/planning-prompt'
 import { composePrompt } from './utils/compose-prompt'
 import { firstQueued, withQueued, withoutQueued, withoutWorkspaceQueue, type SendQueues } from './send-queue'
+import { withEditorTerminal, withoutEditorTerminal } from './editor-terminal-state'
+import type { TerminalSlot } from '../../shared/terminal-slot'
 import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
 import type { DisplayAttachment, DisplayMessage } from './message-parsing'
 import { appendPromptHistory, applyChatStreamUpdate, applyChatToolExecution, chatEventNotice, parseChatMessage, retainChatMessageIdentity, turnErrorText, type ChatToolCall } from './chat-session-state'
@@ -20,6 +22,7 @@ import { buildLineageTree, type LineageNode } from '../../shared/session-lineage
 import { clampSidebarWidth } from '../../shared/sidebar-width'
 import { workspaceNameFromFolderPath } from '../../shared/folder-drop'
 import { pathsEqual } from '../../shared/path-compare'
+import { isBrowserPaneUrl } from '../../shared/browser-pane'
 import { EDITED_TITLE_MAX_CHARS, sessionPreview, stripInjectedPreamble, truncateTitle } from '../../shared/session-preview'
 import { validateModelsConfig, mergeModelsConfig, type ModelsConfig } from '../../shared/models-config'
 import {
@@ -73,6 +76,7 @@ import type {
   NoteInput,
   NoteUpdate,
   UpdateCheckResult,
+  GitAvailability,
   PromptImage,
   CouncilArbiterRequest,
   PermissionRule,
@@ -86,9 +90,11 @@ import type {
   ModelsFileInfo,
   ModelInfo,
   PiPromptResultEvent,
+  PinnedSessionsMap,
+  UnreadSessionsMap,
 } from '../../shared/ipc-contracts'
 import {
-  isRuntimeBusy, promptRanWithoutAgent, promptRefusal, promptResultRefusal, reportsNoAgentRun, reportsPromptOutcome,
+  BLOCKING_UI_METHODS, isRuntimeBusy, promptRanWithoutAgent, promptRefusal, promptResultRefusal, reportsNoAgentRun, reportsPromptOutcome,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -108,7 +114,7 @@ export interface PreviewTarget {
 }
 
 /** A secondary view in the chat's side slot. */
-export type ChatSidePanel = 'files' | 'diff' | 'tasks'
+export type ChatSidePanel = 'files' | 'diff' | 'tasks' | 'browser'
 
 /**
  * Whether a side panel takes the whole side slot. The chat then shows no file
@@ -116,7 +122,7 @@ export type ChatSidePanel = 'files' | 'diff' | 'tasks'
  * The layout and the actions that open a panel read this one rule.
  */
 export function sidePanelHidesPreview(panel: ChatSidePanel | null): boolean {
-  return panel === 'diff' || panel === 'tasks'
+  return panel === 'diff' || panel === 'tasks' || panel === 'browser'
 }
 
 // ─── Composer Draft ──────────────────────────────────────────────────────────
@@ -345,6 +351,10 @@ interface AppState {
   chatSidePanel: ChatSidePanel | null
   sidebarOpen: boolean
   terminalOpen: boolean
+  // Workspaces with a terminal editor in their editor slot, and the slot each
+  // workspace's terminal panel shows (see editor-terminal-state.ts).
+  editorTerminalWorkspaces: string[]
+  shownTerminalSlot: Record<string, TerminalSlot>
   reviewOpen: boolean
   settings: AppSettings | null
   // Unsaved edits from the Settings panel (theme, piPath, permission mode,
@@ -442,6 +452,11 @@ interface AppState {
   archivedSessions: Record<string, number>
   showArchived: boolean
 
+  // Pinned sessions sort to the top of their folder group (GUI-only registry)
+  pinnedSessions: PinnedSessionsMap
+  // Sessions whose last turn ended out of view; main owns this map
+  unreadSessions: UnreadSessionsMap
+
   // Notes (reusable prompts / commands)
   notes: Note[]
   notePickerOpen: boolean
@@ -474,8 +489,9 @@ interface AppState {
   // Set by the diff shortcuts; the diff viewer or Git actions consume and clear it.
   diffShortcutRequest: 'review' | 'commitPush' | null
   // A prompt queued for insertion into the chat input. The nonce lets the
-  // chat input re-apply the same text on repeated inserts.
-  pendingInsert: { text: string; nonce: number; replace?: boolean } | null
+  // chat input re-apply the same text on repeated inserts. Attachments are
+  // staged beside the text (a Browser pane pick); nothing is sent.
+  pendingInsert: { text: string; nonce: number; replace?: boolean; attachments?: ComposerAttachment[] } | null
   // Set when a session opens; the chat input takes focus once it can, unless
   // the user leaves chat or focuses something else first.
   composerFocusRequested: boolean
@@ -489,6 +505,11 @@ interface AppState {
   // Update check (GitHub releases). Set when a newer version is available.
   updateInfo: UpdateCheckResult | null
   updateDismissed: boolean
+
+  // Git check. Dismiss is memory-only, so it lasts until the next app start.
+  gitAvailability: GitAvailability | null
+  gitBannerDismissed: boolean
+  gitCheckRunning: boolean
 
   // Cross-session lineage tree
   lineage: LineageNode[]
@@ -593,6 +614,11 @@ interface AppActions {
   setChatSidePanel: (panel: ChatSidePanel | null) => Promise<boolean>
   toggleSidebar: () => void
   toggleTerminal: () => void
+  // Show the editor slot of a workspace's terminal panel in the chat view.
+  showEditorTerminal: (workspaceId: string) => void
+  // The terminal editor exited: drop its slot and show the shell again.
+  closeEditorTerminal: (workspaceId: string) => void
+  setShownTerminalSlot: (workspaceId: string, slot: TerminalSlot) => void
   toggleReview: () => void
   loadSettings: () => Promise<void>
   setSettingsDraft: (patch: Partial<AppSettings>) => void
@@ -600,6 +626,8 @@ interface AppActions {
   setPermissionRulesDraft: (scope: PermissionRulesScope, rules: PermissionRule[] | null) => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   toggleSessionGroupCollapsed: (projectPath: string) => Promise<void>
+  // Remember the last Browser pane page of a workspace (http/https only).
+  saveBrowserPaneUrl: (workspacePath: string, url: string) => Promise<void>
   updateSkillGroups: (change: (groups: SkillGroup[]) => SkillGroup[]) => Promise<void>
   saveSidebarWidth: (width: number) => Promise<void>
   loadCommands: () => Promise<void>
@@ -708,6 +736,13 @@ interface AppActions {
   deleteSession: (session: SessionListItem) => Promise<SessionDeleteResult>
   toggleShowArchived: () => void
 
+  // Pinned / unread
+  loadPinnedSessions: () => Promise<void>
+  pinSession: (sessionId: string) => Promise<void>
+  unpinSession: (sessionId: string) => Promise<void>
+  loadUnreadSessions: () => Promise<void>
+  handleUnreadSessions: (map: UnreadSessionsMap) => void
+
   // Notes
   loadNotes: () => Promise<void>
   saveNote: (input: NoteInput) => Promise<void>
@@ -715,6 +750,9 @@ interface AppActions {
   deleteNote: (id: string) => Promise<void>
   insertPrompt: (text: string, replace?: boolean) => void
   clearPendingInsert: () => void
+  // Stage a Browser pane pick in the composer of `workspaceId`. False (and
+  // nothing staged) when that workspace is no longer the active one.
+  stagePickedAttachments: (workspaceId: string, attachments: ComposerAttachment[]) => boolean
   setNotePickerOpen: (open: boolean) => void
   toggleAllThinking: () => void
   setCommandPalette: (open: boolean) => void
@@ -728,6 +766,11 @@ interface AppActions {
   checkForUpdates: () => Promise<void>
   dismissUpdate: () => void
 
+  // Git check
+  loadGitAvailability: () => Promise<void>
+  recheckGitAvailability: () => Promise<void>
+  dismissGitBanner: () => void
+
   // Lineage
   loadLineage: () => Promise<void>
 }
@@ -737,6 +780,13 @@ interface AppActions {
 let messageCounter = 0
 function generateId(): string {
   return `msg-${Date.now()}-${++messageCounter}`
+}
+
+/** A session registry map without one session's entry (a new object). */
+function withoutSession(map: Record<string, number>, sessionId: string): Record<string, number> {
+  const next = { ...map }
+  delete next[sessionId]
+  return next
 }
 
 
@@ -1164,6 +1214,36 @@ async function runArbiterStep(
   }
 }
 
+/** Keep the pin map main returns; a failure becomes a system message. */
+async function applyPinChange(
+  set: StoreSet,
+  get: StoreGet,
+  change: () => Promise<PinnedSessionsMap>,
+  errorText: (detail: string) => string,
+): Promise<void> {
+  try {
+    set({ pinnedSessions: await change() })
+  } catch (err) {
+    get().addMessage({
+      id: generateId(),
+      role: 'system',
+      content: errorText(err instanceof Error ? err.message : String(err)),
+      timestamp: Date.now(),
+    })
+  }
+}
+
+/** Keep a git check result unless a newer check started meanwhile. */
+async function applyLatestGitAvailability(set: StoreSet, read: () => Promise<GitAvailability>): Promise<void> {
+  const isLatest = gitAvailabilityLoads.begin()
+  try {
+    const gitAvailability = await read()
+    if (isLatest()) set({ gitAvailability })
+  } catch {
+    // Best effort, like the update check: the banner stays as it was
+  }
+}
+
 /**
  * Run one package install/remove/update under the Installed tab's shared
  * loading flag and notification banner. The list refreshes even on failure:
@@ -1198,6 +1278,8 @@ let latestPackageUpdateCheck = 0
 
 // Engine changes can start reads of two models files at once; the last one wins.
 const customModelsLoads = createStaleGuard()
+// The startup check can end after a Check again; only the newest result is kept.
+const gitAvailabilityLoads = createStaleGuard()
 
 export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Initial State ────────────────────────────────────────────────────
@@ -1238,6 +1320,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   chatSidePanel: null,
   sidebarOpen: true,
   terminalOpen: false,
+  editorTerminalWorkspaces: [],
+  shownTerminalSlot: {},
   reviewOpen: false,
   settings: null,
   settingsDraft: {},
@@ -1289,6 +1373,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   archivedSessions: {},
   showArchived: false,
 
+  pinnedSessions: {},
+  unreadSessions: {},
+
   notes: [],
   notePickerOpen: false,
   allThinkingExpanded: null,
@@ -1328,6 +1415,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   noteDraft: null,
   updateInfo: null,
   updateDismissed: false,
+  gitAvailability: null,
+  gitBannerDismissed: false,
+  gitCheckRunning: false,
 
   lineage: [],
 
@@ -2436,6 +2526,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   toggleTerminal: () => set((state) => ({ terminalOpen: !state.terminalOpen })),
 
+  showEditorTerminal: (workspaceId) =>
+    set((state) => ({ ...withEditorTerminal(state, workspaceId), terminalOpen: true, currentView: 'chat' })),
+
+  closeEditorTerminal: (workspaceId) => set((state) => withoutEditorTerminal(state, workspaceId)),
+
+  setShownTerminalSlot: (workspaceId, slot) =>
+    set((state) => ({ shownTerminalSlot: { ...state.shownTerminalSlot, [workspaceId]: slot } })),
+
   toggleReview: () => set((state) => ({ reviewOpen: !state.reviewOpen })),
 
   loadSettings: async () => {
@@ -2524,6 +2622,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       ? current.filter((p) => p !== projectPath)
       : [...current, projectPath]
     const updated = await window.piDesktop.settings.save({ collapsedSessionGroups: next })
+    set({ settings: updated })
+  },
+
+  saveBrowserPaneUrl: async (workspacePath, url) => {
+    const current = get().settings?.browserPaneUrls ?? {}
+    if (!isBrowserPaneUrl(url) || current[workspacePath] === url) return
+    const updated = await window.piDesktop.settings.save({ browserPaneUrls: { ...current, [workspacePath]: url } })
     set({ settings: updated })
   },
 
@@ -2798,7 +2903,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           // Toast slot: kept apart from the dialog slot so a notification can
           // never clobber an unanswered blocking prompt.
           set({ extensionNotify: uiEvent })
-        } else if (uiEvent.method === 'select' || uiEvent.method === 'confirm' || uiEvent.method === 'input' || uiEvent.method === 'editor') {
+        } else if (BLOCKING_UI_METHODS.has(uiEvent.method)) {
           set({ extensionUiRequest: uiEvent })
         }
         break
@@ -3613,7 +3718,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   archiveSession: async (sessionId) => {
     try {
       const archived = await window.piDesktop.session.archive(sessionId)
-      set({ archivedSessions: archived })
+      // Main unpins an archived session; mirror that without another round trip.
+      set((state) => ({ archivedSessions: archived, pinnedSessions: withoutSession(state.pinnedSessions, sessionId) }))
     } catch (err) {
       get().addMessage({
         id: generateId(),
@@ -3642,12 +3748,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       const result = await window.piDesktop.session.delete(session.path)
       if (result.ok) {
-        // Refresh list and prune archive entry locally
-        set((state) => {
-          const next = { ...state.archivedSessions }
-          delete next[session.sessionId]
-          return { archivedSessions: next }
-        })
+        // Refresh list and prune the archive and pin entries locally
+        set((state) => ({
+          archivedSessions: withoutSession(state.archivedSessions, session.sessionId),
+          pinnedSessions: withoutSession(state.pinnedSessions, session.sessionId),
+        }))
 
         await get().refreshSessionList()
 
@@ -3680,6 +3785,34 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   toggleShowArchived: () => set((state) => ({ showArchived: !state.showArchived })),
+
+  // ─── Pinned / Unread ──────────────────────────────────────────────────
+
+  loadPinnedSessions: async () => {
+    try {
+      set({ pinnedSessions: await window.piDesktop.session.listPinned() })
+    } catch {
+      // Silent failure — the pin registry is best-effort
+    }
+  },
+
+  pinSession: (sessionId) => applyPinChange(set, get,
+    () => window.piDesktop.session.pin(sessionId),
+    (detail) => t('store.messages.pinError', { detail })),
+
+  unpinSession: (sessionId) => applyPinChange(set, get,
+    () => window.piDesktop.session.unpin(sessionId),
+    (detail) => t('store.messages.unpinError', { detail })),
+
+  loadUnreadSessions: async () => {
+    try {
+      set({ unreadSessions: await window.piDesktop.session.listUnread() })
+    } catch {
+      // Silent failure — the next change event carries the full map
+    }
+  },
+
+  handleUnreadSessions: (map) => set({ unreadSessions: map }),
 
   // ─── Notes ────────────────────────────────────────────────────────────
 
@@ -3719,6 +3852,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   clearPendingInsert: () => set({ pendingInsert: null }),
 
+  stagePickedAttachments: (workspaceId, attachments) => {
+    // A capture that ends after a workspace switch must not land in another composer.
+    if (activeWorkspaceId(get) !== workspaceId) return false
+    set({ pendingInsert: { text: '', nonce: Date.now(), attachments } })
+    return true
+  },
+
   setNotePickerOpen: (open) => set({ notePickerOpen: open }),
 
   // Thinking blocks start closed, so the first command opens them all.
@@ -3749,6 +3889,21 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   dismissUpdate: () => set({ updateDismissed: true }),
+
+  // ─── Git check ────────────────────────────────────────────────────────
+
+  loadGitAvailability: () => applyLatestGitAvailability(set, () => window.piDesktop.gitCheck.get()),
+
+  recheckGitAvailability: async () => {
+    set({ gitCheckRunning: true })
+    try {
+      await applyLatestGitAvailability(set, () => window.piDesktop.gitCheck.recheck())
+    } finally {
+      set({ gitCheckRunning: false })
+    }
+  },
+
+  dismissGitBanner: () => set({ gitBannerDismissed: true }),
 
   // ─── Lineage ──────────────────────────────────────────────────────────
 

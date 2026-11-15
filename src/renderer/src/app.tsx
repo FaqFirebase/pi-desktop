@@ -19,6 +19,7 @@ import { ExtensionUiDialog, AppConfirmDialog } from './components/extension-ui-d
 import { ChatToolRail } from './components/chat-tool-rail'
 import { WorkspaceTabs } from './components/workspace-tabs'
 import { RepoBar } from './components/repo-bar'
+import { GitMissingBanner } from './components/git-missing-banner'
 import { LinkedTaskDialog } from './components/linked-task-dialog'
 import { WorkflowNavigator } from './components/workflow-navigator'
 import { useContextMenu, buildDefaultContextMenu } from './components/context-menu'
@@ -28,6 +29,7 @@ import { useAppStore } from './store'
 import { MainChatProvider } from './main-chat-provider'
 import { handleAppShortcut, handleAppShortcutAfterTarget, handleAppShortcutRelease, releasePushToTalk } from './utils/app-shortcuts'
 import { emitVoiceShortcut } from './voice/voice-shortcut'
+import { setRendererErrorContextSource } from './utils/renderer-error-report'
 import { useEffect } from 'react'
 import { ArrowUpCircle, FolderOpen, PanelLeft, X } from 'lucide-react'
 
@@ -47,6 +49,12 @@ export function App(): React.JSX.Element {
   const workflowPanelOpen = useAppStore((state) => state.workflowPanelOpen)
   const workflowPanelFilter = useAppStore((state) => state.workflowPanelFilter)
   const workflowPanelWorkspaceId = useAppStore((state) => state.workflowPanelWorkspaceId)
+
+  // Renderer error records name the view and session they happened in.
+  useEffect(() => setRendererErrorContextSource(() => {
+    const state = useAppStore.getState()
+    return { view: state.currentView, sessionId: state.sessionState?.sessionId ?? null }
+  }), [])
 
   // Global context menu
   const { show, ContextMenuComponent } = useContextMenu()
@@ -161,6 +169,7 @@ export function App(): React.JSX.Element {
         <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           {showChrome && <WorkspaceTabs />}
           {showChrome && <RepoBar />}
+          {showChrome && <GitMissingBanner placement="workspace" />}
           <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
               <div className={globalWorkflowOpen ? 'hidden' : 'contents'}>

@@ -1,5 +1,6 @@
 import { t } from '../../shared/i18n'
 import { isStoppedAnswer } from '../../shared/stopped-answer'
+import { isImportedMessage } from '../../shared/chat-import'
 import { splitClaudeCliMarkers } from './claude-cli-markers'
 
 export interface DisplayAttachment {
@@ -153,7 +154,8 @@ export function parseAgentMessage(msg: unknown): DisplayMessage | null {
       timestamp: parseTimestamp(m.timestamp),
       thinking: thinkingParts.length > 0 ? thinkingParts.join('') : undefined,
       toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
-      model: typeof m.model === 'string' ? m.model : undefined,
+      // Imported chats carry a marker model, not one the user picked.
+      model: typeof m.model === 'string' && !isImportedMessage(m) ? m.model : undefined,
       provider: typeof m.provider === 'string' ? m.provider : undefined,
       stopped: isStoppedAnswer(m) || undefined,
     }

@@ -24,6 +24,8 @@ import { engineProjectSessionDirs } from '../latest-project-session'
 // WorkspaceManager (via agent-resources) and every handler module are imported
 // dynamically inside withBridge, after this stub is installed.
 const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<unknown>>()
+// The popup lists sessions with the pinned rows kept; these tests pin none.
+const NO_PINNED_SESSIONS = { getAll: async () => ({}) }
 const require = createRequire(import.meta.url)
 const electronPath = require.resolve('electron')
 require('electron')
@@ -131,6 +133,7 @@ async function fixture(wm: WorkspaceManager, root: string): Promise<BridgeFixtur
   const ctx = {
     workspaceManager: wm,
     broadcast: (channel: string, data: unknown) => broadcasts.push({ channel, data }),
+    pinnedSessions: NO_PINNED_SESSIONS,
   } as unknown as IpcContext
   const bridge = createQuickChatHandlers(ctx, { getWindow: () => main, showWindow: () => { shows++ } }, {
     getWindow: () => window,
@@ -498,7 +501,7 @@ test('pickWorkspace on a fresh manager creates the first workspace without activ
     const webContents = { mainFrame: frame, send: () => {} }
     const window = { webContents, isDestroyed: () => false, isVisible: () => true, isFocused: () => true } as unknown as BrowserWindow
     const main = { isDestroyed: () => false, isMinimized: () => false, show: () => {}, focus: () => {} } as unknown as BrowserWindow
-    const ctx = { workspaceManager: fresh, broadcast: () => {} } as unknown as IpcContext
+    const ctx = { workspaceManager: fresh, broadcast: () => {}, pinnedSessions: NO_PINNED_SESSIONS } as unknown as IpcContext
     const bridge = createQuickChatHandlers(ctx, { getWindow: () => main, showWindow: () => {} }, {
       getWindow: () => window,
       hide: () => {},

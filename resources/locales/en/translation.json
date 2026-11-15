@@ -8,6 +8,12 @@
     "workingInAnotherWorkspace": "Pi is working in another workspace"
   },
   "app": {
+    "crashScreen": {
+      "copyDetails": "Copy details",
+      "message": "{{product}} hit an error and stopped drawing this window. Your sessions keep running. Reload to continue.",
+      "reload": "Reload",
+      "title": "Something went wrong"
+    },
     "dropFolder": {
       "description": "Opens that folder as a workspace (creates one if needed)",
       "title": "Drop folder to open as project"
@@ -24,6 +30,22 @@
       "dismissAriaLabel": "Dismiss update notification",
       "downloadButton": "Download"
     }
+  },
+  "browserPane": {
+    "addressLabel": "Address",
+    "addressPlaceholder": "Enter a web address or localhost:port",
+    "back": "Back",
+    "close": "Close browser",
+    "downloadRefused": "Downloads are turned off in the Browser pane. Open the page in your default browser to download.",
+    "emptyHint": "Enter a web address to open a page here. Pick sends nothing: it adds the element to your message.",
+    "forward": "Forward",
+    "invalidAddress": "Only http and https pages can open here.",
+    "loadFailed": "Could not load {{url}}.",
+    "openExternal": "Open in default browser",
+    "pick": "Pick an element",
+    "pickImageTooLarge": "The element screenshot is too large to attach. Its text was added.",
+    "reload": "Reload",
+    "stopPicking": "Stop picking (Esc)"
   },
   "chat": {
     "activity": {
@@ -174,6 +196,7 @@
       "viewSource": "View source"
     },
     "toolbar": {
+      "browser": "Browser",
       "diffViewer": "Diff viewer",
       "fileTree": "File tree",
       "reviewPanel": "Review panel",
@@ -304,6 +327,7 @@
     "deleteSessionLabel": "Delete…",
     "openLink": "Open Link",
     "openSession": "Open Session",
+    "pin": "Pin",
     "rename": "Rename…",
     "searchSelection": "Search Selection",
     "shortcuts": {
@@ -314,6 +338,7 @@
       "selectAll": "Ctrl+A"
     },
     "unarchive": "Unarchive",
+    "unpin": "Unpin",
     "workflowRuns": "Workflow Runs"
   },
   "conveyor": {
@@ -424,6 +449,11 @@
       "working": "working…"
     }
   },
+  "crashRecovery": {
+    "detail": "Reason: {{reason}}",
+    "message": "The {{product}} window stopped again soon after it reloaded.",
+    "title": "Window stopped"
+  },
   "customModels": {
     "addModelButton": "Add model",
     "addProviderButton": "Add provider",
@@ -454,12 +484,18 @@
     "visionLabel": "vision"
   },
   "diagnostics": {
+    "exportLogs": "Export logs",
+    "exportLogsFailed": "Could not export logs: {{error}}",
+    "exportLogsSaved": "Logs saved to {{path}}",
     "fields": {
       "appVersion": "App version",
       "binaryFound": "Binary found",
       "chromium": "Chromium",
       "electron": "Electron",
       "engineVersion": "{{agent}} version",
+      "gitFailed": "Did not run: {{detail}}",
+      "gitNotFound": "Not found",
+      "gitVersion": "Git version",
       "globalRules": "Global rules",
       "globalRulesInvalid": "invalid file: {{error}}",
       "guiDataDir": "GUI data dir",
@@ -508,6 +544,7 @@
     "sections": {
       "application": "Application",
       "binaryTitle": "{{agent}} Binary",
+      "git": "Git",
       "permissions": "Permissions",
       "providers": "Providers",
       "recentErrors": "Recent Errors",
@@ -520,6 +557,10 @@
     "workspaceTrustedBadge": "trusted"
   },
   "dialogs": {
+    "logExport": {
+      "fileFilterName": "JSON",
+      "title": "Export logs"
+    },
     "openFolder": {
       "title": "Open Folder"
     },
@@ -590,6 +631,9 @@
       "pathNotPermitted": "Attachment path is not permitted",
       "tooLarge": "Attachment is too large (max {{limit}} MB)"
     },
+    "chatImport": {
+      "busy": "A chat import is already running."
+    },
     "council": {
       "agentNotFound": "{{agent}} was not found. Install it, or remove it from the council members in Settings.",
       "arbiterFailed": "Arbiter failed",
@@ -626,6 +670,7 @@
       "localBranchRequired": "Choose an existing local branch",
       "namedBranchRequired": "A named branch is required to create a pull request",
       "newFileNotCommittable": "{{path}} cannot be committed: it is not a new file in the selected changes, or Git ignores it",
+      "notInstalled": "Git is not installed",
       "noTrackedChanges": "No tracked changes to commit in this workspace. Stage untracked files first to include them.",
       "operationInProgressCommit": "Cannot commit while a Git {{operation}} is in progress",
       "operationInProgressCreateBranch": "Cannot create a branch while a Git {{operation}} is in progress",
@@ -773,6 +818,15 @@
       "folderNotFound": "Folder not found",
       "noWorkspaceHint": "Switch to a project folder from the workspace switcher in the sidebar.",
       "noWorkspaceOpen": "No workspace open"
+    }
+  },
+  "gitCheck": {
+    "banner": {
+      "checkAgain": "Check again",
+      "dismissAriaLabel": "Dismiss the Git notice",
+      "failedTitle": "Git did not run",
+      "howToInstall": "How to install",
+      "missingDescription": "Commits, branches, diffs and worktrees need Git. Install it, then check again."
     }
   },
   "home": {
@@ -949,6 +1003,25 @@
     "failed": "Pi stopped with an error.",
     "needs-approval": "Pi is waiting for your approval.",
     "withSession": "{{body}} Click to open the finished session."
+  },
+  "openPath": {
+    "followUp": {
+      "reveal": "Show in Folder",
+      "system": "Open with System App"
+    },
+    "openInEditor": "Open in Editor",
+    "openWithSystem": "Open with System App",
+    "refusal": {
+      "editorRunning": "An editor is already open in this project's terminal. Close it, then try again.",
+      "launchFailed": "The editor did not start.",
+      "noTerminalWorkspace": "Open a project first. Terminal editors open in the project's terminal panel.",
+      "notFound": "This file or folder no longer exists.",
+      "outsideRoots": "This path is outside the open projects.",
+      "runnableFile": "This file can run as a program, so it is not opened with the system app.",
+      "systemOpenFailed": "The system could not open this file or folder."
+    },
+    "refusalTitle": "Could not open",
+    "showInFolder": "Show in Folder"
   },
   "packages": {
     "catalog": {
@@ -1253,6 +1326,7 @@
       "sessionCount_one": "{{count}} session",
       "sessionCount_other": "{{count}} sessions"
     },
+    "pinnedBadge": "Pinned",
     "runtime": {
       "completed": "{{agent}} finished",
       "failed": "{{agent}} stopped with an error",
@@ -1287,7 +1361,8 @@
       "minutes_other": "{{count}}m ago"
     },
     "title": "Sessions",
-    "unknownProject": "Unknown"
+    "unknownProject": "Unknown",
+    "unreadDot": "New activity"
   },
   "settings": {
     "actions": {
@@ -1317,6 +1392,36 @@
     "autoScroll": {
       "description": "Automatically scroll to new messages",
       "label": "Auto Scroll"
+    },
+    "chatImport": {
+      "alreadyImported": "Imported",
+      "empty": "No chats found.",
+      "engine": "Import as",
+      "failure": {
+        "folderMissing": "The chat's project folder no longer exists.",
+        "invalidPath": "This file is not in the chat folder.",
+        "noMessages": "The chat has no messages to import.",
+        "unreadable": "The chat file could not be read.",
+        "writeFailed": "The session file could not be written."
+      },
+      "folderMissing": "Folder missing",
+      "import_one": "Import {{count}} chat",
+      "import_other": "Import {{count}} chats",
+      "intro": "Copy chats into {{agent}} sessions. The original files are only read.",
+      "loading": "Looking for chats…",
+      "progress": "{{done}} of {{total}}",
+      "results": {
+        "failed_one": "Failed: {{count}}",
+        "failed_other": "Failed: {{count}}",
+        "imported_one": "Imported: {{count}}",
+        "imported_other": "Imported: {{count}}",
+        "skipped_one": "Skipped, already imported: {{count}}",
+        "skipped_other": "Skipped, already imported: {{count}}"
+      },
+      "selectFolder": "Select all chats in this folder",
+      "sourceRoot": "Reads {{path}}",
+      "unknownFolder": "Unknown folder",
+      "untitled": "Untitled chat"
     },
     "chatWidth": {
       "description": "How wide messages and the prompt box can grow",
@@ -1363,6 +1468,30 @@
     "desktopNotifications": {
       "description": "Notify when Pi finishes, fails, or waits for approval in a workspace you are not looking at",
       "label": "Desktop Notifications"
+    },
+    "editor": {
+      "description": "Editors found on this computer. Terminal editors open in an Editor tab of the project's terminal panel.",
+      "label": "Open files in",
+      "missingNote": "The saved editor was not found. Files open with the system default.",
+      "rescan": "Rescan",
+      "systemDefault": "System default",
+      "terminalOption": "{{name}} ({{tag}})",
+      "terminalTag": "terminal"
+    },
+    "keepAwake": {
+      "description": "Stop this computer from going to sleep. The screen can still turn off. A closed laptop lid still puts the computer to sleep.",
+      "label": "Keep This Computer Awake",
+      "modes": {
+        "always": "Always",
+        "off": "Off",
+        "whileWorking": "While agents work"
+      },
+      "status": {
+        "holding": "Status: keeping this computer awake",
+        "off": "Status: off",
+        "unsupported": "Status: Pi Desktop cannot block sleep on this system. It found no power manager and no systemd sleep lock.",
+        "waitingForWork": "Status: waiting for work"
+      }
     },
     "language": {
       "description": "Language of menus, buttons, and messages",
@@ -1412,7 +1541,9 @@
       "agentConfiguration": "Agent Configuration",
       "appearance": "Appearance",
       "behavior": "Behavior",
+      "chatImport": "Import chats",
       "customModels": "Custom Models",
+      "editor": "Editor",
       "multiAgentCouncilPlanning": "Multi-Agent Council Planning",
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "Voice dictation"
@@ -1862,6 +1993,7 @@
       "notAFolder": "Cannot open as project — not a folder: {{path}}",
       "notGitRepository": "This project is not a Git repository. Use New session for another conversation, or open a Git project for an isolated tab.",
       "openFolderError": "Open folder error: {{detail}}",
+      "pinError": "Pin error: {{detail}}",
       "removedPackage": "Removed {{spec}}",
       "removePackageFailed": "Remove failed",
       "removeWorkspaceError": "Remove workspace error: {{detail}}",
@@ -1877,6 +2009,7 @@
       "truncatedHistory_other": "Showing the latest {{count}} of {{total}} messages for performance. Older turns are still on disk in the session file.",
       "unarchiveError": "Unarchive error: {{detail}}",
       "unknownError": "Unknown error",
+      "unpinError": "Unpin error: {{detail}}",
       "updatedAllPackages": "Updated packages. Restart Pi to load them.",
       "updatedPackage": "Updated {{spec}}. Restart Pi to load it.",
       "updatePackageFailed": "Update failed",
@@ -1906,6 +2039,10 @@
     "maximizeLabel": "Maximize terminal",
     "restartHint": "Press any key to start a new shell",
     "restoreLabel": "Restore terminal",
+    "tabs": {
+      "editor": "Editor",
+      "shell": "Terminal"
+    },
     "title": "Terminal"
   },
   "themes": {

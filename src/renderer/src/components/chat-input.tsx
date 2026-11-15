@@ -31,7 +31,7 @@ import {
   type PiCommand,
 } from '../../../shared/pi-command'
 import { isImeComposing } from '../utils/ime-composing'
-import { NO_RECALLED_PROMPT, composerDraftText, consumeSubmittedDraft } from './composer-draft'
+import { NO_RECALLED_PROMPT, composerDraftText, composerInsertEdit, consumeSubmittedDraft } from './composer-draft'
 import { isFileDrag } from '../../../shared/folder-drop'
 import { droppedAttachmentFiles, readDroppedAttachment } from '../utils/dropped-attachments'
 import { readAttachmentBatch, type AttachmentSource } from '../utils/attachment-batch'
@@ -142,33 +142,6 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     setAttachments(next)
     saveDraft()
   }, [saveDraft])
-  // Apply a note inserted from the panel or picker: drop the text at the
-  // cursor, refocus, resize, then clear so the same note can be inserted again.
-  // Only consume when Chat is the active surface (avoids applying while on Settings/etc.).
-  useEffect(() => {
-    if (!pendingInsert) return
-    if (!active) return
-    const ta = textareaRef.current
-    if (!ta) return
-
-    let caret: number
-    if (pendingInsert.replace) {
-      // Replace the whole composer (used by the slash palette, which fires
-      // only when the entire input is a "/..." query).
-      ta.value = pendingInsert.text
-      caret = pendingInsert.text.length
-    } else {
-      const start = ta.selectionStart ?? ta.value.length
-      const end = ta.selectionEnd ?? ta.value.length
-      ta.value = ta.value.slice(0, start) + pendingInsert.text + ta.value.slice(end)
-      caret = start + pendingInsert.text.length
-    }
-    ta.focus()
-    ta.setSelectionRange(caret, caret)
-    resizeTextarea(ta)
-    markDraftEdited()
-    clearPendingInsert?.()
-  }, [pendingInsert, active, clearPendingInsert, resizeTextarea, markDraftEdited])
   const [attachError, setAttachError] = useState<string | null>(null)
   const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
   const attachmentDragDepth = useRef(0)
@@ -181,6 +154,35 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
       updateAttachments([...previous, next])
     }
   }, [updateAttachments])
+  // Apply a note inserted from the panel or picker: drop the text at the
+  // cursor, refocus, resize, stage any attachments, then clear so the same
+  // note can be inserted again. A Browser pane pick has no text: it only
+  // stages attachments and leaves the typed text, selection and focus alone.
+  // Only consume when Chat is the active surface (avoids applying while on Settings/etc.).
+  useEffect(() => {
+    if (!pendingInsert) return
+    if (!active) return
+    const ta = textareaRef.current
+    if (!ta) return
+
+    // `replace` replaces the whole composer (used by the slash palette, which
+    // fires only when the entire input is a "/..." query).
+    const edit = composerInsertEdit(
+      ta.value,
+      ta.selectionStart ?? ta.value.length,
+      ta.selectionEnd ?? ta.value.length,
+      pendingInsert
+    )
+    if (edit) {
+      ta.value = edit.value
+      ta.focus()
+      ta.setSelectionRange(edit.caret, edit.caret)
+      resizeTextarea(ta)
+      markDraftEdited()
+    }
+    for (const attachment of pendingInsert.attachments ?? []) addAttachment(attachment)
+    clearPendingInsert?.()
+  }, [pendingInsert, active, clearPendingInsert, resizeTextarea, markDraftEdited, addAttachment])
 
   // Live voice dictation writes a running transcript into the composer. The
   // textarea is uncontrolled, so track the insertion point (anchor) and the

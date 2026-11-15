@@ -32,8 +32,9 @@ import { FileTree, FileSearch, FilePreview } from './file-tree'
 import { ImageViewer } from './image-viewer'
 import { DiffViewer } from './diff-viewer'
 import { SubagentPanel } from './subagent-panel'
+import { BrowserPane } from './browser-pane'
 import { TerminalPanel } from './terminal'
-import { isFileWatchDemanded, useChatScroll, useChatVisible, useChatWidth } from '../hooks'
+import { isFileWatchDemanded, useChatScroll, useChatVisible, useChatWidth, visibleSessionPath } from '../hooks'
 import { messageColumnClass } from '../utils/chat-width'
 import { createMeasureRef } from '../utils/element-measure'
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
@@ -151,12 +152,13 @@ export function ChatPanel(): React.JSX.Element {
 
   const showSidePanel = sidePanel !== null || previewTarget !== null
   const showFileTree = sidePanel === 'files'
-  // The diff and the Tasks panel take the whole side slot; previews wait behind them.
+  // The diff, Tasks and Browser panels take the whole side slot; previews wait behind them.
   const previewAllowed = !sidePanelHidesPreview(sidePanel)
   const showImage = previewTarget?.kind === 'image' && previewAllowed
   const showEditor = previewTarget?.kind === 'code' && previewAllowed
   const showDiff = sidePanel === 'diff'
   const showTasks = sidePanel === 'tasks'
+  const showBrowser = sidePanel === 'browser'
   const sidePanes = { showFileTree, showEditor, showImage }
   const paneLayout = resolvePaneLayout(
     panelRowWidth,
@@ -196,6 +198,16 @@ export function ChatPanel(): React.JSX.Element {
       void window.piDesktop.files.setWatchDemand(false).catch(() => {})
     }
   }, [fileWatchDemanded])
+
+  // Main marks a session unread when a turn ends while it is not on screen,
+  // so it must know which session this view shows.
+  const visibleSession = useAppStore(visibleSessionPath)
+  useEffect(() => {
+    void window.piDesktop.session.setVisible(visibleSession).catch(() => {})
+    return () => {
+      void window.piDesktop.session.setVisible(null).catch(() => {})
+    }
+  }, [visibleSession])
 
   const sidePanelPane = showSidePanel ? (
     <div
@@ -248,6 +260,11 @@ export function ChatPanel(): React.JSX.Element {
         {showTasks && (
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <SubagentPanel onClose={() => setSidePanel(null)} />
+          </div>
+        )}
+        {showBrowser && (
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <BrowserPane onClose={() => setSidePanel(null)} />
           </div>
         )}
         {showEditor && (

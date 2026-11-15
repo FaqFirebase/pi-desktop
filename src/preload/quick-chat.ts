@@ -26,6 +26,7 @@ const api: QuickChatApi = {
     ipcRenderer.on(QUICK_CHAT_CHANNELS.update, listener)
     return () => { ipcRenderer.removeListener(QUICK_CHAT_CHANNELS.update, listener) }
   },
+  reportRendererError: (record) => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.rendererError, record),
 }
 
 contextBridge.exposeInMainWorld('piQuickChat', api)

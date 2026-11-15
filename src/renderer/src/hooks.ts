@@ -9,6 +9,7 @@ import type { WorkspaceActivationIntent } from '../../shared/ipc-contracts'
 import type { ChatWidth } from '../../shared/chat-width'
 import { t } from '../../shared/i18n'
 import { isImeComposing } from './utils/ime-composing'
+import { currentNavigationType, launchView } from './utils/launch-view'
 
 /**
  * Subscribes to Pi events from the main process and routes them to the store.
@@ -19,6 +20,7 @@ export function usePiEvents(): void {
   const handlePendingPromptCounts = useAppStore((state) => state.handlePendingPromptCounts)
   const handleWorkspaceActivity = useAppStore((state) => state.handleWorkspaceActivity)
   const handleSessionRuntime = useAppStore((state) => state.handleSessionRuntime)
+  const handleUnreadSessions = useAppStore((state) => state.handleUnreadSessions)
   const recoverPendingPrompts = useAppStore((state) => state.recoverPendingPrompts)
 
   useEffect(() => {
@@ -26,6 +28,7 @@ export function usePiEvents(): void {
     const unsubscribeEvent = window.piDesktop.onEvent(handlePiEvent)
     const unsubscribeCounts = window.piDesktop.onPendingPrompts(handlePendingPromptCounts)
     const unsubscribeActivity = window.piDesktop.onWorkspaceActivity(handleWorkspaceActivity)
+    const unsubscribeUnread = window.piDesktop.onUnreadSessions(handleUnreadSessions)
     const unsubscribeSessionRuntime = window.piDesktop.onSessionRuntime(handleSessionRuntime)
     const unsubscribeRuntimeState = window.piDesktop.onRuntimeState(({ runtimeId }) => {
       // A model/thinking switch made in another window (e.g. secondary view) changed
@@ -112,11 +115,12 @@ export function usePiEvents(): void {
       unsubscribeEvent()
       unsubscribeCounts()
       unsubscribeActivity()
+      unsubscribeUnread()
       unsubscribeSessionRuntime()
       unsubscribeRuntimeState()
       unsubscribeActivate()
     }
-  }, [handlePiEvent, handlePendingPromptCounts, handleWorkspaceActivity, handleSessionRuntime, recoverPendingPrompts])
+  }, [handlePiEvent, handlePendingPromptCounts, handleWorkspaceActivity, handleUnreadSessions, handleSessionRuntime, recoverPendingPrompts])
 }
 
 /**
@@ -204,6 +208,17 @@ export function isChatVisible(scope: ChatVisibilityScope): boolean {
 /** Component-side subscription to {@link isChatVisible}. */
 export function useChatVisible(): boolean {
   return useAppStore(isChatVisible)
+}
+
+/**
+ * The session file the main view shows, or null when the chat is not on
+ * screen. Main reads it to decide which finished turns the user has seen.
+ * It is the file path, not `sessionState.sessionId` (the engine's header id).
+ */
+export function visibleSessionPath(
+  state: ChatVisibilityScope & { sessionState: { sessionFile: string | null } | null }
+): string | null {
+  return isChatVisible(state) ? state.sessionState?.sessionFile ?? null : null
 }
 
 /**
@@ -610,7 +625,10 @@ export function useInitialize(): void {
       // background matches from the start.
       subscribeAppliedTheme(syncWindowBackground)
       await loadSettings()
-      const openToHome = useAppStore.getState().settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch
+      const openToHome = launchView({
+        openToHomeOnLaunch: useAppStore.getState().settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch,
+        navigationType: currentNavigationType(),
+      }) === 'home'
 
       // Workspaces are needed for the shell chrome; land the UI immediately after.
       await loadWorkspaces()
@@ -645,9 +663,12 @@ export function useInitialize(): void {
       void useAppStore.getState().refreshWorkflowRuns()
       void useAppStore.getState().loadTags()
       void useAppStore.getState().loadArchivedSessions()
+      void useAppStore.getState().loadPinnedSessions()
+      void useAppStore.getState().loadUnreadSessions()
       void useAppStore.getState().loadNotes()
       void useAppStore.getState().loadCustomModels()
       void useAppStore.getState().checkForUpdates()
+      void useAppStore.getState().loadGitAvailability()
 
       // "Resume Last Session" opens the project's last conversation in the
       // background, Home included, so the chat shows what the next start

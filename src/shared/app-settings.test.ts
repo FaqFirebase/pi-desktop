@@ -85,3 +85,29 @@ test('skill groups default to none and are cleaned on load', () => {
   assert.deepEqual(settings.skillGroups, [{ id: 'a', name: 'Git', skills: ['commit'], collapsed: true }])
   assert.deepEqual(normalizeStoredSettings({ skillGroups: 'bad' }, LANGUAGES).skillGroups, [])
 })
+
+test('keep-awake mode defaults to off and keeps a known value', () => {
+  assert.equal(DEFAULT_SETTINGS.keepAwakeMode, 'off')
+  for (const mode of ['off', 'while-working', 'always'])
+    assert.equal(normalizeStoredSettings({ keepAwakeMode: mode }, LANGUAGES).keepAwakeMode, mode)
+})
+
+test('normalizeStoredSettings resets an invalid keep-awake mode', () => {
+  for (const keepAwakeMode of ['on', true, null, 3])
+    assert.equal(normalizeStoredSettings({ keepAwakeMode }, LANGUAGES).keepAwakeMode, DEFAULT_SETTINGS.keepAwakeMode)
+})
+
+test('preferredEditor defaults to null and drops unknown ids', () => {
+  assert.equal(normalizeStoredSettings({}, LANGUAGES).preferredEditor, null)
+  assert.equal(normalizeStoredSettings({ preferredEditor: 'helix' }, LANGUAGES).preferredEditor, 'helix')
+  assert.equal(normalizeStoredSettings({ preferredEditor: 'emacs' }, LANGUAGES).preferredEditor, null)
+  assert.equal(normalizeStoredSettings({ preferredEditor: 7 }, LANGUAGES).preferredEditor, null)
+})
+
+test('browser pane URLs default to empty and drop non-http entries', () => {
+  assert.deepEqual(normalizeStoredSettings({}, LANGUAGES).browserPaneUrls, {})
+  assert.deepEqual(
+    normalizeStoredSettings({ browserPaneUrls: { '/a': 'http://localhost:3000/', '/b': 'javascript:x' } }, LANGUAGES).browserPaneUrls,
+    { '/a': 'http://localhost:3000/' },
+  )
+})

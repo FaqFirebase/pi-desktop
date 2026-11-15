@@ -1,10 +1,14 @@
 import { spawn } from 'child_process'
+import { existsSync } from 'fs'
 import { mkdir } from 'fs/promises'
 import { basename, dirname, join, resolve } from 'path'
 import { i18n, type Translate } from '../shared/i18n'
 
 /** Exit status Git uses for fatal errors, repository discovery included. */
 export const GIT_FATAL_EXIT_CODE = 128
+
+/** Spawn error code for a program that could not be found. */
+const SPAWN_NOT_FOUND_CODE = 'ENOENT'
 
 /** Git wordings that mean `cwd` is not inside a usable working tree. */
 const MISSING_REPOSITORY_PATTERN = /not a git repository|this operation must be run in a work tree/i
@@ -42,6 +46,18 @@ export class GitCommandError extends Error {
   ) {
     super(describeGitFailure(args, stdout, stderr))
     this.name = 'GitCommandError'
+  }
+}
+
+/**
+ * Rejection raised when the `git` binary could not be started because it is
+ * not installed. Node gives a missing working folder the same `ENOENT`, so
+ * `runGit` checks that the folder exists before it reports this error.
+ */
+export class GitNotInstalledError extends Error {
+  constructor() {
+    super(i18n.t('errors.git.notInstalled'))
+    this.name = 'GitNotInstalledError'
   }
 }
 
@@ -89,7 +105,9 @@ export function runGit(args: readonly string[], cwd: string, env?: NodeJS.Proces
     child.stderr?.setEncoding('utf8')
     child.stdout?.on('data', (chunk: string) => { stdout += chunk })
     child.stderr?.on('data', (chunk: string) => { stderr += chunk })
-    child.once('error', reject)
+    child.once('error', (error: NodeJS.ErrnoException) => {
+      reject(error.code === SPAWN_NOT_FOUND_CODE && existsSync(cwd) ? new GitNotInstalledError() : error)
+    })
     child.once('close', (code) => {
       if (code === 0) {
         resolvePromise({ stdout, stderr })

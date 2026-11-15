@@ -8,6 +8,12 @@
     "workingInAnotherWorkspace": "Pi работает в другом проекте"
   },
   "app": {
+    "crashScreen": {
+      "copyDetails": "Копировать подробности",
+      "message": "В {{product}} произошла ошибка, и окно перестало отображаться. Ваши сессии продолжают работать. Перезагрузите окно, чтобы продолжить.",
+      "reload": "Перезагрузить",
+      "title": "Что-то пошло не так"
+    },
     "dropFolder": {
       "description": "Открывает папку как проект (при необходимости создаёт его)",
       "title": "Перетащите папку, чтобы открыть проект"
@@ -24,6 +30,22 @@
       "dismissAriaLabel": "Скрыть уведомление об обновлении",
       "downloadButton": "Скачать"
     }
+  },
+  "browserPane": {
+    "addressLabel": "Адрес",
+    "addressPlaceholder": "Введите веб-адрес или localhost:порт",
+    "back": "Назад",
+    "close": "Закрыть браузер",
+    "downloadRefused": "Загрузка файлов в панели браузера отключена. Чтобы скачать файл, откройте страницу в браузере по умолчанию.",
+    "emptyHint": "Введите веб-адрес, чтобы открыть страницу здесь. Выбор ничего не отправляет: элемент добавляется в ваше сообщение.",
+    "forward": "Вперёд",
+    "invalidAddress": "Здесь можно открывать только страницы http и https.",
+    "loadFailed": "Не удалось загрузить {{url}}.",
+    "openExternal": "Открыть в браузере по умолчанию",
+    "pick": "Выбрать элемент",
+    "pickImageTooLarge": "Снимок элемента слишком велик для вложения. Добавлен его текст.",
+    "reload": "Обновить",
+    "stopPicking": "Прекратить выбор (Esc)"
   },
   "chat": {
     "activity": {
@@ -184,6 +206,7 @@
       "viewSource": "Исходный код"
     },
     "toolbar": {
+      "browser": "Браузер",
       "diffViewer": "Просмотр изменений",
       "fileTree": "Дерево файлов",
       "reviewPanel": "Панель проверки",
@@ -318,6 +341,7 @@
     "deleteSessionLabel": "Удалить…",
     "openLink": "Открыть ссылку",
     "openSession": "Открыть сессию",
+    "pin": "Закрепить",
     "rename": "Переименовать…",
     "searchSelection": "Найти выделенное",
     "shortcuts": {
@@ -328,6 +352,7 @@
       "selectAll": "Ctrl+A"
     },
     "unarchive": "Из архива",
+    "unpin": "Открепить",
     "workflowRuns": "Запуски процессов"
   },
   "conveyor": {
@@ -444,6 +469,11 @@
       "working": "в работе…"
     }
   },
+  "crashRecovery": {
+    "detail": "Причина: {{reason}}",
+    "message": "Окно {{product}} снова остановилось вскоре после перезагрузки.",
+    "title": "Окно остановилось"
+  },
   "customModels": {
     "addModelButton": "Добавить модель",
     "addProviderButton": "Добавить провайдера",
@@ -474,12 +504,18 @@
     "visionLabel": "зрение"
   },
   "diagnostics": {
+    "exportLogs": "Экспорт журналов",
+    "exportLogsFailed": "Не удалось экспортировать журналы: {{error}}",
+    "exportLogsSaved": "Журналы сохранены в {{path}}",
     "fields": {
       "appVersion": "Версия приложения",
       "binaryFound": "Исполняемый файл найден",
       "chromium": "Chromium",
       "electron": "Electron",
       "engineVersion": "Версия {{agent}}",
+      "gitFailed": "Не запустился: {{detail}}",
+      "gitNotFound": "Не найден",
+      "gitVersion": "Версия Git",
       "globalRules": "Глобальные правила",
       "globalRulesInvalid": "ошибка в файле: {{error}}",
       "guiDataDir": "Папка данных интерфейса",
@@ -530,6 +566,7 @@
     "sections": {
       "application": "Приложение",
       "binaryTitle": "Исполняемый файл {{agent}}",
+      "git": "Git",
       "permissions": "Разрешения",
       "providers": "Провайдеры",
       "recentErrors": "Последние ошибки",
@@ -542,6 +579,10 @@
     "workspaceTrustedBadge": "доверенный"
   },
   "dialogs": {
+    "logExport": {
+      "fileFilterName": "JSON",
+      "title": "Экспорт журналов"
+    },
     "openFolder": {
       "title": "Открыть папку"
     },
@@ -618,6 +659,9 @@
       "pathNotPermitted": "Путь вложения не разрешён",
       "tooLarge": "Вложение слишком большое (макс. {{limit}} МБ)"
     },
+    "chatImport": {
+      "busy": "Импорт чатов уже выполняется."
+    },
     "council": {
       "agentNotFound": "{{agent}} не найден. Установите его или удалите из состава совета в настройках.",
       "arbiterFailed": "Ошибка арбитра",
@@ -654,6 +698,7 @@
       "localBranchRequired": "Выберите существующую локальную ветку",
       "namedBranchRequired": "Для пул-реквеста нужна именованная ветка",
       "newFileNotCommittable": "Нельзя включить {{path}} в коммит: файл не является новым в выбранных изменениях или игнорируется Git",
+      "notInstalled": "Git не установлен",
       "noTrackedChanges": "В проекте нет отслеживаемых изменений для коммита. Сначала добавьте новые файлы в индекс, чтобы включить их.",
       "operationInProgressCommit": "Нельзя создать коммит во время операции Git {{operation}}",
       "operationInProgressCreateBranch": "Нельзя создать ветку во время операции Git {{operation}}",
@@ -803,6 +848,15 @@
       "folderNotFound": "Папка не найдена",
       "noWorkspaceHint": "Выберите папку проекта в переключателе проектов на боковой панели.",
       "noWorkspaceOpen": "Нет открытого проекта"
+    }
+  },
+  "gitCheck": {
+    "banner": {
+      "checkAgain": "Проверить снова",
+      "dismissAriaLabel": "Скрыть уведомление о Git",
+      "failedTitle": "Git не запустился",
+      "howToInstall": "Как установить",
+      "missingDescription": "Для коммитов, веток, просмотра изменений и рабочих деревьев нужен Git. Установите его и проверьте снова."
     }
   },
   "home": {
@@ -983,6 +1037,25 @@
     "failed": "Pi остановился с ошибкой.",
     "needs-approval": "Pi ждёт вашего одобрения.",
     "withSession": "{{body}} Нажмите, чтобы открыть завершённую сессию."
+  },
+  "openPath": {
+    "followUp": {
+      "reveal": "Показать в папке",
+      "system": "Открыть в системном приложении"
+    },
+    "openInEditor": "Открыть в редакторе",
+    "openWithSystem": "Открыть в системном приложении",
+    "refusal": {
+      "editorRunning": "В терминале этого проекта уже открыт редактор. Закройте его и повторите попытку.",
+      "launchFailed": "Редактор не запустился.",
+      "noTerminalWorkspace": "Сначала откройте проект. Терминальные редакторы открываются в панели терминала проекта.",
+      "notFound": "Этого файла или папки больше нет.",
+      "outsideRoots": "Этот путь находится вне открытых проектов.",
+      "runnableFile": "Этот файл может запуститься как программа, поэтому он не открывается в системном приложении.",
+      "systemOpenFailed": "Системе не удалось открыть этот файл или папку."
+    },
+    "refusalTitle": "Не удалось открыть",
+    "showInFolder": "Показать в папке"
   },
   "packages": {
     "catalog": {
@@ -1301,6 +1374,7 @@
       "sessionCount_many": "{{count}} сессий",
       "sessionCount_other": "{{count}} сессии"
     },
+    "pinnedBadge": "Закреплена",
     "runtime": {
       "completed": "{{agent}} завершил работу",
       "failed": "{{agent}} остановился с ошибкой",
@@ -1341,7 +1415,8 @@
       "minutes_other": "{{count}} мин. назад"
     },
     "title": "Сессии",
-    "unknownProject": "Неизвестный"
+    "unknownProject": "Неизвестный",
+    "unreadDot": "Новые события"
   },
   "settings": {
     "actions": {
@@ -1373,6 +1448,44 @@
     "autoScroll": {
       "description": "Автоматически прокручивать к новым сообщениям",
       "label": "Автопрокрутка"
+    },
+    "chatImport": {
+      "alreadyImported": "Импортирован",
+      "empty": "Чаты не найдены.",
+      "engine": "Импортировать в",
+      "failure": {
+        "folderMissing": "Папка проекта этого чата больше не существует.",
+        "invalidPath": "Этот файл не находится в папке чатов.",
+        "noMessages": "В чате нет сообщений для импорта.",
+        "unreadable": "Не удалось прочитать файл чата.",
+        "writeFailed": "Не удалось записать файл сеанса."
+      },
+      "folderMissing": "Папка не найдена",
+      "import_one": "Импортировать {{count}} чат",
+      "import_few": "Импортировать {{count}} чата",
+      "import_many": "Импортировать {{count}} чатов",
+      "import_other": "Импортировать {{count}} чата",
+      "intro": "Копирует чаты в сеансы {{agent}}. Исходные файлы только читаются.",
+      "loading": "Поиск чатов…",
+      "progress": "{{done}} из {{total}}",
+      "results": {
+        "failed_one": "С ошибкой: {{count}}",
+        "failed_few": "С ошибкой: {{count}}",
+        "failed_many": "С ошибкой: {{count}}",
+        "failed_other": "С ошибкой: {{count}}",
+        "imported_one": "Импортировано: {{count}}",
+        "imported_few": "Импортировано: {{count}}",
+        "imported_many": "Импортировано: {{count}}",
+        "imported_other": "Импортировано: {{count}}",
+        "skipped_one": "Пропущено, уже импортированы: {{count}}",
+        "skipped_few": "Пропущено, уже импортированы: {{count}}",
+        "skipped_many": "Пропущено, уже импортированы: {{count}}",
+        "skipped_other": "Пропущено, уже импортированы: {{count}}"
+      },
+      "selectFolder": "Выбрать все чаты в этой папке",
+      "sourceRoot": "Чтение из {{path}}",
+      "unknownFolder": "Неизвестная папка",
+      "untitled": "Чат без названия"
     },
     "chatWidth": {
       "description": "Максимальная ширина сообщений и поля ввода",
@@ -1419,6 +1532,30 @@
     "desktopNotifications": {
       "description": "Уведомлять о завершении Pi, ошибке или запросе одобрения в другом проекте",
       "label": "Системные уведомления"
+    },
+    "editor": {
+      "description": "Редакторы, найденные на этом компьютере. Терминальные редакторы открываются на вкладке «Редактор» в панели терминала проекта.",
+      "label": "Открывать файлы в",
+      "missingNote": "Сохранённый редактор не найден. Файлы открываются системным приложением по умолчанию.",
+      "rescan": "Искать снова",
+      "systemDefault": "Системное по умолчанию",
+      "terminalOption": "{{name}} ({{tag}})",
+      "terminalTag": "терминал"
+    },
+    "keepAwake": {
+      "description": "Не давать компьютеру уходить в спящий режим. Экран всё равно может выключаться. Закрытая крышка ноутбука по-прежнему переводит компьютер в спящий режим.",
+      "label": "Не давать компьютеру засыпать",
+      "modes": {
+        "always": "Всегда",
+        "off": "Выключено",
+        "whileWorking": "Пока работают агенты"
+      },
+      "status": {
+        "holding": "Статус: компьютер не засыпает",
+        "off": "Статус: выключено",
+        "unsupported": "Статус: Pi Desktop не может запретить спящий режим в этой системе. Не найдены ни менеджер питания, ни блокировка сна systemd.",
+        "waitingForWork": "Статус: ожидание работы"
+      }
     },
     "language": {
       "description": "Язык меню, кнопок и сообщений",
@@ -1468,7 +1605,9 @@
       "agentConfiguration": "Настройки агента",
       "appearance": "Оформление",
       "behavior": "Поведение",
+      "chatImport": "Импорт чатов",
       "customModels": "Свои модели",
+      "editor": "Редактор",
       "multiAgentCouncilPlanning": "Планирование с советом агентов",
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "Голосовая диктовка"
@@ -1940,6 +2079,7 @@
       "notAFolder": "Нельзя открыть как проект — это не папка: {{path}}",
       "notGitRepository": "Проект не является Git-репозиторием. Выберите «Новая сессия» для другого чата или откройте Git-проект для изолированной вкладки.",
       "openFolderError": "Ошибка открытия папки: {{detail}}",
+      "pinError": "Ошибка закрепления: {{detail}}",
       "removedPackage": "Удалён {{spec}}",
       "removePackageFailed": "Ошибка удаления",
       "removeWorkspaceError": "Ошибка удаления проекта: {{detail}}",
@@ -1957,6 +2097,7 @@
       "truncatedHistory_other": "Для быстродействия показаны последние {{count}} из {{total}} сообщений. Более ранние ходы остаются в файле сессии на диске.",
       "unarchiveError": "Ошибка извлечения из архива: {{detail}}",
       "unknownError": "Неизвестная ошибка",
+      "unpinError": "Ошибка открепления: {{detail}}",
       "updatedAllPackages": "Пакеты обновлены. Перезапустите Pi для загрузки.",
       "updatedPackage": "Обновлён {{spec}}. Перезапустите Pi для загрузки.",
       "updatePackageFailed": "Ошибка обновления",
@@ -1988,6 +2129,10 @@
     "maximizeLabel": "Развернуть терминал",
     "restartHint": "Нажмите любую клавишу, чтобы запустить новую оболочку",
     "restoreLabel": "Восстановить размер терминала",
+    "tabs": {
+      "editor": "Редактор",
+      "shell": "Терминал"
+    },
     "title": "Терминал"
   },
   "themes": {
