@@ -3,8 +3,11 @@ import { existsSync, mkdirSync } from 'fs'
 import { basename, dirname, join, resolve as resolvePath } from 'path'
 import { isTrustedRendererUrl, RENDERER_INDEX_PATH, RENDERER_INDEX_URL } from './renderer-origin'
 import { workspaceTrustStore } from './workspace-trust'
-import { PREVIEW_PARTITIONS } from '../shared/preview-partitions'
+import { BROWSER_PANE_PARTITION, PREVIEW_PARTITIONS } from '../shared/preview-partitions'
 import { isBlockedPreviewRequest, previewGuestPreferences } from './preview-guest'
+import { hardenBrowserPaneSession, isBrowserPaneGuest, watchBrowserPaneGuest } from './browser-pane-session'
+import { browserPaneGuestPreferences } from './browser-pane-guest'
+import { isBrowserPaneUrl } from '../shared/browser-pane'
 import { WorkspaceManager } from './workspace-manager'
 import type { WorkspaceTerminals } from './workspace-terminals'
 import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
@@ -76,6 +79,7 @@ const MIN_WINDOW_WIDTH = 800
 const MIN_WINDOW_HEIGHT = 600
 const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL
 const PRELOAD_PATH = join(__dirname, '../preload/index.js')
+const BROWSER_PANE_PRELOAD_PATH = join(__dirname, '../preload/browser-pane.js')
 
 // In dev: resources/ sits at the project root (app.getAppPath()).
 // In packaged: extraResources config copies resources/ into process.resourcesPath/resources/.
@@ -394,6 +398,13 @@ function createMainWindow(): BrowserWindow {
   // Defense-in-depth against a renderer XSS trying to attach a guest with
   // elevated webPreferences.
   window.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    // The Browser pane has its own rules: our picker preload, the locked-down
+    // flags, and an http or https start page only.
+    if (params.partition === BROWSER_PANE_PARTITION) {
+      Object.assign(webPreferences, browserPaneGuestPreferences(BROWSER_PANE_PRELOAD_PATH))
+      if (!isBrowserPaneUrl(params.src)) event.preventDefault()
+      return
+    }
     delete webPreferences.preload
     webPreferences.nodeIntegration = false
     webPreferences.nodeIntegrationInSubFrames = false
@@ -600,6 +611,8 @@ app.whenReady().then(async () => {
 
   // Lock both preview partitions to local files before any preview can load.
   hardenPreviewSession()
+  // The Browser pane partition: http/https only, no permissions, no downloads.
+  hardenBrowserPaneSession()
 
   // Serve downloaded speech-model files to the renderer. The handler streams
   // files only from the single speech-models directory and rejects traversal.
@@ -736,12 +749,17 @@ app.on('will-quit', (event) => {
 
 // Security: prevent new window creation, and stop preview <webview> guests from
 // navigating away from their local file (e.g. a malicious HTML file redirecting
-// itself to a remote URL to phone home).
+// itself to a remote URL to phone home). The Browser pane partition has its
+// own rules instead (browser-pane-session.ts).
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(() => {
     return { action: 'deny' }
   })
   if (contents.getType() === 'webview') {
+    if (isBrowserPaneGuest(contents)) {
+      watchBrowserPaneGuest(contents)
+      return
+    }
     contents.on('will-navigate', (event, url) => {
       // An untrusted preview may not navigate away from its local file (e.g. a
       // malicious page redirecting itself to a remote URL). Trusted previews of

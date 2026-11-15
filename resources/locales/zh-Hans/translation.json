@@ -31,6 +31,22 @@
       "downloadButton": "下载"
     }
   },
+  "browserPane": {
+    "addressLabel": "地址",
+    "addressPlaceholder": "输入网址或 localhost:端口",
+    "back": "后退",
+    "close": "关闭浏览器",
+    "downloadRefused": "浏览器面板已禁用下载。如需下载，请在默认浏览器中打开该页面。",
+    "emptyHint": "输入网址即可在此打开页面。选取不会发送任何内容：它只会把元素添加到你的消息中。",
+    "forward": "前进",
+    "invalidAddress": "此处只能打开 http 和 https 页面。",
+    "loadFailed": "无法加载 {{url}}。",
+    "openExternal": "在默认浏览器中打开",
+    "pick": "选取元素",
+    "pickImageTooLarge": "元素截图过大，无法附加。已添加其文本。",
+    "reload": "重新加载",
+    "stopPicking": "停止选取（Esc）"
+  },
   "chat": {
     "activity": {
       "stalled": "模型已有 {{silent}} 没有回复。服务商可能较慢。",
@@ -175,6 +191,7 @@
       "viewSource": "查看源码"
     },
     "toolbar": {
+      "browser": "浏览器",
       "diffViewer": "差异查看器",
       "fileTree": "文件树",
       "reviewPanel": "审查面板",

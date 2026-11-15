@@ -22,6 +22,7 @@ import { buildLineageTree, type LineageNode } from '../../shared/session-lineage
 import { clampSidebarWidth } from '../../shared/sidebar-width'
 import { workspaceNameFromFolderPath } from '../../shared/folder-drop'
 import { pathsEqual } from '../../shared/path-compare'
+import { isBrowserPaneUrl } from '../../shared/browser-pane'
 import { EDITED_TITLE_MAX_CHARS, sessionPreview, stripInjectedPreamble, truncateTitle } from '../../shared/session-preview'
 import { validateModelsConfig, mergeModelsConfig, type ModelsConfig } from '../../shared/models-config'
 import {
@@ -113,7 +114,7 @@ export interface PreviewTarget {
 }
 
 /** A secondary view in the chat's side slot. */
-export type ChatSidePanel = 'files' | 'diff' | 'tasks'
+export type ChatSidePanel = 'files' | 'diff' | 'tasks' | 'browser'
 
 /**
  * Whether a side panel takes the whole side slot. The chat then shows no file
@@ -121,7 +122,7 @@ export type ChatSidePanel = 'files' | 'diff' | 'tasks'
  * The layout and the actions that open a panel read this one rule.
  */
 export function sidePanelHidesPreview(panel: ChatSidePanel | null): boolean {
-  return panel === 'diff' || panel === 'tasks'
+  return panel === 'diff' || panel === 'tasks' || panel === 'browser'
 }
 
 // ─── Composer Draft ──────────────────────────────────────────────────────────
@@ -488,8 +489,9 @@ interface AppState {
   // Set by the diff shortcuts; the diff viewer or Git actions consume and clear it.
   diffShortcutRequest: 'review' | 'commitPush' | null
   // A prompt queued for insertion into the chat input. The nonce lets the
-  // chat input re-apply the same text on repeated inserts.
-  pendingInsert: { text: string; nonce: number; replace?: boolean } | null
+  // chat input re-apply the same text on repeated inserts. Attachments are
+  // staged beside the text (a Browser pane pick); nothing is sent.
+  pendingInsert: { text: string; nonce: number; replace?: boolean; attachments?: ComposerAttachment[] } | null
   // Set when a session opens; the chat input takes focus once it can, unless
   // the user leaves chat or focuses something else first.
   composerFocusRequested: boolean
@@ -624,6 +626,8 @@ interface AppActions {
   setPermissionRulesDraft: (scope: PermissionRulesScope, rules: PermissionRule[] | null) => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   toggleSessionGroupCollapsed: (projectPath: string) => Promise<void>
+  // Remember the last Browser pane page of a workspace (http/https only).
+  saveBrowserPaneUrl: (workspacePath: string, url: string) => Promise<void>
   updateSkillGroups: (change: (groups: SkillGroup[]) => SkillGroup[]) => Promise<void>
   saveSidebarWidth: (width: number) => Promise<void>
   loadCommands: () => Promise<void>
@@ -746,6 +750,9 @@ interface AppActions {
   deleteNote: (id: string) => Promise<void>
   insertPrompt: (text: string, replace?: boolean) => void
   clearPendingInsert: () => void
+  // Stage a Browser pane pick in the composer of `workspaceId`. False (and
+  // nothing staged) when that workspace is no longer the active one.
+  stagePickedAttachments: (workspaceId: string, attachments: ComposerAttachment[]) => boolean
   setNotePickerOpen: (open: boolean) => void
   toggleAllThinking: () => void
   setCommandPalette: (open: boolean) => void
@@ -2588,6 +2595,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     set({ settings: updated })
   },
 
+  saveBrowserPaneUrl: async (workspacePath, url) => {
+    const current = get().settings?.browserPaneUrls ?? {}
+    if (!isBrowserPaneUrl(url) || current[workspacePath] === url) return
+    const updated = await window.piDesktop.settings.save({ browserPaneUrls: { ...current, [workspacePath]: url } })
+    set({ settings: updated })
+  },
+
   loadCommands: async () => {
     try {
       set({ commands: normalizePiCommands(await window.piDesktop.piCommands.list()) })
@@ -3825,6 +3839,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     })),
 
   clearPendingInsert: () => set({ pendingInsert: null }),
+
+  stagePickedAttachments: (workspaceId, attachments) => {
+    // A capture that ends after a workspace switch must not land in another composer.
+    if (activeWorkspaceId(get) !== workspaceId) return false
+    set({ pendingInsert: { text: '', nonce: Date.now(), attachments } })
+    return true
+  },
 
   setNotePickerOpen: (open) => set({ notePickerOpen: open }),
 

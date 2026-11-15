@@ -31,6 +31,22 @@
       "downloadButton": "İndir"
     }
   },
+  "browserPane": {
+    "addressLabel": "Adres",
+    "addressPlaceholder": "Bir web adresi veya localhost:port girin",
+    "back": "Geri",
+    "close": "Tarayıcıyı kapat",
+    "downloadRefused": "Tarayıcı panelinde indirmeler kapalı. İndirmek için sayfayı varsayılan tarayıcınızda açın.",
+    "emptyHint": "Bir sayfayı burada açmak için bir web adresi girin. Seçim hiçbir şey göndermez: öğeyi mesajınıza ekler.",
+    "forward": "İleri",
+    "invalidAddress": "Burada yalnızca http ve https sayfaları açılabilir.",
+    "loadFailed": "{{url}} yüklenemedi.",
+    "openExternal": "Varsayılan tarayıcıda aç",
+    "pick": "Bir öğe seç",
+    "pickImageTooLarge": "Öğenin ekran görüntüsü eklenemeyecek kadar büyük. Metni eklendi.",
+    "reload": "Yeniden yükle",
+    "stopPicking": "Seçmeyi durdur (Esc)"
+  },
   "chat": {
     "activity": {
       "stalled": "Model {{silent}} süredir yanıt vermiyor. Sağlayıcı yavaş olabilir.",
@@ -180,6 +196,7 @@
       "viewSource": "Kaynağı göster"
     },
     "toolbar": {
+      "browser": "Tarayıcı",
       "diffViewer": "Fark görüntüleyici",
       "fileTree": "Dosya ağacı",
       "reviewPanel": "İnceleme paneli",

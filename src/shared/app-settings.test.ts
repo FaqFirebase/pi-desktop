@@ -103,3 +103,11 @@ test('preferredEditor defaults to null and drops unknown ids', () => {
   assert.equal(normalizeStoredSettings({ preferredEditor: 'emacs' }, LANGUAGES).preferredEditor, null)
   assert.equal(normalizeStoredSettings({ preferredEditor: 7 }, LANGUAGES).preferredEditor, null)
 })
+
+test('browser pane URLs default to empty and drop non-http entries', () => {
+  assert.deepEqual(normalizeStoredSettings({}, LANGUAGES).browserPaneUrls, {})
+  assert.deepEqual(
+    normalizeStoredSettings({ browserPaneUrls: { '/a': 'http://localhost:3000/', '/b': 'javascript:x' } }, LANGUAGES).browserPaneUrls,
+    { '/a': 'http://localhost:3000/' },
+  )
+})

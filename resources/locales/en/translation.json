@@ -31,6 +31,22 @@
       "downloadButton": "Download"
     }
   },
+  "browserPane": {
+    "addressLabel": "Address",
+    "addressPlaceholder": "Enter a web address or localhost:port",
+    "back": "Back",
+    "close": "Close browser",
+    "downloadRefused": "Downloads are turned off in the Browser pane. Open the page in your default browser to download.",
+    "emptyHint": "Enter a web address to open a page here. Pick sends nothing: it adds the element to your message.",
+    "forward": "Forward",
+    "invalidAddress": "Only http and https pages can open here.",
+    "loadFailed": "Could not load {{url}}.",
+    "openExternal": "Open in default browser",
+    "pick": "Pick an element",
+    "pickImageTooLarge": "The element screenshot is too large to attach. Its text was added.",
+    "reload": "Reload",
+    "stopPicking": "Stop picking (Esc)"
+  },
   "chat": {
     "activity": {
       "stalled": "No reply from the model for {{silent}}. The provider may be slow.",
@@ -180,6 +196,7 @@
       "viewSource": "View source"
     },
     "toolbar": {
+      "browser": "Browser",
       "diffViewer": "Diff viewer",
       "fileTree": "File tree",
       "reviewPanel": "Review panel",

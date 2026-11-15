@@ -9,6 +9,7 @@ import { isKeepAwakeMode } from './keep-awake'
 import { isEditorId } from './editors'
 import { normalizeKeyboardShortcuts } from './keyboard-shortcuts'
 import { normalizeSkillGroups } from './skill-groups'
+import { normalizeBrowserPaneUrls } from './browser-pane'
 
 const ENGINE_SETTINGS: readonly AgentEngine[] = ['auto', 'pi', 'omp']
 const VOICE_PRECISIONS: readonly VoicePrecision[] = ['int8', 'fp16']
@@ -41,6 +42,7 @@ export function normalizeStoredSettings(stored: Record<string, unknown>, languag
   merged.language = normalizeLanguageSetting(merged.language, languages)
   merged.shortcuts = normalizeKeyboardShortcuts(merged.shortcuts)
   merged.skillGroups = normalizeSkillGroups(merged.skillGroups)
+  merged.browserPaneUrls = normalizeBrowserPaneUrls(merged.browserPaneUrls)
   if (typeof merged.voiceModel !== 'string' || !getVoiceModel(merged.voiceModel)) {
     merged.voiceModel = DEFAULT_SETTINGS.voiceModel
   }

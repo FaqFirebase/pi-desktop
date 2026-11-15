@@ -31,13 +31,7 @@ import {
   ShieldAlert,
 } from 'lucide-react'
 import { isImeComposing } from '../utils/ime-composing'
-
-// `<webview>` (enabled via webviewTag) isn't a typed JSX intrinsic; cast the tag
-// to a component so TS accepts the props we use. It renders the HTML preview in
-// an isolated guest process so its JavaScript runs without touching the app CSP.
-const Webview = 'webview' as unknown as React.FC<
-  React.HTMLAttributes<HTMLElement> & { src: string; partition?: string; plugins?: boolean }
->
+import { Webview } from './webview-tag'
 
 // ─── File Tree ───────────────────────────────────────────────────────────────
 

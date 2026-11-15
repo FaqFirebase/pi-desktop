@@ -49,6 +49,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   resumeLastSession: true,
   collapsedSessionGroups: [],
   skillGroups: [],
+  browserPaneUrls: {},
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   openToHomeOnLaunch: true,
   runOnStartup: false,

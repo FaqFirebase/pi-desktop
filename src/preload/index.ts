@@ -103,6 +103,7 @@ import type { ThemeFile } from '../shared/theme/theme-file'
 import type { SubagentListResult, SubagentTranscriptRef, SubagentTranscriptResult } from '../shared/subagent-task'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import type { QuickChatShortcutStatus } from '../shared/quick-chat'
+import type { BrowserPaneGuestEvent } from '../shared/browser-pane'
 
 // Quick Chat can open Settings before the main renderer's hooks have mounted.
 let pendingSettingsMenu = false
@@ -311,6 +312,11 @@ interface PiDesktopAPI {
     clearKey(): Promise<TypeSafeStatus>
     installSkill(): Promise<TypeSafeStatus>
     removeSkill(): Promise<TypeSafeStatus>
+  }
+
+  // Browser pane: pane keys and refused downloads that main caught in a guest page.
+  browserPane: {
+    onGuestEvent(callback: (event: BrowserPaneGuestEvent) => void): () => void
   }
 
   // Skills, Commands, MCP, Tags
@@ -686,6 +692,16 @@ const api: PiDesktopAPI = {
     clearKey: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_CLEAR_KEY),
     installSkill: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_INSTALL_SKILL),
     removeSkill: () => ipcRenderer.invoke(IPC_CHANNELS.TYPESAFE_REMOVE_SKILL),
+  },
+
+  browserPane: {
+    onGuestEvent: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: BrowserPaneGuestEvent) => callback(data)
+      ipcRenderer.on(IPC_CHANNELS.EVENT_BROWSER_PANE_GUEST, handler)
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.EVENT_BROWSER_PANE_GUEST, handler)
+      }
+    },
   },
 
   skills: {

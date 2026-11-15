@@ -252,6 +252,7 @@ export const IPC_CHANNELS = {
   EVENT_COUNCIL_PROGRESS: 'event:council-progress',
   EVENT_VOICE_PROGRESS: 'event:voice-progress',
   EVENT_VOICE_SHORTCUT: 'event:voice-shortcut',
+  EVENT_BROWSER_PANE_GUEST: 'event:browser-pane-guest',
 
   // Voice dictation
   VOICE_STATUS: 'voice:status',
@@ -1491,6 +1492,8 @@ export interface AppSettings {
   collapsedSessionGroups: string[]
   // User-made groups in the Skills panel. Display only: skill files never move.
   skillGroups: import('./skill-groups').SkillGroup[]
+  /** Last Browser pane page per workspace path. Not exposed in the Settings UI. */
+  browserPaneUrls: Record<string, string>
   /** Sidebar width in pixels; clamped by `clampSidebarWidth` on read. */
   sidebarWidth: number
   // Show the Home/launcher screen on launch (Pi starts lazily on first action)

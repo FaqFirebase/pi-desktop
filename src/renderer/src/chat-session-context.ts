@@ -44,7 +44,7 @@ export interface ChatComposerBindings {
   focusRequested: boolean
   requestFocus(): void
   clearFocusRequest(): void
-  pendingInsert: { text: string; replace?: boolean } | null
+  pendingInsert: { text: string; replace?: boolean; attachments?: ComposerAttachment[] } | null
   clearPendingInsert?(): void
   readDraft(): ComposerDraft
   saveDraft(draft: ComposerDraft): void

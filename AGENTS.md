@@ -30,6 +30,7 @@ The project is in **alpha**. APIs, IPC contracts, on-disk config formats, and pa
 - All IPC channels use typed contracts and validate their payloads
 - The renderer has no access to Node APIs
 - Main-window navigation is pinned to the packaged renderer; privileged IPC checks that the sender frame is the app renderer
+- The Browser pane `<webview>` uses its own in-memory partition: http/https main-frame loads only, no permissions, no downloads, a picker preload that exposes nothing to the page; the file-preview rules are unchanged
 - Per-workspace trust gate: until the user trusts a workspace, the allow rules in its own `.pi-desktop/permission-rules.json` are ignored and its HTML preview runs without scripts or network
 - Programs the app starts by bare name resolve from PATH only, not from the working folder (`windows-exe-search.ts`; Windows)
 - Attachment reads are limited to picked or in-workspace paths; session deletion is confined to the session stores; package specs are validated before the Pi CLI runs
@@ -70,7 +71,9 @@ src/
 │   ├── attachment-rules.ts       # Rules for picked and dropped chat attachments
 │   ├── git-diff.ts               # Diff path model (Git C-quoting), pinned diff options, splitting, repository-root -> workspace path helpers
 │   ├── file-url.ts               # file:// URLs for local paths, every segment percent-encoded (drive and UNC paths)
-│   ├── preview-partitions.ts     # File-preview <webview> partition names, the ones main hardens
+│   ├── preview-partitions.ts     # File-preview <webview> partition names, the ones main hardens; the Browser pane partition
+│   ├── browser-pane.ts           # Browser pane: address-bar URL rule (http/https only), fixed pane keys, zoom steps, saved URLs
+│   ├── browser-pick.ts           # Element picker: selector, label, caps, pick payload check, capture rect
 │   ├── repo-set-draft.ts         # Repo set editing: unique names; the first repository is the main one
 │   ├── subagent-task.ts          # Subagent rows for the Subagents panel, rail badge and composer strip: parsers and reducers
 │   ├── untrusted-data.ts         # Wrap file/agent text as a labeled untrusted-data block
@@ -121,6 +124,8 @@ src/
 │   ├── path-authorization.ts     # Path containment checks (attachment/session IPC)
 │   ├── renderer-origin.ts        # Trusted-renderer URL check (navigation + IPC sender)
 │   ├── preview-guest.ts          # File-preview guest rules: which guest is the PDF preview, scripts, per-partition request block
+│   ├── browser-pane-guest.ts     # Browser pane guest rules: web preferences, pop-up decision, main-frame request block
+│   ├── browser-pane-session.ts   # Browser pane partition hardening and per-guest rules (pop-ups, navigation, pane keys)
 │   ├── window-background.ts      # Native window background that follows the theme
 │   ├── workspace-trust.ts        # Per-workspace trust registry (gates allow rules + preview)
 │   ├── workspace-manager.ts      # Multi-workspace management
@@ -199,7 +204,8 @@ src/
 │   ├── windows-exe-search.ts     # Windows: no program starts from the working folder by bare name; child env for direct and cmd.exe launches
 │   └── cmd-escape.ts             # cmd.exe escaping for Windows shell:true spawns
 ├── preload/
-│   └── index.ts                  # contextBridge API
+│   ├── index.ts                  # contextBridge API
+│   └── browser-pane.ts           # Browser pane picker preload: overlay, pick on a real click, sendToHost only
 └── renderer/
     ├── index.html                # Entry HTML with CSP
     ├── public/theme-boot.js      # Paints the last theme's colors before the first frame
@@ -231,6 +237,7 @@ src/
         │   ├── tab-navigation.ts # Project/session tab order and next/previous tab
         │   ├── planning-prompt.ts # Plan/read-only prompt wrapper
         │   ├── compose-prompt.ts # Typed text + staged files -> prompt (text files inlined as data, images as blocks)
+        │   ├── browser-pick-attachments.ts # Browser pane pick -> composer attachments (text block + PNG)
         │   ├── ipc-error.ts      # Strip Electron's remote-method prefix from IPC errors
         │   ├── renderer-error-report.ts # Window errors, rejections and boundary catches -> main; crash details text
         │   ├── launch-view.ts    # First view after load: a reload returns to Chat
@@ -318,6 +325,8 @@ src/
             ├── sidebar-activity.ts # Workspace activity dot mapping for the sidebar
             ├── diagnostics-panel.tsx # Diagnostics view (Pi binary, providers, permissions, log)
             ├── file-tree.tsx      # File tree + search + preview
+            ├── webview-tag.tsx    # Typed `<webview>` tag shared by the file preview and the Browser pane
+            ├── browser-pane.tsx   # Browser view of the chat side slot: address bar, history, zoom, element picker
             ├── diff-viewer.tsx    # Git diff viewer: session filter, discard, open file
             ├── terminal.tsx       # ANSI terminal, resizable
             ├── terminal-clipboard.ts # Ctrl+C / Ctrl+V copy and paste rules per OS
@@ -443,6 +452,7 @@ resources/
 - The right-edge tool rail (`chat-tool-rail.tsx`) toggles the Review panel, file tree, diff viewer, and terminal. It has no workflow button
 - The Review panel (`review-rail.tsx`) shows the permission mode, pending approvals, changed files, and session status. It is hidden by default
 - Click a workspace file link (chat or file tree) to open it in a side pane: code (CodeMirror), image, PDF, or HTML. HTML runs in a sandboxed `<webview>` (no Node access, isolated partition, `file://` source only). HTML preview runs scripts and network only when the workspace is trusted; an untrusted workspace gets a static preview with a "Trust workspace" banner. A PDF preview gets plugins and scripts only when its URL loads a .pdf file, and for an untrusted workspace its partition loads only PDF files and the built-in viewer's own files (`preview-guest.ts`)
+- The Browser view (rail button) shows any http or https page, one per workspace, and remembers the last page per workspace. Pick highlights an element and adds a text block (page, selector, text, HTML) and a screenshot to the composer; nothing is sent until the user presses Send. A pop-up loads in the pane only right after a click; downloads are refused. Fixed keys while the page has focus: Mod+R, Mod+L, Mod+= / Mod+- / Mod+0, Esc ends picking
 
 ### Workflow runs
 

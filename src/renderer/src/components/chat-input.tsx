@@ -142,8 +142,21 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     setAttachments(next)
     saveDraft()
   }, [saveDraft])
+  const [attachError, setAttachError] = useState<string | null>(null)
+  const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
+  const attachmentDragDepth = useRef(0)
+  const [isReadingAttachments, setIsReadingAttachments] = useState(false)
+
+  // Keep the snapshot synchronous: hides and target switches can precede a render.
+  const addAttachment = useCallback((next: ComposerAttachment) => {
+    const previous = attachmentsRef.current
+    if (!previous.some((attachment) => attachment.path === next.path)) {
+      updateAttachments([...previous, next])
+    }
+  }, [updateAttachments])
   // Apply a note inserted from the panel or picker: drop the text at the
-  // cursor, refocus, resize, then clear so the same note can be inserted again.
+  // cursor, refocus, resize, stage any attachments (a Browser pane pick),
+  // then clear so the same note can be inserted again.
   // Only consume when Chat is the active surface (avoids applying while on Settings/etc.).
   useEffect(() => {
     if (!pendingInsert) return
@@ -167,20 +180,9 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     ta.setSelectionRange(caret, caret)
     resizeTextarea(ta)
     markDraftEdited()
+    for (const attachment of pendingInsert.attachments ?? []) addAttachment(attachment)
     clearPendingInsert?.()
-  }, [pendingInsert, active, clearPendingInsert, resizeTextarea, markDraftEdited])
-  const [attachError, setAttachError] = useState<string | null>(null)
-  const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
-  const attachmentDragDepth = useRef(0)
-  const [isReadingAttachments, setIsReadingAttachments] = useState(false)
-
-  // Keep the snapshot synchronous: hides and target switches can precede a render.
-  const addAttachment = useCallback((next: ComposerAttachment) => {
-    const previous = attachmentsRef.current
-    if (!previous.some((attachment) => attachment.path === next.path)) {
-      updateAttachments([...previous, next])
-    }
-  }, [updateAttachments])
+  }, [pendingInsert, active, clearPendingInsert, resizeTextarea, markDraftEdited, addAttachment])
 
   // Live voice dictation writes a running transcript into the composer. The
   // textarea is uncontrolled, so track the insertion point (anchor) and the
