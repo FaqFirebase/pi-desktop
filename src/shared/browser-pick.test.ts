@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  BROWSER_PICK_CHANNELS,
+  isAcceptedPickMessage,
   MAX_PICK_HTML_LENGTH,
   MAX_PICK_LABEL_LENGTH,
   MAX_PICK_SELECTOR_LENGTH,
@@ -115,4 +117,13 @@ test('parseBrowserPick strips control and space characters from a forged label',
   assert.ok(pick)
   assert.equal(/[\s\p{Cc}]/u.test(pick.label), false)
   assert.equal(pick.label.length <= MAX_PICK_LABEL_LENGTH, true)
+})
+
+test('the host takes picker messages only while picking', () => {
+  assert.equal(isAcceptedPickMessage(BROWSER_PICK_CHANNELS.picked, true), true)
+  assert.equal(isAcceptedPickMessage(BROWSER_PICK_CHANNELS.cancelled, true), true)
+  assert.equal(isAcceptedPickMessage(BROWSER_PICK_CHANNELS.picked, false), false)
+  assert.equal(isAcceptedPickMessage(BROWSER_PICK_CHANNELS.cancelled, false), false)
+  assert.equal(isAcceptedPickMessage(BROWSER_PICK_CHANNELS.start, true), false)
+  assert.equal(isAcceptedPickMessage('other', true), false)
 })

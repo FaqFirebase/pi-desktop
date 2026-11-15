@@ -7,7 +7,7 @@ import { createStaleGuard } from '../utils/stale-guard'
 import { buildPickAttachments, fitsAttachmentLimit, pngBase64FromDataUrl } from '../utils/browser-pick-attachments'
 import { BROWSER_PANE_PARTITION } from '../../../shared/preview-partitions'
 import { nextZoomLevel, normalizeAddressInput, type BrowserPaneGuestEvent } from '../../../shared/browser-pane'
-import { BROWSER_PICK_CHANNELS, captureRectForPick, parseBrowserPick } from '../../../shared/browser-pick'
+import { BROWSER_PICK_CHANNELS, captureRectForPick, isAcceptedPickMessage, parseBrowserPick } from '../../../shared/browser-pick'
 import { Webview, type WebviewElement } from './webview-tag'
 
 // Chromium's net error for a load that a newer navigation replaced; not a failure to show.
@@ -131,11 +131,9 @@ function BrowserPaneView({
       if (event.isMainFrame && event.errorCode !== ERR_ABORTED) setError({ kind: 'loadFailed', url: event.validatedURL })
     }
     const onIpcMessage = (event: Electron.IpcMessageEvent): void => {
-      if (event.channel === BROWSER_PICK_CHANNELS.cancelled) setPicking(false)
-      if (event.channel === BROWSER_PICK_CHANNELS.picked) {
-        setPicking(false)
-        void stagePick(event.args[0])
-      }
+      if (!isAcceptedPickMessage(event.channel, picking)) return
+      setPicking(false)
+      if (event.channel === BROWSER_PICK_CHANNELS.picked) void stagePick(event.args[0])
     }
     webview.addEventListener('dom-ready', onDomReady)
     webview.addEventListener('did-navigate', onNavigate)
@@ -149,7 +147,7 @@ function BrowserPaneView({
       webview.removeEventListener('did-fail-load', onFailLoad)
       webview.removeEventListener('ipc-message', onIpcMessage)
     }
-  }, [hasWebview, workspacePath, stagePick])
+  }, [hasWebview, workspacePath, stagePick, picking])
 
   // Pane keys pressed while the page has focus: main catches them and tells us.
   useEffect(() => window.piDesktop.browserPane.onGuestEvent((event: BrowserPaneGuestEvent) => {

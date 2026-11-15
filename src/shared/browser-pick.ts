@@ -14,6 +14,11 @@ export const BROWSER_PICK_CHANNELS = {
   cancelled: 'browser-pane:pick-cancelled',
 } as const
 
+/** True when the host takes a picker message: a pick or a cancel, and only while picking. */
+export function isAcceptedPickMessage(channel: string, picking: boolean): boolean {
+  return picking && (channel === BROWSER_PICK_CHANNELS.picked || channel === BROWSER_PICK_CHANNELS.cancelled)
+}
+
 export const MAX_PICK_URL_LENGTH = 2048
 export const MAX_PICK_SELECTOR_LENGTH = 512
 export const MAX_PICK_TEXT_LENGTH = 2000
