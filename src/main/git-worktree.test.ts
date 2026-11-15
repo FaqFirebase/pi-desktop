@@ -9,6 +9,7 @@ import {
   GIT_FATAL_EXIT_CODE,
   GitCommandError,
   GitNotInstalledError,
+  gitProcessEnv,
   isMissingRepositoryError,
   parseGitWorktrees,
   runGit,
@@ -52,6 +53,30 @@ test('runGit rejects with the exit code and streams of the failed command', asyn
         assert.equal(isMissingRepositoryError(error), true)
         return true
       }
+    )
+  } finally {
+    await rm(folder, { recursive: true, force: true })
+  }
+})
+
+/** A German locale: Git translates its messages for it when the catalog is installed. */
+const TRANSLATED_LOCALE_ENV = { LANGUAGE: 'de', LC_ALL: 'de_DE.UTF-8', LANG: 'de_DE.UTF-8' }
+
+test('gitProcessEnv asks Git for English messages and keeps the rest of the environment', () => {
+  const env = { ...TRANSLATED_LOCALE_ENV, PATH: '/usr/bin' }
+  assert.deepEqual(gitProcessEnv(env), { ...env, LANGUAGE: 'C' })
+  assert.equal(env.LANGUAGE, TRANSLATED_LOCALE_ENV.LANGUAGE, 'the input is not changed')
+  assert.equal(gitProcessEnv().PATH, process.env.PATH)
+})
+
+// Issue #132. On a machine without the German catalog Git writes English
+// anyway, so this guards the fix only where the catalog is installed.
+test('runGit still classifies a missing repository under a translated locale', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'pi-git-worktree-'))
+  try {
+    await assert.rejects(
+      () => runGit(['rev-parse', '--show-toplevel'], folder, { ...process.env, ...TRANSLATED_LOCALE_ENV }),
+      (error: unknown) => isMissingRepositoryError(error),
     )
   } finally {
     await rm(folder, { recursive: true, force: true })

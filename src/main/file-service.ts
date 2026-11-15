@@ -2,7 +2,7 @@ import { watch, type FSWatcher } from 'chokidar'
 import { readdir, stat, readFile, writeFile, realpath } from 'fs/promises'
 import type { Dirent } from 'fs'
 import { join, extname, basename, resolve, relative, isAbsolute, sep, dirname } from 'path'
-import { execFile } from 'child_process'
+import { execFile, type ExecFileOptions } from 'child_process'
 import { promisify } from 'util'
 import { homedir } from 'os'
 import { describeWriteError } from './fs-errors'
@@ -10,6 +10,7 @@ import { appLog } from './app-log'
 import { WHOLE_WORKSPACE_CHANGE_PATH, type FileChangeEvent } from '../shared/ipc-contracts'
 import { watchGitHead } from './git-head-watcher'
 import { parsePorcelainZEntries } from './git-conveyor'
+import { gitProcessEnv } from './git-worktree'
 import {
   GIT_DIFF_NEW_SIDE, GIT_DIFF_OLD_SIDE, canDiscardGitPatch, gitDiffArgs, gitDiffPaths, quoteGitPath, splitGitDiff,
   workspaceRelativeGitPath,
@@ -17,6 +18,11 @@ import {
 import { i18n, t, tEnglish, type Translate } from '../shared/i18n'
 
 const execFileAsync = promisify(execFile)
+
+/** Run git with English messages, the wording `isBenignGitError` matches. */
+function execGit(args: string[], options: ExecFileOptions): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync('git', args, { ...options, encoding: 'utf8', env: gitProcessEnv() })
+}
 
 // execFile kills the child past 1 MiB of stdout by default, which a
 // whole-worktree status or diff on a repo with many changes easily exceeds.
@@ -356,7 +362,7 @@ export class FileService {
 
     try {
       // Without -z, Git quotes a name with a space or a non-ASCII letter.
-      const { stdout } = await execFileAsync('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
+      const { stdout } = await execGit(['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
         cwd: this.workspacePath,
         timeout: 10_000,
         maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
@@ -395,7 +401,7 @@ export class FileService {
   // "outside a repo" — that would silently mask real failures.
   private async probeGitRepo(): Promise<'inside' | 'outside' | 'broken'> {
     try {
-      await execFileAsync('git', ['rev-parse', '--git-dir'], {
+      await execGit(['rev-parse', '--git-dir'], {
         cwd: this.workspacePath,
         timeout: 5_000,
       })
@@ -410,7 +416,7 @@ export class FileService {
    */
   async getGitBranch(): Promise<string | null> {
     try {
-      const { stdout } = await execFileAsync('git', ['branch', '--show-current'], {
+      const { stdout } = await execGit(['branch', '--show-current'], {
         cwd: this.workspacePath,
         timeout: 5_000,
       })
@@ -429,7 +435,7 @@ export class FileService {
     try {
       // The stored content, not a textconv rendering: discard applies these patches in reverse.
       const args = [LITERAL_PATHSPECS, ...gitDiffArgs('--no-textconv', '--', filePath ?? '.')]
-      const { stdout } = await execFileAsync('git', args, {
+      const { stdout } = await execGit(args, {
         cwd: this.workspacePath,
         timeout: 10_000,
         maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
@@ -452,7 +458,7 @@ export class FileService {
       }
       const current = new Set(splitGitDiff(await this.getFileDiff()))
       if (patches.some((patch) => !current.has(patch))) throw new Error(t('diff.discard.stale'))
-      const { stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], { cwd: this.workspacePath })
+      const { stdout } = await execGit(['rev-parse', '--show-toplevel'], { cwd: this.workspacePath })
       const root = await realpath(stdout.trim())
       const workspaceRoot = await realpath(this.workspacePath)
       for (const patch of patches) {
@@ -479,6 +485,7 @@ export class FileService {
     return new Promise((resolve, reject) => {
       const child = execFile('git', ['apply', '--reverse', ...(check ? ['--check'] : []), '--whitespace=nowarn', '-'], {
         cwd,
+        env: gitProcessEnv(),
         timeout: 10_000,
         maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
       }, (error) => {
@@ -498,7 +505,7 @@ export class FileService {
    */
   async getGitPrefix(): Promise<string> {
     try {
-      const { stdout } = await execFileAsync('git', ['rev-parse', '--show-prefix'], {
+      const { stdout } = await execGit(['rev-parse', '--show-prefix'], {
         cwd: this.workspacePath,
         timeout: 5_000,
       })
@@ -537,7 +544,7 @@ export class FileService {
   async getStagedDiff(filePath?: string): Promise<string> {
     try {
       const args = [LITERAL_PATHSPECS, ...gitDiffArgs('--cached', '--', filePath ?? '.')]
-      const { stdout } = await execFileAsync('git', args, {
+      const { stdout } = await execGit(args, {
         cwd: this.workspacePath,
         timeout: 10_000,
         maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,

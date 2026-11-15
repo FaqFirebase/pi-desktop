@@ -336,6 +336,26 @@ test('getFileDiff and getStagedDiff return empty for a non-repo directory', asyn
   assert.equal(await service.getStagedDiff(), '')
 })
 
+// Issue #132. On a machine without the German catalog Git writes English
+// anyway, so this guards the fix only where the catalog is installed.
+test('a non-repo directory stays empty under a translated locale', async () => {
+  const translatedLocale = { LANGUAGE: 'de', LC_ALL: 'de_DE.UTF-8', LANG: 'de_DE.UTF-8' }
+  const saved = Object.fromEntries(Object.keys(translatedLocale).map((key) => [key, process.env[key]]))
+  Object.assign(process.env, translatedLocale)
+  try {
+    const service = new FileService(await mkdtemp(join(tmpdir(), 'fs-nonrepo-')))
+    assert.equal((await service.getGitStatus()).size, 0)
+    assert.equal(await service.getFileDiff(), '')
+    assert.equal(await service.getStagedDiff(), '')
+    assert.equal(await service.getGitPrefix(), '')
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+})
+
 test('getGitPrefix reports the workspace directory inside its repository', async () => {
   const repo = await mkdtemp(join(tmpdir(), 'fs-prefix-'))
   execFileSync('git', ['init', '-q'], { cwd: repo })

@@ -13,6 +13,22 @@ const SPAWN_NOT_FOUND_CODE = 'ENOENT'
 /** Git wordings that mean `cwd` is not inside a usable working tree. */
 const MISSING_REPOSITORY_PATTERN = /not a git repository|this operation must be run in a work tree/i
 
+/**
+ * `LANGUAGE` chooses Git's message catalog ahead of `LC_ALL` and `LANG`, and
+ * `C` names no catalog, so Git writes its untranslated English messages.
+ */
+const GIT_MESSAGE_LANGUAGE = 'C'
+
+/**
+ * Environment for a git child process. Callers classify failures by Git's
+ * English wording, which a translated locale replaces (issue #132). Only the
+ * message language changes: the locale for text encoding stays the user's,
+ * so hooks see the same character set as in their own terminal.
+ */
+export function gitProcessEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...env, LANGUAGE: GIT_MESSAGE_LANGUAGE }
+}
+
 export interface GitCommandResult {
   stdout: string
   stderr: string
@@ -93,7 +109,7 @@ export function runGit(args: readonly string[], cwd: string, env?: NodeJS.Proces
   return new Promise((resolvePromise, reject) => {
     const child = spawn('git', [...args], {
       cwd,
-      env,
+      env: gitProcessEnv(env),
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     })
