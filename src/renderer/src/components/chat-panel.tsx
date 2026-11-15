@@ -1,7 +1,7 @@
 import { sidePanelHidesPreview, useAppStore } from '../store'
 import { agentEngineLabel } from '../../../shared/agent-engine-label'
 import { PI_DESKTOP_PRODUCT_NAME } from '../../../shared/product-name'
-import { ChatInput } from './chat-input'
+import { ChatComposerDock } from './chat-composer-dock'
 import { ChatProjectPicker } from './chat-project-picker'
 import { CouncilPanels } from './council-panels'
 import { MessageBubble, ToolGroupBubble } from './message-bubble'
@@ -63,7 +63,7 @@ export function ChatPanel(): React.JSX.Element {
   const reattachedMidTurn = useAppStore((state) => state.reattachedMidTurn)
   // Drive message-list bottom padding from the real floating composer height so
   // a tall draft / attachments row never permanently covers the last message.
-  // The composer mounts only once the empty chat has messages, hence the ref.
+  // The floating frame exists only once the empty chat has messages, hence the ref.
   const [composerPadPx, composerWrapRef] = useElementMeasure(readComposerPad, DEFAULT_COMPOSER_PAD_PX)
   // The chat column and side panel share this row; the side panel gets what the column leaves.
   const [panelRowWidth, panelRowRef] = useElementMeasure(readClientWidth, Number.POSITIVE_INFINITY)
@@ -304,101 +304,120 @@ export function ChatPanel(): React.JSX.Element {
                 !sessionLoading && messages.length === 0 && !isStreaming
 
               // Empty session: Codex-style center prompt + project picker (sidebar chrome).
-              if (isEmptyChat) {
-                return (
-                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10">
-                    <div className="mb-8 text-center">
-                      <img
-                        src={piLogo}
-                        alt={PI_DESKTOP_PRODUCT_NAME}
-                        className="mx-auto mb-4 block h-14 w-14"
-                      />
-                      <h2 className="text-2xl font-semibold text-primary">
-                        {t('chat.emptyState.title', { agent: engineLabel })}
-                      </h2>
-                      <p className="mt-1 text-sm text-dim">
-                        {piStatus === 'running'
-                          ? t('chat.emptyState.pickProject')
-                          : piStatus === 'starting'
-                            ? piStartupPhase === 'waiting-on-engine'
-                              ? t('chat.emptyState.waitingOnEngine', { agent: engineLabel })
-                              : t('chat.emptyState.starting', { agent: engineLabel })
-                            : piStatus === 'error'
-                              ? t('chat.emptyState.startFailed', { agent: engineLabel })
-                              : t('chat.emptyState.chooseProject', { agent: engineLabel })}
-                      </p>
+              const centeredLead = (
+                <>
+                  <div className="mb-8 text-center">
+                    <img
+                      src={piLogo}
+                      alt={PI_DESKTOP_PRODUCT_NAME}
+                      className="mx-auto mb-4 block h-14 w-14"
+                    />
+                    <h2 className="text-2xl font-semibold text-primary">
+                      {t('chat.emptyState.title', { agent: engineLabel })}
+                    </h2>
+                    <p className="mt-1 text-sm text-dim">
+                      {piStatus === 'running'
+                        ? t('chat.emptyState.pickProject')
+                        : piStatus === 'starting'
+                          ? piStartupPhase === 'waiting-on-engine'
+                            ? t('chat.emptyState.waitingOnEngine', { agent: engineLabel })
+                            : t('chat.emptyState.starting', { agent: engineLabel })
+                          : piStatus === 'error'
+                            ? t('chat.emptyState.startFailed', { agent: engineLabel })
+                            : t('chat.emptyState.chooseProject', { agent: engineLabel })}
+                    </p>
+                  </div>
+                  {piStatus === 'running' && (
+                    <div className={clsx('mb-4 flex w-full flex-wrap justify-center gap-2 px-4', messageColumn)}>
+                      {EXAMPLE_PROMPTS.map((prompt) => (
+                        <button
+                          key={prompt}
+                          type="button"
+                          onClick={() => {
+                            // Fill the composer only — never start a turn from a chip misclick.
+                            useAppStore.getState().insertPrompt(prompt, true)
+                          }}
+                          className="rounded-lg border border-border-strong px-3 py-1.5 text-xs text-muted hover:border-border-strong-hover hover:text-secondary transition-colors"
+                        >
+                          {prompt}
+                        </button>
+                      ))}
                     </div>
-                    <div className={clsx('w-full', messageColumn)}>
-                      {piStatus === 'running' && (
-                        <div className="mb-4 flex flex-wrap justify-center gap-2 px-4">
-                          {EXAMPLE_PROMPTS.map((prompt) => (
-                            <button
-                              key={prompt}
-                              type="button"
-                              onClick={() => {
-                                // Fill the composer only — never start a turn from a chip misclick.
-                                useAppStore.getState().insertPrompt(prompt, true)
-                              }}
-                              className="rounded-lg border border-border-strong px-3 py-1.5 text-xs text-muted hover:border-border-strong-hover hover:text-secondary transition-colors"
-                            >
-                              {prompt}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      <ChatInput dropZoneRef={chatDropZoneRef} />
-                      <div className="px-4">
-                        <ChatProjectPicker />
+                  )}
+                </>
+              )
+              const floatingLead = (
+                <>
+                  <div className={clsx('pointer-events-auto mx-auto w-full px-4', messageColumn)}>
+                    <CouncilPanels />
+                  </div>
+                  {reattachedMidTurn && (
+                    <div className={clsx('pointer-events-auto mx-auto mb-2 w-full px-4', messageColumn)}>
+                      <div className="flex items-center gap-2.5 rounded-md bg-accent px-4 py-2.5 text-sm text-white shadow-lg shadow-black/30">
+                        <Loader2 size={16} className="shrink-0 animate-spin" />
+                        <span className="shrink-0 font-medium">
+                          {t('chat.reattached.stillWorking', { agent: engineLabel })}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-white/80">
+                          {t('chat.reattached.responseWillAppear')}
+                        </span>
                       </div>
                     </div>
+                  )}
+                  <div className={clsx('pointer-events-auto mx-auto w-full px-4 empty:hidden', messageColumn)}>
+                    <PermissionModeRestartNotice />
                   </div>
-                )
-              }
+                </>
+              )
 
+              // The message list and the scroll button come and go, but the
+              // dock keeps its place, so the first send keeps its composer.
               return (
                 <>
-                  <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-                    {sessionLoading && messages.length === 0 && !isStreaming ? (
-                      <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-dim">
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
-                        {piStatus === 'running' ? t('chat.loadingSession') : t('chat.startingAgent')}
-                      </div>
-                    ) : (
-                      <NowContext.Provider value={now}>
-                        <div
-                          className={clsx('mx-auto px-4 pt-6', messageColumn)}
-                          style={{ paddingBottom: composerPadPx }}
-                        >
-                          {renderItems.map((item) =>
-                            item.kind === 'toolGroup' ? (
-                              <ToolGroupBubble
-                                key={item.id}
-                                title={item.title}
-                                messages={item.messages}
-                                onRetry={handleRetry}
-                              />
-                            ) : (
-                              <MessageBubble
-                                key={item.message.id}
-                                message={item.message}
-                                onRetry={handleRetry}
-                              />
-                            )
-                          )}
-                          {!isStreaming && <NextStepsBar steps={nextSteps} />}
-                          {isStreaming && (
-                            <StreamingBubble
-                              content={streamingContent}
-                              thinking={streamingThinking}
-                              toolCalls={streamingToolCalls}
-                            />
-                          )}
+                  {!isEmptyChat && (
+                    <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
+                      {sessionLoading && messages.length === 0 && !isStreaming ? (
+                        <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-dim">
+                          <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
+                          {piStatus === 'running' ? t('chat.loadingSession') : t('chat.startingAgent')}
                         </div>
-                      </NowContext.Provider>
-                    )}
-                  </div>
+                      ) : (
+                        <NowContext.Provider value={now}>
+                          <div
+                            className={clsx('mx-auto px-4 pt-6', messageColumn)}
+                            style={{ paddingBottom: composerPadPx }}
+                          >
+                            {renderItems.map((item) =>
+                              item.kind === 'toolGroup' ? (
+                                <ToolGroupBubble
+                                  key={item.id}
+                                  title={item.title}
+                                  messages={item.messages}
+                                  onRetry={handleRetry}
+                                />
+                              ) : (
+                                <MessageBubble
+                                  key={item.message.id}
+                                  message={item.message}
+                                  onRetry={handleRetry}
+                                />
+                              )
+                            )}
+                            {!isStreaming && <NextStepsBar steps={nextSteps} />}
+                            {isStreaming && (
+                              <StreamingBubble
+                                content={streamingContent}
+                                thinking={streamingThinking}
+                                toolCalls={streamingToolCalls}
+                              />
+                            )}
+                          </div>
+                        </NowContext.Provider>
+                      )}
+                    </div>
+                  )}
 
-                  {!atBottom && (
+                  {!isEmptyChat && !atBottom && (
                     <button
                       onClick={scrollToBottom}
                       className="absolute left-1/2 z-20 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border-strong bg-card/90 text-secondary shadow-lg shadow-black/30 backdrop-blur transition-colors hover:bg-elevated hover:text-primary"
@@ -410,31 +429,17 @@ export function ChatPanel(): React.JSX.Element {
                     </button>
                   )}
 
-                  <div
-                    ref={composerWrapRef}
-                    className="pointer-events-none absolute inset-x-0 bottom-0 z-10 pb-3 pt-8 bg-gradient-to-t from-chat-column via-chat-column/80 to-transparent"
-                  >
-                    <div className={clsx('pointer-events-auto mx-auto w-full px-4', messageColumn)}>
-                      <CouncilPanels />
-                    </div>
-                    {reattachedMidTurn && (
-                      <div className={clsx('pointer-events-auto mx-auto mb-2 w-full px-4', messageColumn)}>
-                        <div className="flex items-center gap-2.5 rounded-md bg-accent px-4 py-2.5 text-sm text-white shadow-lg shadow-black/30">
-                          <Loader2 size={16} className="shrink-0 animate-spin" />
-                          <span className="shrink-0 font-medium">
-                            {t('chat.reattached.stillWorking', { agent: engineLabel })}
-                          </span>
-                          <span className="min-w-0 flex-1 truncate text-white/80">
-                            {t('chat.reattached.responseWillAppear')}
-                          </span>
-                        </div>
+                  <ChatComposerDock
+                    centered={isEmptyChat}
+                    dropZoneRef={chatDropZoneRef}
+                    floatingRef={composerWrapRef}
+                    lead={isEmptyChat ? centeredLead : floatingLead}
+                    trail={isEmptyChat && (
+                      <div className={clsx('w-full px-4', messageColumn)}>
+                        <ChatProjectPicker />
                       </div>
                     )}
-                    <div className={clsx('pointer-events-auto mx-auto w-full px-4 empty:hidden', messageColumn)}>
-                      <PermissionModeRestartNotice />
-                    </div>
-                    <ChatInput dropZoneRef={chatDropZoneRef} />
-                  </div>
+                  />
                 </>
               )
             })()}
