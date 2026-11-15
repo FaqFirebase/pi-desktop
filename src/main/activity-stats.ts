@@ -14,7 +14,7 @@ import { getConfiguredEngineKind } from './pi-rpc-manager'
 import { parseModelsFile, resolveModelsFile, type ModelsFileFormat } from './models-file'
 import { getGuiDataPath } from './app-data-paths'
 import { JSONL_EXTENSION, sessionIdFromPath } from './session-paths'
-import { IMPORTED_MESSAGE_MODEL } from '../shared/chat-import'
+import { isImportedMessage } from '../shared/chat-import'
 import { addTokenUsage, emptyTokenUsage, totalTokenUsage, type TokenUsage } from '../shared/token-usage'
 import type {
   ActivityStatsResult,
@@ -122,6 +122,7 @@ function parseSessionContent(content: string): Record<string, DayBucket> {
       | {
           role?: unknown
           model?: unknown
+          provider?: unknown
           usage?: { input?: unknown; output?: unknown; cacheRead?: unknown; cacheWrite?: unknown }
         }
       | undefined
@@ -130,7 +131,7 @@ function parseSessionContent(content: string): Record<string, DayBucket> {
       typeof msg === 'object' &&
       msg.role === 'assistant' &&
       typeof msg.model === 'string' &&
-      msg.model !== IMPORTED_MESSAGE_MODEL &&
+      !isImportedMessage(msg) &&
       msg.usage &&
       typeof msg.usage === 'object'
     ) {

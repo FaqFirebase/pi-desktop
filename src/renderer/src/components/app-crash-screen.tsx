@@ -1,22 +1,16 @@
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, RotateCw } from 'lucide-react'
 import { PI_DESKTOP_PRODUCT_NAME } from '../../../shared/product-name'
 import { currentRendererErrorContext, formatCrashDetails } from '../utils/renderer-error-report'
-
-/** Same feedback time as CopyButton. */
-const COPIED_FEEDBACK_MS = 1500
+import { useCopyFeedback } from '../hooks/use-copy-feedback'
 
 /** The root error boundary's fallback: the whole window, with Reload and Copy details. */
 export function AppCrashScreen({ error, componentStack }: { error: Error; componentStack: string | null }): React.JSX.Element {
   const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
+  const { copied, copy } = useCopyFeedback()
 
   const copyDetails = (): void => {
-    const details = formatCrashDetails({ error, componentStack, appVersion: __APP_VERSION__, view: currentRendererErrorContext().view })
-    void navigator.clipboard.writeText(details).catch(() => undefined)
-    setCopied(true)
-    setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS)
+    copy(formatCrashDetails({ error, componentStack, appVersion: __APP_VERSION__, view: currentRendererErrorContext().view }))
   }
 
   return (

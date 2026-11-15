@@ -28,6 +28,11 @@ export const IMPORTED_MESSAGE_PROVIDER = 'pi-desktop-import'
  */
 export const IMPORTED_MESSAGE_MODEL = '<synthetic>'
 
+/** True for a message the chat import wrote: it carries the import provider marker. */
+export function isImportedMessage(message: { provider?: unknown }): boolean {
+  return message.provider === IMPORTED_MESSAGE_PROVIDER
+}
+
 export interface ChatImportListItem {
   sourcePath: string
   sourceSessionId: string

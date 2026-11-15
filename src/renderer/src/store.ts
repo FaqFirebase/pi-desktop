@@ -1214,6 +1214,36 @@ async function runArbiterStep(
   }
 }
 
+/** Keep the pin map main returns; a failure becomes a system message. */
+async function applyPinChange(
+  set: StoreSet,
+  get: StoreGet,
+  change: () => Promise<PinnedSessionsMap>,
+  errorText: (detail: string) => string,
+): Promise<void> {
+  try {
+    set({ pinnedSessions: await change() })
+  } catch (err) {
+    get().addMessage({
+      id: generateId(),
+      role: 'system',
+      content: errorText(err instanceof Error ? err.message : String(err)),
+      timestamp: Date.now(),
+    })
+  }
+}
+
+/** Keep a git check result unless a newer check started meanwhile. */
+async function applyLatestGitAvailability(set: StoreSet, read: () => Promise<GitAvailability>): Promise<void> {
+  const isLatest = gitAvailabilityLoads.begin()
+  try {
+    const gitAvailability = await read()
+    if (isLatest()) set({ gitAvailability })
+  } catch {
+    // Best effort, like the update check: the banner stays as it was
+  }
+}
+
 /**
  * Run one package install/remove/update under the Installed tab's shared
  * loading flag and notification banner. The list refreshes even on failure:
@@ -3766,31 +3796,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
-  pinSession: async (sessionId) => {
-    try {
-      set({ pinnedSessions: await window.piDesktop.session.pin(sessionId) })
-    } catch (err) {
-      get().addMessage({
-        id: generateId(),
-        role: 'system',
-        content: t('store.messages.pinError', { detail: err instanceof Error ? err.message : String(err) }),
-        timestamp: Date.now(),
-      })
-    }
-  },
+  pinSession: (sessionId) => applyPinChange(set, get,
+    () => window.piDesktop.session.pin(sessionId),
+    (detail) => t('store.messages.pinError', { detail })),
 
-  unpinSession: async (sessionId) => {
-    try {
-      set({ pinnedSessions: await window.piDesktop.session.unpin(sessionId) })
-    } catch (err) {
-      get().addMessage({
-        id: generateId(),
-        role: 'system',
-        content: t('store.messages.unpinError', { detail: err instanceof Error ? err.message : String(err) }),
-        timestamp: Date.now(),
-      })
-    }
-  },
+  unpinSession: (sessionId) => applyPinChange(set, get,
+    () => window.piDesktop.session.unpin(sessionId),
+    (detail) => t('store.messages.unpinError', { detail })),
 
   loadUnreadSessions: async () => {
     try {
@@ -3880,24 +3892,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   // ─── Git check ────────────────────────────────────────────────────────
 
-  loadGitAvailability: async () => {
-    const isLatest = gitAvailabilityLoads.begin()
-    try {
-      const gitAvailability = await window.piDesktop.gitCheck.get()
-      if (isLatest()) set({ gitAvailability })
-    } catch {
-      // Best effort, like the update check: the banner stays as it was
-    }
-  },
+  loadGitAvailability: () => applyLatestGitAvailability(set, () => window.piDesktop.gitCheck.get()),
 
   recheckGitAvailability: async () => {
     set({ gitCheckRunning: true })
-    const isLatest = gitAvailabilityLoads.begin()
     try {
-      const gitAvailability = await window.piDesktop.gitCheck.recheck()
-      if (isLatest()) set({ gitAvailability })
-    } catch {
-      // Best effort, like the update check: the banner stays as it was
+      await applyLatestGitAvailability(set, () => window.piDesktop.gitCheck.recheck())
     } finally {
       set({ gitCheckRunning: false })
     }
