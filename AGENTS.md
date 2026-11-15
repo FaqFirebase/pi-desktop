@@ -328,7 +328,7 @@ src/
             ├── session-menu-position.ts # Session menu placement
             ├── timeline.tsx       # Agent activity timeline
             ├── review-rail.tsx    # Review panel: permissions, approvals, changed files, session status
-            ├── chat-tool-rail.tsx # Right-edge icon rail: review, files, diff, and terminal toggles
+            ├── chat-tool-rail.tsx # Right-edge icon rail: review, files, diff, subagents, browser, and terminal toggles
             ├── package-browser.tsx # Package/skill browser, fetch-once + local filter, update check
             ├── skills-panel.tsx   # Skills browser: search, user-made groups (settings `skillGroups`)
             ├── notes-panel.tsx    # Reusable prompts/notes
@@ -462,7 +462,7 @@ resources/
 
 ### Chat tool rail and side panels
 
-- The right-edge tool rail (`chat-tool-rail.tsx`) toggles the Review panel, file tree, diff viewer, and terminal. It has no workflow button
+- The right-edge tool rail (`chat-tool-rail.tsx`) toggles the Review panel, file tree, diff viewer, Subagents panel, Browser view, and terminal. It has no workflow button
 - The Review panel (`review-rail.tsx`) shows the permission mode, pending approvals, changed files, and session status. It is hidden by default
 - Click a workspace file link (chat or file tree) to open it in a side pane: code (CodeMirror), image, PDF, or HTML. HTML runs in a sandboxed `<webview>` (no Node access, isolated partition, `file://` source only). HTML preview runs scripts and network only when the workspace is trusted; an untrusted workspace gets a static preview with a "Trust workspace" banner. A PDF preview gets plugins and scripts only when its URL loads a .pdf file, and for an untrusted workspace its partition loads only PDF files and the built-in viewer's own files (`preview-guest.ts`)
 - The Browser view (rail button) shows any http or https page, one per workspace, and remembers the last page per workspace. Pick highlights an element and adds a text block (page, selector, text, HTML) and a screenshot to the composer; nothing is sent until the user presses Send. A pop-up loads in the pane only right after a click; downloads are refused. Fixed keys while the page has focus: Mod+R, Mod+L, Mod+= / Mod+- / Mod+0, Esc ends picking
