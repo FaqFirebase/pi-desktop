@@ -179,7 +179,7 @@ export const IPC_CHANNELS = {
   COUNCIL_CANCEL: 'council:cancel',
 
   // File operations
-  FILE_TREE: 'file:tree',
+  FILE_LIST_DIR: 'file:list-dir',
   FILE_SEARCH: 'file:search',
   FILE_SEARCH_CONTENT: 'file:search-content',
   FILE_READ: 'file:read',
@@ -2083,13 +2083,13 @@ export type LogExportResult =
 
 // ─── File Types ────────────────────────────────────────────────────────────
 
+/** One entry of a folder in the tree view; folders list their entries on demand (`files.listDir`). */
 export interface FileTreeNode {
   name: string
   path: string
+  /** Workspace-relative, `/` separators. */
   relativePath: string
   type: 'file' | 'directory'
-  children?: FileTreeNode[]
-  gitStatus?: GitFileStatus
 }
 
 export interface GitFileStatus {
@@ -2110,11 +2110,10 @@ export interface FileSearchResult {
 /**
  * Emitted (main → renderer, debounced) when files change on disk in the
  * active workspace. The renderer should refresh the file tree and git status
- * wholesale; `changeType`/`relativePath` describe the most recent change in
- * the debounce window and are informational, not an exhaustive change list.
+ * wholesale; `relativePath` (`/` separators) is the most recent change in the
+ * debounce window and is informational, not an exhaustive change list.
  */
 export interface FileChangeEvent {
-  changeType: 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir'
   relativePath: string
 }
 

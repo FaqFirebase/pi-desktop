@@ -380,7 +380,8 @@ interface PiDesktopAPI {
 
   // File operations
   files: {
-    getTree(maxDepth?: number): Promise<FileTreeNode>
+    /** One folder of the active workspace ('' = its root), in tree order. */
+    listDir(relativeDir: string): Promise<FileTreeNode[]>
     search(query: string): Promise<FileSearchResult[]>
     searchContent(query: string): Promise<FileSearchResult[]>
     read(path: string): Promise<string>
@@ -769,7 +770,7 @@ const api: PiDesktopAPI = {
   },
 
   files: {
-    getTree: (maxDepth) => ipcRenderer.invoke(IPC_CHANNELS.FILE_TREE, maxDepth),
+    listDir: (relativeDir) => ipcRenderer.invoke(IPC_CHANNELS.FILE_LIST_DIR, relativeDir),
     search: (query) => ipcRenderer.invoke(IPC_CHANNELS.FILE_SEARCH, query),
     searchContent: (query) => ipcRenderer.invoke(IPC_CHANNELS.FILE_SEARCH_CONTENT, query),
     read: (path) => ipcRenderer.invoke(IPC_CHANNELS.FILE_READ, path),

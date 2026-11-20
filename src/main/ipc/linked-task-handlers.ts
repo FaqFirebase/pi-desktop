@@ -119,7 +119,7 @@ export function registerLinkedTaskHandlers(ctx: IpcContext): void {
     if (working) throw new Error(t('repoSets.ship.errors.agentWorking'))
     const result = await shipLinkedTask(workspace.linkedTask.repos, request)
     if (workspaceManager.getActiveWorkspaceId() === workspaceId) {
-      ctx.broadcast(IPC_CHANNELS.EVENT_FILE_CHANGE, { changeType: 'change', relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
+      ctx.broadcast(IPC_CHANNELS.EVENT_FILE_CHANGE, { relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
     }
     return result
   })

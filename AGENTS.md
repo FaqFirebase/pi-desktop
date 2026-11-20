@@ -136,7 +136,7 @@ src/
 │   ├── git-conveyor.ts           # Validated commit, push, branch, and GitHub PR commands
 │   ├── commit-message-generator.ts # One-shot engine run that suggests a commit subject
 │   ├── commit-message-service.ts # Commit message suggestions cached per workspace and diff
-│   ├── file-service.ts           # File tree, search, git status, read/write
+│   ├── file-service.ts           # Folder listings for the tree, search, git status, disk watcher (native recursive on Windows/macOS, chokidar on Linux), read/write
 │   ├── terminal-service.ts       # node-pty PTY management
 │   ├── workspace-terminals.ts    # One PTY per workspace, independent of the visible panel
 │   ├── terminal-program.ts       # The program an editor PTY starts: direct, or through cmd.exe for a Windows shim
@@ -269,6 +269,8 @@ src/
         │   ├── format-number.ts # Decimals and percents in the interface language
         │   ├── relative-time.tsx # Shared ticking "now" for relative labels
         │   ├── stale-guard.ts    # Last-write-wins guard for overlapping loads
+        │   ├── single-flight.ts  # One run at a time; calls during a run share one follow-up run
+        │   ├── file-tree-listing.ts # File tree: which folders are open, and listing the root plus every open folder
         │   ├── preview-load-error.ts # Preview load/save failure kept as data, translated at render
         │   ├── chat-width.ts     # Chat column width setting -> message/composer max-width classes
         │   ├── process-status-label.ts # Translated agent process status (status popover, Diagnostics)
@@ -499,7 +501,8 @@ resources/
 
 ### File and project
 
-- File tree with git status badges (M/A/D/R/U)
+- File tree with git status badges (M/A/D/R/U). A folder is listed when it is opened (`files.listDir`), never the whole tree up front; refreshes re-list only the root and open folders, one load at a time
+- The disk watcher runs only while a files or diff panel is on screen. Windows and macOS use one native recursive `fs.watch` (no scan, no handle per entry); Linux uses chokidar, 4 levels deep
 - File search by name and content
 - Git branch indicator and branch menu in the status bar
 - Git diff viewer (working and staged)
