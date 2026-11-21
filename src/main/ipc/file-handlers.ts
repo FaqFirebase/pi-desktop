@@ -11,10 +11,11 @@ export function registerFileHandlers(ctx: IpcContext): void {
 
   // ─── File Operations ────────────────────────────────────────────────────
 
-  ipcMain.handle(IPC_CHANNELS.FILE_TREE, async (_event, maxDepth?: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.FILE_LIST_DIR, async (_event, relativeDir: unknown) => {
+    if (!isString(relativeDir)) throw new Error('relativeDir must be a string')
     const fs = workspaceManager.getActiveFileService()
     if (!fs) throw new Error(t('errors.workspace.noneActive'))
-    return fs.getFileTree(typeof maxDepth === 'number' ? maxDepth : 4)
+    return fs.listDirectory(relativeDir)
   })
 
   ipcMain.handle(IPC_CHANNELS.FILE_SEARCH, async (_event, query: unknown) => {
@@ -88,8 +89,8 @@ export function registerFileHandlers(ctx: IpcContext): void {
   // Disk watching is demand-driven: the renderer declares whether a live
   // files panel consumes change events, and the watcher attaches to the
   // active workspace only while demanded. Without demand (cold start, Home)
-  // no chokidar watcher exists; the tree still loads on open and the safety
-  // poll + focus refresh cover the unwatched state.
+  // no watcher exists; the tree still loads on open and the safety poll +
+  // focus refresh cover the unwatched state.
   ipcMain.handle(IPC_CHANNELS.FILE_WATCH_DEMAND, async (_event, demanded: unknown) => {
     if (typeof demanded !== 'boolean') throw new Error('demanded must be a boolean')
     workspaceManager.setFileWatchDemand(demanded)

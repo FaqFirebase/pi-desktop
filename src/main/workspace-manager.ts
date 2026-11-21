@@ -226,7 +226,7 @@ export class WorkspaceManager {
   // forwarded for the active workspace only — and only while the renderer
   // has declared a live consumer for change events (the Chat files panel).
   // Without demand there is no watcher, so cold start and the Home view pay
-  // no chokidar cost; the tree still loads on demand and the safety poll +
+  // no watcher cost; the tree still loads on demand and the safety poll +
   // focus refresh keep it fresh.
   private watchingWorkspaceId: string | null = null
   private fileWatchDemanded = false
@@ -292,9 +292,8 @@ export class WorkspaceManager {
 
     this.watchingWorkspaceId = target
     if (target) {
-      this.fileServices
-        .get(target)
-        ?.startWatching((event) => this.emitFileChange(event))
+      // Resolves after chokidar's initial scan on Linux; nothing here waits for it.
+      void this.fileServices.get(target)?.startWatching((event) => this.emitFileChange(event))
     }
   }
 
@@ -1662,7 +1661,7 @@ export class WorkspaceManager {
       this.watchingWorkspaceId = null
       this.gitWatchingWorkspaceId = null
       this.updateActiveWatcher()
-      this.emitFileChange({ changeType: 'change', relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
+      this.emitFileChange({ relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
     }
   }
 

@@ -54,7 +54,7 @@ async function changeBranch(
     if (!workspace || workspace.id !== workspaceId) throw new GitSwitchRefusal(t('conveyor.errors.workspaceChanged'))
     const status = await change(activeCwd(ctx))
     if (ctx.workspaceManager.getActiveWorkspace()?.id === workspaceId) {
-      ctx.broadcast(IPC_CHANNELS.EVENT_FILE_CHANGE, { changeType: 'change', relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
+      ctx.broadcast(IPC_CHANNELS.EVENT_FILE_CHANGE, { relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
     }
     return { ok: true, status }
   } catch (err) {

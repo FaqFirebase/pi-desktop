@@ -3,8 +3,6 @@ import { test } from 'node:test'
 import { writeFile, mkdir, readFile, symlink } from 'fs/promises'
 import { join } from 'path'
 import { execFileSync } from 'child_process'
-import { once } from 'node:events'
-import type { FSWatcher } from 'chokidar'
 import {
   buildNewFileDiff,
   describeGitError,
@@ -90,19 +88,12 @@ function waitForChange(timeoutMs: number, matches: (event: FileChangeEvent) => b
   return { promise, onChange }
 }
 
-async function startWatching(service: FileService, onChange: (event: FileChangeEvent) => void): Promise<void> {
-  service.startWatching(onChange)
-  // Wait for the scan, not an arbitrary delay that depends on the machine.
-  const watcher = Reflect.get(service, 'watcher') as FSWatcher
-  await once(watcher, 'ready', { signal: AbortSignal.timeout(5000) })
-}
-
 async function testWatcherEmitsOnChange(): Promise<void> {
   const dir = makeTempDir('pi-fs-watch-')
   const service = new FileService(dir)
   const { promise, onChange } = waitForChange(3000)
 
-  await startWatching(service, onChange)
+  await service.startWatching(onChange)
   await writeFile(join(dir, 'hello.txt'), 'hi')
 
   const events = await promise
@@ -118,7 +109,7 @@ async function testWatcherIgnoresHeavyDirs(): Promise<void> {
   const service = new FileService(dir)
   const { promise, onChange } = waitForChange(1500)
 
-  await startWatching(service, onChange)
+  await service.startWatching(onChange)
   await writeFile(join(dir, 'node_modules', 'ignored.js'), 'x')
 
   const events = await promise
@@ -130,11 +121,12 @@ async function testWatcherIgnoresHeavyDirs(): Promise<void> {
 async function testWatcherDoesNotFollowSymlinks(): Promise<void> {
   const dir = makeTempDir('pi-fs-symlink-')
   const target = makeTempDir('pi-fs-symlink-target-')
-  await symlink(target, join(dir, 'alias'), 'dir')
+  // A junction needs no elevation on Windows; other platforms ignore the type.
+  await symlink(target, join(dir, 'alias'), 'junction')
   const service = new FileService(dir)
   const { promise, onChange } = waitForChange(1500)
 
-  await startWatching(service, onChange)
+  await service.startWatching(onChange)
   await writeFile(join(target, 'inside-target.txt'), 'x')
 
   const events = await promise
@@ -194,15 +186,14 @@ async function makeToolingWorkspace(): Promise<string> {
   return dir
 }
 
-function childNames(node: FileTreeNode): string[] {
-  return (node.children ?? []).map((child) => child.name)
+function names(entries: FileTreeNode[]): string[] {
+  return entries.map((entry) => entry.name)
 }
 
 test('project workspaces keep tooling folders in the tree and in search', async () => {
   const dir = await makeToolingWorkspace()
   const service = new FileService(dir, join(dir, 'not-home'))
-  const tree = await service.getFileTree()
-  assert.ok(childNames(tree).includes('.cargo'))
+  assert.ok(names(await service.listDirectory('')).includes('.cargo'))
   const found = await service.searchFiles('config.toml')
   assert.deepEqual(found.map((hit) => hit.relativePath).sort(), ['.cargo/config.toml', 'Projects/app/.cargo/config.toml'])
 })
@@ -210,8 +201,8 @@ test('project workspaces keep tooling folders in the tree and in search', async 
 test('a home workspace hides tooling stores only at its root', async () => {
   const dir = await makeToolingWorkspace()
   const service = new FileService(dir, dir)
-  const tree = await service.getFileTree()
-  assert.equal(childNames(tree).includes('.cargo'), false)
+  assert.equal(names(await service.listDirectory('')).includes('.cargo'), false)
+  assert.deepEqual(names(await service.listDirectory('Projects/app')), ['.cargo'])
   const found = await service.searchFiles('config.toml')
   assert.deepEqual(found.map((hit) => hit.relativePath), ['Projects/app/.cargo/config.toml'])
 })
@@ -233,9 +224,30 @@ test('an entry that cannot be listed hides only itself, not the rest of its fold
     t.skip('creating a symlink requires elevation on this platform')
     return
   }
-  const tree = await new FileService(dir, join(dir, 'not-home')).getFileTree()
-  assert.deepEqual(childNames(tree), ['folder', 'b.txt', 'c.txt'])
-  assert.deepEqual(childNames(tree.children!.find((child) => child.name === 'folder')!), ['b.txt', 'c.txt'])
+  const service = new FileService(dir, join(dir, 'not-home'))
+  assert.deepEqual(names(await service.listDirectory('')), ['folder', 'b.txt', 'c.txt'])
+  assert.deepEqual(names(await service.listDirectory('folder')), ['b.txt', 'c.txt'])
+})
+
+test('a folder lists its entries with workspace paths, folders first', async () => {
+  const dir = makeTempDir('pi-fs-list-')
+  await mkdir(join(dir, 'src', 'b-folder'), { recursive: true })
+  await writeFile(join(dir, 'src', 'a.ts'), 'a')
+  const entries = await new FileService(dir, join(dir, 'not-home')).listDirectory('src')
+  assert.deepEqual(entries, [
+    { name: 'b-folder', path: join(dir, 'src', 'b-folder'), relativePath: 'src/b-folder', type: 'directory' },
+    { name: 'a.ts', path: join(dir, 'src', 'a.ts'), relativePath: 'src/a.ts', type: 'file' },
+  ])
+})
+
+test('listing refuses folders outside the workspace and fails for a missing folder', async () => {
+  const dir = makeTempDir('pi-fs-list-escape-')
+  const service = new FileService(join(dir, 'workspace'), join(dir, 'not-home'))
+  await mkdir(join(dir, 'workspace'))
+  for (const outside of ['..', '../other', dir]) {
+    await assert.rejects(service.listDirectory(outside), /outside/i, outside)
+  }
+  await assert.rejects(service.listDirectory('missing'), { code: 'ENOENT' })
 })
 
 // A stale network or FUSE mount (ENOTCONN, ESTALE), a disk error (EIO) or an
@@ -255,8 +267,7 @@ test('Git config files show in the tree and in search, the .git folder does not'
   await mkdir(join(dir, '.github', 'workflows'), { recursive: true })
   await writeFile(join(dir, '.github', 'workflows', 'ci.yml'), 'on: push\n')
   const service = new FileService(dir, join(dir, 'not-home'))
-  const tree = await service.getFileTree()
-  assert.deepEqual(childNames(tree).sort(), ['.github', '.gitignore'])
+  assert.deepEqual(names(await service.listDirectory('')).sort(), ['.github', '.gitignore'])
   const found = await service.searchFiles('i')
   assert.deepEqual(found.map((hit) => hit.relativePath).sort(), ['.github/workflows/ci.yml', '.gitignore'])
 })
@@ -267,7 +278,7 @@ async function testHomeWatcherIgnoresRootToolingOnly(): Promise<void> {
   const nestedFile = 'Projects/app/.cargo/seen.toml'
   const { promise, onChange } = waitForChange(3000, (event) => event.relativePath === nestedFile)
 
-  await startWatching(service, onChange)
+  await service.startWatching(onChange)
   await writeFile(join(dir, '.cargo', 'ignored.toml'), 'x')
   // Exercise the real watcher/debounce window before the nested write; fake
   // timers cannot advance operating-system file events.
