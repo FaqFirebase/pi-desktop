@@ -1321,7 +1321,7 @@ test('no disk watcher is attached until the renderer demands change events', asy
     assert.equal(
       mgr.getWatchedWorkspaceId(),
       null,
-      'cold start with an active workspace must not pay the chokidar cost'
+      'cold start with an active workspace must not pay the disk watch cost'
     )
   })
 })

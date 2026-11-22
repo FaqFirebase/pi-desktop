@@ -46,7 +46,6 @@
     "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
-    "chokidar": "^5.0.0",
     "i18next": "^26.4.2",
     "node-pty": "^1.1.0",
     "yaml": "^2.9.0"

@@ -184,7 +184,7 @@ export function ChatPanel(): React.JSX.Element {
     sidePanelStacked ? paneLayout.sidePanelRowWidth + MIN_CHAT_COLUMN_WIDTH : paneLayout.sidePanelRowWidth
   )
 
-  // Disk watching is demand-driven: the main process only attaches chokidar
+  // Disk watching is demand-driven: the main process only attaches the watcher
   // while a visible files or diff panel consumes change events. Without this,
   // cold start and the Home view would pay the full workspace-watch cost for a
   // tree nobody is looking at — and ChatPanel stays mounted (just hidden)

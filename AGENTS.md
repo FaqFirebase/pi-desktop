@@ -136,7 +136,7 @@ src/
 │   ├── git-conveyor.ts           # Validated commit, push, branch, and GitHub PR commands
 │   ├── commit-message-generator.ts # One-shot engine run that suggests a commit subject
 │   ├── commit-message-service.ts # Commit message suggestions cached per workspace and diff
-│   ├── file-service.ts           # Folder listings for the tree, search, git status, disk watcher (native recursive on Windows/macOS, chokidar on Linux), read/write
+│   ├── file-service.ts           # Folder listings for the tree, search, git status, disk watcher (native recursive on Windows/macOS, one watch per folder on Linux), read/write
 │   ├── terminal-service.ts       # node-pty PTY management
 │   ├── workspace-terminals.ts    # One PTY per workspace, independent of the visible panel
 │   ├── terminal-program.ts       # The program an editor PTY starts: direct, or through cmd.exe for a Windows shim
@@ -185,6 +185,7 @@ src/
 │   ├── subagent-transcripts.ts   # Subagent transcripts: OMP RPC, pi-subagents inspect command, foreground session files
 │   ├── git-worktree.ts           # Isolated Git worktrees for New Task; a missing git binary is GitNotInstalledError
 │   ├── git-head-watcher.ts       # Reports a HEAD or local branch change made outside the app; always on for the active workspace
+│   ├── folder-tree-watcher.ts    # Linux disk watcher: one fs.watch per folder, none per file; follows folders made or removed later
 │   ├── repo-sets.ts              # Saved repo sets (repo-sets.json); a picked folder resolves to the top of its checkout
 │   ├── linked-worktrees.ts       # Worktrees of an isolated linked task, one shared branch
 │   ├── linked-ship.ts            # Ship all: commit, push, and pull request per repository, linked repositories first
@@ -502,7 +503,7 @@ resources/
 ### File and project
 
 - File tree with git status badges (M/A/D/R/U). A folder is listed when it is opened (`files.listDir`), never the whole tree up front; refreshes re-list only the root and open folders, one load at a time
-- The disk watcher runs only while a files or diff panel is on screen. Windows and macOS use one native recursive `fs.watch` (no scan, no handle per entry); Linux uses chokidar, 4 levels deep
+- The disk watcher runs only while a files or diff panel is on screen. Windows and macOS use one native recursive `fs.watch` (no scan, no handle per entry); Linux uses one `fs.watch` per folder, none per file, down to 5 folder levels
 - File search by name and content
 - Git branch indicator and branch menu in the status bar
 - Git diff viewer (working and staged)

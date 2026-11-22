@@ -1,4 +1,3 @@
-import { watch as chokidarWatch } from 'chokidar'
 import { readdir, stat, readFile, writeFile, realpath } from 'fs/promises'
 import { watch as fsWatch, type Dirent } from 'fs'
 import { join, extname, basename, resolve, relative, isAbsolute, sep, dirname } from 'path'
@@ -9,6 +8,7 @@ import { describeWriteError } from './fs-errors'
 import { appLog } from './app-log'
 import { WHOLE_WORKSPACE_CHANGE_PATH, type FileChangeEvent, type FileTreeNode } from '../shared/ipc-contracts'
 import { watchGitHead } from './git-head-watcher'
+import { watchFolderTree } from './folder-tree-watcher'
 import { parsePorcelainZEntries } from './git-conveyor'
 import { gitProcessEnv } from './git-worktree'
 import {
@@ -138,7 +138,7 @@ const IGNORED_DIRS = new Set([
 /**
  * Package caches and tool state that live under a home-directory workspace.
  * Each holds thousands of directories, so watching them exhausts file
- * descriptors long before `WATCH_DEPTH` bounds the walk.
+ * watches long before `WATCH_MAX_FOLDER_DEPTH` bounds the walk.
  */
 const HOME_TOOLING_IGNORED = new Set([
   '.npm', '.pnpm-store', '.yarn', '.bun', '.nvm', '.cargo', '.rustup',
@@ -202,19 +202,18 @@ const WORKSPACE_ROOT_DEPTH = 0
 const watchErrorLogged = new Set<string>()
 
 // Watcher tuning. Burst writes (e.g. an agent editing several files) are
-// coalesced into one refresh. On Linux, chokidar's walk stops at
-// `WATCH_DEPTH`, so it never recurses into deep subtrees of a home-directory
-// workspace; changes deeper down reach the tree through its safety poll.
-const WATCH_DEPTH = 4
+// coalesced into one refresh. On Linux, the walk stops at
+// `WATCH_MAX_FOLDER_DEPTH` (the root is level 0), so it never recurses into
+// deep subtrees of a home-directory workspace; changes deeper down reach the
+// tree through its safety poll.
+const WATCH_MAX_FOLDER_DEPTH = 5
 const WATCH_DEBOUNCE_MS = 250
 
 /**
  * Windows and macOS watch a whole tree with one native handle
- * (ReadDirectoryChangesW, FSEvents): no scan and no handle per entry. chokidar
- * opens a synchronous `fs.watch` for every file and folder, which held the
- * main process for seconds on a home-directory workspace. Linux has no native
- * recursive watch (Node walks the tree in JavaScript, with no ignore list), so
- * it keeps chokidar.
+ * (ReadDirectoryChangesW, FSEvents): no scan and no handle per entry. Linux has
+ * no native recursive watch (Node walks the tree in JavaScript, with no ignore
+ * list), so it uses `watchFolderTree`: one watch per folder, none per file.
  */
 const NATIVE_RECURSIVE_WATCH = process.platform === 'win32' || process.platform === 'darwin'
 
@@ -642,12 +641,13 @@ export class FileService {
    * Start watching the workspace for file changes and invoke `callback`
    * (debounced) when files are added, changed, or removed. Heavy and hidden
    * directories are ignored. Windows and macOS use one native recursive watch;
-   * Linux uses chokidar bounded to `WATCH_DEPTH`, so it stays cheap even when
-   * the workspace is the user's home directory. `.git` is skipped;
-   * `startGitWatching` covers HEAD and the branches. Resolves once changes are
-   * reported (after chokidar's initial scan). Watch failures are logged, never
-   * thrown: the tree's safety poll still keeps it fresh. Idempotent per
-   * instance: a second call replaces the previous watcher.
+   * Linux watches each folder down to `WATCH_MAX_FOLDER_DEPTH`, so it stays
+   * cheap even when the workspace is the user's home directory. `.git` is
+   * skipped; `startGitWatching` covers HEAD and the branches. Resolves once
+   * changes are reported (after the initial folder walk on Linux). Watch
+   * failures are logged, never thrown: the tree's safety poll still keeps it
+   * fresh. Idempotent per instance: a second call replaces the previous
+   * watcher.
    */
   startWatching(callback: FileChangeCallback): Promise<void> {
     this.stopWatching()
@@ -663,7 +663,7 @@ export class FileService {
       }, WATCH_DEBOUNCE_MS)
     }
 
-    if (!NATIVE_RECURSIVE_WATCH) return this.watchWithChokidar(emit)
+    if (!NATIVE_RECURSIVE_WATCH) return this.watchEachFolder(emit)
     this.watchNatively(emit)
     return Promise.resolve()
   }
@@ -689,24 +689,15 @@ export class FileService {
     }
   }
 
-  private watchWithChokidar(emit: (relativePath: string) => void): Promise<void> {
-    const watcher = chokidarWatch(this.workspacePath, {
-      ignored: (path) => this.isIgnoredPath(path),
-      ignoreInitial: true,
-      // Ignores are decided by the link name, not its target, so a followed
-      // symlink can fan out into an unbounded tree (POSIX links into package
-      // stores). Never follow.
-      followSymlinks: false,
-      depth: WATCH_DEPTH,
-      awaitWriteFinish: { stabilityThreshold: WATCH_DEBOUNCE_MS, pollInterval: 50 },
-      persistent: true,
+  private watchEachFolder(emit: (relativePath: string) => void): Promise<void> {
+    const watch = watchFolderTree(this.workspacePath, {
+      maxDepth: WATCH_MAX_FOLDER_DEPTH,
+      isIgnored: (relativePath) => this.isIgnoredRelativePath(relativePath),
+      onChange: emit,
+      onError: (err) => this.reportWatchError(err),
     })
-    watcher
-      .on('all', (_event, absolutePath) => emit(toTreePath(relative(this.workspacePath, absolutePath))))
-      .on('error', (err) => this.reportWatchError(err))
-    this.closeWatcher = () => void watcher.close()
-    // Not events.once: it rejects on the scan's first 'error', which is only logged here.
-    return new Promise((resolve) => watcher.once('ready', () => resolve()))
+    this.closeWatcher = watch.close
+    return watch.ready
   }
 
   /** Tolerate watch failures (EPERM on protected folders, ENOSPC on large trees): log each kind once. */
@@ -760,13 +751,7 @@ export class FileService {
     this.stopGitHeadWatch = null
   }
 
-  /** True if any path segment under the workspace is an ignored directory. */
-  private isIgnoredPath(absolutePath: string): boolean {
-    const rel = relative(this.workspacePath, absolutePath)
-    if (!rel || rel.startsWith('..')) return false
-    return this.isIgnoredRelativePath(rel)
-  }
-
+  /** True if any segment of a workspace-relative path is an ignored directory. */
   private isIgnoredRelativePath(relativePath: string): boolean {
     return relativePath.split(/[\\/]/).some((segment, depth) => this.isIgnoredEntry(segment, depth))
   }

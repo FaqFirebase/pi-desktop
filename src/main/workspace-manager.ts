@@ -292,7 +292,7 @@ export class WorkspaceManager {
 
     this.watchingWorkspaceId = target
     if (target) {
-      // Resolves after chokidar's initial scan on Linux; nothing here waits for it.
+      // Resolves after the initial folder walk on Linux; nothing here waits for it.
       void this.fileServices.get(target)?.startWatching((event) => this.emitFileChange(event))
     }
   }
