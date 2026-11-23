@@ -62,6 +62,7 @@ export function QuickChatApp({ api = window.piQuickChat }: { api?: QuickChatApi 
   }), [api, target])
   const voice = useMemo<ChatSessionBindings['voice']>(() => ({
     loadStatus: () => api.voiceStatus(),
+    transcribeOnServer: (audio) => api.voiceTranscribe(audio),
     openSettings: () => api.openSettings(),
     globalShortcuts: false,
   }), [api])

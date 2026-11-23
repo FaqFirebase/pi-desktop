@@ -31,7 +31,7 @@ Pi Desktop is in alpha, so expect rough edges.
 - [Keyboard shortcuts](#keyboard-shortcuts) you can change in Settings, [themes](#custom-themes) (7 built-ins, System, and your own), and a UI font setting
 - [Multi-Agent Council Planning](#multi-agent-council-planning): Pi, Claude, and Codex plan together before Pi builds (opt-in)
 - [TypeSafe Jev](#typesafe-jev): save your TypeSafe API key once and install the Jev skill for Pi and OMP (opt-in)
-- [Voice dictation](#voice-dictation) that runs on your machine with a model you pick (opt-in)
+- [Voice dictation](#voice-dictation) that runs on your machine with a model you pick, or on a speech-to-text server you choose (opt-in)
 - [Translatable interface](#languages) (English, Russian, Simplified Chinese, Turkish, and Ukrainian ship today)
 
 ## Review panel
@@ -184,9 +184,11 @@ To learn more, see the TypeSafe [quickstart](https://docs.typesafe.ai/introducti
 
 Click the microphone in the composer and start talking. Your words show up in the prompt box while you speak, and recording stops after a short pause (or click the mic to stop). The text stays in the box for you to read and edit; the app never sends it for you.
 
-Speech-to-text runs on your own computer. No model ships with the app and none is selected by default, so nothing downloads until you choose one in **Settings > Voice dictation**. The model you pick downloads once, with a progress bar, into the app's data folder.
+By default, speech-to-text runs on your own computer. No model ships with the app and none is selected by default, so nothing downloads until you choose one in **Settings > Voice dictation**. The model you pick downloads once, with a progress bar, into the app's data folder.
 
 The right model depends on your machine and language. Moonshine is small and fast and handles English well, so it is a good first choice. Whisper covers many languages. Parakeet V3 is the most accurate and also covers many languages, but it is a much larger download. Bigger models are more accurate but run slower and use more disk. Models use your graphics card when there is one and fall back to the processor otherwise.
+
+You can use a speech-to-text server instead, for example one you run on another machine. In **Settings > Voice dictation**, pick **On a server you choose** and enter its address and model, plus a language, a prompt, or an API key if you want them. The server must accept OpenAI-compatible transcription requests (`POST <address>/audio/transcriptions`). Each time you pause, the app sends what you said since the last pause to that address as a WAV file. The API key is kept in its own file in the app's data folder, not in the settings file.
 
 ## Getting started
 

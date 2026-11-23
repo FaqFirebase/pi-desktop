@@ -95,6 +95,7 @@ src/
 │   ├── terminal-height.ts        # Default and bounds for the resizable terminal
 │   ├── typesafe.ts               # TypeSafe (Jev) values shared by both processes
 │   ├── voice-models.ts           # On-device speech-to-text model catalog (other voice-*.ts hold dictation helpers)
+│   ├── voice-server.ts           # Transcription server settings, endpoint rule, which transcriber dictation uses
 │   ├── workflow-control.ts       # Control eligibility for persisted workflow runs
 │   └── theme/                    # Theme-file format, resolver, syntax defaults, tokens
 ├── main/
@@ -198,6 +199,7 @@ src/
 │   ├── voice-model-download.ts   # Pick and download one speech model's files
 │   ├── voice-protocol.ts         # `pi-voice` scheme that serves model files to the renderer
 │   ├── voice-gpu-switches.ts     # Chromium GPU switches for the saved voice device, read before app ready
+│   ├── voice-server-transcription.ts # One segment as WAV to the user's OpenAI-compatible server; its API key file
 │   ├── global-dictation-shortcut.ts # System-wide dictation key (Electron globalShortcut), toggles the composer mic
 │   ├── workflow-monitor.ts       # ~/.pi/workflows run and project discovery
 │   ├── tray-manager.ts           # System-tray lifecycle (minimize to tray on close)
@@ -568,7 +570,7 @@ Click the status icon in the sidebar header to see:
 - Run on startup, Minimize to tray on close (Windows/Linux), Resume last session, desktop notifications
 - Keyboard shortcuts (see Keyboard shortcuts above)
 - Custom theme editor: create, edit, import/export, install from URL, browse the community gallery (theme files live in the GUI data dir `themes/`)
-- Voice dictation: speech model, precision, and device; models download into `<GUI data dir>/speech-models/`
+- Voice dictation: where speech becomes text (`voiceTranscriber`, `local` by default, or `server`). Local: speech model, precision, and device; models download into `<GUI data dir>/speech-models/`. Server: `voiceServer` (`baseUrl`, `model`, `language`, `prompt`; empty language and prompt are not sent). The main process makes the call, since the renderer CSP allows no network: each segment the dictation hook cuts goes as 16 kHz mono 16-bit WAV in a multipart `POST {baseUrl}/audio/transcriptions`, one at a time, with `VOICE_SERVER_TIMEOUT_MS`, and the answer is `{ text }`. An optional API key goes in `<GUI data dir>/voice-server-api-key` and is sent as a Bearer token; it is read again on each request, so another program may write it (and `settings.json`) while the app runs
 - TypeSafe Jev: API key and Jev skill install
 - Every field live-previews before Save through a unified settings draft (`store.ts` `settingsDraft`); the draft survives view switches; Save persists it, and Reset restores `DEFAULT_SETTINGS`
 - Permission rules: user-defined allow/deny rules (a glob per Pi tool) on top of the permission modes. Deny beats allow, and allow beats the mode default; deny applies in every mode. Global rules live in `<GUI data dir>/permission-rules.json`. A workspace `.pi-desktop/permission-rules.json` depends on workspace trust: when the workspace is trusted, it replaces the global rules; when it is untrusted (the default), only its deny rules apply, on top of the global rules, and its allow rules are ignored (a repo can tighten, never grant). Opening a workspace whose rules file has allow rules shows a trust prompt; the editor's Global tab notes the override, and the This workspace tab has a Trust/Revoke control. Settings > Behavior edits BOTH scopes through Global | This workspace tabs: create, edit, and remove workspace rules (in-app danger confirmation), Copy from global (seeds an unsaved draft from the current global list), and per-scope JSON import/export. Hand edits to either file on disk are supported: switching scope tabs re-reads that file when the scope has no unsaved draft. Engine: `resources/permission-rules.ts`, shared by the Pi extension (jiti relative import, mtime-cached live re-read) and the main process. The permissions extension always loads alongside Pi when it is present on disk, whatever the mode and whether or not rules exist, so a rules file created mid-session is enforced at once.
@@ -628,6 +630,7 @@ Instances on different data dirs can read one session store, and two agents on o
 | `<GUI data dir>/themes/` | User theme files |
 | `<GUI data dir>/typesafe-api-key` | TypeSafe API key (owner-only file) |
 | `<GUI data dir>/speech-models/` | Downloaded voice dictation models |
+| `<GUI data dir>/voice-server-api-key` | API key of the voice transcription server (owner-only file) |
 | `<workspace>/.pi-desktop/permission-rules.json` | Workspace permission rules |
 | `~/.pi/agent/sessions/` | Pi session files (organized by cwd) |
 | `~/.omp/agent/sessions/` | OMP session files (same layout; OMP writes here regardless of flags) |

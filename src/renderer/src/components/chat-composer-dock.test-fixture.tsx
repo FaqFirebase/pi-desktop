@@ -65,7 +65,12 @@ function mount(accept: boolean) {
       commands: [], guiCommands: [],
     },
     approval: { request: null, notify: null, answering: false, respond: () => {}, cancel: () => {}, dismissNotify: () => {} },
-    voice: { loadStatus: async () => { throw new Error('Voice is outside this composer probe') }, openSettings: () => {}, globalShortcuts: false },
+    voice: {
+      loadStatus: async () => { throw new Error('Voice is outside this composer probe') },
+      transcribeOnServer: async () => { throw new Error('Voice is outside this composer probe') },
+      openSettings: () => {},
+      globalShortcuts: false,
+    },
   }
   function render(): void {
     root.render(

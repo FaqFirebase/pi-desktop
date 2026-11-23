@@ -1,4 +1,4 @@
-import { mkdir, rename, rm, writeFile } from 'fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'fs/promises'
 import { readFileSync } from 'fs'
 import { dirname } from 'path'
 
@@ -38,6 +38,22 @@ export class ApiKeyStore {
    */
   getSavedKey(): string | null {
     if (this.cached === undefined) this.cached = this.readFromDisk()
+    return this.cached
+  }
+
+  /**
+   * Read the file again, so a key another program saved since the last read
+   * is used at once. A missing file is no key; any other read error throws.
+   */
+  async readSavedKey(): Promise<string | null> {
+    let text: string
+    try {
+      text = await readFile(this.resolvePath(), 'utf8')
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+      text = ''
+    }
+    this.cached = normalizeApiKey(text)
     return this.cached
   }
 

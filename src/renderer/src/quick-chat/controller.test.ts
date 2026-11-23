@@ -85,6 +85,7 @@ function harness(initial: QuickChatBinding | null = binding('A')): {
     listCommands: async () => [],
     searchFiles: async () => [],
     voiceStatus: async () => { throw new Error('voice is not used by the controller') },
+    voiceTranscribe: async () => { throw new Error('voice is not used by the controller') },
     openSettings: async () => {},
     setRuntimeModel: async (input) => { modelCalls.push({ provider: input.provider, modelId: input.modelId, version: input.version }); return { type: 'response', command: 'set_model', success: true } },
     setRuntimeThinking: async (input) => { thinkingCalls.push({ level: input.level, version: input.version }); return { type: 'response', command: 'set_thinking_level', success: true } },

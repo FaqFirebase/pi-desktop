@@ -19,6 +19,7 @@ import { createPiEventRouter } from '../pi-event-router'
 import { stripInjectedPreamble } from '../../shared/session-preview'
 import { engineProjectSessionDirs } from '../latest-project-session'
 import { makeTempDir } from '../../shared/temp-dir.test-helper'
+import { t } from '../../shared/i18n'
 
 // Electron names are bound when a main-process module first imports them, so
 // the stub must be in place before any module that touches Electron loads.
@@ -895,6 +896,7 @@ test('every popup query rejects other windows, subframes, and stale runtime vers
       [QUICK_CHAT_CHANNELS.listCommands, runtime],
       [QUICK_CHAT_CHANNELS.searchFiles, { target: runtime, query: 'file' }],
       [QUICK_CHAT_CHANNELS.voiceStatus, undefined],
+      [QUICK_CHAT_CHANNELS.voiceTranscribe, new Float32Array(1)],
       [QUICK_CHAT_CHANNELS.openSettings, undefined],
     ] as const
     for (const [channel, input] of queries) {
@@ -1031,6 +1033,15 @@ test('voice status shares main settings/catalog behavior and Settings leaves bot
     const context = await h.invoke(QUICK_CHAT_CHANNELS.context) as QuickChatContext
     assert.equal(context.binding?.version, selected.version)
     assert.equal(context.binding?.runtime.runtimeId, h.alpha.runtimeId)
+  })
+})
+
+test('popup dictation takes the same server path as the main window, payload check first', async () => {
+  await withBridge(async (h) => {
+    await assert.rejects(h.invoke(QUICK_CHAT_CHANNELS.voiceTranscribe, [0, 0.5]), /Float32Array/)
+    // No server is set, so the shared path refuses before any request.
+    await assert.rejects(h.invoke(QUICK_CHAT_CHANNELS.voiceTranscribe, new Float32Array(1)),
+      { message: t('errors.voice.serverNotConfigured') })
   })
 })
 

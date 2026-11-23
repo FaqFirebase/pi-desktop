@@ -777,6 +777,13 @@
       "skillDownloadFailed": "{{file}} indirilemedi (HTTP {{status}}).",
       "skillInstalledElsewhere": "Pi Desktop'ın kurmadığı bir TypeSafe skill'i zaten şurada: {{directory}}. Pi Desktop onu değiştirmedi."
     },
+    "voice": {
+      "serverBadResponse": "",
+      "serverNotConfigured": "",
+      "serverStatus": "",
+      "serverTimeout": "",
+      "serverUnreachable": ""
+    },
     "workflow": {
       "runNotFound": "İş akışı çalıştırması bulunamadı"
     },
@@ -1683,7 +1690,34 @@
       "runtimeCpuNoGpu": "Kullanılabilir ekran kartı bulunamadı; ses, her modelin CPU sürümüyle işlemcide (CPU) çalışır.",
       "runtimeGpu": "Her modelin GPU sürümüyle ekran kartında ({{name}}) çalışır.",
       "selected": "Kullanımda",
+      "server": {
+        "address": "",
+        "addressInvalid": "",
+        "addressPlaceholder": "",
+        "addressTip": "",
+        "intro": "",
+        "key": "",
+        "keyInvalid": "",
+        "keyPlaceholder": "",
+        "keyRemove": "",
+        "keySave": "",
+        "keySaved": "",
+        "language": "",
+        "languagePlaceholder": "",
+        "model": "",
+        "modelPlaceholder": "",
+        "notReady": "",
+        "prompt": "",
+        "promptPlaceholder": "",
+        "ready": "",
+        "save": ""
+      },
       "sizeMb": "~{{mb}} MB",
+      "transcribe": "",
+      "transcriber": {
+        "local": "",
+        "server": ""
+      },
       "use": "Kullan"
     }
   },

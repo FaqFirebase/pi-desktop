@@ -9,7 +9,8 @@ export const QUICK_CHAT_CHANNELS = {
   listModels: 'quick-chat:list-models', setRuntimeModel: 'quick-chat:set-runtime-model',
   setRuntimeThinking: 'quick-chat:set-runtime-thinking',
   searchFiles: 'quick-chat:search-files', listCommands: 'quick-chat:list-commands',
-  voiceStatus: 'quick-chat:voice-status', openSettings: 'quick-chat:open-settings',
+  voiceStatus: 'quick-chat:voice-status', voiceTranscribe: 'quick-chat:voice-transcribe',
+  openSettings: 'quick-chat:open-settings',
   pickAttachment: 'quick-chat:pick-attachment',
   // Same intake as IPC_CHANNELS.RENDERER_ERROR_REPORT. A separate name keeps
   // this sandboxed preload free of ipc-contracts: a module both preloads
@@ -90,6 +91,8 @@ export interface QuickChatApi {
   searchFiles(input: { target: QuickChatQueryTarget; query: string }): Promise<FileSearchResult[]>
   listCommands(target: QuickChatQueryTarget): Promise<unknown[]>
   voiceStatus(): Promise<VoiceStatus>
+  /** Same as the main window's voice.transcribe. */
+  voiceTranscribe(audio: Float32Array): Promise<string>
   openSettings(): Promise<void>
   /** Switch the bound runtime's model. Refused while busy, awaiting approval, stopping, or stopped. */
   setRuntimeModel(input: { version: number; provider: string; modelId: string }): Promise<PiResponseEvent | null>

@@ -15,6 +15,7 @@ const api: QuickChatApi = {
   searchFiles: (input) => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.searchFiles, input),
   listCommands: (target) => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.listCommands, target),
   voiceStatus: () => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.voiceStatus),
+  voiceTranscribe: (audio) => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.voiceTranscribe, audio),
   openSettings: () => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.openSettings),
   setRuntimeModel: (input) => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.setRuntimeModel, input),
   setRuntimeThinking: (input) => ipcRenderer.invoke(QUICK_CHAT_CHANNELS.setRuntimeThinking, input),

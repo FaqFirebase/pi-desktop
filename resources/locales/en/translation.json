@@ -777,6 +777,13 @@
       "skillDownloadFailed": "Could not download {{file}} (HTTP {{status}}).",
       "skillInstalledElsewhere": "A TypeSafe skill that Pi Desktop did not install is already at {{directory}}. Pi Desktop did not change it."
     },
+    "voice": {
+      "serverBadResponse": "The speech server's answer has no text.",
+      "serverNotConfigured": "Enter the speech server's address and model in Settings > Voice dictation.",
+      "serverStatus": "The speech server answered with error {{status}}: {{detail}}",
+      "serverTimeout": "The speech server at {{url}} did not answer within {{seconds}} seconds.",
+      "serverUnreachable": "Could not reach the speech server at {{url}} ({{reason}})."
+    },
     "workflow": {
       "runNotFound": "Workflow run not found"
     },
@@ -1683,7 +1690,34 @@
       "runtimeCpuNoGpu": "No usable graphics card found, so voice runs on the processor (CPU) with the CPU version of each model.",
       "runtimeGpu": "Runs on your graphics card ({{name}}) with the GPU version of each model.",
       "selected": "In use",
+      "server": {
+        "address": "Server address",
+        "addressInvalid": "Enter an http:// or https:// address, without a user name, query, or #.",
+        "addressPlaceholder": "https://speech.example.com/v1",
+        "addressTip": "Your recorded speech is sent to this address to be turned into text.",
+        "intro": "Each time you pause, Pi Desktop sends what you said to this server and adds the text it returns. The server must accept OpenAI-compatible transcription requests.",
+        "key": "API key (optional)",
+        "keyInvalid": "That does not look like an API key. Paste the key without spaces or line breaks.",
+        "keyPlaceholder": "Paste the server's API key",
+        "keyRemove": "Remove",
+        "keySave": "Save key",
+        "keySaved": "Key saved",
+        "language": "Language",
+        "languagePlaceholder": "Detect automatically",
+        "model": "Model",
+        "modelPlaceholder": "Model name on the server",
+        "notReady": "Enter the address and model to dictate with this server.",
+        "prompt": "Prompt",
+        "promptPlaceholder": "Optional words or style for the transcript",
+        "ready": "Dictation uses this server.",
+        "save": "Save"
+      },
       "sizeMb": "~{{mb}} MB",
+      "transcribe": "Transcribe",
+      "transcriber": {
+        "local": "On this computer",
+        "server": "On a server you choose"
+      },
       "use": "Use"
     }
   },
