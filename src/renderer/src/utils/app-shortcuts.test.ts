@@ -368,6 +368,30 @@ test('push to talk holds while its keys are down and releases on its own key-up 
   unsubscribe()
 })
 
+test('push to talk on Mod+Space types no space in the composer, and in the terminal Ctrl+Space goes to the shell', () => {
+  const commands: VoiceShortcutCommand[] = []
+  const unsubscribe = onVoiceShortcut((command) => commands.push(command))
+  useAppStore.setState({ settings: { ...DEFAULT_SETTINGS, shortcuts: { ...DEFAULT_SETTINGS.shortcuts, pushToTalk: 'Mod+Space' } } })
+  for (const platform of ['darwin', 'linux']) {
+    setPlatform(platform)
+    const space = { ...(platform === 'darwin' ? {} : CTRL), key: ' ', code: 'Space' }
+    const pressed = keyEvent(space)
+    press(pressed, () => assert.fail('the composer never gets the key'))
+    assert.equal(pressed.defaultPrevented, true)
+    handleAppShortcutRelease(keyEvent({ ...space, metaKey: false, ctrlKey: false }))
+  }
+  assert.deepEqual(commands, ['hold', 'release', 'hold', 'release'])
+  // xterm sends Ctrl+Space to the shell as NUL, like the other plain Ctrl keys.
+  let reachedShell = false
+  press(keyEvent({ ...CTRL, key: ' ', code: 'Space', target: new Target([TERMINAL]) }), (event) => {
+    reachedShell = true
+    xtermSendsKey(event)
+  })
+  assert.equal(reachedShell, true)
+  assert.deepEqual(commands, ['hold', 'release', 'hold', 'release'])
+  unsubscribe()
+})
+
 test('the system-wide dictation key is left to the main process when it reaches the window', () => {
   const commands: VoiceShortcutCommand[] = []
   const unsubscribe = onVoiceShortcut((command) => commands.push(command))

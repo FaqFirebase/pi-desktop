@@ -1565,7 +1565,7 @@
       "globalUnsaved": "Save to apply this change. The system registration below still uses the saved setting.",
       "heading": "Keyboard shortcuts",
       "inUse": "{{shortcut}} is already used by {{action}}. Choose another combination.",
-      "invalid": "Use Cmd or Ctrl with a letter, number, punctuation key, or F1–F12.",
+      "invalid": "Use Cmd or Ctrl with a letter, number, punctuation key, Space, or F1–F12.",
       "modelSelector": "Model selector",
       "nextProject": "Next project",
       "nextSession": "Next open session",

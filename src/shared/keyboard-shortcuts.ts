@@ -56,7 +56,7 @@ const MODIFIER_KEYS: Record<string, string> = { Control: 'Ctrl', Meta: 'Meta', A
 const ACCELERATOR_MODIFIERS: Record<string, string> = {
   Mod: 'CommandOrControl', Ctrl: 'Control', Meta: 'Super', Alt: 'Alt', Shift: 'Shift',
 }
-const KEY_PATTERN = /^(?:[A-Z0-9]|F(?:[1-9]|1[0-2])|Backquote|Comma|Period|Slash|Backslash|BracketLeft|BracketRight|Minus|Equal|Semicolon|Quote)$/
+const KEY_PATTERN = /^(?:[A-Z0-9]|F(?:[1-9]|1[0-2])|Space|Backquote|Comma|Period|Slash|Backslash|BracketLeft|BracketRight|Minus|Equal|Semicolon|Quote)$/
 
 function parseShortcut(value: unknown): string[] | null {
   if (typeof value !== 'string') return null

@@ -245,7 +245,7 @@ Launching again with the same folder brings that window to the front. Only one w
 
 ## Keyboard shortcuts
 
-You can change the app shortcuts in **Settings > Keyboard shortcuts**, or turn any of them off. `Mod` is `Cmd` on macOS and `Ctrl` elsewhere. The defaults:
+You can change the app shortcuts in **Settings > Keyboard shortcuts**, or turn any of them off. `Mod` is `Cmd` on macOS and `Ctrl` elsewhere. A shortcut is `Cmd` or `Ctrl` with a letter, number, punctuation key, `Space`, or `F1`–`F12`. Your system may keep some of them for itself, such as `Cmd+Space` (Spotlight) on macOS or `Ctrl+Space` (input language switch) on some desktops; the app never sees those. The defaults:
 
 | Shortcut | What it does |
 |----------|-------------|
