@@ -1,6 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { join } from 'path'
+import { mkdirSync, writeFileSync } from 'fs'
+import { dirname, join } from 'path'
+import { piDotenvPath } from './pi-dotenv'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 import {
   engineForBoundSession,
   engineForSessionPath,
@@ -201,5 +204,51 @@ test('expandPiPath reads paths the way Pi expandTildePath does', () => {
 test('PI_CODING_AGENT_DIR does not move the OMP session store', () => {
   withEnv({ HOME: '/home/tester', PI_CODING_AGENT_DIR: '/custom/pi-agent', OMP_CODING_AGENT_DIR: undefined }, () => {
     assert.equal(getOmpSessionsRoot(), join('/home/tester', '.omp', 'agent', 'sessions'))
+  })
+})
+
+/** A home directory whose ~/.pi/.env holds `text`. */
+function homeWithDotenv(text: string): string {
+  const home = makeTempDir('pi-paths-home-')
+  const dotenvPath = piDotenvPath(home)
+  mkdirSync(dirname(dotenvPath), { recursive: true })
+  writeFileSync(dotenvPath, text)
+  return home
+}
+
+const NO_AGENT_ENV = {
+  PI_CODING_AGENT_DIR: undefined,
+  OMP_CODING_AGENT_DIR: undefined,
+  OMP_PROFILE: undefined,
+  PI_PROFILE: undefined,
+}
+
+test('the Pi agent directory follows PI_CODING_AGENT_DIR from ~/.pi/.env, as the Pi child does', () => {
+  const home = homeWithDotenv('PI_CODING_AGENT_DIR=/dotenv/pi-agent\n')
+  withEnv({ ...NO_AGENT_ENV, HOME: home, USERPROFILE: home }, () => {
+    assert.equal(getPiAgentDir(), '/dotenv/pi-agent')
+    assert.equal(getSessionsRoot(), join('/dotenv/pi-agent', 'sessions'))
+    assert.equal(engineForSessionPath(join('/dotenv/pi-agent', 'sessions', '--p--', 's.jsonl')), 'pi')
+  })
+})
+
+test('the OMP session store follows OMP_CODING_AGENT_DIR from ~/.pi/.env', () => {
+  const home = homeWithDotenv('OMP_CODING_AGENT_DIR=/dotenv/omp-agent\n')
+  withEnv({ ...NO_AGENT_ENV, HOME: home, USERPROFILE: home }, () => {
+    assert.equal(getOmpSessionsRoot(), join('/dotenv/omp-agent', 'sessions'))
+  })
+})
+
+test('an agent directory in the environment wins over the one in ~/.pi/.env', () => {
+  const home = homeWithDotenv('PI_CODING_AGENT_DIR=/dotenv/pi-agent\nOMP_CODING_AGENT_DIR=/dotenv/omp-agent\n')
+  withEnv({
+    ...NO_AGENT_ENV,
+    HOME: home,
+    USERPROFILE: home,
+    PI_CODING_AGENT_DIR: '/env/pi-agent',
+    OMP_CODING_AGENT_DIR: '/env/omp-agent',
+  }, () => {
+    assert.equal(getPiAgentDir(), '/env/pi-agent')
+    assert.equal(getOmpSessionsRoot(), join('/env/omp-agent', 'sessions'))
   })
 })

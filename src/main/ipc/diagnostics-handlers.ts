@@ -3,7 +3,8 @@ import { writeFile } from 'fs/promises'
 import { IPC_CHANNELS, type LogExportResult } from '../../shared/ipc-contracts'
 import { t } from '../../shared/i18n'
 import { appLog } from '../app-log'
-import { collectDiagnostics, diagnosticsEnv } from '../diagnostics'
+import { collectDiagnostics } from '../diagnostics'
+import { agentEnv } from '../pi-dotenv'
 import { buildLogExport, LOG_EXPORT_EXTENSION, logExportFileName, serializeLogExport } from '../log-export'
 import { secretValuesFromEnv } from '../log-redaction'
 import type { IpcContext } from './context'
@@ -24,7 +25,7 @@ export function registerDiagnosticsHandlers(ctx: IpcContext): void {
       const file = buildLogExport({
         diagnostics,
         ...logFiles,
-        secretValues: secretValuesFromEnv(diagnosticsEnv()),
+        secretValues: secretValuesFromEnv(agentEnv()),
         exportedAt: Date.now(),
       })
       await writeFile(result.filePath, serializeLogExport(file), 'utf-8')

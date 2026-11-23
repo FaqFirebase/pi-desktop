@@ -4,9 +4,12 @@ import { fileURLToPath } from 'url'
 import { isPathWithin } from '../../resources/path-within'
 import type { AgentEngineKind } from '../shared/ipc-contracts'
 import { currentOmpProfile, ompAgentDirIn } from './omp-paths'
+import { agentEnv } from './pi-dotenv'
 
 /** Relocates Pi's whole agent directory, as Pi's own getAgentDir reads it. */
 export const PI_AGENT_DIR_ENV_VAR = 'PI_CODING_AGENT_DIR'
+/** Relocates the session store of OMP's default profile. */
+const OMP_AGENT_DIR_ENV_VAR = 'OMP_CODING_AGENT_DIR'
 const PI_HOME_DIR_NAME = '.pi'
 const PI_AGENT_DIR_NAME = 'agent'
 const SESSIONS_DIR_NAME = 'sessions'
@@ -46,13 +49,15 @@ export function expandPiPath(path: string, home: string, platform: NodeJS.Platfo
  * Pi's agent directory (`~/.pi/agent`, or `PI_CODING_AGENT_DIR` when set,
  * expanded by expandPiPath), resolved the way Pi resolves it so every file the
  * app reads or writes for Pi (settings, models, skills, packages, sessions) is
- * the one Pi itself uses. The home directory is `os.homedir()`, as in Pi:
- * `HOME` on POSIX (which is what tests override), `USERPROFILE` on Windows.
- * `home` replaces it for a caller that scans a given home. Read per call
- * because tests change the environment.
+ * the one Pi itself uses. The variable is read from the environment the Pi
+ * child gets (~/.pi/.env under the app's own, see agentEnv), so a directory
+ * set only in that file moves the app's reads along with Pi's writes. The home
+ * directory is `os.homedir()`, as in Pi: `HOME` on POSIX (which is what tests
+ * override), `USERPROFILE` on Windows. `home` replaces it for a caller that
+ * scans a given home. Read per call because tests change the environment.
  */
 export function getPiAgentDir(home: string = homedir()): string {
-  const configured = process.env[PI_AGENT_DIR_ENV_VAR]
+  const configured = agentEnv()[PI_AGENT_DIR_ENV_VAR]
   return configured ? expandPiPath(configured, home) : join(home, PI_HOME_DIR_NAME, PI_AGENT_DIR_NAME)
 }
 
@@ -73,11 +78,13 @@ export function getSessionsRoot(): string {
  * `~/.pi`, and neither is pointed at the other's tree. Both stores use the
  * same per-project directory naming and the same JSONL record shape, so the
  * index can read them side by side. `OMP_CODING_AGENT_DIR` relocates the
- * default profile's store only.
+ * default profile's store only, and is read from the OMP child's environment
+ * like the profile is (see agentEnv).
  */
 export function getOmpSessionsRoot(): string {
-  const profile = currentOmpProfile()
-  const agentDir = (!profile && process.env.OMP_CODING_AGENT_DIR) || ompAgentDirIn(homedir(), profile)
+  const env = agentEnv()
+  const profile = currentOmpProfile(env)
+  const agentDir = (!profile && env[OMP_AGENT_DIR_ENV_VAR]) || ompAgentDirIn(homedir(), profile)
   return join(agentDir, SESSIONS_DIR_NAME)
 }
 

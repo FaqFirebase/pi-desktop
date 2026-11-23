@@ -1,6 +1,6 @@
 import { join } from 'path'
 import { normalizeOmpProfile } from '../shared/omp-profile'
-import { loadPiDotenv } from './pi-dotenv'
+import { agentEnv } from './pi-dotenv'
 
 /**
  * OMP's on-disk layout for the profile OMP itself runs under.
@@ -39,11 +39,6 @@ export interface OmpProfileSelection {
 
 /** The agent arguments from the "default args" setting; see setOmpLaunchArgs. */
 let launchArgs: readonly string[] = []
-
-/** The environment every OMP child gets: ~/.pi/.env under the app's own (see buildPiRunEnv). */
-function agentEnv(): NodeJS.ProcessEnv {
-  return { ...loadPiDotenv(), ...process.env }
-}
 
 /**
  * The profile name `--profile` gives in `args`, read the way OMP reads its own

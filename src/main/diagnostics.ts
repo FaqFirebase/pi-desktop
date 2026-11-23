@@ -11,7 +11,7 @@ import {
 } from './diagnostics-report'
 import type { WorkspaceManager } from './workspace-manager'
 import { getConfiguredEngineKind, getPiCli, getPiResolution } from './pi-rpc-manager'
-import { loadPiDotenv } from './pi-dotenv'
+import { agentEnv } from './pi-dotenv'
 import { workspaceTrustStore } from './workspace-trust'
 import { getOmpSessionsRoot, getSessionsRoot } from './pi-paths'
 import { getGuiDataDir } from './app-data-paths'
@@ -26,11 +26,6 @@ import { readModelsConfigFile } from './ipc/models-config-handlers'
 import { getGitAvailability } from './ipc/git-availability-handlers'
 
 const PI_VERSION_TIMEOUT_MS = 10_000
-
-/** The environment agents run with: ~/.pi/.env under the app's own. */
-export function diagnosticsEnv(): NodeJS.ProcessEnv {
-  return { ...loadPiDotenv(), ...process.env }
-}
 
 async function readGlobalRuleCount(): Promise<{ count: number | null; error: string | null }> {
   const rulesPath = getGlobalPermissionRulesPath()
@@ -49,7 +44,7 @@ export async function collectDiagnostics(
   const settings = await loadAppSettings(workspaceManager)
   const cli = getPiCli()
   const resolution = getPiResolution()
-  const env = diagnosticsEnv()
+  const env = agentEnv()
   const secretValues = secretValuesFromEnv(env)
 
   const versionCwd = accountCommandCwd(workspaceManager.getActiveWorkspace()?.path)
