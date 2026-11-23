@@ -191,6 +191,7 @@ src/
 │   ├── linked-ship.ts            # Ship all: commit, push, and pull request per repository, linked repositories first
 │   ├── linked-task-status.ts     # One repo bar row per repository of a linked task
 │   ├── theme-store.ts            # User theme files: list, save, delete, install from URL, gallery
+│   ├── api-key-store.ts          # API key rule; one key in an owner-only file in the GUI data dir
 │   ├── typesafe-key-store.ts     # TypeSafe API key in an owner-only file in the GUI data dir
 │   ├── typesafe-skill.ts         # Install the TypeSafe agent skill from a pinned release, digest-checked
 │   ├── voice-model-store.ts      # Downloaded speech models under the GUI data dir
