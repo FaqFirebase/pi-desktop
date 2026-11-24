@@ -23,6 +23,11 @@ test('compaction, retry and command output use the shared notice wording', () =>
   assert.equal(chatEventNotice({ type: 'compaction_end', reason: 'threshold', result: {}, aborted: false, willRetry: false }), t('store.messages.contextCompacted'))
   assert.equal(chatEventNotice({ type: 'compaction_end', reason: 'threshold', result: null, aborted: true, willRetry: false }), t('store.messages.compactionAborted'))
   assert.equal(chatEventNotice({ type: 'compaction_end', reason: 'threshold', result: null, aborted: false, willRetry: false }), null)
+  const failure = 'Compaction failed: Nothing to compact (session too small)'
+  assert.equal(
+    chatEventNotice({ type: 'compaction_end', reason: 'manual', result: undefined, aborted: false, willRetry: false, errorMessage: failure }),
+    t('store.messages.error', { detail: failure }),
+  )
   assert.equal(
     chatEventNotice({ type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 0, errorMessage: PROVIDER_ERROR }),
     t('store.messages.retrying', { attempt: 1, maxAttempts: 3, detail: PROVIDER_ERROR }),

@@ -189,7 +189,9 @@ export function chatEventNotice(event: PiRpcEvent): string | null {
       return t('store.messages.compactingContext', { reason: event.reason })
     case 'compaction_end':
       if (event.aborted) return t('store.messages.compactionAborted')
-      return event.result ? t('store.messages.contextCompacted') : null
+      if (event.result) return t('store.messages.contextCompacted')
+      // The engine words the reason ("Compaction failed: Nothing to compact").
+      return event.errorMessage ? t('store.messages.error', { detail: event.errorMessage }) : null
     case 'auto_retry_start':
       return t('store.messages.retrying', { attempt: event.attempt, maxAttempts: event.maxAttempts, detail: event.errorMessage })
     case 'command_output': {

@@ -64,6 +64,8 @@ import type {
   PiQueueUpdateEvent,
   PiAutoRetryStartEvent,
   PiAutoRetryEndEvent,
+  PiCompactionEndEvent,
+  PiResponseEvent,
   PiExtensionUiRequest,
   Workspace,
   LinkedTaskOptions,
@@ -827,6 +829,10 @@ let historyLoadingRuntime: string | null = null
 // must not invalidate the retained chat's session I/O, which is what
 // sessionLoadGeneration guards. Last activation intent wins.
 let activationIntentGeneration = 0
+// compaction_start events of the active chat, so compactContext can tell a
+// command the engine refused (no start, so no end notice either) from one
+// whose outcome the compaction_end notice reports.
+let compactionStarts = 0
 
 /**
  * Texts of prompts this GUI just sent to Pi, awaiting their echo on the RPC
@@ -2638,15 +2644,32 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   compactContext: async () => {
+    const runtimeId = get().activeSessionRuntimeId
+    const startsBefore = compactionStarts
+    // Spin at once: the engine's compaction_start can take a moment to arrive.
+    setCompacting(set, true)
+    let failure: string | null = null
     try {
-      await window.piDesktop.session.compact()
-      // compaction_start/end events drive the chat system messages; refresh
-      // state + stats so the context-usage figures update afterwards.
-      get().refreshSessionState()
-      get().refreshSessionStats()
-    } catch {
-      // Silent failure
+      const response = (await window.piDesktop.session.compact()) as PiResponseEvent | null
+      if (response?.success === false) failure = response.error || t('store.messages.unknownError')
+    } catch (err) {
+      failure = formatIpcError(err)
     }
+    if (runtimeId !== get().activeSessionRuntimeId) return
+    // After a compaction_start, compaction_end owns the spinner and the notice
+    // (a timed-out command means the compaction still runs). Without one, the
+    // engine refused the command, or it reports compaction only in its reply.
+    if (compactionStarts === startsBefore) {
+      setCompacting(set, false)
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: failure ? t('store.messages.error', { detail: failure }) : t('store.messages.contextCompacted'),
+        timestamp: Date.now(),
+      })
+    }
+    void get().refreshSessionState()
+    void get().refreshSessionStats()
   },
 
   // ─── UI ───────────────────────────────────────────────────────────────
@@ -2990,16 +3013,25 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         break
 
       case 'compaction_start':
-      case 'compaction_end':
+      case 'compaction_end': {
+        const ended = event.type === 'compaction_end' ? (event as PiCompactionEndEvent) : null
+        if (!ended) compactionStarts++
+        setCompacting(set, !ended)
         addEventNotice(event, get)
         get().addTimelineEvent({
           id: generateId(),
           type: 'compaction',
           timestamp: Date.now(),
-          title: event.type === 'compaction_start' ? t('timeline.compactionStarted') : t('timeline.compactionComplete'),
-          status: event.type === 'compaction_start' ? 'running' : 'success',
+          title: ended ? t('timeline.compactionComplete') : t('timeline.compactionStarted'),
+          status: !ended ? 'running' : ended.errorMessage ? 'error' : 'success',
         })
+        // Context usage changes with every compaction, manual or automatic.
+        if (ended) {
+          void get().refreshSessionState()
+          void get().refreshSessionStats()
+        }
         break
+      }
 
       case 'auto_retry_start':
       case 'auto_retry_end':
@@ -4252,6 +4284,13 @@ function handleMessageUpdate(
 function addEventNotice(event: PiRpcEvent, get: () => AppState & AppActions): void {
   const content = chatEventNotice(event)
   if (content) get().addMessage({ id: generateId(), role: 'system', content, timestamp: Date.now() })
+}
+
+/** Show or clear the compact buttons' spinner until the next state refresh. */
+function setCompacting(set: ZustandSet, isCompacting: boolean): void {
+  set((state) => state.sessionState && state.sessionState.isCompacting !== isCompacting
+    ? { sessionState: { ...state.sessionState, isCompacting } }
+    : {})
 }
 
 function handleTurnComplete(
