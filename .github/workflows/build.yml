@@ -109,7 +109,7 @@ jobs:
           # uses ad-hoc signing so the app gets its own identifier, not Electron's.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - name: Verify macOS local-network metadata and signature
+      - name: Verify macOS privacy metadata and signature
         if: runner.os == 'macOS'
         shell: bash
         run: |
@@ -117,6 +117,8 @@ jobs:
           test "${#apps[@]}" -eq 1
           app_bundle="${apps[0]}"
           /usr/libexec/PlistBuddy -c 'Print :NSLocalNetworkUsageDescription' "$app_bundle/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$app_bundle/Contents/Info.plist"
+          codesign -d --entitlements - --xml "$app_bundle" | grep -F com.apple.security.device.audio-input
           app_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_bundle/Contents/Info.plist")
           codesign --verify --deep --strict "$app_bundle"
           codesign -dv "$app_bundle" 2> signing-info.txt

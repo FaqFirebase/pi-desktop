@@ -225,6 +225,8 @@ Then open the app normally. You only need to do this once.
 
 Local-network model providers also depend on macOS Local Network permission. The app declares why it needs that access and the release build signs it with Pi Desktop's own bundle identifier. Allow access when prompted, or check **System Settings > Privacy & Security > Local Network**. Apple's [TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy) explains how permission applies to agent and terminal child processes; it recommends an Apple-issued signing identity for reliable permission tracking across builds. Ad-hoc signing does not provide that publisher identity or notarization.
 
+Voice dictation needs macOS Microphone permission. The app asks the first time you dictate; allow it, or turn on **Pi Desktop** in **System Settings > Privacy & Security > Microphone**.
+
 ### Windows
 
 Download the **installer** (`…-win-x64-setup.exe`, recommended) or the **portable** `…-win-x64.exe` from [Releases](https://github.com/FaqFirebase/pi-desktop/releases). Builds are unsigned, so SmartScreen may warn; choose **More info > Run anyway**. If file edits or saves fail, see the [Controlled Folder Access](#controlled-folder-access-ransomware-protection) note below. Windows is community-tested, so please [open a bug report](https://github.com/FaqFirebase/pi-desktop/issues) if you hit a problem.
