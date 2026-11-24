@@ -1760,6 +1760,7 @@
       "namePlaceholder": "Çalışma alanı adı",
       "noWorkspace": "Çalışma alanı yok",
       "openProjectEllipsis": "Proje aç…",
+      "tabClosedTitle": "Sekme kapalı · yeniden açmak için tıklayın",
       "triggerTitle": "Değiştirmek için tıklayın · yeniden adlandırmak için çift tıklayın · seçenekler için sağ tıklayın"
     }
   },
@@ -1954,6 +1955,8 @@
       "closeUnmanagedWorktreeMessage": "\"{{name}}\" kapatılsın mı? Bu mevcut worktree ve dosyaları diskte kalır.",
       "forkAnywayLabel": "Yine de çatalla",
       "forkMessage": "Pi bu oturumda yanıtını bitirmedi. Bu oturumu çatallamak yanıtı durdurur: Pi'nin oturuma şimdiye kadar yazdıkları korunur, ancak yanıtın geri kalanı — hâlâ çalışan araç çağrıları dahil — atılır.",
+      "keepInSidebarHint": "Kenar çubuğunda tut yalnızca sekmeyi kapatır: \"{{name}}\" kenar çubuğunda kalır ve Pi'si çalışmaya devam eder. Sekmeyi yeniden açmak için kenar çubuğunda seçin.",
+      "keepInSidebarLabel": "Kenar çubuğunda tut",
       "keepUntrustedLabel": "Güvenilmez olarak bırak",
       "keepWorkingLabel": "Çalışmaya devam et",
       "newMessage": "Pi bu oturumda yanıtını bitirmedi. Yeni oturum başlatmak yanıtı durdurur: Pi'nin oturuma şimdiye kadar yazdıkları korunur, ancak yanıtın geri kalanı — hâlâ çalışan araç çağrıları dahil — atılır.",
@@ -2373,7 +2376,6 @@
     "newLinkedTaskTitle": "Birden çok depoya yayılan yeni bağlantılı görev",
     "newSessionAriaLabel": "Bu projede yeni oturum",
     "newSessionFallback": "Yeni oturum",
-    "removeWorkspaceAriaLabel": "Kaldır: {{name}}",
     "sessions": "Oturumlar",
     "tools": "Araçlar"
   }

@@ -753,6 +753,7 @@ function WorkspaceSwitcher({ onOpenProject }: { onOpenProject: () => void }): Re
   const changeWorkspaceFolder = useAppStore((state) => state.changeWorkspaceFolder)
   const pendingPromptCounts = useAppStore((state) => state.pendingPromptCounts)
   const workspaceActivity = useAppStore((state) => state.workspaceActivity)
+  const hiddenProjectTabIds = useAppStore((state) => state.hiddenProjectTabIds)
   const { show: showContextMenu, ContextMenuComponent: WorkspaceContextMenu } = useContextMenu()
 
   // Prompts held for workspaces other than the active one — the active
@@ -911,12 +912,13 @@ function WorkspaceSwitcher({ onOpenProject }: { onOpenProject: () => void }): Re
                   setIsOpen(false)
                 }}
                 className="flex items-center gap-2 min-w-0 flex-1 text-left"
+                title={hiddenProjectTabIds.includes(ws.id) ? t('sidebar.workspaceSwitcher.tabClosedTitle') : undefined}
               >
                 <div
                   className="h-2 w-2 rounded-full shrink-0"
                   style={{ backgroundColor: ws.color }}
                 />
-                <span className="text-sm text-secondary truncate">{ws.name}</span>
+                <span className={clsx('text-sm truncate', hiddenProjectTabIds.includes(ws.id) ? 'text-faint' : 'text-secondary')}>{ws.name}</span>
                 {ws.id === activeWorkspace?.id && (
                   <Check size={12} className="shrink-0 text-success" />
                 )}

@@ -22,6 +22,7 @@ export function WorkspaceTabs(): React.JSX.Element {
   const { t } = useTranslation()
   const workspaces = useAppStore((state) => state.workspaces)
   const projectTabOrder = useAppStore((state) => state.projectTabOrder)
+  const hiddenProjectTabIds = useAppStore((state) => state.hiddenProjectTabIds)
   const reorderProjectTab = useAppStore((state) => state.reorderProjectTab)
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<{ id: string; placement: 'before' | 'after' } | null>(null)
@@ -38,7 +39,7 @@ export function WorkspaceTabs(): React.JSX.Element {
   const activateWorkspace = useAppStore((state) => state.activateWorkspace)
   const switchSession = useAppStore((state) => state.switchSession)
   const closeSessionTab = useAppStore((state) => state.closeSessionTab)
-  const removeWorkspace = useAppStore((state) => state.removeWorkspace)
+  const closeProjectTab = useAppStore((state) => state.closeProjectTab)
   const createWorktreeTab = useAppStore((state) => state.createWorktreeTab)
   const setLinkedTaskDialog = useAppStore((state) => state.setLinkedTaskDialog)
   const createNewSession = useAppStore((state) => state.createNewSession)
@@ -50,8 +51,8 @@ export function WorkspaceTabs(): React.JSX.Element {
     toolView.includes(currentView as (typeof toolView)[number]) || globalWorkflowOpen
 
   const tabs = useMemo(
-    () => getProjectTabs(workspaces, projectTabOrder),
-    [workspaces, projectTabOrder]
+    () => getProjectTabs(workspaces, projectTabOrder, hiddenProjectTabIds),
+    [workspaces, projectTabOrder, hiddenProjectTabIds]
   )
   const sessionTabs = useMemo(
     () => getSessionTabs(sessionRuntimes, activeWorkspace?.id),
@@ -77,8 +78,6 @@ export function WorkspaceTabs(): React.JSX.Element {
         const activity = workspaceActivity[workspace.id]
         const isWorktree = workspace.kind === 'worktree'
         const isLinkedTask = workspace.kind === 'repoSet'
-        // Worktree and linked task tabs close; a folder workspace is removed.
-        const isTab = isWorktree || isLinkedTask
         const isWorking = activity?.state === 'working'
         const needsApproval = activity?.state === 'needs-approval'
         const completed = activity?.state === 'completed'
@@ -121,7 +120,7 @@ export function WorkspaceTabs(): React.JSX.Element {
               // the normal context menu and use the middle button as tab-close.
               if (event.button !== 1) return
               event.preventDefault()
-              void removeWorkspace(workspace.id)
+              void closeProjectTab(workspace.id)
             }}
             className={clsx(
               'group relative flex h-9 min-w-[150px] max-w-[240px] shrink-0 select-none items-center gap-2 rounded-t-md border border-b-0 px-2.5 text-xs transition-colors',
@@ -168,19 +167,15 @@ export function WorkspaceTabs(): React.JSX.Element {
             {tabs.length > 1 && (
               <button
                 type="button"
-                onClick={() => void removeWorkspace(workspace.id)}
+                onClick={() => void closeProjectTab(workspace.id)}
                 draggable
                 onDragStart={(event) => {
                   event.preventDefault()
                   event.stopPropagation()
                 }}
                 className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-all hover:bg-highlight hover:text-primary group-hover:opacity-100"
-                title={isTab ? t('store.confirm.closeTabLabel') : t('store.confirm.removeWorkspaceTitle')}
-                aria-label={
-                  isTab
-                    ? t('workspaceTabs.closeTabAriaLabel', { name: tabLabel(workspace) })
-                    : t('workspaceTabs.removeWorkspaceAriaLabel', { name: tabLabel(workspace) })
-                }
+                title={t('store.confirm.closeTabLabel')}
+                aria-label={t('workspaceTabs.closeTabAriaLabel', { name: tabLabel(workspace) })}
               >
                 <X size={12} />
               </button>

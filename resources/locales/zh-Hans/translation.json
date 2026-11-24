@@ -1726,6 +1726,7 @@
       "namePlaceholder": "工作区名称",
       "noWorkspace": "无工作区",
       "openProjectEllipsis": "打开项目…",
+      "tabClosedTitle": "标签页已关闭 · 点击可重新打开",
       "triggerTitle": "点击切换 · 双击重命名 · 右键查看选项"
     }
   },
@@ -1911,6 +1912,8 @@
       "closeUnmanagedWorktreeMessage": "关闭“{{name}}”？该现有工作树及其文件将保留在磁盘上。",
       "forkAnywayLabel": "仍然分叉",
       "forkMessage": "Pi 在此会话中尚未完成响应。分叉此会话会中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
+      "keepInSidebarHint": "“保留在侧边栏”只关闭标签页：“{{name}}”仍保留在侧边栏中，其 Pi 继续运行。在侧边栏中选择它即可重新打开标签页。",
+      "keepInSidebarLabel": "保留在侧边栏",
       "keepUntrustedLabel": "保持未信任",
       "keepWorkingLabel": "让它继续工作",
       "newMessage": "Pi 在此会话中尚未完成响应。启动新会话会中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
@@ -2302,7 +2305,6 @@
     "newLinkedTaskTitle": "新建跨多个仓库的关联任务",
     "newSessionAriaLabel": "在此项目中新建会话",
     "newSessionFallback": "新建会话",
-    "removeWorkspaceAriaLabel": "移除 {{name}}",
     "sessions": "会话",
     "tools": "工具"
   }
