@@ -12,6 +12,11 @@ export interface InterimResult {
   caret: number
 }
 
+// dictated words keep a space from a word they would touch, but not from an opening bracket or quote
+const NEEDS_SPACE_AFTER = /[^\s([{"'“‘«]$/u
+const NEEDS_SPACE_BEFORE = /^[\p{L}\p{N}]/u
+const SPACE = ' '
+
 export function applyInterim(
   value: string,
   anchor: number,
@@ -20,9 +25,13 @@ export function applyInterim(
 ): InterimResult {
   const before = value.slice(0, anchor)
   const after = value.slice(anchor + prevLength)
+  // the spaces belong to the interim region, so the next rewrite replaces them too
+  const lead = text && NEEDS_SPACE_AFTER.test(before) ? SPACE : ''
+  const trail = text && NEEDS_SPACE_BEFORE.test(after) ? SPACE : ''
+  const inserted = lead + text + trail
   return {
-    value: before + text + after,
-    interimLength: text.length,
-    caret: anchor + text.length,
+    value: before + inserted + after,
+    interimLength: inserted.length,
+    caret: anchor + lead.length + text.length,
   }
 }
