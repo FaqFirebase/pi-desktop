@@ -439,6 +439,14 @@ export function AppConfirmDialog(): React.JSX.Element | null {
           >
             {request.cancelLabel ?? t('common.cancel')}
           </button>
+          {request.alternativeLabel && (
+            <button
+              onClick={() => resolveConfirm('alternative')}
+              className="rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover transition-colors"
+            >
+              {request.alternativeLabel}
+            </button>
+          )}
           <button
             onClick={() => resolveConfirm(true)}
             autoFocus={!request.danger}

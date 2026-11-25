@@ -72,7 +72,7 @@ export async function runAppShortcut(action: CommandShortcutAction): Promise<voi
       return
     case 'previousProject':
     case 'nextProject': {
-      const tabs = projectTabs(state.workspaces, state.projectTabOrder)
+      const tabs = projectTabs(state.workspaces, state.projectTabOrder, state.hiddenProjectTabIds)
       const index = adjacentTabIndex(tabs.findIndex((tab) => tab.id === state.activeWorkspace?.id), tabs.length,
         action === 'nextProject' ? 'next' : 'previous')
       if (index === null) return

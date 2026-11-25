@@ -8,7 +8,7 @@ import { composePrompt } from './utils/compose-prompt'
 import { firstQueued, withQueued, withoutQueued, withoutChats, type SendQueueHold, type SendQueueHolds, type SendQueues } from './send-queue'
 import { withEditorTerminal, withoutEditorTerminal } from './editor-terminal-state'
 import type { TerminalSlot } from '../../shared/terminal-slot'
-import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
+import { hiddenTabsAfterActivation, moveProjectTab, projectTabs, readHiddenProjectTabs, readProjectTabOrder, rememberHiddenProjectTabs, rememberProjectTabOrder } from './utils/tab-navigation'
 import type { DisplayAttachment, DisplayMessage } from './message-parsing'
 import { appendPromptHistory, applyChatStreamUpdate, applyChatToolExecution, chatEventNotice, parseChatMessage, retainChatMessageIdentity, turnErrorText, type ChatToolCall } from './chat-session-state'
 import { isStoppedAnswer } from '../../shared/stopped-answer'
@@ -183,12 +183,16 @@ export interface ConfirmOptions {
   message: string
   confirmLabel?: string
   cancelLabel?: string
+  // A third, non-destructive choice shown between Cancel and confirm.
+  alternativeLabel?: string
   // Style the confirm button as destructive (red).
   danger?: boolean
 }
 
+export type ConfirmChoice = 'confirm' | 'alternative' | 'cancel'
+
 export interface ConfirmRequest extends ConfirmOptions {
-  resolve: (confirmed: boolean) => void
+  resolve: (choice: ConfirmChoice) => void
 }
 
 /** The actions that abandon the live turn, by replacing the session, leaving it, or restarting its Pi. */
@@ -411,6 +415,8 @@ interface AppState {
   // Workspaces
   workspaces: Workspace[]
   projectTabOrder: string[]
+  // Projects kept in the sidebar whose tab the user closed; never the active one.
+  hiddenProjectTabIds: string[]
   activeWorkspace: Workspace | null
 
   // Timeline
@@ -680,7 +686,10 @@ interface AppActions {
 
   // App confirmation dialog (promise-based; resolves true on confirm)
   requestConfirm: (options: ConfirmOptions) => Promise<boolean>
-  resolveConfirm: (confirmed: boolean) => void
+  // The same dialog with a third button (options.alternativeLabel).
+  requestChoice: (options: ConfirmOptions) => Promise<ConfirmChoice>
+  // true = confirm, false = cancel, 'alternative' = the third button.
+  resolveConfirm: (answer: boolean | 'alternative') => void
 
   // Shows the one-time "this workspace has its own permission rules" notice
   // and records the acknowledgment in settings.
@@ -715,6 +724,12 @@ interface AppActions {
    */
   activateWorkspace: (workspaceId: string, options?: { awaitingSession?: boolean; skipDirtyConfirm?: boolean }) => Promise<boolean>
   removeWorkspace: (workspaceId: string) => Promise<void>
+  /**
+   * The project tab's close action. Asks whether to remove the project
+   * (removeWorkspace) or close only its tab: the project stays in the sidebar,
+   * its Pi processes keep running, and activating it shows the tab again.
+   */
+  closeProjectTab: (workspaceId: string) => Promise<void>
   renameWorkspace: (workspaceId: string, name: string) => Promise<void>
   changeWorkspaceFolder: (workspaceId: string, newPath: string) => Promise<void>
 
@@ -1491,6 +1506,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   workspaces: [],
   projectTabOrder: readProjectTabOrder(),
+  hiddenProjectTabIds: readHiddenProjectTabs(),
   activeWorkspace: null,
 
   timelineEvents: [],
@@ -3292,17 +3308,19 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
-  requestConfirm: (options) =>
-    new Promise<boolean>((resolve) => {
+  requestConfirm: async (options) => (await get().requestChoice(options)) === 'confirm',
+
+  requestChoice: (options) =>
+    new Promise<ConfirmChoice>((resolve) => {
       // Resolve any dialog already open (treated as cancelled) before showing.
       const pending = get().confirmRequest
-      if (pending) pending.resolve(false)
+      if (pending) pending.resolve('cancel')
       set({ confirmRequest: { ...options, resolve } })
     }),
 
-  resolveConfirm: (confirmed) => {
+  resolveConfirm: (answer) => {
     const req = get().confirmRequest
-    if (req) req.resolve(confirmed)
+    if (req) req.resolve(answer === 'alternative' ? 'alternative' : answer ? 'confirm' : 'cancel')
     set({ confirmRequest: null })
   },
 
@@ -3365,6 +3383,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       const workspaces = await window.piDesktop.workspace.list()
       const active = await window.piDesktop.workspace.getActive()
       set({ workspaces, activeWorkspace: active })
+      showActiveProjectTab(get, set)
     } catch {
       // Silent failure
     }
@@ -3544,6 +3563,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         piError: null,
         sessionLoading: live || options?.awaitingSession === true,
       }))
+      showActiveProjectTab(get, set)
       void window.piDesktop.ui.flushPendingPrompts(workspace.id)
       scheduleSessionListRefresh(get)
       if (!live && options?.awaitingSession !== true) {
@@ -3572,59 +3592,41 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   removeWorkspace: async (workspaceId) => {
+    const prompt = workspaceRemovalPrompt(get().workspaces.find((w) => w.id === workspaceId), workspaceId)
+    if (!(await get().requestConfirm(prompt))) return
+    await removeConfirmedWorkspace(get, set, workspaceId)
+  },
+
+  closeProjectTab: async (workspaceId) => {
     const workspace = get().workspaces.find((w) => w.id === workspaceId)
-    const isWorktree = workspace?.kind === 'worktree'
-    const isManagedWorktree = isWorktree && workspace?.managed !== false
-    const linkedTask = workspace?.linkedTask
-    const isTab = isWorktree || !!linkedTask
-    const workspaceLabel = workspace?.name ?? workspaceId
-    const confirmed = await get().requestConfirm({
-      title: isTab ? t('store.confirm.closeTabLabel') : t('store.confirm.removeWorkspaceTitle'),
-      message: linkedTask
-        ? linkedTask.mode === 'isolated'
-          ? t('store.confirm.closeIsolatedLinkedTaskMessage', { name: workspaceLabel })
-          : t('store.confirm.closeInPlaceLinkedTaskMessage', { name: workspaceLabel })
-        : isWorktree
-        ? isManagedWorktree
-          ? t('store.confirm.closeManagedWorktreeMessage', { name: workspaceLabel })
-          : t('store.confirm.closeUnmanagedWorktreeMessage', { name: workspaceLabel })
-        : t('store.confirm.removeWorkspaceMessage', { name: workspaceLabel }),
-      confirmLabel: isTab ? t('store.confirm.closeTabLabel') : t('common.remove'),
-      cancelLabel: t('common.cancel'),
-      danger: true,
+    const prompt = workspaceRemovalPrompt(workspace, workspaceId)
+    const choice = await get().requestChoice({
+      ...prompt,
+      title: t('store.confirm.closeTabLabel'),
+      message: `${prompt.message}\n\n${t('store.confirm.keepInSidebarHint', { name: workspace?.name ?? workspaceId })}`,
+      alternativeLabel: t('store.confirm.keepInSidebarLabel'),
     })
-    if (!confirmed) return
-    // Removing the active workspace closes its preview via the adoption
-    // below — a dirty editor gets the same ask a workspace switch gives it.
-    if (workspaceId === get().activeWorkspace?.id) {
-      if (!(await get().confirmDiscardEditorChanges())) return
+    if (choice === 'confirm') {
+      await removeConfirmedWorkspace(get, set, workspaceId)
+      return
     }
-    const previousActiveId = get().activeWorkspace?.id ?? null
-    try {
-      const result = await window.piDesktop.workspace.remove(workspaceId)
-      await get().loadWorkspaces()
-      get().saveComposerDraft(workspaceId, EMPTY_COMPOSER_DRAFT)
-      // Main stops the workspace's chats without a closed marker for each.
-      forgetChats(set, get, Object.values(get().sessionRuntimes)
-        .filter((runtime) => runtime.workspaceId === workspaceId)
-        .map((runtime) => runtime.runtimeId))
-      adoptMainSideActivation(get, set, previousActiveId)
-      if (result.preservedWorktreePaths) {
-        get().addMessage({
-          id: generateId(),
-          role: 'system',
-          content: t('store.messages.tabClosedWorktreePreserved', { path: result.preservedWorktreePaths.join(', ') }),
-          timestamp: Date.now(),
-        })
-      }
-    } catch (err) {
-      get().addMessage({
-        id: generateId(),
-        role: 'system',
-        content: t('store.messages.removeWorkspaceError', { detail: err instanceof Error ? err.message : String(err) }),
-        timestamp: Date.now(),
-      })
+    if (choice !== 'alternative') return
+    const state = get()
+    if (workspaceId === state.activeWorkspace?.id) {
+      // The project on screen always has a tab: move to a neighbouring tab
+      // first (the next one, else the previous one), the way a browser does.
+      const tabs = projectTabs(state.workspaces, state.projectTabOrder, state.hiddenProjectTabIds)
+      const index = tabs.findIndex((tab) => tab.id === workspaceId)
+      const neighbour = tabs[index + 1] ?? tabs[index - 1]
+      if (!neighbour || neighbour.id === workspaceId) return
+      if (!(await get().activateWorkspace(neighbour.id))) return
     }
+    const latest = get()
+    if (latest.hiddenProjectTabIds.includes(workspaceId) || latest.activeWorkspace?.id === workspaceId) return
+    if (!latest.workspaces.some((w) => w.id === workspaceId)) return
+    const hidden = [...latest.hiddenProjectTabIds, workspaceId]
+    set({ hiddenProjectTabIds: hidden })
+    rememberHiddenProjectTabs(hidden)
   },
 
   renameWorkspace: async (workspaceId, name) => {
@@ -4202,6 +4204,73 @@ useAppStore.subscribe((state, prev) => {
 
 // Zustand set supports both object and callback forms
 type ZustandSet = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void
+
+/** Keeps the active project's tab shown and drops hidden ids of removed projects. */
+function showActiveProjectTab(get: StoreGet, set: ZustandSet): void {
+  const state = get()
+  const hidden = hiddenTabsAfterActivation(state.hiddenProjectTabIds, state.workspaces, state.activeWorkspace?.id)
+  if (hidden === state.hiddenProjectTabIds) return
+  set({ hiddenProjectTabIds: hidden })
+  rememberHiddenProjectTabs(hidden)
+}
+
+function workspaceRemovalPrompt(workspace: Workspace | undefined, workspaceId: string): ConfirmOptions {
+  const isWorktree = workspace?.kind === 'worktree'
+  const isManagedWorktree = isWorktree && workspace?.managed !== false
+  const linkedTask = workspace?.linkedTask
+  const isTab = isWorktree || !!linkedTask
+  const workspaceLabel = workspace?.name ?? workspaceId
+  return {
+    title: isTab ? t('store.confirm.closeTabLabel') : t('store.confirm.removeWorkspaceTitle'),
+    message: linkedTask
+      ? linkedTask.mode === 'isolated'
+        ? t('store.confirm.closeIsolatedLinkedTaskMessage', { name: workspaceLabel })
+        : t('store.confirm.closeInPlaceLinkedTaskMessage', { name: workspaceLabel })
+      : isWorktree
+      ? isManagedWorktree
+        ? t('store.confirm.closeManagedWorktreeMessage', { name: workspaceLabel })
+        : t('store.confirm.closeUnmanagedWorktreeMessage', { name: workspaceLabel })
+      : t('store.confirm.removeWorkspaceMessage', { name: workspaceLabel }),
+    confirmLabel: isTab ? t('store.confirm.closeTabLabel') : t('common.remove'),
+    cancelLabel: t('common.cancel'),
+    danger: true,
+  }
+}
+
+/** Removes a workspace the user agreed to remove; main stops its Pi processes. */
+async function removeConfirmedWorkspace(get: StoreGet, set: ZustandSet, workspaceId: string): Promise<void> {
+  // Removing the active workspace closes its preview via the adoption
+  // below — a dirty editor gets the same ask a workspace switch gives it.
+  if (workspaceId === get().activeWorkspace?.id) {
+    if (!(await get().confirmDiscardEditorChanges())) return
+  }
+  const previousActiveId = get().activeWorkspace?.id ?? null
+  try {
+    const result = await window.piDesktop.workspace.remove(workspaceId)
+    await get().loadWorkspaces()
+    get().saveComposerDraft(workspaceId, EMPTY_COMPOSER_DRAFT)
+    // Main stops the workspace's chats without a closed marker for each.
+    forgetChats(set, get, Object.values(get().sessionRuntimes)
+      .filter((runtime) => runtime.workspaceId === workspaceId)
+      .map((runtime) => runtime.runtimeId))
+    adoptMainSideActivation(get, set, previousActiveId)
+    if (result.preservedWorktreePaths) {
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: t('store.messages.tabClosedWorktreePreserved', { path: result.preservedWorktreePaths.join(', ') }),
+        timestamp: Date.now(),
+      })
+    }
+  } catch (err) {
+    get().addMessage({
+      id: generateId(),
+      role: 'system',
+      content: t('store.messages.removeWorkspaceError', { detail: err instanceof Error ? err.message : String(err) }),
+      timestamp: Date.now(),
+    })
+  }
+}
 
 
 // Counts committed assistant messages, so a streamed-text snapshot requested

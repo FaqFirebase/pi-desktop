@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, test } from 'node:test'
 import { useAppStore } from './store'
-import { PROJECT_TAB_ORDER_STORAGE_KEY, projectTabs, readProjectTabOrder } from './utils/tab-navigation'
+import { HIDDEN_PROJECT_TABS_STORAGE_KEY, PROJECT_TAB_ORDER_STORAGE_KEY, projectTabs, readHiddenProjectTabs, readProjectTabOrder } from './utils/tab-navigation'
 
 const initialState = useAppStore.getState()
 const originalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
@@ -82,4 +82,21 @@ test('blocked storage does not prevent reordering in the current window', () => 
   assert.deepEqual(readProjectTabOrder(), [])
   useAppStore.getState().reorderProjectTab('a', 'c', 'after')
   assert.deepEqual(useAppStore.getState().projectTabOrder, ['b', 'c', 'a'])
+})
+
+test('closed tabs survive a reload; the active project and removed projects leave the list', async () => {
+  saved.set(HIDDEN_PROJECT_TABS_STORAGE_KEY, '["a", "c", "gone"]')
+  useAppStore.setState({ hiddenProjectTabIds: readHiddenProjectTabs() })
+  const { workspaces } = useAppStore.getState()
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: { piDesktop: {
+    ui: { setEditorDirty: () => {} },
+    workspace: { list: async () => workspaces, getActive: async () => workspaces[0] },
+  } } })
+
+  await useAppStore.getState().loadWorkspaces()
+
+  const state = useAppStore.getState()
+  assert.deepEqual(state.hiddenProjectTabIds, ['c'])
+  assert.deepEqual(readHiddenProjectTabs(), ['c'])
+  assert.deepEqual(projectTabs(state.workspaces, state.projectTabOrder, state.hiddenProjectTabIds).map((tab) => tab.id), ['a', 'b'])
 })

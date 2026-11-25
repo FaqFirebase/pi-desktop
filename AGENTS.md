@@ -250,7 +250,7 @@ src/
         ├── utils/
         │   ├── app-shortcuts.ts  # Dispatch configurable shortcuts to app actions
         │   ├── commit-push-shortcut.ts # Review / Commit and push shortcut flow
-        │   ├── tab-navigation.ts # Project/session tab order and next/previous tab
+        │   ├── tab-navigation.ts # Project/session tab order, closed project tabs, next/previous tab
         │   ├── planning-prompt.ts # Plan/read-only prompt wrapper
         │   ├── compose-prompt.ts # Typed text + staged files -> prompt (text files inlined as data, images as blocks)
         │   ├── browser-pick-attachments.ts # Browser pane pick -> composer attachments (text block + PNG)
@@ -409,6 +409,7 @@ resources/
 - Session navigation is immediate; Pi startup and history loading continue in the background
 - Workspace switcher in the sidebar
 - Project tabs keep creation order until the user drags one to a new place; the custom order is saved (`utils/tab-navigation.ts`), and the project-tab shortcuts follow it
+- Closing a project tab asks: **Remove** (drop the project from the sidebar and stop its Pi processes; a worktree tab also removes its clean worktree) or **Keep in sidebar** (close only the tab; the project stays in the sidebar, dimmed, and its Pi processes keep running). The project on screen always has a tab: closing the active one first switches to the neighbouring tab, the last visible tab has no close button, and activating a project from anywhere (sidebar, palette, session, notification) shows its tab again. Closed tabs are saved and stay closed after a restart (`closeProjectTab` in `store.ts`)
 - Switching to a session from a different project creates that project's workspace if needed
 - **Drag and drop a folder** onto the window to open it as a project (create the workspace if needed, switch, show Chat); this is the same path as File > Open Project
 - Mission Control summarizes all live session runtimes and workflow runs across projects; New Task sends a prompt to a dedicated background runtime
@@ -648,6 +649,7 @@ Instances on different data dirs can read one session store, and two agents on o
 | `pi-desktop.boot-theme` (renderer `localStorage`) | Last-applied theme colors, painted before the first frame to avoid a flash of the default theme |
 | `pi-desktop.boot-language` (renderer `localStorage`) | Last-resolved interface language, shown before Settings loads for the same reason |
 | `pi-desktop.project-tab-order` (renderer `localStorage`) | Project tab order the user set by dragging tabs |
+| `pi-desktop.hidden-project-tabs` (renderer `localStorage`) | Projects whose tab was closed with Keep in sidebar |
 | `pi-desktop.model-recency` (renderer `localStorage`) | Last time each model was picked, for model picker order |
 
 Optional window hints for a host that starts several instances (`window-hints.ts`): `PI_DESKTOP_WINDOW_TITLE` appends a label to the window title and the tray tooltip. Hints must behave the same on every platform and session, so there is no per-instance taskbar identity (Windows-only) and no frameless or host-positioned window (Wayland cannot position windows, and Linux has no skip-taskbar).

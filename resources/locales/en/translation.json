@@ -1795,6 +1795,7 @@
       "namePlaceholder": "Workspace name",
       "noWorkspace": "No workspace",
       "openProjectEllipsis": "Open project…",
+      "tabClosedTitle": "Tab closed · click to open it again",
       "triggerTitle": "Click to switch · double-click to rename · right-click for options"
     }
   },
@@ -1989,6 +1990,8 @@
       "closeUnmanagedWorktreeMessage": "Close \"{{name}}\"? This existing worktree and its files remain on disk.",
       "forkAnywayLabel": "Fork anyway",
       "forkMessage": "Pi has not finished responding in this session. Forking this session stops it: whatever Pi already wrote to the session is kept, but the rest of the response — including any tool calls still running — is discarded.",
+      "keepInSidebarHint": "Keep in sidebar closes only the tab: \"{{name}}\" stays in the sidebar and its Pi keeps running. Pick it in the sidebar to open the tab again.",
+      "keepInSidebarLabel": "Keep in sidebar",
       "keepUntrustedLabel": "Keep untrusted",
       "keepWorkingLabel": "Keep working",
       "newMessage": "Pi has not finished responding in this session. Starting a new session stops it: whatever Pi already wrote to the session is kept, but the rest of the response — including any tool calls still running — is discarded.",
@@ -2408,7 +2411,6 @@
     "newLinkedTaskTitle": "New linked task across several repositories",
     "newSessionAriaLabel": "New session in this project",
     "newSessionFallback": "New session",
-    "removeWorkspaceAriaLabel": "Remove {{name}}",
     "sessions": "Sessions",
     "tools": "Tools"
   }

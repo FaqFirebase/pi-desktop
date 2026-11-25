@@ -13,6 +13,7 @@ import type {
   Workspace,
 } from '../../shared/ipc-contracts'
 import type { PreviewTarget } from './store'
+import { projectTabs } from './utils/tab-navigation'
 
 // Each recorded call is appended to `calls`, so tests can assert both that a
 // session change reached Pi and that nothing reached Pi when it was declined.
@@ -321,7 +322,7 @@ function enterStreamingState(): void {
 // not answer a later test's dialog with the wrong value.
 let answerPoll: ReturnType<typeof setInterval> | null = null
 
-function answerConfirms(values: boolean[]): void {
+function answerConfirms(values: Array<boolean | 'alternative'>): void {
   if (answerPoll !== null) clearInterval(answerPoll)
   let next = 0
   const poll = setInterval(() => {
@@ -339,7 +340,7 @@ function answerConfirms(values: boolean[]): void {
   setTimeout(() => clearInterval(poll), 100)
 }
 
-function answerConfirm(confirmed: boolean): void {
+function answerConfirm(confirmed: boolean | 'alternative'): void {
   answerConfirms([confirmed])
 }
 
@@ -393,6 +394,7 @@ beforeEach(() => {
     chatSidePanel: null,
     editorDirty: false,
     permissionRulesDrafts: { global: null, workspace: null },
+    hiddenProjectTabIds: [],
   })
   // AFTER the state reset: the editor-dirty mirror subscription fires on the
   // reset itself when the previous test left the flag set, and that push
@@ -1935,6 +1937,79 @@ test('removing an inactive workspace never asks about the editor', async () => {
   assert.equal(calls.includes(`removeWorkspace:${WORKSPACE_TWO.id}`), true)
   assert.equal(useAppStore.getState().previewTarget?.path, CODE_FILE.path)
   assert.equal(useAppStore.getState().editorDirty, true)
+})
+
+test('keeping the active project in the sidebar closes only its tab; activating it shows the tab again', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  const backgroundRuntime = runtimeIn(WORKSPACE_ONE, { runtimeId: 'rt-one', status: 'running', activity: 'working' })
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    sessionRuntimes: { 'rt-one': backgroundRuntime },
+  })
+  answerConfirm('alternative')
+
+  await useAppStore.getState().closeProjectTab(WORKSPACE_ONE.id)
+
+  let state = useAppStore.getState()
+  assert.equal(calls.some((c) => c.startsWith('removeWorkspace:')), false, 'the project stays registered in main')
+  assert.equal(state.activeWorkspace?.id, WORKSPACE_TWO.id, 'the neighbouring tab takes over')
+  assert.deepEqual(state.hiddenProjectTabIds, [WORKSPACE_ONE.id])
+  assert.deepEqual(projectTabs(state.workspaces, state.projectTabOrder, state.hiddenProjectTabIds).map((w) => w.id), [WORKSPACE_TWO.id])
+  assert.equal(state.sessionRuntimes['rt-one'], backgroundRuntime, 'its Pi keeps running')
+
+  assert.equal(await useAppStore.getState().activateWorkspace(WORKSPACE_ONE.id), true)
+  state = useAppStore.getState()
+  assert.deepEqual(state.hiddenProjectTabIds, [])
+})
+
+test('keeping a project in the sidebar is abandoned when the dirty editor is kept', async () => {
+  workspaceListResult = [WORKSPACE_ONE, WORKSPACE_TWO]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    previewTarget: CODE_FILE,
+    editorDirty: true,
+  })
+  answerConfirms(['alternative', false])
+
+  await useAppStore.getState().closeProjectTab(WORKSPACE_ONE.id)
+
+  assert.equal(useAppStore.getState().activeWorkspace?.id, WORKSPACE_ONE.id)
+  assert.deepEqual(useAppStore.getState().hiddenProjectTabIds, [])
+  assert.equal(calls.some((c) => c.startsWith('setActiveWorkspace:')), false)
+})
+
+test('the last visible tab cannot be closed into the sidebar', async () => {
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+    hiddenProjectTabIds: [WORKSPACE_TWO.id],
+  })
+  answerConfirm('alternative')
+
+  await useAppStore.getState().closeProjectTab(WORKSPACE_ONE.id)
+
+  assert.equal(useAppStore.getState().activeWorkspace?.id, WORKSPACE_ONE.id)
+  assert.deepEqual(useAppStore.getState().hiddenProjectTabIds, [WORKSPACE_TWO.id])
+})
+
+test('removing from the tab close dialog still removes the project', async () => {
+  workspaceListResult = [WORKSPACE_ONE]
+  activeWorkspaceResult = WORKSPACE_ONE
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, WORKSPACE_TWO],
+  })
+  answerConfirm(true)
+
+  await useAppStore.getState().closeProjectTab(WORKSPACE_TWO.id)
+
+  assert.equal(calls.includes(`removeWorkspace:${WORKSPACE_TWO.id}`), true)
+  assert.deepEqual(useAppStore.getState().hiddenProjectTabIds, [])
 })
 
 const DRAFT_ONE = { text: 'draft one', attachments: [] }
