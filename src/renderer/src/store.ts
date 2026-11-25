@@ -3,6 +3,7 @@ import { applyThemeSettings, rememberBootTheme, setUserThemes, watchSystemTheme 
 import { applyLanguageSetting } from './i18n'
 import { applyUiFont } from './utils/ui-font'
 import { t } from '../../shared/i18n'
+import { agentEngineLabel, DEFAULT_AGENT_ENGINE_LABEL } from '../../shared/agent-engine-label'
 import { buildPlanningPrompt } from '../../shared/planning-prompt'
 import { composePrompt } from './utils/compose-prompt'
 import { firstQueued, withQueued, withoutQueued, withoutChats, type SendQueueHold, type SendQueueHolds, type SendQueues } from './send-queue'
@@ -3592,18 +3593,20 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   removeWorkspace: async (workspaceId) => {
-    const prompt = workspaceRemovalPrompt(get().workspaces.find((w) => w.id === workspaceId), workspaceId)
+    const prompt = workspaceRemovalPrompt(get().workspaces.find((w) => w.id === workspaceId), workspaceId, get().piEngine)
     if (!(await get().requestConfirm(prompt))) return
     await removeConfirmedWorkspace(get, set, workspaceId)
   },
 
   closeProjectTab: async (workspaceId) => {
     const workspace = get().workspaces.find((w) => w.id === workspaceId)
-    const prompt = workspaceRemovalPrompt(workspace, workspaceId)
+    const prompt = workspaceRemovalPrompt(workspace, workspaceId, get().piEngine)
     const choice = await get().requestChoice({
       ...prompt,
       title: t('store.confirm.closeTabLabel'),
-      message: `${prompt.message}\n\n${t('store.confirm.keepInSidebarHint', { name: workspace?.name ?? workspaceId })}`,
+      message: `${prompt.message}\n\n${t('store.confirm.keepInSidebarHint', { name: workspace?.name ?? workspaceId, agent: engineDisplayName(get().piEngine) })}`,
+      // both choices close the tab, so the red one says remove
+      confirmLabel: t('common.remove'),
       alternativeLabel: t('store.confirm.keepInSidebarLabel'),
     })
     if (choice === 'confirm') {
@@ -4214,7 +4217,11 @@ function showActiveProjectTab(get: StoreGet, set: ZustandSet): void {
   rememberHiddenProjectTabs(hidden)
 }
 
-function workspaceRemovalPrompt(workspace: Workspace | undefined, workspaceId: string): ConfirmOptions {
+function engineDisplayName(engine: AgentEngineKind): string {
+  return agentEngineLabel(engine) ?? DEFAULT_AGENT_ENGINE_LABEL
+}
+
+function workspaceRemovalPrompt(workspace: Workspace | undefined, workspaceId: string, engine: AgentEngineKind): ConfirmOptions {
   const isWorktree = workspace?.kind === 'worktree'
   const isManagedWorktree = isWorktree && workspace?.managed !== false
   const linkedTask = workspace?.linkedTask
@@ -4230,7 +4237,7 @@ function workspaceRemovalPrompt(workspace: Workspace | undefined, workspaceId: s
       ? isManagedWorktree
         ? t('store.confirm.closeManagedWorktreeMessage', { name: workspaceLabel })
         : t('store.confirm.closeUnmanagedWorktreeMessage', { name: workspaceLabel })
-      : t('store.confirm.removeWorkspaceMessage', { name: workspaceLabel }),
+      : t('store.confirm.removeWorkspaceMessage', { name: workspaceLabel, agent: engineDisplayName(engine) }),
     confirmLabel: isTab ? t('store.confirm.closeTabLabel') : t('common.remove'),
     cancelLabel: t('common.cancel'),
     danger: true,

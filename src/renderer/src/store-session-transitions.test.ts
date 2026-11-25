@@ -14,6 +14,7 @@ import type {
 } from '../../shared/ipc-contracts'
 import type { PreviewTarget } from './store'
 import { projectTabs } from './utils/tab-navigation'
+import { t } from '../../shared/i18n'
 
 // Each recorded call is appended to `calls`, so tests can assert both that a
 // session change reached Pi and that nothing reached Pi when it was declined.
@@ -395,6 +396,7 @@ beforeEach(() => {
     editorDirty: false,
     permissionRulesDrafts: { global: null, workspace: null },
     hiddenProjectTabIds: [],
+    piEngine: 'pi',
   })
   // AFTER the state reset: the editor-dirty mirror subscription fires on the
   // reset itself when the previous test left the flag set, and that push
@@ -2010,6 +2012,25 @@ test('removing from the tab close dialog still removes the project', async () =>
 
   assert.equal(calls.includes(`removeWorkspace:${WORKSPACE_TWO.id}`), true)
   assert.deepEqual(useAppStore.getState().hiddenProjectTabIds, [])
+})
+
+test('the tab close dialog names the engine and labels the destructive choice Remove', async () => {
+  const worktreeTab: Workspace = { ...WORKSPACE_TWO, kind: 'worktree' }
+  useAppStore.setState({
+    activeWorkspace: WORKSPACE_ONE,
+    workspaces: [WORKSPACE_ONE, worktreeTab],
+    piEngine: 'omp',
+  })
+
+  const closing = useAppStore.getState().closeProjectTab(worktreeTab.id)
+  const request = useAppStore.getState().confirmRequest
+  useAppStore.getState().resolveConfirm(false)
+  await closing
+
+  assert.equal(request?.confirmLabel, t('common.remove'))
+  assert.equal(request?.alternativeLabel, t('store.confirm.keepInSidebarLabel'))
+  assert.match(request?.message ?? '', /its OMP keeps running/)
+  assert.equal(calls.some((c) => c.startsWith('removeWorkspace:')), false)
 })
 
 const DRAFT_ONE = { text: 'draft one', attachments: [] }
