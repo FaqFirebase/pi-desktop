@@ -104,7 +104,22 @@ test('status still loads when the key file cannot be read, and a request reports
   const status = await invoke(IPC_CHANNELS.VOICE_STATUS) as VoiceStatus
   assert.equal(status.transcriber, 'local')
   assert.equal(status.serverKeySaved, false)
+  await writeFile(join(dir, 'settings.json'), JSON.stringify({ voiceTranscriber: 'server', voiceServer: SERVER }))
   await assert.rejects(voiceHandlers.transcribeVoiceClip(workspaceManager, CLIP), /EISDIR|directory/)
+})
+
+test('no audio leaves this computer while the saved setting is on this computer', async () => {
+  const dir = freshDataDir()
+  let sent = 0
+  const fetchImpl = (async () => {
+    sent++
+    return new Response(JSON.stringify({ text: 'sent' }))
+  }) as typeof fetch
+  // A full server setup and a key, but the saved choice is still local.
+  await writeFile(join(dir, 'settings.json'), JSON.stringify({ voiceTranscriber: 'local', voiceServer: SERVER }))
+  await writeFile(join(dir, KEY_FILE), 'sk-outside\n')
+  await assert.rejects(voiceHandlers.transcribeVoiceClip(workspaceManager, CLIP, fetchImpl), /set to run on this computer/)
+  assert.equal(sent, 0)
 })
 
 test('a clip goes to the server and key the files hold at that moment', async () => {
@@ -114,9 +129,10 @@ test('a clip goes to the server and key the files hold at that moment', async ()
     sent.push({ url, headers: init.headers, language: (init.body as FormData).get('language') })
     return new Response(JSON.stringify({ text: `segment ${sent.length}` }))
   }) as typeof fetch
+  await writeFile(join(dir, 'settings.json'), JSON.stringify({ voiceTranscriber: 'server' }))
   await assert.rejects(
     voiceHandlers.transcribeVoiceClip(workspaceManager, CLIP, fetchImpl),
-    /Settings > Voice dictation/,
+    /address and model/,
   )
   // Written the way another program would: straight into the data folder.
   await writeFile(join(dir, 'settings.json'), JSON.stringify({ voiceTranscriber: 'server', voiceServer: SERVER }))

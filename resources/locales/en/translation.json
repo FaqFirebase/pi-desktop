@@ -780,6 +780,7 @@
     "voice": {
       "serverBadResponse": "The speech server's answer has no text.",
       "serverNotConfigured": "Enter the speech server's address and model in Settings > Voice dictation.",
+      "serverNotSelected": "Voice dictation is set to run on this computer. To use your speech server, choose On a server you choose in Settings > Voice dictation.",
       "serverStatus": "The speech server answered with error {{status}}: {{detail}}",
       "serverTimeout": "The speech server at {{url}} did not answer within {{seconds}} seconds.",
       "serverUnreachable": "Could not reach the speech server at {{url}} ({{reason}})."

@@ -1039,7 +1039,12 @@ test('voice status shares main settings/catalog behavior and Settings leaves bot
 test('popup dictation takes the same server path as the main window, payload check first', async () => {
   await withBridge(async (h) => {
     await assert.rejects(h.invoke(QUICK_CHAT_CHANNELS.voiceTranscribe, [0, 0.5]), /Float32Array/)
-    // No server is set, so the shared path refuses before any request.
+    // The shared path refuses before any request: first the saved choice is
+    // this computer, then the server is chosen but has no address or model.
+    await assert.rejects(h.invoke(QUICK_CHAT_CHANNELS.voiceTranscribe, new Float32Array(1)),
+      { message: t('errors.voice.serverNotSelected') })
+    const { saveAppSettings } = await import('./settings')
+    await saveAppSettings({ voiceTranscriber: 'server' })
     await assert.rejects(h.invoke(QUICK_CHAT_CHANNELS.voiceTranscribe, new Float32Array(1)),
       { message: t('errors.voice.serverNotConfigured') })
   })

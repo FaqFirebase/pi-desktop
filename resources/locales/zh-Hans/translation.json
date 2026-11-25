@@ -766,6 +766,7 @@
     "voice": {
       "serverBadResponse": "",
       "serverNotConfigured": "",
+      "serverNotSelected": "语音听写当前设为在这台电脑上运行。要使用你的语音服务器，请在“设置 > 语音听写”中选择“在你选择的服务器上”。",
       "serverStatus": "",
       "serverTimeout": "",
       "serverUnreachable": ""

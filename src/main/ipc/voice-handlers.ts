@@ -16,6 +16,7 @@ import { createSerialQueue } from '../serial-queue'
 import { loadAppSettings, saveAppSettings } from './settings'
 import { assertTrustedSender, isObject, isString } from './validation'
 import { appLog } from '../app-log'
+import { t } from '../../shared/i18n'
 import type { IpcContext } from './context'
 
 const VOICE_PRECISIONS: readonly VoicePrecision[] = ['int8', 'fp16']
@@ -73,6 +74,8 @@ export async function transcribeVoiceClip(
   const clip = parseVoiceClip(audio)
   return runTranscription(async () => {
     const settings = await loadAppSettings(workspaceManager)
+    // page status can be stale, only the saved choice lets audio out
+    if (settings.voiceTranscriber !== 'server') throw new Error(t('errors.voice.serverNotSelected'))
     try {
       const apiKey = await voiceServerKeyStore.readSavedKey()
       return await transcribeWithServer({ server: settings.voiceServer, apiKey, audio: clip }, fetchImpl)

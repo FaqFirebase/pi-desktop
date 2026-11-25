@@ -780,6 +780,7 @@
     "voice": {
       "serverBadResponse": "",
       "serverNotConfigured": "",
+      "serverNotSelected": "Sesli dikte bu bilgisayarda çalışacak şekilde ayarlı. Konuşma sunucunuzu kullanmak için Ayarlar > Sesli dikte bölümünde Seçtiğiniz bir sunucuda seçeneğini seçin.",
       "serverStatus": "",
       "serverTimeout": "",
       "serverUnreachable": ""

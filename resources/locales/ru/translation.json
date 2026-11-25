@@ -808,6 +808,7 @@
     "voice": {
       "serverBadResponse": "",
       "serverNotConfigured": "",
+      "serverNotSelected": "Голосовая диктовка настроена на работу на этом компьютере. Чтобы использовать свой сервер распознавания речи, выберите «На выбранном вами сервере» в разделе «Настройки > Голосовая диктовка».",
       "serverStatus": "",
       "serverTimeout": "",
       "serverUnreachable": ""
