@@ -124,7 +124,7 @@ export function WorkspaceTabs(): React.JSX.Element {
               void removeWorkspace(workspace.id)
             }}
             className={clsx(
-              'group relative flex h-9 min-w-[150px] max-w-[240px] shrink-0 select-none items-center gap-2 rounded-t-md border border-b-0 px-2.5 text-xs transition-colors',
+              'group relative flex h-9 min-w-[150px] max-w-[240px] shrink-0 select-none items-stretch rounded-t-md border border-b-0 text-xs transition-colors',
               draggedProjectId === workspace.id && 'opacity-50',
               active
                 ? 'border-border bg-surface text-primary'
@@ -149,7 +149,8 @@ export function WorkspaceTabs(): React.JSX.Element {
                   if (switched) setCurrentView('chat')
                 })
               }}
-              className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              // The select button fills the whole tab; the close button sits on top of it.
+              className={clsx('flex min-w-0 flex-1 items-center gap-2 pl-2.5 text-left', tabs.length > 1 ? 'pr-8' : 'pr-2.5')}
               title={`${workspace.path}${workspace.branch ? `\n${workspace.branch}` : ''}`}
             >
               {isLinkedTask ? (
@@ -174,7 +175,7 @@ export function WorkspaceTabs(): React.JSX.Element {
                   event.preventDefault()
                   event.stopPropagation()
                 }}
-                className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-all hover:bg-highlight hover:text-primary group-hover:opacity-100"
+                className="absolute right-2.5 top-1/2 shrink-0 -translate-y-1/2 rounded p-0.5 text-faint opacity-0 transition-all hover:bg-highlight hover:text-primary group-hover:opacity-100"
                 title={isTab ? t('store.confirm.closeTabLabel') : t('store.confirm.removeWorkspaceTitle')}
                 aria-label={
                   isTab
@@ -267,7 +268,7 @@ export function WorkspaceTabs(): React.JSX.Element {
                 void closeSessionTab(runtime.runtimeId)
               }}
               className={clsx(
-                'group flex min-w-0 max-w-[240px] shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[11px] transition-colors',
+                'group relative flex min-w-0 max-w-[240px] shrink-0 items-stretch rounded text-[11px] transition-colors',
                 active ? 'bg-card text-primary' : 'text-muted hover:bg-highlight hover:text-secondary'
               )}
             >
@@ -278,7 +279,8 @@ export function WorkspaceTabs(): React.JSX.Element {
                   setCurrentView('chat')
                   void switchSession(runtime.sessionPath, activeWorkspace?.path)
                 }}
-                className="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-0.5 text-left"
+                // The select button fills the whole tab; the close button sits on top of it.
+                className="flex min-w-0 flex-1 items-center gap-1.5 py-1 pl-2 pr-6 text-left"
                 title={runtime.sessionPath ?? undefined}
                 aria-current={active ? 'page' : undefined}
               >
@@ -290,7 +292,7 @@ export function WorkspaceTabs(): React.JSX.Element {
               <button
                 type="button"
                 onClick={() => void closeSessionTab(runtime.runtimeId)}
-                className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-all hover:bg-highlight-strong hover:text-primary group-hover:opacity-100"
+                className="absolute right-1 top-1/2 shrink-0 -translate-y-1/2 rounded p-0.5 text-faint opacity-0 transition-all hover:bg-highlight-strong hover:text-primary group-hover:opacity-100"
                 title={t('workspaceTabs.closeSessionTab')}
                 aria-label={t('workspaceTabs.closeSessionTab')}
               >
