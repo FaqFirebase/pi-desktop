@@ -778,12 +778,12 @@
       "skillInstalledElsewhere": "Pi Desktop'ın kurmadığı bir TypeSafe skill'i zaten şurada: {{directory}}. Pi Desktop onu değiştirmedi."
     },
     "voice": {
-      "serverBadResponse": "",
-      "serverNotConfigured": "",
+      "serverBadResponse": "Konuşma sunucusunun yanıtında metin yok.",
+      "serverNotConfigured": "Konuşma sunucusunun adresini ve modelini Ayarlar > Sesli dikte bölümünde girin.",
       "serverNotSelected": "Sesli dikte bu bilgisayarda çalışacak şekilde ayarlı. Konuşma sunucunuzu kullanmak için Ayarlar > Sesli dikte bölümünde Seçtiğiniz bir sunucuda seçeneğini seçin.",
-      "serverStatus": "",
-      "serverTimeout": "",
-      "serverUnreachable": ""
+      "serverStatus": "Konuşma sunucusu {{status}} hatasıyla yanıt verdi: {{detail}}",
+      "serverTimeout": "{{url}} adresindeki konuşma sunucusu {{seconds}} saniye içinde yanıt vermedi.",
+      "serverUnreachable": "{{url}} adresindeki konuşma sunucusuna ulaşılamadı ({{reason}})."
     },
     "workflow": {
       "runNotFound": "İş akışı çalıştırması bulunamadı"
@@ -1573,7 +1573,7 @@
       "globalUnsaved": "Bu değişikliği uygulamak için kaydedin. Aşağıdaki sistem kaydı hâlâ kayıtlı ayarı kullanıyor.",
       "heading": "Klavye kısayolları",
       "inUse": "{{shortcut}} zaten kullanımda: {{action}}. Başka bir kombinasyon seçin.",
-      "invalid": "Cmd veya Ctrl ile birlikte bir harf, rakam, noktalama tuşu ya da F1–F12 kullanın.",
+      "invalid": "Cmd veya Ctrl ile birlikte bir harf, rakam, noktalama tuşu, Boşluk ya da F1–F12 kullanın.",
       "modelSelector": "Model seçici",
       "nextProject": "Sonraki proje",
       "nextSession": "Sonraki açık oturum",
@@ -1692,32 +1692,32 @@
       "runtimeGpu": "Her modelin GPU sürümüyle ekran kartında ({{name}}) çalışır.",
       "selected": "Kullanımda",
       "server": {
-        "address": "",
-        "addressInvalid": "",
-        "addressPlaceholder": "",
-        "addressTip": "",
-        "intro": "",
-        "key": "",
-        "keyInvalid": "",
-        "keyPlaceholder": "",
-        "keyRemove": "",
-        "keySave": "",
-        "keySaved": "",
-        "language": "",
-        "languagePlaceholder": "",
-        "model": "",
-        "modelPlaceholder": "",
-        "notReady": "",
-        "prompt": "",
-        "promptPlaceholder": "",
-        "ready": "",
-        "save": ""
+        "address": "Sunucu adresi",
+        "addressInvalid": "Kullanıcı adı, sorgu veya # içermeyen bir http:// ya da https:// adresi girin.",
+        "addressPlaceholder": "https://speech.example.com/v1",
+        "addressTip": "Kaydedilen konuşmanız metne çevrilmek üzere bu adrese gönderilir.",
+        "intro": "Her duraksadığınızda Pi Desktop söylediklerinizi bu sunucuya gönderir ve dönen metni ekler. Sunucu, OpenAI uyumlu yazıya dökme isteklerini kabul etmelidir.",
+        "key": "API anahtarı (isteğe bağlı)",
+        "keyInvalid": "Bu bir API anahtarına benzemiyor. Anahtarı boşluk veya satır sonu olmadan yapıştırın.",
+        "keyPlaceholder": "Sunucunun API anahtarını yapıştırın",
+        "keyRemove": "Kaldır",
+        "keySave": "Anahtarı kaydet",
+        "keySaved": "Anahtar kaydedildi",
+        "language": "Dil",
+        "languagePlaceholder": "Otomatik algıla",
+        "model": "Model",
+        "modelPlaceholder": "Sunucudaki model adı",
+        "notReady": "Bu sunucuyla dikte etmek için adresi ve modeli girin.",
+        "prompt": "İstem",
+        "promptPlaceholder": "Metin için isteğe bağlı sözcükler veya üslup",
+        "ready": "Dikte bu sunucuyu kullanıyor.",
+        "save": "Kaydet"
       },
       "sizeMb": "~{{mb}} MB",
-      "transcribe": "",
+      "transcribe": "Yazıya dökme",
       "transcriber": {
-        "local": "",
-        "server": ""
+        "local": "Bu bilgisayarda",
+        "server": "Seçtiğiniz bir sunucuda"
       },
       "use": "Kullan"
     }

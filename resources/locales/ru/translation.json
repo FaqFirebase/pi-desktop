@@ -806,12 +806,12 @@
       "skillInstalledElsewhere": "В {{directory}} уже есть навык TypeSafe, установленный не через Pi Desktop. Pi Desktop не изменял его."
     },
     "voice": {
-      "serverBadResponse": "",
-      "serverNotConfigured": "",
+      "serverBadResponse": "В ответе сервера распознавания речи нет текста.",
+      "serverNotConfigured": "Укажите адрес и модель сервера распознавания речи в разделе «Настройки > Голосовая диктовка».",
       "serverNotSelected": "Голосовая диктовка настроена на работу на этом компьютере. Чтобы использовать свой сервер распознавания речи, выберите «На выбранном вами сервере» в разделе «Настройки > Голосовая диктовка».",
-      "serverStatus": "",
-      "serverTimeout": "",
-      "serverUnreachable": ""
+      "serverStatus": "Сервер распознавания речи вернул ошибку {{status}}: {{detail}}",
+      "serverTimeout": "Сервер распознавания речи {{url}} не ответил за {{seconds}} с.",
+      "serverUnreachable": "Не удалось подключиться к серверу распознавания речи {{url}} ({{reason}})."
     },
     "workflow": {
       "runNotFound": "Запуск процесса не найден"
@@ -1637,7 +1637,7 @@
       "globalUnsaved": "Сохраните, чтобы применить изменение. Статус регистрации ниже относится к сохранённой настройке.",
       "heading": "Сочетания клавиш",
       "inUse": "{{shortcut}} уже используется для «{{action}}». Выберите другое сочетание.",
-      "invalid": "Используйте Cmd или Ctrl с буквой, цифрой, знаком пунктуации или F1–F12.",
+      "invalid": "Используйте Cmd или Ctrl с буквой, цифрой, знаком пунктуации, пробелом или F1–F12.",
       "modelSelector": "Выбор модели",
       "nextProject": "Следующий проект",
       "nextSession": "Следующая открытая сессия",
@@ -1756,32 +1756,32 @@
       "runtimeGpu": "Работает на видеокарте ({{name}}) с версией каждой модели для GPU.",
       "selected": "Используется",
       "server": {
-        "address": "",
-        "addressInvalid": "",
-        "addressPlaceholder": "",
-        "addressTip": "",
-        "intro": "",
-        "key": "",
-        "keyInvalid": "",
-        "keyPlaceholder": "",
-        "keyRemove": "",
-        "keySave": "",
-        "keySaved": "",
-        "language": "",
-        "languagePlaceholder": "",
-        "model": "",
-        "modelPlaceholder": "",
-        "notReady": "",
-        "prompt": "",
-        "promptPlaceholder": "",
-        "ready": "",
-        "save": ""
+        "address": "Адрес сервера",
+        "addressInvalid": "Введите адрес http:// или https:// без имени пользователя, параметров запроса и #.",
+        "addressPlaceholder": "https://speech.example.com/v1",
+        "addressTip": "Ваша записанная речь отправляется на этот адрес для преобразования в текст.",
+        "intro": "Каждый раз, когда вы делаете паузу, Pi Desktop отправляет сказанное на этот сервер и добавляет возвращённый текст. Сервер должен принимать запросы на распознавание речи в формате, совместимом с OpenAI.",
+        "key": "API-ключ (необязательно)",
+        "keyInvalid": "Это не похоже на API-ключ. Вставьте ключ без пробелов и переносов строк.",
+        "keyPlaceholder": "Вставьте API-ключ сервера",
+        "keyRemove": "Удалить",
+        "keySave": "Сохранить ключ",
+        "keySaved": "Ключ сохранён",
+        "language": "Язык",
+        "languagePlaceholder": "Определять автоматически",
+        "model": "Модель",
+        "modelPlaceholder": "Название модели на сервере",
+        "notReady": "Укажите адрес и модель, чтобы диктовать через этот сервер.",
+        "prompt": "Подсказка",
+        "promptPlaceholder": "Необязательные слова или стиль для текста",
+        "ready": "Диктовка использует этот сервер.",
+        "save": "Сохранить"
       },
       "sizeMb": "~{{mb}} МБ",
-      "transcribe": "",
+      "transcribe": "Распознавание",
       "transcriber": {
-        "local": "",
-        "server": ""
+        "local": "На этом компьютере",
+        "server": "На выбранном вами сервере"
       },
       "use": "Выбрать"
     }
