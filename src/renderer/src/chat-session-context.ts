@@ -86,6 +86,8 @@ export interface ChatSessionBindings {
   composer: ChatComposerBindings
   voice: {
     loadStatus(): Promise<VoiceStatus>
+    /** Transcribe one segment on the user's server (the main process makes the request). */
+    transcribeOnServer(audio: Float32Array): Promise<string>
     openSettings(): Promise<void> | void
     globalShortcuts: boolean
   }

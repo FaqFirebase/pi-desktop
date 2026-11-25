@@ -78,14 +78,7 @@ export class VoiceRecorder {
     return resampleLinear(range, this.sampleRate, TARGET_SAMPLE_RATE)
   }
 
-  /** Stop recording and return the audio from frame `from` on as mono 16 kHz PCM. */
-  async stop(from = 0): Promise<Float32Array> {
-    const pcm = this.getPcm16k(from)
-    this.release()
-    return pcm
-  }
-
-  /** Abort recording and drop the audio. */
+  /** Stop recording and release the microphone. The audio captured so far stays readable with getPcm16k. */
   cancel(): void {
     this.release()
   }

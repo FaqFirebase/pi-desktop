@@ -221,7 +221,9 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     }),
     [resizeTextarea, markDraftEdited]
   )
-  const dictation = useVoiceDictation(voiceHandlers, { active, loadStatus: voice.loadStatus })
+  const dictation = useVoiceDictation(voiceHandlers, {
+    active, loadStatus: voice.loadStatus, transcribeOnServer: voice.transcribeOnServer,
+  })
   const { cancel: cancelDictation } = dictation
 
   // Clear the composer and collapse it back to the idle height. The textarea is

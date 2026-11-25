@@ -4,6 +4,7 @@ import { normalizeLanguageSetting } from './i18n/resolve'
 import { isPermissionMode } from './permission-mode'
 import { getVoiceModel, type VoicePrecision } from './voice-models'
 import { isVoiceDevice } from './voice-device'
+import { isVoiceTranscriber, normalizeVoiceServerSettings } from './voice-server'
 import { isChatWidth } from './chat-width'
 import { isKeepAwakeMode } from './keep-awake'
 import { isEditorId } from './editors'
@@ -48,6 +49,8 @@ export function normalizeStoredSettings(stored: Record<string, unknown>, languag
   }
   if (!isVoicePrecision(merged.voicePrecision)) merged.voicePrecision = DEFAULT_SETTINGS.voicePrecision
   if (!isVoiceDevice(merged.voiceDevice)) merged.voiceDevice = DEFAULT_SETTINGS.voiceDevice
+  if (!isVoiceTranscriber(merged.voiceTranscriber)) merged.voiceTranscriber = DEFAULT_SETTINGS.voiceTranscriber
+  merged.voiceServer = normalizeVoiceServerSettings(merged.voiceServer)
   if (!isEditorId(merged.preferredEditor)) merged.preferredEditor = DEFAULT_SETTINGS.preferredEditor
   return merged
 }

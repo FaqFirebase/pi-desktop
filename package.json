@@ -149,9 +149,11 @@
       "icon": "resources/icons/Icon.icon",
       "darkModeSupport": true,
       "extendInfo": {
-        "NSLocalNetworkUsageDescription": "Pi Desktop connects to AI providers and development services on your local network."
+        "NSLocalNetworkUsageDescription": "Pi Desktop connects to AI providers and development services on your local network.",
+        "NSMicrophoneUsageDescription": "Pi Desktop uses the microphone for voice dictation."
       },
       "hardenedRuntime": true,
+      "entitlements": "resources/mac/entitlements.mac.plist",
       "gatekeeperAssess": false,
       "artifactName": "Pi-Desktop-${version}-${os}-${arch}.${ext}"
     },

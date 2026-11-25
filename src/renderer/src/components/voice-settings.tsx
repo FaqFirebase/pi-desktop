@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Download, Trash2, Loader2, Check } from 'lucide-react'
+import { Download, Trash2, Loader2, Check, Info, KeyRound } from 'lucide-react'
 import type {
   VoiceStatus,
   VoiceProgressEvent,
 } from '../../../shared/ipc-contracts'
+import {
+  VOICE_TRANSCRIBERS,
+  normalizeVoiceServerSettings,
+  voiceServerEndpoint,
+  voiceServerReady,
+  type VoiceServerSettings,
+  type VoiceTranscriber,
+} from '../../../shared/voice-server'
 import type { VoiceModel, VoicePrecision } from '../../../shared/voice-models'
 import {
   precisionForRuntime,
@@ -13,13 +21,24 @@ import {
   type VoiceDevice,
 } from '../../../shared/voice-device'
 import { probeGpu, type GpuProbe } from '../voice/gpu-probe'
+import { formatIpcError } from '../utils/ipc-error'
+
+const TAB_CLASS = 'rounded-md px-2 py-1 text-xs transition-colors'
+const TAB_SELECTED_CLASS = 'bg-card text-primary ring-1 ring-inset ring-border-strong'
+const TAB_IDLE_CLASS = 'text-dim hover:text-secondary'
+const INPUT_CLASS =
+  'min-w-0 flex-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-primary focus:border-focus focus:outline-none'
+const BUTTON_CLASS =
+  'flex items-center gap-1 rounded-md px-2 py-1 text-xs text-dim hover:bg-highlight-strong hover:text-secondary disabled:opacity-50'
+const SERVER_FIELDS = ['baseUrl', 'model', 'language', 'prompt'] as const
 
 /**
- * Voice dictation settings: where the model runs (Auto, CPU or GPU) and the
- * model picker. The device decides which version of a model to download: the
- * GPU version (fp16) or the CPU version (int8). No model is downloaded until
- * the user installs one; there is no default. Each row explains what the model
- * is, how big it is, and which languages it covers.
+ * Voice dictation settings: where speech becomes text (this computer or a
+ * server the user chooses). On this computer: where the model runs (Auto, CPU
+ * or GPU) and the model picker. The device decides which version of a model
+ * to download: the GPU version (fp16) or the CPU version (int8). No model is
+ * downloaded until the user installs one; there is no default. Each row
+ * explains what the model is, how big it is, and which languages it covers.
  */
 export function VoiceSettings(): React.JSX.Element {
   const { t } = useTranslation()
@@ -81,6 +100,19 @@ export function VoiceSettings(): React.JSX.Element {
     [refresh],
   )
 
+  const setTranscriber = useCallback(
+    async (transcriber: VoiceTranscriber) => {
+      setError(null)
+      try {
+        await window.piDesktop.settings.save({ voiceTranscriber: transcriber })
+        await refresh()
+      } catch (err) {
+        setError(formatIpcError(err))
+      }
+    },
+    [refresh],
+  )
+
   const setDevice = useCallback(
     async (device: VoiceDevice) => {
       setError(null)
@@ -106,8 +138,45 @@ export function VoiceSettings(): React.JSX.Element {
     return <div className="text-sm text-dim">{t('common.loading')}</div>
   }
 
+  const errorNote = error && (
+    <div className="rounded-md border border-error-bg bg-error-bg px-2 py-1 text-xs text-error">
+      {error}
+    </div>
+  )
+
+  const transcriberTabs = (
+    <div className="flex items-center gap-2">
+      <span className="text-sm text-primary">{t('settings.voice.transcribe')}</span>
+      <div className="flex gap-1" role="tablist" aria-label={t('settings.voice.transcribe')}>
+        {VOICE_TRANSCRIBERS.map((option) => (
+          <button
+            key={option}
+            type="button"
+            role="tab"
+            aria-selected={status.transcriber === option}
+            onClick={() => void setTranscriber(option)}
+            className={`${TAB_CLASS} ${status.transcriber === option ? TAB_SELECTED_CLASS : TAB_IDLE_CLASS}`}
+          >
+            {t(`settings.voice.transcriber.${option}`)}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
+  if (status.transcriber === 'server') {
+    return (
+      <div className="space-y-4">
+        {transcriberTabs}
+        {errorNote}
+        <ServerTranscriberSettings status={status} onStatus={setStatus} onError={setError} onSaved={refresh} />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
+      {transcriberTabs}
       <p className="text-xs text-dim">{t('settings.voice.intro')}</p>
 
       <div className="space-y-1">
@@ -121,11 +190,7 @@ export function VoiceSettings(): React.JSX.Element {
                 role="tab"
                 aria-selected={status.device === option}
                 onClick={() => void setDevice(option)}
-                className={`rounded-md px-2 py-1 text-xs transition-colors ${
-                  status.device === option
-                    ? 'bg-card text-primary ring-1 ring-inset ring-border-strong'
-                    : 'text-dim hover:text-secondary'
-                }`}
+                className={`${TAB_CLASS} ${status.device === option ? TAB_SELECTED_CLASS : TAB_IDLE_CLASS}`}
               >
                 {t(`settings.voice.device.${option}`)}
               </button>
@@ -144,11 +209,7 @@ export function VoiceSettings(): React.JSX.Element {
         )}
       </div>
 
-      {error && (
-        <div className="rounded-md border border-error-bg bg-error-bg px-2 py-1 text-xs text-error">
-          {error}
-        </div>
-      )}
+      {errorNote}
 
       <div className="space-y-2">
         {status.catalog.map((model) => {
@@ -263,6 +324,155 @@ export function VoiceSettings(): React.JSX.Element {
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The user's OpenAI-compatible transcription server: address, model, optional
+ * language and prompt, and an optional API key. The key is saved by the main
+ * process in its own file and never comes back to the page.
+ */
+function ServerTranscriberSettings({ status, onStatus, onError, onSaved }: {
+  status: VoiceStatus
+  onStatus: (status: VoiceStatus) => void
+  onError: (error: string | null) => void
+  onSaved: () => Promise<void>
+}): React.JSX.Element {
+  const { t } = useTranslation()
+  const [draft, setDraft] = useState<VoiceServerSettings>(status.server)
+  const [keyDraft, setKeyDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const entered = normalizeVoiceServerSettings(draft)
+  const changed = SERVER_FIELDS.some((field) => entered[field] !== status.server[field])
+  const addressInvalid = entered.baseUrl !== '' && voiceServerEndpoint(entered.baseUrl) === null
+
+  const run = async (work: () => Promise<void>) => {
+    onError(null)
+    setBusy(true)
+    try {
+      await work()
+    } catch (err) {
+      onError(formatIpcError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const saveServer = () => run(async () => {
+    await window.piDesktop.settings.save({ voiceServer: entered })
+    setDraft(entered)
+    await onSaved()
+  })
+
+  const saveKey = () => run(async () => {
+    const result = await window.piDesktop.voice.saveServerKey(keyDraft)
+    if (!result.ok) {
+      onError(t('settings.voice.server.keyInvalid'))
+      return
+    }
+    setKeyDraft('')
+    onStatus(result.status)
+  })
+
+  const fieldLabels: Record<typeof SERVER_FIELDS[number], string> = {
+    baseUrl: t('settings.voice.server.address'),
+    model: t('settings.voice.server.model'),
+    language: t('settings.voice.server.language'),
+    prompt: t('settings.voice.server.prompt'),
+  }
+  const fieldPlaceholders: Record<typeof SERVER_FIELDS[number], string> = {
+    baseUrl: t('settings.voice.server.addressPlaceholder'),
+    model: t('settings.voice.server.modelPlaceholder'),
+    language: t('settings.voice.server.languagePlaceholder'),
+    prompt: t('settings.voice.server.promptPlaceholder'),
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-dim">{t('settings.voice.server.intro')}</p>
+
+      <form
+        className="space-y-2"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void saveServer()
+        }}
+      >
+        {SERVER_FIELDS.map((field) => (
+          <label key={field} className="flex items-center gap-2">
+            <span className="flex w-32 shrink-0 items-center gap-1 text-xs text-secondary">
+              {fieldLabels[field]}
+              {field === 'baseUrl' && (
+                <span title={t('settings.voice.server.addressTip')}>
+                  <Info size={12} className="text-dim" aria-label={t('settings.voice.server.addressTip')} />
+                </span>
+              )}
+            </span>
+            <input
+              type="text"
+              value={draft[field]}
+              onChange={(event) => setDraft({ ...draft, [field]: event.target.value })}
+              placeholder={fieldPlaceholders[field]}
+              aria-invalid={field === 'baseUrl' && addressInvalid}
+              autoComplete="off"
+              spellCheck={false}
+              className={INPUT_CLASS}
+            />
+          </label>
+        ))}
+        {addressInvalid && <p className="text-xs text-error">{t('settings.voice.server.addressInvalid')}</p>}
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs text-dim">
+            {voiceServerReady(status.server) ? t('settings.voice.server.ready') : t('settings.voice.server.notReady')}
+          </span>
+          <button type="submit" disabled={busy || !changed || addressInvalid} className={BUTTON_CLASS}>
+            {t('settings.voice.server.save')}
+          </button>
+        </div>
+      </form>
+
+      <div className="space-y-2">
+        <div className="text-sm text-primary">{t('settings.voice.server.key')}</div>
+        {status.serverKeySaved ? (
+          <div className="flex items-center justify-between gap-3">
+            <span className="inline-flex items-center gap-1 text-xs text-secondary">
+              <Check size={13} /> {t('settings.voice.server.keySaved')}
+            </span>
+            <button
+              type="button"
+              onClick={() => void run(async () => onStatus(await window.piDesktop.voice.clearServerKey()))}
+              disabled={busy}
+              className={BUTTON_CLASS}
+            >
+              <Trash2 size={13} /> {t('settings.voice.server.keyRemove')}
+            </button>
+          </div>
+        ) : (
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void saveKey()
+            }}
+          >
+            <input
+              type="password"
+              value={keyDraft}
+              onChange={(event) => setKeyDraft(event.target.value)}
+              placeholder={t('settings.voice.server.keyPlaceholder')}
+              aria-label={t('settings.voice.server.key')}
+              autoComplete="off"
+              spellCheck={false}
+              className={INPUT_CLASS}
+            />
+            <button type="submit" disabled={busy || keyDraft.trim() === ''} className={BUTTON_CLASS}>
+              <KeyRound size={13} /> {t('settings.voice.server.keySave')}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   )

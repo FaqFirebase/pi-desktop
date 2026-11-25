@@ -50,6 +50,7 @@ import type {
   TypeSafeSaveKeyResult,
   VoiceInstallRequest,
   VoiceProgressEvent,
+  VoiceSaveServerKeyResult,
   AttachmentReadResult,
   OpenDialogOptions,
   OpenAttachmentDialogOptions,
@@ -295,13 +296,17 @@ interface PiDesktopAPI {
     onProgress(callback: (event: CouncilProgressEvent) => void): () => void
   }
 
-  // Voice dictation: on-device speech-to-text models
+  // Voice dictation: on-device speech-to-text models, or the user's transcription server
   voice: {
     status(): Promise<VoiceStatus>
     install(request: VoiceInstallRequest): Promise<VoiceStatus>
     cancel(): Promise<void>
     remove(modelId: string): Promise<VoiceStatus>
     select(request: { modelId: string | null; precision: VoiceInstallRequest['precision'] }): Promise<VoiceStatus>
+    /** Send one segment of mono 16 kHz samples to the server in the settings; resolves to its text. */
+    transcribe(audio: Float32Array): Promise<string>
+    saveServerKey(key: string): Promise<VoiceSaveServerKeyResult>
+    clearServerKey(): Promise<VoiceStatus>
     onProgress(callback: (event: VoiceProgressEvent) => void): () => void
     /** The system-wide dictation key was pressed. */
     onShortcut(callback: () => void): () => void
@@ -686,6 +691,9 @@ const api: PiDesktopAPI = {
     cancel: () => ipcRenderer.invoke(IPC_CHANNELS.VOICE_CANCEL),
     remove: (modelId) => ipcRenderer.invoke(IPC_CHANNELS.VOICE_REMOVE, modelId),
     select: (request) => ipcRenderer.invoke(IPC_CHANNELS.VOICE_SELECT, request),
+    transcribe: (audio) => ipcRenderer.invoke(IPC_CHANNELS.VOICE_TRANSCRIBE, audio),
+    saveServerKey: (key) => ipcRenderer.invoke(IPC_CHANNELS.VOICE_SAVE_SERVER_KEY, key),
+    clearServerKey: () => ipcRenderer.invoke(IPC_CHANNELS.VOICE_CLEAR_SERVER_KEY),
     onProgress: (callback) => {
       const handler = (_event: Electron.IpcRendererEvent, data: VoiceProgressEvent) => callback(data)
       ipcRenderer.on(IPC_CHANNELS.EVENT_VOICE_PROGRESS, handler)

@@ -805,6 +805,13 @@
       "skillDownloadFailed": "Не вдалося завантажити {{file}} (HTTP {{status}}).",
       "skillInstalledElsewhere": "У {{directory}} уже є навичка TypeSafe, установлена не через Pi Desktop. Pi Desktop не змінював її."
     },
+    "voice": {
+      "serverBadResponse": "",
+      "serverNotConfigured": "",
+      "serverStatus": "",
+      "serverTimeout": "",
+      "serverUnreachable": ""
+    },
     "workflow": {
       "runNotFound": "Запуск процесу не знайдено"
     },
@@ -1747,7 +1754,34 @@
       "runtimeCpuNoGpu": "Відповідну відеокарту не знайдено. Розпізнавання працює на процесорі (CPU) з версією кожної моделі для CPU.",
       "runtimeGpu": "Працює на відеокарті ({{name}}) з версією кожної моделі для GPU.",
       "selected": "Використовується",
+      "server": {
+        "address": "",
+        "addressInvalid": "",
+        "addressPlaceholder": "",
+        "addressTip": "",
+        "intro": "",
+        "key": "",
+        "keyInvalid": "",
+        "keyPlaceholder": "",
+        "keyRemove": "",
+        "keySave": "",
+        "keySaved": "",
+        "language": "",
+        "languagePlaceholder": "",
+        "model": "",
+        "modelPlaceholder": "",
+        "notReady": "",
+        "prompt": "",
+        "promptPlaceholder": "",
+        "ready": "",
+        "save": ""
+      },
       "sizeMb": "~{{mb}} МБ",
+      "transcribe": "",
+      "transcriber": {
+        "local": "",
+        "server": ""
+      },
       "use": "Вибрати"
     }
   },

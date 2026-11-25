@@ -56,7 +56,12 @@ function mount(engine: AgentEngineKind) {
       commands: [], guiCommands: [],
     },
     approval: { request: null, notify: null, answering: false, respond: () => {}, cancel: () => {}, dismissNotify: () => {} },
-    voice: { loadStatus: async () => { throw new Error('Voice is outside this picker probe') }, openSettings: () => {}, globalShortcuts: false },
+    voice: {
+      loadStatus: async () => { throw new Error('Voice is outside this picker probe') },
+      transcribeOnServer: async () => { throw new Error('Voice is outside this picker probe') },
+      openSettings: () => {},
+      globalShortcuts: false,
+    },
   }
   function render(): void {
     root.render(<I18nextProvider i18n={i18n}><ChatSessionContext.Provider value={{ ...bindings }}><textarea /><ModelSelector /></ChatSessionContext.Provider></I18nextProvider>)

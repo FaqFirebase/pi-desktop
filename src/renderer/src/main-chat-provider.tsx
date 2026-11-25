@@ -13,6 +13,7 @@ import { SubagentProgress } from './components/subagent-progress'
 
 const mainVoice: ChatSessionBindings['voice'] = {
   loadStatus: () => window.piDesktop.voice.status(),
+  transcribeOnServer: (audio) => window.piDesktop.voice.transcribe(audio),
   openSettings: () => useAppStore.getState().setCurrentView('settings'),
   globalShortcuts: true,
 }

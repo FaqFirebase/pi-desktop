@@ -261,6 +261,9 @@ export const IPC_CHANNELS = {
   VOICE_CANCEL: 'voice:cancel',
   VOICE_REMOVE: 'voice:remove',
   VOICE_SELECT: 'voice:select',
+  VOICE_TRANSCRIBE: 'voice:transcribe',
+  VOICE_SAVE_SERVER_KEY: 'voice:save-server-key',
+  VOICE_CLEAR_SERVER_KEY: 'voice:clear-server-key',
 
   // TypeSafe (Jev): API key storage and agent skill install
   TYPESAFE_STATUS: 'typesafe:status',
@@ -1305,6 +1308,7 @@ import type { ModelsConfig as ModelsConfigType } from './models-config'
 import type { CouncilConfig } from './council-config'
 import type { VoicePrecision, VoiceModel, VoiceModelManifest, VoiceDownloadProgress } from './voice-models'
 import type { VoiceDevice } from './voice-device'
+import type { VoiceServerSettings, VoiceTranscriber } from './voice-server'
 import type { ChatWidth } from './chat-width'
 import type { KeepAwakeMode } from './keep-awake'
 import type { EditorId } from './editors'
@@ -1561,6 +1565,13 @@ export interface AppSettings {
   // 'gpu'. It picks which precision Settings downloads. Unknown values reset
   // to 'auto' on load.
   voiceDevice: VoiceDevice
+  // Where dictation turns speech into text: 'local' runs the voice model on
+  // this computer; 'server' sends each spoken segment to voiceServer. Unknown
+  // values reset to 'local' on load.
+  voiceTranscriber: VoiceTranscriber
+  // The OpenAI-compatible transcription server for 'server'. Its API key, when
+  // there is one, lives in its own owner-only file, never in this file.
+  voiceServer: VoiceServerSettings
   // Editor that "Open in editor" uses; null = System default. Unknown ids
   // reset to null on load.
   preferredEditor: EditorId | null
@@ -1577,7 +1588,13 @@ export interface VoiceStatus {
   device: VoiceDevice
   /** The saved device needs a different set of startup switches than this run has. */
   restartRequired: boolean
+  transcriber: VoiceTranscriber
+  server: VoiceServerSettings
+  /** An API key for the server is saved. The key itself never leaves the main process. */
+  serverKeySaved: boolean
 }
+
+export type VoiceSaveServerKeyResult = { ok: true; status: VoiceStatus } | { ok: false }
 
 /** Request to download and install one model at one precision. */
 export interface VoiceInstallRequest {

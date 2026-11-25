@@ -805,6 +805,13 @@
       "skillDownloadFailed": "Не удалось скачать {{file}} (HTTP {{status}}).",
       "skillInstalledElsewhere": "В {{directory}} уже есть навык TypeSafe, установленный не через Pi Desktop. Pi Desktop не изменял его."
     },
+    "voice": {
+      "serverBadResponse": "",
+      "serverNotConfigured": "",
+      "serverStatus": "",
+      "serverTimeout": "",
+      "serverUnreachable": ""
+    },
     "workflow": {
       "runNotFound": "Запуск процесса не найден"
     },
@@ -1747,7 +1754,34 @@
       "runtimeCpuNoGpu": "Подходящая видеокарта не найдена. Распознавание работает на процессоре (CPU) с версией каждой модели для CPU.",
       "runtimeGpu": "Работает на видеокарте ({{name}}) с версией каждой модели для GPU.",
       "selected": "Используется",
+      "server": {
+        "address": "",
+        "addressInvalid": "",
+        "addressPlaceholder": "",
+        "addressTip": "",
+        "intro": "",
+        "key": "",
+        "keyInvalid": "",
+        "keyPlaceholder": "",
+        "keyRemove": "",
+        "keySave": "",
+        "keySaved": "",
+        "language": "",
+        "languagePlaceholder": "",
+        "model": "",
+        "modelPlaceholder": "",
+        "notReady": "",
+        "prompt": "",
+        "promptPlaceholder": "",
+        "ready": "",
+        "save": ""
+      },
       "sizeMb": "~{{mb}} МБ",
+      "transcribe": "",
+      "transcriber": {
+        "local": "",
+        "server": ""
+      },
       "use": "Выбрать"
     }
   },

@@ -763,6 +763,13 @@
       "skillDownloadFailed": "无法下载 {{file}}（HTTP {{status}}）。",
       "skillInstalledElsewhere": "{{directory}} 处已存在一个并非由 Pi Desktop 安装的 TypeSafe 技能。Pi Desktop 没有改动它。"
     },
+    "voice": {
+      "serverBadResponse": "",
+      "serverNotConfigured": "",
+      "serverStatus": "",
+      "serverTimeout": "",
+      "serverUnreachable": ""
+    },
     "workflow": {
       "runNotFound": "未找到工作流运行"
     },
@@ -1651,7 +1658,34 @@
       "runtimeCpuNoGpu": "未找到可用的显卡，因此语音在处理器（CPU）上运行，使用每个模型的 CPU 版本。",
       "runtimeGpu": "在显卡（{{name}}）上运行，使用每个模型的 GPU 版本。",
       "selected": "使用中",
+      "server": {
+        "address": "",
+        "addressInvalid": "",
+        "addressPlaceholder": "",
+        "addressTip": "",
+        "intro": "",
+        "key": "",
+        "keyInvalid": "",
+        "keyPlaceholder": "",
+        "keyRemove": "",
+        "keySave": "",
+        "keySaved": "",
+        "language": "",
+        "languagePlaceholder": "",
+        "model": "",
+        "modelPlaceholder": "",
+        "notReady": "",
+        "prompt": "",
+        "promptPlaceholder": "",
+        "ready": "",
+        "save": ""
+      },
       "sizeMb": "约 {{mb}} MB",
+      "transcribe": "",
+      "transcriber": {
+        "local": "",
+        "server": ""
+      },
       "use": "使用"
     }
   },

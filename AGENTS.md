@@ -95,6 +95,7 @@ src/
 │   ├── terminal-height.ts        # Default and bounds for the resizable terminal
 │   ├── typesafe.ts               # TypeSafe (Jev) values shared by both processes
 │   ├── voice-models.ts           # On-device speech-to-text model catalog (other voice-*.ts hold dictation helpers)
+│   ├── voice-server.ts           # Transcription server settings, endpoint rule, which transcriber dictation uses
 │   ├── workflow-control.ts       # Control eligibility for persisted workflow runs
 │   └── theme/                    # Theme-file format, resolver, syntax defaults, tokens
 ├── main/
@@ -191,12 +192,14 @@ src/
 │   ├── linked-ship.ts            # Ship all: commit, push, and pull request per repository, linked repositories first
 │   ├── linked-task-status.ts     # One repo bar row per repository of a linked task
 │   ├── theme-store.ts            # User theme files: list, save, delete, install from URL, gallery
+│   ├── api-key-store.ts          # API key rule; one key in an owner-only file in the GUI data dir
 │   ├── typesafe-key-store.ts     # TypeSafe API key in an owner-only file in the GUI data dir
 │   ├── typesafe-skill.ts         # Install the TypeSafe agent skill from a pinned release, digest-checked
 │   ├── voice-model-store.ts      # Downloaded speech models under the GUI data dir
 │   ├── voice-model-download.ts   # Pick and download one speech model's files
 │   ├── voice-protocol.ts         # `pi-voice` scheme that serves model files to the renderer
 │   ├── voice-gpu-switches.ts     # Chromium GPU switches for the saved voice device, read before app ready
+│   ├── voice-server-transcription.ts # One segment as WAV to the user's OpenAI-compatible server; its API key file
 │   ├── global-dictation-shortcut.ts # System-wide dictation key (Electron globalShortcut), toggles the composer mic
 │   ├── workflow-monitor.ts       # ~/.pi/workflows run and project discovery
 │   ├── tray-manager.ts           # System-tray lifecycle (minimize to tray on close)
@@ -456,7 +459,7 @@ resources/
 ### Keyboard shortcuts
 
 - Settings > Keyboard shortcuts records a new combination per action or disables it. `src/shared/keyboard-shortcuts.ts` holds the actions, the defaults, matching, and the conflict checks; `utils/app-shortcuts.ts` dispatches them
-- Bindings are stored with `Mod` (Cmd on macOS, Ctrl elsewhere). A binding needs Cmd or Ctrl plus a letter, digit, punctuation key, or F1 to F12
+- Bindings are stored with `Mod` (Cmd on macOS, Ctrl elsewhere). A binding needs Cmd or Ctrl plus a letter, digit, punctuation key, Space, or F1 to F12. Keys the system takes first (Cmd+Space opens Spotlight on macOS, Ctrl+Space switches the input method on some desktops) are not reserved: the system may never deliver them
 - Default bindings: diff `Mod+G`, terminal `Ctrl+Backquote`, settings `Mod+Comma`, command palette `Mod+K`, model selector `Mod+Shift+M`, note picker `Ctrl+Shift+P`, Review / Commit and push `Mod+Shift+H`, sidebar `Mod+B`, file tree `Mod+Shift+E`, Review panel `Mod+Shift+U`, new session `Mod+N`, previous/next project `Mod+Shift+BracketLeft`/`Mod+Shift+BracketRight`, previous/next open session `Mod+BracketLeft`/`Mod+BracketRight`, push to talk `Mod+Shift+T`; the system-wide dictation key is off by default
 - Voice keys: hold push to talk to record into the composer and let go to stop (silence does not end it while held; losing window focus does). The system-wide dictation key works while other apps are in front: the main process binds it with Electron `globalShortcut` (`global-dictation-shortcut.ts`), which reports presses only, so each press starts or stops dictation like a mic click. It is bound at startup and on Save; a key another app holds is logged to the app log. On Linux Wayland the desktop's global-shortcuts portal must accept the bind
 - Native menu and editing shortcuts are reserved and cannot be assigned (`RESERVED_SHORTCUTS`), for example `Mod+Shift+N` (New Workspace), `Mod+O` (Open Project), `Mod+F`, and `Ctrl+P`. A duplicate or reserved binding blocks dispatch until it is fixed
@@ -567,7 +570,7 @@ Click the status icon in the sidebar header to see:
 - Run on startup, Minimize to tray on close (Windows/Linux), Resume last session, desktop notifications
 - Keyboard shortcuts (see Keyboard shortcuts above)
 - Custom theme editor: create, edit, import/export, install from URL, browse the community gallery (theme files live in the GUI data dir `themes/`)
-- Voice dictation: speech model, precision, and device; models download into `<GUI data dir>/speech-models/`
+- Voice dictation: where speech becomes text (`voiceTranscriber`, `local` by default, or `server`). Local: speech model, precision, and device; models download into `<GUI data dir>/speech-models/`. Server: `voiceServer` (`baseUrl`, `model`, `language`, `prompt`; empty language and prompt are not sent). The main process makes the call, since the renderer CSP allows no network: each segment the dictation hook cuts goes as 16 kHz mono 16-bit WAV in a multipart `POST {baseUrl}/audio/transcriptions`, one at a time, with `VOICE_SERVER_TIMEOUT_MS`, and the answer is `{ text }`. An optional API key goes in `<GUI data dir>/voice-server-api-key` and is sent as a Bearer token; it is read again on each request, so another program may write it (and `settings.json`) while the app runs
 - TypeSafe Jev: API key and Jev skill install
 - Every field live-previews before Save through a unified settings draft (`store.ts` `settingsDraft`); the draft survives view switches; Save persists it, and Reset restores `DEFAULT_SETTINGS`
 - Permission rules: user-defined allow/deny rules (a glob per Pi tool) on top of the permission modes. Deny beats allow, and allow beats the mode default; deny applies in every mode. Global rules live in `<GUI data dir>/permission-rules.json`. A workspace `.pi-desktop/permission-rules.json` depends on workspace trust: when the workspace is trusted, it replaces the global rules; when it is untrusted (the default), only its deny rules apply, on top of the global rules, and its allow rules are ignored (a repo can tighten, never grant). Opening a workspace whose rules file has allow rules shows a trust prompt; the editor's Global tab notes the override, and the This workspace tab has a Trust/Revoke control. Settings > Behavior edits BOTH scopes through Global | This workspace tabs: create, edit, and remove workspace rules (in-app danger confirmation), Copy from global (seeds an unsaved draft from the current global list), and per-scope JSON import/export. Hand edits to either file on disk are supported: switching scope tabs re-reads that file when the scope has no unsaved draft. Engine: `resources/permission-rules.ts`, shared by the Pi extension (jiti relative import, mtime-cached live re-read) and the main process. The permissions extension always loads alongside Pi when it is present on disk, whatever the mode and whether or not rules exist, so a rules file created mid-session is enforced at once.
@@ -627,6 +630,7 @@ Instances on different data dirs can read one session store, and two agents on o
 | `<GUI data dir>/themes/` | User theme files |
 | `<GUI data dir>/typesafe-api-key` | TypeSafe API key (owner-only file) |
 | `<GUI data dir>/speech-models/` | Downloaded voice dictation models |
+| `<GUI data dir>/voice-server-api-key` | API key of the voice transcription server (owner-only file) |
 | `<workspace>/.pi-desktop/permission-rules.json` | Workspace permission rules |
 | `~/.pi/agent/sessions/` | Pi session files (organized by cwd) |
 | `~/.omp/agent/sessions/` | OMP session files (same layout; OMP writes here regardless of flags) |

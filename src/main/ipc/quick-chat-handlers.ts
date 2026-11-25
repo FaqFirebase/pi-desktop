@@ -21,7 +21,7 @@ import { ensureSessionRuntimeStarted, readRuntimeMessages, readStoppedRuntimeMes
 import { queryModelCatalog } from './model-catalog-query'
 import { attachmentDialogOptions } from '../../shared/attachment-dialog'
 import { fetchCommands } from './skills-mcp-handlers'
-import { buildVoiceStatus } from './voice-handlers'
+import { buildVoiceStatus, transcribeVoiceClip } from './voice-handlers'
 import { readAttachment } from '../attachment-reader'
 import { requestWorkspaceActivation, type WindowControls } from './workspace-activity-wiring'
 import type { IpcContext } from './context'
@@ -467,6 +467,7 @@ export function createQuickChatHandlers(
         return commands
       })
       handle(QUICK_CHAT_CHANNELS.voiceStatus, () => buildVoiceStatus(wm))
+      handle(QUICK_CHAT_CHANNELS.voiceTranscribe, (audio) => transcribeVoiceClip(wm, audio))
       handle(QUICK_CHAT_CHANNELS.openSettings, () => {
         windowControls.showWindow()
         const window = windowControls.getWindow()

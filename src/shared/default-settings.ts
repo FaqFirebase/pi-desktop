@@ -5,6 +5,7 @@ import { DEFAULT_CHAT_WIDTH } from './chat-width'
 import { DEFAULT_KEEP_AWAKE_MODE } from './keep-awake'
 import { SYSTEM_LANGUAGE } from './i18n/languages'
 import { DEFAULT_KEYBOARD_SHORTCUTS } from './keyboard-shortcuts'
+import { DEFAULT_VOICE_SERVER } from './voice-server'
 
 export const GIT_COMMIT_MESSAGE_CONFIG = {
   maxMessageLength: 10_000,
@@ -64,5 +65,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   voiceModel: null,
   voicePrecision: 'int8',
   voiceDevice: 'auto',
+  voiceTranscriber: 'local',
+  voiceServer: DEFAULT_VOICE_SERVER,
   preferredEditor: null,
 }

@@ -76,6 +76,27 @@ test('normalizeStoredSettings resets an invalid voice device', () => {
   assert.equal(settings.voiceDevice, DEFAULT_SETTINGS.voiceDevice)
 })
 
+test('dictation runs on this computer by default, and no server is set', () => {
+  assert.equal(DEFAULT_SETTINGS.voiceTranscriber, 'local')
+  assert.deepEqual(DEFAULT_SETTINGS.voiceServer, { baseUrl: '', model: '', language: '', prompt: '' })
+})
+
+test('a server written to settings.json by another program is kept, trimmed', () => {
+  const settings = normalizeStoredSettings(JSON.parse(JSON.stringify({
+    voiceTranscriber: 'server',
+    voiceServer: { baseUrl: 'http://127.0.0.1:8000/v1 ', model: 'speech-1', language: 'fr', prompt: '' },
+  })), LANGUAGES)
+  assert.equal(settings.voiceTranscriber, 'server')
+  assert.deepEqual(settings.voiceServer, { baseUrl: 'http://127.0.0.1:8000/v1', model: 'speech-1', language: 'fr', prompt: '' })
+})
+
+test('normalizeStoredSettings resets an unknown transcriber and a malformed server', () => {
+  const settings = normalizeStoredSettings({ voiceTranscriber: 'cloud', voiceServer: 'http://x' }, LANGUAGES)
+  assert.equal(settings.voiceTranscriber, 'local')
+  assert.deepEqual(settings.voiceServer, DEFAULT_SETTINGS.voiceServer)
+  assert.deepEqual(normalizeStoredSettings({ voiceServer: { model: 7 } }, LANGUAGES).voiceServer, DEFAULT_SETTINGS.voiceServer)
+})
+
 test('skill groups default to none and are cleaned on load', () => {
   assert.deepEqual(DEFAULT_SETTINGS.skillGroups, [])
   const settings = normalizeStoredSettings(
