@@ -30,6 +30,7 @@ import { appLog } from './app-log'
 import { getGuiDataPath } from './app-data-paths'
 import { loadPiDotenv } from './pi-dotenv'
 import { ompProfileArgEnv } from './omp-paths'
+import { renameOmpEvent } from './omp-events'
 import { childProcessEnv } from './windows-exe-search'
 import { FORCE_KILL_TIMEOUT_MS, hasExited, stopProcessTree } from './process-tree-kill'
 import { t, tEnglish } from '../shared/i18n'
@@ -1263,7 +1264,7 @@ export class PiRpcManager extends EventEmitter {
       this.emit('parse-error', line)
       return
     }
-    const event = parsed as PiRpcEvent
+    const event = renameOmpEvent(parsed) as PiRpcEvent
 
     // OMP advertises readiness explicitly. Keep the probe fallback for the
     // original Pi RPC implementation, which has no ready frame.
