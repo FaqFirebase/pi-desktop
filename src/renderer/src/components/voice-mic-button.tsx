@@ -4,6 +4,14 @@ import { Mic, Square, Loader2 } from 'lucide-react'
 import type { VoiceDictation } from '../voice/use-voice-dictation'
 import { VOICE_NEEDS_GPU_ERROR } from '../voice/voice-worker-protocol'
 import { onVoiceShortcut, type VoiceShortcutCommand } from '../voice/voice-shortcut'
+import { micState } from '../voice/mic-state'
+
+// red while recording; red without the pulse after a failure, so it shows without a hover
+const MIC_TONE = {
+  recording: 'text-error hover:text-error animate-pulse',
+  failed: 'text-error hover:bg-highlight-strong',
+  idle: 'text-dim hover:bg-highlight-strong hover:text-secondary',
+} as const
 
 /**
  * Microphone button for the composer. Click to record; a running transcript
@@ -45,7 +53,9 @@ export function VoiceMicButton({
   const baseClass =
     'flex items-center justify-center rounded-md p-1.5 transition-colors disabled:opacity-50'
 
-  if (!ready) {
+  const state = micState({ ready, phase, error })
+
+  if (state === 'setUp') {
     return (
       <button
         type="button"
@@ -60,7 +70,7 @@ export function VoiceMicButton({
     )
   }
 
-  if (phase === 'transcribing') {
+  if (state === 'transcribing') {
     return (
       <button
         type="button"
@@ -74,17 +84,13 @@ export function VoiceMicButton({
     )
   }
 
-  const recording = phase === 'recording'
+  const recording = state === 'recording'
   return (
     <button
       type="button"
       onClick={toggle}
       disabled={disabled}
-      className={`${baseClass} ${
-        recording
-          ? 'text-error hover:text-error animate-pulse'
-          : 'text-dim hover:bg-highlight-strong hover:text-secondary'
-      }`}
+      className={`${baseClass} ${MIC_TONE[state]}`}
       title={
         error
           ? t('chat.voice.errorTitle', {
