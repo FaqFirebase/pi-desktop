@@ -1007,6 +1007,39 @@ test('a live runtime never loses its session file to another runtime', async () 
   })
 })
 
+test('a runtime drops its session name when it moves to another session file', async () => {
+  await freshDataDir()
+
+  await withManager(async (mgr) => {
+    const workspace = await mgr.createWorkspace('Alpha', await project())
+    const sessions = await project()
+    const parentPath = join(sessions, 'parent.jsonl')
+    const forkPath = join(sessions, 'fork.jsonl')
+    await writeFile(parentPath, JSON.stringify({ type: 'session', id: 'parent' }) + '\n', 'utf-8')
+    const runtime = await mgr.activateSession(workspace.id, parentPath)
+    const manager = mgr.getActivePiManager()
+    assert.ok(manager, 'the activated session owns the active Pi manager')
+    fakePiProcess(manager, 9310)
+    let reportedFile = parentPath
+    manager.sendCommand = async () => ({
+      type: 'response',
+      command: 'get_state',
+      success: true,
+      data: { sessionFile: reportedFile, sessionId: basename(reportedFile) },
+    })
+    mgr.setSessionRuntimeName(runtime.runtimeId, 'Release notes')
+
+    const sameFile = await mgr.refreshSessionRuntime(runtime.runtimeId)
+    assert.equal(sameFile?.sessionName, 'Release notes', 'the name stays while the session file is the same')
+
+    // A fork or a clone moves the runtime to a new file.
+    reportedFile = forkPath
+    const forked = await mgr.refreshSessionRuntime(runtime.runtimeId)
+    assert.equal(forked?.sessionPath, forkPath)
+    assert.equal(forked?.sessionName, undefined, 'the fork must not show the name of its parent')
+  })
+})
+
 // ─── A New Task's prompt ─────────────────────────────────────────────────────
 // A launched task shows as working before its prompt goes out, and only a turn
 // end clears that. These answers start no turn.

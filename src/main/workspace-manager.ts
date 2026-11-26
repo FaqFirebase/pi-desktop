@@ -969,12 +969,16 @@ export class WorkspaceManager {
     if (sessionPath && this.isRuntimeLive(entry) && !this.claimSessionFor(entry, sessionPath)) {
       return this.refuseClaimedSession(entry, sessionPath)
     }
+    // a fork or clone moves the runtime to a new file; the old name is not its name
+    const { sessionName, ...info } = entry.info
+    const keepsName = sessionName !== undefined && (entry.info.sessionPath === null || sessionPath === entry.info.sessionPath)
     if (sessionPath && sessionPath !== entry.info.sessionPath) {
       if (entry.info.sessionPath) this.runtimeBySessionPath.delete(pathGroupKey(entry.info.sessionPath))
       this.runtimeBySessionPath.set(pathGroupKey(sessionPath), entry.info.runtimeId)
     }
     entry.info = {
-      ...entry.info,
+      ...info,
+      ...(keepsName ? { sessionName } : {}),
       sessionPath: sessionPath ?? null,
       sessionId: typeof data?.sessionId === 'string' ? data.sessionId : entry.info.sessionId,
       ...entry.manager.getStatus(),
