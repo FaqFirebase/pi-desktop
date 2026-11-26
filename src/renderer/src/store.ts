@@ -9,6 +9,7 @@ import { composePrompt } from './utils/compose-prompt'
 import { firstQueued, withQueued, withoutQueued, withoutChats, type SendQueueHold, type SendQueueHolds, type SendQueues } from './send-queue'
 import { withEditorTerminal, withoutEditorTerminal } from './editor-terminal-state'
 import type { TerminalSlot } from '../../shared/terminal-slot'
+import type { ExtensionStatuses } from '../../shared/extension-status'
 import { hiddenTabsAfterActivation, moveProjectTab, projectTabs, readHiddenProjectTabs, readProjectTabOrder, rememberHiddenProjectTabs, rememberProjectTabOrder } from './utils/tab-navigation'
 import type { DisplayAttachment, DisplayMessage } from './message-parsing'
 import { appendPromptHistory, applyChatStreamUpdate, applyChatToolExecution, chatEventNotice, parseChatMessage, retainChatMessageIdentity, turnErrorText, type ChatToolCall } from './chat-session-state'
@@ -249,6 +250,18 @@ export function formatPromptsWaiting(count: number): string {
   return t('store.promptsWaiting', { count })
 }
 
+/**
+ * Extension statuses of the chat on screen. Main keeps them on each runtime's
+ * snapshot, so a session shows its own entries, including those set while it
+ * ran in the background.
+ */
+export function selectActiveExtensionStatuses(
+  state: Pick<AppState, 'sessionRuntimes' | 'activeSessionRuntimeId'>
+): ExtensionStatuses | undefined {
+  const runtimeId = state.activeSessionRuntimeId
+  return runtimeId ? state.sessionRuntimes[runtimeId]?.extensionStatuses : undefined
+}
+
 function councilErrorMessage(error: unknown): string {
   return t('store.messages.councilFailed', { detail: error instanceof Error ? error.message : String(error) })
 }
@@ -427,8 +440,6 @@ interface AppState {
   workspaceActivity: WorkspaceActivityMap
   // Dynamic workflow runs read from the extension's persisted run journal.
   workflowRuns: WorkflowRunSummary[]
-  // Extension status entries (setStatus fire-and-forget). Keyed by statusKey.
-  extensionStatuses: Record<string, string>
   // Subagent rows shared by the Tasks panel, the rail badge and the composer strip.
   subagentTasks: SubagentTask[]
   // OMP answered get_subagents: its rows come from subagent events, not tool events.
@@ -1525,7 +1536,6 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   pendingPromptCounts: {},
   workspaceActivity: {},
   workflowRuns: [],
-  extensionStatuses: {},
   subagentTasks: [],
   subagentEventsSupported: false,
   selectedSubagentTaskId: null,
@@ -3137,22 +3147,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
             const snapshot = tasksFromPiAsyncWidget(uiEvent.widgetLines)
             if (snapshot) set((state) => ({ subagentTasks: replacePiAsyncRuns(state.subagentTasks, snapshot) }))
           }
-        } else if (uiEvent.method === 'setStatus') {
-          set((state) => {
-            const key = uiEvent.statusKey ?? 'default'
-            if (uiEvent.statusText === undefined) {
-              const { [key]: _removed, ...rest } = state.extensionStatuses
-              return { extensionStatuses: rest }
-            }
-            return {
-              extensionStatuses: {
-                ...state.extensionStatuses,
-                [key]: uiEvent.statusText,
-              },
-            }
-          })
-        } else if (uiEvent.method === 'setTitle' || uiEvent.method === 'set_editor_text') {
-          // Fire-and-forget: nothing to store in state.
+        } else if (
+          uiEvent.method === 'setStatus' || uiEvent.method === 'setTitle' || uiEvent.method === 'set_editor_text'
+        ) {
+          // Fire-and-forget: nothing to store in state. Main keeps statuses on
+          // the runtime snapshot (selectActiveExtensionStatuses).
         } else if (uiEvent.method === 'notify') {
           // Toast slot: kept apart from the dialog slot so a notification can
           // never clobber an unanswered blocking prompt.

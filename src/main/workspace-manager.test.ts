@@ -1327,6 +1327,67 @@ test('canceling startup approval restores idle and late answers cannot reopen a 
   })
 })
 
+/** A fire-and-forget setStatus request, as the engine sends `ctx.ui.setStatus(key, text)`. */
+function setStatusRequest(statusKey: string, statusText?: string): object {
+  return { type: 'extension_ui_request', id: `status-${statusKey}`, method: 'setStatus', statusKey, statusText }
+}
+
+test('extension statuses ride the snapshot of the runtime whose process set them', async () => {
+  await freshDataDir()
+  await withManager(async (mgr) => {
+    const workspace = await mgr.createWorkspace('Alpha', await project())
+    const first = await liveRuntime(mgr, workspace.id, 9460)
+    const firstManager = mgr.getSessionRuntimeManager(first.runtime.runtimeId)!
+    const second = await liveRuntime(mgr, workspace.id, 9461)
+    const secondManager = mgr.getSessionRuntimeManager(second.runtime.runtimeId)!
+    const seen: SessionRuntimeInfo[] = []
+    mgr.onSessionRuntime((snapshot) => seen.push(snapshot))
+    seen.length = 0
+
+    firstManager.emit('extension_ui_request', setStatusRequest('0-claude-max', '5h 35%'))
+    secondManager.emit('extension_ui_request', setStatusRequest('git', 'clean'))
+    assert.deepEqual(mgr.getSessionRuntime(first.runtime.runtimeId)?.extensionStatuses, { '0-claude-max': '5h 35%' })
+    assert.deepEqual(mgr.getSessionRuntime(second.runtime.runtimeId)?.extensionStatuses, { git: 'clean' })
+    assert.deepEqual(
+      seen.map((snapshot) => [snapshot.runtimeId, snapshot.extensionStatuses]),
+      [[first.runtime.runtimeId, { '0-claude-max': '5h 35%' }], [second.runtime.runtimeId, { git: 'clean' }]],
+      'each change is published on its own runtime snapshot, active or not'
+    )
+
+    firstManager.emit('extension_ui_request', setStatusRequest('0-claude-max', '5h 35%'))
+    assert.equal(seen.length, 2, 'a repeat of the same text publishes nothing')
+
+    firstManager.emit('extension_ui_request', setStatusRequest('0-claude-max'))
+    assert.equal(mgr.getSessionRuntime(first.runtime.runtimeId)?.extensionStatuses, undefined)
+    assert.equal(seen.at(-1)?.extensionStatuses, undefined)
+    assert.equal(mgr.getSessionRuntime(first.runtime.runtimeId)?.activity, null, 'a status is not an approval')
+  })
+})
+
+test('a stopped or failed process drops its statuses; one still starting keeps what it sets', async () => {
+  await freshDataDir()
+  await withManager(async (mgr) => {
+    const workspace = await mgr.createWorkspace('Alpha', await project())
+    const { runtime } = await liveRuntime(mgr, workspace.id, 9470, 'starting')
+    const manager = mgr.getSessionRuntimeManager(runtime.runtimeId)!
+    const statuses = (): unknown => mgr.getSessionRuntime(runtime.runtimeId)?.extensionStatuses
+
+    // Extensions set statuses from session_start, before the process is ready.
+    manager.emit('extension_ui_request', setStatusRequest('usage', 'wk 27%'))
+    await manager.start()
+    assert.equal(mgr.getSessionRuntime(runtime.runtimeId)?.status, 'running')
+    assert.deepEqual(statuses(), { usage: 'wk 27%' })
+
+    manager.stop()
+    assert.equal(statuses(), undefined, 'a stopped process shows no statuses')
+
+    await manager.start()
+    manager.emit('extension_ui_request', setStatusRequest('usage', 'wk 28%'))
+    manager.failStart('boom', 'boom')
+    assert.equal(statuses(), undefined, 'a failed process shows no statuses')
+  })
+})
+
 test('load recovers from .bak when the live workspaces file is corrupted', async () => {
   await freshDataDir()
   const proj = await project()

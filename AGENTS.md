@@ -78,6 +78,7 @@ src/
 │   ├── browser-pick.ts           # Element picker: selector, label, caps, pick payload check, capture rect
 │   ├── repo-set-draft.ts         # Repo set editing: unique names; the first repository is the main one
 │   ├── subagent-task.ts          # Subagent rows for the Subagents panel, rail badge and composer strip: parsers and reducers
+│   ├── extension-status.ts       # Extension statuses (ctx.ui.setStatus) of one runtime: apply one setStatus request
 │   ├── untrusted-data.ts         # Wrap file/agent text as a labeled untrusted-data block
 │   ├── agent-engine-label.ts     # Display names for the Pi/OMP engines (every surface reads this one map)
 │   ├── product-name.ts           # "Pi Desktop" display name (a named constant, never a translation key)
@@ -279,6 +280,7 @@ src/
         │   ├── preview-load-error.ts # Preview load/save failure kept as data, translated at render
         │   ├── chat-width.ts     # Chat column width setting -> message/composer max-width classes
         │   ├── process-status-label.ts # Translated agent process status (status popover, Diagnostics)
+        │   ├── extension-status-line.ts # Extension statuses as plain text: the status bar's (by key) and the subagent strip's
         │   ├── open-path-action.ts # Run an open-path action: show the Editor tab, or the refusal with its follow-up
         │   ├── open-path-refusal.ts # Open-path refusal -> message and follow-up action
         │   └── workflow-runs.ts  # Session id used to scope workflow runs
@@ -317,7 +319,7 @@ src/
             ├── code-editor-highlight.ts  # Theme-aware highlight style
             ├── code-editor-git.ts # Git change markers in the editor gutter
             ├── code-editor-setup.ts # codemirror basicSetup without the lint keymap (no linter; Mod+Shift+M stays the app's)
-            ├── status-bar.tsx     # Agent status, branch menu, workflows, context, compact, cost, panel toggles
+            ├── status-bar.tsx     # Agent status, branch menu, extension statuses, workflows, context, compact, cost, panel toggles
             ├── status-popover.tsx # System status popup
             ├── settings-panel.tsx # Language, theme, font, behavior, shortcuts, council settings (live-preview draft)
             ├── shortcut-settings.tsx # Settings > Keyboard shortcuts recorder
@@ -604,6 +606,7 @@ Renderer → preload (contextBridge) → IPC → main handlers → Pi RPC / File
 - `IPC_CHANNELS` in `src/shared/ipc-contracts.ts` lists every channel; all handlers validate their payloads
 - Pi events go from main to the renderer through `webContents.send`
 - Extension UI protocol supported (select, confirm, input, editor dialogs)
+- Extension statuses (`setStatus`) are kept per session runtime in main (`WorkspaceManager`, `shared/extension-status.ts`) and ride the runtime snapshot as `extensionStatuses`, so a session shows its own, including those set while it ran in the background. A stop, failure or fresh start of the process drops them. The status bar shows the active session's, ordered by key like Pi's footer, as plain text; pi-subagents' keys go to the composer's subagent strip instead (`utils/extension-status-line.ts`)
 
 ## Data storage
 

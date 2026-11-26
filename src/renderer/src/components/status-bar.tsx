@@ -1,8 +1,15 @@
+import { Fragment, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useAppStore, countPromptsWaitingElsewhere, formatPromptsWaiting } from '../store'
+import {
+  useAppStore,
+  countPromptsWaitingElsewhere,
+  formatPromptsWaiting,
+  selectActiveExtensionStatuses,
+} from '../store'
 import { agentEngineLabel } from '../../../shared/agent-engine-label'
 import { clsx } from 'clsx'
 import { ProjectBranchSelector } from './project-branch-selector'
+import { statusBarStatuses } from '../utils/extension-status-line'
 import {
   PanelLeft,
   Terminal,
@@ -13,6 +20,29 @@ import {
   Loader2,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
+
+/**
+ * The statuses the session's extensions set (`ctx.ui.setStatus`), on one line
+ * like Pi's footer. It fills the space between the two sections and cuts off
+ * with an ellipsis; the tooltip has every status in full.
+ */
+function ExtensionStatusLine(): React.JSX.Element {
+  const extensionStatuses = useAppStore(selectActiveExtensionStatuses)
+  const statuses = useMemo(() => statusBarStatuses(extensionStatuses), [extensionStatuses])
+  return (
+    <div
+      className="min-w-0 flex-1 truncate px-3 text-dim"
+      title={statuses.length > 0 ? statuses.map((status) => status.text).join('\n') : undefined}
+    >
+      {statuses.map((status, index) => (
+        <Fragment key={status.key}>
+          {index > 0 && <span className="text-faint" aria-hidden="true"> · </span>}
+          <span>{status.text}</span>
+        </Fragment>
+      ))}
+    </div>
+  )
+}
 
 export function StatusBar(): React.JSX.Element {
   const { t, i18n } = useTranslation()
@@ -108,6 +138,8 @@ export function StatusBar(): React.JSX.Element {
           </span>
         )}
       </div>
+
+      <ExtensionStatusLine />
 
       {/* Right section */}
       <div className="flex items-center gap-3">

@@ -8,6 +8,7 @@ import type { PermissionRule } from '../../resources/permission-rules'
 import type { LinkedTaskMode, RepoRole } from '../../resources/repo-set-map'
 import type { TokenUsage } from './token-usage'
 import type { TerminalSlot } from './terminal-slot'
+import type { ExtensionStatuses } from './extension-status'
 
 // ─── IPC Channel Names ──────────────────────────────────────────────────────
 
@@ -342,6 +343,12 @@ export interface SessionRuntimeInfo extends PiStatus {
    * the first rename.
    */
   sessionName?: string
+  /**
+   * Status entries the live process's extensions set (`ctx.ui.setStatus`),
+   * keyed by status key. Absent when there are none; cleared whenever the
+   * process stops or restarts, since its extensions set them again on start.
+   */
+  extensionStatuses?: ExtensionStatuses
 }
 
 export interface SessionRuntimeCloseResult {

@@ -26,6 +26,7 @@ Pi Desktop is in alpha, so expect rough edges.
 - Skills browser with search and your own skill groups, session fork/branch tree, session tags, inline session rename, and one-click context compaction
 - Home dashboard with usage stats: messages, tokens, active-day streaks, peak hour, and a per-model breakdown
 - Diagnostics view: Pi/OMP install and PATH resolution, provider configuration, permissions, and recent errors
+- Extension statuses (`ctx.ui.setStatus`), such as a usage meter, show in the status bar for the session on screen, ordered by key like Pi's footer
 - Package browser for pi.dev/packages, with local search and update checks for installed packages
 - Custom models and providers editor, which edits your engine's models file (`~/.pi/agent/models.json` for Pi, `~/.omp/agent/models.yml` for OMP)
 - [Keyboard shortcuts](#keyboard-shortcuts) you can change in Settings, [themes](#custom-themes) (7 built-ins, System, and your own), and a UI font setting
