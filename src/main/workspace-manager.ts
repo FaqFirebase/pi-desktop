@@ -52,6 +52,7 @@ import {
 import { extractGitHubPullRequestUrl, resolvePullRequestHeadBranch } from './git-conveyor'
 import { t, tEnglish } from '../shared/i18n'
 import { OMP_SUBAGENT_SUBSCRIPTION_LEVEL } from '../shared/subagent-task'
+import { applyExtensionStatus } from '../shared/extension-status'
 import { REPO_MAP_ENV, serializeRepoMap } from '../../resources/repo-set-map'
 import { agentResourcePath } from './agent-resources'
 import { workspaceTrustStore } from './workspace-trust'
@@ -559,6 +560,13 @@ export class WorkspaceManager {
     }
     manager.on('status-change', () => {
       entry.info = { ...entry.info, ...manager.getStatus() }
+      // Statuses belong to the process that set them. A stop, a failure or a
+      // fresh start drops them; the next process's extensions set their own,
+      // possibly while it is still starting, so reaching running keeps them.
+      if (entry.info.status !== 'running') {
+        const { extensionStatuses: _dropped, ...info } = entry.info
+        entry.info = info
+      }
       if (entry.info.status !== 'running' && entry.info.status !== 'starting') {
         pendingUi.clear()
         // The child can outlive its stopped status by the force-kill timeout,
@@ -595,7 +603,13 @@ export class WorkspaceManager {
       if (entry.runlessPromptRuns === entry.agentRunStarts) this.settleRunlessPrompt(entry, promptResultRefusal(event)?.reason)
     })
     manager.on('extension_ui_request', (event: PiExtensionUiRequest) => {
-      if (BLOCKING_UI_METHODS.has(event.method)) {
+      if (event.method === 'setStatus') {
+        const extensionStatuses = applyExtensionStatus(entry.info.extensionStatuses, event.statusKey, event.statusText)
+        if (extensionStatuses === entry.info.extensionStatuses) return
+        const { extensionStatuses: _previous, ...info } = entry.info
+        entry.info = extensionStatuses ? { ...info, extensionStatuses } : info
+        this.emitSessionRuntime(entry)
+      } else if (BLOCKING_UI_METHODS.has(event.method)) {
         if (pendingUi.size === 0) activityBeforeApproval = entry.info.activity
         pendingUi.add(event.id)
         this.emitRuntimeActivity(entry, 'needs-approval')

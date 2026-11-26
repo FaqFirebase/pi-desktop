@@ -1,8 +1,8 @@
-import { useAppStore } from '../store'
+import { selectActiveExtensionStatuses, useAppStore } from '../store'
 import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
-import { stripAnsi } from '../utils/strip-ansi'
+import { subagentStatusLines } from '../utils/extension-status-line'
 import { ChevronDown, Loader2, Bot } from 'lucide-react'
 import { stripSubagentTasks, summarizeSubagentTasks } from '../../../shared/subagent-task'
 import { SubagentTaskRow } from './subagent-task-row'
@@ -16,7 +16,6 @@ import { SubagentTaskRow } from './subagent-task-row'
  * the strip shows only running rows and the rows the live turn spawned.
  */
 
-const STATUS_KEYS = ['subagent-slash', 'subagent-slash-text', 'subagents-edit'] as const
 const HIDE_DELAY_MS = 1200
 const ROW_HEIGHT_PX = 28
 const MAX_VISIBLE_ROWS = 4
@@ -25,7 +24,7 @@ export function SubagentProgress(): React.JSX.Element | null {
   const { t } = useTranslation()
   const allTasks = useAppStore((state) => state.subagentTasks)
   const isStreaming = useAppStore((state) => state.isStreaming)
-  const extensionStatuses = useAppStore((state) => state.extensionStatuses)
+  const extensionStatuses = useAppStore(selectActiveExtensionStatuses)
 
   // Default collapsed — one summary line. Toggle is fully manual.
   const [expanded, setExpanded] = useState(false)
@@ -39,13 +38,7 @@ export function SubagentProgress(): React.JSX.Element | null {
     if (isStreaming) setKnownAtTurnStart(new Set(allTasks.map((task) => task.id)))
   }
 
-  const statusLines = useMemo(() => {
-    const lines: string[] = []
-    for (const key of STATUS_KEYS) {
-      if (extensionStatuses[key]) lines.push(stripAnsi(extensionStatuses[key]))
-    }
-    return lines
-  }, [extensionStatuses])
+  const statusLines = useMemo(() => subagentStatusLines(extensionStatuses), [extensionStatuses])
 
   const tasks = useMemo(() => stripSubagentTasks(allTasks, knownAtTurnStart), [allTasks, knownAtTurnStart])
   const { running: runningCount, failed: failedCount } = summarizeSubagentTasks(tasks)
