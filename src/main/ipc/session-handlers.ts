@@ -241,7 +241,11 @@ export function registerSessionHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC_CHANNELS.SESSION_SET_NAME, async (_event, name: unknown) => {
     if (!isString(name)) throw new Error('name must be a string')
-    return getActivePi().sendCommand({ type: 'set_session_name', name })
+    // The runtime the command reaches; another may be active once it answers.
+    const runtime = workspaceManager.getActiveSessionRuntime()
+    const response = await getActivePi().sendCommand({ type: 'set_session_name', name })
+    if (runtime && response?.success === true) workspaceManager.setSessionRuntimeName(runtime.runtimeId, name.trim())
+    return response
   })
 
   ipcMain.handle(IPC_CHANNELS.SESSION_EXPORT_HTML, async (_event, outputPath?: unknown) => {

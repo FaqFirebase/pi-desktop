@@ -405,6 +405,14 @@ export class WorkspaceManager {
     this.emitSessionRuntime(entry)
   }
 
+  /** Record the name the engine accepted for a runtime's session. */
+  setSessionRuntimeName(runtimeId: string, name: string): void {
+    const entry = this.sessionRuntimes.get(runtimeId)
+    if (!entry || entry.info.sessionName === name) return
+    entry.info = { ...entry.info, sessionName: name }
+    this.emitSessionRuntime(entry)
+  }
+
   /** Mark a runtime as recently used so eviction picks a genuinely idle one. */
   private touchRuntime(entry: SessionRuntimeEntry): void {
     entry.lastActiveAt = Date.now()

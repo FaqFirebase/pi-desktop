@@ -302,3 +302,46 @@ test('the resume target is the project runtime session, else its newest used fil
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('a rename the engine accepts is kept on the runtime it reached', async () => {
+  const require = createRequire(import.meta.url)
+  const electronPath = require.resolve('electron')
+  require('electron')
+  const electronModule = require.cache[electronPath]!
+  const originalExports = electronModule.exports
+  handlers.clear()
+  electronModule.exports = {
+    ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler) },
+    app: { isPackaged: false, getAppPath: () => process.cwd() },
+  }
+  try {
+    const { registerSessionHandlers } = await import('./session-handlers')
+    let active = 'renamed'
+    let accept = true
+    const recorded: Array<[string, string]> = []
+    registerSessionHandlers({
+      workspaceManager: {
+        getActiveSessionRuntime: () => ({ runtimeId: active }),
+        setSessionRuntimeName: (runtimeId: string, name: string) => { recorded.push([runtimeId, name]) },
+      },
+      getActivePi: () => ({
+        sendCommand: async () => {
+          // The user switches tabs while the engine answers.
+          active = 'other'
+          return { type: 'response', command: 'set_session_name', success: accept }
+        },
+      }),
+    } as unknown as IpcContext)
+    const setName = handlers.get(IPC_CHANNELS.SESSION_SET_NAME)!
+
+    await setName(null, '  Release notes  ')
+    assert.deepEqual(recorded, [['renamed', 'Release notes']])
+
+    active = 'renamed'
+    accept = false
+    await setName(null, 'Refused')
+    assert.deepEqual(recorded, [['renamed', 'Release notes']], 'a refused name is not recorded')
+  } finally {
+    electronModule.exports = originalExports
+  }
+})

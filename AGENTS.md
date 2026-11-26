@@ -361,6 +361,7 @@ src/
             ├── resize-handle.tsx  # Drag handle reporting deltas along one axis
             ├── session-runtime-indicator.tsx # Per-session engine/status indicator
             ├── session-row-markers.tsx # Session row pin icon and unread dot
+            ├── session-name-input.tsx # Inline session name field shared by the sidebar row and the session tab
             ├── theme-editor.tsx   # Custom theme editor
             ├── theme-editor-helpers.ts # Pure theme-editor helpers
             ├── theme-gallery.tsx  # Theme gallery browser
@@ -423,7 +424,7 @@ resources/
 - Sessions grouped by project in the session panel
 - **Session tags**: type `#tag-name` in chat to tag the current session. Tags are saved to `<GUI data dir>/session-tags.json`, shown in the session list, and filterable
 - Session names come from each session's `session_info` record (Pi) or first-line `title` slot (OMP). The fallback title is a distinguishable local timestamp, not a shared id prefix
-- Inline rename of the active session (double-click, or right-click > Rename…) through Pi's `set_session_name` RPC; it updates live on `session_info_changed`
+- Inline rename of the active session from its sidebar row or its session tab (double-click, or right-click > Rename…) through the `set_session_name` RPC. The store applies a confirmed name itself, since OMP sends no `session_info_changed` (Pi does, and auto-title extensions use it). Main keeps the name on the runtime snapshot (`SessionRuntimeInfo.sessionName`), so the tab of a session not yet in the session list (no messages) keeps showing it after a switch
 - Delete asks in an in-app themed dialog, not the native OS dialog
 - Branch/fork tree, clone, and cross-session lineage in the Timeline; one-click context compaction (status bar and status popover)
 - An answer the user stopped keeps a "Stopped" mark (`shared/stopped-answer.ts`)
@@ -589,6 +590,7 @@ Right-click for:
 - Code blocks: Copy Code Block, Search Selection
 - Links: Open Link, Copy Link
 - Session rows: Open Session, Workflow Runs, Pin/Unpin, Archive/Unarchive, Rename…, Delete…
+- Session tabs: Rename… (active tab only), Close session tab
 - Terminal: Copy, Paste, Select All, Clear
 
 ## IPC architecture
