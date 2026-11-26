@@ -4,9 +4,13 @@ import { normalizeLanguageSetting } from './i18n/resolve'
 import { isPermissionMode } from './permission-mode'
 import { getVoiceModel, type VoicePrecision } from './voice-models'
 import { isVoiceDevice } from './voice-device'
+import { isVoiceTranscriber, normalizeVoiceServerSettings } from './voice-server'
 import { isChatWidth } from './chat-width'
+import { isKeepAwakeMode } from './keep-awake'
+import { isEditorId } from './editors'
 import { normalizeKeyboardShortcuts } from './keyboard-shortcuts'
 import { normalizeSkillGroups } from './skill-groups'
+import { normalizeBrowserPaneUrls } from './browser-pane'
 
 const ENGINE_SETTINGS: readonly AgentEngine[] = ['auto', 'pi', 'omp']
 const VOICE_PRECISIONS: readonly VoicePrecision[] = ['int8', 'fp16']
@@ -29,6 +33,7 @@ export function normalizeStoredSettings(stored: Record<string, unknown>, languag
   if (!isEngineSetting(merged.piEngine)) merged.piEngine = DEFAULT_SETTINGS.piEngine
   if (!isPermissionMode(merged.permissionMode)) merged.permissionMode = DEFAULT_SETTINGS.permissionMode
   if (!isChatWidth(merged.chatWidth)) merged.chatWidth = DEFAULT_SETTINGS.chatWidth
+  if (!isKeepAwakeMode(merged.keepAwakeMode)) merged.keepAwakeMode = DEFAULT_SETTINGS.keepAwakeMode
   merged.uiFontFamily = typeof merged.uiFontFamily === 'string'
     ? merged.uiFontFamily.trim()
     : DEFAULT_SETTINGS.uiFontFamily
@@ -38,10 +43,14 @@ export function normalizeStoredSettings(stored: Record<string, unknown>, languag
   merged.language = normalizeLanguageSetting(merged.language, languages)
   merged.shortcuts = normalizeKeyboardShortcuts(merged.shortcuts)
   merged.skillGroups = normalizeSkillGroups(merged.skillGroups)
+  merged.browserPaneUrls = normalizeBrowserPaneUrls(merged.browserPaneUrls)
   if (typeof merged.voiceModel !== 'string' || !getVoiceModel(merged.voiceModel)) {
     merged.voiceModel = DEFAULT_SETTINGS.voiceModel
   }
   if (!isVoicePrecision(merged.voicePrecision)) merged.voicePrecision = DEFAULT_SETTINGS.voicePrecision
   if (!isVoiceDevice(merged.voiceDevice)) merged.voiceDevice = DEFAULT_SETTINGS.voiceDevice
+  if (!isVoiceTranscriber(merged.voiceTranscriber)) merged.voiceTranscriber = DEFAULT_SETTINGS.voiceTranscriber
+  merged.voiceServer = normalizeVoiceServerSettings(merged.voiceServer)
+  if (!isEditorId(merged.preferredEditor)) merged.preferredEditor = DEFAULT_SETTINGS.preferredEditor
   return merged
 }

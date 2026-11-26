@@ -3,27 +3,47 @@ import { existsSync, mkdirSync } from 'fs'
 import { basename, dirname, join, resolve as resolvePath } from 'path'
 import { isTrustedRendererUrl, RENDERER_INDEX_PATH, RENDERER_INDEX_URL } from './renderer-origin'
 import { workspaceTrustStore } from './workspace-trust'
-import { PREVIEW_PARTITIONS } from '../shared/preview-partitions'
+import { BROWSER_PANE_PARTITION, PREVIEW_PARTITIONS } from '../shared/preview-partitions'
 import { isBlockedPreviewRequest, previewGuestPreferences } from './preview-guest'
+import { hardenBrowserPaneSession, isBrowserPaneGuest, watchBrowserPaneGuest } from './browser-pane-session'
+import { browserPaneGuestPreferences } from './browser-pane-guest'
+import { isBrowserPaneUrl } from '../shared/browser-pane'
 import { WorkspaceManager } from './workspace-manager'
+import { councilRuns } from './council-manager'
 import type { WorkspaceTerminals } from './workspace-terminals'
 import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
+import { installLinuxApplicationEntry } from './linux-application-entry'
 import { setPiExecutableOverride, cleanupPiChildTempDir } from './pi-rpc-manager'
 import { applyLanguageSetting } from './i18n'
 import { i18n, t } from '../shared/i18n'
 import { fetchAllCatalogPackages } from './package-catalog'
 import { activityStatsStore } from './activity-stats'
-import { configureGuiDataDir, getCanonicalUserDataDir, getExternalGuiDataDir, migrateLegacyGuiData } from './app-data-paths'
+import {
+  configureGuiDataDir,
+  getCanonicalUserDataDir,
+  getExternalGuiDataDir,
+  migrateLegacyGuiData,
+  usesOwnInstanceLock,
+} from './app-data-paths'
 import { setupTray, setTrayEnabled, isTrayEnabled, isTrayAvailable, destroyTray, notifyFirstHide } from './tray-manager'
 import { shouldHideToTray } from './tray-decision'
+import { applyKeepAwakeMode } from './keep-awake-service'
+import { readWindowHints, windowTitle } from './window-hints'
 import { createEditorGuard } from './editor-guard'
 import { appLog } from './app-log'
+import { CLEAN_EXIT_REASON, crashRecoveryAction } from './renderer-crash-recovery'
+import { RENDERER_LOG_SCOPE } from './renderer-error-log'
+import { PI_DESKTOP_PRODUCT_NAME } from '../shared/product-name'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { VOICE_PROTOCOL_SCHEME, handleVoiceProtocolRequest } from './voice-protocol'
 import { getVoiceModelsDir } from './voice-model-store'
 import { applyVoiceGpuSwitches, readVoiceDeviceSync } from './voice-gpu-switches'
-import { getSettingsPath } from './ipc/settings'
+import { applyOmpLaunchArgs, getSettingsPath, onUnreadableSettings } from './ipc/settings'
+import { isAppWindowSender, restrictIpcToAppWindows } from './ipc-sender-guard'
 import { disableCwdExecutableSearch } from './windows-exe-search'
+import { WINDOW_BACKGROUND_COLOR } from './window-appearance'
+import { configureSessionClaims, SESSION_CLAIMS_DIR_NAME } from './session-claims'
+import { destroyQuickChatWindow, getQuickChatWindow, hideQuickChatWindow, isQuickChatOpenRequested, setQuickChatQuittingHandler, toggleQuickChatWindow } from './quick-chat-window'
 
 // First, before anything spawns: Windows must never run a program from the
 // working directory (usually the workspace) when it is started by bare name.
@@ -33,6 +53,9 @@ disableCwdExecutableSearch(process.env, process.platform)
 // workspace (created on first run, switched to on subsequent runs). The CLI
 // launcher in bin/pi-desktop.js sets this from `pi-desktop <path>`.
 const WORKSPACE_ENV_VAR = 'PI_DESKTOP_WORKSPACE'
+
+// Optional hints from a host that starts several instances (window-hints.ts).
+const windowHints = readWindowHints(process.env)
 
 // Electron's development executable otherwise registers as Electron on Windows,
 // which makes the taskbar and notification identity use Electron branding.
@@ -48,6 +71,7 @@ process.on('uncaughtException', (err) => {
   console.error('Uncaught exception:', err)
   appLog.error('app', 'Uncaught exception', err)
 })
+process.on('unhandledRejection', (reason) => appLog.error('app', 'Unhandled rejection', reason))
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -57,6 +81,7 @@ const MIN_WINDOW_WIDTH = 800
 const MIN_WINDOW_HEIGHT = 600
 const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL
 const PRELOAD_PATH = join(__dirname, '../preload/index.js')
+const BROWSER_PANE_PRELOAD_PATH = join(__dirname, '../preload/browser-pane.js')
 
 // In dev: resources/ sits at the project root (app.getAppPath()).
 // In packaged: extraResources config copies resources/ into process.resourcesPath/resources/.
@@ -84,17 +109,26 @@ let mainWindow: BrowserWindow | null = null
 let isQuitting = false
 let shutdownPending: Promise<void> | null = null
 let shutdownComplete = false
+setQuickChatQuittingHandler(() => isQuitting)
 
 // Guards the renderer's unsaved editor buffer against teardown. The renderer
 // mirrors its dirty flag here (ui:editor-dirty-set); quit, non-tray window
 // close, and the reload menu items all pause on the same discard dialog.
 const editorGuard = createEditorGuard()
 
+// When the main window's renderer last reloaded after a crash; a second crash
+// soon after asks instead of reloading again (renderer-crash-recovery.ts).
+let lastCrashReloadAt: number | null = null
+
+// A dialog can be due while the window is hidden in the tray; surface it so
+// the dialog (and what it is asking about) is actually visible.
+function showWindowForDialog(window: BrowserWindow | null): void {
+  if (window && !window.isDestroyed() && !window.isVisible()) window.show()
+}
+
 /** Native confirm matching the in-app discard dialog's wording. */
 async function confirmEditorDiscard(window: BrowserWindow | null): Promise<boolean> {
-  // Tray Quit can arrive while the window is hidden; surface it so the
-  // dialog (and the edits it is asking about) are actually visible.
-  if (window && !window.isDestroyed() && !window.isVisible()) window.show()
+  showWindowForDialog(window)
   const options = {
     type: 'warning' as const,
     title: t('editorGuard.title'),
@@ -109,8 +143,68 @@ async function confirmEditorDiscard(window: BrowserWindow | null): Promise<boole
   return response === 0
 }
 
+/** The renderer crashed again soon after a reload: Reload (true) or Quit (false). */
+async function confirmCrashReload(window: BrowserWindow, reason: string): Promise<boolean> {
+  showWindowForDialog(window)
+  const { response } = await dialog.showMessageBox(window, {
+    type: 'error',
+    title: t('crashRecovery.title'),
+    message: t('crashRecovery.message', { product: PI_DESKTOP_PRODUCT_NAME }),
+    detail: t('crashRecovery.detail', { reason }),
+    buttons: [t('menu.reload'), t('app.quit')],
+    defaultId: 0,
+    cancelId: 1,
+  })
+  return response === 0
+}
+
+/** Main windows past their first paint, so a dialog can be parented to them. */
+const paintedWindows = new WeakSet<BrowserWindow>()
+/** Unreadable settings files found before the main window was painted. */
+let pendingSettingsNotices: string[] = []
+
+/** The settings file cannot be read: say where it is and what to do. */
+function showUnreadableSettingsNotice(window: BrowserWindow, settingsPath: string): void {
+  showWindowForDialog(window)
+  void dialog.showMessageBox(window, {
+    type: 'warning',
+    title: t('settings.unreadableFile.title'),
+    message: t('settings.unreadableFile.message', { product: PI_DESKTOP_PRODUCT_NAME }),
+    detail: t('settings.unreadableFile.detail', { path: settingsPath }),
+    buttons: [t('common.dismiss')],
+  })
+}
+
+/** Startup finds the file before the window (and its language) exist, so it waits. */
+function noticeUnreadableSettings(settingsPath: string): void {
+  const window = mainWindow
+  if (window && !window.isDestroyed() && paintedWindows.has(window)) showUnreadableSettingsNotice(window, settingsPath)
+  else pendingSettingsNotices.push(settingsPath)
+}
+
+function showPendingSettingsNotices(window: BrowserWindow): void {
+  paintedWindows.add(window)
+  const paths = pendingSettingsNotices
+  pendingSettingsNotices = []
+  for (const settingsPath of paths) showUnreadableSettingsNotice(window, settingsPath)
+}
+
+onUnreadableSettings(noticeUnreadableSettings)
+
+function reloadAfterCrash(window: BrowserWindow): void {
+  if (window.isDestroyed()) return
+  lastCrashReloadAt = Date.now()
+  window.webContents.reload()
+}
+
 /** Menu Reload / Force Reload: ask a dirty editor first, then reload. */
-async function reloadMainWindowWithGuard(ignoreCache: boolean): Promise<void> {
+async function reloadFocusedWindowWithGuard(ignoreCache: boolean): Promise<void> {
+  const popup = getQuickChatWindow()
+  if (popup?.isFocused()) {
+    if (ignoreCache) popup.webContents.reloadIgnoringCache()
+    else popup.webContents.reload()
+    return
+  }
   const window = mainWindow
   if (!window) return
   if (editorGuard.needsPrompt() && !(await confirmEditorDiscard(window))) return
@@ -119,10 +213,31 @@ async function reloadMainWindowWithGuard(ignoreCache: boolean): Promise<void> {
   else window.webContents.reload()
 }
 
+// PI_DESKTOP_USER_DATA_DIR set by the launching process overrides the
+// canonical appData-derived directory: that exact directory holds all GUI
+// data and legacy migration is skipped, keeping it fully isolated.
+const externalUserDataDir = getExternalGuiDataDir()
+const canonicalUserDataDir = getCanonicalUserDataDir(app.getPath('appData'))
+const userDataDir = externalUserDataDir ?? canonicalUserDataDir
+mkdirSync(userDataDir, { recursive: true })
+
+// Electron keys the single-instance lock on the userData path when the lock is
+// requested, so the order below decides its scope: a data folder of its own is
+// applied first and gets its own lock; every other launch shares one lock.
+const ownInstanceLock = usesOwnInstanceLock(externalUserDataDir, canonicalUserDataDir)
+
+function applyUserDataDir(): void {
+  app.setPath('userData', userDataDir)
+  configureGuiDataDir(userDataDir)
+}
+
+if (ownInstanceLock) applyUserDataDir()
+
 // Single-instance lock: with "minimize to tray" the window can be hidden while
 // the app keeps running, so a relaunch (taskbar, launcher, `pi-desktop <path>`)
 // must focus the existing instance instead of spawning a second one. The second
-// process exits immediately; the first receives 'second-instance'.
+// process exits immediately; the first receives 'second-instance'. A launch on
+// a data folder of its own only folds into a copy on that same folder.
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -131,18 +246,24 @@ if (!app.requestSingleInstanceLock()) {
   })
 }
 
-// PI_DESKTOP_USER_DATA_DIR set by the launching process overrides the
-// canonical appData-derived directory: that exact directory holds all GUI
-// data and legacy migration is skipped, keeping it fully isolated.
-const externalUserDataDir = getExternalGuiDataDir()
-const userDataDir = externalUserDataDir ?? getCanonicalUserDataDir(app.getPath('appData'))
-mkdirSync(userDataDir, { recursive: true })
-app.setPath('userData', userDataDir)
-configureGuiDataDir(userDataDir)
+if (!ownInstanceLock) applyUserDataDir()
+
+// Instances on different data folders can read one session store. The claims
+// that keep two of them off one session file live in the canonical folder,
+// which every launch of this user resolves the same way.
+configureSessionClaims(join(canonicalUserDataDir, SESSION_CLAIMS_DIR_NAME))
 
 // Voice dictation on the GPU needs WebGPU, which Chromium keeps off on Linux
 // unless it starts with extra switches. Set them now, before the app is ready.
 applyVoiceGpuSwitches(app.commandLine, process.platform, readVoiceDeviceSync(getSettingsPath()))
+
+// Before the first desktop portal call, which fixes the app id that the Linux
+// portal checks for system-wide shortcuts.
+try {
+  installLinuxApplicationEntry()
+} catch (err) {
+  console.error('[startup] Failed to install the Linux application entry:', err)
+}
 
 // ─── Window Creation ─────────────────────────────────────────────────────────
 
@@ -193,8 +314,8 @@ function createMainWindow(): BrowserWindow {
     height: WINDOW_HEIGHT,
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
-    title: 'Pi Desktop',
-    backgroundColor: '#0a0a0a',
+    title: windowTitle('Pi Desktop', windowHints),
+    backgroundColor: WINDOW_BACKGROUND_COLOR,
     icon: appIcon,
     show: false,
     webPreferences: {
@@ -218,10 +339,23 @@ function createMainWindow(): BrowserWindow {
   // reveal it.
   window.setMenuBarVisibility(false)
 
+  // The renderer's <title> replaces the window title; keep the instance label.
+  if (windowHints.titleLabel) {
+    window.on('page-title-updated', (event, title) => {
+      event.preventDefault()
+      window.setTitle(windowTitle(title, windowHints))
+    })
+  }
+
   // Graceful show (avoid white flash)
   window.once('ready-to-show', () => {
-    window.show()
-    window.focus()
+    // A shortcut can open the popup before the main window's first paint.
+    if (isQuickChatOpenRequested()) window.showInactive()
+    else {
+      window.show()
+      window.focus()
+    }
+    showPendingSettingsNotices(window)
   })
 
   // Minimize-to-tray: when enabled (Windows/Linux), a window close hides the
@@ -251,10 +385,33 @@ function createMainWindow(): BrowserWindow {
   // A reloaded (or crashed-and-recovered) renderer starts with a clean
   // editor; a stale dirty flag here would make quit nag forever.
   window.webContents.on('did-start-loading', () => editorGuard.reset())
-  window.webContents.on('render-process-gone', () => editorGuard.reset())
+  window.webContents.on('render-process-gone', (_event, details) => {
+    editorGuard.reset()
+    if (details.reason !== CLEAN_EXIT_REASON) {
+      appLog.error(RENDERER_LOG_SCOPE, 'Renderer process gone', { reason: details.reason, exitCode: details.exitCode })
+    }
+    const action = crashRecoveryAction({
+      reason: details.reason,
+      isQuitting,
+      windowDestroyed: window.isDestroyed(),
+      now: Date.now(),
+      lastReloadAt: lastCrashReloadAt,
+    })
+    if (action === 'reload') reloadAfterCrash(window)
+    else if (action === 'ask') {
+      void confirmCrashReload(window, details.reason).then((reload) => {
+        if (reload) reloadAfterCrash(window)
+        else app.quit()
+      })
+    }
+  })
 
   window.on('closed', () => {
-    if (mainWindow === window) mainWindow = null
+    if (mainWindow !== window) return
+    mainWindow = null
+    // Auxiliary hidden windows must not keep Windows/Linux alive after a real
+    // main-window close. Tray hides never reach this event.
+    if (process.platform !== 'darwin') destroyQuickChatWindow()
   })
 
   // Open external links in default browser
@@ -277,6 +434,13 @@ function createMainWindow(): BrowserWindow {
   // Defense-in-depth against a renderer XSS trying to attach a guest with
   // elevated webPreferences.
   window.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    // The Browser pane has its own rules: our picker preload, the locked-down
+    // flags, and an http or https start page only.
+    if (params.partition === BROWSER_PANE_PARTITION) {
+      Object.assign(webPreferences, browserPaneGuestPreferences(BROWSER_PANE_PRELOAD_PATH))
+      if (!isBrowserPaneUrl(params.src)) event.preventDefault()
+      return
+    }
     delete webPreferences.preload
     webPreferences.nodeIntegration = false
     webPreferences.nodeIntegrationInSubFrames = false
@@ -346,7 +510,7 @@ function createApplicationMenu(): void {
           label: t('common.newSession'),
           click: () => {
             const focusedWindow = BrowserWindow.getFocusedWindow()
-            focusedWindow?.webContents.send('menu:new-session')
+            if (focusedWindow === mainWindow) focusedWindow?.webContents.send('menu:new-session')
           },
         },
         {
@@ -354,7 +518,7 @@ function createApplicationMenu(): void {
           accelerator: 'CmdOrCtrl+Shift+N',
           click: () => {
             const focusedWindow = BrowserWindow.getFocusedWindow()
-            focusedWindow?.webContents.send('menu:new-workspace')
+            if (focusedWindow === mainWindow) focusedWindow?.webContents.send('menu:new-workspace')
           },
         },
         {
@@ -362,7 +526,7 @@ function createApplicationMenu(): void {
           accelerator: 'CmdOrCtrl+O',
           click: () => {
             const focusedWindow = BrowserWindow.getFocusedWindow()
-            focusedWindow?.webContents.send('menu:open-project')
+            if (focusedWindow === mainWindow) focusedWindow?.webContents.send('menu:open-project')
           },
         },
         { type: 'separator' },
@@ -391,12 +555,12 @@ function createApplicationMenu(): void {
         {
           label: t('menu.reload'),
           accelerator: 'CmdOrCtrl+R',
-          click: () => void reloadMainWindowWithGuard(false),
+          click: () => void reloadFocusedWindowWithGuard(false),
         },
         {
           label: t('menu.forceReload'),
           accelerator: 'Shift+CmdOrCtrl+R',
-          click: () => void reloadMainWindowWithGuard(true),
+          click: () => void reloadFocusedWindowWithGuard(true),
         },
         { role: 'toggleDevTools', label: t('menu.toggleDevTools') },
         { type: 'separator' },
@@ -410,6 +574,11 @@ function createApplicationMenu(): void {
     {
       label: t('menu.window'),
       submenu: [
+        {
+          label: t('quickChat.title'),
+          click: () => toggleQuickChatWindow(),
+        },
+        { type: 'separator' },
         { role: 'minimize', label: t('menu.minimize') },
         { role: 'zoom', label: t('menu.zoom') },
         // macOS: Command+W closes the session tab, as in a browser, and the
@@ -420,7 +589,9 @@ function createApplicationMenu(): void {
                 label: t('workspaceTabs.closeSessionTab'),
                 accelerator: 'Command+W',
                 click: () => {
-                  BrowserWindow.getFocusedWindow()?.webContents.send('menu:close-session')
+                  const focused = BrowserWindow.getFocusedWindow()
+                  if (focused === getQuickChatWindow()) hideQuickChatWindow()
+                  else if (focused === mainWindow) focused?.webContents.send('menu:close-session')
                 },
               },
               { role: 'close', label: t('menu.close'), accelerator: 'Shift+Command+W' },
@@ -476,6 +647,8 @@ app.whenReady().then(async () => {
 
   // Lock both preview partitions to local files before any preview can load.
   hardenPreviewSession()
+  // The Browser pane partition: http/https only, no permissions, no downloads.
+  hardenBrowserPaneSession()
 
   // Serve downloaded speech-model files to the renderer. The handler streams
   // files only from the single speech-models directory and rejects traversal.
@@ -488,9 +661,20 @@ app.whenReady().then(async () => {
   // binary before this setting is applied.
   const settings = await loadAppSettings(workspaceManager)
   setPiExecutableOverride(settings.piExecutablePath, settings.piEngine)
+  // The agent runs under the profile OMP_PROFILE or a `--profile` in the
+  // default args selects, and the app reads that profile's files.
+  applyOmpLaunchArgs(settings.defaultArgs)
 
   // Before the menu, window, and tray exist, so they are built in the saved language.
   applyLanguageSetting(settings.language)
+
+  // Every IPC channel serves the main and Quick Chat windows only. Installed
+  // before the first handler is registered, so no channel is left out.
+  const guestSessions = [...PREVIEW_PARTITIONS, BROWSER_PANE_PARTITION].map((partition) => session.fromPartition(partition))
+  restrictIpcToAppWindows(ipcMain, (sender) => isAppWindowSender(sender, {
+    appWindowContents: () => [mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null, getQuickChatWindow()?.webContents],
+    guestSessions,
+  }))
 
   // Register IPC handlers before creating windows. The window getter is a
   // lazy closure — mainWindow is created later and the notification wiring
@@ -503,7 +687,8 @@ app.whenReady().then(async () => {
 
   // The renderer mirrors its editor-dirty flag on every transition; the
   // quit/close/reload guards below read the cached value.
-  ipcMain.on(IPC_CHANNELS.UI_EDITOR_DIRTY_SET, (_event, dirty: unknown, fileName: unknown) => {
+  ipcMain.on(IPC_CHANNELS.UI_EDITOR_DIRTY_SET, (event, dirty: unknown, fileName: unknown) => {
+    if (event.sender !== mainWindow?.webContents || !isAllowedMainWindowNavigation(event.senderFrame?.url ?? '')) return
     editorGuard.setDirty(dirty === true, typeof fileName === 'string' ? fileName : null)
   })
 
@@ -521,12 +706,18 @@ app.whenReady().then(async () => {
     getWindow: () => mainWindow,
     quit: () => app.quit(),
     iconPath: getAppIconPath(),
+    tooltip: windowTitle(app.getName(), windowHints),
     hasSeenHint: settings.hasSeenTrayHint,
     onHintShown: () => {
-      void saveAppSettings({ hasSeenTrayHint: true })
+      // saveAppSettings logs a failed save; the hint shows again next time.
+      void saveAppSettings({ hasSeenTrayHint: true }).catch(() => {})
     },
+    toggleQuickChat: toggleQuickChatWindow,
   })
   setTrayEnabled(settings.minimizeToTrayOnClose)
+  void applyKeepAwakeMode(settings.keepAwakeMode).catch((err) => {
+    appLog.error('power', 'Failed to apply the keep-awake setting', err)
+  })
 
   // Warm the package catalog cache in the background so the Catalog tab is
   // instant when first opened. Non-blocking; failures are ignored (offline etc).
@@ -551,6 +742,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', (event) => {
+  if (isQuitting) return
   // Gate BEFORE isQuitting is set: quitting destroys the renderer and its
   // unsaved editor buffer, and a cancelled dialog must leave the tray-hide
   // behavior (which reads isQuitting) exactly as it was.
@@ -568,15 +760,23 @@ app.on('before-quit', (event) => {
   // the window actually close. This is the single choke point every quit path
   // flows through (menu/tray Quit, Cmd-Ctrl+Q).
   isQuitting = true
+  destroyQuickChatWindow()
 })
 
 // Close the renderer before tearing down the services it can still query.
 app.on('will-quit', (event) => {
   if (!shutdownComplete) {
     event.preventDefault()
-    // The executor turns a synchronous stopAll() throw into a rejection, so a
-    // failed teardown is logged and the quit still resumes instead of hanging.
-    shutdownPending ??= new Promise<void>((resolve) => resolve(workspaceManager?.stopAll()))
+    // Council consultants are stopped first, so the force-kill at the end of
+    // stopAll() reaches them too. stopAll() waits a bounded time for each
+    // agent to exit, then force-kills every stopped process tree still alive.
+    // See process-tree-kill.ts for what that reaches on each platform.
+    // The executor turns a synchronous throw into a rejection, so a failed
+    // teardown is logged and the quit still resumes instead of hanging.
+    shutdownPending ??= new Promise<void>((resolve) => {
+      councilRuns.cancelAll()
+      resolve(workspaceManager?.stopAll())
+    })
       .catch((error) => appLog.warn('app', 'Failed to stop workspaces on quit', error))
       .then(() => {
         shutdownComplete = true
@@ -601,12 +801,17 @@ app.on('will-quit', (event) => {
 
 // Security: prevent new window creation, and stop preview <webview> guests from
 // navigating away from their local file (e.g. a malicious HTML file redirecting
-// itself to a remote URL to phone home).
+// itself to a remote URL to phone home). The Browser pane partition has its
+// own rules instead (browser-pane-session.ts).
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(() => {
     return { action: 'deny' }
   })
   if (contents.getType() === 'webview') {
+    if (isBrowserPaneGuest(contents)) {
+      watchBrowserPaneGuest(contents)
+      return
+    }
     contents.on('will-navigate', (event, url) => {
       // An untrusted preview may not navigate away from its local file (e.g. a
       // malicious page redirecting itself to a remote URL). Trusted previews of

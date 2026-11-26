@@ -9,6 +9,8 @@ import type { WorkspaceActivationIntent } from '../../shared/ipc-contracts'
 import type { ChatWidth } from '../../shared/chat-width'
 import { t } from '../../shared/i18n'
 import { isImeComposing } from './utils/ime-composing'
+import { claimEscape, useEscapeSurface } from './utils/escape-key'
+import { currentNavigationType, launchView } from './utils/launch-view'
 
 /**
  * Subscribes to Pi events from the main process and routes them to the store.
@@ -19,6 +21,7 @@ export function usePiEvents(): void {
   const handlePendingPromptCounts = useAppStore((state) => state.handlePendingPromptCounts)
   const handleWorkspaceActivity = useAppStore((state) => state.handleWorkspaceActivity)
   const handleSessionRuntime = useAppStore((state) => state.handleSessionRuntime)
+  const handleUnreadSessions = useAppStore((state) => state.handleUnreadSessions)
   const recoverPendingPrompts = useAppStore((state) => state.recoverPendingPrompts)
 
   useEffect(() => {
@@ -26,23 +29,51 @@ export function usePiEvents(): void {
     const unsubscribeEvent = window.piDesktop.onEvent(handlePiEvent)
     const unsubscribeCounts = window.piDesktop.onPendingPrompts(handlePendingPromptCounts)
     const unsubscribeActivity = window.piDesktop.onWorkspaceActivity(handleWorkspaceActivity)
+    const unsubscribeUnread = window.piDesktop.onUnreadSessions(handleUnreadSessions)
     const unsubscribeSessionRuntime = window.piDesktop.onSessionRuntime(handleSessionRuntime)
+    const unsubscribeRuntimeState = window.piDesktop.onRuntimeState(({ runtimeId }) => {
+      // A model/thinking switch made in another window (e.g. secondary view) changed
+      // engine state for that runtime. Re-read get_state so the model button
+      // and thinking level of the session this window is viewing stay true.
+      if (useAppStore.getState().activeSessionRuntimeId === runtimeId) {
+        void useAppStore.getState().refreshSessionState()
+      }
+    })
 
     // A desktop-notification click hands the renderer the switch intent so the
     // usual streaming/dirty-editor confirms still run; landing on chat shows
     // the finished (or waiting) turn the notification was about.
     const activateWorkspaceIntent = (intent: WorkspaceActivationIntent): void => {
       const state = useAppStore.getState()
-      const { workspaceId, sessionPath } = intent
-      // A stale intent for a removed workspace must not run confirm dialogs
-      // for a doomed switch. An empty list means it just hasn't loaded yet
-      // (boot) — proceed and let main validate.
-      if (state.workspaces.length > 0 && !state.workspaces.some((ws) => ws.id === workspaceId)) return
+      const { workspaceId, sessionPath, runtimeId } = intent
 
       void (async () => {
+        // A stale intent for a removed workspace must not run confirm dialogs
+        // for a doomed switch. An empty list means it just hasn't loaded yet
+        // (boot); an unknown id means a workspace the popup (or anything
+        // else) created in the background that this window hasn't seen —
+        // re-read the list before deciding, instead of silently dropping the
+        // navigation.
+        let known = state.workspaces.some((ws) => ws.id === workspaceId)
+        if (!known && state.workspaces.length > 0) {
+          try {
+            await useAppStore.getState().loadWorkspaces()
+            known = useAppStore.getState().workspaces.some((ws) => ws.id === workspaceId)
+          } catch {
+            // Fall through: a refresh failure keeps the previous knowledge.
+          }
+        }
+        if (!known && useAppStore.getState().workspaces.length > 0) return
+
+        if (runtimeId && !sessionPath) {
+          if (await useAppStore.getState().activateRuntime(workspaceId, runtimeId)) {
+            useAppStore.getState().setCurrentView('chat')
+          }
+          return
+        }
         if (sessionPath) {
-          if (state.activeWorkspace?.id !== workspaceId) {
-            if (!(await state.activateWorkspace(workspaceId, { awaitingSession: true }))) return
+          if (useAppStore.getState().activeWorkspace?.id !== workspaceId) {
+            if (!(await useAppStore.getState().activateWorkspace(workspaceId, { awaitingSession: true }))) return
           }
           const workspace = useAppStore.getState().activeWorkspace
           if (!workspace) return
@@ -50,11 +81,12 @@ export function usePiEvents(): void {
           useAppStore.getState().setCurrentView('chat')
           return
         }
-        if (state.activeWorkspace?.id === workspaceId) {
-          if (state.currentView !== 'chat') state.setCurrentView('chat')
+        const current = useAppStore.getState()
+        if (current.activeWorkspace?.id === workspaceId) {
+          if (current.currentView !== 'chat') current.setCurrentView('chat')
           return
         }
-        const switched = await state.activateWorkspace(workspaceId)
+        const switched = await current.activateWorkspace(workspaceId)
         if (switched) useAppStore.getState().setCurrentView('chat')
       })()
     }
@@ -84,10 +116,12 @@ export function usePiEvents(): void {
       unsubscribeEvent()
       unsubscribeCounts()
       unsubscribeActivity()
+      unsubscribeUnread()
       unsubscribeSessionRuntime()
+      unsubscribeRuntimeState()
       unsubscribeActivate()
     }
-  }, [handlePiEvent, handlePendingPromptCounts, handleWorkspaceActivity, handleSessionRuntime, recoverPendingPrompts])
+  }, [handlePiEvent, handlePendingPromptCounts, handleWorkspaceActivity, handleUnreadSessions, handleSessionRuntime, recoverPendingPrompts])
 }
 
 /**
@@ -109,6 +143,9 @@ export function useMenuActions(): void {
           if (runtimeId) void state.closeSessionTab(runtimeId)
           break
         }
+        case 'menu:settings':
+          setCurrentView('settings')
+          break
         case 'menu:new-workspace':
           setCurrentView('settings') // Open settings where workspace creation lives
           break
@@ -172,6 +209,17 @@ export function isChatVisible(scope: ChatVisibilityScope): boolean {
 /** Component-side subscription to {@link isChatVisible}. */
 export function useChatVisible(): boolean {
   return useAppStore(isChatVisible)
+}
+
+/**
+ * The session file the main view shows, or null when the chat is not on
+ * screen. Main reads it to decide which finished turns the user has seen.
+ * It is the file path, not `sessionState.sessionId` (the engine's header id).
+ */
+export function visibleSessionPath(
+  state: ChatVisibilityScope & { sessionState: { sessionFile: string | null } | null }
+): string | null {
+  return isChatVisible(state) ? state.sessionState?.sessionFile ?? null : null
 }
 
 /**
@@ -454,6 +502,29 @@ export function isAbortShortcut(event: { key: string; defaultPrevented: boolean 
   return event.key === 'Escape' && isStreaming && !event.defaultPrevented
 }
 
+/** Capture phase: runs before the chat's bubble-phase Escape handler below. */
+const ESCAPE_TO_CLOSE_LISTENER_OPTIONS: AddEventListenerOptions = { capture: true }
+
+/**
+ * Calls `onEscape` for an Escape press while `enabled`, for a surface that
+ * closes on Escape wherever the focus is (a modal, a popover). The window
+ * listener runs in the capture phase and claims the press, so the chat's
+ * Escape handler does not also stop the running turn, whatever order the two
+ * listeners were added in. Only the surface opened last claims a press (see
+ * `EscapeSurface`), so one Escape closes one surface.
+ */
+export function useEscapeToClose(enabled: boolean, onEscape: () => void): void {
+  const surface = useEscapeSurface(enabled)
+  useEffect(() => {
+    if (!enabled) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (claimEscape(event, surface)) onEscape()
+    }
+    window.addEventListener('keydown', onKey, ESCAPE_TO_CLOSE_LISTENER_OPTIONS)
+    return () => window.removeEventListener('keydown', onKey, ESCAPE_TO_CLOSE_LISTENER_OPTIONS)
+  }, [enabled, onEscape, surface])
+}
+
 /**
  * Keyboard shortcut handler for the chat input. Enter sends (the composer
  * queues it while the agent works); Ctrl/Cmd+Enter sends now, into a running
@@ -462,35 +533,36 @@ export function isAbortShortcut(event: { key: string; defaultPrevented: boolean 
 export function useChatKeyboard(
   onSend: (message: string) => void,
   onSendNow: (message: string) => void,
-  onAbort: () => void,
-  inputRef: React.RefObject<HTMLTextAreaElement | null>
+  inputRef: React.RefObject<HTMLTextAreaElement | null>,
+  { active, streaming, escape, onEscape }: {
+    active: boolean
+    streaming: boolean
+    escape: 'abort' | 'hide'
+    onEscape: () => void
+  }
 ): void {
-  const isStreaming = useAppStore((state) => state.isStreaming)
-
   useEffect(() => {
+    if (!active) return
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isImeComposing(e)) return
-      if (isAbortShortcut(e, isStreaming)) {
+      if (e.defaultPrevented || isImeComposing(e)) return
+      if (e.key === 'Escape' && (escape === 'hide' || isAbortShortcut(e, streaming))) {
         e.preventDefault()
-        onAbort()
+        onEscape()
         return
       }
 
       // Enter: send message (without Shift)
       if (e.key === 'Enter' && !e.shiftKey && document.activeElement === inputRef.current) {
         e.preventDefault()
-        const value = inputRef.current?.value.trim()
-        if (value) {
-          if (e.ctrlKey || e.metaKey) onSendNow(value)
-          else onSend(value)
-          if (inputRef.current) inputRef.current.value = ''
-        }
+        const value = inputRef.current?.value ?? ''
+        if (e.ctrlKey || e.metaKey) onSendNow(value)
+        else onSend(value)
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isStreaming, onSend, onSendNow, onAbort, inputRef])
+  }, [active, streaming, escape, onSend, onSendNow, onEscape, inputRef])
 }
 
 /** A Pi built-in that maps to a GUI action rather than being inserted as text. */
@@ -542,6 +614,7 @@ export function useCommandCatalog(): { builtins: BuiltinCommand[]; allCommands: 
       { name: 'resume', description: t('commands.resume.description'), run: () => setCurrentView('sessions') },
       { name: 'fork', description: t('commands.fork.description'), run: () => setCurrentView('timeline') },
       { name: 'settings', description: t('commands.settings.description'), run: () => setCurrentView('settings') },
+      { name: 'quick-chat', description: t('quickChat.title'), run: () => { void window.piDesktop.settings.openQuickChat() } },
     ],
     [
       compactContext, cloneBranch, createNewSession, setTaskLauncherOpen, setLinkedTaskDialog, addRepoToLinkedTask,
@@ -576,7 +649,10 @@ export function useInitialize(): void {
       // background matches from the start.
       subscribeAppliedTheme(syncWindowBackground)
       await loadSettings()
-      const openToHome = useAppStore.getState().settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch
+      const openToHome = launchView({
+        openToHomeOnLaunch: useAppStore.getState().settings?.openToHomeOnLaunch ?? DEFAULT_SETTINGS.openToHomeOnLaunch,
+        navigationType: currentNavigationType(),
+      }) === 'home'
 
       // Workspaces are needed for the shell chrome; land the UI immediately after.
       await loadWorkspaces()
@@ -611,9 +687,12 @@ export function useInitialize(): void {
       void useAppStore.getState().refreshWorkflowRuns()
       void useAppStore.getState().loadTags()
       void useAppStore.getState().loadArchivedSessions()
+      void useAppStore.getState().loadPinnedSessions()
+      void useAppStore.getState().loadUnreadSessions()
       void useAppStore.getState().loadNotes()
       void useAppStore.getState().loadCustomModels()
       void useAppStore.getState().checkForUpdates()
+      void useAppStore.getState().loadGitAvailability()
 
       // "Resume Last Session" opens the project's last conversation in the
       // background, Home included, so the chat shows what the next start

@@ -181,3 +181,29 @@ test('deleted files and missing workspaces do not open a preview', async () => {
   assert.equal(useAppStore.getState().previewTarget, null)
   assert.equal(useAppStore.getState().currentView, 'diff')
 })
+
+/** A hunk that removes a SQL comment (`-- old`) and adds a C increment (`++i;`). */
+const DASHED_BODY_DIFF = [
+  'diff --git a/query.sql b/query.sql', 'index 5626abf..f719efd 100644',
+  '--- a/query.sql', '+++ b/query.sql', '@@ -4,3 +4,3 @@ select', ' a', '--- old', '+++i;', ' b',
+  '@@ -10 +10,2 @@', ' c', '+---',
+  '',
+].join('\n')
+
+test('body lines that start with --- or +++ stay in the hunk with their line numbers', () => {
+  const [file] = parseDiff(DASHED_BODY_DIFF)
+  assert.deepEqual(file.hunks, [
+    [
+      { type: 'hunk', content: '@@ -4,3 +4,3 @@ select' },
+      { type: 'context', content: 'a', oldLine: 4, newLine: 4 },
+      { type: 'remove', content: '-- old', oldLine: 5 },
+      { type: 'add', content: '++i;', newLine: 5 },
+      { type: 'context', content: 'b', oldLine: 6, newLine: 6 },
+    ],
+    [
+      { type: 'hunk', content: '@@ -10 +10,2 @@' },
+      { type: 'context', content: 'c', oldLine: 10, newLine: 10 },
+      { type: 'add', content: '---', newLine: 11 },
+    ],
+  ])
+})

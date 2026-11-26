@@ -1,5 +1,6 @@
 import { ChildProcess, SpawnOptions, spawn, spawnSync } from 'child_process'
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'fs'
+import { homedir } from 'os'
 import { join } from 'path'
 import { EventEmitter } from 'events'
 import { StringDecoder } from 'string_decoder'
@@ -14,6 +15,7 @@ import type {
   AgentInstallation,
   StreamingTextSnapshot,
 } from '../shared/ipc-contracts'
+import { BLOCKING_UI_METHODS } from '../shared/ipc-contracts'
 import type { CaptureOptions, PiEngine, PiResolution, PiStartFailure, ResolutionDeps } from './pi-binary-resolution'
 import {
   describePiStartFailure,
@@ -27,7 +29,10 @@ import { StreamingTextTracker } from './streaming-text-tracker'
 import { appLog } from './app-log'
 import { getGuiDataPath } from './app-data-paths'
 import { loadPiDotenv } from './pi-dotenv'
+import { ompProfileArgEnv } from './omp-paths'
+import { renameOmpEvent } from './omp-events'
 import { childProcessEnv } from './windows-exe-search'
+import { FORCE_KILL_TIMEOUT_MS, hasExited, stopProcessTree } from './process-tree-kill'
 import { t, tEnglish } from '../shared/i18n'
 
 /**
@@ -91,9 +96,10 @@ const STARTUP_PROBE_ID = '__startup_probe__'
 // O(messages) and get_available_models filters the model list.)
 const STARTUP_PROBE_COMMAND = 'get_state'
 const STARTUP_PROBE_INTERVAL_MS = 750
-const FORCE_KILL_TIMEOUT_MS = 3_000
-/** Bound on the one `ps` call used to snapshot a child's descendants at kill time. */
-const PROCESS_TREE_TIMEOUT_MS = 2_000
+/** How long stopAndWait waits past the force kill for the killed child to report its exit. */
+const FORCE_KILL_EXIT_GRACE_MS = 500
+/** stopAndWait's bound: the force kill fires inside it, so a stop never waits forever. */
+const STOP_AND_WAIT_TIMEOUT_MS = FORCE_KILL_TIMEOUT_MS + FORCE_KILL_EXIT_GRACE_MS
 /**
  * Fallbacks only. The engine advertises its real limits in the `ready` frame
  * (`maxFrameBytes`, `maxReassembledFrameBytes`); configureLimits() adopts those
@@ -355,8 +361,7 @@ const INSTALLATION_CACHE_TTL_MS = 30_000
  * protocol/tool surface.
  */
 export function setPiExecutableOverride(raw: string | undefined | null, engine: PiEngine = 'auto'): void {
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? ''
-  const next = normalizeOverride(raw, home)
+  const next = normalizeOverride(raw, homedir())
   if (next === configuredOverride && engine === configuredEngine && cachedResolution) return
   configuredOverride = next
   configuredEngine = engine
@@ -617,12 +622,14 @@ export function buildPiInvocation(
 
 /**
  * The environment of one Pi or OMP run: ~/.pi/.env under `base`, the app's
- * own environment by default. `needsShell` is the run's PiCli.needsShell: the
- * app's current-folder search switch reaches the run only when cmd.exe starts
- * it (see childProcessEnv).
+ * own environment by default. A `--profile` in the "default args" setting is
+ * set as OMP_PROFILE over both, so a run that does not get those arguments (a
+ * CLI command, a commit message, a council run) uses the agent's profile.
+ * `needsShell` is the run's PiCli.needsShell: the app's current-folder search
+ * switch reaches the run only when cmd.exe starts it (see childProcessEnv).
  */
 export function buildPiRunEnv(needsShell: boolean, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return childProcessEnv(needsShell, { ...loadPiDotenv(), ...base })
+  return childProcessEnv(needsShell, { ...loadPiDotenv(), ...base, ...ompProfileArgEnv() })
 }
 
 const MAX_PENDING_RESPONSES = 64
@@ -641,8 +648,7 @@ function resolvePiChildTempDir(): string {
     return dir
   } catch {
     // Fall back to home — still more reliable than a broken Local\Temp ACL.
-    const home = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd()
-    const dir = join(home, '.pi', 'tmp')
+    const dir = join(homedir(), '.pi', 'tmp')
     try {
       mkdirSync(dir, { recursive: true })
     } catch {
@@ -685,9 +691,10 @@ export function cleanupPiChildTempDir(): void {
 }
 
 interface PendingResponse {
+  commandType: string
   resolve: (event: PiResponseEvent) => void
   reject: (error: Error) => void
-  timer: ReturnType<typeof setTimeout>
+  timer?: NodeJS.Timeout
 }
 
 /** A Pi RPC command got no response in time. Callers check the class, not the text. */
@@ -704,18 +711,24 @@ export class PiRpcManager extends EventEmitter {
   private stdoutBuffer = ''
   private stderrBuffer = ''
   private pendingResponses = new Map<string, PendingResponse>()
+  private readonly activeBlockingUiRequests = new Set<string>()
   private nextRequestId = 1
   private decoder = new StringDecoder('utf8')
   private rpcFrameDecoder = new RpcFrameDecoder()
   private readonly streamingText = new StreamingTextTracker()
   private startInFlight: Promise<PiStatus> | null = null
+  // Bumped by stop(): a start that began before it no longer owns the process
+  // slot, so it must not kill, retry, or set a status after its awaits.
+  private startGeneration = 0
   private runningEngine: 'pi' | 'omp' | null = null
   private readonly exitWaiters = new Map<ChildProcess, Set<() => void>>()
+  /** Settles when the last process stop() signalled has exited. */
+  private lastProcessExit: Promise<void> = Promise.resolve()
   // Set while a spawn attempt awaits readiness; handleLine invokes it when the
   // startup probe's correlated response arrives. Cleared once the attempt settles.
   private markReady: (() => void) | null = null
   // Settles a pending startup attempt when the process is torn down under it.
-  // Without this, stop()/restart() during 'starting' would sever every settle
+  // Without this, stop() during 'starting' would sever every settle
   // path of spawnAndAwaitReady (kill() removes the child's listeners and the
   // deadline guard is status-gated), leaving start() hung forever.
   private abortStartup: (() => void) | null = null
@@ -769,10 +782,12 @@ export class PiRpcManager extends EventEmitter {
       return this.startInFlight
     }
 
-    this.startInFlight = this.doStart(options).finally(() => {
-      this.startInFlight = null
+    const started = this.doStart(options).finally(() => {
+      // A stop() may have released this start and a newer one may own the slot.
+      if (this.startInFlight === started) this.startInFlight = null
     })
-    return this.startInFlight
+    this.startInFlight = started
+    return started
   }
 
   private async doStart(options: PiStartOptions): Promise<PiStatus> {
@@ -784,13 +799,13 @@ export class PiRpcManager extends EventEmitter {
     // clear message instead of letting spawn die with a cryptic ENOENT.
     const { failureReason } = resolveStartCli(options)
     if (failureReason) {
-      return this.failPreflight(
+      return this.failStart(
         describePiStartFailure(failureReason, t),
         describePiStartFailure(failureReason, tEnglish)
       )
     }
     if (options.cwd && (!existsSync(options.cwd) || !statSync(options.cwd).isDirectory())) {
-      return this.failPreflight(
+      return this.failStart(
         t('errors.pi.cwdMissing', { cwd: options.cwd }),
         tEnglish('errors.pi.cwdMissing', { cwd: options.cwd })
       )
@@ -798,13 +813,15 @@ export class PiRpcManager extends EventEmitter {
 
     // Spawn, with one retry reserved for a crash before readiness. See
     // STARTUP_MAX_ATTEMPTS: a crash is often transient; a timeout is not.
+    const generation = this.startGeneration
     for (let attempt = 1; attempt <= STARTUP_MAX_ATTEMPTS; attempt++) {
       const outcome = await this.spawnAndAwaitReady(options)
       if (outcome === 'ready') return this.getStatus()
 
-      // A deliberate stop/restart tore this attempt down; the initiator has
-      // already set the status — report it without retrying or erroring.
-      if (outcome === 'aborted') return this.getStatus()
+      // stop() tore this attempt down, or ran after it settled and before this
+      // line: the status is stopped, or a newer start owns the process. Report
+      // it without retrying, killing, or erroring.
+      if (outcome === 'aborted' || generation !== this.startGeneration) return this.getStatus()
 
       if (outcome === 'crashed' && attempt < STARTUP_MAX_ATTEMPTS) {
         console.log(
@@ -837,7 +854,12 @@ export class PiRpcManager extends EventEmitter {
    * UI shows; `englishReason` is the same message for the log, which stays
    * English.
    */
-  private failPreflight(reason: string, englishReason: string): PiStatus {
+  /**
+   * End a start before any process is spawned: status `error` with `reason`
+   * as the error the user sees. Also used by a caller that refuses the start
+   * itself (a session claimed by another Pi Desktop).
+   */
+  failStart(reason: string, englishReason: string): PiStatus {
     this.stderrBuffer = reason
     this.setStatus('error')
     console.error('[Pi] Pre-flight failed:', englishReason)
@@ -936,8 +958,8 @@ export class PiRpcManager extends EventEmitter {
         }
         resolve(outcome)
       }
-      // Deliberate teardown (stop/restart) while starting: settle without
-      // retrying and without stamping an error — the caller chose to stop.
+      // Deliberate teardown (stop) while starting: settle without retrying
+      // and without stamping an error — the caller chose to stop.
       this.abortStartup = (): void => finish('aborted')
 
       // Readiness signal: handleLine invokes this when the probe's correlated
@@ -1015,15 +1037,28 @@ export class PiRpcManager extends EventEmitter {
   }
 
   stop(): void {
+    // Release the aborted start so a start() right after this stop spawns a
+    // new process with its own options instead of joining the dead attempt.
+    this.startGeneration++
+    this.startInFlight = null
     this.kill()
     this.setStatus('stopped')
+  }
+
+  /**
+   * Settles once the process the last stop() signalled has exited: a stopped
+   * status is set at once, while the child can take up to the force-kill
+   * timeout to end. Settled when no process was running.
+   */
+  processExited(): Promise<void> {
+    return this.lastProcessExit
   }
 
   /**
    * Stop the child and wait until Windows releases its cwd/handles.
    * Ordinary stop() remains fire-and-forget for UI navigation.
    */
-  async stopAndWait(timeoutMs = FORCE_KILL_TIMEOUT_MS + 500): Promise<void> {
+  async stopAndWait(timeoutMs = STOP_AND_WAIT_TIMEOUT_MS): Promise<void> {
     const proc = this.process
     if (!proc) {
       this.stop()
@@ -1045,14 +1080,9 @@ export class PiRpcManager extends EventEmitter {
       waiters.add(finish)
       this.exitWaiters.set(proc, waiters)
       this.stop()
-      if (proc.exitCode !== null || proc.signalCode !== null) finish()
+      if (hasExited(proc)) finish()
       else timer = setTimeout(finish, timeoutMs)
     })
-  }
-
-  restart(options: PiStartOptions = {}): Promise<PiStatus> {
-    this.kill()
-    return this.start(options)
   }
 
   /**
@@ -1075,17 +1105,35 @@ export class PiRpcManager extends EventEmitter {
         return
       }
 
-      const timer = setTimeout(() => {
-        this.pendingResponses.delete(id)
-        reject(new RpcTimeoutError(String(command.type), RESPONSE_TIMEOUT_MS))
-      }, RESPONSE_TIMEOUT_MS)
+      const commandType = String(command.type)
+      const hasBlockingUi = commandType === 'prompt' && this.activeBlockingUiRequests.size > 0
+      const timer = hasBlockingUi
+        ? undefined
+        : setTimeout(() => {
+            this.pendingResponses.delete(id)
+            if (commandType === 'prompt') {
+              let hasPendingPrompt = false
+              for (const p of this.pendingResponses.values()) {
+                if (p.commandType === 'prompt') {
+                  hasPendingPrompt = true
+                  break
+                }
+              }
+              if (!hasPendingPrompt) this.activeBlockingUiRequests.clear()
+            }
+            reject(new RpcTimeoutError(commandType, RESPONSE_TIMEOUT_MS))
+          }, RESPONSE_TIMEOUT_MS)
 
-      this.pendingResponses.set(id, { resolve, reject, timer })
+      this.pendingResponses.set(id, { commandType, resolve, reject, timer })
 
       this.process!.stdin!.write(line, (err) => {
         if (err) {
           clearTimeout(timer)
           this.pendingResponses.delete(id)
+          if (commandType === 'prompt') {
+            const hasPendingPrompt = Array.from(this.pendingResponses.values()).some((p) => p.commandType === 'prompt')
+            if (!hasPendingPrompt) this.activeBlockingUiRequests.clear()
+          }
           reject(err)
         }
       })
@@ -1116,11 +1164,44 @@ export class PiRpcManager extends EventEmitter {
    * Respond to an extension UI request.
    */
   sendExtensionUiResponse(id: string, response: Record<string, unknown>): void {
+    if (this.status !== 'running') return
+    if (this.activeBlockingUiRequests.delete(id) && this.activeBlockingUiRequests.size === 0) {
+      this.resumePromptTimers()
+    }
     this.sendCommandFireAndForget({
       type: 'extension_ui_response',
       id,
       ...response,
     })
+    if (this.status === 'running') this.emit('extension-ui-response', id)
+  }
+
+  private pausePromptTimers(): void {
+    for (const pending of this.pendingResponses.values()) {
+      if (pending.commandType === 'prompt' && pending.timer !== undefined) {
+        clearTimeout(pending.timer)
+        pending.timer = undefined
+      }
+    }
+  }
+
+  private resumePromptTimers(): void {
+    for (const [id, pending] of this.pendingResponses) {
+      if (pending.commandType === 'prompt' && pending.timer === undefined) {
+        pending.timer = setTimeout(() => {
+          this.pendingResponses.delete(id)
+          let hasPendingPrompt = false
+          for (const p of this.pendingResponses.values()) {
+            if (p.commandType === 'prompt') {
+              hasPendingPrompt = true
+              break
+            }
+          }
+          if (!hasPendingPrompt) this.activeBlockingUiRequests.clear()
+          pending.reject(new RpcTimeoutError(pending.commandType, RESPONSE_TIMEOUT_MS))
+        }, RESPONSE_TIMEOUT_MS)
+      }
+    }
   }
 
   private setupStreams(): void {
@@ -1183,7 +1264,7 @@ export class PiRpcManager extends EventEmitter {
       this.emit('parse-error', line)
       return
     }
-    const event = parsed as PiRpcEvent
+    const event = renameOmpEvent(parsed) as PiRpcEvent
 
     // OMP advertises readiness explicitly. Keep the probe fallback for the
     // original Pi RPC implementation, which has no ready frame.
@@ -1219,8 +1300,37 @@ export class PiRpcManager extends EventEmitter {
         if (pending) {
           clearTimeout(pending.timer)
           this.pendingResponses.delete(responseEvent.id)
+          let hasPendingPrompt = false
+          for (const p of this.pendingResponses.values()) {
+            if (p.commandType === 'prompt') {
+              hasPendingPrompt = true
+              break
+            }
+          }
+          if (!hasPendingPrompt) {
+            this.activeBlockingUiRequests.clear()
+          }
           pending.resolve(responseEvent)
           return
+        }
+      }
+    }
+
+    if (event.type === 'extension_ui_request') {
+      const uiReq = event as { id?: unknown; method?: unknown; targetId?: unknown }
+      const method = typeof uiReq.method === 'string' ? uiReq.method : ''
+      const id = typeof uiReq.id === 'string' ? uiReq.id : ''
+      const targetId = typeof uiReq.targetId === 'string' ? uiReq.targetId : ''
+
+      if (BLOCKING_UI_METHODS.has(method) && id) {
+        this.activeBlockingUiRequests.add(id)
+        this.pausePromptTimers()
+      } else if (method === 'cancel') {
+        const cancelledId = targetId || id
+        if (cancelledId && this.activeBlockingUiRequests.delete(cancelledId)) {
+          if (this.activeBlockingUiRequests.size === 0) {
+            this.resumePromptTimers()
+          }
         }
       }
     }
@@ -1238,51 +1348,11 @@ export class PiRpcManager extends EventEmitter {
     }
   }
 
-  /**
-   * PIDs descended from `root`, children before grandchildren.
-   *
-   * A negative-PID signal only reaches the killed process's own group, and OMP
-   * puts each subagent it spawns in a new group, so `hub` fan-out survives the
-   * parent dying: the app exits, the subagents are re-parented to init, and
-   * they keep running and keep billing. They have to be enumerated before the
-   * parent is signalled, because re-parenting erases the link immediately.
-   *
-   * POSIX only. Windows has the same gap but `taskkill /T` is the fix there and
-   * it cannot be verified from here, so that path is left as it was.
-   */
-  private descendantPids(root: number): number[] {
-    if (IS_WINDOWS) return []
-    const result = spawnSync('ps', ['-eo', 'pid=,ppid='], { encoding: 'utf-8', timeout: PROCESS_TREE_TIMEOUT_MS })
-    if (result.status !== 0 || typeof result.stdout !== 'string') return []
-
-    const childrenByParent = new Map<number, number[]>()
-    for (const line of result.stdout.split('\n')) {
-      const [pid, ppid] = line.trim().split(/\s+/).map(Number)
-      if (!Number.isInteger(pid) || !Number.isInteger(ppid)) continue
-      const siblings = childrenByParent.get(ppid)
-      if (siblings) siblings.push(pid)
-      else childrenByParent.set(ppid, [pid])
-    }
-
-    const found: number[] = []
-    const queue = [root]
-    // Breadth-first with a seen set: a malformed table must not loop forever.
-    const seen = new Set<number>([root])
-    while (queue.length > 0) {
-      for (const child of childrenByParent.get(queue.shift()!) ?? []) {
-        if (seen.has(child)) continue
-        seen.add(child)
-        found.push(child)
-        queue.push(child)
-      }
-    }
-    return found
-  }
-
   private kill(): void {
     // Settle any pending startup attempt first — after the listener teardown
     // below it could never settle on its own. No-op when already settled.
     this.abortStartup?.()
+    this.activeBlockingUiRequests.clear()
     for (const [, pending] of this.pendingResponses) {
       clearTimeout(pending.timer)
       pending.reject(new Error(t('errors.pi.processKilled')))
@@ -1294,6 +1364,12 @@ export class PiRpcManager extends EventEmitter {
       proc.removeAllListeners()
       proc.stdout?.removeAllListeners()
       proc.stderr?.removeAllListeners()
+      this.lastProcessExit = hasExited(proc)
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+          proc.once('exit', () => resolve())
+          proc.once('close', () => resolve())
+        })
       const waiters = this.exitWaiters.get(proc)
       if (waiters?.size) {
         const settle = (): void => {
@@ -1305,38 +1381,7 @@ export class PiRpcManager extends EventEmitter {
       }
       proc.stdin?.end()
 
-      // Snapshot the tree before signalling: once the parent dies its children
-      // are re-parented to init and can no longer be found from this pid.
-      const strays = proc.pid ? this.descendantPids(proc.pid) : []
-
-      // Kill entire process group (negative PID)
-      try {
-        if (proc.pid) {
-          process.kill(-proc.pid, 'SIGTERM')
-        }
-      } catch {
-        proc.kill('SIGTERM')
-      }
-
-      // Subagents sit in their own groups, so the group signal above misses
-      // them. Signal each directly; ESRCH just means it already exited.
-      for (const stray of strays) {
-        try { process.kill(stray, 'SIGTERM') } catch { /* already gone */ }
-      }
-
-      // Force kill after timeout
-      setTimeout(() => {
-        try {
-          if (proc.pid && !proc.killed) {
-            process.kill(-proc.pid, 'SIGKILL')
-          }
-        } catch {
-          try { proc.kill('SIGKILL') } catch { /* already dead */ }
-        }
-        for (const stray of strays) {
-          try { process.kill(stray, 'SIGKILL') } catch { /* already gone */ }
-        }
-      }, FORCE_KILL_TIMEOUT_MS)
+      stopProcessTree(proc)
 
       this.process = null
     }
@@ -1347,6 +1392,7 @@ export class PiRpcManager extends EventEmitter {
   }
 
   private rejectAllPending(reason: string): void {
+    this.activeBlockingUiRequests.clear()
     for (const [, pending] of this.pendingResponses) {
       clearTimeout(pending.timer)
       pending.reject(new Error(reason))

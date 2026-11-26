@@ -1,0 +1,34 @@
+.quick-chat {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--color-app) 94%, transparent);
+  color: var(--color-primary);
+  font-family: var(--ui-font-family, 'Inter Variable', system-ui, sans-serif);
+  font-size: 0.875rem;
+  overflow: hidden;
+  position: relative;
+  user-select: text;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  box-shadow: 0 24px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.quick-chat button,
+.quick-chat input,
+.quick-chat textarea {
+  font-family: inherit;
+}
+
+/* ─── Drag Regions for Window Movement ─────────────────────────────────────── */
+
+.qc-drag-region,
+.qc-drag-region * {
+  -webkit-app-region: drag;
+}
+
+.qc-no-drag,
+.qc-no-drag * {
+  -webkit-app-region: no-drag;
+}

@@ -1,4 +1,6 @@
 import { execFile } from 'child_process'
+import { statSync } from 'fs'
+import { homedir } from 'os'
 import { promisify } from 'util'
 import type { AgentEngineKind } from '../../shared/ipc-contracts'
 import { buildPiInvocation, buildPiRunEnv, getPiCli, getPiCliForEngine } from '../pi-rpc-manager'
@@ -6,6 +8,23 @@ import { describePiStartFailure } from '../pi-binary-resolution'
 import { t } from '../../shared/i18n'
 
 const execFileAsync = promisify(execFile)
+
+/**
+ * Working directory for a command whose result does not depend on the
+ * workspace (a version check, account usage): the workspace folder while it
+ * exists, else the home folder. A folder deleted or renamed outside the app
+ * would otherwise make the spawn itself fail.
+ */
+export function accountCommandCwd(workspacePath: string | undefined): string {
+  if (workspacePath) {
+    try {
+      if (statSync(workspacePath).isDirectory()) return workspacePath
+    } catch {
+      // Missing or unreadable: use the home folder.
+    }
+  }
+  return homedir()
+}
 
 // Run a `pi <subcommand>` using the same binary resolved at startup, or the
 // binary of an explicitly named engine (the active session's engine can differ

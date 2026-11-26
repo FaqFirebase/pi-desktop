@@ -81,7 +81,7 @@ test('branch IPC validates inputs and workspace activity, switches explicitly, a
     const result = await switchBranch(event, 'project', 'target') as GitBranchSwitchResult
     assert.equal(result.ok && result.status.branch, 'target')
     assert.equal(git(['branch', '--show-current']), 'target')
-    assert.deepEqual(events, [[IPC_CHANNELS.EVENT_FILE_CHANGE, { changeType: 'change', relativePath: '.' }]])
+    assert.deepEqual(events, [[IPC_CHANNELS.EVENT_FILE_CHANGE, { relativePath: '.' }]])
   } finally {
     electronModule.exports = originalExports
     await rm(root, { recursive: true, force: true })
@@ -135,7 +135,7 @@ test('new-branch IPC creates from HEAD while an agent works, refuses bad names a
     const result = await createBranch(event, 'project', 'feature/new') as GitBranchSwitchResult
     assert.equal(result.ok && result.status.branch, 'feature/new')
     assert.equal(git(['status', '--porcelain']), '?? work.txt')
-    assert.deepEqual(events, [[IPC_CHANNELS.EVENT_FILE_CHANGE, { changeType: 'change', relativePath: '.' }]])
+    assert.deepEqual(events, [[IPC_CHANNELS.EVENT_FILE_CHANGE, { relativePath: '.' }]])
 
     const commit = handlers.get(IPC_CHANNELS.GIT_CONVEYOR_COMMIT)!
     await assert.rejects(commit(event, { message: 'm', newFiles: ['work.txt'] }), /newFiles a string array with paths/)

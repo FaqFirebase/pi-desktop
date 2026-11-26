@@ -1,55 +1,63 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { firstQueued, withQueued, withoutQueued, withoutWorkspaceQueue, type QueuedPrompt, type SendQueues } from './send-queue'
+import { tEnglish } from '../../shared/i18n'
+import { firstQueued, sendQueueStatusText, withQueued, withoutQueued, withoutChats, type QueuedPrompt, type SendQueues } from './send-queue'
 
-const WORKSPACE = 'ws-1'
-const OTHER_WORKSPACE = 'ws-2'
+const CHAT = 'runtime-1'
+const OTHER_CHAT = 'runtime-2'
 
 function prompt(id: string, text = `Message ${id}`): QueuedPrompt {
   return { id, text, attachments: [] }
 }
 
-test('withQueued appends to the end of one workspace queue only', () => {
+test('withQueued appends to the end of one chat queue only', () => {
   let queues: SendQueues = {}
-  queues = withQueued(queues, WORKSPACE, prompt('a'))
-  queues = withQueued(queues, WORKSPACE, prompt('b'))
-  queues = withQueued(queues, OTHER_WORKSPACE, prompt('c'))
-  assert.deepEqual(queues[WORKSPACE].map((p) => p.id), ['a', 'b'])
-  assert.deepEqual(queues[OTHER_WORKSPACE].map((p) => p.id), ['c'])
+  queues = withQueued(queues, CHAT, prompt('a'))
+  queues = withQueued(queues, CHAT, prompt('b'))
+  queues = withQueued(queues, OTHER_CHAT, prompt('c'))
+  assert.deepEqual(queues[CHAT].map((p) => p.id), ['a', 'b'])
+  assert.deepEqual(queues[OTHER_CHAT].map((p) => p.id), ['c'])
 })
 
 test('firstQueued gives the oldest prompt, or nothing for an empty queue', () => {
-  const queues = withQueued(withQueued({}, WORKSPACE, prompt('a')), WORKSPACE, prompt('b'))
-  assert.equal(firstQueued(queues, WORKSPACE)?.id, 'a')
-  assert.equal(firstQueued(queues, OTHER_WORKSPACE), undefined)
+  const queues = withQueued(withQueued({}, CHAT, prompt('a')), CHAT, prompt('b'))
+  assert.equal(firstQueued(queues, CHAT)?.id, 'a')
+  assert.equal(firstQueued(queues, OTHER_CHAT), undefined)
 })
 
 test('withoutQueued removes one prompt and drops a queue left empty', () => {
-  const queues = withQueued(withQueued({}, WORKSPACE, prompt('a')), WORKSPACE, prompt('b'))
-  const afterOne = withoutQueued(queues, WORKSPACE, 'a')
-  assert.deepEqual(afterOne[WORKSPACE].map((p) => p.id), ['b'])
-  const afterBoth = withoutQueued(afterOne, WORKSPACE, 'b')
-  assert.equal(WORKSPACE in afterBoth, false)
+  const queues = withQueued(withQueued({}, CHAT, prompt('a')), CHAT, prompt('b'))
+  const afterOne = withoutQueued(queues, CHAT, 'a')
+  assert.deepEqual(afterOne[CHAT].map((p) => p.id), ['b'])
+  const afterBoth = withoutQueued(afterOne, CHAT, 'b')
+  assert.equal(CHAT in afterBoth, false)
 })
 
 test('withoutQueued returns the same queues when the prompt is not there', () => {
-  const queues = withQueued({}, WORKSPACE, prompt('a'))
-  assert.equal(withoutQueued(queues, WORKSPACE, 'missing'), queues)
-  assert.equal(withoutQueued(queues, OTHER_WORKSPACE, 'a'), queues)
+  const queues = withQueued({}, CHAT, prompt('a'))
+  assert.equal(withoutQueued(queues, CHAT, 'missing'), queues)
+  assert.equal(withoutQueued(queues, OTHER_CHAT, 'a'), queues)
 })
 
-test('withoutWorkspaceQueue drops one workspace queue and keeps the others', () => {
-  const queues = withQueued(withQueued({}, WORKSPACE, prompt('a')), OTHER_WORKSPACE, prompt('b'))
-  const next = withoutWorkspaceQueue(queues, WORKSPACE)
-  assert.equal(WORKSPACE in next, false)
-  assert.deepEqual(next[OTHER_WORKSPACE].map((p) => p.id), ['b'])
-  assert.equal(withoutWorkspaceQueue(next, WORKSPACE), next)
+test('withoutChats drops the entries of the closed chats and keeps the others', () => {
+  const queues = withQueued(withQueued({}, CHAT, prompt('a')), OTHER_CHAT, prompt('b'))
+  const next = withoutChats(queues, [CHAT])
+  assert.equal(CHAT in next, false)
+  assert.deepEqual(next[OTHER_CHAT].map((p) => p.id), ['b'])
+  assert.equal(withoutChats(next, [CHAT]), next)
+  assert.deepEqual(withoutChats(queues, [CHAT, OTHER_CHAT]), {})
 })
 
 test('the queue functions never change the queues they were given', () => {
-  const queues = withQueued({}, WORKSPACE, prompt('a'))
+  const queues = withQueued({}, CHAT, prompt('a'))
   const snapshot = JSON.stringify(queues)
-  withQueued(queues, WORKSPACE, prompt('b'))
-  withoutQueued(queues, WORKSPACE, 'a')
+  withQueued(queues, CHAT, prompt('b'))
+  withoutQueued(queues, CHAT, 'a')
   assert.equal(JSON.stringify(queues), snapshot)
+})
+
+test('each hold reason tells the user what starts the queue again', () => {
+  assert.equal(sendQueueStatusText(tEnglish, undefined), 'Sends when the agent finishes')
+  assert.equal(sendQueueStatusText(tEnglish, 'interrupted'), 'Paused. Your next message, or Send now, starts it again')
+  assert.equal(sendQueueStatusText(tEnglish, 'ended-off-screen'), 'Paused while you were away. Press Send now to send it')
 })

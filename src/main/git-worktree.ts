@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { existsSync } from 'fs'
 import { mkdir } from 'fs/promises'
 import { basename, dirname, join, resolve } from 'path'
 import { i18n, type Translate } from '../shared/i18n'
@@ -6,8 +7,27 @@ import { i18n, type Translate } from '../shared/i18n'
 /** Exit status Git uses for fatal errors, repository discovery included. */
 export const GIT_FATAL_EXIT_CODE = 128
 
+/** Spawn error code for a program that could not be found. */
+const SPAWN_NOT_FOUND_CODE = 'ENOENT'
+
 /** Git wordings that mean `cwd` is not inside a usable working tree. */
 const MISSING_REPOSITORY_PATTERN = /not a git repository|this operation must be run in a work tree/i
+
+/**
+ * `LANGUAGE` chooses Git's message catalog ahead of `LC_ALL` and `LANG`, and
+ * `C` names no catalog, so Git writes its untranslated English messages.
+ */
+const GIT_MESSAGE_LANGUAGE = 'C'
+
+/**
+ * Environment for a git child process. Callers classify failures by Git's
+ * English wording, which a translated locale replaces (issue #132). Only the
+ * message language changes: the locale for text encoding stays the user's,
+ * so hooks see the same character set as in their own terminal.
+ */
+export function gitProcessEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...env, LANGUAGE: GIT_MESSAGE_LANGUAGE }
+}
 
 export interface GitCommandResult {
   stdout: string
@@ -46,6 +66,18 @@ export class GitCommandError extends Error {
 }
 
 /**
+ * Rejection raised when the `git` binary could not be started because it is
+ * not installed. Node gives a missing working folder the same `ENOENT`, so
+ * `runGit` checks that the folder exists before it reports this error.
+ */
+export class GitNotInstalledError extends Error {
+  constructor() {
+    super(i18n.t('errors.git.notInstalled'))
+    this.name = 'GitNotInstalledError'
+  }
+}
+
+/**
  * True only when Git refused a command because the directory is outside any
  * working tree. A missing `git` binary, a missing folder, or any other fatal
  * error stays unclassified so callers still surface it.
@@ -77,7 +109,7 @@ export function runGit(args: readonly string[], cwd: string, env?: NodeJS.Proces
   return new Promise((resolvePromise, reject) => {
     const child = spawn('git', [...args], {
       cwd,
-      env,
+      env: gitProcessEnv(env),
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     })
@@ -89,7 +121,9 @@ export function runGit(args: readonly string[], cwd: string, env?: NodeJS.Proces
     child.stderr?.setEncoding('utf8')
     child.stdout?.on('data', (chunk: string) => { stdout += chunk })
     child.stderr?.on('data', (chunk: string) => { stderr += chunk })
-    child.once('error', reject)
+    child.once('error', (error: NodeJS.ErrnoException) => {
+      reject(error.code === SPAWN_NOT_FOUND_CODE && existsSync(cwd) ? new GitNotInstalledError() : error)
+    })
     child.once('close', (code) => {
       if (code === 0) {
         resolvePromise({ stdout, stderr })

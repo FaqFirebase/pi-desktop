@@ -8,6 +8,12 @@
     "workingInAnotherWorkspace": "Pi is working in another workspace"
   },
   "app": {
+    "crashScreen": {
+      "copyDetails": "Copy details",
+      "message": "{{product}} hit an error and stopped drawing this window. Your sessions keep running. Reload to continue.",
+      "reload": "Reload",
+      "title": "Something went wrong"
+    },
     "dropFolder": {
       "description": "Opens that folder as a workspace (creates one if needed)",
       "title": "Drop folder to open as project"
@@ -24,6 +30,22 @@
       "dismissAriaLabel": "Dismiss update notification",
       "downloadButton": "Download"
     }
+  },
+  "browserPane": {
+    "addressLabel": "Address",
+    "addressPlaceholder": "Enter a web address or localhost:port",
+    "back": "Back",
+    "close": "Close browser",
+    "downloadRefused": "Downloads are turned off in the Browser pane. Open the page in your default browser to download.",
+    "emptyHint": "Enter a web address to open a page here. Pick sends nothing: it adds the element to your message.",
+    "forward": "Forward",
+    "invalidAddress": "Only http and https pages can open here.",
+    "loadFailed": "Could not load {{url}}.",
+    "openExternal": "Open in default browser",
+    "pick": "Pick an element",
+    "pickImageTooLarge": "The element screenshot is too large to attach. Its text was added.",
+    "reload": "Reload",
+    "stopPicking": "Stop picking (Esc)"
   },
   "chat": {
     "activity": {
@@ -83,13 +105,17 @@
       "insertHint": "↑↓ navigate · Enter/Tab insert path · Esc close"
     },
     "message": {
-      "branchedFrom": "Branched from: \"{{excerpt}}\"",
       "branchFromHere": "Branch from here",
       "editAndResend": "Edit & resend",
       "stopped": "Stopped"
     },
     "nextSteps": {
       "title": "Suggested next steps"
+    },
+    "permissionModeRestart": {
+      "idle": "{{agent}} still runs with the old permission mode. Restart it to use {{mode}}.",
+      "restart": "Restart {{agent}}",
+      "working": "{{agent}} is still working. It keeps the old permission mode until you restart it. Restart it when it finishes to use {{mode}}."
     },
     "projectPicker": {
       "noProject": "No project",
@@ -123,6 +149,7 @@
       "files_one": "{{count}} file",
       "files_other": "{{count}} files",
       "held": "Paused. Your next message, or Send now, starts it again",
+      "heldOffScreen": "Paused while you were away. Press Send now to send it",
       "next": "Sends when the agent finishes",
       "sendNow": "Send now",
       "sendNowHint": "Send this message into the running turn now",
@@ -131,6 +158,7 @@
     "startingAgent": "Starting agent…",
     "stopButton": {
       "ariaLabel": "Stop generating",
+      "title": "Stop",
       "titleWithShortcut": "Stop (Esc)"
     },
     "subagentPanel": {
@@ -168,6 +196,7 @@
       "viewSource": "View source"
     },
     "toolbar": {
+      "browser": "Browser",
       "diffViewer": "Diff viewer",
       "fileTree": "File tree",
       "reviewPanel": "Review panel",
@@ -293,11 +322,12 @@
     "copyLink": "Copy Link",
     "copyMessage": "Copy Message",
     "copySelection": "Copy Selection",
-    "deleteSessionConfirmMessage": "Delete session \"{{name}}\"?\n\nWill use the system 'trash' CLI if installed (recoverable); otherwise the .jsonl session file is permanently removed.",
+    "deleteSessionConfirmMessage": "Delete session \"{{name}}\"?\n\nThe .jsonl session file moves to the system trash, so you can restore it. If the trash is not available, the file is permanently removed.",
     "deleteSessionConfirmTitle": "Delete session",
     "deleteSessionLabel": "Delete…",
     "openLink": "Open Link",
     "openSession": "Open Session",
+    "pin": "Pin",
     "rename": "Rename…",
     "searchSelection": "Search Selection",
     "shortcuts": {
@@ -308,6 +338,7 @@
       "selectAll": "Ctrl+A"
     },
     "unarchive": "Unarchive",
+    "unpin": "Unpin",
     "workflowRuns": "Workflow Runs"
   },
   "conveyor": {
@@ -418,6 +449,11 @@
       "working": "working…"
     }
   },
+  "crashRecovery": {
+    "detail": "Reason: {{reason}}",
+    "message": "The {{product}} window stopped again soon after it reloaded.",
+    "title": "Window stopped"
+  },
   "customModels": {
     "addModelButton": "Add model",
     "addProviderButton": "Add provider",
@@ -448,12 +484,18 @@
     "visionLabel": "vision"
   },
   "diagnostics": {
+    "exportLogs": "Export logs",
+    "exportLogsFailed": "Could not export logs: {{error}}",
+    "exportLogsSaved": "Logs saved to {{path}}",
     "fields": {
       "appVersion": "App version",
       "binaryFound": "Binary found",
       "chromium": "Chromium",
       "electron": "Electron",
       "engineVersion": "{{agent}} version",
+      "gitFailed": "Did not run: {{detail}}",
+      "gitNotFound": "Not found",
+      "gitVersion": "Git version",
       "globalRules": "Global rules",
       "globalRulesInvalid": "invalid file: {{error}}",
       "guiDataDir": "GUI data dir",
@@ -502,6 +544,7 @@
     "sections": {
       "application": "Application",
       "binaryTitle": "{{agent}} Binary",
+      "git": "Git",
       "permissions": "Permissions",
       "providers": "Providers",
       "recentErrors": "Recent Errors",
@@ -514,6 +557,10 @@
     "workspaceTrustedBadge": "trusted"
   },
   "dialogs": {
+    "logExport": {
+      "fileFilterName": "JSON",
+      "title": "Export logs"
+    },
     "openFolder": {
       "title": "Open Folder"
     },
@@ -584,10 +631,14 @@
       "pathNotPermitted": "Attachment path is not permitted",
       "tooLarge": "Attachment is too large (max {{limit}} MB)"
     },
+    "chatImport": {
+      "busy": "A chat import is already running."
+    },
     "council": {
       "agentNotFound": "{{agent}} was not found. Install it, or remove it from the council members in Settings.",
       "arbiterFailed": "Arbiter failed",
       "arbiterTimedOut": "Arbiter timed out",
+      "cancelled": "Council run cancelled",
       "notEnoughMembers": "Council needs at least {{min}} agents. Install or enable Pi, Claude, or Codex, or turn the council off.",
       "planningDisabled": "Council planning is disabled in Settings.",
       "timeoutNotNumber": "Council timeout must be a finite number",
@@ -620,6 +671,7 @@
       "localBranchRequired": "Choose an existing local branch",
       "namedBranchRequired": "A named branch is required to create a pull request",
       "newFileNotCommittable": "{{path}} cannot be committed: it is not a new file in the selected changes, or Git ignores it",
+      "notInstalled": "Git is not installed",
       "noTrackedChanges": "No tracked changes to commit in this workspace. Stage untracked files first to include them.",
       "operationInProgressCommit": "Cannot commit while a Git {{operation}} is in progress",
       "operationInProgressCreateBranch": "Cannot create a branch while a Git {{operation}} is in progress",
@@ -644,6 +696,9 @@
       "bodyRequired": "Note body is required",
       "notFound": "Note not found: {{id}}",
       "titleRequired": "Note title is required"
+    },
+    "ompUsage": {
+      "unreadable": "OMP printed usage output the app could not read"
     },
     "packages": {
       "invalidSpec": "Invalid package specification",
@@ -680,9 +735,13 @@
       "alreadyAttached": "Session file is already attached to a live runtime",
       "attachedToDifferentWorkspace": "Session is already attached to a different workspace runtime",
       "ompNoClone": "The OMP engine does not support cloning a session",
+      "openInAnotherWindow": "This session is open in another Pi Desktop window. Close it there first.",
       "pathMustExist": "{{field}} must point to an existing Pi session file",
       "projectMismatch": "Session project does not match the active workspace",
       "runtimeNotFound": "Session runtime not found: {{runtimeId}}"
+    },
+    "settings": {
+      "unreadable": "The settings were not saved: \"{{path}}\" cannot be read. Fix or remove that file, then save again."
     },
     "system": {
       "externalUrlHttpOnly": "Only http(s) URLs are allowed"
@@ -717,6 +776,14 @@
       "skillChecksumMismatch": "{{file}} did not match its expected checksum, so Pi Desktop did not install it.",
       "skillDownloadFailed": "Could not download {{file}} (HTTP {{status}}).",
       "skillInstalledElsewhere": "A TypeSafe skill that Pi Desktop did not install is already at {{directory}}. Pi Desktop did not change it."
+    },
+    "voice": {
+      "serverBadResponse": "The speech server's answer has no text.",
+      "serverNotConfigured": "Enter the speech server's address and model in Settings > Voice dictation.",
+      "serverNotSelected": "Voice dictation is set to run on this computer. To use your speech server, choose On a server you choose in Settings > Voice dictation.",
+      "serverStatus": "The speech server answered with error {{status}}: {{detail}}",
+      "serverTimeout": "The speech server at {{url}} did not answer within {{seconds}} seconds.",
+      "serverUnreachable": "Could not reach the speech server at {{url}} ({{reason}})."
     },
     "workflow": {
       "runNotFound": "Workflow run not found"
@@ -763,6 +830,15 @@
       "folderNotFound": "Folder not found",
       "noWorkspaceHint": "Switch to a project folder from the workspace switcher in the sidebar.",
       "noWorkspaceOpen": "No workspace open"
+    }
+  },
+  "gitCheck": {
+    "banner": {
+      "checkAgain": "Check again",
+      "dismissAriaLabel": "Dismiss the Git notice",
+      "failedTitle": "Git did not run",
+      "howToInstall": "How to install",
+      "missingDescription": "Commits, branches, diffs and worktrees need Git. Install it, then check again."
     }
   },
   "home": {
@@ -940,6 +1016,25 @@
     "needs-approval": "Pi is waiting for your approval.",
     "withSession": "{{body}} Click to open the finished session."
   },
+  "openPath": {
+    "followUp": {
+      "reveal": "Show in Folder",
+      "system": "Open with System App"
+    },
+    "openInEditor": "Open in Editor",
+    "openWithSystem": "Open with System App",
+    "refusal": {
+      "editorRunning": "An editor is already open in this project's terminal. Close it, then try again.",
+      "launchFailed": "The editor did not start.",
+      "noTerminalWorkspace": "Open a project first. Terminal editors open in the project's terminal panel.",
+      "notFound": "This file or folder no longer exists.",
+      "outsideRoots": "This path is outside the open projects.",
+      "runnableFile": "This file can run as a program, so it is not opened with the system app.",
+      "systemOpenFailed": "The system could not open this file or folder."
+    },
+    "refusalTitle": "Could not open",
+    "showInFolder": "Show in Folder"
+  },
   "packages": {
     "catalog": {
       "emptyHint": "Visit <link>pi.dev/packages</link> to browse",
@@ -1047,6 +1142,48 @@
       "target": "Target: {{path}}",
       "title": "Allow {{tool}}?"
     }
+  },
+  "quickChat": {
+    "activeTasksCount_one": "{{count}} active task running",
+    "activeTasksCount_other": "{{count}} active tasks running",
+    "chooseProject": "Select project",
+    "chooseProjectFirst": "Choose a project folder before sending.",
+    "chooseSession": "Choose a session",
+    "completed": "Completed",
+    "errors": {
+      "runtimeBusy": "Could not switch while the session is busy, stopped, or waiting for an answer.",
+      "staleApproval": "This confirmation is no longer available.",
+      "staleBinding": "The selected session changed. Please try again.",
+      "stateUnavailable": "Could not read the session state. Please try again.",
+      "submitting": "A message is already being submitted.",
+      "targetUnavailable": "This session is no longer available. Select another session."
+    },
+    "failed": "Failed",
+    "hide": "Hide Quick Chat (tasks continue running)",
+    "loading": "Loading session…",
+    "needsApproval": "Waiting for your answer",
+    "newTask": "New task",
+    "newTaskDescription": "Describe what to do; the agent will work in the background.",
+    "noMatchingSessions": "No matching sessions",
+    "noProject": "No project",
+    "open": "Open",
+    "openInMain": "View in main window",
+    "pickWorkspace": "Open project folder…",
+    "ready": "Ready",
+    "retry": "Retry",
+    "savedSession": "Saved session",
+    "searchSessions": "Search sessions",
+    "sendRejected": "The engine did not accept this message.",
+    "sessions": "Sessions",
+    "startConversation": "Send a message to this session.",
+    "starting": "Starting…",
+    "steerHint": "Adds an instruction to the current run; does not queue a new task.",
+    "stopFailed": "The task could not be stopped. Please try again.",
+    "stopped": "Stopped by you",
+    "targetUnavailable": "This session is no longer available. Choose a session again; your draft is preserved.",
+    "title": "Quick Chat",
+    "untitledSession": "Untitled session",
+    "working": "Working"
   },
   "repoSets": {
     "bar": {
@@ -1184,7 +1321,7 @@
     "currentProjectBadge": "current",
     "currentWorkspaceLabel": "Current workspace:",
     "deleteConfirm": {
-      "message": "Delete this session? Will use <code>trash</code> if available, otherwise permanent."
+      "message": "Delete this session? It moves to the system trash, or is permanently removed if the trash is not available."
     },
     "deleteEllipsis": "Delete...",
     "empty": {
@@ -1201,6 +1338,7 @@
       "sessionCount_one": "{{count}} session",
       "sessionCount_other": "{{count}} sessions"
     },
+    "pinnedBadge": "Pinned",
     "runtime": {
       "completed": "{{agent}} finished",
       "failed": "{{agent}} stopped with an error",
@@ -1235,7 +1373,8 @@
       "minutes_other": "{{count}}m ago"
     },
     "title": "Sessions",
-    "unknownProject": "Unknown"
+    "unknownProject": "Unknown",
+    "unreadDot": "New activity"
   },
   "settings": {
     "actions": {
@@ -1265,6 +1404,36 @@
     "autoScroll": {
       "description": "Automatically scroll to new messages",
       "label": "Auto Scroll"
+    },
+    "chatImport": {
+      "alreadyImported": "Imported",
+      "empty": "No chats found.",
+      "engine": "Import as",
+      "failure": {
+        "folderMissing": "The chat's project folder no longer exists.",
+        "invalidPath": "This file is not in the chat folder.",
+        "noMessages": "The chat has no messages to import.",
+        "unreadable": "The chat file could not be read.",
+        "writeFailed": "The session file could not be written."
+      },
+      "folderMissing": "Folder missing",
+      "import_one": "Import {{count}} chat",
+      "import_other": "Import {{count}} chats",
+      "intro": "Copy chats into {{agent}} sessions. The original files are only read.",
+      "loading": "Looking for chats…",
+      "progress": "{{done}} of {{total}}",
+      "results": {
+        "failed_one": "Failed: {{count}}",
+        "failed_other": "Failed: {{count}}",
+        "imported_one": "Imported: {{count}}",
+        "imported_other": "Imported: {{count}}",
+        "skipped_one": "Skipped, already imported: {{count}}",
+        "skipped_other": "Skipped, already imported: {{count}}"
+      },
+      "selectFolder": "Select all chats in this folder",
+      "sourceRoot": "Reads {{path}}",
+      "unknownFolder": "Unknown folder",
+      "untitled": "Untitled chat"
     },
     "chatWidth": {
       "description": "How wide messages and the prompt box can grow",
@@ -1312,6 +1481,30 @@
       "description": "Notify when Pi finishes, fails, or waits for approval in a workspace you are not looking at",
       "label": "Desktop Notifications"
     },
+    "editor": {
+      "description": "Editors found on this computer. Terminal editors open in an Editor tab of the project's terminal panel.",
+      "label": "Open files in",
+      "missingNote": "The saved editor was not found. Files open with the system default.",
+      "rescan": "Rescan",
+      "systemDefault": "System default",
+      "terminalOption": "{{name}} ({{tag}})",
+      "terminalTag": "terminal"
+    },
+    "keepAwake": {
+      "description": "Stop this computer from going to sleep. The screen can still turn off. A closed laptop lid still puts the computer to sleep.",
+      "label": "Keep This Computer Awake",
+      "modes": {
+        "always": "Always",
+        "off": "Off",
+        "whileWorking": "While agents work"
+      },
+      "status": {
+        "holding": "Status: keeping this computer awake",
+        "off": "Status: off",
+        "unsupported": "Status: Pi Desktop cannot block sleep on this system. It found no power manager and no systemd sleep lock.",
+        "waitingForWork": "Status: waiting for work"
+      }
+    },
     "language": {
       "description": "Language of menus, buttons, and messages",
       "label": "Language",
@@ -1353,13 +1546,16 @@
     },
     "runOnStartup": {
       "description": "Automatically start Pi Desktop when you log in to your computer (takes effect in installed builds)",
-      "label": "Run on Startup"
+      "label": "Run on Startup",
+      "ownDataFolder": "This window uses its own data folder. Only the main Pi Desktop can start when you log in."
     },
     "sections": {
       "agentConfiguration": "Agent Configuration",
       "appearance": "Appearance",
       "behavior": "Behavior",
+      "chatImport": "Import chats",
       "customModels": "Custom Models",
+      "editor": "Editor",
       "multiAgentCouncilPlanning": "Multi-Agent Council Planning",
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "Voice dictation"
@@ -1374,17 +1570,26 @@
       "disabled": "Disabled",
       "duplicate": "{{action}} and {{other}} use the same shortcut. Choose another combination.",
       "globalDictation": "Voice dictation from any app: press to start or stop",
+      "globalUnsaved": "Save to apply this change. The system registration below still uses the saved setting.",
       "heading": "Keyboard shortcuts",
       "inUse": "{{shortcut}} is already used by {{action}}. Choose another combination.",
-      "invalid": "Use Cmd or Ctrl with a letter, number, punctuation key, or F1–F12.",
+      "invalid": "Use Cmd or Ctrl with a letter, number, punctuation key, Space, or F1–F12.",
       "modelSelector": "Model selector",
       "nextProject": "Next project",
       "nextSession": "Next open session",
       "notes": "Note picker",
+      "openQuickChat": "Open Quick Chat",
       "pressKeys": "Press a combination…",
       "previousProject": "Previous project",
       "previousSession": "Previous open session",
       "pushToTalk": "Voice dictation: hold to talk",
+      "quickChat": "Quick Chat (global)",
+      "quickChatDescription": "Show or hide Quick Chat from any app. Off until you choose a shortcut.",
+      "registrationActive": "Saved and registered system shortcut: {{shortcut}}",
+      "registrationDisabled": "Saved shortcut: disabled. No system shortcut is registered.",
+      "registrationFailed": "Saved shortcut {{shortcut}} is not active: another app may be using it, or system shortcut registration is unavailable. Choose a different shortcut or save to try again.",
+      "registrationLoading": "Checking system shortcut registration…",
+      "registrationUnknown": "Could not read the system registration status. Saving a shortcut does not guarantee it is active.",
       "reserved": "This combination is reserved for a native menu or editor action.",
       "reset": "Reset shortcuts",
       "sidebar": "Sidebar",
@@ -1457,6 +1662,11 @@
       "description": "Chat, panels, and sidebar — not the terminal or code editor",
       "label": "UI Font Size"
     },
+    "unreadableFile": {
+      "detail": "File: {{path}}\n\nFix this file, or remove it to start again with the default settings.",
+      "message": "{{product}} cannot read its settings file. It uses the default settings, and it cannot save changes to settings.",
+      "title": "Settings file problem"
+    },
     "voice": {
       "device": {
         "auto": "Auto",
@@ -1481,7 +1691,34 @@
       "runtimeCpuNoGpu": "No usable graphics card found, so voice runs on the processor (CPU) with the CPU version of each model.",
       "runtimeGpu": "Runs on your graphics card ({{name}}) with the GPU version of each model.",
       "selected": "In use",
+      "server": {
+        "address": "Server address",
+        "addressInvalid": "Enter an http:// or https:// address, without a user name, query, or #.",
+        "addressPlaceholder": "https://speech.example.com/v1",
+        "addressTip": "Your recorded speech is sent to this address to be turned into text.",
+        "intro": "Each time you pause, Pi Desktop sends what you said to this server and adds the text it returns. The server must accept OpenAI-compatible transcription requests.",
+        "key": "API key (optional)",
+        "keyInvalid": "That does not look like an API key. Paste the key without spaces or line breaks.",
+        "keyPlaceholder": "Paste the server's API key",
+        "keyRemove": "Remove",
+        "keySave": "Save key",
+        "keySaved": "Key saved",
+        "language": "Language",
+        "languagePlaceholder": "Detect automatically",
+        "model": "Model",
+        "modelPlaceholder": "Model name on the server",
+        "notReady": "Enter the address and model to dictate with this server.",
+        "prompt": "Prompt",
+        "promptPlaceholder": "Optional words or style for the transcript",
+        "ready": "Dictation uses this server.",
+        "save": "Save"
+      },
       "sizeMb": "~{{mb}} MB",
+      "transcribe": "Transcribe",
+      "transcriber": {
+        "local": "On this computer",
+        "server": "On a server you choose"
+      },
       "use": "Use"
     }
   },
@@ -1545,6 +1782,8 @@
       "diagnostics": "Diagnostics",
       "notes": "Notes",
       "packages": "Packages",
+      "quickChatTitleNoShortcut": "Open Quick Chat. Set a shortcut in Settings > Keyboard shortcuts.",
+      "quickChatTitleWithShortcut": "Open Quick Chat ({{shortcut}})",
       "sectionLabel": "Tools"
     },
     "workflowRunsForSession": "Workflow runs for this session",
@@ -1556,6 +1795,7 @@
       "namePlaceholder": "Workspace name",
       "noWorkspace": "No workspace",
       "openProjectEllipsis": "Open project…",
+      "tabClosedTitle": "Tab closed · click to open it again",
       "triggerTitle": "Click to switch · double-click to rename · right-click for options"
     }
   },
@@ -1686,6 +1926,28 @@
     "trigger": {
       "title": "System status"
     },
+    "usage": {
+      "accountNumber": "Account {{number}}",
+      "accountsWithoutUsage_one": "{{count}} account without usage data",
+      "accountsWithoutUsage_other": "{{count}} accounts without usage data",
+      "capacity_one": "{{used}} of {{count}} account used",
+      "capacity_other": "{{used}} of {{count}} accounts used",
+      "disabled": "Disabled. Sign in again to restore it.",
+      "disabledSince": "Disabled {{time}}. Sign in again to restore it.",
+      "fetched": "Fetched {{time}}",
+      "noAccounts": "No signed-in account reports usage",
+      "noLimits": "No limits reported",
+      "resetsExpire": "soonest expires in {{duration}}",
+      "resetsIn": "resets in {{duration}}",
+      "savedResets_one": "{{count}} saved reset",
+      "savedResets_other": "{{count}} saved resets",
+      "unknownAmount": "unknown",
+      "usableNow_one": "{{count}} usable now",
+      "usableNow_other": "{{count}} usable now"
+    },
+    "usageSection": {
+      "title": "Usage Limits"
+    },
     "workspaceSection": {
       "title": "Workspace"
     }
@@ -1728,12 +1990,14 @@
       "closeUnmanagedWorktreeMessage": "Close \"{{name}}\"? This existing worktree and its files remain on disk.",
       "forkAnywayLabel": "Fork anyway",
       "forkMessage": "Pi has not finished responding in this session. Forking this session stops it: whatever Pi already wrote to the session is kept, but the rest of the response — including any tool calls still running — is discarded.",
+      "keepInSidebarHint": "Keep in sidebar closes only the tab: \"{{name}}\" stays in the sidebar and its {{agent}} keeps running. Pick it in the sidebar to open the tab again.",
+      "keepInSidebarLabel": "Keep in sidebar",
       "keepUntrustedLabel": "Keep untrusted",
       "keepWorkingLabel": "Keep working",
       "newMessage": "Pi has not finished responding in this session. Starting a new session stops it: whatever Pi already wrote to the session is kept, but the rest of the response — including any tool calls still running — is discarded.",
       "okLabel": "OK",
       "permissionModeMessage": "Pi has not finished responding in this session. Changing the permission mode restarts Pi, which stops it: whatever Pi already wrote to the session is kept, but the rest of the response — including any tool calls still running — is discarded.",
-      "removeWorkspaceMessage": "Remove \"{{name}}\" from the sidebar? Its Pi process stops; files on disk are not touched.",
+      "removeWorkspaceMessage": "Remove \"{{name}}\" from the sidebar? Its {{agent}} process stops; files on disk are not touched.",
       "removeWorkspaceTitle": "Remove workspace",
       "startAnywayLabel": "Start anyway",
       "stillWorkingTitle": "Pi is still working",
@@ -1752,23 +2016,26 @@
       "cannotActivateSession": "Cannot activate session",
       "cannotCreateSession": "Cannot create session",
       "changeFolderError": "Change folder error: {{detail}}",
+      "cloneError": "Could not clone the session: {{detail}}",
       "closeSessionError": "Close session error: {{detail}}",
       "compactingContext": "Compacting context ({{reason}})...",
       "compactionAborted": "Compaction aborted.",
       "contextCompacted": "Context compacted.",
       "councilFailed": "Council failed: {{detail}}",
       "councilNoQuorum": "No consultant produced a plan (all timed out or errored). Council aborted.",
+      "councilOpenElsewhere": "A council run is open in another chat. Approve or cancel it there first.",
       "createWorkspaceError": "Create workspace error: {{detail}}",
       "defaultTaskLabel": "Task",
       "deleteError": "Delete error: {{detail}}",
       "editedSessionName": "{{title}} (edited)",
-      "editNotInSession": "The saved session does not contain this message.",
       "editResendError": "Could not edit and resend the message: {{detail}}",
       "error": "Error: {{detail}}",
       "followUpError": "Follow-up error: {{detail}}",
+      "forkError": "Could not branch the session: {{detail}}",
       "imageFallbackName": "Image {{index}}",
       "installedPackage": "Installed {{spec}}. Restart Pi to load it.",
       "installFailed": "Install failed",
+      "messageNotInSession": "The saved session does not contain this message.",
       "modelError": "Model error: {{detail}}",
       "modelsFileNotLoaded": "The models file has not loaded yet. Try again.",
       "newIsolatedTabError": "New isolated tab error: {{detail}}",
@@ -1776,6 +2043,7 @@
       "notAFolder": "Cannot open as project — not a folder: {{path}}",
       "notGitRepository": "This project is not a Git repository. Use New session for another conversation, or open a Git project for an isolated tab.",
       "openFolderError": "Open folder error: {{detail}}",
+      "pinError": "Pin error: {{detail}}",
       "removedPackage": "Removed {{spec}}",
       "removePackageFailed": "Remove failed",
       "removeWorkspaceError": "Remove workspace error: {{detail}}",
@@ -1791,6 +2059,7 @@
       "truncatedHistory_other": "Showing the latest {{count}} of {{total}} messages for performance. Older turns are still on disk in the session file.",
       "unarchiveError": "Unarchive error: {{detail}}",
       "unknownError": "Unknown error",
+      "unpinError": "Unpin error: {{detail}}",
       "updatedAllPackages": "Updated packages. Restart Pi to load them.",
       "updatedPackage": "Updated {{spec}}. Restart Pi to load it.",
       "updatePackageFailed": "Update failed",
@@ -1820,6 +2089,10 @@
     "maximizeLabel": "Maximize terminal",
     "restartHint": "Press any key to start a new shell",
     "restoreLabel": "Restore terminal",
+    "tabs": {
+      "editor": "Editor",
+      "shell": "Terminal"
+    },
     "title": "Terminal"
   },
   "themes": {
@@ -2138,8 +2411,8 @@
     "newLinkedTaskTitle": "New linked task across several repositories",
     "newSessionAriaLabel": "New session in this project",
     "newSessionFallback": "New session",
-    "removeWorkspaceAriaLabel": "Remove {{name}}",
     "sessions": "Sessions",
+    "sessionTabTitleRenamable": "{{path}}\n\nDouble-click to rename · right-click for actions",
     "tools": "Tools"
   }
 }

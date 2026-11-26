@@ -1,11 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, writeFile, mkdir, readFile, symlink } from 'fs/promises'
+import { writeFile, mkdir, readFile, symlink } from 'fs/promises'
 import { join } from 'path'
 import { execFileSync } from 'child_process'
-import { tmpdir } from 'os'
-import { once } from 'node:events'
-import type { FSWatcher } from 'chokidar'
 import {
   buildNewFileDiff,
   describeGitError,
@@ -21,6 +18,7 @@ import { gitDiffPaths, splitGitDiff } from '../shared/git-diff'
 import type { FileChangeEvent, FileTreeNode } from '../shared/ipc-contracts'
 import { i18n, tEnglish } from '../shared/i18n'
 import { PSEUDO_LANGUAGE, SOURCE_LANGUAGE } from '../shared/i18n/languages'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 // ─── Path-boundary guard ──────────────────────────────────────────────────
 
@@ -37,7 +35,7 @@ test('isPathInsideWorkspace rejects traversal and outside-absolute paths', () =>
 })
 
 test('readFileContent reads inside the workspace but refuses traversal', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-fs-read-'))
+  const dir = makeTempDir('pi-fs-read-')
   await writeFile(join(dir, 'ok.txt'), 'inside')
   const service = new FileService(dir)
   assert.equal(await service.readFileContent('ok.txt'), 'inside')
@@ -46,7 +44,7 @@ test('readFileContent reads inside the workspace but refuses traversal', async (
 })
 
 test('writeFileContent writes inside the workspace but refuses traversal', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-fs-write-'))
+  const dir = makeTempDir('pi-fs-write-')
   const service = new FileService(dir)
   await service.writeFileContent('out.txt', 'data')
   assert.equal(await readFile(join(dir, 'out.txt'), 'utf-8'), 'data')
@@ -90,19 +88,12 @@ function waitForChange(timeoutMs: number, matches: (event: FileChangeEvent) => b
   return { promise, onChange }
 }
 
-async function startWatching(service: FileService, onChange: (event: FileChangeEvent) => void): Promise<void> {
-  service.startWatching(onChange)
-  // Wait for the scan, not an arbitrary delay that depends on the machine.
-  const watcher = Reflect.get(service, 'watcher') as FSWatcher
-  await once(watcher, 'ready', { signal: AbortSignal.timeout(5000) })
-}
-
 async function testWatcherEmitsOnChange(): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-fs-watch-'))
+  const dir = makeTempDir('pi-fs-watch-')
   const service = new FileService(dir)
   const { promise, onChange } = waitForChange(3000)
 
-  await startWatching(service, onChange)
+  await service.startWatching(onChange)
   await writeFile(join(dir, 'hello.txt'), 'hi')
 
   const events = await promise
@@ -113,12 +104,12 @@ async function testWatcherEmitsOnChange(): Promise<void> {
 }
 
 async function testWatcherIgnoresHeavyDirs(): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-fs-ignore-'))
+  const dir = makeTempDir('pi-fs-ignore-')
   await mkdir(join(dir, 'node_modules'), { recursive: true })
   const service = new FileService(dir)
   const { promise, onChange } = waitForChange(1500)
 
-  await startWatching(service, onChange)
+  await service.startWatching(onChange)
   await writeFile(join(dir, 'node_modules', 'ignored.js'), 'x')
 
   const events = await promise
@@ -128,13 +119,14 @@ async function testWatcherIgnoresHeavyDirs(): Promise<void> {
 }
 
 async function testWatcherDoesNotFollowSymlinks(): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-fs-symlink-'))
-  const target = await mkdtemp(join(tmpdir(), 'pi-fs-symlink-target-'))
-  await symlink(target, join(dir, 'alias'), 'dir')
+  const dir = makeTempDir('pi-fs-symlink-')
+  const target = makeTempDir('pi-fs-symlink-target-')
+  // A junction needs no elevation on Windows; other platforms ignore the type.
+  await symlink(target, join(dir, 'alias'), 'junction')
   const service = new FileService(dir)
   const { promise, onChange } = waitForChange(1500)
 
-  await startWatching(service, onChange)
+  await service.startWatching(onChange)
   await writeFile(join(target, 'inside-target.txt'), 'x')
 
   const events = await promise
@@ -186,7 +178,7 @@ test('isIgnoredHomeRootDirName ignores Windows profile folders only on win32', (
 })
 
 async function makeToolingWorkspace(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-fs-tooling-'))
+  const dir = makeTempDir('pi-fs-tooling-')
   await mkdir(join(dir, '.cargo'), { recursive: true })
   await writeFile(join(dir, '.cargo', 'config.toml'), '[build]')
   await mkdir(join(dir, 'Projects', 'app', '.cargo'), { recursive: true })
@@ -194,15 +186,14 @@ async function makeToolingWorkspace(): Promise<string> {
   return dir
 }
 
-function childNames(node: FileTreeNode): string[] {
-  return (node.children ?? []).map((child) => child.name)
+function names(entries: FileTreeNode[]): string[] {
+  return entries.map((entry) => entry.name)
 }
 
 test('project workspaces keep tooling folders in the tree and in search', async () => {
   const dir = await makeToolingWorkspace()
   const service = new FileService(dir, join(dir, 'not-home'))
-  const tree = await service.getFileTree()
-  assert.ok(childNames(tree).includes('.cargo'))
+  assert.ok(names(await service.listDirectory('')).includes('.cargo'))
   const found = await service.searchFiles('config.toml')
   assert.deepEqual(found.map((hit) => hit.relativePath).sort(), ['.cargo/config.toml', 'Projects/app/.cargo/config.toml'])
 })
@@ -210,14 +201,14 @@ test('project workspaces keep tooling folders in the tree and in search', async 
 test('a home workspace hides tooling stores only at its root', async () => {
   const dir = await makeToolingWorkspace()
   const service = new FileService(dir, dir)
-  const tree = await service.getFileTree()
-  assert.equal(childNames(tree).includes('.cargo'), false)
+  assert.equal(names(await service.listDirectory('')).includes('.cargo'), false)
+  assert.deepEqual(names(await service.listDirectory('Projects/app')), ['.cargo'])
   const found = await service.searchFiles('config.toml')
   assert.deepEqual(found.map((hit) => hit.relativePath), ['Projects/app/.cargo/config.toml'])
 })
 
 test('an entry that cannot be listed hides only itself, not the rest of its folder', async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-fs-dangling-'))
+  const dir = makeTempDir('pi-fs-dangling-')
   await mkdir(join(dir, 'folder'))
   for (const name of ['b.txt', 'c.txt']) {
     await writeFile(join(dir, name), name)
@@ -233,9 +224,30 @@ test('an entry that cannot be listed hides only itself, not the rest of its fold
     t.skip('creating a symlink requires elevation on this platform')
     return
   }
-  const tree = await new FileService(dir, join(dir, 'not-home')).getFileTree()
-  assert.deepEqual(childNames(tree), ['folder', 'b.txt', 'c.txt'])
-  assert.deepEqual(childNames(tree.children!.find((child) => child.name === 'folder')!), ['b.txt', 'c.txt'])
+  const service = new FileService(dir, join(dir, 'not-home'))
+  assert.deepEqual(names(await service.listDirectory('')), ['folder', 'b.txt', 'c.txt'])
+  assert.deepEqual(names(await service.listDirectory('folder')), ['b.txt', 'c.txt'])
+})
+
+test('a folder lists its entries with workspace paths, folders first', async () => {
+  const dir = makeTempDir('pi-fs-list-')
+  await mkdir(join(dir, 'src', 'b-folder'), { recursive: true })
+  await writeFile(join(dir, 'src', 'a.ts'), 'a')
+  const entries = await new FileService(dir, join(dir, 'not-home')).listDirectory('src')
+  assert.deepEqual(entries, [
+    { name: 'b-folder', path: join(dir, 'src', 'b-folder'), relativePath: 'src/b-folder', type: 'directory' },
+    { name: 'a.ts', path: join(dir, 'src', 'a.ts'), relativePath: 'src/a.ts', type: 'file' },
+  ])
+})
+
+test('listing refuses folders outside the workspace and fails for a missing folder', async () => {
+  const dir = makeTempDir('pi-fs-list-escape-')
+  const service = new FileService(join(dir, 'workspace'), join(dir, 'not-home'))
+  await mkdir(join(dir, 'workspace'))
+  for (const outside of ['..', '../other', dir]) {
+    await assert.rejects(service.listDirectory(outside), /outside/i, outside)
+  }
+  await assert.rejects(service.listDirectory('missing'), { code: 'ENOENT' })
 })
 
 // A stale network or FUSE mount (ENOTCONN, ESTALE), a disk error (EIO) or an
@@ -249,14 +261,13 @@ test('any file system error leaves out only its entry; a program error is not hi
 })
 
 test('Git config files show in the tree and in search, the .git folder does not', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-fs-git-files-'))
+  const dir = makeTempDir('pi-fs-git-files-')
   execFileSync('git', ['init', '-q'], { cwd: dir })
   await writeFile(join(dir, '.gitignore'), 'out\n')
   await mkdir(join(dir, '.github', 'workflows'), { recursive: true })
   await writeFile(join(dir, '.github', 'workflows', 'ci.yml'), 'on: push\n')
   const service = new FileService(dir, join(dir, 'not-home'))
-  const tree = await service.getFileTree()
-  assert.deepEqual(childNames(tree).sort(), ['.github', '.gitignore'])
+  assert.deepEqual(names(await service.listDirectory('')).sort(), ['.github', '.gitignore'])
   const found = await service.searchFiles('i')
   assert.deepEqual(found.map((hit) => hit.relativePath).sort(), ['.github/workflows/ci.yml', '.gitignore'])
 })
@@ -267,7 +278,7 @@ async function testHomeWatcherIgnoresRootToolingOnly(): Promise<void> {
   const nestedFile = 'Projects/app/.cargo/seen.toml'
   const { promise, onChange } = waitForChange(3000, (event) => event.relativePath === nestedFile)
 
-  await startWatching(service, onChange)
+  await service.startWatching(onChange)
   await writeFile(join(dir, '.cargo', 'ignored.toml'), 'x')
   // Exercise the real watcher/debounce window before the nested write; fake
   // timers cannot advance operating-system file events.
@@ -323,34 +334,54 @@ test('describeGitError renders English for the log and marked text for the UI', 
 })
 
 test('getGitStatus returns empty for a non-repo directory', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fs-nonrepo-'))
+  const dir = makeTempDir('fs-nonrepo-')
   const service = new FileService(dir)
   const status = await service.getGitStatus()
   assert.equal(status.size, 0)
 })
 
 test('getFileDiff and getStagedDiff return empty for a non-repo directory', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fs-nonrepo-'))
+  const dir = makeTempDir('fs-nonrepo-')
   const service = new FileService(dir)
   assert.equal(await service.getFileDiff(), '')
   assert.equal(await service.getStagedDiff(), '')
 })
 
+// Issue #132. On a machine without the German catalog Git writes English
+// anyway, so this guards the fix only where the catalog is installed.
+test('a non-repo directory stays empty under a translated locale', async () => {
+  const translatedLocale = { LANGUAGE: 'de', LC_ALL: 'de_DE.UTF-8', LANG: 'de_DE.UTF-8' }
+  const saved = Object.fromEntries(Object.keys(translatedLocale).map((key) => [key, process.env[key]]))
+  Object.assign(process.env, translatedLocale)
+  try {
+    const service = new FileService(makeTempDir('fs-nonrepo-'))
+    assert.equal((await service.getGitStatus()).size, 0)
+    assert.equal(await service.getFileDiff(), '')
+    assert.equal(await service.getStagedDiff(), '')
+    assert.equal(await service.getGitPrefix(), '')
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+})
+
 test('getGitPrefix reports the workspace directory inside its repository', async () => {
-  const repo = await mkdtemp(join(tmpdir(), 'fs-prefix-'))
+  const repo = makeTempDir('fs-prefix-')
   execFileSync('git', ['init', '-q'], { cwd: repo })
   const subfolder = join(repo, 'pkg', 'app')
   await mkdir(subfolder, { recursive: true })
   assert.equal(await new FileService(repo).getGitPrefix(), '')
   assert.equal(await new FileService(subfolder).getGitPrefix(), 'pkg/app/')
-  assert.equal(await new FileService(await mkdtemp(join(tmpdir(), 'fs-nonrepo-'))).getGitPrefix(), '')
+  assert.equal(await new FileService(makeTempDir('fs-nonrepo-')).getGitPrefix(), '')
 })
 
 // Node's execFile default maxBuffer; a diff above it used to fail (#70).
 const EXEC_FILE_DEFAULT_MAX_BUFFER_BYTES = 1024 * 1024
 
 test('getFileDiff and getStagedDiff return diffs larger than the execFile default buffer', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fs-bigdiff-'))
+  const dir = makeTempDir('fs-bigdiff-')
   const git = (...args: string[]): void => {
     execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', ...args], { cwd: dir })
   }
@@ -372,7 +403,7 @@ test('getFileDiff and getStagedDiff return diffs larger than the execFile defaul
 })
 
 test('a monorepo subfolder workspace reports its Git prefix and diffs only its own files', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fs-monorepo-'))
+  const dir = makeTempDir('fs-monorepo-')
   const git = (...args: string[]): void => {
     execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', ...args], { cwd: dir })
   }
@@ -410,7 +441,7 @@ const UNUSUAL_NAMES = [
 const UNUSUAL_NEW_FILE = 'neue Datei ü.txt'
 
 async function unusualNamesRepo(): Promise<{ dir: string; git: (...args: string[]) => string; service: FileService }> {
-  const dir = await mkdtemp(join(tmpdir(), 'fs-unusual-names-'))
+  const dir = makeTempDir('fs-unusual-names-')
   const git = (...args: string[]): string =>
     execFileSync('git', args, { cwd: dir, encoding: 'utf8' })
   git('init', '-q')
@@ -459,7 +490,7 @@ test('a commit from the path list of the Diff view takes every file, whatever it
 })
 
 test('user Git diff settings do not change the form of the diffs the Diff view reads', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fs-diff-config-'))
+  const dir = makeTempDir('fs-diff-config-')
   const git = (...args: string[]): void => {
     execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', ...args], { cwd: dir })
   }
@@ -490,7 +521,7 @@ test('user Git diff settings do not change the form of the diffs the Diff view r
 const ANSI_ESCAPE = String.fromCharCode(0x1b)
 
 test('a file diff names its file literally, never as a glob', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fs-literal-path-'))
+  const dir = makeTempDir('fs-literal-path-')
   const git = (...args: string[]): void => {
     execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', ...args], { cwd: dir })
   }

@@ -3,23 +3,28 @@ import { applyThemeSettings, rememberBootTheme, setUserThemes, watchSystemTheme 
 import { applyLanguageSetting } from './i18n'
 import { applyUiFont } from './utils/ui-font'
 import { t } from '../../shared/i18n'
-import { buildPlanningPrompt } from './utils/planning-prompt'
+import { agentEngineLabel, DEFAULT_AGENT_ENGINE_LABEL } from '../../shared/agent-engine-label'
+import { buildPlanningPrompt } from '../../shared/planning-prompt'
 import { composePrompt } from './utils/compose-prompt'
-import { firstQueued, withQueued, withoutQueued, withoutWorkspaceQueue, type SendQueues } from './send-queue'
-import { moveProjectTab, projectTabs, readProjectTabOrder, rememberProjectTabOrder } from './utils/tab-navigation'
-import { parseAgentMessage, type DisplayAttachment, type DisplayMessage } from './message-parsing'
+import { firstQueued, withQueued, withoutQueued, withoutChats, type SendQueueHold, type SendQueueHolds, type SendQueues } from './send-queue'
+import { withEditorTerminal, withoutEditorTerminal } from './editor-terminal-state'
+import type { TerminalSlot } from '../../shared/terminal-slot'
+import { hiddenTabsAfterActivation, moveProjectTab, projectTabs, readHiddenProjectTabs, readProjectTabOrder, rememberHiddenProjectTabs, rememberProjectTabOrder } from './utils/tab-navigation'
+import type { DisplayAttachment, DisplayMessage } from './message-parsing'
+import { appendPromptHistory, applyChatStreamUpdate, applyChatToolExecution, chatEventNotice, parseChatMessage, retainChatMessageIdentity, turnErrorText, type ChatToolCall } from './chat-session-state'
 import { isStoppedAnswer } from '../../shared/stopped-answer'
-import { stripAnsi } from './utils/strip-ansi'
 import { createStaleGuard } from './utils/stale-guard'
+import { formatIpcError } from './utils/ipc-error'
 import { splitClaudeCliMarkers } from './claude-cli-markers'
 import { markUnansweredToolCallsRunning, settleRunningToolCall } from './reattached-tool-calls'
-import type { PiCommand } from '../../shared/pi-command'
+import { normalizePiCommands, type PiCommand } from '../../shared/pi-command'
 import type { SkillGroup } from '../../shared/skill-groups'
 import { forkPointForUserMessage, normalizeForkMessages, type ForkPoint } from '../../shared/fork-point'
 import { buildLineageTree, type LineageNode } from '../../shared/session-lineage'
 import { clampSidebarWidth } from '../../shared/sidebar-width'
 import { workspaceNameFromFolderPath } from '../../shared/folder-drop'
 import { pathsEqual } from '../../shared/path-compare'
+import { isBrowserPaneUrl } from '../../shared/browser-pane'
 import { EDITED_TITLE_MAX_CHARS, sessionPreview, stripInjectedPreamble, truncateTitle } from '../../shared/session-preview'
 import { validateModelsConfig, mergeModelsConfig, type ModelsConfig } from '../../shared/models-config'
 import {
@@ -58,10 +63,10 @@ import type {
   PiToolExecutionEndEvent,
   PiToolExecutionUpdateEvent,
   PiQueueUpdateEvent,
-  PiCompactionStartEvent,
-  PiCompactionEndEvent,
   PiAutoRetryStartEvent,
   PiAutoRetryEndEvent,
+  PiCompactionEndEvent,
+  PiResponseEvent,
   PiExtensionUiRequest,
   Workspace,
   LinkedTaskOptions,
@@ -75,6 +80,7 @@ import type {
   NoteInput,
   NoteUpdate,
   UpdateCheckResult,
+  GitAvailability,
   PromptImage,
   CouncilArbiterRequest,
   PermissionRule,
@@ -88,9 +94,11 @@ import type {
   ModelsFileInfo,
   ModelInfo,
   PiPromptResultEvent,
+  PinnedSessionsMap,
+  UnreadSessionsMap,
 } from '../../shared/ipc-contracts'
 import {
-  promptRanWithoutAgent, promptRefusal, promptResultRefusal, reportsNoAgentRun, reportsPromptOutcome,
+  BLOCKING_UI_METHODS, isRuntimeBusy, promptRanWithoutAgent, promptRefusal, promptResultRefusal, reportsNoAgentRun, reportsPromptOutcome,
 } from '../../shared/ipc-contracts'
 
 export type { DisplayAttachment, DisplayMessage } from './message-parsing'
@@ -110,7 +118,7 @@ export interface PreviewTarget {
 }
 
 /** A secondary view in the chat's side slot. */
-export type ChatSidePanel = 'files' | 'diff' | 'tasks'
+export type ChatSidePanel = 'files' | 'diff' | 'tasks' | 'browser'
 
 /**
  * Whether a side panel takes the whole side slot. The chat then shows no file
@@ -118,7 +126,7 @@ export type ChatSidePanel = 'files' | 'diff' | 'tasks'
  * The layout and the actions that open a panel read this one rule.
  */
 export function sidePanelHidesPreview(panel: ChatSidePanel | null): boolean {
-  return panel === 'diff' || panel === 'tasks'
+  return panel === 'diff' || panel === 'tasks' || panel === 'browser'
 }
 
 // ─── Composer Draft ──────────────────────────────────────────────────────────
@@ -140,7 +148,19 @@ export const EMPTY_COMPOSER_DRAFT: ComposerDraft = { text: '', attachments: [] }
 
 export type CouncilPhase = 'detecting' | 'consulting' | 'merging' | 'awaiting-approval' | 'refused'
 
-export interface CouncilRunState {
+/** The chat a council run was started in: its workspace and session runtime id. */
+export interface CouncilOwner {
+  workspaceId: string
+  chatId: string
+}
+
+/** Which council run a state belongs to, so a cancelled or replaced run never writes over a newer one. */
+interface CouncilRunIdentity {
+  id: string
+  owner: CouncilOwner
+}
+
+export interface CouncilRunState extends CouncilRunIdentity {
   phase: CouncilPhase
   request: string
   results: ConsultantResult[]
@@ -164,12 +184,16 @@ export interface ConfirmOptions {
   message: string
   confirmLabel?: string
   cancelLabel?: string
+  // A third, non-destructive choice shown between Cancel and confirm.
+  alternativeLabel?: string
   // Style the confirm button as destructive (red).
   danger?: boolean
 }
 
+export type ConfirmChoice = 'confirm' | 'alternative' | 'cancel'
+
 export interface ConfirmRequest extends ConfirmOptions {
-  resolve: (confirmed: boolean) => void
+  resolve: (choice: ConfirmChoice) => void
 }
 
 /** The actions that abandon the live turn, by replacing the session, leaving it, or restarting its Pi. */
@@ -275,6 +299,32 @@ function workspaceHasLivePi(
   )
 }
 
+/**
+ * The shown session's new name, in its state and its list row, so the chat
+ * header, the sidebar row and the session tab change together. `sessionFile`
+ * is the session the name belongs to (null: one without a file yet); a name
+ * for any other session is dropped, since the user may have switched away
+ * while the rename ran.
+ */
+function sessionNamePatch(
+  state: Pick<AppState, 'sessionState' | 'sessionList'>,
+  sessionFile: string | null,
+  name: string | null,
+  sessionId?: string
+): Partial<Pick<AppState, 'sessionState' | 'sessionList'>> {
+  const current = state.sessionState
+  if (!current) return {}
+  const currentFile = current.sessionFile ?? null
+  const sameSession = sessionFile && currentFile ? pathsEqual(currentFile, sessionFile) : sessionFile === currentFile
+  if (!sameSession) return {}
+  return {
+    sessionState: { ...current, sessionName: name, ...(sessionId ? { sessionId } : {}) },
+    ...(sessionFile
+      ? { sessionList: state.sessionList.map((s) => (pathsEqual(s.path, sessionFile) ? { ...s, name } : s)) }
+      : {}),
+  }
+}
+
 // ─── Store Shape ─────────────────────────────────────────────────────────────
 
 /**
@@ -309,10 +359,7 @@ interface AppState {
   promptHistory: string[]
   streamingContent: string
   streamingThinking: string
-  streamingToolCalls: Map<
-    string,
-    { name: string; args: string; result?: string; isExecuting: boolean; isError?: boolean; startedAt?: number; durationMs?: number }
-  >
+  streamingToolCalls: Map<string, ChatToolCall>
   isStreaming: boolean
   /**
    * History may be incomplete after a mid-turn attach or a snapshot racing
@@ -350,6 +397,10 @@ interface AppState {
   chatSidePanel: ChatSidePanel | null
   sidebarOpen: boolean
   terminalOpen: boolean
+  // Workspaces with a terminal editor in their editor slot, and the slot each
+  // workspace's terminal panel shows (see editor-terminal-state.ts).
+  editorTerminalWorkspaces: string[]
+  shownTerminalSlot: Record<string, TerminalSlot>
   reviewOpen: boolean
   settings: AppSettings | null
   // Unsaved edits from the Settings panel (theme, piPath, permission mode,
@@ -391,6 +442,8 @@ interface AppState {
   // Workspaces
   workspaces: Workspace[]
   projectTabOrder: string[]
+  // Projects kept in the sidebar whose tab the user closed; never the active one.
+  hiddenProjectTabIds: string[]
   activeWorkspace: Workspace | null
 
   // Timeline
@@ -419,7 +472,12 @@ interface AppState {
    */
   customModelsEdited: boolean
 
-  // Council run UI state (null when no council run is active)
+  /**
+   * The council run (null when none is open). One run at a time: its progress
+   * events carry no run id. It belongs to the chat it was started in and is
+   * kept while the user is elsewhere, so no consultant work is lost; only
+   * that chat shows it (see councilRunOnScreen) and can approve its plan.
+   */
   councilRun: CouncilRunState | null
 
   // File preview. A single target drives the side-panel preview; `kind` selects
@@ -447,6 +505,11 @@ interface AppState {
   archivedSessions: Record<string, number>
   showArchived: boolean
 
+  // Pinned sessions sort to the top of their folder group (GUI-only registry)
+  pinnedSessions: PinnedSessionsMap
+  // Sessions whose last turn ended out of view; main owns this map
+  unreadSessions: UnreadSessionsMap
+
   // Notes (reusable prompts / commands)
   notes: Note[]
   notePickerOpen: boolean
@@ -464,23 +527,23 @@ interface AppState {
   // draft into another.
   composerDrafts: Record<string, ComposerDraft>
   saveComposerDraft: (workspaceId: string, draft: ComposerDraft) => void
-  /** Messages sent while the agent was busy, per workspace (see send-queue.ts). */
-  sendQueues: SendQueues
   /**
-   * Workspaces whose queue waits for the user: the turn was stopped, refused
-   * or failed, so sending the next message by itself would surprise the user
-   * or fail again. The user's next send releases it.
+   * Messages sent while the agent was busy, per chat (session runtime id, see
+   * send-queue.ts). A chat's queue shows and goes out only in that chat.
    */
-  heldSendQueues: string[]
-  queuePrompt: (workspaceId: string, text: string, attachments: ComposerAttachment[]) => void
-  removeQueuedPrompt: (workspaceId: string, promptId: string) => void
-  /** Send one queued message at once: into the running turn, or as a new prompt when idle. */
-  sendQueuedPromptNow: (workspaceId: string, promptId: string) => Promise<void>
+  sendQueues: SendQueues
+  /** Chats whose queue waits for the user, and why (see SendQueueHold). */
+  heldSendQueues: SendQueueHolds
+  queuePrompt: (chatId: string, text: string, attachments: ComposerAttachment[]) => void
+  removeQueuedPrompt: (chatId: string, promptId: string) => void
+  /** Send one queued message of the chat on screen at once: into the running turn, or as a new prompt when idle. */
+  sendQueuedPromptNow: (chatId: string, promptId: string) => Promise<void>
   // Set by the diff shortcuts; the diff viewer or Git actions consume and clear it.
   diffShortcutRequest: 'review' | 'commitPush' | null
   // A prompt queued for insertion into the chat input. The nonce lets the
-  // chat input re-apply the same text on repeated inserts.
-  pendingInsert: { text: string; nonce: number; replace?: boolean } | null
+  // chat input re-apply the same text on repeated inserts. Attachments are
+  // staged beside the text (a Browser pane pick); nothing is sent.
+  pendingInsert: { text: string; nonce: number; replace?: boolean; attachments?: ComposerAttachment[] } | null
   // Set when a session opens; the chat input takes focus once it can, unless
   // the user leaves chat or focuses something else first.
   composerFocusRequested: boolean
@@ -494,6 +557,11 @@ interface AppState {
   // Update check (GitHub releases). Set when a newer version is available.
   updateInfo: UpdateCheckResult | null
   updateDismissed: boolean
+
+  // Git check. Dismiss is memory-only, so it lasts until the next app start.
+  gitAvailability: GitAvailability | null
+  gitBannerDismissed: boolean
+  gitCheckRunning: boolean
 
   // Cross-session lineage tree
   lineage: LineageNode[]
@@ -511,6 +579,12 @@ interface AppActions {
   openLastSession: () => Promise<boolean>
   stopPi: () => Promise<void>
   restartPi: (options?: Record<string, unknown>) => Promise<void>
+  /**
+   * Bring every live session to the saved permission mode. A session that is
+   * idle restarts at once; one in the middle of a turn keeps running with its
+   * old tool set until the user restarts it (see the chat panel notice).
+   */
+  applyPermissionModeToSessions: () => Promise<void>
 
   // Messages
   addMessage: (message: DisplayMessage) => void
@@ -535,6 +609,12 @@ interface AppActions {
   closeSessionTab: (runtimeId: string) => Promise<void>
   switchSession: (path: string, projectPath?: string) => Promise<void>
   /**
+   * Activate a specific runtime by id without a session path (Quick Chat
+   * "Open in Main" on a file-less tab). Runs the same dirty-editor and
+   * streaming-turn confirms as any other session change.
+   */
+  activateRuntime: (workspaceId: string, runtimeId: string) => Promise<boolean>
+  /**
    * Open a session row from any surface (sidebar, session panel, quick
    * switcher): auto-switches or creates the owning workspace first, then
    * switches to the session and shows Chat. The previous session runtime keeps
@@ -550,8 +630,18 @@ interface AppActions {
   refreshSessionList: () => Promise<void>
   setSessionName: (name: string) => Promise<void>
   loadForkMessages: () => Promise<void>
-  /** True once the session continues from just before the entry. */
+  /**
+   * True once the session continues from just before the entry. False when
+   * the user or an extension cancelled it, or, with the reason in the chat,
+   * when the agent refused it.
+   */
   forkFrom: (entryId: string) => Promise<boolean>
+  /**
+   * Branch from here: continue the session from just before the sent user
+   * message `messageId`, the same fork as the Timeline makes. False, with the
+   * reason in the chat, when the session could not branch there.
+   */
+  branchFromMessage: (messageId: string) => Promise<boolean>
   /**
    * Replace a sent user message: continue the session from just before it
    * (the same fork as Branch from here), then send `text`. False, with the
@@ -561,13 +651,13 @@ interface AppActions {
   cloneBranch: () => Promise<void>
 
   // Model
-  setModel: (provider: string, modelId: string) => Promise<void>
+  setModel: (provider: string, modelId: string) => Promise<boolean>
   saveDefaultModel: (provider: string, modelId: string) => Promise<void>
   cycleModel: () => Promise<void>
   listModels: () => Promise<ModelInfo[]>
 
   // Thinking
-  setThinkingLevel: (level: string) => Promise<void>
+  setThinkingLevel: (level: string) => Promise<boolean>
   cycleThinkingLevel: () => Promise<void>
 
   // Context compaction
@@ -586,6 +676,11 @@ interface AppActions {
   setChatSidePanel: (panel: ChatSidePanel | null) => Promise<boolean>
   toggleSidebar: () => void
   toggleTerminal: () => void
+  // Show the editor slot of a workspace's terminal panel in the chat view.
+  showEditorTerminal: (workspaceId: string) => void
+  // The terminal editor exited: drop its slot and show the shell again.
+  closeEditorTerminal: (workspaceId: string) => void
+  setShownTerminalSlot: (workspaceId: string, slot: TerminalSlot) => void
   toggleReview: () => void
   loadSettings: () => Promise<void>
   setSettingsDraft: (patch: Partial<AppSettings>) => void
@@ -593,6 +688,8 @@ interface AppActions {
   setPermissionRulesDraft: (scope: PermissionRulesScope, rules: PermissionRule[] | null) => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   toggleSessionGroupCollapsed: (projectPath: string) => Promise<void>
+  // Remember the last Browser pane page of a workspace (http/https only).
+  saveBrowserPaneUrl: (workspacePath: string, url: string) => Promise<void>
   updateSkillGroups: (change: (groups: SkillGroup[]) => SkillGroup[]) => Promise<void>
   saveSidebarWidth: (width: number) => Promise<void>
   loadCommands: () => Promise<void>
@@ -616,7 +713,10 @@ interface AppActions {
 
   // App confirmation dialog (promise-based; resolves true on confirm)
   requestConfirm: (options: ConfirmOptions) => Promise<boolean>
-  resolveConfirm: (confirmed: boolean) => void
+  // The same dialog with a third button (options.alternativeLabel).
+  requestChoice: (options: ConfirmOptions) => Promise<ConfirmChoice>
+  // true = confirm, false = cancel, 'alternative' = the third button.
+  resolveConfirm: (answer: boolean | 'alternative') => void
 
   // Shows the one-time "this workspace has its own permission rules" notice
   // and records the acknowledgment in settings.
@@ -651,6 +751,12 @@ interface AppActions {
    */
   activateWorkspace: (workspaceId: string, options?: { awaitingSession?: boolean; skipDirtyConfirm?: boolean }) => Promise<boolean>
   removeWorkspace: (workspaceId: string) => Promise<void>
+  /**
+   * The project tab's close action. Asks whether to remove the project
+   * (removeWorkspace) or close only its tab: the project stays in the sidebar,
+   * its Pi processes keep running, and activating it shows the tab again.
+   */
+  closeProjectTab: (workspaceId: string) => Promise<void>
   renameWorkspace: (workspaceId: string, name: string) => Promise<void>
   changeWorkspaceFolder: (workspaceId: string, newPath: string) => Promise<void>
 
@@ -701,6 +807,13 @@ interface AppActions {
   deleteSession: (session: SessionListItem) => Promise<SessionDeleteResult>
   toggleShowArchived: () => void
 
+  // Pinned / unread
+  loadPinnedSessions: () => Promise<void>
+  pinSession: (sessionId: string) => Promise<void>
+  unpinSession: (sessionId: string) => Promise<void>
+  loadUnreadSessions: () => Promise<void>
+  handleUnreadSessions: (map: UnreadSessionsMap) => void
+
   // Notes
   loadNotes: () => Promise<void>
   saveNote: (input: NoteInput) => Promise<void>
@@ -708,6 +821,9 @@ interface AppActions {
   deleteNote: (id: string) => Promise<void>
   insertPrompt: (text: string, replace?: boolean) => void
   clearPendingInsert: () => void
+  // Stage a Browser pane pick in the composer of `workspaceId`. False (and
+  // nothing staged) when that workspace is no longer the active one.
+  stagePickedAttachments: (workspaceId: string, attachments: ComposerAttachment[]) => boolean
   setNotePickerOpen: (open: boolean) => void
   toggleAllThinking: () => void
   setCommandPalette: (open: boolean) => void
@@ -721,6 +837,11 @@ interface AppActions {
   checkForUpdates: () => Promise<void>
   dismissUpdate: () => void
 
+  // Git check
+  loadGitAvailability: () => Promise<void>
+  recheckGitAvailability: () => Promise<void>
+  dismissGitBanner: () => void
+
   // Lineage
   loadLineage: () => Promise<void>
 }
@@ -732,17 +853,13 @@ function generateId(): string {
   return `msg-${Date.now()}-${++messageCounter}`
 }
 
-function normalizePiCommands(raw: unknown): PiCommand[] {
-  if (!Array.isArray(raw)) return []
-  return raw
-    .filter((command): command is Record<string, unknown> => typeof command === 'object' && command !== null)
-    .map((command) => ({
-      name: String(command.name ?? ''),
-      description: String(command.description ?? ''),
-      source: typeof command.source === 'string' ? command.source : 'extension',
-    }))
-    .filter((command) => command.name.length > 0)
+/** A session registry map without one session's entry (a new object). */
+function withoutSession(map: Record<string, number>, sessionId: string): Record<string, number> {
+  const next = { ...map }
+  delete next[sessionId]
+  return next
 }
+
 
 // Navigation invalidates all session I/O. History and state requests also
 // have their own sequence so overlapping loads of one session cannot rewind it.
@@ -750,6 +867,14 @@ let sessionLoadGeneration = 0
 let historyLoadId = 0
 let sessionStateRequestId = 0
 let historyLoadingRuntime: string | null = null
+// Activation intents have their own sequence: a declined or superseded request
+// must not invalidate the retained chat's session I/O, which is what
+// sessionLoadGeneration guards. Last activation intent wins.
+let activationIntentGeneration = 0
+// compaction_start events of the active chat, so compactContext can tell a
+// command the engine refused (no start, so no end notice either) from one
+// whose outcome the compaction_end notice reports.
+let compactionStarts = 0
 
 /**
  * Texts of prompts this GUI just sent to Pi, awaiting their echo on the RPC
@@ -816,6 +941,17 @@ function enqueueAttachBackfill(get: () => AppState & AppActions): Promise<void> 
 }
 
 /**
+ * A check that an async step still serves the chat it started in: no session
+ * load or workspace switch happened since. Main answers for the workspace
+ * active when the call went out, so a stale answer must not land on another.
+ */
+function captureChatScope(get: () => AppState & AppActions): () => boolean {
+  const gen = sessionLoadGeneration
+  const workspaceId = get().activeWorkspace?.id
+  return () => gen === sessionLoadGeneration && workspaceId === get().activeWorkspace?.id
+}
+
+/**
  * Agent runs the chat on screen saw start. A prompt reads it before it is sent,
  * so its answer can tell whether a run followed it.
  */
@@ -856,32 +992,69 @@ function activeWorkspaceId(get: () => AppState & AppActions): string {
   return get().activeWorkspace?.id ?? ''
 }
 
-function holdSendQueue(set: ZustandSet, get: () => AppState & AppActions): void {
-  const workspaceId = activeWorkspaceId(get)
-  set((state) => state.heldSendQueues.includes(workspaceId) ? state : { heldSendQueues: [...state.heldSendQueues, workspaceId] })
+/**
+ * Hold a chat's queue; a null chat (none bound yet) has no queue to hold. An
+ * 'ended-off-screen' hold stays: an interruption after it must not let the
+ * user's next send release messages older than that send.
+ */
+function holdSendQueue(set: ZustandSet, chatId: string | null, hold: SendQueueHold): void {
+  if (chatId === null) return
+  set((state) => state.heldSendQueues[chatId] === 'ended-off-screen' || state.heldSendQueues[chatId] === hold
+    ? state
+    : { heldSendQueues: { ...state.heldSendQueues, [chatId]: hold } })
 }
 
-function releaseSendQueue(set: ZustandSet, get: () => AppState & AppActions): void {
-  const workspaceId = activeWorkspaceId(get)
-  set((state) => state.heldSendQueues.includes(workspaceId)
-    ? { heldSendQueues: state.heldSendQueues.filter((id) => id !== workspaceId) }
+/** The user sends again: an interrupted queue may go on after this turn. */
+function releaseInterruptedSendQueue(set: ZustandSet, chatId: string | null): void {
+  set((state) => chatId !== null && state.heldSendQueues[chatId] === 'interrupted'
+    ? { heldSendQueues: withoutChats(state.heldSendQueues, [chatId]) }
     : state)
 }
 
 /**
- * The active turn is over: send the oldest queued message, unless the turn
- * failed (then hold the queue: the next one would likely fail too) or the
- * queue is already held (the user stopped the turn).
+ * The turn of the chat on screen is over: send its oldest queued message,
+ * unless the turn failed (then hold the queue: the next one would likely fail
+ * too) or the queue is already held (the user stopped the turn).
  */
 function settleSendQueue(set: ZustandSet, get: () => AppState & AppActions, failed: boolean): void {
+  const chatId = get().activeSessionRuntimeId
   if (failed) {
-    holdSendQueue(set, get)
+    holdSendQueue(set, chatId, 'interrupted')
     return
   }
-  const workspaceId = activeWorkspaceId(get)
-  if (get().heldSendQueues.includes(workspaceId)) return
-  const next = firstQueued(get().sendQueues, workspaceId)
-  if (next) void get().sendQueuedPromptNow(workspaceId, next.id)
+  if (chatId === null || chatId in get().heldSendQueues) return
+  const next = firstQueued(get().sendQueues, chatId)
+  if (next) void get().sendQueuedPromptNow(chatId, next.id)
+}
+
+/**
+ * A chat off screen finished its turn. The renderer never sees that turn's
+ * end, so its queue cannot go out in order; hold it until the user is back
+ * and sends it. A chat that only leaves the screen while idle keeps the hold
+ * it has: no turn ended off screen, so an 'interrupted' hold stays.
+ */
+function holdQueueOfIdleBackgroundChat(set: ZustandSet, get: () => AppState & AppActions, runtime: SessionRuntimeInfo): void {
+  if (runtime.active || isRuntimeBusy(runtime.activity)) return
+  if (!get().sendQueues[runtime.runtimeId]) return
+  const turnEnded = isRuntimeBusy(get().sessionRuntimes[runtime.runtimeId]?.activity)
+  if (!turnEnded && runtime.runtimeId in get().heldSendQueues) return
+  holdSendQueue(set, runtime.runtimeId, 'ended-off-screen')
+}
+
+/**
+ * Drop what the store keeps for chats that are gone: their queues, their holds
+ * and a council run they own, whose consultants main then stops.
+ */
+function forgetChats(set: ZustandSet, get: StoreGet, chatIds: readonly string[]): void {
+  if (chatIds.length === 0) return
+  const run = get().councilRun
+  const droppedRun = run && chatIds.includes(run.owner.chatId) ? run : null
+  set((state) => ({
+    sendQueues: withoutChats(state.sendQueues, chatIds),
+    heldSendQueues: withoutChats(state.heldSendQueues, chatIds),
+    ...(droppedRun ? { councilRun: null } : {}),
+  }))
+  if (droppedRun) stopCouncilRun(droppedRun)
 }
 
 // ─── Turn Activity ──────────────────────────────────────────────────────────
@@ -1025,6 +1198,63 @@ function scheduleSessionListRefresh(get: () => AppState & AppActions): void {
   }, SESSION_LIST_REFRESH_DELAY_MS)
 }
 
+/**
+ * Show the chat as loading a different session. The runtime being left keeps
+ * running in the background; only the renderer's pointers to it are cleared.
+ */
+function beginSessionLoad(set: ZustandSet, get: StoreGet, extraState: Partial<AppState> = {}): void {
+  set({
+    sessionLoading: true,
+    sessionState: null,
+    sessionStats: null,
+    activeSessionRuntimeId: null,
+    // The dialog belongs to the runtime being left. Main retains its
+    // origin and replays it when the user switches back.
+    extensionUiRequest: null,
+    ...extraState,
+  })
+  get().clearMessages()
+}
+
+/** Point the chat at the runtime main activated and start its hydration. */
+function applyActivatedRuntime(
+  set: ZustandSet,
+  get: StoreGet,
+  runtime: SessionRuntimeInfo | null,
+  workspaceId: string | undefined,
+  extraState: Partial<AppState> = {}
+): void {
+  set({
+    composerFocusRequested: true,
+    sessionLoading: runtime?.status !== 'running',
+    ...(runtime ? {
+      activeSessionRuntimeId: runtime.runtimeId,
+      piStatus: runtime.status,
+      piPid: runtime.pid,
+      piEngine: runtime.engine ?? 'pi',
+      piError: runtime.error,
+    } : {}),
+    ...extraState,
+  })
+  // Main retains a pending dialog until the renderer asks for it, and a
+  // runtime swap inside one workspace emits no workspace-change replay.
+  if (workspaceId) void window.piDesktop.ui.flushPendingPrompts(workspaceId)
+  if (isRuntimeBusy(runtime?.activity)) set({ isStreaming: true, reattachedMidTurn: true })
+  // A runtime still starting is hydrated by handleSessionRuntime on its running event.
+  void get().reloadActiveSession({ refreshList: false })
+  scheduleSessionListRefresh(get)
+}
+
+function failSessionLoad(set: ZustandSet, get: StoreGet, content: string): void {
+  set({ sessionLoading: false, ...idleTurnState() })
+  get().addMessage({ id: generateId(), role: 'system', content, timestamp: Date.now() })
+}
+
+function reportSessionSwitchError(set: ZustandSet, get: StoreGet, gen: number, err: unknown): void {
+  if (gen !== sessionLoadGeneration) return
+  failSessionLoad(set, get, t('store.messages.switchSessionError', { detail: err instanceof Error ? err.message : String(err) }))
+}
+
 const PARSE_CHUNK = 50
 
 /** Parse history in chunks, yielding to the event loop so the UI can paint. */
@@ -1037,7 +1267,7 @@ async function parseMessagesChunked(
     if (gen !== sessionLoadGeneration) return null
     const end = Math.min(i + PARSE_CHUNK, raw.length)
     for (let j = i; j < end; j++) {
-      const parsed = parseAgentMessage(raw[j])
+      const parsed = parseChatMessage(raw[j])
       if (parsed) out.push(parsed)
     }
     // Yield so Windows doesn't mark the window "Not Responding".
@@ -1079,6 +1309,34 @@ interface ArbiterStepBase {
   results: ConsultantResult[]
 }
 
+type CouncilRunStep = Omit<CouncilRunState, keyof CouncilRunIdentity>
+
+/**
+ * Tell main to stop the consultant and arbiter processes of a run the store
+ * dropped, so it spends no more model credits. Main ignores a run that is
+ * already over, and the run is gone from the store either way.
+ */
+function stopCouncilRun(run: CouncilRunIdentity): void {
+  void window.piDesktop.council.cancel({ runId: run.id }).catch(() => undefined)
+}
+
+/** Show a step of that council run, unless it was cancelled or replaced meanwhile. */
+function showCouncilStep(get: StoreGet, set: StoreSet, identity: CouncilRunIdentity, step: CouncilRunStep): void {
+  if (get().councilRun?.id !== identity.id) return
+  set({ councilRun: { ...identity, ...step } })
+}
+
+/** Whether the chat on screen is the one that owns the council run. */
+function isCouncilOwnerOnScreen(state: AppState, owner: CouncilOwner): boolean {
+  return owner.workspaceId === state.activeWorkspace?.id && owner.chatId === state.activeSessionRuntimeId
+}
+
+/** The council run of the chat on screen; a run another chat owns stays out of sight. */
+export function councilRunOnScreen(state: AppState): CouncilRunState | null {
+  const run = state.councilRun
+  return run && isCouncilOwnerOnScreen(state, run.owner) ? run : null
+}
+
 /**
  * Drive one arbiter round (merge or revise) through the isolated read-only Pi
  * subprocess, streaming its output live into councilRun.consensus. Returns the
@@ -1088,13 +1346,14 @@ interface ArbiterStepBase {
 async function runArbiterStep(
   payload: CouncilArbiterRequest,
   base: ArbiterStepBase,
+  identity: CouncilRunIdentity,
   get: StoreGet,
   set: StoreSet,
 ): Promise<{ plan?: string; error?: string }> {
-  set({ councilRun: { phase: 'merging', request: base.request, results: base.results, consensus: '' } })
-  const unsubscribe = window.piDesktop.council.onProgress(({ chunk }) => {
+  showCouncilStep(get, set, identity, { phase: 'merging', request: base.request, results: base.results, consensus: '' })
+  const unsubscribe = window.piDesktop.council.onProgress(({ runId, chunk }) => {
     const run = get().councilRun
-    if (!run || run.phase !== 'merging') return
+    if (runId !== identity.id || !run || run.id !== identity.id || run.phase !== 'merging') return
     set({ councilRun: { ...run, consensus: (run.consensus ?? '') + chunk } })
   })
   try {
@@ -1104,6 +1363,76 @@ async function runArbiterStep(
     return { error: t('store.messages.arbiterFailed', { detail: err instanceof Error ? err.message : String(err) }) }
   } finally {
     unsubscribe()
+  }
+}
+
+/** Keep the pin map main returns; a failure becomes a system message. */
+async function applyPinChange(
+  set: StoreSet,
+  get: StoreGet,
+  change: () => Promise<PinnedSessionsMap>,
+  errorText: (detail: string) => string,
+): Promise<void> {
+  try {
+    set({ pinnedSessions: await change() })
+  } catch (err) {
+    get().addMessage({
+      id: generateId(),
+      role: 'system',
+      content: errorText(err instanceof Error ? err.message : String(err)),
+      timestamp: Date.now(),
+    })
+  }
+}
+
+/** Put the reason an action failed in the chat as a system message. */
+function reportChatError(get: StoreGet, errorText: (detail: string) => string, err: unknown): void {
+  get().addMessage({ id: generateId(), role: 'system', content: errorText(formatIpcError(err)), timestamp: Date.now() })
+}
+
+/** The reply of a session command (fork, clone) the agent can refuse. */
+interface SessionCommandResult {
+  success?: boolean
+  error?: string
+  data?: { cancelled?: boolean }
+}
+
+/**
+ * Run a session command (fork, clone). A refusal (`{ success: false, error }`)
+ * or a failed call (no agent running, for example) puts the reason in the
+ * chat and gives null.
+ */
+async function runSessionCommand(
+  get: StoreGet,
+  command: () => Promise<unknown>,
+  errorText: (detail: string) => string,
+): Promise<SessionCommandResult | null> {
+  try {
+    const result = (await command()) as SessionCommandResult | null
+    if (!result?.success) throw new Error(result?.error ?? t('store.messages.unknownError'))
+    return result
+  } catch (err) {
+    reportChatError(get, errorText, err)
+    return null
+  }
+}
+
+/** The fork point of the sent user message `messageId`; throws when the saved session does not hold it. */
+async function forkPointOfMessage(get: StoreGet, messageId: string): Promise<ForkPoint> {
+  await get().loadForkMessages()
+  const point = forkPointForUserMessage(get().messages, messageId, get().forkMessages)
+  if (!point) throw new Error(t('store.messages.messageNotInSession'))
+  return point
+}
+
+/** Keep a git check result unless a newer check started meanwhile. */
+async function applyLatestGitAvailability(set: StoreSet, read: () => Promise<GitAvailability>): Promise<void> {
+  const isLatest = gitAvailabilityLoads.begin()
+  try {
+    const gitAvailability = await read()
+    if (isLatest()) set({ gitAvailability })
+  } catch {
+    // Best effort, like the update check: the banner stays as it was
   }
 }
 
@@ -1141,6 +1470,8 @@ let latestPackageUpdateCheck = 0
 
 // Engine changes can start reads of two models files at once; the last one wins.
 const customModelsLoads = createStaleGuard()
+// The startup check can end after a Check again; only the newest result is kept.
+const gitAvailabilityLoads = createStaleGuard()
 
 export const useAppStore = create<AppState & AppActions>((set, get) => ({
   // ─── Initial State ────────────────────────────────────────────────────
@@ -1181,6 +1512,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   chatSidePanel: null,
   sidebarOpen: true,
   terminalOpen: false,
+  editorTerminalWorkspaces: [],
+  shownTerminalSlot: {},
   reviewOpen: false,
   settings: null,
   settingsDraft: {},
@@ -1200,6 +1533,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   workspaces: [],
   projectTabOrder: readProjectTabOrder(),
+  hiddenProjectTabIds: readHiddenProjectTabs(),
   activeWorkspace: null,
 
   timelineEvents: [],
@@ -1232,6 +1566,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   archivedSessions: {},
   showArchived: false,
 
+  pinnedSessions: {},
+  unreadSessions: {},
+
   notes: [],
   notePickerOpen: false,
   allThinkingExpanded: null,
@@ -1250,17 +1587,23 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     return { composerDrafts }
   }),
   sendQueues: {},
-  heldSendQueues: [],
-  queuePrompt: (workspaceId, text, attachments) =>
-    set((state) => ({ sendQueues: withQueued(state.sendQueues, workspaceId, { id: generateId(), text, attachments }) })),
-  removeQueuedPrompt: (workspaceId, promptId) =>
-    set((state) => ({ sendQueues: withoutQueued(state.sendQueues, workspaceId, promptId) })),
-  sendQueuedPromptNow: async (workspaceId, promptId) => {
-    // sendPrompt reaches the active workspace's agent only.
-    if (workspaceId !== (get().activeWorkspace?.id ?? '')) return
-    const queued = get().sendQueues[workspaceId]?.find((prompt) => prompt.id === promptId)
+  heldSendQueues: {},
+  queuePrompt: (chatId, text, attachments) =>
+    set((state) => ({ sendQueues: withQueued(state.sendQueues, chatId, { id: generateId(), text, attachments }) })),
+  removeQueuedPrompt: (chatId, promptId) =>
+    set((state) => {
+      const sendQueues = withoutQueued(state.sendQueues, chatId, promptId)
+      // A hold on an emptied queue holds nothing; the next queued message starts fresh.
+      return chatId in sendQueues
+        ? { sendQueues }
+        : { sendQueues, heldSendQueues: withoutChats(state.heldSendQueues, [chatId]) }
+    }),
+  sendQueuedPromptNow: async (chatId, promptId) => {
+    // sendPrompt reaches the agent of the chat on screen only.
+    if (chatId !== get().activeSessionRuntimeId) return
+    const queued = get().sendQueues[chatId]?.find((prompt) => prompt.id === promptId)
     if (!queued) return
-    get().removeQueuedPrompt(workspaceId, promptId)
+    get().removeQueuedPrompt(chatId, promptId)
     const { message, options } = composePrompt(queued.text, queued.attachments)
     await get().sendPrompt(message, options)
   },
@@ -1271,6 +1614,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   noteDraft: null,
   updateInfo: null,
   updateDismissed: false,
+  gitAvailability: null,
+  gitBannerDismissed: false,
+  gitCheckRunning: false,
 
   lineage: [],
 
@@ -1280,9 +1626,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (pendingLastSessionOpen) await pendingLastSessionOpen
     // Don't start if already running
     if (get().piStatus === 'running') return
-    const gen = sessionLoadGeneration
-    const workspaceId = get().activeWorkspace?.id
-    const isCurrent = (): boolean => gen === sessionLoadGeneration && workspaceId === get().activeWorkspace?.id
+    const isCurrent = captureChatScope(get)
 
     try {
       // The renderer starts only what the chat shows. A resumed session is
@@ -1350,20 +1694,26 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   restartPi: async (options) => {
+    // Main restarts the workspace active when the call starts and answers
+    // with that workspace's status; a chat switched to meanwhile is not it.
+    const isCurrent = captureChatScope(get)
     try {
       const status = await window.piDesktop.pi.restart(options as Record<string, unknown> | undefined)
-      set({ piStatus: status.status, piStartupPhase: status.startupPhase ?? null, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
-
-      // Re-read session state after a restart so the status bar's model label
-      // and stats reflect a changed models.json (mirrors startPi). Without this
-      // the label keeps the pre-restart model.
-      if (status.status === 'running') {
-        await get().refreshSessionState()
-        await get().refreshSessionStats()
-        await get().refreshSessionList()
-      }
+      if (isCurrent()) await adoptRestartedPi(set, get, status, isCurrent)
     } catch (err) {
+      if (!isCurrent()) return
       set({ piStatus: 'error', piStartupPhase: null, piError: err instanceof Error ? err.message : String(err) })
+    }
+  },
+
+  applyPermissionModeToSessions: async () => {
+    const isCurrent = captureChatScope(get)
+    const restartedRuntimeIds = await window.piDesktop.pi.applyPermissionMode()
+    if (!isCurrent()) return
+    const activeRuntime = Object.values(get().sessionRuntimes).find((runtime) => runtime.active)
+    if (activeRuntime && restartedRuntimeIds.includes(activeRuntime.runtimeId)) {
+      const status = await window.piDesktop.pi.getStatus()
+      if (isCurrent()) await adoptRestartedPi(set, get, status, isCurrent)
     }
   },
 
@@ -1392,18 +1742,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     })
   },
 
-  // Append a sent prompt to the recall history. Ignores blanks and consecutive
-  // duplicates (shell-style), and caps the list so it can't grow unbounded.
-  recordPrompt: (text) =>
-    set((state) => {
-      const trimmed = text.trim()
-      if (!trimmed) return state
-      const history = state.promptHistory
-      if (history[history.length - 1] === trimmed) return state
-      const next = [...history, trimmed]
-      if (next.length > 200) next.shift()
-      return { promptHistory: next }
-    }),
+  recordPrompt: (text) => set((state) => ({ promptHistory: appendPromptHistory(state.promptHistory, text) })),
 
   // ─── Prompts ──────────────────────────────────────────────────────────
 
@@ -1423,8 +1762,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       await get().startPi()
       if (get().piStatus !== 'running') return
     }
-    // The user sends again, so a held queue may go on after this turn.
-    releaseSendQueue(set, get)
+    releaseInterruptedSendQueue(set, get().activeSessionRuntimeId)
 
     const { sessionState, settings } = get()
 
@@ -1526,39 +1864,48 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   runCouncil: async (request) => {
-    const { piStatus, settings } = get()
-    if (piStatus !== 'running' || !request.trim()) return
+    const { piStatus, settings, activeWorkspace, activeSessionRuntimeId: chatId } = get()
+    if (piStatus !== 'running' || !request.trim() || !activeWorkspace || chatId === null) return
     const config = settings?.council
     if (!config) return
+    // One run at a time, and a run another chat owns is that chat's work:
+    // replacing it from here would throw its consultants' plans away.
+    const openRun = get().councilRun
+    if (openRun && !isCouncilOwnerOnScreen(get(), openRun.owner)) {
+      get().addMessage({ id: generateId(), role: 'system', content: t('store.messages.councilOpenElsewhere'), timestamp: Date.now() })
+      return
+    }
 
-    set({ councilRun: { phase: 'detecting', request, results: [] } })
+    const identity: CouncilRunIdentity = { id: generateId(), owner: { workspaceId: activeWorkspace.id, chatId } }
+    set({ councilRun: { ...identity, phase: 'detecting', request, results: [] } })
+    const show = (step: CouncilRunStep): void => showCouncilStep(get, set, identity, step)
 
     try {
       const detectResult = await window.piDesktop.council.detect()
       const detected = { pi: false, claude: false, codex: false } as Record<CouncilAgentId, boolean>
       for (const a of detectResult.agents) detected[a.id] = a.found
+      // Cancelled or replaced while detecting: start no consultant for it.
+      if (get().councilRun?.id !== identity.id) return
 
       const resolution = resolveActiveMembers(config, detected)
       if (!resolution.canRun) {
-        set({ councilRun: { phase: 'refused', request, results: [], reason: resolution.reason } })
+        show({ phase: 'refused', request, results: [], reason: resolution.reason })
         return
       }
 
-      set({
-        councilRun: {
-          phase: 'consulting',
-          request,
-          results: [],
-          members: resolution.active,
-          partials: {},
-          startedAt: Date.now(),
-        },
+      show({
+        phase: 'consulting',
+        request,
+        results: [],
+        members: resolution.active,
+        partials: {},
+        startedAt: Date.now(),
       })
 
       // Stream live consultant output into councilRun.partials while consulting.
-      const unsubscribe = window.piDesktop.council.onProgress(({ id, chunk }) => {
+      const unsubscribe = window.piDesktop.council.onProgress(({ runId, id, chunk }) => {
         const run = get().councilRun
-        if (!run || run.phase !== 'consulting') return
+        if (runId !== identity.id || !run || run.id !== identity.id || run.phase !== 'consulting') return
         const partials = { ...(run.partials ?? {}) }
         partials[id] = (partials[id] ?? '') + chunk
         set({ councilRun: { ...run, partials } })
@@ -1567,6 +1914,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       let results: ConsultantResult[]
       try {
         ;({ results } = await window.piDesktop.council.runConsultants({
+          runId: identity.id,
+          workspaceId: identity.owner.workspaceId,
           request,
           members: resolution.active,
           timeoutSeconds: config.timeoutSeconds,
@@ -1575,15 +1924,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       } finally {
         unsubscribe()
       }
+      if (get().councilRun?.id !== identity.id) return
 
       if (!hasQuorum(results)) {
-        set({
-          councilRun: {
-            phase: 'refused',
-            request,
-            results,
-            reason: t('store.messages.councilNoQuorum'),
-          },
+        show({
+          phase: 'refused',
+          request,
+          results,
+          reason: t('store.messages.councilNoQuorum'),
         })
         return
       }
@@ -1592,23 +1940,26 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // are untrusted input, so they are never fed to the live (writable) session —
       // only the vetted consensus plan is, and only after the user approves it.
       const merged = await runArbiterStep(
-        { kind: 'merge', request, results, timeoutSeconds: config.timeoutSeconds },
+        { kind: 'merge', runId: identity.id, workspaceId: identity.owner.workspaceId, request, results, timeoutSeconds: config.timeoutSeconds },
         { request, results },
+        identity,
         get,
         set,
       )
       if (merged.error) {
-        set({ councilRun: { phase: 'refused', request, results, reason: merged.error } })
+        show({ phase: 'refused', request, results, reason: merged.error })
         return
       }
-      set({ councilRun: { phase: 'awaiting-approval', request, results, consensus: merged.plan } })
+      show({ phase: 'awaiting-approval', request, results, consensus: merged.plan })
     } catch (error) {
-      set({ councilRun: { phase: 'refused', request, results: [], reason: councilErrorMessage(error) } })
+      show({ phase: 'refused', request, results: [], reason: councilErrorMessage(error) })
     }
   },
 
   approveCouncilPlan: async () => {
-    const run = get().councilRun
+    // Only the chat that started the run may send its plan: the plan was made
+    // for that workspace, and sendPrompt reaches the chat on screen.
+    const run = councilRunOnScreen(get())
     if (!run || run.phase !== 'awaiting-approval' || !run.consensus?.trim()) return
     const plan = run.consensus
     set({ councilRun: null })
@@ -1618,30 +1969,37 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   reviseCouncilPlan: async (feedback) => {
-    const run = get().councilRun
+    const run = councilRunOnScreen(get())
     if (!run || run.phase !== 'awaiting-approval' || !feedback.trim() || !run.consensus) return
-    const { request, results, consensus } = run
+    const { request, results, consensus, id, owner } = run
+    const identity: CouncilRunIdentity = { id, owner }
     const config = get().settings?.council
     if (!config) return
     const revised = await runArbiterStep(
-      { kind: 'revise', request, plan: consensus, feedback, timeoutSeconds: config.timeoutSeconds },
+      { kind: 'revise', runId: id, workspaceId: owner.workspaceId, request, plan: consensus, feedback, timeoutSeconds: config.timeoutSeconds },
       { request, results },
+      identity,
       get,
       set,
     )
     if (revised.error) {
       // Keep the previous plan at the approval gate and surface the failure.
-      set({ councilRun: { phase: 'awaiting-approval', request, results, consensus, reason: revised.error } })
+      showCouncilStep(get, set, identity, { phase: 'awaiting-approval', request, results, consensus, reason: revised.error })
       return
     }
-    set({ councilRun: { phase: 'awaiting-approval', request, results, consensus: revised.plan } })
+    showCouncilStep(get, set, identity, { phase: 'awaiting-approval', request, results, consensus: revised.plan })
   },
 
-  cancelCouncil: () => set({ councilRun: null }),
+  cancelCouncil: () => {
+    const run = get().councilRun
+    if (!run) return
+    set({ councilRun: null })
+    stopCouncilRun(run)
+  },
 
   abort: async () => {
     // The user stopped this turn: its end must not send the next queued message.
-    holdSendQueue(set, get)
+    holdSendQueue(set, get().activeSessionRuntimeId, 'interrupted')
     try {
       await window.piDesktop.commands.abort()
       set({ isStreaming: false })
@@ -1792,7 +2150,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const runtime = get().sessionRuntimes[runtimeId]
     if (!runtime) return
 
-    if (runtime.activity === 'working' || runtime.activity === 'needs-approval') {
+    if (isRuntimeBusy(runtime.activity)) {
       const confirmed = await get().requestConfirm({
         title: t('store.confirm.closeSessionTabTitle'),
         message: t('store.confirm.closeSessionTabMessage'),
@@ -1810,6 +2168,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
       // The main process broadcasts the closed marker, but remove locally too
       // so a renderer that races that event cannot leave a ghost tab behind.
+      forgetChats(set, get, [runtimeId])
       set((state) => {
         const { [runtimeId]: _closed, ...remaining } = state.sessionRuntimes
         return {
@@ -1885,64 +2244,57 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const run = async (): Promise<void> => {
       if (gen !== sessionLoadGeneration || pendingSwitchPath !== path) return
       try {
-        // Binding a different session is safe: its Pi process continues in the
-        // background. Render the new target immediately; only hydration waits.
-        set({
-          sessionLoading: true,
-          sessionState: null,
-          sessionStats: null,
-          activeSessionRuntimeId: null,
-          // The dialog belongs to the runtime being left. Main retains its
-          // origin and replays it when the user switches back.
-          extensionUiRequest: null,
-        })
-        get().clearMessages()
+        beginSessionLoad(set, get)
         const result = await window.piDesktop.session.switch(path, projectPath) as SessionRuntimeInfo | { success?: boolean; error?: string } | null
         if (gen !== sessionLoadGeneration) return
         if (result && 'success' in result && result.success === false) {
-          set({ sessionLoading: false, ...idleTurnState() })
-          get().addMessage({
-            id: generateId(),
-            role: 'system',
-            content: result.error ?? t('store.messages.cannotActivateSession'),
-            timestamp: Date.now(),
-          })
+          failSessionLoad(set, get, result.error ?? t('store.messages.cannotActivateSession'))
           return
         }
         const runtime = result && 'runtimeId' in result ? result : null
-        const reattaching = runtime?.activity === 'working' || runtime?.activity === 'needs-approval'
-        if (get().activeWorkspace?.id) void window.piDesktop.ui.flushPendingPrompts(get().activeWorkspace!.id)
-        set({
-          currentView: 'chat',
-          composerFocusRequested: true,
-          sessionLoading: runtime?.status !== 'running',
-          ...(runtime ? {
-            activeSessionRuntimeId: runtime.runtimeId,
-            piStatus: runtime.status,
-            piPid: runtime.pid,
-            piEngine: runtime.engine ?? 'pi',
-            piError: runtime.error,
-          } : {}),
-        })
-        // If the runtime is already ready this starts hydration now. If it is
-        // still starting, handleSessionRuntime retries on its running event.
-        void get().reloadActiveSession({ refreshList: false })
-        if (reattaching) set({ isStreaming: true, reattachedMidTurn: true })
-        scheduleSessionListRefresh(get)
+        applyActivatedRuntime(set, get, runtime, get().activeWorkspace?.id, { currentView: 'chat' })
       } catch (err) {
-        if (gen !== sessionLoadGeneration) return
-        set({ sessionLoading: false, ...idleTurnState() })
-        get().addMessage({
-          id: generateId(),
-          role: 'system',
-          content: t('store.messages.switchSessionError', { detail: err instanceof Error ? err.message : String(err) }),
-          timestamp: Date.now(),
-        })
+        reportSessionSwitchError(set, get, gen, err)
       }
     }
 
     switchPipeline = switchPipeline.then(run, run)
     await switchPipeline
+  },
+
+  /**
+   * Activate a runtime by id. A file-less session has no path for
+   * switchSession, so Quick Chat's "Open in Main" comes here.
+   */
+  activateRuntime: async (workspaceId, runtimeId) => {
+    const intent = ++activationIntentGeneration
+    const loadGen = sessionLoadGeneration
+    const superseded = (): boolean => intent !== activationIntentGeneration || loadGen !== sessionLoadGeneration
+    if (!(await get().confirmDiscardEditorChanges()) || superseded()) return false
+    // A workspace switch keeps the old turn running in the background; only a
+    // swap inside one workspace abandons it.
+    const sameWorkspace = get().activeWorkspace?.id === workspaceId
+    if (sameWorkspace && !(await get().confirmSessionChange('switch'))) return false
+    if (superseded()) return false
+    // The catch reads gen, so it is declared outside the try.
+    let gen = 0
+    try {
+      if (!sameWorkspace) {
+        if (!(await get().activateWorkspace(workspaceId, { awaitingSession: true, skipDirtyConfirm: true }))) return false
+        if (intent !== activationIntentGeneration) return false
+      }
+      gen = ++sessionLoadGeneration
+      const workspace = get().activeWorkspace
+      if (!workspace || workspace.id !== workspaceId) return false
+      beginSessionLoad(set, get, { currentView: 'chat' })
+      const runtime = await window.piDesktop.session.activateRuntime(workspaceId, runtimeId)
+      if (gen !== sessionLoadGeneration || !runtime) return false
+      applyActivatedRuntime(set, get, runtime, workspaceId)
+      return true
+    } catch (err) {
+      reportSessionSwitchError(set, get, gen, err)
+      return false
+    }
   },
 
   reloadActiveSession: async (options) => {
@@ -2002,23 +2354,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
               timestamp: Date.now(),
             })
           }
-          // Preserve React keys and the user's open reasoning blocks when an
-          // idle backfill returns the same messages with fresh parser IDs.
-          const previous = new Map<string, DisplayMessage[]>()
-          const key = (entry: DisplayMessage): string => JSON.stringify([
-            entry.role, entry.content, entry.thinking, entry.toolCallId,
-            !entry.content && !entry.thinking ? entry.toolCalls?.map((call) => call.id) : undefined,
-          ])
-          for (const entry of messagesAtStart) {
-            const identity = key(entry)
-            const matches = previous.get(identity) ?? []
-            matches.push(entry)
-            previous.set(identity, matches)
-          }
-          const messages = loaded.map((entry) => {
-            const existing = previous.get(key(entry))?.shift()
-            return existing ? { ...entry, id: existing.id, initiallyShowThinking: existing.initiallyShowThinking } : entry
-          })
+          const messages = retainChatMessageIdentity(loaded, messagesAtStart)
           // Back in a turn that is still running: its unanswered tools are running.
           const reattached = get().isStreaming && get().reattachedMidTurn
           set({
@@ -2182,11 +2518,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   setSessionName: async (name) => {
+    const sessionFile = get().sessionState?.sessionFile ?? null
     try {
-      await window.piDesktop.session.setName(name)
-      // No manual refresh: Pi emits `session_info_changed` after setting the
-      // name, and handlePiEvent applies it to the Current Session panel and the
-      // Recent row — the same path used by auto-title extensions.
+      const response = await window.piDesktop.session.setName(name) as { success?: boolean } | null
+      // Pi also emits `session_info_changed` for the new name; OMP sends no
+      // event, so a confirmed rename is applied here. Both carry the same name.
+      if (response?.success !== true) return
+      set((state) => sessionNamePatch(state, sessionFile, name))
     } catch {
       // Silent failure
     }
@@ -2203,19 +2541,28 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   forkFrom: async (entryId) => {
     if (!(await get().confirmSessionChange('fork'))) return false
-    const result = (await window.piDesktop.session.fork(entryId)) as
-      { success?: boolean; data?: { cancelled?: boolean } } | null
-    if (!result?.success) return false
+    const result = await runSessionCommand(get, () => window.piDesktop.session.fork(entryId),
+      (detail) => t('store.messages.forkError', { detail }))
+    if (!result) return false
     await get().reloadActiveSession()
     // An extension can cancel the fork; the session then stays where it was.
     return result.data?.cancelled !== true
   },
 
+  branchFromMessage: async (messageId) => {
+    let point: ForkPoint
+    try {
+      point = await forkPointOfMessage(get, messageId)
+    } catch (err) {
+      reportChatError(get, (detail) => t('store.messages.forkError', { detail }), err)
+      return false
+    }
+    return get().forkFrom(point.entryId)
+  },
+
   editAndResend: async (messageId, text) => {
     try {
-      await get().loadForkMessages()
-      const point = forkPointForUserMessage(get().messages, messageId, get().forkMessages)
-      if (!point) throw new Error(t('store.messages.editNotInSession'))
+      const point = await forkPointOfMessage(get, messageId)
       const title = sessionTitleForFork(get().sessionState?.sessionName, get().messages)
       if (!(await get().forkFrom(point.entryId))) return false
       // The fork starts with the same first message, so unnamed it would list
@@ -2224,12 +2571,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         await get().setSessionName(t('store.messages.editedSessionName', { title: truncateTitle(title, EDITED_TITLE_MAX_CHARS) }))
       }
     } catch (err) {
-      get().addMessage({
-        id: generateId(),
-        role: 'system',
-        content: t('store.messages.editResendError', { detail: err instanceof Error ? err.message : String(err) }),
-        timestamp: Date.now(),
-      })
+      reportChatError(get, (detail) => t('store.messages.editResendError', { detail }), err)
       return false
     }
     await get().sendPrompt(text)
@@ -2238,10 +2580,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   cloneBranch: async () => {
     if (!(await get().confirmSessionChange('clone'))) return
-    const result = (await window.piDesktop.session.clone()) as { success?: boolean } | null
-    if (result?.success) {
-      await get().reloadActiveSession()
-    }
+    const result = await runSessionCommand(get, () => window.piDesktop.session.clone(),
+      (detail) => t('store.messages.cloneError', { detail }))
+    if (result) await get().reloadActiveSession()
   },
 
   // ─── Model ────────────────────────────────────────────────────────────
@@ -2251,9 +2592,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       // The runtime stopped after the picker listed: keep the choice for the next start.
       if (get().piStatus !== 'running') {
         await get().saveDefaultModel(provider, modelId)
-        return
+        return true
       }
-      await window.piDesktop.model.set(provider, modelId)
+      const response = await window.piDesktop.model.set(provider, modelId) as { success?: boolean; error?: string } | null
+      if (!response?.success) throw new Error(response?.error ?? t('store.messages.unknownError'))
       try {
         await get().saveDefaultModel(provider, modelId)
       } catch {
@@ -2261,6 +2603,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       }
       set({ composerFocusRequested: true })
       get().refreshSessionState()
+      return true
     } catch (err) {
       get().addMessage({
         id: generateId(),
@@ -2268,6 +2611,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         content: t('store.messages.modelError', { detail: err instanceof Error ? err.message : String(err) }),
         timestamp: Date.now(),
       })
+      return false
     }
   },
 
@@ -2290,9 +2634,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   listModels: async () => {
-    const gen = sessionLoadGeneration
-    const workspaceId = get().activeWorkspace?.id
-    const isCurrent = (): boolean => gen === sessionLoadGeneration && workspaceId === get().activeWorkspace?.id
+    const isCurrent = captureChatScope(get)
     // The picker is also usable on a fresh composer. Starting the runtime
     // discovers the engine's real catalog without sending a prompt; like every
     // renderer start it opens what the chat shows (see startPi).
@@ -2315,16 +2657,17 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   setThinkingLevel: async (level) => {
     try {
       const response = await window.piDesktop.thinking.setLevel(level) as { success?: boolean } | null
-      if (!response?.success) return
-      try {
-        const updated = await window.piDesktop.settings.save({ defaultThinkingLevel: level })
-        set({ settings: updated })
-      } finally {
-        await get().refreshSessionState()
-      }
+      if (!response?.success) return false
     } catch {
-      // Silent failure
+      return false
     }
+    try {
+      set({ settings: await window.piDesktop.settings.save({ defaultThinkingLevel: level }) })
+    } catch {
+      // The level applied; only saving it as the default failed.
+    }
+    await get().refreshSessionState()
+    return true
   },
 
   cycleThinkingLevel: async () => {
@@ -2346,15 +2689,32 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   compactContext: async () => {
+    const runtimeId = get().activeSessionRuntimeId
+    const startsBefore = compactionStarts
+    // Spin at once: the engine's compaction_start can take a moment to arrive.
+    setCompacting(set, true)
+    let failure: string | null = null
     try {
-      await window.piDesktop.session.compact()
-      // compaction_start/end events drive the chat system messages; refresh
-      // state + stats so the context-usage figures update afterwards.
-      get().refreshSessionState()
-      get().refreshSessionStats()
-    } catch {
-      // Silent failure
+      const response = (await window.piDesktop.session.compact()) as PiResponseEvent | null
+      if (response?.success === false) failure = response.error || t('store.messages.unknownError')
+    } catch (err) {
+      failure = formatIpcError(err)
     }
+    if (runtimeId !== get().activeSessionRuntimeId) return
+    // After a compaction_start, compaction_end owns the spinner and the notice
+    // (a timed-out command means the compaction still runs). Without one, the
+    // engine refused the command, or it reports compaction only in its reply.
+    if (compactionStarts === startsBefore) {
+      setCompacting(set, false)
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: failure ? t('store.messages.error', { detail: failure }) : t('store.messages.contextCompacted'),
+        timestamp: Date.now(),
+      })
+    }
+    void get().refreshSessionState()
+    void get().refreshSessionStats()
   },
 
   // ─── UI ───────────────────────────────────────────────────────────────
@@ -2411,6 +2771,14 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   toggleTerminal: () => set((state) => ({ terminalOpen: !state.terminalOpen })),
 
+  showEditorTerminal: (workspaceId) =>
+    set((state) => ({ ...withEditorTerminal(state, workspaceId), terminalOpen: true, currentView: 'chat' })),
+
+  closeEditorTerminal: (workspaceId) => set((state) => withoutEditorTerminal(state, workspaceId)),
+
+  setShownTerminalSlot: (workspaceId, slot) =>
+    set((state) => ({ shownTerminalSlot: { ...state.shownTerminalSlot, [workspaceId]: slot } })),
+
   toggleReview: () => set((state) => ({ reviewOpen: !state.reviewOpen })),
 
   loadSettings: async () => {
@@ -2466,6 +2834,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     if (get().piStatus === 'running') {
       await get().restartPi()
     }
+    await get().applyPermissionModeToSessions()
   },
 
   updateSkillGroups: async (change) => {
@@ -2501,6 +2870,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     set({ settings: updated })
   },
 
+  saveBrowserPaneUrl: async (workspacePath, url) => {
+    const current = get().settings?.browserPaneUrls ?? {}
+    if (!isBrowserPaneUrl(url) || current[workspacePath] === url) return
+    const updated = await window.piDesktop.settings.save({ browserPaneUrls: { ...current, [workspacePath]: url } })
+    set({ settings: updated })
+  },
+
   loadCommands: async () => {
     try {
       set({ commands: normalizePiCommands(await window.piDesktop.piCommands.list()) })
@@ -2529,7 +2905,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         // ignored: assistant content renders via message_update / message_end.
         const startedMessage = (event as PiMessageStartEvent).message
         if (startedMessage && (startedMessage as { role?: unknown }).role === 'user') {
-          const parsed = parseAgentMessage(startedMessage)
+          const parsed = parseChatMessage(startedMessage)
           if (parsed && parsed.content.trim() && !consumeLocalEcho(parsed.content)) {
             get().addMessage(parsed)
             // Mirror sendPrompt's turn-start state so the external turn gets
@@ -2570,14 +2946,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         // turn_end re-delivers the same message, so errors surface only here.
         const turnError = turnErrorText(endedMessage)
         turnFailed = turnError !== null
-        if (turnError) {
-          get().addMessage({
-            id: generateId(),
-            role: 'system',
-            content: t('store.messages.error', { detail: turnError }),
-            timestamp: Date.now(),
-          })
-        }
+        addEventNotice(event, get)
         get().addTimelineEvent({
           id: generateId(),
           type: 'assistant_message',
@@ -2689,20 +3058,33 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         break
 
       case 'compaction_start':
-      case 'compaction_end':
-        handleCompaction(event as PiCompactionStartEvent | PiCompactionEndEvent, set)
+      case 'compaction_end': {
+        const ended = event.type === 'compaction_end' ? (event as PiCompactionEndEvent) : null
+        if (!ended) compactionStarts++
+        setCompacting(set, !ended)
+        addEventNotice(event, get)
         get().addTimelineEvent({
           id: generateId(),
           type: 'compaction',
           timestamp: Date.now(),
-          title: event.type === 'compaction_start' ? t('timeline.compactionStarted') : t('timeline.compactionComplete'),
-          status: event.type === 'compaction_start' ? 'running' : 'success',
+          title: ended ? t('timeline.compactionComplete') : t('timeline.compactionStarted'),
+          status: !ended ? 'running' : ended.errorMessage ? 'error' : 'success',
         })
+        // Context usage changes with every compaction, manual or automatic.
+        if (ended) {
+          void get().refreshSessionState()
+          void get().refreshSessionStats()
+        }
         break
+      }
 
       case 'auto_retry_start':
       case 'auto_retry_end':
-        handleAutoRetry(event as PiAutoRetryStartEvent | PiAutoRetryEndEvent, set, get)
+        addEventNotice(event, get)
+        if (event.type === 'auto_retry_end' && !(event as PiAutoRetryEndEvent).success) {
+          set({ isStreaming: false })
+          get().refreshSessionStats()
+        }
         get().addTimelineEvent({
           id: generateId(),
           type: 'retry',
@@ -2716,15 +3098,9 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         set({ commands: normalizePiCommands((event as { commands?: unknown }).commands) })
         break
 
-      case 'command_output': {
-        const text = (event as { text?: unknown }).text
-        // OMP writes command output for its terminal UI, colors included.
-        const content = typeof text === 'string' ? stripAnsi(text) : ''
-        if (content.trim()) {
-          get().addMessage({ id: generateId(), role: 'system', content, timestamp: Date.now() })
-        }
+      case 'command_output':
+        addEventNotice(event, get)
         break
-      }
 
       case 'prompt_result': {
         // Before any turn started for it, the prompt ran none: a refusal after
@@ -2781,7 +3157,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
           // Toast slot: kept apart from the dialog slot so a notification can
           // never clobber an unanswered blocking prompt.
           set({ extensionNotify: uiEvent })
-        } else if (uiEvent.method === 'select' || uiEvent.method === 'confirm' || uiEvent.method === 'input' || uiEvent.method === 'editor') {
+        } else if (BLOCKING_UI_METHODS.has(uiEvent.method)) {
           set({ extensionUiRequest: uiEvent })
         }
         break
@@ -2796,21 +3172,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         const info = event as { name?: unknown; title?: unknown; sessionId?: unknown }
         const rawName = info.name ?? info.title
         const newName = (typeof rawName === 'string' && rawName.trim()) || null
-        set((state) => {
-          const activeFile = state.sessionState?.sessionFile ?? null
-          return {
-            sessionState: state.sessionState
-              ? {
-                  ...state.sessionState,
-                  sessionName: newName,
-                  ...(typeof info.sessionId === 'string' ? { sessionId: info.sessionId } : {}),
-                }
-              : state.sessionState,
-            sessionList: activeFile
-              ? state.sessionList.map((s) => (s.path === activeFile ? { ...s, name: newName } : s))
-              : state.sessionList,
-          }
-        })
+        set((state) => sessionNamePatch(
+          state,
+          state.sessionState?.sessionFile ?? null,
+          newName,
+          typeof info.sessionId === 'string' ? info.sessionId : undefined
+        ))
         break
       }
 
@@ -2855,7 +3222,10 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       if (extensionUiRequest.method === 'confirm') {
         window.piDesktop.ui.respondConfirm(extensionUiRequest.id, false)
       } else {
-        window.piDesktop.ui.respondInput(extensionUiRequest.id, '')
+        // A cancel is a real answer, not an empty value: an empty string would
+        // be rejected for select (no such option) and submitted as text for
+        // input/editor. The engine resolves cancelled to undefined.
+        window.piDesktop.ui.respondCancel(extensionUiRequest.id)
       }
       set({ extensionUiRequest: null })
     }
@@ -2883,6 +3253,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     const refusalArrived = runtime.promptRefusal !== undefined &&
       runtime.promptRefusal !== get().sessionRuntimes[runtime.runtimeId]?.promptRefusal
     if (runtime.closed) {
+      forgetChats(set, get, [runtime.runtimeId])
       set((current) => {
         const { [runtime.runtimeId]: _closed, ...remaining } = current.sessionRuntimes
         return {
@@ -2892,6 +3263,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       })
       return
     }
+    holdQueueOfIdleBackgroundChat(set, get, runtime)
     set((current) => ({
       sessionRuntimes: { ...current.sessionRuntimes, [runtime.runtimeId]: runtime },
       activeSessionRuntimeId: runtime.active
@@ -2913,7 +3285,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     // guard made New Session look stuck forever after Pi was already ready.
     const current = get()
     if (runtime.active && runtime.workspaceId === current.activeWorkspace?.id) {
-      const working = runtime.activity === 'working' || runtime.activity === 'needs-approval'
+      const working = isRuntimeBusy(runtime.activity)
       if ((runtime.status === 'stopped' || runtime.status === 'error') && current.isStreaming) {
         handleTurnComplete(set, undefined, true)
         set({ isStreaming: false, reattachedMidTurn: false })
@@ -2956,17 +3328,19 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     }
   },
 
-  requestConfirm: (options) =>
-    new Promise<boolean>((resolve) => {
+  requestConfirm: async (options) => (await get().requestChoice(options)) === 'confirm',
+
+  requestChoice: (options) =>
+    new Promise<ConfirmChoice>((resolve) => {
       // Resolve any dialog already open (treated as cancelled) before showing.
       const pending = get().confirmRequest
-      if (pending) pending.resolve(false)
+      if (pending) pending.resolve('cancel')
       set({ confirmRequest: { ...options, resolve } })
     }),
 
-  resolveConfirm: (confirmed) => {
+  resolveConfirm: (answer) => {
     const req = get().confirmRequest
-    if (req) req.resolve(confirmed)
+    if (req) req.resolve(answer === 'alternative' ? 'alternative' : answer ? 'confirm' : 'cancel')
     set({ confirmRequest: null })
   },
 
@@ -3029,6 +3403,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
       const workspaces = await window.piDesktop.workspace.list()
       const active = await window.piDesktop.workspace.getActive()
       set({ workspaces, activeWorkspace: active })
+      showActiveProjectTab(get, set)
     } catch {
       // Silent failure
     }
@@ -3208,6 +3583,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         piError: null,
         sessionLoading: live || options?.awaitingSession === true,
       }))
+      showActiveProjectTab(get, set)
       void window.piDesktop.ui.flushPendingPrompts(workspace.id)
       scheduleSessionListRefresh(get)
       if (!live && options?.awaitingSession !== true) {
@@ -3219,7 +3595,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         // advertised). Arm the mid-turn attach so the next turn boundary
         // backfills the prefix the stream buffers never saw.
         const activity = Object.values(get().sessionRuntimes).find((runtime) => runtime.active && runtime.workspaceId === workspaceId)?.activity
-        if (activity === 'working' || activity === 'needs-approval') {
+        if (isRuntimeBusy(activity)) {
           set({ isStreaming: true, reattachedMidTurn: true })
         }
       }
@@ -3236,59 +3612,43 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   removeWorkspace: async (workspaceId) => {
+    const prompt = workspaceRemovalPrompt(get().workspaces.find((w) => w.id === workspaceId), workspaceId, get().piEngine)
+    if (!(await get().requestConfirm(prompt))) return
+    await removeConfirmedWorkspace(get, set, workspaceId)
+  },
+
+  closeProjectTab: async (workspaceId) => {
     const workspace = get().workspaces.find((w) => w.id === workspaceId)
-    const isWorktree = workspace?.kind === 'worktree'
-    const isManagedWorktree = isWorktree && workspace?.managed !== false
-    const linkedTask = workspace?.linkedTask
-    const isTab = isWorktree || !!linkedTask
-    const workspaceLabel = workspace?.name ?? workspaceId
-    const confirmed = await get().requestConfirm({
-      title: isTab ? t('store.confirm.closeTabLabel') : t('store.confirm.removeWorkspaceTitle'),
-      message: linkedTask
-        ? linkedTask.mode === 'isolated'
-          ? t('store.confirm.closeIsolatedLinkedTaskMessage', { name: workspaceLabel })
-          : t('store.confirm.closeInPlaceLinkedTaskMessage', { name: workspaceLabel })
-        : isWorktree
-        ? isManagedWorktree
-          ? t('store.confirm.closeManagedWorktreeMessage', { name: workspaceLabel })
-          : t('store.confirm.closeUnmanagedWorktreeMessage', { name: workspaceLabel })
-        : t('store.confirm.removeWorkspaceMessage', { name: workspaceLabel }),
-      confirmLabel: isTab ? t('store.confirm.closeTabLabel') : t('common.remove'),
-      cancelLabel: t('common.cancel'),
-      danger: true,
+    const prompt = workspaceRemovalPrompt(workspace, workspaceId, get().piEngine)
+    const choice = await get().requestChoice({
+      ...prompt,
+      title: t('store.confirm.closeTabLabel'),
+      message: `${prompt.message}\n\n${t('store.confirm.keepInSidebarHint', { name: workspace?.name ?? workspaceId, agent: engineDisplayName(get().piEngine) })}`,
+      // both choices close the tab, so the red one says remove
+      confirmLabel: t('common.remove'),
+      alternativeLabel: t('store.confirm.keepInSidebarLabel'),
     })
-    if (!confirmed) return
-    // Removing the active workspace closes its preview via the adoption
-    // below — a dirty editor gets the same ask a workspace switch gives it.
-    if (workspaceId === get().activeWorkspace?.id) {
-      if (!(await get().confirmDiscardEditorChanges())) return
+    if (choice === 'confirm') {
+      await removeConfirmedWorkspace(get, set, workspaceId)
+      return
     }
-    const previousActiveId = get().activeWorkspace?.id ?? null
-    try {
-      const result = await window.piDesktop.workspace.remove(workspaceId)
-      await get().loadWorkspaces()
-      get().saveComposerDraft(workspaceId, EMPTY_COMPOSER_DRAFT)
-      set((state) => ({
-        sendQueues: withoutWorkspaceQueue(state.sendQueues, workspaceId),
-        heldSendQueues: state.heldSendQueues.filter((id) => id !== workspaceId),
-      }))
-      adoptMainSideActivation(get, set, previousActiveId)
-      if (result.preservedWorktreePaths) {
-        get().addMessage({
-          id: generateId(),
-          role: 'system',
-          content: t('store.messages.tabClosedWorktreePreserved', { path: result.preservedWorktreePaths.join(', ') }),
-          timestamp: Date.now(),
-        })
-      }
-    } catch (err) {
-      get().addMessage({
-        id: generateId(),
-        role: 'system',
-        content: t('store.messages.removeWorkspaceError', { detail: err instanceof Error ? err.message : String(err) }),
-        timestamp: Date.now(),
-      })
+    if (choice !== 'alternative') return
+    const state = get()
+    if (workspaceId === state.activeWorkspace?.id) {
+      // The project on screen always has a tab: move to a neighbouring tab
+      // first (the next one, else the previous one), the way a browser does.
+      const tabs = projectTabs(state.workspaces, state.projectTabOrder, state.hiddenProjectTabIds)
+      const index = tabs.findIndex((tab) => tab.id === workspaceId)
+      const neighbour = tabs[index + 1] ?? tabs[index - 1]
+      if (!neighbour || neighbour.id === workspaceId) return
+      if (!(await get().activateWorkspace(neighbour.id))) return
     }
+    const latest = get()
+    if (latest.hiddenProjectTabIds.includes(workspaceId) || latest.activeWorkspace?.id === workspaceId) return
+    if (!latest.workspaces.some((w) => w.id === workspaceId)) return
+    const hidden = [...latest.hiddenProjectTabIds, workspaceId]
+    set({ hiddenProjectTabIds: hidden })
+    rememberHiddenProjectTabs(hidden)
   },
 
   renameWorkspace: async (workspaceId, name) => {
@@ -3593,7 +3953,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   archiveSession: async (sessionId) => {
     try {
       const archived = await window.piDesktop.session.archive(sessionId)
-      set({ archivedSessions: archived })
+      // Main unpins an archived session; mirror that without another round trip.
+      set((state) => ({ archivedSessions: archived, pinnedSessions: withoutSession(state.pinnedSessions, sessionId) }))
     } catch (err) {
       get().addMessage({
         id: generateId(),
@@ -3622,12 +3983,11 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
     try {
       const result = await window.piDesktop.session.delete(session.path)
       if (result.ok) {
-        // Refresh list and prune archive entry locally
-        set((state) => {
-          const next = { ...state.archivedSessions }
-          delete next[session.sessionId]
-          return { archivedSessions: next }
-        })
+        // Refresh list and prune the archive and pin entries locally
+        set((state) => ({
+          archivedSessions: withoutSession(state.archivedSessions, session.sessionId),
+          pinnedSessions: withoutSession(state.pinnedSessions, session.sessionId),
+        }))
 
         await get().refreshSessionList()
 
@@ -3660,6 +4020,34 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   toggleShowArchived: () => set((state) => ({ showArchived: !state.showArchived })),
+
+  // ─── Pinned / Unread ──────────────────────────────────────────────────
+
+  loadPinnedSessions: async () => {
+    try {
+      set({ pinnedSessions: await window.piDesktop.session.listPinned() })
+    } catch {
+      // Silent failure — the pin registry is best-effort
+    }
+  },
+
+  pinSession: (sessionId) => applyPinChange(set, get,
+    () => window.piDesktop.session.pin(sessionId),
+    (detail) => t('store.messages.pinError', { detail })),
+
+  unpinSession: (sessionId) => applyPinChange(set, get,
+    () => window.piDesktop.session.unpin(sessionId),
+    (detail) => t('store.messages.unpinError', { detail })),
+
+  loadUnreadSessions: async () => {
+    try {
+      set({ unreadSessions: await window.piDesktop.session.listUnread() })
+    } catch {
+      // Silent failure — the next change event carries the full map
+    }
+  },
+
+  handleUnreadSessions: (map) => set({ unreadSessions: map }),
 
   // ─── Notes ────────────────────────────────────────────────────────────
 
@@ -3699,6 +4087,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   clearPendingInsert: () => set({ pendingInsert: null }),
 
+  stagePickedAttachments: (workspaceId, attachments) => {
+    // A capture that ends after a workspace switch must not land in another composer.
+    if (activeWorkspaceId(get) !== workspaceId) return false
+    set({ pendingInsert: { text: '', nonce: Date.now(), attachments } })
+    return true
+  },
+
   setNotePickerOpen: (open) => set({ notePickerOpen: open }),
 
   // Thinking blocks start closed, so the first command opens them all.
@@ -3729,6 +4124,21 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   dismissUpdate: () => set({ updateDismissed: true }),
+
+  // ─── Git check ────────────────────────────────────────────────────────
+
+  loadGitAvailability: () => applyLatestGitAvailability(set, () => window.piDesktop.gitCheck.get()),
+
+  recheckGitAvailability: async () => {
+    set({ gitCheckRunning: true })
+    try {
+      await applyLatestGitAvailability(set, () => window.piDesktop.gitCheck.recheck())
+    } finally {
+      set({ gitCheckRunning: false })
+    }
+  },
+
+  dismissGitBanner: () => set({ gitBannerDismissed: true }),
 
   // ─── Lineage ──────────────────────────────────────────────────────────
 
@@ -3817,22 +4227,107 @@ useAppStore.subscribe((state, prev) => {
 // Zustand set supports both object and callback forms
 type ZustandSet = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void
 
-/**
- * `current` with one streamed delta placed at its offset, or null when the
- * delta starts past the end of `current`: the view attached in the middle of
- * the message and missed its start. A delta `current` already holds (a
- * snapshot covered it) changes nothing; a delta without an offset appends.
- */
-export function placeStreamedDelta(current: string, delta: string, offset: number | undefined): string | null {
-  if (offset === undefined) return current + delta
-  if (offset > current.length) return null
-  return offset + delta.length <= current.length ? current : current.slice(0, offset) + delta
+/** Keeps the active project's tab shown and drops hidden ids of removed projects. */
+function showActiveProjectTab(get: StoreGet, set: ZustandSet): void {
+  const state = get()
+  const hidden = hiddenTabsAfterActivation(state.hiddenProjectTabIds, state.workspaces, state.activeWorkspace?.id)
+  if (hidden === state.hiddenProjectTabIds) return
+  set({ hiddenProjectTabIds: hidden })
+  rememberHiddenProjectTabs(hidden)
 }
+
+function engineDisplayName(engine: AgentEngineKind): string {
+  return agentEngineLabel(engine) ?? DEFAULT_AGENT_ENGINE_LABEL
+}
+
+function workspaceRemovalPrompt(workspace: Workspace | undefined, workspaceId: string, engine: AgentEngineKind): ConfirmOptions {
+  const isWorktree = workspace?.kind === 'worktree'
+  const isManagedWorktree = isWorktree && workspace?.managed !== false
+  const linkedTask = workspace?.linkedTask
+  const isTab = isWorktree || !!linkedTask
+  const workspaceLabel = workspace?.name ?? workspaceId
+  return {
+    title: isTab ? t('store.confirm.closeTabLabel') : t('store.confirm.removeWorkspaceTitle'),
+    message: linkedTask
+      ? linkedTask.mode === 'isolated'
+        ? t('store.confirm.closeIsolatedLinkedTaskMessage', { name: workspaceLabel })
+        : t('store.confirm.closeInPlaceLinkedTaskMessage', { name: workspaceLabel })
+      : isWorktree
+      ? isManagedWorktree
+        ? t('store.confirm.closeManagedWorktreeMessage', { name: workspaceLabel })
+        : t('store.confirm.closeUnmanagedWorktreeMessage', { name: workspaceLabel })
+      : t('store.confirm.removeWorkspaceMessage', { name: workspaceLabel, agent: engineDisplayName(engine) }),
+    confirmLabel: isTab ? t('store.confirm.closeTabLabel') : t('common.remove'),
+    cancelLabel: t('common.cancel'),
+    danger: true,
+  }
+}
+
+/** Removes a workspace the user agreed to remove; main stops its Pi processes. */
+async function removeConfirmedWorkspace(get: StoreGet, set: ZustandSet, workspaceId: string): Promise<void> {
+  // Removing the active workspace closes its preview via the adoption
+  // below — a dirty editor gets the same ask a workspace switch gives it.
+  if (workspaceId === get().activeWorkspace?.id) {
+    if (!(await get().confirmDiscardEditorChanges())) return
+  }
+  const previousActiveId = get().activeWorkspace?.id ?? null
+  try {
+    const result = await window.piDesktop.workspace.remove(workspaceId)
+    await get().loadWorkspaces()
+    get().saveComposerDraft(workspaceId, EMPTY_COMPOSER_DRAFT)
+    // Main stops the workspace's chats without a closed marker for each.
+    forgetChats(set, get, Object.values(get().sessionRuntimes)
+      .filter((runtime) => runtime.workspaceId === workspaceId)
+      .map((runtime) => runtime.runtimeId))
+    adoptMainSideActivation(get, set, previousActiveId)
+    if (result.preservedWorktreePaths) {
+      get().addMessage({
+        id: generateId(),
+        role: 'system',
+        content: t('store.messages.tabClosedWorktreePreserved', { path: result.preservedWorktreePaths.join(', ') }),
+        timestamp: Date.now(),
+      })
+    }
+  } catch (err) {
+    get().addMessage({
+      id: generateId(),
+      role: 'system',
+      content: t('store.messages.removeWorkspaceError', { detail: err instanceof Error ? err.message : String(err) }),
+      timestamp: Date.now(),
+    })
+  }
+}
+
 
 // Counts committed assistant messages, so a streamed-text snapshot requested
 // for one message is never applied to the next.
 let committedStreamCount = 0
 let streamingTextBackfill: Promise<void> | null = null
+
+/**
+ * Show the status of the restarted process. The caller checked `isCurrent`
+ * before this: the status belongs to the chat on screen. A chat switched to
+ * during the refresh below keeps its own state.
+ */
+async function adoptRestartedPi(
+  set: ZustandSet,
+  get: () => AppState & AppActions,
+  status: PiStatus,
+  isCurrent: () => boolean
+): Promise<void> {
+  set({ piStatus: status.status, piStartupPhase: status.startupPhase ?? null, piPid: status.pid, piError: status.error, piEngine: status.engine ?? 'pi' })
+
+  // Re-read session state after a restart so the status bar's model label
+  // and stats reflect a changed models.json (mirrors startPi). Without this
+  // the label keeps the pre-restart model.
+  if (status.status === 'running') {
+    await get().refreshSessionState()
+    if (!isCurrent()) return
+    await get().refreshSessionStats()
+    if (!isCurrent()) return
+    await get().refreshSessionList()
+  }
+}
 
 /**
  * Fill the start of a message this view missed: after switching back to a
@@ -3858,122 +4353,39 @@ function backfillStreamingText(get: () => AppState & AppActions, set: ZustandSet
     .finally(() => { streamingTextBackfill = null })
 }
 
-const STREAMED_DELTA_FIELDS = {
-  text_delta: 'streamingContent',
-  thinking_delta: 'streamingThinking',
-} as const satisfies Record<string, keyof AppState>
-
 function handleMessageUpdate(
   event: PiMessageUpdateEvent,
   set: ZustandSet,
   get: () => AppState & AppActions,
 ): void {
-  const { assistantMessageEvent } = event
-  // Start/delta events identify the call by its index in the partial message;
-  // only toolcall_end carries the finalized toolCall directly.
-  const partialContent = assistantMessageEvent.partial?.content
-  const toolCall = assistantMessageEvent.toolCall ?? (
-    Array.isArray(partialContent) && assistantMessageEvent.contentIndex !== undefined
-      ? partialContent[assistantMessageEvent.contentIndex] as Record<string, unknown> | undefined
-      : undefined
-  )
-
-  switch (assistantMessageEvent.type) {
-    case 'text_delta':
-    case 'thinking_delta': {
-      const field = STREAMED_DELTA_FIELDS[assistantMessageEvent.type]
-      let missedStart = false
-      set((state) => {
-        const placed = placeStreamedDelta(state[field], assistantMessageEvent.delta ?? '', assistantMessageEvent.offset)
-        if (placed !== null) return { [field]: placed }
-        missedStart = true
-        return {}
-      })
-      if (missedStart) backfillStreamingText(get, set)
-      break
+  let missingPrefix = false
+  set((state) => {
+    const next = applyChatStreamUpdate({
+      content: state.streamingContent,
+      thinking: state.streamingThinking,
+      tools: state.streamingToolCalls,
+    }, event.assistantMessageEvent)
+    missingPrefix = next.missingPrefix
+    return {
+      streamingContent: next.content,
+      streamingThinking: next.thinking,
+      streamingToolCalls: next.tools,
     }
-
-    case 'text_end':
-    case 'thinking_end':
-      // Content is finalized in message_end
-      break
-
-    case 'toolcall_start': {
-      if (toolCall) {
-        const callId = String(toolCall.id ?? '')
-        set((state) => {
-          const newMap = new Map(state.streamingToolCalls)
-          newMap.set(callId, {
-            name: String(toolCall.name ?? 'unknown'),
-            args: '',
-            isExecuting: true,
-            startedAt: Date.now(),
-          })
-          return { streamingToolCalls: newMap }
-        })
-      }
-      break
-    }
-
-    case 'toolcall_delta': {
-      if (toolCall?.id) {
-        set((state) => {
-          const newMap = new Map(state.streamingToolCalls)
-          const existing = newMap.get(String(toolCall.id))
-          if (existing) {
-            newMap.set(String(toolCall.id), {
-              ...existing,
-              args: existing.args + (assistantMessageEvent.delta ?? ''),
-            })
-          }
-          return { streamingToolCalls: newMap }
-        })
-      }
-      break
-    }
-
-    case 'toolcall_end': {
-      if (toolCall?.id) {
-        set((state) => {
-          const newMap = new Map(state.streamingToolCalls)
-          const existing = newMap.get(String(toolCall.id))
-          if (existing) {
-            newMap.set(String(toolCall.id), {
-              ...existing,
-              args: JSON.stringify(toolCall.arguments ?? existing.args),
-            })
-          }
-          return { streamingToolCalls: newMap }
-        })
-      }
-      break
-    }
-  }
+  })
+  if (missingPrefix) backfillStreamingText(get, set)
 }
 
-// Pi and OMP report a plain user stop with exactly these texts; anything else
-// on an aborted turn is a specific reason worth showing (mirrors Pi's own TUI).
-// Not translated: they are compared against the engines' own (English)
-// output, never shown. The "Stopped" mark already tells the user.
-const GENERIC_ABORT_MESSAGES: ReadonlySet<string> = new Set([
-  'Request was aborted', // Pi
-  'Interrupted by user', // OMP
-])
+/** Append the shared transcript notice for an engine event, when it has one. */
+function addEventNotice(event: PiRpcEvent, get: () => AppState & AppActions): void {
+  const content = chatEventNotice(event)
+  if (content) get().addMessage({ id: generateId(), role: 'system', content, timestamp: Date.now() })
+}
 
-/**
- * Error text to surface in chat for a finished assistant message, or null.
- * A provider that rejects before streaming (e.g. HTTP 402) yields an
- * assistant message with stopReason 'error', empty content, and the provider
- * error in errorMessage — without this, the chat shows nothing at all.
- */
-function turnErrorText(message?: Record<string, unknown>): string | null {
-  if (!message || message.role !== 'assistant') return null
-  const errorMessage = typeof message.errorMessage === 'string' ? message.errorMessage : ''
-  if (message.stopReason === 'error') return errorMessage || t('store.messages.unknownError')
-  if (message.stopReason === 'aborted' && errorMessage && !GENERIC_ABORT_MESSAGES.has(errorMessage)) {
-    return errorMessage
-  }
-  return null
+/** Show or clear the compact buttons' spinner until the next state refresh. */
+function setCompacting(set: ZustandSet, isCompacting: boolean): void {
+  set((state) => state.sessionState && state.sessionState.isCompacting !== isCompacting
+    ? { sessionState: { ...state.sessionState, isCompacting } }
+    : {})
 }
 
 function handleTurnComplete(
@@ -3986,7 +4398,7 @@ function handleTurnComplete(
     const newMessages = [...state.messages]
     // Final messages contain the full body, including bytes emitted before a
     // mid-turn attach. Deltas alone can only reconstruct the suffix we saw.
-    const final = !completeTools && Array.isArray(message?.content) ? parseAgentMessage(message) : null
+    const final = !completeTools && Array.isArray(message?.content) ? parseChatMessage(message) : null
     const nativeIds = new Set((Array.isArray(message?.content) ? message.content : [])
       .filter((block: Record<string, unknown>) => block?.type === 'toolCall')
       .map((block: Record<string, unknown>) => block.id))
@@ -4089,13 +4501,7 @@ function handleToolStart(
   set: ZustandSet
 ): void {
   set((state) => {
-    const newMap = new Map(state.streamingToolCalls)
-    newMap.set(event.toolCallId, {
-      name: event.toolName,
-      args: JSON.stringify(event.args),
-      isExecuting: true,
-      startedAt: Date.now(),
-    })
+    const newMap = applyChatToolExecution(state.streamingToolCalls, event)
     const subagentTasks = subagentTasksAfterTool(state, event.toolName, {
       toolCallId: event.toolCallId,
       args: event.args,
@@ -4111,18 +4517,8 @@ function handleToolUpdate(
   event: PiToolExecutionUpdateEvent,
   set: ZustandSet
 ): void {
-  const text = event.partialResult.content
-    .filter((c) => c.type === 'text')
-    .map((c) => c.text ?? '')
-    .join('')
-
   set((state) => {
-    const newMap = new Map(state.streamingToolCalls)
-    const existing = newMap.get(event.toolCallId)
-    newMap.set(event.toolCallId, {
-      ...(existing ?? { name: event.toolName, args: JSON.stringify(event.args), isExecuting: true }),
-      result: text || existing?.result,
-    })
+    const newMap = applyChatToolExecution(state.streamingToolCalls, event)
 
     const subagentTasks = subagentTasksAfterTool(state, event.toolName, {
       toolCallId: event.toolCallId,
@@ -4139,23 +4535,9 @@ function handleToolEnd(
   event: PiToolExecutionEndEvent,
   set: ZustandSet
 ): void {
-  const resultText = event.result.content
-    .filter((c) => c.type === 'text')
-    .map((c) => c.text ?? '')
-    .join('')
-
   set((state) => {
-    const newMap = new Map(state.streamingToolCalls)
-    const existing = newMap.get(event.toolCallId)
-    if (existing) {
-      newMap.set(event.toolCallId, {
-        ...existing,
-        isExecuting: false,
-        isError: event.isError,
-        result: resultText || existing.result,
-        durationMs: existing.startedAt ? Date.now() - existing.startedAt : existing.durationMs,
-      })
-    }
+    const existing = state.streamingToolCalls.get(event.toolCallId)
+    const newMap = applyChatToolExecution(state.streamingToolCalls, event)
 
     const subagentTasks = subagentTasksAfterTool(state, event.toolName, {
       toolCallId: event.toolCallId,
@@ -4182,76 +4564,4 @@ function handleQueueUpdate(
     pendingSteering: event.steering,
     pendingFollowUp: event.followUp,
   })
-}
-
-function handleCompaction(
-  event: PiCompactionStartEvent | PiCompactionEndEvent,
-  set: ZustandSet
-): void {
-  if (event.type === 'compaction_start') {
-    set((state) => ({
-      messages: [
-        ...state.messages,
-        {
-          id: generateId(),
-          role: 'system',
-          content: t('store.messages.compactingContext', { reason: (event as PiCompactionStartEvent).reason }),
-          timestamp: Date.now(),
-        },
-      ],
-    }))
-  } else {
-    const endEvent = event as PiCompactionEndEvent
-    if (endEvent.aborted) {
-      set((state) => ({
-        messages: [
-          ...state.messages,
-          {
-            id: generateId(),
-            role: 'system',
-            content: t('store.messages.compactionAborted'),
-            timestamp: Date.now(),
-          },
-        ],
-      }))
-    } else if (endEvent.result) {
-      set((state) => ({
-        messages: [
-          ...state.messages,
-          {
-            id: generateId(),
-            role: 'system',
-            content: t('store.messages.contextCompacted'),
-            timestamp: Date.now(),
-          },
-        ],
-      }))
-    }
-  }
-}
-
-function handleAutoRetry(
-  event: PiAutoRetryStartEvent | PiAutoRetryEndEvent,
-  set: ZustandSet,
-  get: () => AppState & AppActions
-): void {
-  if (event.type === 'auto_retry_start') {
-    set((state) => ({
-      messages: [
-        ...state.messages,
-        {
-          id: generateId(),
-          role: 'system',
-          content: t('store.messages.retrying', { attempt: event.attempt, maxAttempts: event.maxAttempts, detail: event.errorMessage }),
-          timestamp: Date.now(),
-        },
-      ],
-    }))
-  } else {
-    const endEvent = event as PiAutoRetryEndEvent
-    if (!endEvent.success) {
-      set({ isStreaming: false })
-      get().refreshSessionStats()
-    }
-  }
 }

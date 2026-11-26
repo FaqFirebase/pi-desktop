@@ -19,6 +19,7 @@ import { useAppStore } from '../store'
 import piLogo from '../assets/pi-logo.svg'
 import { formatGitStatus } from './review-rail'
 import { StatsPanel } from './stats-panel'
+import { GitMissingBanner } from './git-missing-banner'
 import type { GitFileStatus, SessionListItem } from '../../../shared/ipc-contracts'
 import { workspaceNameFromFolderPath } from '../../../shared/folder-drop'
 import { pathsEqual } from '../../../shared/path-compare'
@@ -345,6 +346,7 @@ function HomeScreenInfo(): React.JSX.Element {
     <div className="flex-1 overflow-y-auto">
       <div className={clsx('mx-auto max-w-[952px] px-8 py-12', busy && 'pointer-events-none opacity-60')}>
         <PiErrorBanner />
+        <GitMissingBanner placement="home" />
 
         <div className="mb-6 flex flex-col items-center text-center">
           <img src={piLogo} alt={PI_DESKTOP_PRODUCT_NAME} className="h-16 w-16" />

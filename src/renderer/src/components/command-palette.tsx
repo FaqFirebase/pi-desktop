@@ -24,6 +24,7 @@ import { getSessionTitle } from '../utils/session-title'
 import { isImagePath } from './chat-file-link'
 import type { FileSearchResult } from '../../../shared/ipc-contracts'
 import { isImeComposing } from '../utils/ime-composing'
+import { claimEscape, useEscapeSurface } from '../utils/escape-key'
 
 const FILE_SEARCH_DEBOUNCE_MS = 150
 
@@ -122,6 +123,7 @@ export function CommandPalette(): React.JSX.Element | null {
     }, FILE_SEARCH_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
   }, [open, switcherQuery, searchGuard])
+  const escapeSurface = useEscapeSurface(open)
 
   if (!open) return null
 
@@ -165,8 +167,7 @@ export function CommandPalette(): React.JSX.Element | null {
 
   const handleKeyDown = (e: React.KeyboardEvent): void => {
     if (isImeComposing(e.nativeEvent)) return
-    if (e.key === 'Escape') {
-      e.preventDefault()
+    if (claimEscape(e.nativeEvent, escapeSurface)) {
       close()
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()

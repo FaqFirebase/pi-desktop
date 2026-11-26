@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdir, mkdtemp, readFile, writeFile } from 'fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join, resolve } from 'path'
-import { tmpdir } from 'os'
 import {
   GUI_DATA_ENV_VAR,
   GUI_DATA_FILES,
@@ -13,7 +12,9 @@ import {
   getLegacyGuiDataPath,
   getLegacyGuiDataDirs,
   migrateLegacyGuiData,
+  usesOwnInstanceLock,
 } from './app-data-paths'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 test('getCanonicalUserDataDir appends the canonical dir name', () => {
   assert.equal(getCanonicalUserDataDir('/home/test/.config'), '/home/test/.config/pi-desktop')
@@ -38,6 +39,37 @@ test('getLegacyGuiDataDirs lists home and electron legacy dirs', () => {
   )
 })
 
+test('getLegacyGuiDataDirs also checks HOME when it differs from the home directory', () => {
+  // Windows with Git Bash or MSYS: os.homedir() is USERPROFILE, but earlier
+  // versions read HOME first and may have written the legacy folder there.
+  assert.deepEqual(
+    getLegacyGuiDataDirs({ homeDir: 'C:/Users/test', envHomeDir: 'D:/msys/home/test' }),
+    ['D:/msys/home/test/.pi-desktop-gui', 'C:/Users/test/.pi-desktop-gui'],
+  )
+  assert.deepEqual(
+    getLegacyGuiDataDirs({ homeDir: '/home/test', envHomeDir: '/home/test' }),
+    ['/home/test/.pi-desktop-gui'],
+    'one home is listed once',
+  )
+})
+
+test('migrateLegacyGuiData finds legacy data under HOME when the home directory differs', async () => {
+  const tmp = makeTempDir('pi-desktop-app-data-')
+  const homeDir = join(tmp, 'profile')
+  const envHomeDir = join(tmp, 'msys-home')
+  const userDataDir = join(tmp, 'config', 'pi-desktop')
+  const legacySettings = join(envHomeDir, '.pi-desktop-gui', 'settings.json')
+  await mkdir(join(legacySettings, '..'), { recursive: true })
+  await writeFile(legacySettings, '{"theme":"light"}', 'utf-8')
+
+  try {
+    await migrateLegacyGuiData({ homeDir, envHomeDir, userDataDir, files: ['settings.json'] })
+    assert.equal(await readFile(getGuiDataPath('settings.json', { userDataDir }), 'utf-8'), '{"theme":"light"}')
+  } finally {
+    await rm(tmp, { recursive: true, force: true })
+  }
+})
+
 test('getExternalGuiDataDir returns the externally-set override as an absolute path', () => {
   assert.equal(getExternalGuiDataDir({}), undefined)
   assert.equal(getExternalGuiDataDir({ [GUI_DATA_ENV_VAR]: '' }), undefined)
@@ -49,6 +81,25 @@ test('getExternalGuiDataDir returns the externally-set override as an absolute p
     getExternalGuiDataDir({ [GUI_DATA_ENV_VAR]: 'scratch-profile' }),
     resolve('scratch-profile')
   )
+})
+
+test('usesOwnInstanceLock: only a data folder of its own gets a lock of its own', () => {
+  const canonical = '/home/test/.config/pi-desktop'
+  // A normal launch shares the one lock, as it always did.
+  assert.equal(usesOwnInstanceLock(undefined, canonical, 'linux'), false)
+  // A launcher's own folder gets its own lock.
+  assert.equal(usesOwnInstanceLock('/home/test/accounts/work', canonical, 'linux'), true)
+  // Pointed at the canonical folder, it must share the lock a normal launch holds.
+  assert.equal(usesOwnInstanceLock(canonical, canonical, 'linux'), false)
+  assert.equal(usesOwnInstanceLock(`${canonical}/`, canonical, 'linux'), false)
+  // A folder inside the canonical one is a different folder.
+  assert.equal(usesOwnInstanceLock(`${canonical}/work`, canonical, 'linux'), true)
+})
+
+test('usesOwnInstanceLock compares folders by the platform rules', () => {
+  const canonical = 'C:\\Users\\test\\AppData\\Roaming\\pi-desktop'
+  assert.equal(usesOwnInstanceLock('c:\\users\\TEST\\appdata\\roaming\\Pi-Desktop', canonical, 'win32'), false)
+  assert.equal(usesOwnInstanceLock('/home/test/.config/Pi-Desktop', '/home/test/.config/pi-desktop', 'linux'), true)
 })
 
 test('getGuiDataPath / getLegacyGuiDataPath resolve under the right root', () => {
@@ -67,7 +118,7 @@ test('getGuiDataPath / getLegacyGuiDataPath resolve under the right root', () =>
 })
 
 test('migrateLegacyGuiData copies legacy files but never overwrites existing', async () => {
-  const tmp = await mkdtemp(join(tmpdir(), 'pi-desktop-app-data-'))
+  const tmp = makeTempDir('pi-desktop-app-data-')
   const homeDir = join(tmp, 'home')
   const appDataDir = join(tmp, 'config')
   const userDataDir = getCanonicalUserDataDir(appDataDir)

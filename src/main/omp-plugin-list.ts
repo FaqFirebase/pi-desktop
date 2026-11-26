@@ -1,4 +1,5 @@
 import type { InstalledPackage } from '../shared/ipc-contracts'
+import { parseCliJsonObject } from './cli-json'
 
 /**
  * Parsing for `omp plugin list --json`.
@@ -14,7 +15,7 @@ import type { InstalledPackage } from '../shared/ipc-contracts'
  * `omp plugin uninstall` expects, so it doubles as the row's source.
  */
 export function parseOmpPluginList(output: string, pluginsDir: string): InstalledPackage[] {
-  const parsed = parseListJson(output)
+  const parsed = parseCliJsonObject(output)
   if (!parsed) return []
 
   const packages: InstalledPackage[] = []
@@ -43,7 +44,7 @@ export interface OmpNpmPlugin {
 
 /** The `npm` rows of `omp plugin list --json`; marketplace rows are skipped. */
 export function parseOmpNpmPlugins(output: string): OmpNpmPlugin[] {
-  const parsed = parseListJson(output)
+  const parsed = parseCliJsonObject(output)
   const rows = parsed?.npm
   if (!Array.isArray(rows)) return []
 
@@ -63,25 +64,6 @@ export function parseOmpNpmPlugins(output: string): OmpNpmPlugin[] {
     })
   }
   return plugins
-}
-
-function parseListJson(output: string): Record<string, unknown> | null {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(output)
-  } catch {
-    // The CLI may prefix warnings; retry on the outermost JSON object.
-    const start = output.indexOf('{')
-    const end = output.lastIndexOf('}')
-    if (start === -1 || end <= start) return null
-    try {
-      parsed = JSON.parse(output.slice(start, end + 1))
-    } catch {
-      return null
-    }
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
-  return parsed as Record<string, unknown>
 }
 
 function ompPluginEntry(entry: unknown, pluginsDir: string): InstalledPackage | null {

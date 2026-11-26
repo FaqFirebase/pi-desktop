@@ -1,18 +1,19 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtempSync, writeFileSync } from 'fs'
+import { writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { GUI_DATA_ENV_VAR } from './app-data-paths'
 import { appLog } from './app-log'
 import { loadPiDotenv, piDotenvPath, readPiDotenv } from './pi-dotenv'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 // appLog resolves its file under the GUI data dir on its first entry — keep the
 // warning test's log out of the real data dir.
 process.env[GUI_DATA_ENV_VAR] = join(tmpdir(), `pi-dotenv-log-${process.pid}`)
 
 function writeDotenv(text: string): string {
-  const path = join(mkdtempSync(join(tmpdir(), 'pi-dotenv-')), '.env')
+  const path = join(makeTempDir('pi-dotenv-'), '.env')
   writeFileSync(path, text)
   return path
 }
@@ -42,7 +43,7 @@ test('loadPiDotenv never overrides a variable the app inherited', () => {
 
 test('loadPiDotenv logs an unreadable file and yields nothing', () => {
   // A directory in place of the file fails to read with EISDIR, not ENOENT.
-  const dir = mkdtempSync(join(tmpdir(), 'pi-dotenv-'))
+  const dir = makeTempDir('pi-dotenv-')
   assert.deepEqual(loadPiDotenv(dir), {})
   const warning = appLog.getRecent().find((entry) => entry.level === 'warn' && entry.message === `Could not read ${dir}`)
   assert.ok(warning, 'the unreadable file is surfaced in the app log')

@@ -95,43 +95,43 @@ function normalize(path: string): string {
 }
 
 /**
- * Open the file referenced by inline-code text. Images open in the image viewer
- * pane; other files open in the code editor. Absolute paths are read directly
- * (may live outside the workspace); relative names are resolved by searching the
- * workspace on basename. No-op if nothing resolves.
+ * The file inline-code text refers to. Absolute paths count only inside the
+ * active workspace (the code editor reads paths there; the HTML preview loads
+ * via file:// so it works regardless), with the basename as relativePath so
+ * the header stays readable and language/preview detection still works.
+ * Relative names are resolved by searching the workspace on basename. Null
+ * when nothing resolves.
  */
-export async function openFileFromChat(text: string): Promise<void> {
+export async function resolveChatFileTarget(text: string): Promise<Omit<PreviewTarget, 'kind'> | null> {
   const original = text.trim()
   const raw = original.replace(/\\/g, '/').replace(/^\.\//, '')
   const base = raw.split('/').pop() ?? raw
-  if (!base) return
+  if (!base) return null
 
   try {
-    // Absolute path: open it directly rather than searching the workspace.
-    // The code editor reads paths inside the workspace; the HTML preview loads
-    // via file:// so it works regardless. relativePath is the basename so the
-    // header stays readable and language/preview detection still works.
     if (isAbsolutePath(raw)) {
-      // Only open absolute paths that live inside the active workspace.
-      if (!isInsideWorkspace(raw)) return
-      await openFilePreview({ name: base, path: original, relativePath: base })
-      return
+      return isInsideWorkspace(raw) ? { name: base, path: original, relativePath: base } : null
     }
 
     const results = await window.piDesktop.files.search(base)
-    if (results.length === 0) return
-
     const wanted = normalize(raw)
     const match =
       results.find((r) => normalize(r.relativePath) === wanted) ??
       results.find((r) => normalize(r.relativePath).endsWith('/' + wanted)) ??
       results.find((r) => r.name.toLowerCase() === base.toLowerCase()) ??
       results[0]
-
-    if (!match) return
-
-    await openFilePreview({ name: match.name, path: match.path, relativePath: match.relativePath })
+    return match ? { name: match.name, path: match.path, relativePath: match.relativePath } : null
   } catch {
-    // File service unavailable or no active workspace — silently ignore.
+    // File service unavailable or no active workspace.
+    return null
   }
+}
+
+/**
+ * Open the file referenced by inline-code text. Images open in the image viewer
+ * pane; other files open in the code editor. No-op if nothing resolves.
+ */
+export async function openFileFromChat(text: string): Promise<void> {
+  const target = await resolveChatFileTarget(text)
+  if (target) await openFilePreview(target)
 }

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, mkdir, writeFile, rm, utimes, stat } from 'fs/promises'
-import { tmpdir } from 'os'
+import { mkdir, writeFile, rm, utimes, stat } from 'fs/promises'
 import { join } from 'path'
 import { ActivityStatsStore } from './activity-stats'
+import { IMPORTED_MESSAGE_MODEL, IMPORTED_MESSAGE_PROVIDER } from '../shared/chat-import'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 // Fixed reference instant so window math is deterministic.
 const NOW = new Date('2026-07-05T12:00:00')
@@ -15,6 +16,7 @@ function isoOn(day: string, hour = 12): string {
 interface MsgOpts {
   role?: 'user' | 'assistant'
   model?: string
+  provider?: string
   input?: number
   output?: number
   cacheRead?: number
@@ -23,17 +25,18 @@ interface MsgOpts {
 }
 
 function messageLine(day: string, opts: MsgOpts = {}): string {
-  const { role = 'user', model, input = 0, output = 0, cacheRead = 0, cacheWrite = 0, hour = 12 } = opts
+  const { role = 'user', model, provider, input = 0, output = 0, cacheRead = 0, cacheWrite = 0, hour = 12 } = opts
   const message: Record<string, unknown> = { role }
   if (role === 'assistant' && model) {
     message.model = model
+    if (provider) message.provider = provider
     message.usage = { input, output, cacheRead, cacheWrite }
   }
   return JSON.stringify({ type: 'message', timestamp: isoOn(day, hour), message })
 }
 
 async function makeDirs(): Promise<{ root: string; storePath: string }> {
-  const base = await mkdtemp(join(tmpdir(), 'stats-'))
+  const base = makeTempDir('stats-')
   const root = join(base, 'sessions')
   await mkdir(root, { recursive: true })
   return { root, storePath: join(base, 'activity-stats.json') }
@@ -348,6 +351,21 @@ test('a version 1 store re-parses present files and keeps deleted ones', async (
   assert.equal(year.sessions, 2)
   assert.equal(year.totalTokens, 1170 + 5)
   assert.equal(year.models[0].cacheRead, 1000)
+
+  await rm(root, { recursive: true, force: true })
+})
+
+test('imported assistant messages count but add no model bucket', async () => {
+  const { root, storePath } = await makeDirs()
+  await writeFile(
+    join(root, 's1.jsonl'),
+    messageLine('2026-07-04', { role: 'assistant', model: IMPORTED_MESSAGE_MODEL, provider: IMPORTED_MESSAGE_PROVIDER })
+  )
+
+  const store = new ActivityStatsStore({ sessionsRoots: [root], storePath })
+  const year = (await store.computeStats(NOW)).ranges['365']
+  assert.equal(year.messages, 1)
+  assert.equal(year.models.some((m) => m.model === IMPORTED_MESSAGE_MODEL), false)
 
   await rm(root, { recursive: true, force: true })
 })

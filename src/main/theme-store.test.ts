@@ -1,13 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, readFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { writeFile, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   listUserThemes, saveUserTheme, deleteUserTheme, installThemeFromUrl, fetchGalleryThemes,
   fetchGalleryImage,
 } from './theme-store'
 import { THEME_SCHEMA_V1, type ThemeFile } from '../shared/theme/theme-file'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 const theme = (name: string): ThemeFile => ({
   $schema: THEME_SCHEMA_V1, name, kind: 'dark',
@@ -18,7 +18,7 @@ const theme = (name: string): ThemeFile => ({
 })
 
 async function freshDir(): Promise<string> {
-  return mkdtemp(join(tmpdir(), 'pi-themes-'))
+  return makeTempDir('pi-themes-')
 }
 
 test('save + list round-trip', async () => {

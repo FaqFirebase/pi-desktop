@@ -1,0 +1,127 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { mkdir, readFile, readdir, stat, writeFile } from 'fs/promises'
+import { existsSync } from 'fs'
+import { basename, dirname, join } from 'path'
+import { ApiKeyStore, MAX_API_KEY_LENGTH, normalizeApiKey } from './api-key-store'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
+
+const OWNER_ONLY_MODE = 0o600
+const PERMISSION_BITS = 0o777
+
+async function tempKeyPath(): Promise<string> {
+  const dir = makeTempDir('pi-api-key-')
+  return join(dir, 'api-key')
+}
+
+test('a pasted key keeps its value and loses surrounding whitespace', () => {
+  assert.equal(normalizeApiKey('  ts_live_abc123  \n'), 'ts_live_abc123')
+})
+
+test('an empty or blank key is rejected', () => {
+  assert.equal(normalizeApiKey(''), null)
+  assert.equal(normalizeApiKey('   '), null)
+})
+
+test('a value that is not a string is rejected', () => {
+  assert.equal(normalizeApiKey(undefined), null)
+  assert.equal(normalizeApiKey(42), null)
+})
+
+test('a key with inner whitespace or control characters is rejected', () => {
+  assert.equal(normalizeApiKey('ts_live abc'), null)
+  assert.equal(normalizeApiKey('ts_live\nabc'), null)
+  assert.equal(normalizeApiKey('ts_live\0abc'), null)
+})
+
+test('a key longer than the limit is rejected', () => {
+  assert.equal(normalizeApiKey('k'.repeat(MAX_API_KEY_LENGTH)), 'k'.repeat(MAX_API_KEY_LENGTH))
+  assert.equal(normalizeApiKey('k'.repeat(MAX_API_KEY_LENGTH + 1)), null)
+})
+
+test('no key is saved until the user saves one', async () => {
+  const path = await tempKeyPath()
+  assert.equal(new ApiKeyStore(() => path).getSavedKey(), null)
+})
+
+test('a saved key is written to its own file and read back by a new store', async () => {
+  const path = await tempKeyPath()
+  const store = new ApiKeyStore(() => path)
+  assert.equal(await store.save('  ts_live_abc  '), true)
+  assert.equal(store.getSavedKey(), 'ts_live_abc')
+  assert.equal(await readFile(path, 'utf8'), 'ts_live_abc\n')
+  assert.equal(new ApiKeyStore(() => path).getSavedKey(), 'ts_live_abc')
+})
+
+test('the key file is readable by its owner only', { skip: process.platform === 'win32' }, async () => {
+  const path = await tempKeyPath()
+  await new ApiKeyStore(() => path).save('ts_live_abc')
+  assert.equal((await stat(path)).mode & PERMISSION_BITS, OWNER_ONLY_MODE)
+})
+
+test('saving again replaces the key and keeps the file owner-only', { skip: process.platform === 'win32' }, async () => {
+  const path = await tempKeyPath()
+  const store = new ApiKeyStore(() => path)
+  await store.save('ts_live_first')
+  await store.save('ts_live_second')
+  assert.equal(new ApiKeyStore(() => path).getSavedKey(), 'ts_live_second')
+  assert.equal((await stat(path)).mode & PERMISSION_BITS, OWNER_ONLY_MODE)
+})
+
+test('an invalid key is refused and nothing is written', async () => {
+  const path = await tempKeyPath()
+  const store = new ApiKeyStore(() => path)
+  assert.equal(await store.save('has space'), false)
+  assert.equal(existsSync(path), false)
+  assert.equal(store.getSavedKey(), null)
+})
+
+test('a save that fails leaves no stray copy of the key', async () => {
+  const path = await tempKeyPath()
+  // A non-empty folder where the key file belongs makes the final rename fail.
+  await mkdir(join(path, 'blocker'), { recursive: true })
+  const store = new ApiKeyStore(() => path)
+  await assert.rejects(store.save('ts_live_abc'))
+  assert.deepEqual(await readdir(dirname(path)), [basename(path)])
+  assert.equal(store.getSavedKey(), null)
+})
+
+test('clearing removes the file and the cached key', async () => {
+  const path = await tempKeyPath()
+  const store = new ApiKeyStore(() => path)
+  await store.save('ts_live_abc')
+  await store.clear()
+  assert.equal(existsSync(path), false)
+  assert.equal(store.getSavedKey(), null)
+})
+
+test('clearing when no key is saved succeeds', async () => {
+  const path = await tempKeyPath()
+  const store = new ApiKeyStore(() => path)
+  await store.clear()
+  assert.equal(store.getSavedKey(), null)
+})
+
+test('a file that does not hold a valid key reads as no key', async () => {
+  const path = await tempKeyPath()
+  await writeFile(path, 'not a key\n')
+  assert.equal(new ApiKeyStore(() => path).getSavedKey(), null)
+})
+
+test('a fresh read sees a key another program wrote or removed after the first read', async () => {
+  const path = await tempKeyPath()
+  const store = new ApiKeyStore(() => path)
+  assert.equal(await store.readSavedKey(), null)
+  await writeFile(path, 'sk-written-outside\n', { mode: OWNER_ONLY_MODE })
+  assert.equal(store.getSavedKey(), null)
+  assert.equal(await store.readSavedKey(), 'sk-written-outside')
+  assert.equal(store.getSavedKey(), 'sk-written-outside')
+  await writeFile(path, 'not a key\n')
+  assert.equal(await store.readSavedKey(), null)
+})
+
+test('a fresh read reports a key file it cannot read instead of sending no key', async () => {
+  const path = await tempKeyPath()
+  await mkdir(path)
+  await assert.rejects(new ApiKeyStore(() => path).readSavedKey(), { code: 'EISDIR' })
+})

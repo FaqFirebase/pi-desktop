@@ -1,5 +1,5 @@
 import { useAppStore } from '../store'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, AlertCircle, HelpCircle, EyeOff, Eye } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -9,6 +9,10 @@ import {
   splitPromptText,
 } from './extension-ui-dialog-helpers'
 import { isImeComposing } from '../utils/ime-composing'
+import { claimEscape, useEscapeSurface } from '../utils/escape-key'
+import { useEscapeToClose } from '../hooks'
+import { useChatSession } from '../chat-session-context'
+import type { PiExtensionUiRequest } from '../../../shared/ipc-contracts'
 
 // Stacking tiers for the two extension-UI surfaces, which can be on screen at
 // the same time. The toast MUST outrank the dialog's full-screen backdrop: at
@@ -24,11 +28,40 @@ const NOTIFY_TOAST_TIMEOUT_MS = 5000
 const KEY_LISTENER_OPTIONS: AddEventListenerOptions = { capture: true }
 
 export function ExtensionUiDialog(): React.JSX.Element | null {
-  const request = useAppStore((state) => state.extensionUiRequest)
-  const notify = useAppStore((state) => state.extensionNotify)
-  const respondExtensionUi = useAppStore((state) => state.respondExtensionUi)
-  const dismissExtensionUi = useAppStore((state) => state.dismissExtensionUi)
-  const dismissExtensionNotify = useAppStore((state) => state.dismissExtensionNotify)
+  const { composer } = useChatSession()
+  return <SessionExtensionUiDialog key={composer.scopeKey} />
+}
+
+function SessionExtensionUiDialog(): React.JSX.Element | null {
+  const { t } = useTranslation()
+  const { approval } = useChatSession()
+  const { request, notify, dismissNotify: dismissExtensionNotify, hideSurface } = approval
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null)
+  const [answerError, setAnswerError] = useState<{ id: string; message: string } | null>(null)
+  const pending = useRef<string | null>(null)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+  const answering = approval.answering || (request !== null && pendingRequestId === request.id)
+  const answer = async (response?: Record<string, unknown>): Promise<void> => {
+    if (!request || approval.answering || pending.current === request.id) return
+    pending.current = request.id
+    setPendingRequestId(request.id)
+    setAnswerError(null)
+    try {
+      if (response === undefined) await approval.cancel()
+      else await approval.respond(request.id, response)
+    } catch (error) {
+      if (mounted.current) setAnswerError({ id: request.id, message: error instanceof Error ? error.message : String(error) })
+    } finally {
+      if (pending.current === request.id) {
+        pending.current = null
+        if (mounted.current) setPendingRequestId(null)
+      }
+    }
+  }
 
   // Temporary hide (issue #61): the prompt stays unanswered in the store while
   // the user reads the chat behind it. Keyed by request id so a new prompt is
@@ -36,26 +69,35 @@ export function ExtensionUiDialog(): React.JSX.Element | null {
   // any click on the pill.
   const [hiddenRequestId, setHiddenRequestId] = useState<string | null>(null)
   const hidden = request !== null && hiddenRequestId === request.id
-  const hide = (): void => setHiddenRequestId(request?.id ?? null)
+  const hide = (): void => {
+    if (approval.hideSurface) approval.hideSurface()
+    else setHiddenRequestId(request?.id ?? null)
+  }
   const show = (): void => setHiddenRequestId(null)
 
+  // Escape hides the shown prompt (or the whole surface that can hide), unless
+  // a surface opened above it takes the press.
+  const escapeSurface = useEscapeSurface(request !== null && (hideSurface !== undefined || !hidden))
   useEffect(() => {
     if (!request) return
     const onKey = (e: KeyboardEvent): void => {
       if (isImeComposing(e)) return
       if (isDialogToggleKey(e)) {
         e.preventDefault()
-        setHiddenRequestId((current) => (current === request.id ? null : request.id))
-      } else if (e.key === 'Escape' && hiddenRequestId !== request.id) {
-        e.preventDefault()
-        setHiddenRequestId(request.id)
+        e.stopPropagation()
+        if (hideSurface) hideSurface()
+        else setHiddenRequestId((current) => (current === request.id ? null : request.id))
+      } else if (claimEscape(e, escapeSurface)) {
+        e.stopPropagation()
+        if (hideSurface) hideSurface()
+        else setHiddenRequestId(request.id)
       }
     }
     // Capture phase: the chat's own Escape handler (abort the turn) runs
     // later in the bubble phase and skips a press this handler consumed.
     window.addEventListener('keydown', onKey, KEY_LISTENER_OPTIONS)
     return () => window.removeEventListener('keydown', onKey, KEY_LISTENER_OPTIONS)
-  }, [request, hiddenRequestId])
+  }, [request, hideSurface, escapeSurface])
 
   // The toast lives in its own store slot so it can coexist with a blocking
   // dialog instead of clobbering it; dismissal only touches the toast slot.
@@ -71,38 +113,42 @@ export function ExtensionUiDialog(): React.JSX.Element | null {
   // user already typed into an input or editor survives the hide.
   const dialog = ((): React.JSX.Element | null => {
     if (!request) return null
-    const frame = { onCancel: dismissExtensionUi, onHide: hide, hidden }
+    const frame = { onCancel: () => void answer(), onHide: hide, hidden, answering }
     switch (request.method) {
       case 'select':
         return (
           <SelectDialog
+            key={request.id}
             request={request}
-            onSelect={(value) => respondExtensionUi(request.id, { value })}
+            onSelect={(value) => void answer({ value })}
             {...frame}
           />
         )
       case 'confirm':
         return (
           <ConfirmDialog
+            key={request.id}
             request={request}
-            onConfirm={() => respondExtensionUi(request.id, { confirmed: true })}
-            onDeny={() => respondExtensionUi(request.id, { confirmed: false })}
+            onConfirm={() => void answer({ confirmed: true })}
+            onDeny={() => void answer({ confirmed: false })}
             {...frame}
           />
         )
       case 'input':
         return (
           <InputDialog
+            key={request.id}
             request={request}
-            onSubmit={(value) => respondExtensionUi(request.id, { value })}
+            onSubmit={(value) => void answer({ value })}
             {...frame}
           />
         )
       case 'editor':
         return (
           <EditorDialog
+            key={request.id}
             request={request}
-            onSubmit={(value) => respondExtensionUi(request.id, { value })}
+            onSubmit={(value) => void answer({ value })}
             {...frame}
           />
         )
@@ -115,6 +161,11 @@ export function ExtensionUiDialog(): React.JSX.Element | null {
 
   return (
     <>
+      {request && answerError?.id === request.id && (
+        <div role="alert" className="fixed left-4 right-4 top-4 rounded-lg border border-error bg-surface px-3 py-2 text-sm text-error" style={{ zIndex: NOTIFY_TOAST_Z_INDEX + 1 }}>
+          {t('store.messages.error', { detail: answerError.message })}
+        </div>
+      )}
       {toast}
       {dialog}
       {hidden && <HiddenPromptPill onShow={show} />}
@@ -181,11 +232,12 @@ function NotifyToast({
 
 // ─── Select Dialog ───────────────────────────────────────────────────────────
 
-/** Cancel answers the prompt with a deny; hide keeps it pending off-screen. */
+/** Cancel answers the prompt; hide keeps it pending off-screen. */
 interface DialogFrameProps {
   onCancel: () => void
   onHide: () => void
   hidden: boolean
+  answering: boolean
 }
 
 function SelectDialog({
@@ -194,14 +246,16 @@ function SelectDialog({
   onCancel,
   onHide,
   hidden,
+  answering,
 }: DialogFrameProps & {
-  request: { id: string; title?: string; options?: string[]; timeout?: number }
+  request: PiExtensionUiRequest
   onSelect: (value: string) => void
 }): React.JSX.Element {
   const { t } = useTranslation()
   return (
     <DialogOverlay hidden={hidden} onBackdropClick={onHide}>
-      <DialogBox prompt={request.title ?? t('chat.extensionUi.selectFallbackTitle')} onCancel={onCancel} onHide={onHide}>
+      <DialogBox prompt={request.title ?? t('chat.extensionUi.selectFallbackTitle')} onCancel={onCancel} onHide={onHide} answering={answering}>
+        <PromptDetails request={request} />
         <div className="space-y-1">
           {(request.options ?? []).map((option) => (
             <button
@@ -228,16 +282,17 @@ function ConfirmDialog({
   onCancel,
   onHide,
   hidden,
+  answering,
 }: DialogFrameProps & {
-  request: { id: string; title?: string; message?: string }
+  request: PiExtensionUiRequest
   onConfirm: () => void
   onDeny: () => void
 }): React.JSX.Element {
   const { t } = useTranslation()
   return (
     <DialogOverlay hidden={hidden} onBackdropClick={onHide}>
-      <DialogBox prompt={request.title ?? t('common.confirm')} onCancel={onCancel} onHide={onHide}>
-        {request.message && <PromptBody text={request.message} />}
+      <DialogBox prompt={request.title ?? t('common.confirm')} onCancel={onCancel} onHide={onHide} answering={answering}>
+        <PromptDetails request={request} />
         <div className="flex justify-end gap-2">
           <button
             onClick={onDeny}
@@ -265,16 +320,18 @@ function InputDialog({
   onCancel,
   onHide,
   hidden,
+  answering,
 }: DialogFrameProps & {
-  request: { id: string; title?: string; placeholder?: string }
+  request: PiExtensionUiRequest
   onSubmit: (value: string) => void
 }): React.JSX.Element {
   const { t } = useTranslation()
-  const [value, setValue] = useState('')
+  const [value, setValue] = useState(request.prefill ?? '')
 
   return (
     <DialogOverlay hidden={hidden} onBackdropClick={onHide}>
-      <DialogBox prompt={request.title ?? t('chat.extensionUi.inputFallbackTitle')} onCancel={onCancel} onHide={onHide}>
+      <DialogBox prompt={request.title ?? t('chat.extensionUi.inputFallbackTitle')} onCancel={onCancel} onHide={onHide} answering={answering}>
+        <PromptDetails request={request} />
         <input
           type="text"
           placeholder={request.placeholder ?? ''}
@@ -283,7 +340,11 @@ function InputDialog({
           autoFocus
           className="mb-4 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-primary placeholder:text-faint focus:border-focus focus:outline-none"
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !isImeComposing(e.nativeEvent)) onSubmit(value)
+            if (e.key === 'Enter' && !isImeComposing(e.nativeEvent)) {
+              e.preventDefault()
+              e.stopPropagation()
+              onSubmit(value)
+            }
           }}
         />
         <div className="flex justify-end gap-2">
@@ -313,8 +374,9 @@ function EditorDialog({
   onCancel,
   onHide,
   hidden,
+  answering,
 }: DialogFrameProps & {
-  request: { id: string; title?: string; prefill?: string }
+  request: PiExtensionUiRequest
   onSubmit: (value: string) => void
 }): React.JSX.Element {
   const { t } = useTranslation()
@@ -322,7 +384,8 @@ function EditorDialog({
 
   return (
     <DialogOverlay hidden={hidden} onBackdropClick={onHide}>
-      <DialogBox prompt={request.title ?? t('chat.extensionUi.editFallbackTitle')} onCancel={onCancel} onHide={onHide} wide>
+      <DialogBox prompt={request.title ?? t('chat.extensionUi.editFallbackTitle')} onCancel={onCancel} onHide={onHide} answering={answering} wide>
+        <PromptDetails request={request} />
         <textarea
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -359,17 +422,8 @@ export function AppConfirmDialog(): React.JSX.Element | null {
   const request = useAppStore((state) => state.confirmRequest)
   const resolveConfirm = useAppStore((state) => state.resolveConfirm)
 
-  useEffect(() => {
-    if (!request) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && !isImeComposing(e)) {
-        e.preventDefault()
-        resolveConfirm(false)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [request, resolveConfirm])
+  const decline = useCallback(() => resolveConfirm(false), [resolveConfirm])
+  useEscapeToClose(request !== null, decline)
 
   if (!request) return null
 
@@ -385,6 +439,14 @@ export function AppConfirmDialog(): React.JSX.Element | null {
           >
             {request.cancelLabel ?? t('common.cancel')}
           </button>
+          {request.alternativeLabel && (
+            <button
+              onClick={() => resolveConfirm('alternative')}
+              className="rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover transition-colors"
+            >
+              {request.alternativeLabel}
+            </button>
+          )}
           <button
             onClick={() => resolveConfirm(true)}
             autoFocus={!request.danger}
@@ -406,6 +468,15 @@ export function AppConfirmDialog(): React.JSX.Element | null {
 // Body text keeps the extension's own line breaks (issue #61).
 function PromptBody({ text }: { text: string }): React.JSX.Element {
   return <p className="mb-4 whitespace-pre-wrap break-words text-sm text-muted">{text}</p>
+}
+
+function PromptDetails({ request }: { request: PiExtensionUiRequest }): React.JSX.Element {
+  return (
+    <>
+      {request.message && <PromptBody text={request.message} />}
+      {request.instructions && <PromptBody text={request.instructions} />}
+    </>
+  )
 }
 
 function DialogOverlay({
@@ -441,12 +512,14 @@ function DialogBox({
   onCancel,
   onHide,
   wide,
+  answering = false,
 }: {
   prompt: string
   children: React.ReactNode
   onCancel: () => void
   onHide?: () => void
   wide?: boolean
+  answering?: boolean
 }): React.JSX.Element {
   const { t } = useTranslation()
   const { heading, body } = splitPromptText(prompt)
@@ -470,7 +543,7 @@ function DialogBox({
               <EyeOff size={14} />
             </button>
           )}
-          <button onClick={onCancel} title={t('common.cancel')} className="text-dim hover:text-secondary">
+          <button disabled={answering} onClick={onCancel} title={t('common.cancel')} className="text-dim hover:text-secondary disabled:opacity-50">
             <X size={14} />
           </button>
         </div>
@@ -478,8 +551,10 @@ function DialogBox({
 
       {/* Content */}
       <div className="min-h-0 overflow-y-auto p-4">
-        {body && <PromptBody text={body} />}
-        {children}
+        <fieldset disabled={answering} aria-busy={answering} className="min-w-0">
+          {body && <PromptBody text={body} />}
+          {children}
+        </fieldset>
       </div>
     </div>
   )

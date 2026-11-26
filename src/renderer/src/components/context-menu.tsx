@@ -13,6 +13,10 @@ import {
   MessageSquare,
   StickyNote,
   Pencil,
+  Pin,
+  PinOff,
+  SquarePen,
+  FolderOpen,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
 import type { Terminal as XTerm } from '@xterm/xterm'
@@ -20,6 +24,9 @@ import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { useAppStore } from '../store'
 import { getSessionTitle } from '../utils/session-title'
 import { t } from '../../../shared/i18n'
+import type { OpenPathAction } from '../../../shared/editors'
+import { runOpenPath } from '../utils/open-path-action'
+import { claimEscape, useEscapeSurface } from '../utils/escape-key'
 
 /**
  * Events that close the menu because the user scrolls. A plain `scroll` event
@@ -93,6 +100,8 @@ export function useContextMenu(): {
     setState((prev) => ({ ...prev, visible: false }))
   }, [])
 
+  const escapeSurface = useEscapeSurface(state.visible)
+
   // Close on click outside
   useEffect(() => {
     if (!state.visible) return
@@ -105,7 +114,9 @@ export function useContextMenu(): {
 
     const handleEscape = (e: KeyboardEvent) => {
       // Escape closes; Tab dismisses so focus isn't trapped behind the menu.
-      if (e.key === 'Escape' || e.key === 'Tab') hide()
+      // Document listeners run before the chat's window-level Escape handler,
+      // which skips the claimed press instead of stopping the running turn.
+      if (e.key === 'Tab' || claimEscape(e, escapeSurface)) hide()
     }
 
     // Delay to avoid immediate close from the same right-click
@@ -119,7 +130,7 @@ export function useContextMenu(): {
       document.removeEventListener('click', handleClick)
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [state.visible, hide])
+  }, [state.visible, hide, escapeSurface])
 
   // Close when the user scrolls
   useEffect(() => {
@@ -371,6 +382,41 @@ export interface SessionContextMenuActions {
   // must open scoped to Pi's header UUID — the identifier runs carry — never
   // the session filename stem.
   onRuns?: (session: SessionListItem) => void
+  // Optional: when provided, a Pin or Unpin item is shown (above Archive) for a
+  // session that is not archived.
+  pin?: {
+    isPinned: boolean
+    onPin: (sessionId: string) => void
+    onUnpin: (sessionId: string) => void
+  }
+}
+
+/** The pin actions of a session row's menu, bound to the store. */
+export function useSessionPinActions(): (sessionId: string) => NonNullable<SessionContextMenuActions['pin']> {
+  const pinnedSessions = useAppStore((state) => state.pinnedSessions)
+  const pinSession = useAppStore((state) => state.pinSession)
+  const unpinSession = useAppStore((state) => state.unpinSession)
+  return (sessionId) => ({
+    isPinned: sessionId in pinnedSessions,
+    onPin: (id) => { void pinSession(id) },
+    onUnpin: (id) => { void unpinSession(id) },
+  })
+}
+
+function sessionPinItem(session: SessionListItem, pin: NonNullable<SessionContextMenuActions['pin']>): ContextMenuItem {
+  return pin.isPinned
+    ? {
+        id: 'session-unpin',
+        label: t('contextMenu.unpin'),
+        icon: <PinOff size={14} />,
+        action: () => pin.onUnpin(session.sessionId),
+      }
+    : {
+        id: 'session-pin',
+        label: t('contextMenu.pin'),
+        icon: <Pin size={14} />,
+        action: () => pin.onPin(session.sessionId),
+      }
 }
 
 export function buildSessionContextMenu(
@@ -400,6 +446,7 @@ export function buildSessionContextMenu(
       divider: true,
       action: () => {},
     },
+    ...(actions.pin && !isArchived ? [sessionPinItem(session, actions.pin)] : []),
     isArchived
       ? {
           id: 'session-unarchive',
@@ -523,5 +570,21 @@ export function buildLinkContextMenu(url: string): ContextMenuItem[] {
       action: () => {},
     },
     ...buildDefaultContextMenu(),
+  ]
+}
+
+/**
+ * "Open in editor", "Open with system app" and "Show in folder" for a path,
+ * read when an item is picked. A null path does nothing.
+ */
+export function buildOpenPathMenuItems(resolvePath: () => Promise<string | null>, line?: number): ContextMenuItem[] {
+  const run = (action: OpenPathAction) => async (): Promise<void> => {
+    const path = await resolvePath()
+    if (path) await runOpenPath({ action, path, ...(line === undefined ? {} : { line }) })
+  }
+  return [
+    { id: 'open-in-editor', label: t('openPath.openInEditor'), icon: <SquarePen size={14} />, action: run('editor') },
+    { id: 'open-with-system', label: t('openPath.openWithSystem'), icon: <ExternalLink size={14} />, action: run('system') },
+    { id: 'show-in-folder', label: t('openPath.showInFolder'), icon: <FolderOpen size={14} />, action: run('reveal') },
   ]
 }

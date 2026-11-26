@@ -42,3 +42,13 @@ export function loadPiDotenv(path: string = piDotenvPath()): NodeJS.ProcessEnv {
     return {}
   }
 }
+
+/**
+ * The environment every agent process runs with: the user's env file under the
+ * app's own (see buildPiRunEnv). Whatever the app resolves from the agent's
+ * environment (agent directories, the OMP profile, provider keys) reads this,
+ * so the app and the agent it starts agree.
+ */
+export function agentEnv(): NodeJS.ProcessEnv {
+  return { ...loadPiDotenv(), ...process.env }
+}

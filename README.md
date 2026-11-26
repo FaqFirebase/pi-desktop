@@ -8,10 +8,12 @@ Pi Desktop is in alpha, so expect rough edges.
 
 ## What it does
 
-- Streaming chat with thinking blocks and tool calls. Consecutive tool calls fold into groups, file reads show as line-numbered code, and edits show as diffs. SVG blocks render inline, and file names in replies open a preview pane
+- Streaming chat with thinking blocks and tool calls. Consecutive tool calls fold into groups, file reads show as line-numbered code, and edits show as diffs. SVG blocks and LaTeX math render inline, and file names in replies open a preview pane
 - Composer with `@` file mentions, prompt recall with `Up`/`Down`, a model picker you can drive from the keyboard, and file or image attachments (pick, paste, or drop them)
+- While a turn runs, new messages wait in a queue and send when it ends. The composer shows how long the turn has run, and offers Stop when the model has sent nothing for 30 seconds. After a reply, the agent can suggest up to three next steps; click one to put it in the message box
 - Find in the conversation (`Ctrl/Cmd+F`) and a quick switcher (`Ctrl/Cmd+K`) for commands, skills, prompt templates, workspaces, sessions, and files
 - Multiple workspaces with project tabs you can drag to reorder. Each live session runs its own agent process, so a turn keeps running after you switch away. Mission Control and sidebar activity dots show background work, and desktop notifications tell you when a session finishes, fails, or waits for approval
+- [Quick Chat](#quick-chat): an optional system-wide shortcut opens a compact chat window for a new task or an existing session, without leaving your current app
 - New Task starts a fresh session in a project and sends the task right away, optionally in an isolated Git worktree
 - [Linked tasks](#linked-tasks): one task across several Git repositories, shipped as linked pull requests
 - Right-edge tool rail that opens the Review panel, file tree, diff viewer, and terminal
@@ -21,7 +23,7 @@ Pi Desktop is in alpha, so expect rough edges.
 - Resizable terminal, one per workspace
 - [Permission modes and custom allow/deny rules](#permissions), global or per workspace
 - Workflow runs viewer for the pi-dynamic-workflows extension, with Abort and Resume
-- Skills browser, session fork/branch tree, session tags, inline session rename, and one-click context compaction
+- Skills browser with search and your own skill groups, session fork/branch tree, session tags, inline session rename, and one-click context compaction
 - Home dashboard with usage stats: messages, tokens, active-day streaks, peak hour, and a per-model breakdown
 - Diagnostics view: Pi/OMP install and PATH resolution, provider configuration, permissions, and recent errors
 - Package browser for pi.dev/packages, with local search and update checks for installed packages
@@ -29,7 +31,7 @@ Pi Desktop is in alpha, so expect rough edges.
 - [Keyboard shortcuts](#keyboard-shortcuts) you can change in Settings, [themes](#custom-themes) (7 built-ins, System, and your own), and a UI font setting
 - [Multi-Agent Council Planning](#multi-agent-council-planning): Pi, Claude, and Codex plan together before Pi builds (opt-in)
 - [TypeSafe Jev](#typesafe-jev): save your TypeSafe API key once and install the Jev skill for Pi and OMP (opt-in)
-- [Voice dictation](#voice-dictation) that runs on your machine with a model you pick (opt-in)
+- [Voice dictation](#voice-dictation) that runs on your machine with a model you pick, or on a speech-to-text server you choose (opt-in)
 - [Translatable interface](#languages) (English, Russian, Simplified Chinese, Turkish, and Ukrainian ship today)
 
 ## Review panel
@@ -52,6 +54,10 @@ Changed files use these status badges:
 Pi Desktop speaks Pi's RPC protocol, so it can run either the standard `pi` CLI or the compatible `omp` binary from [oh-my-pi](https://github.com/can1357/oh-my-pi). **Settings > Agent Configuration > Agent Installation** finds installed engines and lets you pick one, or point it at a custom executable or install directory.
 
 Each engine keeps its own sessions: Pi writes to `~/.pi/agent/sessions`, OMP to `~/.omp/agent/sessions`. The app reads both, so switching engines never hides your history. When sessions from both appear in one list, each row is tagged `Pi` or `OMP`, and opening one starts the engine that wrote it. Under OMP, package actions use OMP's plugin commands.
+
+Under OMP, the status popover also lists your usage limits per provider and account, with reset times. **Refresh** fetches them again.
+
+OMP named profiles work too. The app uses the profile OMP runs under: `--profile` in `defaultArgs` in `settings.json` first, then `OMP_PROFILE`. Sessions, models, skills, MCP servers, and plugins all come from that profile.
 
 If `~/.pi/.env` exists, its variables (provider API keys, for example) are passed to every Pi or OMP process and to the terminal. A variable already set in the environment wins.
 
@@ -178,9 +184,11 @@ To learn more, see the TypeSafe [quickstart](https://docs.typesafe.ai/introducti
 
 Click the microphone in the composer and start talking. Your words show up in the prompt box while you speak, and recording stops after a short pause (or click the mic to stop). The text stays in the box for you to read and edit; the app never sends it for you.
 
-Speech-to-text runs on your own computer. No model ships with the app and none is selected by default, so nothing downloads until you choose one in **Settings > Voice dictation**. The model you pick downloads once, with a progress bar, into the app's data folder.
+By default, speech-to-text runs on your own computer. No model ships with the app and none is selected by default, so nothing downloads until you choose one in **Settings > Voice dictation**. The model you pick downloads once, with a progress bar, into the app's data folder.
 
 The right model depends on your machine and language. Moonshine is small and fast and handles English well, so it is a good first choice. Whisper covers many languages. Parakeet V3 is the most accurate and also covers many languages, but it is a much larger download. Bigger models are more accurate but run slower and use more disk. Models use your graphics card when there is one and fall back to the processor otherwise.
+
+You can use a speech-to-text server instead, for example one you run on another machine. In **Settings > Voice dictation**, pick **On a server you choose** and enter its address and model, plus a language, a prompt, or an API key if you want them. The server must accept OpenAI-compatible transcription requests (`POST <address>/audio/transcriptions`). Each time you pause, the app sends what you said since the last pause to that address as a WAV file. The API key is kept in its own file in the app's data folder, not in the settings file.
 
 ## Getting started
 
@@ -219,13 +227,29 @@ Then open the app normally. You only need to do this once.
 
 Local-network model providers also depend on macOS Local Network permission. The app declares why it needs that access and the release build signs it with Pi Desktop's own bundle identifier. Allow access when prompted, or check **System Settings > Privacy & Security > Local Network**. Apple's [TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy) explains how permission applies to agent and terminal child processes; it recommends an Apple-issued signing identity for reliable permission tracking across builds. Ad-hoc signing does not provide that publisher identity or notarization.
 
+Voice dictation needs macOS Microphone permission. The app asks the first time you dictate; allow it, or turn on **Pi Desktop** in **System Settings > Privacy & Security > Microphone**.
+
 ### Windows
 
 Download the **installer** (`…-win-x64-setup.exe`, recommended) or the **portable** `…-win-x64.exe` from [Releases](https://github.com/FaqFirebase/pi-desktop/releases). Builds are unsigned, so SmartScreen may warn; choose **More info > Run anyway**. If file edits or saves fail, see the [Controlled Folder Access](#controlled-folder-access-ransomware-protection) note below. Windows is community-tested, so please [open a bug report](https://github.com/FaqFirebase/pi-desktop/issues) if you hit a problem.
 
+## Quick Chat
+
+Quick Chat opens a compact window for a new task or an existing session, using the same chat controls as the main window. Open it from the command palette, the **Quick Chat** button under **Tools** in the sidebar, or the tray menu. You can also set an optional global shortcut in **Settings > Keyboard shortcuts**.
+
+## Several windows
+
+Pi Desktop keeps its settings, workspaces, and notes in one data folder, and normally only one copy runs. To run separate copies side by side, for example one per account, start each one with its own folder in `PI_DESKTOP_USER_DATA_DIR`. `PI_DESKTOP_WINDOW_TITLE` adds a label to its window title and tray tooltip:
+
+```bash
+PI_DESKTOP_USER_DATA_DIR="$HOME/.config/pi-desktop-work" PI_DESKTOP_WINDOW_TITLE=Work ./Pi-Desktop-*.AppImage
+```
+
+Launching again with the same folder brings that window to the front. Only one window at a time runs an agent on a session, so opening a session that another window is using shows an error. Only the copy on the normal data folder can start at login. To keep accounts apart under OMP, give each copy its own `OMP_PROFILE` as well.
+
 ## Keyboard shortcuts
 
-You can change the app shortcuts in **Settings > Keyboard shortcuts**, or turn any of them off. `Mod` is `Cmd` on macOS and `Ctrl` elsewhere. The defaults:
+You can change the app shortcuts in **Settings > Keyboard shortcuts**, or turn any of them off. `Mod` is `Cmd` on macOS and `Ctrl` elsewhere. A shortcut is `Cmd` or `Ctrl` with a letter, number, punctuation key, `Space`, or `F1`–`F12`. Your system may keep some of them for itself, such as `Cmd+Space` (Spotlight) on macOS or `Ctrl+Space` (input language switch) on some desktops; the app never sees those. The defaults:
 
 | Shortcut | What it does |
 |----------|-------------|
@@ -251,7 +275,8 @@ These shortcuts are fixed:
 
 | Shortcut | What it does |
 |----------|-------------|
-| `Enter` | Send message |
+| `Enter` | Send message (queued while a turn runs) |
+| `Ctrl/Cmd+Enter` | Send into the running turn without waiting |
 | `Shift+Enter` | New line |
 | `Up` / `Down` | Recall prompts sent in this session |
 | `@` | Mention a workspace file |

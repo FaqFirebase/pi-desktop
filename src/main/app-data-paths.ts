@@ -1,6 +1,8 @@
 import { copyFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
+import { homedir } from 'os'
 import { dirname, join, resolve } from 'path'
+import { isPathWithin } from '../../resources/path-within'
 
 export const GUI_DATA_ENV_VAR = 'PI_DESKTOP_USER_DATA_DIR'
 export const CANONICAL_GUI_DATA_DIR_NAME = 'pi-desktop'
@@ -19,7 +21,13 @@ export const GUI_DATA_FILES = [
 export type GuiDataFileName = typeof GUI_DATA_FILES[number]
 
 interface PathOptions {
+  /** The home directory; `os.homedir()` when unset. */
   homeDir?: string
+  /**
+   * The HOME variable as earlier versions read it. Only read when `homeDir` is
+   * set (tests); otherwise it is process.env.HOME.
+   */
+  envHomeDir?: string
   appDataDir?: string
   userDataDir?: string
 }
@@ -29,7 +37,7 @@ interface MigrationOptions extends PathOptions {
 }
 
 function getHomeDir(options?: PathOptions): string {
-  return options?.homeDir ?? process.env.HOME ?? process.env.USERPROFILE ?? ''
+  return options?.homeDir ?? homedir()
 }
 
 export function configureGuiDataDir(userDataDir: string): void {
@@ -48,8 +56,45 @@ export function getCanonicalUserDataDir(appDataDir: string): string {
   return join(appDataDir, CANONICAL_GUI_DATA_DIR_NAME)
 }
 
+/**
+ * Whether this launch takes a single-instance lock of its own data folder.
+ * Electron keys the lock on the userData path at the moment it is requested,
+ * so startup applies the folder before the lock when this is true.
+ *
+ * A data folder set by the launching process (PI_DESKTOP_USER_DATA_DIR) gets
+ * its own lock: launches on different folders run side by side (for example
+ * one per account, started by a launcher), and launches on the same folder
+ * still fold into one. Every other launch, including one pointed at the
+ * canonical folder itself, shares the one lock it always had, so a running
+ * copy of the default folder is never joined by a second process. The rule
+ * reads only how the app was launched, never a stored setting, so a running
+ * copy and a new launch always agree on the lock.
+ */
+export function usesOwnInstanceLock(
+  externalDir: string | undefined,
+  canonicalDir: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (!externalDir) return false
+  const sameFolder = isPathWithin(canonicalDir, externalDir, platform) && isPathWithin(externalDir, canonicalDir, platform)
+  return !sameFolder
+}
+
+/**
+ * Homes that may hold the legacy folder. Earlier versions took HOME before
+ * USERPROFILE, so on Windows with HOME set (Git Bash, MSYS, Cygwin) the folder
+ * can sit under HOME instead of under `os.homedir()`. HOME comes first because
+ * that is where those versions wrote; both are checked when they differ, and
+ * a file is still copied only when the new data folder lacks it.
+ */
+function legacyHomeDirs(options?: PathOptions): string[] {
+  const envHome = options?.homeDir === undefined ? process.env.HOME : options.envHomeDir
+  const homes = [envHome, getHomeDir(options)].filter((dir): dir is string => Boolean(dir))
+  return [...new Set(homes)]
+}
+
 export function getLegacyGuiDataDirs(options?: PathOptions): string[] {
-  const dirs = [join(getHomeDir(options), LEGACY_GUI_DATA_DIR_NAME)]
+  const dirs = legacyHomeDirs(options).map((home) => join(home, LEGACY_GUI_DATA_DIR_NAME))
 
   if (options?.appDataDir) {
     for (const dirName of LEGACY_ELECTRON_GUI_DATA_DIR_NAMES) {

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useContext, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MarkdownRenderer } from './markdown-renderer'
+import { ReadOnlyChatContext } from './read-only-chat-context'
 import { toolLabel, toolCallLabel, toolCallStatusLabel } from '../message-grouping'
 import { splitClaudeCliMarkers } from '../claude-cli-markers'
 import { mayBeNextStepsCall } from '../next-steps'
@@ -29,7 +30,8 @@ interface StreamingBubbleProps {
 
 export function StreamingBubble({ content: rawContent, thinking, toolCalls }: StreamingBubbleProps): React.JSX.Element {
   const { t } = useTranslation()
-  const provider = useAppStore((state) => state.sessionState?.model?.provider)
+  const view = useContext(ReadOnlyChatContext)
+  const provider = useAppStore((state) => (view ? view.provider : state.sessionState?.model?.provider))
   const { content, toolCalls: markerCalls } = useMemo(
     () => splitClaudeCliMarkers(rawContent, provider, true),
     [rawContent, provider]
@@ -41,7 +43,7 @@ export function StreamingBubble({ content: rawContent, thinking, toolCalls }: St
     [toolCalls]
   )
   const thinkingEnabled = useAppStore(
-    (state) => state.settingsDraft.showThinking ?? state.settings?.showThinking ?? DEFAULT_SETTINGS.showThinking
+    (state) => (view ? view.showThinking : (state.settingsDraft.showThinking ?? state.settings?.showThinking ?? DEFAULT_SETTINGS.showThinking))
   )
   const thinkingScrollRef = useRef<HTMLDivElement>(null)
 

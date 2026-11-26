@@ -1,7 +1,7 @@
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import { Copy, Check } from 'lucide-react'
+import { useCopyFeedback } from '../hooks/use-copy-feedback'
 
 export function CopyButton({
   text,
@@ -11,13 +11,11 @@ export function CopyButton({
   className?: string
 }): React.JSX.Element {
   const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
+  const { copied, copy } = useCopyFeedback()
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation()
-    void navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+    copy(text)
   }
 
   return (

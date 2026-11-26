@@ -1,19 +1,22 @@
 import { useAppStore } from '../store'
 import { getSessionTitle } from '../utils/session-title'
-import { FolderOpen, Plus, Clock, Search, ChevronRight, ChevronDown, FolderTree, Tag, X, MoreVertical, Archive, ArchiveRestore, Trash2, Sparkles, Workflow as WorkflowIcon } from 'lucide-react'
+import { FolderOpen, Plus, Search, ChevronRight, ChevronDown, FolderTree, Tag, X, MoreVertical, Archive, ArchiveRestore, Trash2, Sparkles, Workflow as WorkflowIcon } from 'lucide-react'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { useTranslation, Trans } from 'react-i18next'
+import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import type { SessionListItem } from '../../../shared/ipc-contracts'
 import { pathsEqual } from '../../../shared/path-compare'
-import { useContextMenu, buildSessionContextMenu } from './context-menu'
+import { useContextMenu, buildSessionContextMenu, useSessionPinActions } from './context-menu'
+import { SessionRowIcon, SessionUnreadDot } from './session-row-markers'
+import { orderSessionsPinnedFirst } from '../utils/session-pin-order'
 import { getSessionMenuPosition, type MenuPosition } from './session-menu-position'
 import { resolveRunSessionId } from '../utils/workflow-runs'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
 import { getSessionEngineLabel, hasMixedSessionEngines } from './sidebar-session-labels'
 import type { Translate } from '../../../shared/i18n'
 import { isImeComposing } from '../utils/ime-composing'
+import { claimEscape } from '../utils/escape-key'
 
 export function SessionPanel(): React.JSX.Element {
   const { t, i18n } = useTranslation()
@@ -25,6 +28,7 @@ export function SessionPanel(): React.JSX.Element {
   const createNewSession = useAppStore((state) => state.createNewSession)
   const refreshSessionList = useAppStore((state) => state.refreshSessionList)
   const archivedSessions = useAppStore((state) => state.archivedSessions)
+  const pinnedSessions = useAppStore((state) => state.pinnedSessions)
   const showArchived = useAppStore((state) => state.showArchived)
   const toggleShowArchived = useAppStore((state) => state.toggleShowArchived)
   const sessionsScope = useAppStore((state) => state.sessionsScope)
@@ -330,7 +334,8 @@ export function SessionPanel(): React.JSX.Element {
 
                   {isExpanded && (
                     <div className="border-t border-border/50">
-                      {sessions.map((session) => (
+                      {/* Pins order the rows only; the header keeps the newest session (sessions[0]). */}
+                      {orderSessionsPinnedFirst(sessions, pinnedSessions).map((session) => (
                         <SessionEntry
                           key={session.path}
                           session={session}
@@ -390,6 +395,9 @@ function SessionEntry({
   const removeSessionTag = useAppStore((state) => state.removeSessionTag)
   const removeAutoTag = useAppStore((state) => state.removeAutoTag)
   const archivedSessions = useAppStore((state) => state.archivedSessions)
+  const pinnedSessions = useAppStore((state) => state.pinnedSessions)
+  const unreadSessions = useAppStore((state) => state.unreadSessions)
+  const sessionPinActions = useSessionPinActions()
   const archiveSession = useAppStore((state) => state.archiveSession)
   const unarchiveSession = useAppStore((state) => state.unarchiveSession)
   const deleteSession = useAppStore((state) => state.deleteSession)
@@ -498,6 +506,7 @@ function SessionEntry({
         // existing flow) instead of a window.confirm.
         onDelete: () => setConfirmingDelete(true),
         onRuns: (s) => openWorkflowRunsForSession(resolveRunSessionId(s.piSessionId, s.sessionId) ?? s.sessionId),
+        pin: sessionPinActions(session.sessionId),
       })
     )
   }
@@ -527,7 +536,7 @@ function SessionEntry({
         }}
         className="flex w-full cursor-pointer items-center gap-3 text-left"
       >
-        <Clock size={12} className="shrink-0 text-faint" />
+        <SessionRowIcon pinned={session.sessionId in pinnedSessions} className="text-faint" />
         <div className="min-w-0 flex-1">
           <div className={clsx('text-sm truncate', isActive ? 'text-accent-fg' : 'text-muted')}>
             {getSessionTitle(session.name, session.sessionId, session.preview)}
@@ -587,6 +596,7 @@ function SessionEntry({
         <div className="text-[10px] text-faint shrink-0">
           {formatRelativeTime(session.lastModified, t, i18n.language)}
         </div>
+        {session.sessionId in unreadSessions && <SessionUnreadDot />}
         {isArchived && (
           <span className="rounded bg-warning-bg px-1.5 py-0.5 text-[10px] text-warning">
             {t('sessions.archivedBadge')}
@@ -657,7 +667,7 @@ function SessionEntry({
         <div className="mt-2 flex items-center gap-2 rounded border border-error-bg bg-error-bg px-2 py-1.5 text-[11px] text-error">
           <Trash2 size={12} className="shrink-0" />
           <span className="flex-1">
-            <Trans i18nKey="sessions.deleteConfirm.message" components={{ code: <code className="text-error" /> }} />
+            {t('sessions.deleteConfirm.message')}
           </span>
           <button
             onClick={() => setConfirmingDelete(false)}
@@ -686,7 +696,7 @@ function SessionEntry({
                 onKeyDown={(e) => {
                   if (isImeComposing(e.nativeEvent)) return
                   if (e.key === 'Enter') handleAddTag()
-                  if (e.key === 'Escape') setShowTagInput(false)
+                  if (claimEscape(e.nativeEvent)) setShowTagInput(false)
                 }}
                 placeholder={t('sessions.tags.addPlaceholder')}
                 className="flex-1 rounded border border-border-strong bg-card px-2 py-0.5 text-[10px] text-secondary placeholder:text-faint focus:border-focus focus:outline-none"

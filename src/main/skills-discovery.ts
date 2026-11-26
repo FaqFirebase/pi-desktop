@@ -1,8 +1,11 @@
 import { readdir, readFile } from 'fs/promises'
+import { homedir } from 'os'
 import { extname, join } from 'path'
 import { existsSync } from 'fs'
 import { RPC_SKILL_PATH_PREFIX, isRpcSkillPath, type InstalledSkill } from '../shared/ipc-contracts'
 import { skillDisplayName } from '../shared/pi-command'
+import { currentOmpProfile, ompAgentDirIn } from './omp-paths'
+import { getPiAgentDir } from './pi-paths'
 
 /**
  * Per-engine skill discovery for the Skills panel.
@@ -11,9 +14,9 @@ import { skillDisplayName } from '../shared/pi-command'
  * OMP (e.g. from `~/.claude/skills`) is not offered while Pi runs, and
  * Pi-only skills stay hidden under OMP:
  *
- *  - Pi reads `~/.pi/agent/skills`, `~/.agents/skills` and the project's
- *    `.pi/skills` / `.agents/skills`, recursively, including bare root
- *    `<name>.md` files.
+ *  - Pi reads `~/.pi/agent/skills` (under `PI_CODING_AGENT_DIR` when set),
+ *    `~/.agents/skills` and the project's `.pi/skills` / `.agents/skills`,
+ *    recursively, including bare root `<name>.md` files.
  *  - OMP reads its native `.omp` roots plus Claude Code and `.agents` roots,
  *    one directory level deep (`<root>/<skill>/SKILL.md` only — OMP does not
  *    discover nested skill groups or bare root markdown files).
@@ -38,7 +41,8 @@ function skillScanPlan(cwd: string, homeDir: string, engine: 'pi' | 'omp'): Skil
     return {
       dirs: [
         { dir: join(cwd, '.omp', 'skills'), source: 'project' },
-        { dir: join(homeDir, '.omp', 'agent', 'skills'), source: 'global' },
+        // The global skills of the profile OMP runs under (see omp-paths.ts).
+        { dir: join(ompAgentDirIn(homeDir, currentOmpProfile()), 'skills'), source: 'global' },
         { dir: join(cwd, '.claude', 'skills'), source: 'project' },
         { dir: join(homeDir, '.claude', 'skills'), source: 'global' },
         { dir: agentsSkillsDir(cwd), source: 'project' },
@@ -51,7 +55,7 @@ function skillScanPlan(cwd: string, homeDir: string, engine: 'pi' | 'omp'): Skil
   return {
     dirs: [
       { dir: join(cwd, '.pi', 'skills'), source: 'project' },
-      { dir: join(homeDir, '.pi', 'agent', 'skills'), source: 'global' },
+      { dir: join(getPiAgentDir(homeDir), 'skills'), source: 'global' },
       { dir: agentsSkillsDir(cwd), source: 'project' },
       { dir: agentsSkillsDir(homeDir), source: 'global' },
     ],
@@ -63,7 +67,7 @@ function skillScanPlan(cwd: string, homeDir: string, engine: 'pi' | 'omp'): Skil
 export async function listSkills(
   cwd: string,
   engine: 'pi' | 'omp',
-  homeDir: string = process.env.HOME ?? process.env.USERPROFILE ?? ''
+  homeDir: string = homedir()
 ): Promise<InstalledSkill[]> {
   const { dirs, recursive, rootMdFiles } = skillScanPlan(cwd, homeDir, engine)
 

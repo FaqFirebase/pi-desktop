@@ -3,7 +3,7 @@ import { activeShortcuts } from '../utils/app-shortcuts'
 import { formatShortcut } from '../../../shared/keyboard-shortcuts'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
-import { FolderTree, GitCompare, ListChecks, Terminal, ShieldCheck } from 'lucide-react'
+import { FolderTree, GitCompare, Globe, ListChecks, Terminal, ShieldCheck } from 'lucide-react'
 import { countRunningSubagentTasks } from '../../../shared/subagent-task'
 
 export function ChatToolRail(): React.JSX.Element {
@@ -44,6 +44,12 @@ export function ChatToolRail(): React.JSX.Element {
         title={t('chat.toolbar.subagents')}
         badge={runningSubagents}
         badgeLabel={t('chat.toolbar.subagentsRunning', { count: runningSubagents })}
+      />
+      <RailButton
+        icon={<Globe size={16} />}
+        active={sidePanel === 'browser'}
+        onClick={() => void setSidePanel(sidePanel === 'browser' ? null : 'browser')}
+        title={t('chat.toolbar.browser')}
       />
       <RailButton
         icon={<Terminal size={16} />}

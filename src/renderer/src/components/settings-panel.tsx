@@ -22,11 +22,15 @@ import { VoiceSettings } from './voice-settings'
 import { ShortcutSettings } from './shortcut-settings'
 import { shortcutProblem } from '../../../shared/keyboard-shortcuts'
 import { TypeSafeSettings } from './typesafe-settings'
-import { Settings, Save, RotateCcw, FolderOpen, RefreshCw, Check, ChevronDown } from 'lucide-react'
+import { ChatImportSettings } from './chat-import-settings'
+import { EditorSettings } from './editor-settings'
+import { SelectField, SettingsRow } from './settings-controls'
+import { Settings, Save, RotateCcw, FolderOpen, RefreshCw, Check } from 'lucide-react'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { activeShortcuts } from '../utils/app-shortcuts'
 import { applyUiFont } from '../utils/ui-font'
 import { isChatWidth } from '../../../shared/chat-width'
+import { isKeepAwakeMode, type KeepAwakeStatus } from '../../../shared/keep-awake'
 import { PermissionSelector } from './permission-selector'
 import { PermissionRulesEditor } from './permission-rules-editor'
 import { validateRuleList, shouldPersistScope } from './permission-rules-editor-helpers'
@@ -74,6 +78,13 @@ interface ScopeRulesState {
 
 const EMPTY_SCOPE_RULES: ScopeRulesState = { rules: [], loaded: false, loadError: null, exists: false }
 
+const KEEP_AWAKE_STATUS_KEYS = {
+  off: 'settings.keepAwake.status.off',
+  holding: 'settings.keepAwake.status.holding',
+  'waiting-for-work': 'settings.keepAwake.status.waitingForWork',
+  unsupported: 'settings.keepAwake.status.unsupported',
+} as const satisfies Record<KeepAwakeStatus, string>
+
 export function SettingsPanel(): React.JSX.Element {
   const { t, i18n } = useTranslation()
   // A user who picks a language by mistake can still find this row.
@@ -87,6 +98,7 @@ export function SettingsPanel(): React.JSX.Element {
   const shortcuts = useAppStore(activeShortcuts)
   const shortcutsInvalid = shortcutProblem(shortcuts, window.piDesktop.system.platform) !== null
   const loadSettings = useAppStore((state) => state.loadSettings)
+  const applyPermissionModeToSessions = useAppStore((state) => state.applyPermissionModeToSessions)
   const setSettingsDraft = useAppStore((state) => state.setSettingsDraft)
   const clearSettingsDraft = useAppStore((state) => state.clearSettingsDraft)
   const activeWorkspace = useAppStore((state) => state.activeWorkspace)
@@ -190,6 +202,30 @@ export function SettingsPanel(): React.JSX.Element {
     const installation = detectedAgentInstalls.find((candidate) => candidate.path === piPath)
     if (installation && installation.kind === piEngine) setCustomAgentPathMode(false)
   }, [detectedAgentInstalls, piEngine, piPath])
+
+  // A launch with a data folder of its own cannot run on startup.
+  const [runOnStartupAvailable, setRunOnStartupAvailable] = useState(true)
+  useEffect(() => {
+    let cancelled = false
+    void window.piDesktop.settings.isRunOnStartupAvailable().then((available) => {
+      if (!cancelled) setRunOnStartupAvailable(available)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  // The keep-awake status changes with agent work, so it is pushed from main.
+  const [keepAwakeStatus, setKeepAwakeStatus] = useState<KeepAwakeStatus>('off')
+  useEffect(() => {
+    let cancelled = false
+    void window.piDesktop.settings.getKeepAwakeStatus().then((status) => {
+      if (!cancelled) setKeepAwakeStatus(status)
+    })
+    const unsubscribe = window.piDesktop.onKeepAwakeStatus(setKeepAwakeStatus)
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [])
 
   // Detect available council agents on mount
   useEffect(() => {
@@ -598,6 +634,7 @@ export function SettingsPanel(): React.JSX.Element {
 
     // Reload settings in store
     await loadSettings()
+    await applyPermissionModeToSessions()
 
     // Persist permission rules too (only the scopes shouldPersistScope
     // allowed — never overwrite a scope's file with an empty list because
@@ -659,6 +696,8 @@ export function SettingsPanel(): React.JSX.Element {
       openToHomeOnLaunch: DEFAULT_SETTINGS.openToHomeOnLaunch,
       runOnStartup: DEFAULT_SETTINGS.runOnStartup,
       minimizeToTrayOnClose: DEFAULT_SETTINGS.minimizeToTrayOnClose,
+      keepAwakeMode: DEFAULT_SETTINGS.keepAwakeMode,
+      preferredEditor: DEFAULT_SETTINGS.preferredEditor,
       permissionMode: DEFAULT_SETTINGS.permissionMode,
       language: DEFAULT_SETTINGS.language,
       shortcuts: DEFAULT_SETTINGS.shortcuts,
@@ -697,6 +736,7 @@ export function SettingsPanel(): React.JSX.Element {
     applyThemeSettings(result)
     document.documentElement.style.fontSize = `${result.fontSize}px`
     await loadSettings()
+    await applyPermissionModeToSessions()
     clearSettingsDraft()
 
     setSaved(true)
@@ -1115,9 +1155,13 @@ export function SettingsPanel(): React.JSX.Element {
 
           <SettingsRow
             label={t('settings.runOnStartup.label')}
-            description={t('settings.runOnStartup.description')}
+            description={runOnStartupAvailable ? t('settings.runOnStartup.description') : t('settings.runOnStartup.ownDataFolder')}
           >
-            <Toggle checked={runOnStartup} onChange={(v) => { setRunOnStartup(v); void applyImmediate({ runOnStartup: v }) }} />
+            <Toggle
+              checked={runOnStartupAvailable && runOnStartup}
+              disabled={!runOnStartupAvailable}
+              onChange={(v) => { setRunOnStartup(v); void applyImmediate({ runOnStartup: v }) }}
+            />
           </SettingsRow>
 
           <SettingsRow
@@ -1126,10 +1170,31 @@ export function SettingsPanel(): React.JSX.Element {
           >
             <Toggle checked={minimizeToTrayOnClose} onChange={(v) => { setMinimizeToTrayOnClose(v); void applyImmediate({ minimizeToTrayOnClose: v }) }} />
           </SettingsRow>
+
+          <SettingsRow label={t('settings.keepAwake.label')} description={t('settings.keepAwake.description')}>
+            <SelectField
+              value={settings?.keepAwakeMode ?? DEFAULT_SETTINGS.keepAwakeMode}
+              onChange={(next) => {
+                if (!isKeepAwakeMode(next)) return
+                void applyImmediate({ keepAwakeMode: next })
+              }}
+            >
+              <option value="off">{t('settings.keepAwake.modes.off')}</option>
+              <option value="while-working">{t('settings.keepAwake.modes.whileWorking')}</option>
+              <option value="always">{t('settings.keepAwake.modes.always')}</option>
+            </SelectField>
+          </SettingsRow>
+          <div className={keepAwakeStatus === 'unsupported' ? 'text-xs text-warning' : 'text-xs text-dim'}>
+            {t(KEEP_AWAKE_STATUS_KEYS[keepAwakeStatus])}
+          </div>
+        </SettingsSection>
+
+        <SettingsSection title={t('settings.sections.editor')}>
+          <EditorSettings />
         </SettingsSection>
 
         <SettingsSection title={t('settings.shortcuts.heading')}>
-          <ShortcutSettings value={shortcuts} onChange={(shortcuts) => setSettingsDraft({ shortcuts })} />
+          <ShortcutSettings value={shortcuts} savedValue={settings?.shortcuts ?? DEFAULT_SETTINGS.shortcuts} onChange={(shortcuts) => setSettingsDraft({ shortcuts })} />
         </SettingsSection>
 
         <SettingsSection title={t('settings.sections.voiceDictation')}>
@@ -1138,6 +1203,10 @@ export function SettingsPanel(): React.JSX.Element {
 
         <SettingsSection title={t('settings.sections.typesafe')}>
           <TypeSafeSettings />
+        </SettingsSection>
+
+        <SettingsSection title={t('settings.sections.chatImport')}>
+          <ChatImportSettings />
         </SettingsSection>
 
         {/* Multi-Agent Council Planning */}
@@ -1330,68 +1399,6 @@ function SettingsSection({
   )
 }
 
-function SettingsRow({
-  label,
-  description,
-  children,
-  stack = false,
-}: {
-  label: string
-  description: string
-  children: React.ReactNode
-  // Controls that are wider than the fixed control column (e.g. a URL input
-  // beside a button) render below the label at full width instead of being
-  // crammed into the right-hand w-64 column.
-  stack?: boolean
-}): React.JSX.Element {
-  if (stack) {
-    return (
-      <div className="flex flex-col gap-2">
-        <div>
-          <div className="text-sm text-primary">{label}</div>
-          <div className="text-xs text-dim">{description}</div>
-        </div>
-        <div>{children}</div>
-      </div>
-    )
-  }
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <div className="min-w-0 flex-1">
-        <div className="text-sm text-primary">{label}</div>
-        <div className="text-xs text-dim">{description}</div>
-      </div>
-      <div className="w-64 max-w-[50%] shrink-0">{children}</div>
-    </div>
-  )
-}
-
-function SelectField({
-  value,
-  onChange,
-  children,
-}: {
-  value: string
-  onChange: (value: string) => void
-  children: React.ReactNode
-}): React.JSX.Element {
-  return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none rounded-md border border-border-strong bg-surface py-1.5 pl-3 pr-9 text-sm text-primary hover:border-border-strong-hover focus:border-focus focus:outline-none"
-      >
-        {children}
-      </select>
-      <ChevronDown
-        size={14}
-        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-dim"
-      />
-    </div>
-  )
-}
-
 // One <option> per registered theme, optionally only those of one kind.
 function ThemeOptions({ kind }: { kind?: ThemeKind }): React.JSX.Element {
   // Subscribes this component to language changes so built-in theme names
@@ -1460,14 +1467,17 @@ function LanguageSelect({
 function Toggle({
   checked,
   onChange,
+  disabled = false,
 }: {
   checked: boolean
   onChange: (value: boolean) => void
+  disabled?: boolean
 }): React.JSX.Element {
   return (
     <button
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 align-middle transition-colors ${
+      disabled={disabled}
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 align-middle transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
         checked ? 'bg-accent' : 'bg-elevated'
       }`}
     >

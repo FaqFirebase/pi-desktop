@@ -1,13 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fillTemplate, loadPermissionPromptText } from './permission-prompt-text'
+import { makeTempDir } from '../src/shared/temp-dir.test-helper'
 
 function localesWith(files: Record<string, unknown>): string {
-  const dir = mkdtempSync(join(tmpdir(), 'pi-desktop-locales-'))
+  const dir = makeTempDir('pi-desktop-locales-')
   for (const [language, content] of Object.entries(files)) {
     mkdirSync(join(dir, language))
     writeFileSync(join(dir, language, 'translation.json'), JSON.stringify(content))
@@ -104,7 +104,7 @@ test('the shipped English prompt text matches today\'s wording', () => {
 })
 
 test('a corrupt English file uses placeholder-only templates', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'pi-desktop-locales-'))
+  const dir = makeTempDir('pi-desktop-locales-')
   mkdirSync(join(dir, SHIPPED_LANGUAGE))
   writeFileSync(join(dir, SHIPPED_LANGUAGE, 'translation.json'), '{not json')
   assert.deepEqual(loadPermissionPromptText(dir, TEST_LANGUAGE), PLACEHOLDER_ONLY_TEXT)

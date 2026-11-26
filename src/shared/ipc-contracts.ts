@@ -7,6 +7,7 @@
 import type { PermissionRule } from '../../resources/permission-rules'
 import type { LinkedTaskMode, RepoRole } from '../../resources/repo-set-map'
 import type { TokenUsage } from './token-usage'
+import type { TerminalSlot } from './terminal-slot'
 
 // ─── IPC Channel Names ──────────────────────────────────────────────────────
 
@@ -15,8 +16,12 @@ export const IPC_CHANNELS = {
   PI_START: 'pi:start',
   PI_STOP: 'pi:stop',
   PI_RESTART: 'pi:restart',
+  PI_APPLY_PERMISSION_MODE: 'pi:apply-permission-mode',
   PI_STATUS: 'pi:status',
   PI_DETECT_INSTALLATIONS: 'pi:detect-installations',
+  QUICK_CHAT_SHORTCUT_STATUS: 'quick-chat:shortcut-status',
+  SETTINGS_RUN_ON_STARTUP_AVAILABLE: 'settings:run-on-startup-available',
+  SETTINGS_KEEP_AWAKE_STATUS: 'settings:keep-awake-status',
 
   // Pi commands
   PI_PROMPT: 'pi:prompt',
@@ -30,6 +35,7 @@ export const IPC_CHANNELS = {
   SESSION_NEW: 'session:new',
   SESSION_LAUNCH_TASK: 'session:launch-task',
   SESSION_CLOSE_RUNTIME: 'session:close-runtime',
+  SESSION_ACTIVATE_RUNTIME: 'session:activate-runtime',
   SESSION_SWITCH: 'session:switch',
   SESSION_LIST_RUNTIMES: 'session:list-runtimes',
   SESSION_FORK: 'session:fork',
@@ -48,6 +54,11 @@ export const IPC_CHANNELS = {
   SESSION_ARCHIVE: 'session:archive',
   SESSION_UNARCHIVE: 'session:unarchive',
   SESSION_LIST_ARCHIVED: 'session:list-archived',
+  SESSION_PIN: 'session:pin',
+  SESSION_UNPIN: 'session:unpin',
+  SESSION_LIST_PINNED: 'session:list-pinned',
+  SESSION_LIST_UNREAD: 'session:list-unread',
+  SESSION_SET_VISIBLE: 'session:set-visible',
   SESSION_GET_LINEAGE: 'session:get-lineage',
   SESSION_COMPACT: 'session:compact',
 
@@ -62,6 +73,7 @@ export const IPC_CHANNELS = {
   SETTINGS_GET_ALL: 'settings:get-all',
   SETTINGS_SAVE: 'settings:save',
   I18N_GET_ENVIRONMENT: 'i18n:get-environment',
+  SETTINGS_OPEN_QUICK_CHAT: 'settings:open-quick-chat',
 
   // Permission rules
   PERMISSION_RULES_GET: 'permission-rules:get',
@@ -77,6 +89,7 @@ export const IPC_CHANNELS = {
   UI_CONFIRM_RESPONSE: 'ui:confirm-response',
   UI_INPUT_RESPONSE: 'ui:input-response',
   UI_EDITOR_RESPONSE: 'ui:editor-response',
+  UI_CANCEL_RESPONSE: 'ui:cancel-response',
   UI_PENDING_FLUSH: 'ui:pending-flush',
   UI_PENDING_GET: 'ui:pending-get',
   UI_EDITOR_DIRTY_SET: 'ui:editor-dirty-set',
@@ -88,6 +101,8 @@ export const IPC_CHANNELS = {
   SYSTEM_PATH_KIND: 'system:path-kind',
   SYSTEM_OPEN_EXTERNAL: 'system:open-external',
   SYSTEM_GET_VERSION: 'system:get-version',
+  SYSTEM_OPEN_PATH: 'system:open-path',
+  EDITORS_DETECT: 'editors:detect',
   UPDATE_CHECK: 'update:check',
 
   // Activity
@@ -105,6 +120,10 @@ export const IPC_CHANNELS = {
 
   // Diagnostics
   DIAGNOSTICS_GET: 'diagnostics:get',
+  DIAGNOSTICS_EXPORT_LOGS: 'diagnostics:export-logs',
+
+  // Renderer errors
+  RENDERER_ERROR_REPORT: 'renderer:error-report',
 
   // Workspaces
   WORKSPACE_LIST: 'workspace:list',
@@ -146,6 +165,8 @@ export const IPC_CHANNELS = {
   SKILLS_READ: 'skills:read',
   COMMANDS_LIST: 'commands:list',
   MCP_SERVERS_LIST: 'mcp:servers-list',
+  // OMP account usage limits (`omp usage --json`)
+  OMP_USAGE_GET: 'omp:usage-get',
 
   // Models config
   MODELS_READ: 'models:read',
@@ -155,9 +176,10 @@ export const IPC_CHANNELS = {
   COUNCIL_DETECT: 'council:detect',
   COUNCIL_RUN_CONSULTANTS: 'council:run-consultants',
   COUNCIL_ARBITER: 'council:arbiter',
+  COUNCIL_CANCEL: 'council:cancel',
 
   // File operations
-  FILE_TREE: 'file:tree',
+  FILE_LIST_DIR: 'file:list-dir',
   FILE_SEARCH: 'file:search',
   FILE_SEARCH_CONTENT: 'file:search-content',
   FILE_READ: 'file:read',
@@ -178,6 +200,8 @@ export const IPC_CHANNELS = {
   GIT_CONVEYOR_COMMIT: 'git:conveyor-commit',
   GIT_CONVEYOR_PUSH: 'git:conveyor-push',
   GIT_CONVEYOR_CREATE_PR: 'git:conveyor-create-pr',
+  GIT_AVAILABILITY_GET: 'git:availability-get',
+  GIT_AVAILABILITY_RECHECK: 'git:availability-recheck',
 
   // Terminal
   TERMINAL_START: 'terminal:start',
@@ -217,7 +241,11 @@ export const IPC_CHANNELS = {
   EVENT_PI: 'event:pi',
   EVENT_PENDING_PROMPTS: 'event:pending-prompts',
   EVENT_WORKSPACE_ACTIVITY: 'event:workspace-activity',
+  EVENT_KEEP_AWAKE_STATUS: 'event:keep-awake-status',
   EVENT_SESSION_RUNTIME: 'event:session-runtime',
+  EVENT_UNREAD_SESSIONS: 'event:unread-sessions',
+  /** A model/thinking switch changed a runtime's engine state; views bound to it refresh. */
+  EVENT_RUNTIME_STATE_CHANGED: 'event:runtime-state-changed',
   EVENT_ACTIVATE_WORKSPACE: 'event:activate-workspace',
   EVENT_FILE_CHANGE: 'event:file-change',
   EVENT_TERMINAL_DATA: 'event:terminal-data',
@@ -225,6 +253,7 @@ export const IPC_CHANNELS = {
   EVENT_COUNCIL_PROGRESS: 'event:council-progress',
   EVENT_VOICE_PROGRESS: 'event:voice-progress',
   EVENT_VOICE_SHORTCUT: 'event:voice-shortcut',
+  EVENT_BROWSER_PANE_GUEST: 'event:browser-pane-guest',
 
   // Voice dictation
   VOICE_STATUS: 'voice:status',
@@ -232,6 +261,9 @@ export const IPC_CHANNELS = {
   VOICE_CANCEL: 'voice:cancel',
   VOICE_REMOVE: 'voice:remove',
   VOICE_SELECT: 'voice:select',
+  VOICE_TRANSCRIBE: 'voice:transcribe',
+  VOICE_SAVE_SERVER_KEY: 'voice:save-server-key',
+  VOICE_CLEAR_SERVER_KEY: 'voice:clear-server-key',
 
   // TypeSafe (Jev): API key storage and agent skill install
   TYPESAFE_STATUS: 'typesafe:status',
@@ -239,6 +271,11 @@ export const IPC_CHANNELS = {
   TYPESAFE_CLEAR_KEY: 'typesafe:clear-key',
   TYPESAFE_INSTALL_SKILL: 'typesafe:install-skill',
   TYPESAFE_REMOVE_SKILL: 'typesafe:remove-skill',
+
+  // Chat import (Claude Code and Codex chats into Pi/OMP sessions)
+  CHAT_IMPORT_LIST: 'chat-import:list',
+  CHAT_IMPORT_RUN: 'chat-import:run',
+  EVENT_CHAT_IMPORT_PROGRESS: 'event:chat-import-progress',
 } as const
 
 // ─── Pi Process Types ───────────────────────────────────────────────────────
@@ -269,6 +306,11 @@ export interface PiStatus {
 
 export type SessionRuntimeActivity = 'working' | 'needs-approval' | 'completed' | 'failed'
 
+/** A turn is running or waiting on an answer. */
+export function isRuntimeBusy(activity: SessionRuntimeActivity | null | undefined): boolean {
+  return activity === 'working' || activity === 'needs-approval'
+}
+
 /** Live runtime for one Pi session. Multiple runtimes may share one workspace cwd. */
 export interface SessionRuntimeInfo extends PiStatus {
   runtimeId: string
@@ -286,6 +328,20 @@ export interface SessionRuntimeInfo extends PiStatus {
    * turn runs.
    */
   promptRefusal?: string
+  /**
+   * The permission mode the live process started with. Its tool list is fixed
+   * at spawn, so a later change to the setting reaches this runtime only
+   * through a restart. Null until the first start; absent on a snapshot that
+   * predates the field.
+   */
+  permissionMode?: PermissionMode | null
+  /**
+   * The name the user gave this session through the app. A session gets a
+   * row in the session list, and its name from there, only once its file has
+   * content, so a tab reads a newer session's name from here. Absent until
+   * the first rename.
+   */
+  sessionName?: string
 }
 
 export interface SessionRuntimeCloseResult {
@@ -437,6 +493,8 @@ export interface TerminalStartOptions {
   cwd?: string
   cols?: number
   rows?: number
+  /** Which of the workspace's PTYs to start; the shell when left out. */
+  slot?: TerminalSlot
 }
 
 export interface TerminalStartResult {
@@ -447,11 +505,13 @@ export interface TerminalStartResult {
 
 export interface TerminalDataEvent {
   workspaceId: string
+  slot: TerminalSlot
   data: string
 }
 
 export interface TerminalExitEvent {
   workspaceId: string
+  slot: TerminalSlot
   exitCode: number
   signal?: number
 }
@@ -606,6 +666,14 @@ export interface PiExtensionUiRequest {
   instructions?: string
   targetId?: string
 }
+
+/** Extension UI methods that stop the turn until the user answers. */
+export const BLOCKING_UI_METHODS: ReadonlySet<string> = new Set<PiExtensionUiRequest['method']>([
+  'select',
+  'confirm',
+  'input',
+  'editor',
+])
 
 /**
  * Blocking extension-UI prompts held in the main process, keyed by workspace
@@ -924,6 +992,11 @@ export interface ModelInfo {
     mode?: string
     efforts?: string[]
   }
+  /**
+   * Pi's per-model thinking levels: a string marks a supported level, null an
+   * unsupported one. xhigh and max are supported only when named.
+   */
+  thinkingLevelMap?: Partial<Record<string, string | null>>
 }
 
 // ─── Session Types ──────────────────────────────────────────────────────────
@@ -965,6 +1038,87 @@ export interface SessionStats {
     percent: number | null
   } | null
 }
+
+// ─── OMP usage limits (`omp usage --json`) ──────────────────────────────────
+
+export type OmpUsageStatus = 'ok' | 'warning' | 'exhausted' | 'unknown'
+
+/** One limit window of an account, e.g. "Claude 5 Hour". */
+export interface OmpUsageLimit {
+  id: string
+  label: string
+  /** 0..1; above 1 is overage. Null when the provider reported no amount. */
+  usedFraction: number | null
+  /** Epoch ms the window resets, when reported. */
+  resetsAt: number | null
+  status: OmpUsageStatus
+}
+
+/** Saved rate-limit resets an account can spend on demand. */
+export interface OmpUsageResets {
+  /** Banked resets, including ones not usable now. */
+  available: number
+  /** Resets the provider says can be spent now. */
+  usable: number
+  /** Epoch ms of the soonest expiry among banked resets, when reported. */
+  soonestExpiresAt: number | null
+}
+
+/** One authenticated account's usage report. */
+export interface OmpUsageAccount {
+  /** Email, else account id; null when the report names neither. */
+  account: string | null
+  org: string | null
+  limits: OmpUsageLimit[]
+  resets: OmpUsageResets | null
+}
+
+/** Quota left across all of a provider's accounts for one window. */
+export interface OmpUsageCapacity {
+  window: string
+  /** Separate meter of the window, e.g. a model tier; null for the main one. */
+  meter: string | null
+  accounts: number
+  /** Accounts' worth of quota used, 0..accounts. */
+  usedAccounts: number
+}
+
+/** A login OMP disabled (for example a failed token refresh); it needs a new sign-in. */
+export interface OmpUsageDisabledAccount {
+  /** Email, else account id; null when OMP names neither. */
+  account: string | null
+  org: string | null
+  /** Epoch ms OMP disabled it, when reported. */
+  disabledAt: number | null
+  /** OMP's reason, as it reported it. */
+  cause: string | null
+}
+
+/** Everything `omp usage` reports for one provider, as OMP groups it. */
+export interface OmpUsageProvider {
+  provider: string
+  /** OMP's notes about the provider, e.g. that it has no quota API. */
+  notes: string[]
+  accounts: OmpUsageAccount[]
+  /** Signed-in accounts for which the provider gives no usage data (e.g. API keys). */
+  accountsWithoutUsage: number
+  disabled: OmpUsageDisabledAccount[]
+  capacity: OmpUsageCapacity[]
+}
+
+export interface OmpUsageReport {
+  /** Sorted by provider id, like `omp usage`. */
+  providers: OmpUsageProvider[]
+  /**
+   * Epoch ms of the oldest account report. OMP caches reports per account, so
+   * this is how stale the section can be; null when no report says.
+   */
+  fetchedAt: number | null
+}
+
+export type OmpUsageResult =
+  | { ok: true; report: OmpUsageReport }
+  | { ok: false; error: string }
 
 export interface SessionListItem {
   path: string
@@ -1046,6 +1200,8 @@ export interface SessionDeleteResult {
 }
 
 export type ArchivedSessionsMap = Record<string, number>
+export type PinnedSessionsMap = Record<string, number>
+export type UnreadSessionsMap = Record<string, number>
 
 // File extensions Pi accepts as inline images (matches Pi's RPC image support).
 export const SUPPORTED_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'] as const
@@ -1101,10 +1257,14 @@ export interface CouncilDetectResult {
 
 /**
  * Request payload for COUNCIL_RUN_CONSULTANTS. The working directory is NOT
- * part of the payload: the main process resolves it from the active workspace,
- * so consultants always run against the real project tree.
+ * part of the payload: the main process resolves it from `workspaceId`, the
+ * registered workspace the run started in, so consultants always run against
+ * that project's tree even when the user switches away meanwhile.
  */
 export interface CouncilRunRequest {
+  /** The renderer's id of the run; main tags the run's progress events with it. */
+  runId: string
+  workspaceId: string
   request: string
   members: CouncilAgentIdType[]
   timeoutSeconds: number
@@ -1119,12 +1279,20 @@ export interface CouncilRunResult {
 /**
  * Request payload for COUNCIL_ARBITER. Pi merges (`merge`) or revises (`revise`)
  * the consensus plan in an isolated read-only subprocess. As with
- * COUNCIL_RUN_CONSULTANTS, the working directory is resolved from the active
- * workspace in the main process, never from the renderer.
+ * COUNCIL_RUN_CONSULTANTS, the main process resolves the working directory
+ * from the run's registered workspace, never from a renderer path.
  */
 export type CouncilArbiterRequest =
-  | { kind: 'merge'; request: string; results: ConsultantResultType[]; timeoutSeconds: number }
-  | { kind: 'revise'; request: string; plan: string; feedback: string; timeoutSeconds: number }
+  | { kind: 'merge'; runId: string; workspaceId: string; request: string; results: ConsultantResultType[]; timeoutSeconds: number }
+  | { kind: 'revise'; runId: string; workspaceId: string; request: string; plan: string; feedback: string; timeoutSeconds: number }
+
+/**
+ * Request payload for COUNCIL_CANCEL: stop the consultant and arbiter
+ * processes of that run, so a run the user left spends no more model credits.
+ */
+export interface CouncilCancelRequest {
+  runId: string
+}
 
 /** Result of COUNCIL_ARBITER: the merged or revised consensus plan text. */
 export interface CouncilArbiterResult {
@@ -1137,6 +1305,8 @@ export interface CouncilArbiterResult {
  * raw stdout for Codex, parsed text deltas for Claude.
  */
 export interface CouncilProgressEvent {
+  /** The run the chunk belongs to (the runId of its request). */
+  runId: string
   id: CouncilAgentIdType
   chunk: string
 }
@@ -1145,7 +1315,10 @@ import type { ModelsConfig as ModelsConfigType } from './models-config'
 import type { CouncilConfig } from './council-config'
 import type { VoicePrecision, VoiceModel, VoiceModelManifest, VoiceDownloadProgress } from './voice-models'
 import type { VoiceDevice } from './voice-device'
+import type { VoiceServerSettings, VoiceTranscriber } from './voice-server'
 import type { ChatWidth } from './chat-width'
+import type { KeepAwakeMode } from './keep-awake'
+import type { EditorId } from './editors'
 /** Result of the MODELS_READ IPC call. */
 /**
  * Where the custom-models config was read from. Main resolves the engine and
@@ -1278,6 +1451,9 @@ export type AgentEngineKind = 'pi' | 'omp'
 
 const AGENT_ENGINE_KINDS = { pi: true, omp: true } as const satisfies Record<AgentEngineKind, true>
 
+/** Every concrete engine, for pickers. */
+export const AGENT_ENGINE_KIND_LIST = Object.keys(AGENT_ENGINE_KINDS) as AgentEngineKind[]
+
 /** Payload check for an engine named over IPC. */
 export function isAgentEngineKind(value: unknown): value is AgentEngineKind {
   return typeof value === 'string' && Object.hasOwn(AGENT_ENGINE_KINDS, value)
@@ -1350,6 +1526,8 @@ export interface AppSettings {
   collapsedSessionGroups: string[]
   // User-made groups in the Skills panel. Display only: skill files never move.
   skillGroups: import('./skill-groups').SkillGroup[]
+  /** Last Browser pane page per workspace path. Not exposed in the Settings UI. */
+  browserPaneUrls: Record<string, string>
   /** Sidebar width in pixels; clamped by `clampSidebarWidth` on read. */
   sidebarWidth: number
   // Show the Home/launcher screen on launch (Pi starts lazily on first action)
@@ -1364,6 +1542,10 @@ export interface AppSettings {
   // the app running in the background. Windows/Linux only; on macOS the window
   // close already keeps the app alive in the Dock (native equivalent).
   minimizeToTrayOnClose: boolean
+  // Stop idle sleep: always, or only while agent work runs. The screen may
+  // still turn off. A closed laptop lid, a manual sleep command and a low
+  // battery stay under the operating system's control.
+  keepAwakeMode: KeepAwakeMode
   // Internal: whether the one-time "still running in the tray" hint has been
   // shown. Not exposed in the Settings UI.
   hasSeenTrayHint: boolean
@@ -1390,6 +1572,16 @@ export interface AppSettings {
   // 'gpu'. It picks which precision Settings downloads. Unknown values reset
   // to 'auto' on load.
   voiceDevice: VoiceDevice
+  // Where dictation turns speech into text: 'local' runs the voice model on
+  // this computer; 'server' sends each spoken segment to voiceServer. Unknown
+  // values reset to 'local' on load.
+  voiceTranscriber: VoiceTranscriber
+  // The OpenAI-compatible transcription server for 'server'. Its API key, when
+  // there is one, lives in its own owner-only file, never in this file.
+  voiceServer: VoiceServerSettings
+  // Editor that "Open in editor" uses; null = System default. Unknown ids
+  // reset to null on load.
+  preferredEditor: EditorId | null
 }
 
 // ─── Voice Dictation Types ──────────────────────────────────────────────────
@@ -1403,7 +1595,13 @@ export interface VoiceStatus {
   device: VoiceDevice
   /** The saved device needs a different set of startup switches than this run has. */
   restartRequired: boolean
+  transcriber: VoiceTranscriber
+  server: VoiceServerSettings
+  /** An API key for the server is saved. The key itself never leaves the main process. */
+  serverKeySaved: boolean
 }
+
+export type VoiceSaveServerKeyResult = { ok: true; status: VoiceStatus } | { ok: false }
 
 /** Request to download and install one model at one precision. */
 export interface VoiceInstallRequest {
@@ -1786,6 +1984,22 @@ export interface AppLogEntry {
   detail?: string
 }
 
+export type RendererErrorKind = 'window-error' | 'unhandled-rejection' | 'render-error'
+
+/** One renderer error, sent to main for the app log. */
+export interface RendererErrorRecord {
+  kind: RendererErrorKind
+  name: string
+  message: string
+  stack: string | null
+  componentStack: string | null
+  /** The store's currentView, or null outside the main app (Quick Chat). */
+  view: string | null
+  sessionId: string | null
+  /** True when nothing local handled it: window errors, rejections, the root boundary. */
+  unhandled: boolean
+}
+
 // ─── Diagnostics Types ──────────────────────────────────────────────────────
 
 export interface DiagnosticsWorkspaceInfo {
@@ -1822,6 +2036,13 @@ export type PiResolutionSource =
   | 'omp'
   | 'fallback'
 
+/** Result of `git --version`, run by bare name the way every git action runs. */
+export type GitAvailability =
+  | { status: 'found'; version: string }
+  | { status: 'missing' }
+  /** git started but did not report a version; `detail` is its own first output line. */
+  | { status: 'failed'; detail: string }
+
 /** Everything the Diagnostics view shows, assembled in one main-side pass. */
 export interface DiagnosticsReport {
   generatedAt: number
@@ -1847,6 +2068,8 @@ export interface DiagnosticsReport {
   }
   /** `pi --version` output (first line), or null when it could not run. */
   piVersion: string | null
+  /** `git --version`, cached from the startup check or the last Check again. */
+  git: GitAvailability
   workspaces: DiagnosticsWorkspaceInfo[]
   /** Null when models.json is missing or unreadable — see providersError. */
   providers: DiagnosticsProviderInfo[] | null
@@ -1867,15 +2090,30 @@ export interface DiagnosticsReport {
   recentErrors: AppLogEntry[]
 }
 
+export const LOG_EXPORT_FORMAT = 'pi-desktop-log-export/v1'
+
+/** The Export logs file: the report plus both log files, secrets redacted. */
+export interface LogExportFile {
+  format: typeof LOG_EXPORT_FORMAT
+  exportedAt: number
+  diagnostics: DiagnosticsReport
+  log: { current: AppLogEntry[]; previous: AppLogEntry[] }
+}
+
+export type LogExportResult =
+  | { ok: true; path: string }
+  | { ok: false; error: string }
+  | { ok: false; canceled: true }
+
 // ─── File Types ────────────────────────────────────────────────────────────
 
+/** One entry of a folder in the tree view; folders list their entries on demand (`files.listDir`). */
 export interface FileTreeNode {
   name: string
   path: string
+  /** Workspace-relative, `/` separators. */
   relativePath: string
   type: 'file' | 'directory'
-  children?: FileTreeNode[]
-  gitStatus?: GitFileStatus
 }
 
 export interface GitFileStatus {
@@ -1896,11 +2134,10 @@ export interface FileSearchResult {
 /**
  * Emitted (main → renderer, debounced) when files change on disk in the
  * active workspace. The renderer should refresh the file tree and git status
- * wholesale; `changeType`/`relativePath` describe the most recent change in
- * the debounce window and are informational, not an exhaustive change list.
+ * wholesale; `relativePath` (`/` separators) is the most recent change in the
+ * debounce window and is informational, not an exhaustive change list.
  */
 export interface FileChangeEvent {
-  changeType: 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir'
   relativePath: string
 }
 

@@ -479,6 +479,14 @@ function DiffHunk({ lines }: { lines: DiffLine[] }): React.JSX.Element {
 
 // ─── Diff Parser ─────────────────────────────────────────────────────────────
 
+const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
+/** A hunk range without a count (`-3 +3`) covers one line. */
+const DEFAULT_HUNK_LINE_COUNT = 1
+
+function hunkLineCount(count: string | undefined): number {
+  return count === undefined ? DEFAULT_HUNK_LINE_COUNT : parseInt(count)
+}
+
 export function parseDiff(diffText: string): DiffFileBlock[] {
   if (!diffText.trim()) return []
 
@@ -498,28 +506,41 @@ export function parseDiff(diffText: string): DiffFileBlock[] {
     let currentHunk: DiffLine[] = []
     let oldLine = 0
     let newLine = 0
+    // Body lines the current hunk header still announces. Outside a hunk (the
+    // `--- a/x` and `+++ b/x` file headers) no line is a body line, and inside
+    // one a removed `-- note` or an added `++i` is (`--- note`, `+++i`).
+    let oldLinesLeft = 0
+    let newLinesLeft = 0
 
     for (const line of lines) {
       if (line.startsWith('@@')) {
         if (currentHunk.length > 0) hunks.push(currentHunk)
         currentHunk = []
 
-        const hunkMatch = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/)
+        const hunkMatch = line.match(HUNK_HEADER)
         if (hunkMatch) {
           oldLine = parseInt(hunkMatch[1])
-          newLine = parseInt(hunkMatch[2])
+          oldLinesLeft = hunkLineCount(hunkMatch[2])
+          newLine = parseInt(hunkMatch[3])
+          newLinesLeft = hunkLineCount(hunkMatch[4])
         }
         currentHunk.push({ type: 'hunk', content: line })
-      } else if (line.startsWith('+') && !line.startsWith('+++')) {
+      } else if (oldLinesLeft === 0 && newLinesLeft === 0) {
+        // A file header or Git's extended header lines: not hunk content.
+      } else if (line.startsWith('+')) {
         currentHunk.push({ type: 'add', content: line.slice(1), newLine })
         newLine++
-      } else if (line.startsWith('-') && !line.startsWith('---')) {
+        newLinesLeft--
+      } else if (line.startsWith('-')) {
         currentHunk.push({ type: 'remove', content: line.slice(1), oldLine })
         oldLine++
+        oldLinesLeft--
       } else if (line.startsWith(' ')) {
         currentHunk.push({ type: 'context', content: line.slice(1), oldLine, newLine })
         oldLine++
         newLine++
+        oldLinesLeft--
+        newLinesLeft--
       }
     }
 

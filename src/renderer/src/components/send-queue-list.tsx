@@ -1,18 +1,18 @@
 import { useTranslation } from 'react-i18next'
 import { ListOrdered, Paperclip, Pencil, SendHorizontal, X } from 'lucide-react'
-import type { QueuedPrompt } from '../send-queue'
+import { sendQueueStatusText, type QueuedPrompt, type SendQueueHold } from '../send-queue'
 
 interface SendQueueListProps {
   prompts: readonly QueuedPrompt[]
-  /** The queue waits for the user (the last turn was stopped, refused or failed). */
-  held: boolean
+  /** Why the queue waits for the user, or undefined when it sends on its own. */
+  hold: SendQueueHold | undefined
   onSendNow: (prompt: QueuedPrompt) => void
   onEdit: (prompt: QueuedPrompt) => void
   onRemove: (prompt: QueuedPrompt) => void
 }
 
 /** Messages sent while the agent works, at the top of the composer, oldest first. */
-export function SendQueueList({ prompts, held, onSendNow, onEdit, onRemove }: SendQueueListProps): React.JSX.Element | null {
+export function SendQueueList({ prompts, hold, onSendNow, onEdit, onRemove }: SendQueueListProps): React.JSX.Element | null {
   const { t } = useTranslation()
   if (prompts.length === 0) return null
   return (
@@ -21,7 +21,7 @@ export function SendQueueList({ prompts, held, onSendNow, onEdit, onRemove }: Se
         <ListOrdered size={12} className="shrink-0" />
         <span>{t('chat.sendQueue.count', { count: prompts.length })}</span>
         <span className="text-faint">·</span>
-        <span className="min-w-0 truncate text-faint">{held ? t('chat.sendQueue.held') : t('chat.sendQueue.next')}</span>
+        <span className="min-w-0 truncate text-faint">{sendQueueStatusText(t, hold)}</span>
       </div>
       <ul className="max-h-28 space-y-1 overflow-y-auto">
         {prompts.map((prompt) => (

@@ -76,6 +76,27 @@ test('normalizeStoredSettings resets an invalid voice device', () => {
   assert.equal(settings.voiceDevice, DEFAULT_SETTINGS.voiceDevice)
 })
 
+test('dictation runs on this computer by default, and no server is set', () => {
+  assert.equal(DEFAULT_SETTINGS.voiceTranscriber, 'local')
+  assert.deepEqual(DEFAULT_SETTINGS.voiceServer, { baseUrl: '', model: '', language: '', prompt: '' })
+})
+
+test('a server written to settings.json by another program is kept, trimmed', () => {
+  const settings = normalizeStoredSettings(JSON.parse(JSON.stringify({
+    voiceTranscriber: 'server',
+    voiceServer: { baseUrl: 'http://127.0.0.1:8000/v1 ', model: 'speech-1', language: 'fr', prompt: '' },
+  })), LANGUAGES)
+  assert.equal(settings.voiceTranscriber, 'server')
+  assert.deepEqual(settings.voiceServer, { baseUrl: 'http://127.0.0.1:8000/v1', model: 'speech-1', language: 'fr', prompt: '' })
+})
+
+test('normalizeStoredSettings resets an unknown transcriber and a malformed server', () => {
+  const settings = normalizeStoredSettings({ voiceTranscriber: 'cloud', voiceServer: 'http://x' }, LANGUAGES)
+  assert.equal(settings.voiceTranscriber, 'local')
+  assert.deepEqual(settings.voiceServer, DEFAULT_SETTINGS.voiceServer)
+  assert.deepEqual(normalizeStoredSettings({ voiceServer: { model: 7 } }, LANGUAGES).voiceServer, DEFAULT_SETTINGS.voiceServer)
+})
+
 test('skill groups default to none and are cleaned on load', () => {
   assert.deepEqual(DEFAULT_SETTINGS.skillGroups, [])
   const settings = normalizeStoredSettings(
@@ -84,4 +105,30 @@ test('skill groups default to none and are cleaned on load', () => {
   )
   assert.deepEqual(settings.skillGroups, [{ id: 'a', name: 'Git', skills: ['commit'], collapsed: true }])
   assert.deepEqual(normalizeStoredSettings({ skillGroups: 'bad' }, LANGUAGES).skillGroups, [])
+})
+
+test('keep-awake mode defaults to off and keeps a known value', () => {
+  assert.equal(DEFAULT_SETTINGS.keepAwakeMode, 'off')
+  for (const mode of ['off', 'while-working', 'always'])
+    assert.equal(normalizeStoredSettings({ keepAwakeMode: mode }, LANGUAGES).keepAwakeMode, mode)
+})
+
+test('normalizeStoredSettings resets an invalid keep-awake mode', () => {
+  for (const keepAwakeMode of ['on', true, null, 3])
+    assert.equal(normalizeStoredSettings({ keepAwakeMode }, LANGUAGES).keepAwakeMode, DEFAULT_SETTINGS.keepAwakeMode)
+})
+
+test('preferredEditor defaults to null and drops unknown ids', () => {
+  assert.equal(normalizeStoredSettings({}, LANGUAGES).preferredEditor, null)
+  assert.equal(normalizeStoredSettings({ preferredEditor: 'helix' }, LANGUAGES).preferredEditor, 'helix')
+  assert.equal(normalizeStoredSettings({ preferredEditor: 'emacs' }, LANGUAGES).preferredEditor, null)
+  assert.equal(normalizeStoredSettings({ preferredEditor: 7 }, LANGUAGES).preferredEditor, null)
+})
+
+test('browser pane URLs default to empty and drop non-http entries', () => {
+  assert.deepEqual(normalizeStoredSettings({}, LANGUAGES).browserPaneUrls, {})
+  assert.deepEqual(
+    normalizeStoredSettings({ browserPaneUrls: { '/a': 'http://localhost:3000/', '/b': 'javascript:x' } }, LANGUAGES).browserPaneUrls,
+    { '/a': 'http://localhost:3000/' },
+  )
 })

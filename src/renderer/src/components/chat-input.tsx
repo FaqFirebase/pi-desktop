@@ -1,13 +1,13 @@
 import { useRef, useCallback, useState, useEffect, useLayoutEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
-import { EMPTY_COMPOSER_DRAFT, useAppStore, type ComposerAttachment } from '../store'
+import { type ComposerAttachment } from '../store'
+import { useChatSession } from '../chat-session-context'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
-import { useChatKeyboard, useChatWidth, useCommandCatalog } from '../hooks'
+import { useChatKeyboard } from '../hooks'
 import { messageColumnClass } from '../utils/chat-width'
 import { ComposerPermissionMenu } from './composer-permission-menu'
 import { CommandResults } from './command-results'
-import { SubagentProgress } from './subagent-progress'
 import { ModelSelector } from './model-selector'
 import { VoiceMicButton } from './voice-mic-button'
 import { useVoiceDictation } from '../voice/use-voice-dictation'
@@ -18,10 +18,8 @@ import {
   SUPPORTED_IMAGE_EXTENSIONS,
   type FileSearchResult,
 } from '../../../shared/ipc-contracts'
-import { composePrompt } from '../utils/compose-prompt'
 import type { QueuedPrompt } from '../send-queue'
 import { SendQueueList } from './send-queue-list'
-import { TurnActivityLine } from './turn-activity-line'
 import { isPointerMovement } from '../utils/pointer-movement'
 import { rankFileResults } from '../utils/rank-file-results'
 import {
@@ -33,7 +31,7 @@ import {
   type PiCommand,
 } from '../../../shared/pi-command'
 import { isImeComposing } from '../utils/ime-composing'
-import { NO_RECALLED_PROMPT, composerDraftText } from './composer-draft'
+import { NO_RECALLED_PROMPT, composerDraftText, composerInsertEdit, consumeSubmittedDraft } from './composer-draft'
 import { isFileDrag } from '../../../shared/folder-drop'
 import { droppedAttachmentFiles, readDroppedAttachment } from '../utils/dropped-attachments'
 import { readAttachmentBatch, type AttachmentSource } from '../utils/attachment-batch'
@@ -41,9 +39,6 @@ import { readFileAsBase64 } from '../utils/file-base64'
 
 const MAX_INPUT_HEIGHT = 160
 const MIN_INPUT_HEIGHT = 40
-
-// A stable empty queue, so the selector does not return a new array each render.
-const NO_QUEUED_PROMPTS: readonly QueuedPrompt[] = []
 
 // Max @-mention file suggestions shown at once.
 const MAX_MENTION_RESULTS = 10
@@ -68,6 +63,15 @@ function detectMention(ta: HTMLTextAreaElement): MentionState | null {
   return { start: pos - query.length - 1, query }
 }
 
+// Composer state that belongs to one scope. `current` turns false when that
+// scope's composer is torn down, so its late async work cannot touch another.
+interface ComposerOwner {
+  scopeKey: string
+  current: boolean
+  pendingReads: number
+  submitting: boolean
+}
+
 interface ChatInputProps {
   /** The chat pane around the composer; file drops anywhere on it attach. */
   dropZoneRef: React.RefObject<HTMLElement | null>
@@ -76,34 +80,29 @@ interface ChatInputProps {
 export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
   const { t } = useTranslation()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const workspaceId = useAppStore((state) => state.activeWorkspace?.id ?? '')
-  const composerFocusRequested = useAppStore((state) => state.composerFocusRequested)
-  const sessionLoading = useAppStore((state) => state.sessionLoading)
-  const currentView = useAppStore((state) => state.currentView)
-  const sendPrompt = useAppStore((state) => state.sendPrompt)
-  const abort = useAppStore((state) => state.abort)
-  const isStreaming = useAppStore((state) => state.isStreaming)
-  const piStatus = useAppStore((state) => state.piStatus)
-  const composerColumn = messageColumnClass(useChatWidth())
-  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
-  const pendingInsert = useAppStore((state) => state.pendingInsert)
-  const clearPendingInsert = useAppStore((state) => state.clearPendingInsert)
-  const setNotePickerOpen = useAppStore((state) => state.setNotePickerOpen)
-  const councilEnabled = useAppStore((s) => s.settings?.council?.enabled ?? false)
-  const runCouncil = useAppStore((s) => s.runCouncil)
-  const recordPrompt = useAppStore((s) => s.recordPrompt)
-  const permissionMode = useAppStore((s) => s.settings?.permissionMode)
-  const setPermissionMode = useAppStore((s) => s.setPermissionMode)
-  const toggleFileSearch = useAppStore((s) => s.toggleFileSearch)
-  const queuePrompt = useAppStore((s) => s.queuePrompt)
-  const removeQueuedPrompt = useAppStore((s) => s.removeQueuedPrompt)
-  const sendQueuedPromptNow = useAppStore((s) => s.sendQueuedPromptNow)
-  const queuedPrompts = useAppStore((s) => s.sendQueues[workspaceId] ?? NO_QUEUED_PROMPTS)
-  const queueHeld = useAppStore((s) => s.heldSendQueues.includes(workspaceId))
+  const session = useChatSession()
+  const { composer, voice } = session
+  const { scopeKey, focusRequested: composerFocusRequested, loading: sessionLoading,
+    active, streaming: isStreaming, pendingInsert, clearPendingInsert, recordPrompt,
+    searchFiles, submit: submitDraft, stop, pickAttachments, clearFocusRequest, getPathForFile } = composer
+  const composerColumn = messageColumnClass(session.settings.chatWidth)
+  const engineLabel = agentEngineLabel(session.engine) ?? DEFAULT_AGENT_ENGINE_LABEL
+  const bindingsRef = useRef(composer)
+  bindingsRef.current = composer
+  const ownerRef = useRef<ComposerOwner | null>(null)
+  if (ownerRef.current?.scopeKey !== scopeKey) {
+    ownerRef.current = { scopeKey, current: true, pendingReads: 0, submitting: false }
+  }
+  const owner = ownerRef.current
+  const ownsComposer = useCallback(
+    (): boolean => owner.current && bindingsRef.current.scopeKey === owner.scopeKey,
+    [owner]
+  )
+  const textRevision = useRef(0)
 
   // Prompt-history recall (shell-style ↑/↓). `historyIndex` is NO_RECALLED_PROMPT
   // while editing a fresh draft; while navigating it points into
-  // store.promptHistory and `draft` holds the text that was in the box before
+  // composer.history and `draft` holds the text that was in the box before
   // recall started (restored on ↓ past the newest entry).
   const historyIndex = useRef(NO_RECALLED_PROMPT)
   const draft = useRef('')
@@ -112,7 +111,8 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
   // draft is a bare `/token`. Unlike the Ctrl+K modal, the textarea keeps
   // focus the whole time and the draft never leaves it, so selecting a
   // command and typing its arguments can't fight a modal for focus.
-  const { builtins, allCommands } = useCommandCatalog()
+  const builtins = composer.guiCommands
+  const allCommands = composer.commands
   const [slashToken, setSlashToken] = useState<string | null>(null)
   const [slashIndex, setSlashIndex] = useState(0)
 
@@ -121,50 +121,68 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     ta.style.height = `${Math.min(Math.max(ta.scrollHeight, MIN_INPUT_HEIGHT), MAX_INPUT_HEIGHT)}px`
   }, [])
 
-  // Apply a note inserted from the panel or picker: drop the text at the
-  // cursor, refocus, resize, then clear so the same note can be inserted again.
-  // Only consume when Chat is the active surface (avoids applying while on Settings/etc.).
-  useEffect(() => {
-    if (!pendingInsert) return
-    if (useAppStore.getState().currentView !== 'chat') return
-    const ta = textareaRef.current
-    if (!ta) return
-
-    let caret: number
-    if (pendingInsert.replace) {
-      // Replace the whole composer (used by the slash palette, which fires
-      // only when the entire input is a "/..." query).
-      ta.value = pendingInsert.text
-      caret = pendingInsert.text.length
-    } else {
-      const start = ta.selectionStart ?? ta.value.length
-      const end = ta.selectionEnd ?? ta.value.length
-      ta.value = ta.value.slice(0, start) + pendingInsert.text + ta.value.slice(end)
-      caret = start + pendingInsert.text.length
-    }
-    ta.focus()
-    ta.setSelectionRange(caret, caret)
-    resizeTextarea(ta)
-
-    clearPendingInsert()
-  }, [pendingInsert, clearPendingInsert, resizeTextarea])
-
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
-  // The staged files as of the last commit, for the draft save on workspace switch.
   const attachmentsRef = useRef(attachments)
-  useLayoutEffect(() => {
-    attachmentsRef.current = attachments
-  }, [attachments])
+  const saveDraft = useCallback(() => {
+    const ta = textareaRef.current
+    if (!ta || !ownsComposer()) return
+    bindingsRef.current.saveDraft({
+      text: composerDraftText(ta.value, historyIndex.current, draft.current),
+      attachments: attachmentsRef.current,
+    })
+  }, [ownsComposer])
+  // Any edit ends prompt-history recall; the box is a fresh draft again.
+  const markDraftEdited = useCallback(() => {
+    textRevision.current += 1
+    historyIndex.current = NO_RECALLED_PROMPT
+    saveDraft()
+  }, [saveDraft])
+  const updateAttachments = useCallback((next: ComposerAttachment[]) => {
+    attachmentsRef.current = next
+    setAttachments(next)
+    saveDraft()
+  }, [saveDraft])
   const [attachError, setAttachError] = useState<string | null>(null)
   const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
   const attachmentDragDepth = useRef(0)
-  const pendingReads = useRef(0)
   const [isReadingAttachments, setIsReadingAttachments] = useState(false)
 
-  // Stage an attachment once; re-attaching the same path is a no-op.
+  // Keep the snapshot synchronous: hides and target switches can precede a render.
   const addAttachment = useCallback((next: ComposerAttachment) => {
-    setAttachments((prev) => (prev.some((a) => a.path === next.path) ? prev : [...prev, next]))
-  }, [])
+    const previous = attachmentsRef.current
+    if (!previous.some((attachment) => attachment.path === next.path)) {
+      updateAttachments([...previous, next])
+    }
+  }, [updateAttachments])
+  // Apply a note inserted from the panel or picker: drop the text at the
+  // cursor, refocus, resize, stage any attachments, then clear so the same
+  // note can be inserted again. A Browser pane pick has no text: it only
+  // stages attachments and leaves the typed text, selection and focus alone.
+  // Only consume when Chat is the active surface (avoids applying while on Settings/etc.).
+  useEffect(() => {
+    if (!pendingInsert) return
+    if (!active) return
+    const ta = textareaRef.current
+    if (!ta) return
+
+    // `replace` replaces the whole composer (used by the slash palette, which
+    // fires only when the entire input is a "/..." query).
+    const edit = composerInsertEdit(
+      ta.value,
+      ta.selectionStart ?? ta.value.length,
+      ta.selectionEnd ?? ta.value.length,
+      pendingInsert
+    )
+    if (edit) {
+      ta.value = edit.value
+      ta.focus()
+      ta.setSelectionRange(edit.caret, edit.caret)
+      resizeTextarea(ta)
+      markDraftEdited()
+    }
+    for (const attachment of pendingInsert.attachments ?? []) addAttachment(attachment)
+    clearPendingInsert?.()
+  }, [pendingInsert, active, clearPendingInsert, resizeTextarea, markDraftEdited, addAttachment])
 
   // Live voice dictation writes a running transcript into the composer. The
   // textarea is uncontrolled, so track the insertion point (anchor) and the
@@ -187,7 +205,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
         ta.focus()
         ta.setSelectionRange(r.caret, r.caret)
         resizeTextarea(ta)
-        historyIndex.current = NO_RECALLED_PROMPT
+        markDraftEdited()
       },
       onFinal: (text: string) => {
         const ta = textareaRef.current
@@ -198,12 +216,14 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
         ta.focus()
         ta.setSelectionRange(r.caret, r.caret)
         resizeTextarea(ta)
-        historyIndex.current = NO_RECALLED_PROMPT
+        markDraftEdited()
       },
     }),
-    [resizeTextarea]
+    [resizeTextarea, markDraftEdited]
   )
-  const dictation = useVoiceDictation(voiceHandlers)
+  const dictation = useVoiceDictation(voiceHandlers, {
+    active, loadStatus: voice.loadStatus, transcribeOnServer: voice.transcribeOnServer,
+  })
   const { cancel: cancelDictation } = dictation
 
   // Clear the composer and collapse it back to the idle height. The textarea is
@@ -217,7 +237,9 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     ta.value = ''
     ta.style.height = `${MIN_INPUT_HEIGHT}px`
     setSlashToken(null)
-  }, [cancelDictation])
+    draft.current = ''
+    markDraftEdited()
+  }, [cancelDictation, markDraftEdited])
 
   // @-file mention autocomplete. `mention` is the token being typed (null when
   // inactive); `mentionResults` are the workspace files matching it and
@@ -231,9 +253,12 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
   useLayoutEffect(() => {
     const ta = textareaRef.current
     if (!ta) return
-    const saved = useAppStore.getState().composerDrafts[workspaceId] ?? EMPTY_COMPOSER_DRAFT
+    owner.current = true
+    const draftOwner = bindingsRef.current
+    const saved = draftOwner.readDraft()
     ta.value = saved.text
     resizeTextarea(ta)
+    attachmentsRef.current = saved.attachments
     setAttachments(saved.attachments)
     setAttachError(null)
     historyIndex.current = NO_RECALLED_PROMPT
@@ -241,17 +266,35 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     setSlashToken(null)
     setMention(null)
     setMentionResults([])
+    setIsReadingAttachments(false)
+    const saveOwnerDraft = draftOwner.saveDraft
 
-    // Capture the element and owner before a workspace switch or unmount. A
-    // running dictation stops, so its late text cannot land in the next draft.
+    // Capture this owner's callback, not the newly selected target's binding.
     return () => {
+      owner.current = false
       cancelDictation()
-      useAppStore.getState().saveComposerDraft(workspaceId, {
+      saveOwnerDraft({
         text: composerDraftText(ta.value, historyIndex.current, draft.current),
         attachments: attachmentsRef.current,
       })
     }
-  }, [workspaceId, resizeTextarea, cancelDictation])
+  }, [scopeKey, owner, resizeTextarea, cancelDictation])
+
+  const restoredDraft = useRef(composer.draftVersion)
+  useLayoutEffect(() => {
+    if (restoredDraft.current === composer.draftVersion) return
+    restoredDraft.current = composer.draftVersion
+    const ta = textareaRef.current
+    if (!ta || !ownsComposer()) return
+    const saved = composer.readDraft()
+    ta.value = saved.text
+    attachmentsRef.current = saved.attachments
+    setAttachments(saved.attachments)
+    historyIndex.current = NO_RECALLED_PROMPT
+    draft.current = ''
+    textRevision.current += 1
+    resizeTextarea(ta)
+  }, [composer, ownsComposer, resizeTextarea])
 
   // Search the workspace for the active mention query (debounced). An empty
   // query yields no results, so the popup stays hidden until the user types.
@@ -268,19 +311,19 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     let cancelled = false
     const timer = setTimeout(async () => {
       try {
-        const results = await window.piDesktop.files.search(query)
-        if (!cancelled) {
+        const results = await searchFiles(query)
+        if (!cancelled && ownsComposer()) {
           setMentionResults(rankFileResults(results, query).slice(0, MAX_MENTION_RESULTS))
         }
       } catch {
-        if (!cancelled) setMentionResults([])
+        if (!cancelled && ownsComposer()) setMentionResults([])
       }
     }, 120)
     return () => {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [mention])
+  }, [mention, ownsComposer, searchFiles])
 
   // Keep the highlight in range as results change.
   useEffect(() => {
@@ -303,8 +346,9 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
       ta.focus()
       setMention(null)
       setMentionResults([])
+      markDraftEdited()
     },
-    [mention, resizeTextarea]
+    [mention, resizeTextarea, markDraftEdited]
   )
 
   const mentionOpen = mention !== null && mentionResults.length > 0
@@ -344,55 +388,48 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
       ta.setSelectionRange(token.length, token.length)
       resizeTextarea(ta)
       ta.focus()
+      markDraftEdited()
     },
-    [builtins, resetComposer, resizeTextarea]
+    [builtins, resetComposer, resizeTextarea, markDraftEdited]
   )
 
-  // Take the typed text and staged files out of the composer for sending.
-  const takeComposerContent = useCallback(
-    (message: string): ComposerAttachment[] | null => {
-      if (pendingReads.current > 0) return null
-      // Record the raw prompt (pre-attachment-inlining) for ↑/↓ recall, and
-      // reset any in-progress history navigation.
+  // Submit raw text once. The host owns prompt composition and queue/steer policy.
+  // Only an accepted result may consume the captured draft; later edits survive.
+  const submit = useCallback(async (message: string, intent: 'send' | 'send-now') => {
+    if (owner.pendingReads > 0 || owner.submitting || !owner.current) return
+    const ta = textareaRef.current
+    if (!ta || (!message.trim() && attachmentsRef.current.length === 0)) return
+    cancelDictation()
+    const captured = {
+      scopeKey,
+      text: ta.value,
+      revision: textRevision.current,
+      attachments: attachmentsRef.current,
+    }
+    owner.submitting = true
+    try {
+      const consumed = await submitDraft(message, captured.attachments, intent)
+      if (!consumed || !ownsComposer()) return
       recordPrompt(message)
-      historyIndex.current = NO_RECALLED_PROMPT
-      draft.current = ''
-      const taken = attachments
-      // Sending can replace this composer before React renders the cleared state.
-      // Clear the cleanup snapshot first so an already-sent image cannot be saved again.
-      attachmentsRef.current = []
-      setAttachments([])
-      resetComposer()
-      useAppStore.getState().saveComposerDraft(workspaceId, EMPTY_COMPOSER_DRAFT)
-      return taken
-    },
-    [attachments, recordPrompt, resetComposer, workspaceId]
-  )
-
-  // Send now, into a running turn too (Ctrl/Cmd+Enter, and every send while idle).
-  const handleSendNow = useCallback(
-    (message: string) => {
-      const taken = takeComposerContent(message)
-      if (!taken) return
-      const { message: prompt, options } = composePrompt(message, taken)
-      void sendPrompt(prompt, options)
-    },
-    [takeComposerContent, sendPrompt]
-  )
-
-  // Enter: while the agent works the message waits in the queue, so it never
-  // lands in the middle of the turn by surprise.
-  const handleSend = useCallback(
-    (message: string) => {
-      if (!useAppStore.getState().isStreaming) {
-        handleSendNow(message)
-        return
+      const remaining = consumeSubmittedDraft(captured, {
+        scopeKey: bindingsRef.current.scopeKey,
+        text: ta.value,
+        revision: textRevision.current,
+        attachments: attachmentsRef.current,
+      })
+      if (remaining.text !== ta.value) resetComposer()
+      updateAttachments(remaining.attachments)
+    } catch (error) {
+      if (owner.current) {
+        setAttachError(error instanceof Error ? error.message : String(error))
+        saveDraft()
       }
-      const taken = takeComposerContent(message)
-      if (taken) queuePrompt(workspaceId, message, taken)
-    },
-    [handleSendNow, takeComposerContent, queuePrompt, workspaceId]
-  )
+    } finally {
+      owner.submitting = false
+    }
+  }, [owner, ownsComposer, submitDraft, scopeKey, cancelDictation, recordPrompt, resetComposer, updateAttachments, saveDraft])
+  const handleSend = useCallback((message: string) => { void submit(message, 'send') }, [submit])
+  const handleSendNow = useCallback((message: string) => { void submit(message, 'send-now') }, [submit])
 
   // Put a queued message back in the composer to change it. Text already in
   // the box stays after it, and files merge, so nothing typed is lost.
@@ -400,19 +437,20 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     (prompt: QueuedPrompt) => {
       const ta = textareaRef.current
       if (!ta) return
-      removeQueuedPrompt(workspaceId, prompt.id)
+      composer.queue?.remove(prompt.id)
       ta.value = ta.value.trim() ? `${prompt.text}\n${ta.value}` : prompt.text
       resizeTextarea(ta)
       ta.focus()
       ta.setSelectionRange(prompt.text.length, prompt.text.length)
       for (const attachment of prompt.attachments) addAttachment(attachment)
+      markDraftEdited()
     },
-    [removeQueuedPrompt, workspaceId, resizeTextarea, addAttachment]
+    [composer.queue, resizeTextarea, addAttachment, markDraftEdited]
   )
 
   const handleAbort = useCallback(() => {
-    abort()
-  }, [abort])
+    void stop()
+  }, [stop])
 
   // Drop a recalled prompt into the box: set value, regrow height, caret to end.
   const applyHistory = useCallback(
@@ -422,50 +460,44 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
       ta.value = text
       resizeTextarea(ta)
       ta.setSelectionRange(text.length, text.length)
+      textRevision.current += 1
+      saveDraft()
     },
-    [resizeTextarea]
+    [resizeTextarea, saveDraft]
   )
 
-  // Read picked or dropped files and stage them. Send waits until every read
-  // settles. The composer is shared across workspaces: a batch whose workspace
-  // was switched away mid-read is discarded, not attached to the new one.
+  // A late read can stage files only in the owner that began the batch.
   const stageAttachmentBatch = useCallback(async (sources: AttachmentSource[]): Promise<void> => {
-    const batchWorkspaceId = workspaceId
-    const isBatchCurrent = (): boolean =>
-      (useAppStore.getState().activeWorkspace?.id ?? '') === batchWorkspaceId
-    pendingReads.current += 1
+    owner.pendingReads += 1
     setIsReadingAttachments(true)
     try {
-      const batch = await readAttachmentBatch(sources, isBatchCurrent)
+      const batch = await readAttachmentBatch(sources, ownsComposer)
       if (!batch) return
       for (const attachment of batch.attachments) addAttachment(attachment)
       if (batch.errors.length) setAttachError(batch.errors.join('\n'))
       textareaRef.current?.focus()
     } finally {
-      pendingReads.current -= 1
-      setIsReadingAttachments(pendingReads.current > 0)
+      owner.pendingReads -= 1
+      if (ownsComposer()) setIsReadingAttachments(owner.pendingReads > 0)
     }
-  }, [addAttachment, workspaceId])
+  }, [addAttachment, owner, ownsComposer])
 
   const handleAttachFile = useCallback(async () => {
     setAttachError(null)
+    owner.pendingReads += 1
+    setIsReadingAttachments(true)
     try {
-      const paths = await window.piDesktop.system.openAttachmentDialog({
-        title: t('common.attachFile'),
-        filters: [
-          { name: t('chat.attach.imagesFilter'), extensions: [...SUPPORTED_IMAGE_EXTENSIONS] },
-          { name: t('chat.attach.allFilesFilter'), extensions: ['*'] },
-        ],
-      })
-      await stageAttachmentBatch(paths.map((path) => ({
-        label: path,
-        path,
-        read: () => window.piDesktop.files.readAttachment(path),
-      })))
+      const picked = await pickAttachments()
+      if (!ownsComposer()) return
+      for (const attachment of picked.attachments) addAttachment(attachment)
+      if (picked.errors.length) setAttachError(picked.errors.join('\n'))
     } catch (err) {
-      setAttachError(err instanceof Error ? err.message : t('chat.attach.attachFailed'))
+      if (owner.current) setAttachError(err instanceof Error ? err.message : t('chat.attach.attachFailed'))
+    } finally {
+      owner.pendingReads -= 1
+      if (owner.current) setIsReadingAttachments(owner.pendingReads > 0)
     }
-  }, [stageAttachmentBatch, t])
+  }, [pickAttachments, addAttachment, owner, ownsComposer, t])
 
   const attachImageFile = useCallback(async (file: File): Promise<void> => {
     const mime = file.type.toLowerCase()
@@ -482,8 +514,11 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     }
 
     setAttachError(null)
+    owner.pendingReads += 1
+    setIsReadingAttachments(true)
     try {
       const data = await readFileAsBase64(file)
+      if (!ownsComposer()) return
       const ext = subtype === 'jpeg' ? 'jpg' : subtype
       const name = file.name && file.name !== 'image.png' ? file.name : `pasted-image.${ext}`
       const path = `clipboard://${name}-${file.size}-${file.lastModified}`
@@ -499,27 +534,31 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
       }
       addAttachment(next)
     } catch (err) {
-      setAttachError(err instanceof Error ? err.message : t('chat.attach.pasteFailed'))
+      if (owner.current) setAttachError(err instanceof Error ? err.message : t('chat.attach.pasteFailed'))
+    } finally {
+      owner.pendingReads -= 1
+      if (owner.current) setIsReadingAttachments(owner.pendingReads > 0)
     }
-  }, [addAttachment, t])
+  }, [addAttachment, owner, ownsComposer, t])
 
   // A stopped agent stays typable: the first send lazy-starts Pi/OMP.
   // Only transient/error states block input.
-  const isDisabled = piStatus === 'starting' || piStatus === 'error'
+  const isDisabled = !active || composer.loading || session.models.status === 'starting' || session.models.status === 'error'
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current
+    const requestFocus = bindingsRef.current.requestFocus
     return () => {
       // Late history hydration can replace an already-focused composer.
       // Hand focus to its replacement, but never reclaim it after the user left.
       if (textarea && document.activeElement === textarea) {
-        useAppStore.setState({ composerFocusRequested: true })
+        requestFocus()
       }
     }
-  }, [])
+  }, [scopeKey])
 
   useEffect(() => {
-    if (!composerFocusRequested || isDisabled || sessionLoading || currentView !== 'chat') return
+    if (!composerFocusRequested || isDisabled || sessionLoading || !active) return
     // History hydration swaps the loading composer for the empty-chat composer.
     // Keep the request pending until the mounted, enabled input actually takes focus.
     const frame = requestAnimationFrame(() => {
@@ -527,11 +566,11 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
       if (!textarea) return
       textarea.focus()
       if (document.activeElement === textarea) {
-        useAppStore.setState({ composerFocusRequested: false })
+        clearFocusRequest()
       }
     })
     return () => cancelAnimationFrame(frame)
-  }, [composerFocusRequested, isDisabled, sessionLoading, currentView])
+  }, [composerFocusRequested, isDisabled, sessionLoading, active, clearFocusRequest])
 
   useEffect(() => {
     if (!composerFocusRequested) return
@@ -539,12 +578,12 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     // request waited: they chose where to type, so the composer must not steal it.
     const dropRequestOnOtherFocus = (event: FocusEvent): void => {
       if (event.target !== textareaRef.current) {
-        useAppStore.setState({ composerFocusRequested: false })
+        clearFocusRequest()
       }
     }
     document.addEventListener('focusin', dropRequestOnOtherFocus)
     return () => document.removeEventListener('focusin', dropRequestOnOtherFocus)
-  }, [composerFocusRequested])
+  }, [composerFocusRequested, clearFocusRequest])
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -585,10 +624,10 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
     setAttachError(null)
     void stageAttachmentBatch(files.map((file) => ({
       label: file.name,
-      path: window.piDesktop.system.getPathForFile(file) || `drop://${file.name}-${file.size}-${file.lastModified}`,
+      path: getPathForFile?.(file) || `drop://${file.name}-${file.size}-${file.lastModified}`,
       read: () => readDroppedAttachment(file),
     })))
-  }, [isDisabled, stageAttachmentBatch])
+  }, [isDisabled, stageAttachmentBatch, getPathForFile])
 
   // The whole chat pane takes file drops, not only the composer box. Claiming
   // a file drag here also hides the window's folder-drop overlay; a drop with
@@ -625,10 +664,15 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
   }, [dropZoneRef, handleDrop, isDisabled])
 
   const removeAttachment = useCallback((index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index))
-  }, [])
+    updateAttachments(attachmentsRef.current.filter((_, i) => i !== index))
+  }, [updateAttachments])
 
-  useChatKeyboard(handleSend, handleSendNow, handleAbort, textareaRef)
+  useChatKeyboard(handleSend, handleSendNow, textareaRef, {
+    active,
+    streaming: isStreaming,
+    escape: composer.escape,
+    onEscape: composer.escape === 'hide' ? () => { void composer.hide?.() } : handleAbort,
+  })
 
   return (
     <div className={clsx('pointer-events-none mx-auto w-full px-4', composerColumn)}>
@@ -659,19 +703,16 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
           </div>
         )}
         {isReadingAttachments && <div className="px-3 pt-2 text-xs text-muted" role="status">{t('chat.attach.reading')}</div>}
-        <TurnActivityLine onStop={handleAbort} />
-        <SendQueueList
-          prompts={queuedPrompts}
-          held={queueHeld}
-          onSendNow={(prompt) => void sendQueuedPromptNow(workspaceId, prompt.id)}
-          onEdit={editQueuedPrompt}
-          onRemove={(prompt) => removeQueuedPrompt(workspaceId, prompt.id)}
-        />
-        {/* Subagent strip sits on the top edge, inset ~5% each side so the pill
-            width doesn't look like it grew with the fleet UI. */}
-        <div className="pointer-events-auto absolute bottom-full left-[5%] right-[5%] z-20 mb-0">
-          <SubagentProgress />
-        </div>
+        {composer.adornment}
+        {composer.queue && (
+          <SendQueueList
+            prompts={composer.queue.prompts}
+            hold={composer.queue.hold}
+            onSendNow={(prompt) => void composer.queue?.sendNow(prompt.id)}
+            onEdit={editQueuedPrompt}
+            onRemove={(prompt) => composer.queue?.remove(prompt.id)}
+          />
+        )}
 
         {slashOpen && (
           <div className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border border-border-strong bg-surface shadow-2xl">
@@ -757,7 +798,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
           placeholder={
             isDisabled
               ? t('chat.composer.placeholderNotRunning', { agent: engineLabel })
-              : isStreaming
+              : isStreaming && composer.queue
                 ? t('chat.composer.placeholderQueue')
                 : t('chat.composer.placeholderIdle', { agent: engineLabel })
           }
@@ -769,14 +810,13 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
           onInput={(e) => {
             const target = e.currentTarget
             resizeTextarea(target)
-            // Any real edit ends history navigation; the box is a fresh draft again.
-            historyIndex.current = NO_RECALLED_PROMPT
             // Offer command suggestions only while the draft is a bare
             // `/token` — once whitespace appears the user is typing arguments
             // after a chosen command, not searching for one (issue #50).
             setSlashToken(isSlashCommandToken(target.value) ? target.value : null)
             // Detect / refine an @-file mention at the caret.
             setMention(detectMention(target))
+            markDraftEdited()
           }}
           onBlur={() => {
             setMention(null)
@@ -784,14 +824,14 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
           }}
           onKeyDown={(e) => {
             if (isImeComposing(e.nativeEvent)) return
-            if (e.key === 'Enter' && !e.shiftKey && pendingReads.current > 0) {
+            if (e.key === 'Enter' && !e.shiftKey && owner.pendingReads > 0) {
               e.preventDefault()
               e.stopPropagation()
               return
             }
             if (e.ctrlKey && e.key === 'p') {
               e.preventDefault()
-              useAppStore.getState().cycleModel()
+              void session.models.cycle()
             }
             // Ctrl+Shift+F (file search) is handled at the window level in
             // ChatPanel so it works regardless of composer focus.
@@ -859,11 +899,11 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
             if (
               (e.key === 'ArrowUp' || e.key === 'ArrowDown') &&
               !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey &&
-              !useAppStore.getState().commandPaletteOpen
+              !composer.historyBlocked
             ) {
               const ta = e.currentTarget
               if (ta.selectionStart !== ta.selectionEnd) return
-              const history = useAppStore.getState().promptHistory
+              const history = composer.history
               if (e.key === 'ArrowUp') {
                 const onFirstLine = ta.value.slice(0, ta.selectionStart).indexOf('\n') === -1
                 if (!onFirstLine || history.length === 0) return
@@ -892,7 +932,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
         />
 
         <div className="@container/composer font-chat flex items-center gap-1 px-2 pb-2 pt-0">
-          <ComposerPermissionMenu value={permissionMode} onChange={setPermissionMode} />
+          <ComposerPermissionMenu />
           <button
             onClick={handleAttachFile}
             disabled={isDisabled}
@@ -902,24 +942,24 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
           >
             <Paperclip size={15} />
           </button>
-          <VoiceMicButton dictation={dictation} disabled={isDisabled} />
-          <button
-            onClick={() => setNotePickerOpen(true)}
+          <VoiceMicButton dictation={dictation} disabled={isDisabled} openSettings={voice.openSettings} globalShortcuts={voice.globalShortcuts ?? false} />
+          {composer.openNotes && <button
+            onClick={composer.openNotes}
             className="hover:bg-highlight-strong flex items-center justify-center rounded-md p-1.5 text-dim hover:text-secondary transition-colors"
             title={t('chat.insertNote.titleWithShortcut')}
             aria-label={t('chat.insertNote.ariaLabel')}
           >
             <StickyNote size={15} />
-          </button>
-          <button
-            onClick={() => toggleFileSearch()}
+          </button>}
+          {composer.searchWorkspace && <button
+            onClick={composer.searchWorkspace}
             className="hover:bg-highlight-strong flex items-center justify-center rounded-md p-1.5 text-dim hover:text-secondary transition-colors"
             title={t('chat.searchWorkspace.titleWithShortcut')}
             aria-label={t('chat.searchWorkspace.ariaLabel')}
           >
             <Search size={15} />
-          </button>
-          {councilEnabled && (
+          </button>}
+          {composer.runCouncil && (
             <button
               type="button"
               onClick={() => {
@@ -928,7 +968,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
                   recordPrompt(value)
                   historyIndex.current = NO_RECALLED_PROMPT
                   draft.current = ''
-                  void runCouncil(value)
+                  void composer.runCouncil?.(value)
                   resetComposer()
                 }
               }}
@@ -954,7 +994,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
               <button
                 onClick={handleAbort}
                 className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors"
-                title={t('chat.stopButton.titleWithShortcut')}
+                title={composer.escape === 'hide' ? t('chat.stopButton.title') : t('chat.stopButton.titleWithShortcut')}
                 aria-label={t('chat.stopButton.ariaLabel')}
               >
                 <Square size={16} />
@@ -962,10 +1002,7 @@ export function ChatInput({ dropZoneRef }: ChatInputProps): React.JSX.Element {
             ) : (
               <button
                 onClick={() => {
-                  const value = textareaRef.current?.value.trim()
-                  if (value) {
-                    handleSend(value)
-                  }
+                  handleSend(textareaRef.current?.value ?? '')
                 }}
                 disabled={isDisabled || isReadingAttachments}
                 className="hover:bg-highlight-strong flex items-center justify-center rounded-lg p-1.5 text-dim hover:text-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"

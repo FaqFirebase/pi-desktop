@@ -19,6 +19,9 @@ let isFileWatchDemanded: (
 let sessionTabToClose: (
   state: WorkflowPanelScope & { currentView: string; activeSessionRuntimeId: string | null }
 ) => string | null
+let visibleSessionPath: (
+  state: WorkflowPanelScope & { currentView: string; sessionState: { sessionFile: string | null } | null }
+) => string | null
 
 const RUNTIME_ID = 'runtime-1'
 const NO_WORKFLOW_PANEL: WorkflowPanelScope = {
@@ -31,7 +34,7 @@ const NO_WORKFLOW_PANEL: WorkflowPanelScope = {
 // actions. A bare stub is enough to import the module under test.
 before(async () => {
   ;(globalThis as unknown as { window: unknown }).window = { piDesktop: {} }
-  ;({ isGlobalWorkflowOpen, isAbortShortcut, isFileWatchDemanded, sessionTabToClose } = await import('./hooks'))
+  ;({ isGlobalWorkflowOpen, isAbortShortcut, isFileWatchDemanded, sessionTabToClose, visibleSessionPath } = await import('./hooks'))
 })
 
 test('the workspace is watched only while a files or diff panel is on screen', () => {
@@ -142,4 +145,13 @@ test('the close shortcut never closes a tab hidden behind another view', () => {
     null,
     'the global workflow view covers the chat'
   )
+})
+
+test("the visible session is the chat's session file only while the chat shows", () => {
+  const sessionState = { sessionFile: '/s/a.jsonl' }
+  assert.equal(visibleSessionPath({ ...NO_WORKFLOW_PANEL, currentView: 'chat', sessionState }), '/s/a.jsonl')
+  assert.equal(visibleSessionPath({ ...NO_WORKFLOW_PANEL, currentView: 'settings', sessionState }), null)
+  const globalWorkflow = { workflowPanelOpen: true, workflowPanelFilter: null, workflowPanelWorkspaceId: null }
+  assert.equal(visibleSessionPath({ ...globalWorkflow, currentView: 'chat', sessionState }), null)
+  assert.equal(visibleSessionPath({ ...NO_WORKFLOW_PANEL, currentView: 'chat', sessionState: null }), null)
 })

@@ -8,8 +8,8 @@ import { requestCommitPushDialog } from './commit-push-shortcut'
 import { adjacentTabIndex, projectTabs, sessionTabs } from './tab-navigation'
 import { emitVoiceShortcut } from '../voice/voice-shortcut'
 
-/** Actions that run once per key press; the voice keys are handled in dispatchAppShortcut. */
-type CommandShortcutAction = Exclude<ShortcutAction, 'pushToTalk' | 'globalDictation'>
+/** In-app commands exclude hold-to-talk and the main process's system-wide actions. */
+type CommandShortcutAction = Exclude<ShortcutAction, 'pushToTalk' | 'globalDictation' | 'quickChat'>
 
 /** The document listener that gets the key: before the focused element ('capture') or after it ('bubble'). */
 type ShortcutListenerPhase = 'capture' | 'bubble'
@@ -72,7 +72,7 @@ export async function runAppShortcut(action: CommandShortcutAction): Promise<voi
       return
     case 'previousProject':
     case 'nextProject': {
-      const tabs = projectTabs(state.workspaces, state.projectTabOrder)
+      const tabs = projectTabs(state.workspaces, state.projectTabOrder, state.hiddenProjectTabIds)
       const index = adjacentTabIndex(tabs.findIndex((tab) => tab.id === state.activeWorkspace?.id), tabs.length,
         action === 'nextProject' ? 'next' : 'previous')
       if (index === null) return
@@ -154,6 +154,13 @@ function dispatchAppShortcut(event: KeyboardEvent, phase: ShortcutListenerPhase)
   if (action === 'pushToTalk') {
     heldPushToTalk = shortcuts.pushToTalk
     emitVoiceShortcut('hold')
+    return
+  }
+  if (action === 'quickChat') {
+    // A desktop that refuses the system-wide key (a Wayland portal without an app id)
+    // never sends it, so the window opens Quick Chat itself. Opening never hides,
+    // so a desktop that also delivers the key here cannot close it again.
+    void window.piDesktop.settings.openQuickChat()
     return
   }
   void runAppShortcut(action)

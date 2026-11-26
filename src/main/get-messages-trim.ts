@@ -18,22 +18,21 @@ export function trimGetMessagesResponse(response: unknown): unknown {
   const messages = dataObj.messages
   if (!Array.isArray(messages)) return response
 
-  const sliced =
-    messages.length > MAX_MESSAGES_FOR_UI
-      ? messages.slice(messages.length - MAX_MESSAGES_FOR_UI)
-      : messages
-
-  const trimmed = sliced.map((msg) => trimMessagePayload(msg))
   return {
     ...root,
     data: {
       ...dataObj,
-      messages: trimmed,
+      messages: trimMessagesForUi(messages),
       // Hint for UI if we dropped older turns (optional; renderer may ignore).
       truncatedFromStart: messages.length > MAX_MESSAGES_FOR_UI,
       totalMessageCount: messages.length,
     },
   }
+}
+
+/** The most recent messages the renderer shows, each with oversized payloads cut. */
+export function trimMessagesForUi(messages: readonly unknown[]): unknown[] {
+  return messages.slice(-MAX_MESSAGES_FOR_UI).map(trimMessagePayload)
 }
 
 export function trimMessagePayload(msg: unknown): unknown {

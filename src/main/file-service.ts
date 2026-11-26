@@ -1,15 +1,16 @@
-import { watch, type FSWatcher } from 'chokidar'
 import { readdir, stat, readFile, writeFile, realpath } from 'fs/promises'
-import type { Dirent } from 'fs'
+import { watch as fsWatch, type Dirent } from 'fs'
 import { join, extname, basename, resolve, relative, isAbsolute, sep, dirname } from 'path'
-import { execFile } from 'child_process'
+import { execFile, type ExecFileOptions } from 'child_process'
 import { promisify } from 'util'
 import { homedir } from 'os'
 import { describeWriteError } from './fs-errors'
 import { appLog } from './app-log'
-import { WHOLE_WORKSPACE_CHANGE_PATH, type FileChangeEvent } from '../shared/ipc-contracts'
+import { WHOLE_WORKSPACE_CHANGE_PATH, type FileChangeEvent, type FileTreeNode } from '../shared/ipc-contracts'
 import { watchGitHead } from './git-head-watcher'
+import { watchFolderTree } from './folder-tree-watcher'
 import { parsePorcelainZEntries } from './git-conveyor'
+import { gitProcessEnv } from './git-worktree'
 import {
   GIT_DIFF_NEW_SIDE, GIT_DIFF_OLD_SIDE, canDiscardGitPatch, gitDiffArgs, gitDiffPaths, quoteGitPath, splitGitDiff,
   workspaceRelativeGitPath,
@@ -17,6 +18,11 @@ import {
 import { i18n, t, tEnglish, type Translate } from '../shared/i18n'
 
 const execFileAsync = promisify(execFile)
+
+/** Run git with English messages, the wording `isBenignGitError` matches. */
+function execGit(args: string[], options: ExecFileOptions): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync('git', args, { ...options, encoding: 'utf8', env: gitProcessEnv() })
+}
 
 // execFile kills the child past 1 MiB of stdout by default, which a
 // whole-worktree status or diff on a repo with many changes easily exceeds.
@@ -132,7 +138,7 @@ const IGNORED_DIRS = new Set([
 /**
  * Package caches and tool state that live under a home-directory workspace.
  * Each holds thousands of directories, so watching them exhausts file
- * descriptors long before `WATCH_DEPTH` bounds the walk.
+ * watches long before `WATCH_MAX_FOLDER_DEPTH` bounds the walk.
  */
 const HOME_TOOLING_IGNORED = new Set([
   '.npm', '.pnpm-store', '.yarn', '.bun', '.nvm', '.cargo', '.rustup',
@@ -195,12 +201,21 @@ const WORKSPACE_ROOT_DEPTH = 0
 /** Log each watch error path at most once to avoid console floods. */
 const watchErrorLogged = new Set<string>()
 
-// Watcher tuning. Depth matches the tree view (getFileTree default), so the
-// watcher never recurses into deep subtrees the UI doesn't render — important
-// because the default workspace is the user's home directory. Burst writes
-// (e.g. an agent editing several files) are coalesced into one refresh.
-const WATCH_DEPTH = 4
+// Watcher tuning. Burst writes (e.g. an agent editing several files) are
+// coalesced into one refresh. On Linux, the walk stops at
+// `WATCH_MAX_FOLDER_DEPTH` (the root is level 0), so it never recurses into
+// deep subtrees of a home-directory workspace; changes deeper down reach the
+// tree through its safety poll.
+const WATCH_MAX_FOLDER_DEPTH = 5
 const WATCH_DEBOUNCE_MS = 250
+
+/**
+ * Windows and macOS watch a whole tree with one native handle
+ * (ReadDirectoryChangesW, FSEvents): no scan and no handle per entry. Linux has
+ * no native recursive watch (Node walks the tree in JavaScript, with no ignore
+ * list), so it uses `watchFolderTree`: one watch per folder, none per file.
+ */
+const NATIVE_RECURSIVE_WATCH = process.platform === 'win32' || process.platform === 'darwin'
 
 export type FileChangeCallback = (event: FileChangeEvent) => void
 
@@ -213,13 +228,21 @@ const TEXT_EXTENSIONS = new Set([
   '.prettierrc', '.eslintrc', 'Makefile', 'Dockerfile',
 ])
 
-export interface FileTreeNode {
-  name: string
-  path: string
-  relativePath: string
-  type: 'file' | 'directory'
-  children?: FileTreeNode[]
-  gitStatus?: GitFileStatus
+/** Workspace-relative path with `/` separators, the form the tree view and change events use. */
+function toTreePath(relativePath: string): string {
+  return sep === '/' ? relativePath : relativePath.split(sep).join('/')
+}
+
+/** A folder entry's tree type, following a symlink; null when its target cannot be read (a dangling link). */
+async function treeEntryType(folder: string, item: Dirent): Promise<FileTreeNode['type'] | null> {
+  if (item.isDirectory()) return 'directory'
+  if (!item.isSymbolicLink()) return 'file'
+  try {
+    return (await stat(join(folder, item.name))).isDirectory() ? 'directory' : 'file'
+  } catch (error) {
+    if (isUnlistableEntryError(error)) return null
+    throw error
+  }
 }
 
 export interface GitFileStatus {
@@ -260,12 +283,12 @@ export function buildNewFileDiff(relativePath: string, content: string): string 
 }
 
 export class FileService {
-  private watcher: FSWatcher | null = null
+  private closeWatcher: (() => void) | null = null
   private stopGitHeadWatch: (() => void) | null = null
   private workspacePath: string
   private readonly isHomeWorkspace: boolean
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
-  private pendingChange: FileChangeEvent | null = null
+  private pendingChangePath: string | null = null
   private discardingDiff = false
 
   constructor(workspacePath: string, homePath: string = homedir()) {
@@ -280,10 +303,35 @@ export class FileService {
   }
 
   /**
-   * Build a file tree for the workspace.
+   * One folder of the tree view, in tree order (folders first, then files,
+   * both alphabetical). `relativeDir` is workspace-relative with `/`
+   * separators; '' is the workspace root. Throws when the folder cannot be
+   * read; an entry whose link target cannot be read is left out. Only links
+   * cost a `stat`: the folder listing already tells files from folders.
    */
-  async getFileTree(maxDepth = 4): Promise<FileTreeNode> {
-    return this.buildTree(this.workspacePath, '', 0, maxDepth)
+  async listDirectory(relativeDir: string): Promise<FileTreeNode[]> {
+    if (relativeDir && (isAbsolute(relativeDir) || !isPathInsideWorkspace(this.workspacePath, relativeDir))) {
+      throw new Error(t(WORKSPACE_ESCAPE_KEYS.read))
+    }
+    const folder = relativeDir ? join(this.workspacePath, relativeDir) : this.workspacePath
+    const depth = relativeDir ? relativeDir.split('/').length : WORKSPACE_ROOT_DEPTH
+    const items = await readdir(folder, { withFileTypes: true })
+    const nodes = await Promise.all(
+      items
+        .filter((item) => !this.isIgnoredEntry(item.name, depth))
+        .map(async (item): Promise<FileTreeNode | null> => {
+          const type = await treeEntryType(folder, item)
+          if (!type) return null
+          const relativePath = relativeDir ? `${relativeDir}/${item.name}` : item.name
+          return { name: item.name, path: join(folder, item.name), relativePath, type }
+        })
+    )
+    return nodes
+      .filter((node): node is FileTreeNode => node !== null)
+      .sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
+        return a.name.localeCompare(b.name)
+      })
   }
 
   /**
@@ -356,7 +404,7 @@ export class FileService {
 
     try {
       // Without -z, Git quotes a name with a space or a non-ASCII letter.
-      const { stdout } = await execFileAsync('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
+      const { stdout } = await execGit(['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
         cwd: this.workspacePath,
         timeout: 10_000,
         maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
@@ -395,7 +443,7 @@ export class FileService {
   // "outside a repo" — that would silently mask real failures.
   private async probeGitRepo(): Promise<'inside' | 'outside' | 'broken'> {
     try {
-      await execFileAsync('git', ['rev-parse', '--git-dir'], {
+      await execGit(['rev-parse', '--git-dir'], {
         cwd: this.workspacePath,
         timeout: 5_000,
       })
@@ -410,7 +458,7 @@ export class FileService {
    */
   async getGitBranch(): Promise<string | null> {
     try {
-      const { stdout } = await execFileAsync('git', ['branch', '--show-current'], {
+      const { stdout } = await execGit(['branch', '--show-current'], {
         cwd: this.workspacePath,
         timeout: 5_000,
       })
@@ -429,7 +477,7 @@ export class FileService {
     try {
       // The stored content, not a textconv rendering: discard applies these patches in reverse.
       const args = [LITERAL_PATHSPECS, ...gitDiffArgs('--no-textconv', '--', filePath ?? '.')]
-      const { stdout } = await execFileAsync('git', args, {
+      const { stdout } = await execGit(args, {
         cwd: this.workspacePath,
         timeout: 10_000,
         maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
@@ -452,7 +500,7 @@ export class FileService {
       }
       const current = new Set(splitGitDiff(await this.getFileDiff()))
       if (patches.some((patch) => !current.has(patch))) throw new Error(t('diff.discard.stale'))
-      const { stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], { cwd: this.workspacePath })
+      const { stdout } = await execGit(['rev-parse', '--show-toplevel'], { cwd: this.workspacePath })
       const root = await realpath(stdout.trim())
       const workspaceRoot = await realpath(this.workspacePath)
       for (const patch of patches) {
@@ -479,6 +527,7 @@ export class FileService {
     return new Promise((resolve, reject) => {
       const child = execFile('git', ['apply', '--reverse', ...(check ? ['--check'] : []), '--whitespace=nowarn', '-'], {
         cwd,
+        env: gitProcessEnv(),
         timeout: 10_000,
         maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
       }, (error) => {
@@ -498,7 +547,7 @@ export class FileService {
    */
   async getGitPrefix(): Promise<string> {
     try {
-      const { stdout } = await execFileAsync('git', ['rev-parse', '--show-prefix'], {
+      const { stdout } = await execGit(['rev-parse', '--show-prefix'], {
         cwd: this.workspacePath,
         timeout: 5_000,
       })
@@ -537,7 +586,7 @@ export class FileService {
   async getStagedDiff(filePath?: string): Promise<string> {
     try {
       const args = [LITERAL_PATHSPECS, ...gitDiffArgs('--cached', '--', filePath ?? '.')]
-      const { stdout } = await execFileAsync('git', args, {
+      const { stdout } = await execGit(args, {
         cwd: this.workspacePath,
         timeout: 10_000,
         maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
@@ -591,60 +640,81 @@ export class FileService {
   /**
    * Start watching the workspace for file changes and invoke `callback`
    * (debounced) when files are added, changed, or removed. Heavy and hidden
-   * directories are ignored, and recursion is bounded to `WATCH_DEPTH` so the
-   * watcher stays cheap even when the workspace is the user's home directory.
-   * `.git` is skipped; `startGitWatching` covers HEAD and the branches.
-   * Idempotent per instance: a second call replaces the previous watcher.
+   * directories are ignored. Windows and macOS use one native recursive watch;
+   * Linux watches each folder down to `WATCH_MAX_FOLDER_DEPTH`, so it stays
+   * cheap even when the workspace is the user's home directory. `.git` is
+   * skipped; `startGitWatching` covers HEAD and the branches. Resolves once
+   * changes are reported (after the initial folder walk on Linux). Watch
+   * failures are logged, never thrown: the tree's safety poll still keeps it
+   * fresh. Idempotent per instance: a second call replaces the previous
+   * watcher.
    */
-  startWatching(callback: FileChangeCallback): void {
+  startWatching(callback: FileChangeCallback): Promise<void> {
     this.stopWatching()
 
-    this.watcher = watch(this.workspacePath, {
-      ignored: (path) => this.isIgnoredPath(path),
-      ignoreInitial: true,
-      // Ignores are decided by the link name, not its target, so a followed
-      // symlink can fan out into an unbounded tree (Windows junctions into
-      // protected folders, POSIX links into package stores). Never follow.
-      followSymlinks: false,
-      depth: WATCH_DEPTH,
-      awaitWriteFinish: { stabilityThreshold: WATCH_DEBOUNCE_MS, pollInterval: 50 },
-      persistent: true,
-    })
-
-    const emit = (changeType: FileChangeEvent['changeType']) => (absolutePath: string): void => {
-      this.pendingChange = { changeType, relativePath: relative(this.workspacePath, absolutePath) }
+    const emit = (relativePath: string): void => {
+      this.pendingChangePath = relativePath
       if (this.debounceTimer) clearTimeout(this.debounceTimer)
       this.debounceTimer = setTimeout(() => {
         this.debounceTimer = null
-        const change = this.pendingChange
-        this.pendingChange = null
-        if (change) callback(change)
+        const changed = this.pendingChangePath
+        this.pendingChangePath = null
+        if (changed !== null) callback({ relativePath: changed })
       }, WATCH_DEBOUNCE_MS)
     }
 
-    this.watcher
-      .on('add', emit('add'))
-      .on('change', emit('change'))
-      .on('unlink', emit('unlink'))
-      .on('addDir', emit('addDir'))
-      .on('unlinkDir', emit('unlinkDir'))
-      // Tolerate watch failures (EPERM on Windows protected dirs, ENOSPC on
-      // large trees): the renderer's safety-net poll still keeps the tree fresh.
-      .on('error', (err: unknown) => {
-        const code =
-          err && typeof err === 'object' && 'code' in err
-            ? String((err as { code?: unknown }).code ?? '')
-            : ''
-        if (code === 'EPERM' || code === 'EACCES' || code === 'ENOENT') {
-          const key = `${this.workspacePath}:${code}`
-          if (!watchErrorLogged.has(key)) {
-            watchErrorLogged.add(key)
-            console.warn(`[FileService] watch ${code} under ${this.workspacePath} (further ${code} suppressed)`)
-          }
+    if (!NATIVE_RECURSIVE_WATCH) return this.watchEachFolder(emit)
+    this.watchNatively(emit)
+    return Promise.resolve()
+  }
+
+  private watchNatively(emit: (relativePath: string) => void): void {
+    try {
+      // Neither ReadDirectoryChangesW nor FSEvents follows symlinks or
+      // junctions, so a link never fans the watch out of the workspace.
+      const watcher = fsWatch(this.workspacePath, { recursive: true, persistent: true }, (_event, filename) => {
+        // No name: the OS dropped events (a full change buffer), so anything may have changed.
+        if (filename === null) {
+          emit(WHOLE_WORKSPACE_CHANGE_PATH)
           return
         }
-        console.error('[FileService] watch error:', err)
+        const relativePath = toTreePath(filename)
+        if (!this.isIgnoredRelativePath(relativePath)) emit(relativePath)
       })
+      watcher.on('error', (err) => this.reportWatchError(err))
+      this.closeWatcher = () => watcher.close()
+    } catch (err) {
+      // A missing or unreadable workspace folder fails at once.
+      this.reportWatchError(err)
+    }
+  }
+
+  private watchEachFolder(emit: (relativePath: string) => void): Promise<void> {
+    const watch = watchFolderTree(this.workspacePath, {
+      maxDepth: WATCH_MAX_FOLDER_DEPTH,
+      isIgnored: (relativePath) => this.isIgnoredRelativePath(relativePath),
+      onChange: emit,
+      onError: (err) => this.reportWatchError(err),
+    })
+    this.closeWatcher = watch.close
+    return watch.ready
+  }
+
+  /** Tolerate watch failures (EPERM on protected folders, ENOSPC on large trees): log each kind once. */
+  private reportWatchError(err: unknown): void {
+    const code =
+      err && typeof err === 'object' && 'code' in err
+        ? String((err as { code?: unknown }).code ?? '')
+        : ''
+    if (code === 'EPERM' || code === 'EACCES' || code === 'ENOENT') {
+      const key = `${this.workspacePath}:${code}`
+      if (!watchErrorLogged.has(key)) {
+        watchErrorLogged.add(key)
+        console.warn(`[FileService] watch ${code} under ${this.workspacePath} (further ${code} suppressed)`)
+      }
+      return
+    }
+    console.error('[FileService] watch error:', err)
   }
 
   /**
@@ -657,11 +727,9 @@ export class FileService {
       clearTimeout(this.debounceTimer)
       this.debounceTimer = null
     }
-    this.pendingChange = null
-    if (this.watcher) {
-      void this.watcher.close()
-      this.watcher = null
-    }
+    this.pendingChangePath = null
+    this.closeWatcher?.()
+    this.closeWatcher = null
   }
 
   /**
@@ -674,7 +742,7 @@ export class FileService {
   startGitWatching(callback: FileChangeCallback): void {
     this.stopGitWatching()
     this.stopGitHeadWatch = watchGitHead(this.workspacePath, () => {
-      callback({ changeType: 'change', relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
+      callback({ relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
     })
   }
 
@@ -683,11 +751,9 @@ export class FileService {
     this.stopGitHeadWatch = null
   }
 
-  /** True if any path segment under the workspace is an ignored directory. */
-  private isIgnoredPath(absolutePath: string): boolean {
-    const rel = relative(this.workspacePath, absolutePath)
-    if (!rel || rel.startsWith('..')) return false
-    return rel.split(/[\\/]/).some((segment, depth) => this.isIgnoredEntry(segment, depth))
+  /** True if any segment of a workspace-relative path is an ignored directory. */
+  private isIgnoredRelativePath(relativePath: string): boolean {
+    return relativePath.split(/[\\/]/).some((segment, depth) => this.isIgnoredEntry(segment, depth))
   }
 
   /**
@@ -699,54 +765,6 @@ export class FileService {
   }
 
   // ─── Private ────────────────────────────────────────────────────────────
-
-  private async buildTree(
-    fullPath: string,
-    relPath: string,
-    depth: number,
-    maxDepth: number
-  ): Promise<FileTreeNode> {
-    const name = relPath ? basename(fullPath) : basename(this.workspacePath)
-    const fileStat = await stat(fullPath)
-
-    if (fileStat.isDirectory()) {
-      const children: FileTreeNode[] = []
-
-      if (depth < maxDepth) {
-        for (const item of await this.listTreeEntries(fullPath, depth)) {
-          const childRelPath = relPath ? `${relPath}/${item.name}` : item.name
-          try {
-            children.push(await this.buildTree(join(fullPath, item.name), childRelPath, depth + 1, maxDepth))
-          } catch (error) {
-            // Only this entry is left out; the rest of its folder still lists.
-            if (!isUnlistableEntryError(error)) throw error
-          }
-        }
-      }
-
-      return { name, path: fullPath, relativePath: relPath, type: 'directory', children }
-    }
-
-    return { name, path: fullPath, relativePath: relPath, type: 'file' }
-  }
-
-  /** A folder's entries in tree order (directories first, then files, both alphabetical); none when it cannot be read. */
-  private async listTreeEntries(folder: string, depth: number): Promise<Dirent[]> {
-    let items: Dirent[]
-    try {
-      items = await readdir(folder, { withFileTypes: true })
-    } catch (error) {
-      if (isUnlistableEntryError(error)) return []
-      throw error
-    }
-    return items
-      .filter((item) => !this.isIgnoredEntry(item.name, depth))
-      .sort((a, b) => {
-        if (a.isDirectory() && !b.isDirectory()) return -1
-        if (!a.isDirectory() && b.isDirectory()) return 1
-        return a.name.localeCompare(b.name)
-      })
-  }
 
   private async walkFiles(
     dir: string,

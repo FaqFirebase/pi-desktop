@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { MAX_PREVIEW_SCAN_BYTES, clearSessionMetadataCache } from './session-metadata'
 import { readSessionLineage } from './session-lineage-reader'
+import { getOmpSessionsRoot, getSessionsRoot } from './pi-paths'
+import { ompTitleSlotLine } from './chat-import-writer'
 
 // ─── Fixture builders ────────────────────────────────────────────────────────
 
@@ -81,7 +83,7 @@ test('labels a session by its first user message, not its Windows cwd', async ()
       },
     ],
     async (root) => {
-      const [record] = await readSessionLineage(root)
+      const [record] = await readSessionLineage([root])
       assert.equal(record.preview, 'Refactor auth module login logic')
       assert.notEqual(record.name, WIN_CWD)
       assert.notEqual(record.preview, WIN_CWD)
@@ -103,7 +105,7 @@ test('does not label POSIX sessions with the shared cwd basename', async () => {
       },
     ],
     async (root) => {
-      const records = await readSessionLineage(root)
+      const records = await readSessionLineage([root])
       const previews = records.map((r) => r.preview).sort()
       assert.deepEqual(previews, ['First topic', 'Second topic'])
       assert.ok(!records.some((r) => r.name === 'pi-desktop-gui'))
@@ -120,7 +122,7 @@ test('prefers an explicit session name over the message preview', async () => {
       },
     ],
     async (root) => {
-      const [record] = await readSessionLineage(root)
+      const [record] = await readSessionLineage([root])
       assert.equal(record.name, 'debug token refresh')
       assert.equal(record.preview, 'Refactor auth')
     }
@@ -136,7 +138,7 @@ test('reports no name for an unnamed session', async () => {
       },
     ],
     async (root) => {
-      assert.equal((await readSessionLineage(root))[0].name, null)
+      assert.equal((await readSessionLineage([root]))[0].name, null)
     }
   )
 })
@@ -154,7 +156,7 @@ test('identifies a session by its filename stem, not the header uuid', async () 
       },
     ],
     async (root) => {
-      assert.equal((await readSessionLineage(root))[0].sessionId, '2026-07-23T23-53-54-474Z_aaa')
+      assert.equal((await readSessionLineage([root]))[0].sessionId, '2026-07-23T23-53-54-474Z_aaa')
     }
   )
 })
@@ -176,7 +178,7 @@ test('links a child to its parent through an absolute parentSession path', async
     )
     clearSessionMetadataCache()
 
-    const records = await readSessionLineage(root)
+    const records = await readSessionLineage([root])
     const child = records.find((r) => r.preview === 'child topic')!
     const parent = records.find((r) => r.preview === 'parent topic')!
     assert.equal(child.parentPath, parentPath)
@@ -185,6 +187,47 @@ test('links a child to its parent through an absolute parentSession path', async
   } finally {
     clearSessionMetadataCache()
     await rm(root, { recursive: true, force: true })
+  }
+})
+
+// ─── Both engines' stores ────────────────────────────────────────────────────
+
+/** Variables that pick the two session stores; the test points them at a temp home. */
+const STORE_ENV_NAMES = ['HOME', 'USERPROFILE', 'PI_CODING_AGENT_DIR', 'OMP_CODING_AGENT_DIR', 'OMP_PROFILE'] as const
+const OMP_TITLE_UPDATED_AT = '2026-08-24T20:05:17.256Z'
+
+test('the Timeline reads OMP sessions as well as Pi sessions, past the OMP title slot', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'pi-lineage-home-'))
+  const saved = STORE_ENV_NAMES.map((name) => [name, process.env[name]] as const)
+  for (const name of STORE_ENV_NAMES) delete process.env[name]
+  process.env.HOME = home
+  try {
+    const piPath = join(getSessionsRoot(), 'proj-a', '2026-07-23T23-53-54-474Z_aaa.jsonl')
+    const ompParentPath = join(getOmpSessionsRoot(), 'proj-a', '2026-07-24T09-00-00-000Z_bbb.jsonl')
+    const ompChildPath = join(getOmpSessionsRoot(), 'proj-a', '2026-07-25T09-00-00-000Z_ccc.jsonl')
+    const sessions: Array<[string, string[]]> = [
+      [piPath, [headerLine(), userLine('pi topic')]],
+      [ompParentPath, [ompTitleSlotLine('OMP parent', OMP_TITLE_UPDATED_AT), headerLine(), userLine('omp parent topic')]],
+      [ompChildPath, [ompTitleSlotLine(null, OMP_TITLE_UPDATED_AT), headerLine({ parentSession: ompParentPath }), userLine('omp child topic')]],
+    ]
+    for (const [path, lines] of sessions) {
+      await mkdir(join(path, '..'), { recursive: true })
+      await writeFile(path, `${lines.join('\n')}\n`, 'utf-8')
+    }
+    clearSessionMetadataCache()
+
+    const byPath = new Map((await readSessionLineage()).map((record) => [record.path, record]))
+    assert.deepEqual([...byPath.keys()].sort(), [piPath, ompParentPath, ompChildPath].sort())
+    assert.equal(byPath.get(ompParentPath)?.name, 'OMP parent', 'the title slot names an OMP session')
+    assert.equal(byPath.get(ompParentPath)?.preview, 'omp parent topic')
+    assert.equal(byPath.get(ompChildPath)?.parentPath, ompParentPath, 'an OMP fork links to its OMP parent')
+  } finally {
+    for (const [name, value] of saved) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+    clearSessionMetadataCache()
+    await rm(home, { recursive: true, force: true })
   }
 })
 
@@ -200,7 +243,7 @@ test('skips a file whose first line is not a session header', async () => {
       },
     ],
     async (root) => {
-      const records = await readSessionLineage(root)
+      const records = await readSessionLineage([root])
       assert.equal(records.length, 1)
       assert.equal(records[0].preview, 'real session')
     }
@@ -222,7 +265,7 @@ test('does not descend into nested subagent directories', async () => {
       },
     ],
     async (root) => {
-      const records = await readSessionLineage(root)
+      const records = await readSessionLineage([root])
       assert.equal(records.length, 1)
       assert.equal(records[0].preview, 'parent session')
     }
@@ -241,7 +284,7 @@ test('ignores a directory whose name ends in .jsonl', async () => {
       },
     ],
     async (root) => {
-      const records = await readSessionLineage(root)
+      const records = await readSessionLineage([root])
       assert.equal(records.length, 1)
       assert.equal(records[0].preview, 'real session')
     },
@@ -259,7 +302,7 @@ test('ignores loose files at the sessions root', async () => {
       },
     ],
     async (root) => {
-      const records = await readSessionLineage(root)
+      const records = await readSessionLineage([root])
       assert.equal(records.length, 1)
       assert.equal(records[0].preview, 'real session')
     }
@@ -267,7 +310,7 @@ test('ignores loose files at the sessions root', async () => {
 })
 
 test('returns no records when the sessions root does not exist', async () => {
-  assert.deepEqual(await readSessionLineage('/no/such/sessions/root'), [])
+  assert.deepEqual(await readSessionLineage(['/no/such/sessions/root']), [])
 })
 
 test('reads every project directory', async () => {
@@ -287,7 +330,7 @@ test('reads every project directory', async () => {
       },
     ],
     async (root) => {
-      const previews = (await readSessionLineage(root)).map((r) => r.preview).sort()
+      const previews = (await readSessionLineage([root])).map((r) => r.preview).sort()
       assert.deepEqual(previews, ['from a', 'from b', 'from c'])
     }
   )
@@ -309,7 +352,7 @@ test('stays within the scan budget on a session larger than the budget', async (
       },
     ],
     async (root) => {
-      const [record] = await readSessionLineage(root)
+      const [record] = await readSessionLineage([root])
       assert.equal(record.sessionId, '2026-07-23T23-53-54-474Z_aaa')
       assert.equal(record.preview, null)
     }

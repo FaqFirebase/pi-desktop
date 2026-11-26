@@ -1,4 +1,5 @@
 import { existsSync } from 'fs'
+import { homedir } from 'os'
 import { join } from 'path'
 import { spawnSync } from 'child_process'
 import type { CouncilAgentId } from '../shared/council-config'
@@ -86,8 +87,7 @@ function resolveAgent(id: CouncilAgentId): string | null {
     for (const c of candidates) if (existsSync(c)) return c
   }
   // 3. common locations
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? ''
-  for (const c of candidatePaths(id, { isWindows: IS_WINDOWS, home, env: process.env })) {
+  for (const c of candidatePaths(id, { isWindows: IS_WINDOWS, home: homedir(), env: process.env })) {
     if (existsSync(c)) return c
   }
   return null

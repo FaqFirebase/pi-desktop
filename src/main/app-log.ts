@@ -10,6 +10,8 @@ export const RECENT_LIMIT = 200
 const SAVE_DEBOUNCE_MS = 2000
 /** When the log file grows past this, it is rotated to `<name>.1`. */
 export const MAX_LOG_BYTES = 512 * 1024
+/** Appended to the log file name for the one rotated (previous) file. */
+export const ROTATED_LOG_SUFFIX = '.1'
 
 interface AppLogDeps {
   /** Test override; production resolves lazily via getGuiDataPath. */
@@ -73,6 +75,9 @@ export class AppLog {
   private pending: AppLogEntry[] = []
   private seeded = false
   private flushTimer: NodeJS.Timeout | null = null
+  // Async writes run one after another, so an explicit flush() waits for a
+  // timer-started write instead of appending the same batch beside it.
+  private writeChain: Promise<void> = Promise.resolve()
 
   constructor(deps: AppLogDeps = {}) {
     this.logPathOverride = deps.logPath
@@ -131,11 +136,25 @@ export class AppLog {
     if (this.flushTimer) return
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null
-      void this.flushAsync()
+      void this.queueFlush()
     }, this.flushDelayMs)
     // The debounce timer must never keep the process alive; quit paths call
     // flushSync explicitly.
     this.flushTimer.unref?.()
+  }
+
+  private queueFlush(): Promise<void> {
+    this.writeChain = this.writeChain.then(() => this.flushAsync())
+    return this.writeChain
+  }
+
+  /** Write every pending entry now and wait until the file has them. */
+  flush(): Promise<void> {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer)
+      this.flushTimer = null
+    }
+    return this.queueFlush()
   }
 
   private async flushAsync(): Promise<void> {
@@ -182,7 +201,7 @@ export class AppLog {
   private async rotateIfNeeded(): Promise<void> {
     const path = this.logPath()
     try {
-      if ((await stat(path)).size > MAX_LOG_BYTES) await rename(path, `${path}.1`)
+      if ((await stat(path)).size > MAX_LOG_BYTES) await rename(path, this.rotatedLogPath())
     } catch {
       // Missing file — nothing to rotate.
     }
@@ -191,19 +210,34 @@ export class AppLog {
   private rotateIfNeededSync(): void {
     const path = this.logPath()
     try {
-      if (statSync(path).size > MAX_LOG_BYTES) renameSync(path, `${path}.1`)
+      if (statSync(path).size > MAX_LOG_BYTES) renameSync(path, this.rotatedLogPath())
     } catch {
       // Missing file — nothing to rotate.
     }
   }
 
-  /** Test hook: read the persisted file (post-flush) as parsed entries. */
-  async readPersisted(): Promise<AppLogEntry[]> {
+  private rotatedLogPath(): string {
+    return `${this.logPath()}${ROTATED_LOG_SUFFIX}`
+  }
+
+  private async readEntries(path: string): Promise<AppLogEntry[]> {
     try {
-      return parseLogLines(await readFile(this.logPath(), 'utf-8'))
+      return parseLogLines(await readFile(path, 'utf-8'))
     } catch {
       return []
     }
+  }
+
+  /** Test hook: read the persisted file (post-flush) as parsed entries. */
+  readPersisted(): Promise<AppLogEntry[]> {
+    return this.readEntries(this.logPath())
+  }
+
+  /** Both log files after a flush: this file and the rotated one before it. */
+  async readLogFiles(): Promise<{ current: AppLogEntry[]; previous: AppLogEntry[] }> {
+    await this.flush()
+    const [current, previous] = await Promise.all([this.readEntries(this.logPath()), this.readEntries(this.rotatedLogPath())])
+    return { current, previous }
   }
 }
 

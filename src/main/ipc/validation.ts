@@ -1,10 +1,10 @@
 import type { IpcMainInvokeEvent } from 'electron'
 import { isTrustedRendererUrl, RENDERER_INDEX_PATH } from '../renderer-origin'
+import { UNAUTHORIZED_IPC_SENDER_MESSAGE } from '../ipc-sender-guard'
 
 // Reject privileged IPC calls whose sender frame is not the app's own renderer.
-// A belt-and-suspenders check: navigation is already pinned (see index.ts) and
-// preview <webview> guests have no preload, so nothing else should be able to
-// reach these channels — this makes that guarantee explicit at the boundary.
+// A second check on top of the pinned navigation (see index.ts) and the app
+// window rule every channel already applies (ipc-sender-guard.ts).
 export function assertTrustedSender(event: IpcMainInvokeEvent): void {
   const url = event.senderFrame?.url
   if (
@@ -14,7 +14,7 @@ export function assertTrustedSender(event: IpcMainInvokeEvent): void {
       rendererIndexPath: RENDERER_INDEX_PATH,
     })
   ) {
-    throw new Error('Unauthorized IPC sender')
+    throw new Error(UNAUTHORIZED_IPC_SENDER_MESSAGE)
   }
 }
 

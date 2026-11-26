@@ -8,6 +8,12 @@
     "workingInAnotherWorkspace": "Pi başka bir çalışma alanında çalışıyor"
   },
   "app": {
+    "crashScreen": {
+      "copyDetails": "Ayrıntıları kopyala",
+      "message": "{{product}} bir hatayla karşılaştı ve bu pencereyi çizmeyi durdurdu. Oturumlarınız çalışmaya devam ediyor. Devam etmek için yeniden yükleyin.",
+      "reload": "Yeniden yükle",
+      "title": "Bir şeyler ters gitti"
+    },
     "dropFolder": {
       "description": "Klasörü çalışma alanı olarak açar (gerekirse oluşturur)",
       "title": "Proje olarak açmak için klasörü bırakın"
@@ -24,6 +30,22 @@
       "dismissAriaLabel": "Güncelleme bildirimini kapat",
       "downloadButton": "İndir"
     }
+  },
+  "browserPane": {
+    "addressLabel": "Adres",
+    "addressPlaceholder": "Bir web adresi veya localhost:port girin",
+    "back": "Geri",
+    "close": "Tarayıcıyı kapat",
+    "downloadRefused": "Tarayıcı panelinde indirmeler kapalı. İndirmek için sayfayı varsayılan tarayıcınızda açın.",
+    "emptyHint": "Bir sayfayı burada açmak için bir web adresi girin. Seçim hiçbir şey göndermez: öğeyi mesajınıza ekler.",
+    "forward": "İleri",
+    "invalidAddress": "Burada yalnızca http ve https sayfaları açılabilir.",
+    "loadFailed": "{{url}} yüklenemedi.",
+    "openExternal": "Varsayılan tarayıcıda aç",
+    "pick": "Bir öğe seç",
+    "pickImageTooLarge": "Öğenin ekran görüntüsü eklenemeyecek kadar büyük. Metni eklendi.",
+    "reload": "Yeniden yükle",
+    "stopPicking": "Seçmeyi durdur (Esc)"
   },
   "chat": {
     "activity": {
@@ -83,13 +105,17 @@
       "insertHint": "↑↓ gezin · Enter/Tab yolu ekle · Esc kapat"
     },
     "message": {
-      "branchedFrom": "Dallanılan mesaj: \"{{excerpt}}\"",
       "branchFromHere": "Buradan dallan",
       "editAndResend": "Düzenle ve yeniden gönder",
       "stopped": "Durduruldu"
     },
     "nextSteps": {
       "title": "Önerilen sonraki adımlar"
+    },
+    "permissionModeRestart": {
+      "idle": "{{agent}} hâlâ eski izin moduyla çalışıyor. {{mode}} modunu kullanmak için yeniden başlatın.",
+      "restart": "{{agent}} yeniden başlat",
+      "working": "{{agent}} hâlâ çalışıyor ve siz yeniden başlatana kadar eski izin modunu korur. {{mode}} modunu kullanmak için iş bitince yeniden başlatın."
     },
     "projectPicker": {
       "noProject": "Proje yok",
@@ -123,6 +149,7 @@
       "files_one": "{{count}} dosya",
       "files_other": "{{count}} dosya",
       "held": "Duraklatıldı. Sonraki mesaj ya da Şimdi gönder kuyruğu yeniden başlatır",
+      "heldOffScreen": "Siz yokken duraklatıldı. Göndermek için Şimdi gönder'e basın",
       "next": "Ajan bitirince gönderilir",
       "sendNow": "Şimdi gönder",
       "sendNowHint": "Bu mesajı çalışan tura hemen gönder",
@@ -131,6 +158,7 @@
     "startingAgent": "Ajan başlatılıyor…",
     "stopButton": {
       "ariaLabel": "Üretimi durdur",
+      "title": "Durdur",
       "titleWithShortcut": "Durdur (Esc)"
     },
     "subagentPanel": {
@@ -168,6 +196,7 @@
       "viewSource": "Kaynağı göster"
     },
     "toolbar": {
+      "browser": "Tarayıcı",
       "diffViewer": "Fark görüntüleyici",
       "fileTree": "Dosya ağacı",
       "reviewPanel": "İnceleme paneli",
@@ -293,11 +322,12 @@
     "copyLink": "Bağlantıyı kopyala",
     "copyMessage": "Mesajı kopyala",
     "copySelection": "Seçimi kopyala",
-    "deleteSessionConfirmMessage": "\"{{name}}\" oturumu silinsin mi?\n\nKuruluysa sistemin 'trash' CLI aracı kullanılır (geri alınabilir); değilse .jsonl oturum dosyası kalıcı olarak silinir.",
+    "deleteSessionConfirmMessage": "\"{{name}}\" oturumu silinsin mi?\n\n.jsonl oturum dosyası sistemin çöp kutusuna taşınır ve geri yüklenebilir. Çöp kutusu kullanılamıyorsa dosya kalıcı olarak silinir.",
     "deleteSessionConfirmTitle": "Oturumu sil",
     "deleteSessionLabel": "Sil…",
     "openLink": "Bağlantıyı aç",
     "openSession": "Oturumu aç",
+    "pin": "Sabitle",
     "rename": "Yeniden adlandır…",
     "searchSelection": "Seçimi ara",
     "shortcuts": {
@@ -308,6 +338,7 @@
       "selectAll": "Ctrl+A"
     },
     "unarchive": "Arşivden çıkar",
+    "unpin": "Sabitlemeyi kaldır",
     "workflowRuns": "İş akışı çalıştırmaları"
   },
   "conveyor": {
@@ -418,6 +449,11 @@
       "working": "çalışıyor…"
     }
   },
+  "crashRecovery": {
+    "detail": "Neden: {{reason}}",
+    "message": "{{product}} penceresi yeniden yüklendikten kısa süre sonra yine durdu.",
+    "title": "Pencere durdu"
+  },
   "customModels": {
     "addModelButton": "Model ekle",
     "addProviderButton": "Sağlayıcı ekle",
@@ -448,12 +484,18 @@
     "visionLabel": "vision"
   },
   "diagnostics": {
+    "exportLogs": "Günlükleri dışa aktar",
+    "exportLogsFailed": "Günlükler dışa aktarılamadı: {{error}}",
+    "exportLogsSaved": "Günlükler şuraya kaydedildi: {{path}}",
     "fields": {
       "appVersion": "Uygulama sürümü",
       "binaryFound": "İkili dosya bulundu",
       "chromium": "Chromium",
       "electron": "Electron",
       "engineVersion": "{{agent}} sürümü",
+      "gitFailed": "Çalışmadı: {{detail}}",
+      "gitNotFound": "Bulunamadı",
+      "gitVersion": "Git sürümü",
       "globalRules": "Genel kurallar",
       "globalRulesInvalid": "geçersiz dosya: {{error}}",
       "guiDataDir": "Arayüz veri dizini",
@@ -502,6 +544,7 @@
     "sections": {
       "application": "Uygulama",
       "binaryTitle": "{{agent}} ikili dosyası",
+      "git": "Git",
       "permissions": "İzinler",
       "providers": "Sağlayıcılar",
       "recentErrors": "Son hatalar",
@@ -514,6 +557,10 @@
     "workspaceTrustedBadge": "güvenilir"
   },
   "dialogs": {
+    "logExport": {
+      "fileFilterName": "JSON",
+      "title": "Günlükleri dışa aktar"
+    },
     "openFolder": {
       "title": "Klasör aç"
     },
@@ -584,10 +631,14 @@
       "pathNotPermitted": "Ek yoluna izin verilmiyor",
       "tooLarge": "Ek çok büyük (en fazla {{limit}} MB)"
     },
+    "chatImport": {
+      "busy": "Bir sohbet içe aktarma işlemi zaten çalışıyor."
+    },
     "council": {
       "agentNotFound": "{{agent}} bulunamadı. Kurun ya da Ayarlar'daki konsey üyelerinden çıkarın.",
       "arbiterFailed": "Hakem başarısız oldu",
       "arbiterTimedOut": "Hakem zaman aşımına uğradı",
+      "cancelled": "Konsey çalışması iptal edildi",
       "notEnoughMembers": "Konsey için en az {{min}} ajan gerekir. Pi, Claude veya Codex'i kurun ya da etkinleştirin veya konseyi kapatın.",
       "planningDisabled": "Konsey planlaması Ayarlar'da devre dışı.",
       "timeoutNotNumber": "Konsey zaman aşımı sonlu bir sayı olmalı",
@@ -620,6 +671,7 @@
       "localBranchRequired": "Var olan bir yerel dal seçin",
       "namedBranchRequired": "Pull request oluşturmak için adlandırılmış bir dal gerekli",
       "newFileNotCommittable": "{{path}} commit edilemez: seçili değişikliklerde yeni bir dosya değil ya da Git onu yok sayıyor",
+      "notInstalled": "Git kurulu değil",
       "noTrackedChanges": "Bu çalışma alanında commit edilecek izlenen değişiklik yok. İzlenmeyen dosyaları dahil etmek için önce hazırlayın.",
       "operationInProgressCommit": "Bir Git {{operation}} işlemi sürerken commit edilemez",
       "operationInProgressCreateBranch": "Bir Git {{operation}} işlemi sürerken dal oluşturulamaz",
@@ -644,6 +696,9 @@
       "bodyRequired": "Not içeriği gerekli",
       "notFound": "Not bulunamadı: {{id}}",
       "titleRequired": "Not başlığı gerekli"
+    },
+    "ompUsage": {
+      "unreadable": "OMP, uygulamanın okuyamadığı bir kullanım çıktısı verdi"
     },
     "packages": {
       "invalidSpec": "Geçersiz paket tanımı",
@@ -680,9 +735,13 @@
       "alreadyAttached": "Oturum dosyası zaten çalışan bir çalışma zamanına bağlı",
       "attachedToDifferentWorkspace": "Oturum zaten başka bir çalışma alanının çalışma zamanına bağlı",
       "ompNoClone": "OMP motoru oturum klonlamayı desteklemiyor",
+      "openInAnotherWindow": "Bu oturum başka bir Pi Desktop penceresinde açık. Önce orada kapatın.",
       "pathMustExist": "{{field}} var olan bir Pi oturum dosyasını göstermeli",
       "projectMismatch": "Oturumun projesi etkin çalışma alanıyla eşleşmiyor",
       "runtimeNotFound": "Oturum çalışma zamanı bulunamadı: {{runtimeId}}"
+    },
+    "settings": {
+      "unreadable": "Ayarlar kaydedilmedi: \"{{path}}\" okunamıyor. Bu dosyayı düzeltin veya kaldırın, sonra yeniden kaydedin."
     },
     "system": {
       "externalUrlHttpOnly": "Yalnız http(s) URL'lerine izin verilir"
@@ -717,6 +776,14 @@
       "skillChecksumMismatch": "{{file}} beklenen sağlama toplamıyla eşleşmedi, bu yüzden Pi Desktop onu kurmadı.",
       "skillDownloadFailed": "{{file}} indirilemedi (HTTP {{status}}).",
       "skillInstalledElsewhere": "Pi Desktop'ın kurmadığı bir TypeSafe skill'i zaten şurada: {{directory}}. Pi Desktop onu değiştirmedi."
+    },
+    "voice": {
+      "serverBadResponse": "Konuşma sunucusunun yanıtında metin yok.",
+      "serverNotConfigured": "Konuşma sunucusunun adresini ve modelini Ayarlar > Sesli dikte bölümünde girin.",
+      "serverNotSelected": "Sesli dikte bu bilgisayarda çalışacak şekilde ayarlı. Konuşma sunucunuzu kullanmak için Ayarlar > Sesli dikte bölümünde Seçtiğiniz bir sunucuda seçeneğini seçin.",
+      "serverStatus": "Konuşma sunucusu {{status}} hatasıyla yanıt verdi: {{detail}}",
+      "serverTimeout": "{{url}} adresindeki konuşma sunucusu {{seconds}} saniye içinde yanıt vermedi.",
+      "serverUnreachable": "{{url}} adresindeki konuşma sunucusuna ulaşılamadı ({{reason}})."
     },
     "workflow": {
       "runNotFound": "İş akışı çalıştırması bulunamadı"
@@ -763,6 +830,15 @@
       "folderNotFound": "Klasör bulunamadı",
       "noWorkspaceHint": "Kenar çubuğundaki çalışma alanı değiştiriciden bir proje klasörüne geçin.",
       "noWorkspaceOpen": "Açık çalışma alanı yok"
+    }
+  },
+  "gitCheck": {
+    "banner": {
+      "checkAgain": "Yeniden denetle",
+      "dismissAriaLabel": "Git bildirimini kapat",
+      "failedTitle": "Git çalışmadı",
+      "howToInstall": "Nasıl kurulur",
+      "missingDescription": "Commit, dal, fark ve worktree işlemleri için Git gerekir. Git'i kurun, sonra yeniden denetleyin."
     }
   },
   "home": {
@@ -940,6 +1016,25 @@
     "needs-approval": "Pi onayınızı bekliyor.",
     "withSession": "{{body}} Biten oturumu açmak için tıklayın."
   },
+  "openPath": {
+    "followUp": {
+      "reveal": "Klasörde göster",
+      "system": "Sistem uygulamasıyla aç"
+    },
+    "openInEditor": "Düzenleyicide aç",
+    "openWithSystem": "Sistem uygulamasıyla aç",
+    "refusal": {
+      "editorRunning": "Bu projenin terminalinde zaten bir düzenleyici açık. Onu kapatın, sonra tekrar deneyin.",
+      "launchFailed": "Düzenleyici başlamadı.",
+      "noTerminalWorkspace": "Önce bir proje açın. Terminal düzenleyicileri projenin terminal panelinde açılır.",
+      "notFound": "Bu dosya veya klasör artık yok.",
+      "outsideRoots": "Bu yol açık projelerin dışında.",
+      "runnableFile": "Bu dosya program olarak çalışabilir, bu yüzden sistem uygulamasıyla açılmadı.",
+      "systemOpenFailed": "Sistem bu dosyayı veya klasörü açamadı."
+    },
+    "refusalTitle": "Açılamadı",
+    "showInFolder": "Klasörde göster"
+  },
   "packages": {
     "catalog": {
       "emptyHint": "Göz atmak için <link>pi.dev/packages</link> adresini ziyaret edin",
@@ -1047,6 +1142,48 @@
       "target": "Hedef: {{path}}",
       "title": "{{tool}} çalıştırılsın mı?"
     }
+  },
+  "quickChat": {
+    "activeTasksCount_one": "{{count}} görev çalışıyor",
+    "activeTasksCount_other": "{{count}} görev çalışıyor",
+    "chooseProject": "Proje seç",
+    "chooseProjectFirst": "Göndermeden önce bir proje klasörü seçin.",
+    "chooseSession": "Oturum seç",
+    "completed": "Tamamlandı",
+    "errors": {
+      "runtimeBusy": "Oturum meşgulken, durdurulmuşken veya yanıt beklerken değiştirilemez.",
+      "staleApproval": "Bu onay artık kullanılamıyor.",
+      "staleBinding": "Seçili oturum değişti. Lütfen yeniden deneyin.",
+      "stateUnavailable": "Oturum durumu okunamadı. Lütfen yeniden deneyin.",
+      "submitting": "Bir mesaj zaten gönderiliyor.",
+      "targetUnavailable": "Bu oturum artık kullanılamıyor. Başka bir oturum seçin."
+    },
+    "failed": "Başarısız",
+    "hide": "Hızlı sohbeti gizle (görevler çalışmaya devam eder)",
+    "loading": "Oturum yükleniyor…",
+    "needsApproval": "Yanıtınız bekleniyor",
+    "newTask": "Yeni görev",
+    "newTaskDescription": "Yapılacak işi açıklayın; ajan arka planda çalışır.",
+    "noMatchingSessions": "Eşleşen oturum yok",
+    "noProject": "Proje yok",
+    "open": "Aç",
+    "openInMain": "Ana pencerede göster",
+    "pickWorkspace": "Proje klasörü aç…",
+    "ready": "Hazır",
+    "retry": "Yeniden dene",
+    "savedSession": "Kayıtlı oturum",
+    "searchSessions": "Oturum ara",
+    "sendRejected": "Motor bu mesajı kabul etmedi.",
+    "sessions": "Oturumlar",
+    "startConversation": "Bu oturuma bir mesaj gönderin.",
+    "starting": "Başlatılıyor…",
+    "steerHint": "Yeni bir görevi kuyruğa almak yerine mevcut çalışmaya talimat ekler.",
+    "stopFailed": "Görev durdurulamadı. Lütfen yeniden deneyin.",
+    "stopped": "Sizin tarafınızdan durduruldu",
+    "targetUnavailable": "Bu oturum artık kullanılamıyor. Yeniden bir oturum seçin; taslağınız korundu.",
+    "title": "Hızlı sohbet",
+    "untitledSession": "Adsız oturum",
+    "working": "Çalışıyor"
   },
   "repoSets": {
     "bar": {
@@ -1184,7 +1321,7 @@
     "currentProjectBadge": "geçerli",
     "currentWorkspaceLabel": "Geçerli çalışma alanı:",
     "deleteConfirm": {
-      "message": "Bu oturum silinsin mi? Varsa <code>trash</code> kullanılır, yoksa kalıcı olarak silinir."
+      "message": "Bu oturum silinsin mi? Sistemin çöp kutusuna taşınır; çöp kutusu kullanılamıyorsa kalıcı olarak silinir."
     },
     "deleteEllipsis": "Sil...",
     "empty": {
@@ -1201,6 +1338,7 @@
       "sessionCount_one": "{{count}} oturum",
       "sessionCount_other": "{{count}} oturum"
     },
+    "pinnedBadge": "Sabitlendi",
     "runtime": {
       "completed": "{{agent}} tamamladı",
       "failed": "{{agent}} bir hatayla durdu",
@@ -1235,7 +1373,8 @@
       "minutes_other": "{{count}} dk önce"
     },
     "title": "Oturumlar",
-    "unknownProject": "Bilinmiyor"
+    "unknownProject": "Bilinmiyor",
+    "unreadDot": "Yeni etkinlik"
   },
   "settings": {
     "actions": {
@@ -1265,6 +1404,36 @@
     "autoScroll": {
       "description": "Yeni mesajlara otomatik kaydır",
       "label": "Otomatik kaydırma"
+    },
+    "chatImport": {
+      "alreadyImported": "İçe aktarıldı",
+      "empty": "Sohbet bulunamadı.",
+      "engine": "Şu olarak içe aktar",
+      "failure": {
+        "folderMissing": "Sohbetin proje klasörü artık yok.",
+        "invalidPath": "Bu dosya sohbet klasöründe değil.",
+        "noMessages": "Sohbette içe aktarılacak mesaj yok.",
+        "unreadable": "Sohbet dosyası okunamadı.",
+        "writeFailed": "Oturum dosyası yazılamadı."
+      },
+      "folderMissing": "Klasör yok",
+      "import_one": "{{count}} sohbeti içe aktar",
+      "import_other": "{{count}} sohbeti içe aktar",
+      "intro": "Sohbetleri {{agent}} oturumlarına kopyalar. Özgün dosyalar yalnızca okunur.",
+      "loading": "Sohbetler aranıyor…",
+      "progress": "{{done}} / {{total}}",
+      "results": {
+        "failed_one": "Başarısız: {{count}}",
+        "failed_other": "Başarısız: {{count}}",
+        "imported_one": "İçe aktarılan: {{count}}",
+        "imported_other": "İçe aktarılan: {{count}}",
+        "skipped_one": "Atlanan, zaten içe aktarılmış: {{count}}",
+        "skipped_other": "Atlanan, zaten içe aktarılmış: {{count}}"
+      },
+      "selectFolder": "Bu klasördeki tüm sohbetleri seç",
+      "sourceRoot": "Okunan yer: {{path}}",
+      "unknownFolder": "Bilinmeyen klasör",
+      "untitled": "Adsız sohbet"
     },
     "chatWidth": {
       "description": "Mesajların ve istem kutusunun ne kadar genişleyebileceği",
@@ -1312,6 +1481,30 @@
       "description": "Bakılmayan bir çalışma alanında Pi bitirdiğinde, hata verdiğinde veya onay beklediğinde bildir",
       "label": "Masaüstü bildirimleri"
     },
+    "editor": {
+      "description": "Bu bilgisayarda bulunan düzenleyiciler. Terminal düzenleyicileri projenin terminal panelindeki Düzenleyici sekmesinde açılır.",
+      "label": "Dosyaları şununla aç",
+      "missingNote": "Kayıtlı düzenleyici bulunamadı. Dosyalar sistem varsayılanıyla açılır.",
+      "rescan": "Yeniden tara",
+      "systemDefault": "Sistem varsayılanı",
+      "terminalOption": "{{name}} ({{tag}})",
+      "terminalTag": "terminal"
+    },
+    "keepAwake": {
+      "description": "Bu bilgisayarın uyku moduna geçmesini engelle. Ekran yine de kapanabilir. Dizüstü bilgisayarın kapağı kapatılınca bilgisayar yine uyku moduna geçer.",
+      "label": "Bu bilgisayarı uyanık tut",
+      "modes": {
+        "always": "Her zaman",
+        "off": "Kapalı",
+        "whileWorking": "Ajanlar çalışırken"
+      },
+      "status": {
+        "holding": "Durum: bu bilgisayar uyanık tutuluyor",
+        "off": "Durum: kapalı",
+        "unsupported": "Durum: Pi Desktop bu sistemde uykuyu engelleyemiyor. Güç yöneticisi ya da systemd uyku kilidi bulunamadı.",
+        "waitingForWork": "Durum: iş bekleniyor"
+      }
+    },
     "language": {
       "description": "Menü, düğme ve mesajların dili",
       "label": "Dil",
@@ -1353,13 +1546,16 @@
     },
     "runOnStartup": {
       "description": "Bilgisayarda oturum açılınca Pi Desktop'ı otomatik başlat (kurulu sürümlerde geçerli olur)",
-      "label": "Başlangıçta çalıştır"
+      "label": "Başlangıçta çalıştır",
+      "ownDataFolder": "Bu pencere kendi veri klasörünü kullanıyor. Oturum açılınca yalnızca ana Pi Desktop başlatılabilir."
     },
     "sections": {
       "agentConfiguration": "Ajan yapılandırması",
       "appearance": "Görünüm",
       "behavior": "Davranış",
+      "chatImport": "Sohbetleri içe aktar",
       "customModels": "Özel modeller",
+      "editor": "Düzenleyici",
       "multiAgentCouncilPlanning": "Çok ajanlı konsey planlaması",
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "Sesli dikte"
@@ -1374,17 +1570,26 @@
       "disabled": "Devre dışı",
       "duplicate": "{{action}} ve {{other}} aynı kısayolu kullanıyor. Başka bir kombinasyon seçin.",
       "globalDictation": "Her uygulamadan sesli dikte: başlatmak veya durdurmak için bas",
+      "globalUnsaved": "Bu değişikliği uygulamak için kaydedin. Aşağıdaki sistem kaydı hâlâ kayıtlı ayarı kullanıyor.",
       "heading": "Klavye kısayolları",
       "inUse": "{{shortcut}} zaten kullanımda: {{action}}. Başka bir kombinasyon seçin.",
-      "invalid": "Cmd veya Ctrl ile birlikte bir harf, rakam, noktalama tuşu ya da F1–F12 kullanın.",
+      "invalid": "Cmd veya Ctrl ile birlikte bir harf, rakam, noktalama tuşu, Boşluk ya da F1–F12 kullanın.",
       "modelSelector": "Model seçici",
       "nextProject": "Sonraki proje",
       "nextSession": "Sonraki açık oturum",
       "notes": "Not seçici",
+      "openQuickChat": "Hızlı sohbeti aç",
       "pressKeys": "Bir kombinasyona bas…",
       "previousProject": "Önceki proje",
       "previousSession": "Önceki açık oturum",
       "pushToTalk": "Sesli dikte: konuşmak için basılı tut",
+      "quickChat": "Hızlı sohbet (genel)",
+      "quickChatDescription": "Her uygulamadan hızlı sohbeti gösterin veya gizleyin. Bir kısayol seçene kadar kapalıdır.",
+      "registrationActive": "Kaydedilen ve sisteme kaydedilen kısayol: {{shortcut}}",
+      "registrationDisabled": "Kayıtlı kısayol devre dışı. Sisteme kayıtlı bir kısayol yok.",
+      "registrationFailed": "Kayıtlı {{shortcut}} kısayolu etkin değil: başka bir uygulama kullanıyor olabilir veya sistem kısayol kaydı kullanılamıyor. Başka bir kısayol seçin ya da yeniden kaydedin.",
+      "registrationLoading": "Sistem kısayol kaydı denetleniyor…",
+      "registrationUnknown": "Sistem kayıt durumu okunamadı. Kısayolun kaydedilmesi etkin olduğunu garanti etmez.",
       "reserved": "Bu kombinasyon yerel bir menü veya düzenleyici eylemine ayrılmış.",
       "reset": "Kısayolları sıfırla",
       "sidebar": "Kenar çubuğu",
@@ -1457,6 +1662,11 @@
       "description": "Sohbet, paneller ve kenar çubuğu; terminal ve kod düzenleyici hariç",
       "label": "Arayüz yazı tipi boyutu"
     },
+    "unreadableFile": {
+      "detail": "Dosya: {{path}}\n\nBu dosyayı düzeltin veya varsayılan ayarlarla yeniden başlamak için kaldırın.",
+      "message": "{{product}} ayarlar dosyasını okuyamıyor. Varsayılan ayarlar kullanılıyor ve ayar değişiklikleri kaydedilemiyor.",
+      "title": "Ayarlar dosyası sorunu"
+    },
     "voice": {
       "device": {
         "auto": "Otomatik",
@@ -1481,7 +1691,34 @@
       "runtimeCpuNoGpu": "Kullanılabilir ekran kartı bulunamadı; ses, her modelin CPU sürümüyle işlemcide (CPU) çalışır.",
       "runtimeGpu": "Her modelin GPU sürümüyle ekran kartında ({{name}}) çalışır.",
       "selected": "Kullanımda",
+      "server": {
+        "address": "Sunucu adresi",
+        "addressInvalid": "Kullanıcı adı, sorgu veya # içermeyen bir http:// ya da https:// adresi girin.",
+        "addressPlaceholder": "https://speech.example.com/v1",
+        "addressTip": "Kaydedilen konuşmanız metne çevrilmek üzere bu adrese gönderilir.",
+        "intro": "Her duraksadığınızda Pi Desktop söylediklerinizi bu sunucuya gönderir ve dönen metni ekler. Sunucu, OpenAI uyumlu yazıya dökme isteklerini kabul etmelidir.",
+        "key": "API anahtarı (isteğe bağlı)",
+        "keyInvalid": "Bu bir API anahtarına benzemiyor. Anahtarı boşluk veya satır sonu olmadan yapıştırın.",
+        "keyPlaceholder": "Sunucunun API anahtarını yapıştırın",
+        "keyRemove": "Kaldır",
+        "keySave": "Anahtarı kaydet",
+        "keySaved": "Anahtar kaydedildi",
+        "language": "Dil",
+        "languagePlaceholder": "Otomatik algıla",
+        "model": "Model",
+        "modelPlaceholder": "Sunucudaki model adı",
+        "notReady": "Bu sunucuyla dikte etmek için adresi ve modeli girin.",
+        "prompt": "İstem",
+        "promptPlaceholder": "Metin için isteğe bağlı sözcükler veya üslup",
+        "ready": "Dikte bu sunucuyu kullanıyor.",
+        "save": "Kaydet"
+      },
       "sizeMb": "~{{mb}} MB",
+      "transcribe": "Yazıya dökme",
+      "transcriber": {
+        "local": "Bu bilgisayarda",
+        "server": "Seçtiğiniz bir sunucuda"
+      },
       "use": "Kullan"
     }
   },
@@ -1545,6 +1782,8 @@
       "diagnostics": "Tanılama",
       "notes": "Notlar",
       "packages": "Paketler",
+      "quickChatTitleNoShortcut": "Hızlı sohbeti aç. Kısayolu Ayarlar > Klavye kısayolları bölümünden atayın.",
+      "quickChatTitleWithShortcut": "Hızlı sohbeti aç ({{shortcut}})",
       "sectionLabel": "Araçlar"
     },
     "workflowRunsForSession": "Bu oturumun iş akışı çalıştırmaları",
@@ -1556,6 +1795,7 @@
       "namePlaceholder": "Çalışma alanı adı",
       "noWorkspace": "Çalışma alanı yok",
       "openProjectEllipsis": "Proje aç…",
+      "tabClosedTitle": "Sekme kapalı · yeniden açmak için tıklayın",
       "triggerTitle": "Değiştirmek için tıklayın · yeniden adlandırmak için çift tıklayın · seçenekler için sağ tıklayın"
     }
   },
@@ -1686,6 +1926,28 @@
     "trigger": {
       "title": "Sistem durumu"
     },
+    "usage": {
+      "accountNumber": "Hesap {{number}}",
+      "accountsWithoutUsage_one": "Kullanım verisi olmayan {{count}} hesap",
+      "accountsWithoutUsage_other": "Kullanım verisi olmayan {{count}} hesap",
+      "capacity_one": "{{count}} hesaptan {{used}} kullanıldı",
+      "capacity_other": "{{count}} hesaptan {{used}} kullanıldı",
+      "disabled": "Devre dışı. Geri yüklemek için yeniden oturum açın.",
+      "disabledSince": "{{time}} devre dışı bırakıldı. Geri yüklemek için yeniden oturum açın.",
+      "fetched": "{{time}} alındı",
+      "noAccounts": "Oturum açılmış hiçbir hesap kullanım bildirmiyor",
+      "noLimits": "Bildirilen limit yok",
+      "resetsExpire": "en yakını {{duration}} içinde sona eriyor",
+      "resetsIn": "{{duration}} içinde sıfırlanır",
+      "savedResets_one": "{{count}} kayıtlı sıfırlama",
+      "savedResets_other": "{{count}} kayıtlı sıfırlama",
+      "unknownAmount": "bilinmiyor",
+      "usableNow_one": "{{count}} şimdi kullanılabilir",
+      "usableNow_other": "{{count}} şimdi kullanılabilir"
+    },
+    "usageSection": {
+      "title": "Kullanım Limitleri"
+    },
     "workspaceSection": {
       "title": "Çalışma alanı"
     }
@@ -1728,12 +1990,14 @@
       "closeUnmanagedWorktreeMessage": "\"{{name}}\" kapatılsın mı? Bu mevcut worktree ve dosyaları diskte kalır.",
       "forkAnywayLabel": "Yine de çatalla",
       "forkMessage": "Pi bu oturumda yanıtını bitirmedi. Bu oturumu çatallamak yanıtı durdurur: Pi'nin oturuma şimdiye kadar yazdıkları korunur, ancak yanıtın geri kalanı — hâlâ çalışan araç çağrıları dahil — atılır.",
+      "keepInSidebarHint": "Kenar çubuğunda tut yalnızca sekmeyi kapatır: \"{{name}}\" kenar çubuğunda kalır ve {{agent}} süreci çalışmaya devam eder. Sekmeyi yeniden açmak için kenar çubuğunda seçin.",
+      "keepInSidebarLabel": "Kenar çubuğunda tut",
       "keepUntrustedLabel": "Güvenilmez olarak bırak",
       "keepWorkingLabel": "Çalışmaya devam et",
       "newMessage": "Pi bu oturumda yanıtını bitirmedi. Yeni oturum başlatmak yanıtı durdurur: Pi'nin oturuma şimdiye kadar yazdıkları korunur, ancak yanıtın geri kalanı — hâlâ çalışan araç çağrıları dahil — atılır.",
       "okLabel": "Tamam",
       "permissionModeMessage": "Pi bu oturumda yanıtını bitirmedi. İzin modunu değiştirmek Pi'yi yeniden başlatır ve yanıtı durdurur: Pi'nin oturuma şimdiye kadar yazdıkları korunur, ancak yanıtın geri kalanı — hâlâ çalışan araç çağrıları dahil — atılır.",
-      "removeWorkspaceMessage": "\"{{name}}\" kenar çubuğundan kaldırılsın mı? Pi süreci durur; diskteki dosyalara dokunulmaz.",
+      "removeWorkspaceMessage": "\"{{name}}\" kenar çubuğundan kaldırılsın mı? {{agent}} süreci durur; diskteki dosyalara dokunulmaz.",
       "removeWorkspaceTitle": "Çalışma alanını kaldır",
       "startAnywayLabel": "Yine de başlat",
       "stillWorkingTitle": "Pi hâlâ çalışıyor",
@@ -1752,23 +2016,26 @@
       "cannotActivateSession": "Oturum etkinleştirilemiyor",
       "cannotCreateSession": "Oturum oluşturulamıyor",
       "changeFolderError": "Klasör değiştirme hatası: {{detail}}",
+      "cloneError": "Oturum kopyalanamadı: {{detail}}",
       "closeSessionError": "Oturum kapatma hatası: {{detail}}",
       "compactingContext": "Bağlam sıkıştırılıyor ({{reason}})...",
       "compactionAborted": "Sıkıştırma durduruldu.",
       "contextCompacted": "Bağlam sıkıştırıldı.",
       "councilFailed": "Konsey başarısız oldu: {{detail}}",
       "councilNoQuorum": "Hiçbir danışman plan üretmedi (hepsi zaman aşımına uğradı ya da hata verdi). Konsey durduruldu.",
+      "councilOpenElsewhere": "Başka bir sohbette açık bir konsey çalışması var. Önce orada onaylayın ya da iptal edin.",
       "createWorkspaceError": "Çalışma alanı oluşturma hatası: {{detail}}",
       "defaultTaskLabel": "Görev",
       "deleteError": "Silme hatası: {{detail}}",
       "editedSessionName": "{{title}} (düzenlendi)",
-      "editNotInSession": "Kaydedilmiş oturum bu mesajı içermiyor.",
       "editResendError": "Mesaj düzenlenip yeniden gönderilemedi: {{detail}}",
       "error": "Hata: {{detail}}",
       "followUpError": "Ek mesaj hatası: {{detail}}",
+      "forkError": "Oturum dallandırılamadı: {{detail}}",
       "imageFallbackName": "Görsel {{index}}",
       "installedPackage": "{{spec}} kuruldu. Yüklemek için Pi'yi yeniden başlatın.",
       "installFailed": "Kurulum başarısız",
+      "messageNotInSession": "Kaydedilmiş oturum bu mesajı içermiyor.",
       "modelError": "Model hatası: {{detail}}",
       "modelsFileNotLoaded": "Model dosyası henüz yüklenmedi. Yeniden deneyin.",
       "newIsolatedTabError": "Yeni yalıtılmış sekme hatası: {{detail}}",
@@ -1776,6 +2043,7 @@
       "notAFolder": "Proje olarak açılamıyor — klasör değil: {{path}}",
       "notGitRepository": "Bu proje bir Git deposu değil. Başka bir konuşma için Yeni oturum'u kullanın ya da yalıtılmış sekme için bir Git projesi açın.",
       "openFolderError": "Klasör açma hatası: {{detail}}",
+      "pinError": "Sabitleme hatası: {{detail}}",
       "removedPackage": "{{spec}} kaldırıldı",
       "removePackageFailed": "Kaldırma başarısız",
       "removeWorkspaceError": "Çalışma alanı kaldırma hatası: {{detail}}",
@@ -1791,6 +2059,7 @@
       "truncatedHistory_other": "Performans için {{total}} mesajın son {{count}} tanesi gösteriliyor. Eski turlar oturum dosyasında diskte duruyor.",
       "unarchiveError": "Arşivden çıkarma hatası: {{detail}}",
       "unknownError": "Bilinmeyen hata",
+      "unpinError": "Sabitlemeyi kaldırma hatası: {{detail}}",
       "updatedAllPackages": "Paketler güncellendi. Yüklemek için Pi'yi yeniden başlatın.",
       "updatedPackage": "{{spec}} güncellendi. Yüklemek için Pi'yi yeniden başlatın.",
       "updatePackageFailed": "Güncelleme başarısız",
@@ -1820,6 +2089,10 @@
     "maximizeLabel": "Terminali büyüt",
     "restartHint": "Yeni bir kabuk başlatmak için herhangi bir tuşa basın",
     "restoreLabel": "Terminali geri yükle",
+    "tabs": {
+      "editor": "Düzenleyici",
+      "shell": "Terminal"
+    },
     "title": "Terminal"
   },
   "themes": {
@@ -2138,8 +2411,8 @@
     "newLinkedTaskTitle": "Birden çok depoya yayılan yeni bağlantılı görev",
     "newSessionAriaLabel": "Bu projede yeni oturum",
     "newSessionFallback": "Yeni oturum",
-    "removeWorkspaceAriaLabel": "Kaldır: {{name}}",
     "sessions": "Oturumlar",
+    "sessionTabTitleRenamable": "{{path}}\n\nYeniden adlandırmak için çift tıklayın · işlemler için sağ tıklayın",
     "tools": "Araçlar"
   }
 }

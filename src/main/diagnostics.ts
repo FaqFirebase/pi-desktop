@@ -11,17 +11,19 @@ import {
 } from './diagnostics-report'
 import type { WorkspaceManager } from './workspace-manager'
 import { getConfiguredEngineKind, getPiCli, getPiResolution } from './pi-rpc-manager'
-import { loadPiDotenv } from './pi-dotenv'
+import { agentEnv } from './pi-dotenv'
 import { workspaceTrustStore } from './workspace-trust'
 import { getOmpSessionsRoot, getSessionsRoot } from './pi-paths'
 import { getGuiDataDir } from './app-data-paths'
 import { appLog } from './app-log'
+import { redactLogEntry, secretValuesFromEnv } from './log-redaction'
 import { validatePermissionRulesFile } from '../../resources/permission-rules'
-import { runPiCli } from './ipc/run-pi-cli'
+import { accountCommandCwd, runPiCli } from './ipc/run-pi-cli'
 import { getGlobalPermissionRulesPath } from './ipc/pi-start-options'
 import { getSettingsPath, loadAppSettings } from './ipc/settings'
 import { buildWorkspaceRulesStatus } from './ipc/permission-rules-handlers'
 import { readModelsConfigFile } from './ipc/models-config-handlers'
+import { getGitAvailability } from './ipc/git-availability-handlers'
 
 const PI_VERSION_TIMEOUT_MS = 10_000
 
@@ -42,14 +44,10 @@ export async function collectDiagnostics(
   const settings = await loadAppSettings(workspaceManager)
   const cli = getPiCli()
   const resolution = getPiResolution()
+  const env = agentEnv()
+  const secretValues = secretValuesFromEnv(env)
 
-  const activeWorkspace = workspaceManager.getActiveWorkspace()
-  // A stale workspace path (folder deleted/renamed outside the app) would make
-  // the spawn itself fail on cwd — fall back rather than reporting no version.
-  const versionCwd =
-    activeWorkspace && existsSync(activeWorkspace.path)
-      ? activeWorkspace.path
-      : (process.env.HOME ?? process.cwd())
+  const versionCwd = accountCommandCwd(workspaceManager.getActiveWorkspace()?.path)
   const piVersionResult = cli.found
     ? await runPiCli(['--version'], versionCwd, PI_VERSION_TIMEOUT_MS)
     : { success: false, output: '' }
@@ -64,7 +62,7 @@ export async function collectDiagnostics(
   }))
 
   const modelsRead = await readModelsConfigFile(getConfiguredEngineKind())
-  const providers = 'config' in modelsRead ? summarizeProviders(modelsRead.config, { ...loadPiDotenv(), ...process.env }) : null
+  const providers = 'config' in modelsRead ? summarizeProviders(modelsRead.config, env) : null
   const providersError = 'failure' in modelsRead ? reportModelsReadFailure(modelsRead.location.name, modelsRead.failure) : null
 
   const globalRules = await readGlobalRuleCount()
@@ -92,6 +90,7 @@ export async function collectDiagnostics(
       pathEntryCount: countPathEntries(resolution.pathEnv, process.platform === 'win32'),
     },
     piVersion: piVersionResult.success ? extractVersionLine(piVersionResult.output) : null,
+    git: await getGitAvailability(),
     workspaces,
     providers,
     providersError,
@@ -107,6 +106,8 @@ export async function collectDiagnostics(
       sessionsRoot,
       sessionsRootExists: existsSync(sessionsRoot),
     },
-    recentErrors: appLog.getRecent().filter((entry) => entry.level !== 'info'),
+    recentErrors: appLog.getRecent()
+      .filter((entry) => entry.level !== 'info')
+      .map((entry) => redactLogEntry(entry, secretValues)),
   }
 }

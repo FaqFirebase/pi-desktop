@@ -113,6 +113,24 @@ test('listSkills for OMP sees .omp, .claude and .agents roots, one level deep', 
   })
 })
 
+test('listSkills for Pi reads global skills from PI_CODING_AGENT_DIR', async () => {
+  await withSkillTree(async (home, cwd) => {
+    const agentDir = join(home, 'relocated-pi-agent')
+    await writeSkill(join(agentDir, 'skills'), 'relocated')
+    const saved = process.env.PI_CODING_AGENT_DIR
+    process.env.PI_CODING_AGENT_DIR = agentDir
+    try {
+      // ~/.pi/agent/skills is no longer Pi's global root; the relocated one is.
+      assert.deepEqual(names(await listSkills(cwd, 'pi', home)), ['proj-pi', 'relocated', 'shared'])
+      // OMP keeps its own global root.
+      assert.equal((await listSkills(cwd, 'omp', home)).some((s) => s.name === 'omp-global'), true)
+    } finally {
+      if (saved === undefined) delete process.env.PI_CODING_AGENT_DIR
+      else process.env.PI_CODING_AGENT_DIR = saved
+    }
+  })
+})
+
 test('listSkills returns [] when no roots exist', async () => {
   const base = await mkdtemp(join(tmpdir(), 'skills-discovery-empty-'))
   try {
@@ -177,5 +195,26 @@ test('parseSkillFrontmatter accepts CRLF endings and a UTF-8 BOM', () => {
   assert.deepEqual(parseSkillFrontmatter('﻿---\nname: bom\ndescription: bom file\n---\n'), {
     name: 'bom',
     description: 'bom file',
+  })
+})
+
+test('OMP global skills come from the profile OMP runs under (OMP_PROFILE)', async (t) => {
+  const saved = { OMP_PROFILE: process.env.OMP_PROFILE, PI_PROFILE: process.env.PI_PROFILE }
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+  process.env.OMP_PROFILE = 'work'
+  delete process.env.PI_PROFILE
+  await withSkillTree(async (home, cwd) => {
+    await writeSkill(join(home, '.omp', 'profiles', 'work', 'agent', 'skills'), 'work-only')
+    const skills = (await listSkills(cwd, 'omp', home)).map((skill) => skill.name)
+    assert.equal(skills.includes('work-only'), true)
+    assert.equal(skills.includes('omp-global'), false, "the default profile's global skills are another account's")
+    // Project, .claude and .agents roots are shared by every profile.
+    assert.equal(skills.includes('proj-omp'), true)
+    assert.equal(skills.includes('shared'), true)
   })
 })

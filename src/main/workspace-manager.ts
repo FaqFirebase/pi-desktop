@@ -1,7 +1,9 @@
-import { dirname, basename, join, resolve } from 'path'
-import { readFile, writeFile, mkdir, rename, copyFile, rm } from 'fs/promises'
+import { basename, join, resolve } from 'path'
+import { readFile, copyFile, rm } from 'fs/promises'
 import { existsSync } from 'fs'
-import { PiRpcManager } from './pi-rpc-manager'
+import { homedir } from 'os'
+import { PiRpcManager, getConfiguredEngineKind } from './pi-rpc-manager'
+import { forceKillStoppingProcessTrees } from './process-tree-kill'
 import { FileService } from './file-service'
 import {
   WHOLE_WORKSPACE_CHANGE_PATH,
@@ -10,8 +12,11 @@ import {
   promptResultRefusal,
   reportsNoAgentRun,
   reportsPromptOutcome,
+  BLOCKING_UI_METHODS,
   type FileChangeEvent,
+  type PiExtensionUiRequest,
   type PiPromptResultEvent,
+  type PiResponseEvent,
   type LinkedRepoStatus,
   type LinkedTaskOptions,
   type LinkedTaskRepo,
@@ -21,6 +26,8 @@ import {
   type WorkspaceRemoveResult,
   type WorkspaceTabOptions,
   type SessionRuntimeInfo,
+  type PermissionMode,
+  type PromptImage,
   type SessionRuntimeActivity,
   type SessionRuntimeCloseResult,
 } from '../shared/ipc-contracts'
@@ -30,6 +37,7 @@ import { pathsEqual, pathGroupKey } from './session-paths'
 import { isPathWithin, resolveRealPath } from '../../resources/path-within'
 import { appLog } from './app-log'
 import { inspectSessionContent } from './session-metadata'
+import { claimSession, releaseSession } from './session-claims'
 import {
   createGitWorktree,
   describeGitFailure,
@@ -51,6 +59,8 @@ import { inspectRepoFolder } from './repo-sets'
 import { checkoutForLinkedTask, checkoutLinkedTask, removeLinkedTaskCheckouts } from './linked-worktrees'
 import { readLinkedRepoStatuses } from './linked-task-status'
 import { uniqueRepoName } from '../shared/repo-set-draft'
+import { writeJsonFileAtomic, writeTextFileAtomic } from './atomic-file-write'
+import { createSerialQueue } from './serial-queue'
 
 /**
  * Manages project workspaces and their independent Pi session runtimes.
@@ -127,6 +137,22 @@ interface SessionRuntimeEntry {
   runlessPromptRuns: number | null
 }
 
+/** How long a resume reservation waits for its runtime to start. */
+const RESUME_RESERVATION_MS = 30_000
+
+/** The data of a get_state response, when it has one. */
+function stateData(response: unknown): { sessionFile?: unknown; sessionId?: unknown } | undefined {
+  return response && typeof response === 'object' && 'data' in response
+    ? response.data as { sessionFile?: unknown; sessionId?: unknown }
+    : undefined
+}
+
+/** The session file a get_state response reports the engine is writing. */
+function reportedSessionFile(response: unknown): string | undefined {
+  const sessionFile = stateData(response)?.sessionFile
+  return typeof sessionFile === 'string' ? sessionFile : undefined
+}
+
 /**
  * The ONLY condition under which this app deletes a session file the user never
  * asked it to delete. Every clause has to hold:
@@ -165,8 +191,17 @@ export class WorkspaceManager {
   // process, even when several sessions share the same workspace cwd.
   private sessionRuntimes = new Map<string, SessionRuntimeEntry>()
   private runtimeBySessionPath = new Map<string, string>()
+  /**
+   * The session file each live runtime claimed for this app (session-claims.ts),
+   * so a Pi Desktop on another data folder does not run an agent on it too.
+   */
+  private claimedSessionByRuntime = new Map<string, string>()
+  /** Sessions claimed for a resume that no runtime has started yet, by session key. */
+  private resumeReservations = new Map<string, ReturnType<typeof setTimeout>>()
+  private runtimeReferences = new Map<string, number>()
   private activeRuntimeByWorkspace = new Map<string, string>()
   private activeRuntimeId: string | null = null
+  private sessionRuntimeStateListeners: Array<(runtimeId: string) => void> = []
   private sessionRuntimeListeners: SessionRuntimeListener[] = []
   private configPath: string
   private nextColorIndex = 0
@@ -181,6 +216,8 @@ export class WorkspaceManager {
   private activeWorkspaceListeners: ActiveWorkspaceListener[] = []
   private fileChangeListeners: FileChangeListener[] = []
   private workspaceRemovedListeners: WorkspaceRemovedListener[] = []
+  private readonly runWorkspaceFileTask = createSerialQueue()
+  private readonly removalsInFlight = new Map<string, Promise<WorkspaceRemoveResult>>()
   // Repository of a repo set tab the diff, file, and git panels show, by
   // name. In memory only: a reopened app shows the main repository again.
   private focusedRepoByWorkspace = new Map<string, string>()
@@ -189,7 +226,7 @@ export class WorkspaceManager {
   // forwarded for the active workspace only — and only while the renderer
   // has declared a live consumer for change events (the Chat files panel).
   // Without demand there is no watcher, so cold start and the Home view pay
-  // no chokidar cost; the tree still loads on demand and the safety poll +
+  // no watcher cost; the tree still loads on demand and the safety poll +
   // focus refresh keep it fresh.
   private watchingWorkspaceId: string | null = null
   private fileWatchDemanded = false
@@ -255,9 +292,8 @@ export class WorkspaceManager {
 
     this.watchingWorkspaceId = target
     if (target) {
-      this.fileServices
-        .get(target)
-        ?.startWatching((event) => this.emitFileChange(event))
+      // Resolves after the initial folder walk on Linux; nothing here waits for it.
+      void this.fileServices.get(target)?.startWatching((event) => this.emitFileChange(event))
     }
   }
 
@@ -327,6 +363,27 @@ export class WorkspaceManager {
     for (const entry of this.sessionRuntimes.values()) listener(this.snapshotRuntime(entry))
   }
 
+  onSessionRuntimeState(listener: (runtimeId: string) => void): () => void {
+    this.sessionRuntimeStateListeners.push(listener)
+    return () => {
+      this.sessionRuntimeStateListeners = this.sessionRuntimeStateListeners.filter((l) => l !== listener)
+    }
+  }
+
+  notifySessionRuntimeState(runtimeId: string): void {
+    for (const listener of this.sessionRuntimeStateListeners) {
+      try {
+        listener(runtimeId)
+      } catch (err) {
+        console.error('[workspace-manager] Error in runtime state listener:', err)
+      }
+    }
+  }
+
+  getSessionRuntimePermissionMode(runtimeId: string): PermissionMode | null {
+    return this.sessionRuntimes.get(runtimeId)?.info.permissionMode ?? null
+  }
+
   private snapshotRuntime(entry: SessionRuntimeEntry): SessionRuntimeInfo {
     return {
       ...entry.info,
@@ -348,6 +405,14 @@ export class WorkspaceManager {
     this.emitSessionRuntime(entry)
   }
 
+  /** Record the name the engine accepted for a runtime's session. */
+  setSessionRuntimeName(runtimeId: string, name: string): void {
+    const entry = this.sessionRuntimes.get(runtimeId)
+    if (!entry || entry.info.sessionName === name) return
+    entry.info = { ...entry.info, sessionName: name }
+    this.emitSessionRuntime(entry)
+  }
+
   /** Mark a runtime as recently used so eviction picks a genuinely idle one. */
   private touchRuntime(entry: SessionRuntimeEntry): void {
     entry.lastActiveAt = Date.now()
@@ -364,6 +429,79 @@ export class WorkspaceManager {
     const ownerId = this.runtimeBySessionPath.get(pathGroupKey(sessionPath))
     if (!ownerId) return null
     return this.sessionRuntimes.get(ownerId) ?? null
+  }
+
+  /**
+   * Claim `sessionPath` for a runtime that runs (or is about to run) an agent
+   * on it, giving up the file it claimed before. False when another Pi Desktop
+   * runs an agent on that file.
+   */
+  private claimSessionFor(entry: SessionRuntimeEntry, sessionPath: string): boolean {
+    const runtimeId = entry.info.runtimeId
+    const claimed = this.claimedSessionByRuntime.get(runtimeId)
+    if (claimed !== undefined && pathsEqual(claimed, sessionPath)) return true
+    if (!claimSession(sessionPath)) return false
+    this.claimedSessionByRuntime.set(runtimeId, sessionPath)
+    if (claimed !== undefined) this.releaseUnusedClaim(claimed)
+    this.endResumeReservation(sessionPath)
+    return true
+  }
+
+  /**
+   * Give a session claim back once nothing in this app uses it: the store holds
+   * one claim per file, while a second runtime here can map the same file for a
+   * moment (a --continue that lands on another tab's session, then stops).
+   */
+  private releaseUnusedClaim(sessionPath: string): void {
+    if (this.runtimeClaims(sessionPath) || this.resumeReservations.has(pathGroupKey(sessionPath))) return
+    releaseSession(sessionPath)
+  }
+
+  /**
+   * Claim the session a window is about to resume, before its runtime starts,
+   * so two windows resuming on launch cannot both pick it. False when another
+   * Pi Desktop holds it. A reservation no start takes over is given back after
+   * RESUME_RESERVATION_MS.
+   */
+  reserveSessionForResume(sessionPath: string): boolean {
+    if (!claimSession(sessionPath)) return false
+    if (this.runtimeClaims(sessionPath)) return true
+    const key = pathGroupKey(sessionPath)
+    clearTimeout(this.resumeReservations.get(key))
+    const timer = setTimeout(() => {
+      this.resumeReservations.delete(key)
+      this.releaseUnusedClaim(sessionPath)
+    }, RESUME_RESERVATION_MS)
+    timer.unref()
+    this.resumeReservations.set(key, timer)
+    return true
+  }
+
+  private endResumeReservation(sessionPath: string): void {
+    const key = pathGroupKey(sessionPath)
+    clearTimeout(this.resumeReservations.get(key))
+    this.resumeReservations.delete(key)
+  }
+
+  private runtimeClaims(sessionPath: string): boolean {
+    return [...this.claimedSessionByRuntime.values()].some((claimed) => pathsEqual(claimed, sessionPath))
+  }
+
+  private releaseSessionClaim(entry: SessionRuntimeEntry): void {
+    const claimed = this.claimedSessionByRuntime.get(entry.info.runtimeId)
+    if (claimed === undefined) return
+    this.claimedSessionByRuntime.delete(entry.info.runtimeId)
+    this.releaseUnusedClaim(claimed)
+  }
+
+  /** End a start that would put a second agent on a session another Pi Desktop runs. */
+  private refuseClaimedSession(entry: SessionRuntimeEntry, sessionPath: string): SessionRuntimeInfo {
+    appLog.warn('workspaces', `Session ${sessionPath} is open in another Pi Desktop; runtime ${entry.info.runtimeId} did not start on it`)
+    if (this.isRuntimeLive(entry)) entry.manager.stop()
+    entry.manager.failStart(t('errors.session.openInAnotherWindow'), tEnglish('errors.session.openInAnotherWindow'))
+    entry.info = { ...entry.info, ...entry.manager.getStatus() }
+    this.emitSessionRuntime(entry)
+    return this.snapshotRuntime(entry)
   }
 
   /**
@@ -413,8 +551,22 @@ export class WorkspaceManager {
 
   private attachSessionRuntime(entry: SessionRuntimeEntry): void {
     const { manager } = entry
+    const pendingUi = new Set<string>()
+    let activityBeforeApproval = entry.info.activity
+    const settleUi = (id: string): void => {
+      if (!pendingUi.delete(id) || pendingUi.size > 0) return
+      if (entry.info.activity === 'needs-approval') this.emitRuntimeActivity(entry, activityBeforeApproval)
+    }
     manager.on('status-change', () => {
       entry.info = { ...entry.info, ...manager.getStatus() }
+      if (entry.info.status !== 'running' && entry.info.status !== 'starting') {
+        pendingUi.clear()
+        // The child can outlive its stopped status by the force-kill timeout,
+        // so the claim waits for it. A start in the meantime keeps the claim.
+        void manager.processExited().then(() => {
+          if (!this.isRuntimeLive(entry)) this.releaseSessionClaim(entry)
+        })
+      }
       if (entry.info.status === 'running' && entry.info.activity === 'failed') {
         entry.info = { ...entry.info, activity: null }
       }
@@ -431,18 +583,25 @@ export class WorkspaceManager {
       // A turn ran, so a refusal of the prompt before it no longer describes the chat.
       const { promptRefusal: _settled, ...info } = entry.info
       entry.info = info
-      this.emitRuntimeActivity(entry, 'working')
+      activityBeforeApproval = 'working'
+      this.emitRuntimeActivity(entry, pendingUi.size > 0 ? 'needs-approval' : 'working')
     })
-    manager.on('agent_end', () => this.emitRuntimeActivity(entry, 'completed'))
+    manager.on('agent_end', () => {
+      pendingUi.clear()
+      this.emitRuntimeActivity(entry, 'completed')
+    })
     // OMP's report on a task prompt that ran no turn: refused after admission, or a command that finished.
     manager.on('prompt_result', (event: PiPromptResultEvent) => {
       if (entry.runlessPromptRuns === entry.agentRunStarts) this.settleRunlessPrompt(entry, promptResultRefusal(event)?.reason)
     })
-    manager.on('extension_ui_request', (event: { method?: string }) => {
-      if (event.method === 'select' || event.method === 'confirm' || event.method === 'input' || event.method === 'editor') {
+    manager.on('extension_ui_request', (event: PiExtensionUiRequest) => {
+      if (BLOCKING_UI_METHODS.has(event.method)) {
+        if (pendingUi.size === 0) activityBeforeApproval = entry.info.activity
+        pendingUi.add(event.id)
         this.emitRuntimeActivity(entry, 'needs-approval')
-      }
+      } else if (event.method === 'cancel' && event.targetId) settleUi(event.targetId)
     })
+    manager.on('extension-ui-response', settleUi)
     manager.on('exit', () => {
       // PiRpcManager only emits exit for an unexpected process death; deliberate
       // stop() detaches listeners first. Preserve a visible failure marker even
@@ -451,13 +610,14 @@ export class WorkspaceManager {
     })
   }
 
-  private createSessionRuntime(workspaceId: string, sessionPath: string | null): SessionRuntimeEntry {
+  private createSessionRuntime(workspaceId: string, sessionPath: string | null, enforceBudget = true): SessionRuntimeEntry {
     if (sessionPath && this.runtimeOwningSessionPath(sessionPath)) {
       throw new Error(t('errors.session.alreadyAttached'))
     }
     // A new tab is started right after it is created, so make room for its
-    // process before the tab exists.
-    this.enforceLiveRuntimeBudget(null)
+    // process before the tab exists. A purely inactive creation (the Quick
+    // Chat popup) spawns no process, so it must not evict a live one.
+    if (enforceBudget) this.enforceLiveRuntimeBudget(null)
     const runtimeId = `rt-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
     const manager = new PiRpcManager()
     const entry: SessionRuntimeEntry = {
@@ -479,6 +639,7 @@ export class WorkspaceManager {
         error: null,
         activity: null,
         active: false,
+        permissionMode: null,
       },
     }
     this.sessionRuntimes.set(runtimeId, entry)
@@ -513,11 +674,58 @@ export class WorkspaceManager {
       .map((entry) => this.snapshotRuntime(entry))
   }
 
+  /**
+   * Create a stopped INACTIVE session runtime without a process and without
+   * moving either main-window active pointer (workspace or runtime). The
+   * popup's first send starts it through the same startup path every view
+   * uses; until then it is only a retained empty tab.
+   */
+  createInactiveSessionRuntime(workspaceId: string): SessionRuntimeInfo {
+    if (!this.workspaces.some((workspace) => workspace.id === workspaceId)) {
+      throw new Error(t('errors.workspace.notFound', { workspaceId }))
+    }
+    // No process is spawned for an inactive tab, so no live-process budget
+    // room is needed and none may be evicted.
+    const entry = this.createSessionRuntime(workspaceId, null, false)
+    return this.snapshotRuntime(entry)
+  }
+
+  /** Protect a view's tab from empty-tab pruning, but not the live-process budget. */
+  retainSessionRuntime(runtimeId: string): () => void {
+    if (!this.sessionRuntimes.has(runtimeId)) throw new Error(t('errors.session.runtimeNotFound', { runtimeId }))
+    this.runtimeReferences.set(runtimeId, (this.runtimeReferences.get(runtimeId) ?? 0) + 1)
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      const count = this.runtimeReferences.get(runtimeId) ?? 0
+      if (count <= 1) this.runtimeReferences.delete(runtimeId)
+      else this.runtimeReferences.set(runtimeId, count - 1)
+    }
+  }
+
+  getSessionRuntimeManager(runtimeId: string): PiRpcManager | null {
+    return this.sessionRuntimes.get(runtimeId)?.manager ?? null
+  }
+
+  /** Open a saved conversation without changing either main-window active pointer. */
+  openSessionRuntime(workspaceId: string, sessionPath: string): SessionRuntimeInfo {
+    if (!this.workspaces.some((workspace) => workspace.id === workspaceId)) {
+      throw new Error(t('errors.workspace.notFound', { workspaceId }))
+    }
+    const existing = this.runtimeOwningSessionPath(sessionPath)
+    if (existing && existing.info.workspaceId !== workspaceId) {
+      throw new Error(t('errors.session.attachedToDifferentWorkspace'))
+    }
+    return this.snapshotRuntime(existing ?? this.createSessionRuntime(workspaceId, sessionPath, false))
+  }
+
   /** Drop inactive header-only sessions so abandoned New Session tabs do not linger. */
   async pruneEmptySessionRuntimes(): Promise<SessionRuntimeCloseResult[]> {
     const candidates = [...this.sessionRuntimes.values()]
       .filter((entry) =>
         entry.info.runtimeId !== this.activeRuntimeId &&
+        !this.runtimeReferences.has(entry.info.runtimeId) &&
         entry.info.sessionPath &&
         entry.info.activity === null &&
         entry.manager.getStatus().status !== 'starting'
@@ -531,6 +739,7 @@ export class WorkspaceManager {
       if (
         !current ||
         current.info.runtimeId === this.activeRuntimeId ||
+        this.runtimeReferences.has(current.info.runtimeId) ||
         current.info.activity !== null ||
         current.manager.getStatus().status === 'starting'
       ) continue
@@ -599,6 +808,26 @@ export class WorkspaceManager {
     return this.snapshotRuntime(entry)
   }
 
+  /**
+   * Activate a specific runtime without touching its session file. The only
+   * path for a target that owns no file (a New Session tab, or a live tab
+   * whose file was deleted): every path-keyed switch would otherwise fall back
+   * to the workspace's remembered runtime or reopen the file under a new tab.
+   */
+  async activateRuntime(workspaceId: string, runtimeId: string): Promise<SessionRuntimeInfo> {
+    const workspace = this.workspaces.find((item) => item.id === workspaceId)
+    if (!workspace) throw new Error(t('errors.workspace.notFound', { workspaceId }))
+    const entry = this.sessionRuntimes.get(runtimeId)
+    if (!entry) throw new Error(t('errors.session.runtimeNotFound', { runtimeId }))
+    if (entry.info.workspaceId !== workspaceId) {
+      throw new Error(t('errors.session.attachedToDifferentWorkspace'))
+    }
+    if (this.activeWorkspaceId !== workspaceId) await this.setActiveWorkspace(workspaceId)
+    this.setActiveRuntime(workspaceId, runtimeId)
+    this.emitSessionRuntime(entry)
+    return this.snapshotRuntime(entry)
+  }
+
   /** Create an empty session runtime and make it active immediately. */
   async createNewSessionRuntime(workspaceId: string): Promise<SessionRuntimeInfo> {
     const workspace = this.workspaces.find((item) => item.id === workspaceId)
@@ -626,6 +855,7 @@ export class WorkspaceManager {
       // no file of its own; once it has one, the merged --session outranks it
       // (see buildPiArgs) and the runtime re-opens what it created.
       (options.continueSession === true && entry.info.sessionPath === null)
+    const appCreatedBefore = entry.appCreated
     if (bindsExistingFile) entry.appCreated = false
     // The engine names a new session's file at once but writes it only after
     // its first answer. A restart before then (a permission mode change)
@@ -644,16 +874,45 @@ export class WorkspaceManager {
     // can resume it. An engine the caller named explicitly still wins.
     const ownerEngine = engineForBoundSession(startOptions)
     if (!startOptions.engine && ownerEngine) startOptions.engine = ownerEngine
+    // OMP refuses to run with the home directory as cwd — it silently switches
+    // to a temp dir, the session header then records /tmp, and the session no
+    // longer belongs to the Home workspace that created it (invisible in every
+    // project-scoped list). Starting from HOME is exactly what a "No project"
+    // session means, so OMP gets the explicit opt-in. Pi has no such guard.
+    // The engine that actually runs is what matters: a brand-new task names no
+    // engine at all, so the configured default decides and must be resolved
+    // here rather than checked on the caller's field.
+    const actualEngine = startOptions.engine ?? getConfiguredEngineKind()
+    if (actualEngine === 'omp') {
+      if (pathsEqual(startOptions.cwd ?? workspace.path, homedir()) &&
+        !startOptions.args?.includes('--allow-home')) {
+        startOptions.args = [...(startOptions.args ?? []), '--allow-home']
+      }
+    }
     // Every start path converges here, so a linked task always hands the
     // agent its repositories, whichever engine runs it.
     if (workspace.linkedTask) {
       startOptions.args = [...(startOptions.args ?? []), '-e', this.resolveAgentResource(REPO_SET_EXTENSION_FILE)]
       startOptions.env = { ...startOptions.env, [REPO_MAP_ENV]: await this.writeRepoMap(workspace) }
     }
+    // The file the agent resumes is known now, and a refused start must not
+    // stop another tab for room; a new or forked session's file
+    // is named by the engine and claimed once it reports it (applySessionRuntimeState).
+    if (startOptions.sessionPath && !this.claimSessionFor(entry, startOptions.sessionPath)) {
+      return this.refuseClaimedSession(entry, startOptions.sessionPath)
+    }
     // Re-activating an evicted tab spawns a process again, so the budget has to
     // hold here too; an already-live runtime spawns nothing and needs no room.
     if (!this.isRuntimeLive(entry)) this.enforceLiveRuntimeBudget(runtimeId)
     this.touchRuntime(entry)
+    // Every start path converges here, so this is where secondary views
+    // learn the mode the process actually started with — including main's
+    // new-session and restart paths that never go through a secondary view's own
+    // start helper.
+    entry.info = {
+      ...entry.info,
+      permissionMode: (startOptions.env?.PI_DESKTOP_PERMISSION_MODE as PermissionMode | undefined) ?? null,
+    }
     await entry.manager.start(startOptions)
     // closeSessionRuntime() can win while startup is waiting for Pi. Do not
     // emit the now-detached entry after the closed marker was broadcast.
@@ -671,14 +930,23 @@ export class WorkspaceManager {
     if (this.sessionRuntimes.get(runtimeId) !== entry) {
       return { ...entry.info, ...entry.manager.getStatus(), active: false, closed: true }
     }
+    // --continue picks "the latest session", not one the user chose. When
+    // another Pi Desktop runs that one (two windows resuming on launch), start
+    // a new session here instead of ending on an error.
+    const resumedLatest = startOptions.continueSession === true && !startOptions.sessionPath && !startOptions.forkSessionPath
+    const reportedPath = reportedSessionFile(response)
+    if (resumedLatest && reportedPath && this.isRuntimeLive(entry) && !this.claimSessionFor(entry, reportedPath)) {
+      appLog.info('workspaces', `The latest session ${reportedPath} is open in another Pi Desktop; runtime ${runtimeId} starts a new session`)
+      entry.manager.stop()
+      entry.appCreated = appCreatedBefore
+      return this.startSessionRuntime(runtimeId, { ...options, continueSession: false })
+    }
     return this.applySessionRuntimeState(entry, response)
   }
 
   private applySessionRuntimeState(entry: SessionRuntimeEntry, response: unknown): SessionRuntimeInfo {
-    const data = response && typeof response === 'object' && 'data' in response
-      ? response.data as { sessionFile?: unknown; sessionId?: unknown }
-      : undefined
-    const sessionPath = typeof data?.sessionFile === 'string' ? data.sessionFile : entry.info.sessionPath
+    const data = stateData(response)
+    const sessionPath = reportedSessionFile(response) ?? entry.info.sessionPath
     if (sessionPath && sessionPath !== entry.info.sessionPath) {
       const owner = this.runtimeOwningSessionPath(sessionPath)
       if (owner && owner.info.runtimeId !== entry.info.runtimeId) {
@@ -696,11 +964,21 @@ export class WorkspaceManager {
         this.emitRuntimeActivity(entry, 'failed')
         return this.snapshotRuntime(entry)
       }
+    }
+    // The same rule across Pi Desktop instances, whose runtimes this index cannot see.
+    if (sessionPath && this.isRuntimeLive(entry) && !this.claimSessionFor(entry, sessionPath)) {
+      return this.refuseClaimedSession(entry, sessionPath)
+    }
+    // a fork or clone moves the runtime to a new file; the old name is not its name
+    const { sessionName, ...info } = entry.info
+    const keepsName = sessionName !== undefined && (entry.info.sessionPath === null || sessionPath === entry.info.sessionPath)
+    if (sessionPath && sessionPath !== entry.info.sessionPath) {
       if (entry.info.sessionPath) this.runtimeBySessionPath.delete(pathGroupKey(entry.info.sessionPath))
       this.runtimeBySessionPath.set(pathGroupKey(sessionPath), entry.info.runtimeId)
     }
     entry.info = {
-      ...entry.info,
+      ...info,
+      ...(keepsName ? { sessionName } : {}),
       sessionPath: sessionPath ?? null,
       sessionId: typeof data?.sessionId === 'string' ? data.sessionId : entry.info.sessionId,
       ...entry.manager.getStatus(),
@@ -754,6 +1032,7 @@ export class WorkspaceManager {
     entry.manager.stop()
     if (sessionPath) this.runtimeBySessionPath.delete(pathGroupKey(sessionPath))
     this.sessionRuntimes.delete(runtimeId)
+    this.runtimeReferences.delete(runtimeId)
 
     if (this.activeRuntimeByWorkspace.get(workspaceId) === runtimeId) {
       if (replacement) this.activeRuntimeByWorkspace.set(workspaceId, replacement.info.runtimeId)
@@ -789,7 +1068,7 @@ export class WorkspaceManager {
    * the engine's reason for its chat; a prompt that ran without an agent run,
    * such as an extension or a local command, completes it.
    */
-  async promptSessionRuntime(runtimeId: string, message: string): Promise<void> {
+  async promptSessionRuntime(runtimeId: string, message: string, options?: { images?: PromptImage[] }): Promise<PiResponseEvent | null> {
     const entry = this.sessionRuntimes.get(runtimeId)
     if (!entry) throw new Error(t('errors.session.runtimeNotFound', { runtimeId }))
     this.touchRuntime(entry)
@@ -799,19 +1078,29 @@ export class WorkspaceManager {
     // Armed before the prompt goes out: OMP can report the outcome before its answer.
     const reportsOutcome = reportsPromptOutcome(entry.manager.getEngineKind())
     if (reportsOutcome) entry.runlessPromptRuns = runsAtSend
-    const response = await entry.manager.sendCommand({ type: 'prompt', message })
+    const cmd: Record<string, unknown> = { type: 'prompt', message }
+    if (options?.images && options.images.length > 0) cmd.images = options.images
+    const response = await entry.manager.sendCommand(cmd)
     // Gone, or already settled by its prompt_result.
-    if (!isOpen() || (reportsOutcome && entry.runlessPromptRuns === null)) return
+    if (!isOpen() || (reportsOutcome && entry.runlessPromptRuns === null)) return response
     const refusal = promptRefusal(response)
-    if (refusal) return this.settleRunlessPrompt(entry, refusal.reason)
+    if (refusal) {
+      this.settleRunlessPrompt(entry, refusal.reason)
+      return response
+    }
     // A turn that started ends the task with its own agent_end.
-    if (entry.agentRunStarts !== runsAtSend) return
-    if (promptRanWithoutAgent(response)) return this.settleRunlessPrompt(entry)
+    if (entry.agentRunStarts !== runsAtSend) return response
+    if (promptRanWithoutAgent(response)) {
+      this.settleRunlessPrompt(entry)
+      return response
+    }
     // Its prompt_result settles a prompt that runs no turn.
-    if (reportsOutcome) return
+    if (reportsOutcome) return response
     const state = await entry.manager.sendCommand({ type: 'get_state' })
-    if (!isOpen() || entry.agentRunStarts !== runsAtSend || !reportsNoAgentRun(state)) return
-    this.settleRunlessPrompt(entry)
+    if (isOpen() && entry.agentRunStarts === runsAtSend && reportsNoAgentRun(state)) {
+      this.settleRunlessPrompt(entry)
+    }
+    return response
   }
 
   /**
@@ -898,12 +1187,13 @@ export class WorkspaceManager {
     return this.fileServices.get(this.activeWorkspaceId) ?? null
   }
 
-  async createWorkspace(name: string, path: string): Promise<Workspace> {
+  async createWorkspace(name: string, path: string, options: { activate?: boolean } = {}): Promise<Workspace> {
     // Check for duplicate path (case-insensitive on Windows, so "Documents"
     // and "documents" resolve to the same workspace instead of duplicating).
     const existing = this.workspaces.find((w) => pathsEqual(w.path, path))
     if (existing) {
-      return this.setActiveWorkspace(existing.id)
+      // Popup folder selection must not change the main window's active project.
+      return options.activate === false ? existing : this.setActiveWorkspace(existing.id)
     }
 
     const workspace: Workspace = {
@@ -926,8 +1216,10 @@ export class WorkspaceManager {
     const fileService = new FileService(path)
     this.fileServices.set(workspace.id, fileService)
 
-    // Auto-set as active if it's the first workspace
-    const becameActive = !this.activeWorkspaceId
+    // Auto-set as active if it's the first workspace — unless the caller
+    // explicitly opted out (the Quick Chat picker), which must not move the
+    // main window's active pointer even when it creates the very first folder.
+    const becameActive = !this.activeWorkspaceId && options.activate !== false
     if (becameActive) {
       this.activeWorkspaceId = workspace.id
     }
@@ -960,10 +1252,23 @@ export class WorkspaceManager {
     return workspace
   }
 
-  async removeWorkspace(workspaceId: string): Promise<WorkspaceRemoveResult> {
-    const index = this.workspaces.findIndex((w) => w.id === workspaceId)
-    if (index === -1) throw new Error(t('errors.workspace.notFound', { workspaceId }))
-    const workspace = this.workspaces[index]
+  /**
+   * Close a tab. A second close of the same tab while the first still runs
+   * joins it and gets the same result, so the worktree is removed once and a
+   * racing second `git worktree remove` cannot report a false preserved path.
+   */
+  removeWorkspace(workspaceId: string): Promise<WorkspaceRemoveResult> {
+    const inFlight = this.removalsInFlight.get(workspaceId)
+    if (inFlight) return inFlight
+    const removal = this.runWorkspaceRemoval(workspaceId)
+      .finally(() => this.removalsInFlight.delete(workspaceId))
+    this.removalsInFlight.set(workspaceId, removal)
+    return removal
+  }
+
+  private async runWorkspaceRemoval(workspaceId: string): Promise<WorkspaceRemoveResult> {
+    const workspace = this.workspaces.find((w) => w.id === workspaceId)
+    if (!workspace) throw new Error(t('errors.workspace.notFound', { workspaceId }))
     let worktreeRemoved: boolean | undefined
     const preservedWorktreePaths: string[] = []
 
@@ -981,6 +1286,7 @@ export class WorkspaceManager {
       await entry.manager.stopAndWait()
       if (entry.info.sessionPath) this.runtimeBySessionPath.delete(pathGroupKey(entry.info.sessionPath))
       this.sessionRuntimes.delete(runtimeId)
+      this.runtimeReferences.delete(runtimeId)
     }
     this.activeRuntimeByWorkspace.delete(workspaceId)
     const fileService = this.fileServices.get(workspaceId)
@@ -1009,7 +1315,15 @@ export class WorkspaceManager {
       await rm(this.repoMapPath(workspaceId), { force: true })
     }
 
-    this.workspaces.splice(index, 1)
+    const result: WorkspaceRemoveResult = {
+      worktreeRemoved,
+      ...(preservedWorktreePaths.length > 0 ? { preservedWorktreePaths } : {}),
+    }
+    // The awaits above let other tabs open or close, so the index is read
+    // only now.
+    const currentIndex = this.workspaces.findIndex((w) => w.id === workspaceId)
+    if (currentIndex === -1) return result
+    this.workspaces.splice(currentIndex, 1)
 
     // If removed workspace was active, switch to first available
     let activeChanged = false
@@ -1030,7 +1344,7 @@ export class WorkspaceManager {
     for (const listener of this.workspaceRemovedListeners) {
       listener(workspaceId)
     }
-    return { worktreeRemoved, ...(preservedWorktreePaths.length > 0 ? { preservedWorktreePaths } : {}) }
+    return result
   }
 
   async renameWorkspace(workspaceId: string, name: string): Promise<void> {
@@ -1359,7 +1673,7 @@ export class WorkspaceManager {
       this.watchingWorkspaceId = null
       this.gitWatchingWorkspaceId = null
       this.updateActiveWatcher()
-      this.emitFileChange({ changeType: 'change', relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
+      this.emitFileChange({ relativePath: WHOLE_WORKSPACE_CHANGE_PATH })
     }
   }
 
@@ -1393,9 +1707,7 @@ export class WorkspaceManager {
   private async writeRepoMap(workspace: Workspace): Promise<string> {
     const task = workspace.linkedTask!
     const path = this.repoMapPath(workspace.id)
-    await mkdir(dirname(path), { recursive: true })
-    const tmpPath = `${path}.tmp`
-    await writeFile(tmpPath, serializeRepoMap({
+    await writeTextFileAtomic(path, serializeRepoMap({
       setName: task.setName,
       mode: task.mode,
       repos: task.repos.map((repo) => ({
@@ -1405,8 +1717,7 @@ export class WorkspaceManager {
         branch: repo.branch,
         trusted: workspaceTrustStore.isTrusted(repo.workPath),
       })),
-    }), 'utf-8')
-    await rename(tmpPath, path)
+    }))
     return path
   }
 
@@ -1435,9 +1746,19 @@ export class WorkspaceManager {
     else this.piManagers.get(workspaceId)?.stop()
   }
 
-  stopAll(): void {
-    for (const [, manager] of this.piManagers) manager.stop()
-    for (const [, entry] of this.sessionRuntimes) entry.manager.stop()
+  /**
+   * Stop every agent process for a quit. Each wait is bounded by stopAndWait
+   * (the stops run side by side, so the whole wait is one such bound), and
+   * then every stopped process tree still alive, from these managers or from
+   * ones dropped earlier, gets the forced kill at once instead of when its
+   * timer would fire after the app has exited.
+   */
+  async stopAll(): Promise<void> {
+    const managers = [
+      ...this.piManagers.values(),
+      ...[...this.sessionRuntimes.values()].map((entry) => entry.manager),
+    ]
+    const stopped = Promise.all(managers.map((manager) => manager.stopAndWait()))
     for (const [, fs] of this.fileServices) {
       fs.stopWatching()
       fs.stopGitWatching()
@@ -1448,9 +1769,12 @@ export class WorkspaceManager {
     this.piManagers.clear()
     this.sessionRuntimes.clear()
     this.runtimeBySessionPath.clear()
+    this.runtimeReferences.clear()
     this.activeRuntimeByWorkspace.clear()
     this.activeRuntimeId = null
     this.fileServices.clear()
+    await stopped
+    forceKillStoppingProcessTrees()
   }
 
   private async loadWorkspaces(): Promise<void> {
@@ -1496,13 +1820,16 @@ export class WorkspaceManager {
     }
   }
 
-  private async saveWorkspaces(): Promise<void> {
-    try {
-      const dir = dirname(this.configPath)
-      if (!existsSync(dir)) {
-        await mkdir(dir, { recursive: true })
-      }
+  /**
+   * Saves run one at a time, and each writes the state as it is when its turn
+   * comes, so the last save always leaves the latest state on disk.
+   */
+  private saveWorkspaces(): Promise<void> {
+    return this.runWorkspaceFileTask(() => this.writeWorkspaceState())
+  }
 
+  private async writeWorkspaceState(): Promise<void> {
+    try {
       const state: WorkspaceState = {
         workspaces: this.workspaces,
         activeWorkspaceId: this.activeWorkspaceId,
@@ -1512,11 +1839,8 @@ export class WorkspaceManager {
       if (existsSync(this.configPath)) {
         await copyFile(this.configPath, `${this.configPath}.bak`)
       }
-      // Atomic write: write a temp file then rename over the target so a crash
-      // or partial write can never leave a half-written/corrupt config.
-      const tmpPath = `${this.configPath}.tmp`
-      await writeFile(tmpPath, JSON.stringify(state, null, 2), 'utf-8')
-      await rename(tmpPath, this.configPath)
+      // Atomic, so a crash or partial write never leaves a half-written config.
+      await writeJsonFileAtomic(this.configPath, state)
     } catch (err) {
       console.error('Failed to save workspaces:', err)
       appLog.error('workspaces', 'Failed to save workspaces.json', err)

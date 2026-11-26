@@ -4,6 +4,7 @@ import { homedir } from 'os'
 import { basename, join, resolve } from 'path'
 import { pathGroupKey } from '../shared/path-compare'
 import { appLog } from './app-log'
+import { getSessionsRoot } from './pi-paths'
 import { pathsEqual, sanitizePath } from './session-paths'
 import { parseSessionLines } from './session-jsonl'
 import type {
@@ -254,15 +255,10 @@ function workflowRunDirs(workspace: Workspace): string[] {
   ]
 }
 
-/** Root of Pi's session store; read per call because tests override the env. */
-function piSessionsRoot(): string {
-  return join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions')
-}
-
 function workflowSessionsDir(cwd: string): string {
   const resolvedCwd = resolve(cwd)
   const safePath = `--${resolvedCwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
-  return join(piSessionsRoot(), safePath)
+  return join(getSessionsRoot(), safePath)
 }
 
 // ─── Workflow project discovery ─────────────────────────────────────────────
@@ -389,7 +385,7 @@ export async function discoverWorkflowProjects(
     if (projects.has(key) && projects.get(key) === null) projects.set(key, resolve(known))
   }
 
-  const sessionsRoot = piSessionsRoot()
+  const sessionsRoot = getSessionsRoot()
   const sessionDirCwds = new Map<string, string>()
   const sessionUuidToFile = new Map<string, string>()
   let sessionDirsScanned = 0
@@ -487,7 +483,7 @@ async function dirStamp(dir: string): Promise<string> {
 async function discoveryCacheKey(knownPaths: readonly string[]): Promise<string | null> {
   const [projects, sessions] = await Promise.all([
     dirStamp(WORKFLOW_PROJECTS_DIR),
-    dirStamp(piSessionsRoot()),
+    dirStamp(getSessionsRoot()),
   ])
   // Only the projects dir can null the key: without it there are no runs to
   // project at all. A missing session store just costs the walk its cwd

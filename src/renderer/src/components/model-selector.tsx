@@ -1,41 +1,34 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useAppStore } from '../store'
+import { useChatSession } from '../chat-session-context'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 import { formatShortcut } from '../../../shared/keyboard-shortcuts'
-import { activeShortcuts } from '../utils/app-shortcuts'
 import type { ModelInfo } from '../../../shared/ipc-contracts'
 import { filterModels, sortModelsByRecency } from '../utils/model-search'
 import { readModelRecency, recordModelUse } from '../utils/model-recency'
 import { thinkingLevels, stepThinkingLevel } from '../utils/thinking-levels'
 import { clsx } from 'clsx'
 import { ArrowLeft, ArrowRight, Cpu, ChevronUp, Check, Loader2, Search } from 'lucide-react'
-
-const setIsOpen = (modelPickerOpen: boolean): void => useAppStore.setState({ modelPickerOpen })
+import { isImeComposing } from '../utils/ime-composing'
 
 interface ModelSelectorProps {
   className?: string
   compact?: boolean
 }
 
-/**
- * Searchable model picker for the status bar.
- * Opens upward; starts the active runtime on demand, even in a fresh chat.
- */
-export function ModelSelector({ className, compact = false }: ModelSelectorProps): React.JSX.Element {
-  const { t } = useTranslation()
-  const sessionState = useAppStore((state) => state.sessionState)
-  const setModel = useAppStore((state) => state.setModel)
-  const setThinkingLevel = useAppStore((state) => state.setThinkingLevel)
-  const listModels = useAppStore((state) => state.listModels)
-  const workspaceId = useAppStore((state) => state.activeWorkspace?.id)
-  const runtimeId = useAppStore((state) => state.activeSessionRuntimeId)
-  const piStatus = useAppStore((state) => state.piStatus)
-  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
-  const modelSelectorShortcut = useAppStore((state) => activeShortcuts(state).modelSelector)
-  const settings = useAppStore((state) => state.settings)
+/** Searchable model and effort picker shared by every chat surface. */
+export function ModelSelector(props: ModelSelectorProps): React.JSX.Element {
+  const { models } = useChatSession()
+  return <SessionModelSelector key={models.scopeKey} {...props} />
+}
 
-  const isOpen = useAppStore((state) => state.modelPickerOpen)
+function SessionModelSelector({ className, compact = false }: ModelSelectorProps): React.JSX.Element {
+  const { t } = useTranslation()
+  const { models: binding, engine, settings, composer } = useChatSession()
+  const { open: isOpen, setOpen: setIsOpen } = binding
+  const listModels = binding.list
+  const engineLabel = agentEngineLabel(engine) ?? DEFAULT_AGENT_ENGINE_LABEL
+  const modelSelectorShortcut = settings.shortcuts.modelSelector
   const [models, setModels] = useState<ModelInfo[]>([])
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
@@ -44,27 +37,36 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
   const [recency, setRecency] = useState(readModelRecency)
   // Keep errors as data: switching language must not restart the load.
   const [loadError, setLoadError] = useState(false)
+  const [selecting, setSelecting] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const selectionPending = useRef(false)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   const ref = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
-  const currentModel = sessionState?.model
-  const fallbackLabel =
-    currentModel?.name ??
-    (settings?.defaultModel
-      ? settings.defaultProvider
-        ? `${settings.defaultProvider}/${settings.defaultModel}`
-        : settings.defaultModel
-      : t('models.selector.selectModel'))
+  const pending = binding.pendingModel
+  const selectedProvider = pending?.provider ?? binding.model?.provider ?? (binding.useDefaults ? settings.defaultProvider : undefined)
+  const selectedId = pending?.modelId ?? binding.model?.id ?? (binding.useDefaults ? settings.defaultModel : undefined)
+  const currentModel = models.find((model) => model.id === selectedId && model.provider === selectedProvider)
+    ?? (binding.model?.id === selectedId && binding.model?.provider === selectedProvider ? binding.model : null)
+  const fallbackLabel = pending?.name ?? currentModel?.name
+    ?? (selectedId ? selectedProvider ? `${selectedProvider}/${selectedId}` : selectedId : t('models.selector.selectModel'))
+  const currentEffort = binding.pendingThinkingLevel ?? binding.thinkingLevel ?? (binding.useDefaults ? settings.defaultThinkingLevel : null) ?? 'medium'
 
-  const close = (): void => {
+  const close = useCallback((): void => {
     setIsOpen(false)
     setQuery('')
     setEffortDraft(null)
     setLoadError(false)
-  }
+  }, [setIsOpen])
 
   const open = (): void => {
+    if (binding.locked || selecting) return
     if (isOpen) {
       close()
       return
@@ -76,6 +78,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
     if (!isOpen) return
     let cancelled = false
     setEffortDraft(null)
+    setQuery('')
     setModels([])
     setLoading(true)
     setLoadError(false)
@@ -91,7 +94,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
     })
     // Never populate a different session's picker with an old RPC result.
     return () => { cancelled = true }
-  }, [isOpen, workspaceId, runtimeId, listModels])
+  }, [isOpen, binding.scopeKey, listModels])
 
   useEffect(() => {
     if (!isOpen) return
@@ -108,7 +111,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
-  }, [isOpen])
+  }, [isOpen, close])
 
   const filteredModels = useMemo(
     () => filterModels(sortModelsByRecency(models, recency), query),
@@ -129,29 +132,42 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
     model && effortDraft?.model.id === model.id && effortDraft.model.provider === model.provider
       ? effortDraft.level
       : undefined
-  const displayedEffort = draftFor(highlightedModel) ?? sessionState?.thinkingLevel ?? 'medium'
+  const displayedEffort = draftFor(highlightedModel) ?? currentEffort
 
-  // setModel reports its own failures in the chat, so the picker always closes.
-  // With the runtime stopped, setModel saves the model as the default.
   const handleSelect = async (model: ModelInfo): Promise<void> => {
+    if (binding.locked || selectionPending.current) return
+    selectionPending.current = true
+    setSelecting(true)
+    setActionError(null)
     const effort = draftFor(model)
-    await setModel(model.provider, model.id)
-    if (effort !== undefined) await setThinkingLevel(effort)
-    setRecency(recordModelUse(model))
-    close()
+    try {
+      await binding.select(model)
+      if (!mounted.current) return
+      if (effort !== undefined) await binding.selectThinking(effort)
+      if (!mounted.current) return
+      setRecency(recordModelUse(model))
+      close()
+      composer.requestFocus()
+    } catch (error) {
+      if (mounted.current) setActionError(error instanceof Error ? error.message : String(error))
+    } finally {
+      selectionPending.current = false
+      if (mounted.current) setSelecting(false)
+    }
   }
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (isImeComposing(e.nativeEvent)) return
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       if (filteredModels.length === 0) return
       const step = e.key === 'ArrowDown' ? 1 : -1
       setHighlighted((i) => (i + step + filteredModels.length) % filteredModels.length)
     } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.nativeEvent.isComposing) return
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
       e.preventDefault()
       e.stopPropagation()
-      if (loading || piStatus !== 'running' || !highlightedModel) return
+      if (loading || selecting || binding.locked || !highlightedModel) return
       const next = stepThinkingLevel(
         thinkingLevels(highlightedModel), displayedEffort, e.key === 'ArrowRight' ? 1 : -1,
       )
@@ -159,13 +175,12 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
     } else if (e.key === 'Enter') {
       e.preventDefault()
       const model = filteredModels[highlighted]
-      if (model && !loading) void handleSelect(model)
+      if (model && !loading && !binding.locked && !selecting) void handleSelect(model)
     } else if (e.key === 'Escape') {
       e.preventDefault()
+      e.stopPropagation()
       close()
-      // Closing unmounts the focused search box; hand focus back to the
-      // composer, as a confirmed selection does.
-      useAppStore.setState({ composerFocusRequested: true })
+      composer.requestFocus()
     }
   }
 
@@ -175,6 +190,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
     <div ref={ref} className={clsx('relative flex', className)}>
       <button
         type="button"
+        disabled={binding.locked || selecting}
         onClick={() => void open()}
         className={clsx(
           'flex items-center gap-1 px-2 text-[11px] transition-colors active:scale-[0.98]',
@@ -189,7 +205,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
           hint: modelSelectorShortcut
             ? t('models.selector.selectModelWithShortcut', {
                 agent: engineLabel,
-                shortcut: formatShortcut(modelSelectorShortcut, window.piDesktop.system.platform),
+                shortcut: formatShortcut(modelSelectorShortcut, /Mac|iPhone|iPad/.test(navigator.platform) ? 'darwin' : 'linux'),
               })
             : t('models.selector.selectModelCycleHint', { agent: engineLabel }),
         })}
@@ -206,12 +222,12 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
 
       {isOpen && (
         <div className="absolute bottom-full right-0 z-50 mb-1 w-72 rounded-lg border border-border-strong bg-surface py-1 shadow-xl shadow-black/40 animate-fade-in">
-          {currentModel && (
+          {selectedId && (
             <div className="border-b border-border px-3 py-2">
               <div className="text-xs text-muted">{t('models.selector.current')}</div>
-              <div className="text-sm font-medium text-primary">{currentModel.name}</div>
+              <div className="text-sm font-medium text-primary">{fallbackLabel}</div>
               <div className="mt-0.5 text-xs text-dim">
-                {currentModel.provider} · {currentModel.id}
+                {selectedProvider} · {selectedId}
               </div>
             </div>
           )}
@@ -238,6 +254,9 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
             </div>
           )}
           <div ref={listRef} className="max-h-56 overflow-y-auto py-1">
+            {actionError && (
+              <div role="alert" className="px-3 py-2 text-xs text-error">{t('store.messages.error', { detail: actionError })}</div>
+            )}
             {loading && (
               <div className="flex items-center gap-2 px-3 py-2 text-xs text-dim">
                 <Loader2 size={12} className="animate-spin" />
@@ -252,7 +271,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
             )}
             {filteredModels.map((model, index) => {
               const selected =
-                currentModel?.id === model.id && currentModel?.provider === model.provider
+                selectedId === model.id && selectedProvider === model.provider
               return (
                 <button
                   key={`${model.provider}/${model.id}`}
@@ -260,7 +279,7 @@ export function ModelSelector({ className, compact = false }: ModelSelectorProps
                   data-model-index={index}
                   onMouseEnter={() => setHighlighted(index)}
                   onClick={() => void handleSelect(model)}
-                  disabled={loading}
+                  disabled={loading || selecting || binding.locked}
                   className={clsx(
                     'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-surface-hover transition-colors',
                     index === highlighted ? 'bg-surface-hover' : selected && 'bg-card'

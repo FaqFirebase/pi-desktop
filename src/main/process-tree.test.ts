@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync, type ChildProcess } from 'child_process'
 import { once } from 'node:events'
-import { PiRpcManager } from './pi-rpc-manager'
+import { descendantPids } from './process-tree-kill'
 
 /**
  * OMP puts each subagent it spawns in a new process group, so the negative-PID
@@ -25,11 +25,6 @@ function alive(pid: number): boolean {
 
 async function settle(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-/** Reach the private walker without widening the class's public surface. */
-function walk(manager: PiRpcManager, root: number): number[] {
-  return (manager as unknown as { descendantPids: (pid: number) => number[] }).descendantPids(root)
 }
 
 async function detachedTree(): Promise<{ parent: ChildProcess; child: number }> {
@@ -64,7 +59,7 @@ test('a grandchild in its own process group is still found', { skip: IS_WINDOWS 
   const { parent, child } = await detachedTree()
   try {
     assert.ok(parent.pid, 'parent must have a pid')
-    assert.ok(walk(new PiRpcManager(), parent.pid).includes(child))
+    assert.ok(descendantPids(parent.pid).includes(child))
     const group = spawnSync('ps', ['-o', 'pgid=', '-p', String(child)], { encoding: 'utf-8' })
     assert.equal(group.status, 0, group.stderr)
     assert.equal(Number(group.stdout.trim()), child, 'the descendant owns a separate process group')
@@ -78,7 +73,7 @@ test('an escaped descendant is signalled directly and dies', { skip: IS_WINDOWS 
   const { parent, child } = await detachedTree()
   try {
     assert.ok(parent.pid, 'parent must have a pid')
-    const strays = walk(new PiRpcManager(), parent.pid)
+    const strays = descendantPids(parent.pid)
     assert.ok(strays.includes(child))
     const childExit = once(parent, 'message', { signal: AbortSignal.timeout(5000) })
     for (const pid of strays) process.kill(pid, 'SIGTERM')
@@ -101,12 +96,12 @@ test('a childless process yields no descendants', { skip: IS_WINDOWS }, async ()
   try {
     assert.ok(lonely.pid)
     await settle(300)
-    assert.deepEqual(walk(new PiRpcManager(), lonely.pid!), [])
+    assert.deepEqual(descendantPids(lonely.pid!), [])
   } finally {
     try { process.kill(-lonely.pid!, 'SIGKILL') } catch { /* gone */ }
   }
 })
 
 test('the walk terminates on an unknown pid', { skip: IS_WINDOWS }, () => {
-  assert.deepEqual(walk(new PiRpcManager(), 999_999_999), [])
+  assert.deepEqual(descendantPids(999_999_999), [])
 })

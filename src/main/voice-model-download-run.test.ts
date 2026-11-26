@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, readFile } from 'fs/promises'
+import { readFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { tmpdir } from 'os'
 import { getVoiceModel, type VoiceDownloadProgress } from '../shared/voice-models'
 import { downloadVoiceModel } from './voice-model-download'
 import {
@@ -11,6 +10,7 @@ import {
   readVoiceModelManifest,
   voiceModelDir,
 } from './voice-model-store'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 const MODEL = getVoiceModel('moonshine-base')!
 
@@ -43,7 +43,7 @@ const BODIES: Record<string, string> = {
 }
 
 async function tempOpts() {
-  return { userDataDir: await mkdtemp(join(tmpdir(), 'pi-voice-dl-')) }
+  return { userDataDir: makeTempDir('pi-voice-dl-') }
 }
 
 test('downloads the int8 files to disk and marks the model installed', async () => {

@@ -1,18 +1,19 @@
-import { useMemo, useState } from 'react'
+import { useContext, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import 'katex/dist/katex.min.css'
-import { useContextMenu, buildCodeBlockContextMenu, buildLinkContextMenu } from './context-menu'
+import { useContextMenu, buildCodeBlockContextMenu, buildLinkContextMenu, buildOpenPathMenuItems } from './context-menu'
 import { CopyButton } from './copy-button'
 import { LineNumberedCode } from './line-numbered-code'
 import { splitReadTruncationNote } from '../message-grouping'
-import { looksLikeFilePath, openFileFromChat } from './chat-file-link'
+import { looksLikeFilePath, openFileFromChat, resolveChatFileTarget } from './chat-file-link'
 import { ErrorBoundary } from './error-boundary'
 import { useAppStore } from '../store'
 import { DEFAULT_SETTINGS } from '../../../shared/default-settings'
 import { MathSpan, markdownRehypePlugins, markdownRemarkPlugins, normalizeMathDelimiters } from '../utils/markdown-math'
 import { Code2, Eye } from 'lucide-react'
+import { ReadOnlyChatContext } from './read-only-chat-context'
 
 interface MarkdownRendererProps {
   content: string
@@ -20,35 +21,40 @@ interface MarkdownRendererProps {
 
 export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.Element {
   const { show, ContextMenuComponent } = useContextMenu()
+  const view = useContext(ReadOnlyChatContext)
   const singleDollarMath = useAppStore(
-    (state) => state.settingsDraft.singleDollarMath ?? state.settings?.singleDollarMath ?? DEFAULT_SETTINGS.singleDollarMath
+    (state) => view
+      ? view.singleDollarMath
+      : state.settingsDraft.singleDollarMath ?? state.settings?.singleDollarMath ?? DEFAULT_SETTINGS.singleDollarMath
   )
   const markdown = useMemo(() => normalizeMathDelimiters(content, singleDollarMath), [content, singleDollarMath])
 
   // Component identity must survive token updates or React remounts code
   // blocks, images and their local controls on every chunk.
   const components = useMemo<Components>(() => ({
-    // Links — right-click for context menu
-    a: ({ href, children, ...props }) => (
-      <a
-        {...props}
-        href={href}
-        onClick={(e) => {
-          e.preventDefault()
-          if (href) {
-            window.piDesktop.system.openExternal(href)
-          }
-        }}
-        onContextMenu={(e) => {
-          if (href) {
-            show(e, buildLinkContextMenu(href))
-          }
-        }}
-        className="text-accent-fg hover:underline cursor-pointer"
-      >
-        {children}
-      </a>
-    ),
+    // Links — right-click for context menu in main; inert span in read-only popup
+    a: ({ href, children, ...props }) =>
+      view ? (
+        <span className="text-accent-fg font-medium cursor-default" title={href}>
+          {children}
+        </span>
+      ) : (
+        <a
+          {...props}
+          href={href}
+          onClick={(e) => {
+            e.preventDefault()
+            if (href) window.piDesktop.system.openExternal(href)
+          }}
+          onContextMenu={(e) => {
+            if (href) show(e, buildLinkContextMenu(href))
+          }}
+          className="text-accent-fg hover:underline cursor-pointer"
+        >
+          {children}
+        </a>
+      ),
+    img: view ? ({ alt }) => <span>{alt}</span> : undefined,
 
     // Code blocks — right-click to copy
     pre: (props) => {
@@ -67,7 +73,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
         <pre
           className="relative"
           onContextMenu={(e) => {
-            if (codeText) {
+            if (codeText && !view) {
               show(e, buildCodeBlockContextMenu(codeText))
             }
           }}
@@ -107,7 +113,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
 
       // Inline code that reads like a real filename opens in the editor;
       // everything else (keywords, function names, literals) copies on click.
-      if (looksLikeFilePath(inlineText)) {
+      if (!view && looksLikeFilePath(inlineText)) {
         return (
           <code
             className="chat-file-link"
@@ -115,7 +121,11 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
               void openFileFromChat(inlineText)
             }}
             onContextMenu={(e) => {
-              show(e, buildCodeBlockContextMenu(inlineText))
+              show(e, [
+                ...buildOpenPathMenuItems(async () => (await resolveChatFileTarget(inlineText))?.path ?? null),
+                { id: 'open-path-divider', label: '', divider: true, action: () => {} },
+                ...buildCodeBlockContextMenu(inlineText),
+              ])
             }}
           >
             {children}
@@ -129,7 +139,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
             if (inlineText) navigator.clipboard.writeText(inlineText)
           }}
           onContextMenu={(e) => {
-            if (inlineText) {
+            if (inlineText && !view) {
               show(e, buildCodeBlockContextMenu(inlineText))
             }
           }}
@@ -148,7 +158,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
         <table {...props}>{children}</table>
       </div>
     ),
-  }), [show])
+  }), [show, view])
 
   return (
     <ErrorBoundary

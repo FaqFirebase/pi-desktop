@@ -28,7 +28,7 @@ test('new sessions receive the persisted model and reasoning preference', async 
   try {
     const { registerSessionHandlers } = await import('./session-handlers')
     const { saveAppSettings } = await import('./settings')
-    await saveAppSettings({ defaultProvider: 'test', defaultModel: 'chosen', defaultThinkingLevel: 'high' })
+    await saveAppSettings({ defaultProvider: 'test', defaultModel: 'chosen', defaultThinkingLevel: 'high', defaultArgs: ['--test-default-argument'] })
     const runtime = { runtimeId: 'new', workspaceId: 'workspace' }
     let started!: (options: PiStartOptions) => void
     const optionsReady = new Promise<PiStartOptions>((resolve) => { started = resolve })
@@ -37,7 +37,12 @@ test('new sessions receive the persisted model and reasoning preference', async 
         getActiveWorkspace: () => ({ id: 'workspace', path: root }),
         getWorkspaces: () => [{ id: 'workspace', path: root }],
         createNewSessionRuntime: async () => runtime,
-        startSessionRuntime: async (_id: string, options: PiStartOptions) => { started(options) },
+        getSessionRuntime: () => runtime,
+        getSessionRuntimeManager: () => ({ getStatus: () => ({ status: 'stopped' }) }),
+        startSessionRuntime: async (_id: string, options: PiStartOptions) => {
+          started(options)
+          return { ...runtime, status: 'running' }
+        },
       },
     } as unknown as IpcContext)
     assert.equal(await handlers.get(IPC_CHANNELS.SESSION_NEW)!(null), runtime)
@@ -45,6 +50,7 @@ test('new sessions receive the persisted model and reasoning preference', async 
     assert.equal(args[args.indexOf('--model') + 1], 'chosen')
     assert.equal(args[args.indexOf('--thinking') + 1], 'high')
     assert.equal(args.includes('--continue'), false)
+    assert.equal(args.includes('--test-default-argument'), true)
   } finally {
     electronModule.exports = originalExports
     await rm(root, { recursive: true, force: true })
@@ -75,7 +81,12 @@ test('a task prompt goes to its own runtime after startup, and a failed send fai
         getActiveWorkspace: () => ({ id: 'workspace', path: root }),
         getWorkspaces: () => [{ id: 'workspace', path: root }],
         createNewSessionRuntime: async () => runtime,
-        startSessionRuntime: async () => { steps.push('start') },
+        getSessionRuntime: () => runtime,
+        getSessionRuntimeManager: () => ({ getStatus: () => ({ status: 'stopped' }) }),
+        startSessionRuntime: async () => {
+          steps.push('start')
+          return { ...runtime, status: 'running' }
+        },
         // The workspace manager settles the task from the engine's answer.
         promptSessionRuntime: async (runtimeId: string, message: string) => {
           steps.push(`prompt:${runtimeId}:${message}`)
@@ -159,6 +170,74 @@ test('switching back to an unpersisted live session reuses its runtime', async (
   }
 })
 
+test('activating a runtime targets it exactly and never falls back to the workspace runtime', async () => {
+  const require = createRequire(import.meta.url)
+  const electronPath = require.resolve('electron')
+  require('electron')
+  const electronModule = require.cache[electronPath]!
+  const originalExports = electronModule.exports
+  handlers.clear()
+  electronModule.exports = {
+    ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler) },
+    app: { isPackaged: false, getAppPath: () => process.cwd() },
+  }
+  const root = await mkdtemp(join(tmpdir(), 'pi-activate-runtime-'))
+  configureGuiDataDir(root)
+  try {
+    const { registerSessionHandlers } = await import('./session-handlers')
+    let runtime: SessionRuntimeInfo | null = {
+      runtimeId: 'target', workspaceId: 'workspace', sessionPath: null, sessionId: null,
+      status: 'running', pid: 123, error: null, activity: null, active: false,
+    }
+    let activations = 0
+    let starts = 0
+    registerSessionHandlers({
+      workspaceManager: {
+        getWorkspaces: () => [{ id: 'workspace', path: root }],
+        getActiveWorkspace: () => ({ id: 'workspace', path: root }),
+        getSessionRuntime: (runtimeId: string) => runtime && runtime.runtimeId === runtimeId ? runtime : null,
+        getSessionRuntimeManager: () => ({ getStatus: () => ({ status: runtime?.status ?? 'stopped' }) }),
+        activateRuntime: async (workspaceId: string, runtimeId: string) => {
+          assert.equal(workspaceId, 'workspace')
+          assert.equal(runtimeId, 'target')
+          activations++
+          return { ...runtime!, active: true }
+        },
+        startSessionRuntime: async () => { starts++ },
+      },
+    } as unknown as IpcContext)
+    const activateRuntime = handlers.get(IPC_CHANNELS.SESSION_ACTIVATE_RUNTIME)!
+    const first = await activateRuntime(null, { workspaceId: 'workspace', runtimeId: 'target' }) as SessionRuntimeInfo
+    assert.equal(first.active, true, 'the exact target is returned as active')
+    assert.equal(activations, 1)
+    assert.equal(starts, 0, 'a live runtime must not be restarted')
+
+    runtime = { ...runtime!, status: 'stopped' }
+    const restarted = await activateRuntime(null, { workspaceId: 'workspace', runtimeId: 'target' }) as SessionRuntimeInfo
+    assert.equal(restarted.runtimeId, 'target')
+    // The handler fires the start fire-and-forget (same convention as SESSION_SWITCH).
+    for (let tick = 0; tick < 100 && starts === 0; tick += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+    assert.equal(starts, 1, 'a stopped runtime starts in place, no new tab')
+    runtime = { ...runtime!, status: 'starting' }
+    assert.equal((await activateRuntime(null, { workspaceId: 'workspace', runtimeId: 'target' }) as SessionRuntimeInfo).runtimeId, 'target')
+    assert.equal(starts, 1, 'a starting runtime must not be restarted')
+
+    // Stale or foreign targets are refused, never redirected.
+    runtime = null
+    await assert.rejects(async () => activateRuntime(null, { workspaceId: 'workspace', runtimeId: 'target' }), /Session runtime not found/)
+    runtime = { runtimeId: 'target', workspaceId: 'other', sessionPath: null, sessionId: null, status: 'running', pid: 1, error: null, activity: null, active: false }
+    await assert.rejects(async () => activateRuntime(null, { workspaceId: 'workspace', runtimeId: 'target' }), /Session runtime not found/)
+    await assert.rejects(async () => activateRuntime(null, { workspaceId: 'workspace', runtimeId: 5 }))
+    assert.equal(activations, 3)
+    assert.equal(starts, 1)
+  } finally {
+    electronModule.exports = originalExports
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('the resume target is the project runtime session, else its newest used file when resuming', async () => {
   const require = createRequire(import.meta.url)
   const electronPath = require.resolve('electron')
@@ -186,17 +265,29 @@ test('the resume target is the project runtime session, else its newest used fil
       JSON.stringify({ type: 'message', message: { role: 'user', content: 'hi' } }),
     ].join('\n'))
     let current: { sessionPath: string | null } | null = null
+    // Whether another Pi Desktop holds the newest file, and what this one reserved.
+    let claimedElsewhere = false
+    const reserved: string[] = []
     registerSessionHandlers({
       workspaceManager: {
         getActiveWorkspace: () => ({ id: 'workspace', path: project }),
         getWorkspaces: () => [{ id: 'workspace', path: project }],
         getWorkspaceSessionRuntime: (id: string) => id === 'workspace' ? current : null,
+        reserveSessionForResume: (sessionPath: string) => {
+          if (claimedElsewhere) return false
+          reserved.push(sessionPath)
+          return true
+        },
       },
     } as unknown as IpcContext)
     const resumeTarget = handlers.get(IPC_CHANNELS.SESSION_RESUME_TARGET)!
     const { saveAppSettings } = await import('./settings')
 
     assert.equal(await resumeTarget(null, project), onDisk)
+    assert.deepEqual(reserved, [onDisk], 'the resumed file is reserved for this window')
+    claimedElsewhere = true
+    assert.equal(await resumeTarget(null, project), null, 'a file another Pi Desktop holds leaves a new session')
+    claimedElsewhere = false
     await saveAppSettings({ resumeLastSession: false })
     assert.equal(await resumeTarget(null, project), null, 'the setting off never resumes a file')
     assert.equal(await resumeTarget(null, join(root, 'unregistered')), null)
@@ -209,5 +300,48 @@ test('the resume target is the project runtime session, else its newest used fil
     if (originalRoot === undefined) delete process.env.PI_CODING_AGENT_DIR
     else process.env.PI_CODING_AGENT_DIR = originalRoot
     await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('a rename the engine accepts is kept on the runtime it reached', async () => {
+  const require = createRequire(import.meta.url)
+  const electronPath = require.resolve('electron')
+  require('electron')
+  const electronModule = require.cache[electronPath]!
+  const originalExports = electronModule.exports
+  handlers.clear()
+  electronModule.exports = {
+    ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler) },
+    app: { isPackaged: false, getAppPath: () => process.cwd() },
+  }
+  try {
+    const { registerSessionHandlers } = await import('./session-handlers')
+    let active = 'renamed'
+    let accept = true
+    const recorded: Array<[string, string]> = []
+    registerSessionHandlers({
+      workspaceManager: {
+        getActiveSessionRuntime: () => ({ runtimeId: active }),
+        setSessionRuntimeName: (runtimeId: string, name: string) => { recorded.push([runtimeId, name]) },
+      },
+      getActivePi: () => ({
+        sendCommand: async () => {
+          // The user switches tabs while the engine answers.
+          active = 'other'
+          return { type: 'response', command: 'set_session_name', success: accept }
+        },
+      }),
+    } as unknown as IpcContext)
+    const setName = handlers.get(IPC_CHANNELS.SESSION_SET_NAME)!
+
+    await setName(null, '  Release notes  ')
+    assert.deepEqual(recorded, [['renamed', 'Release notes']])
+
+    active = 'renamed'
+    accept = false
+    await setName(null, 'Refused')
+    assert.deepEqual(recorded, [['renamed', 'Release notes']], 'a refused name is not recorded')
+  } finally {
+    electronModule.exports = originalExports
   }
 })

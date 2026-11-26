@@ -4,6 +4,8 @@ import { useAppStore } from '../store'
 import { useChatVisible } from '../hooks'
 import { createDebouncedBuffer } from '../utils/debounced-buffer'
 import { createStaleGuard } from '../utils/stale-guard'
+import { createSingleFlight } from '../utils/single-flight'
+import { isFolderExpanded, loadOpenFolders, type FolderListings } from '../utils/file-tree-listing'
 import { toPreviewLoadError, type PreviewLoadError } from '../utils/preview-load-error'
 import type { FileTreeNode, GitFileStatus, FileSearchResult } from '../../../shared/ipc-contracts'
 import { toFileUrl } from '../../../shared/file-url'
@@ -11,6 +13,7 @@ import { HTML_PREVIEW_PARTITION, PDF_PREVIEW_PARTITION } from '../../../shared/p
 import { CodeEditor } from './code-editor'
 import { MarkdownRenderer } from './markdown-renderer'
 import { isImagePath } from './chat-file-link'
+import { buildOpenPathMenuItems, useContextMenu } from './context-menu'
 import { clsx } from 'clsx'
 import {
   FolderOpen,
@@ -30,13 +33,7 @@ import {
   ShieldAlert,
 } from 'lucide-react'
 import { isImeComposing } from '../utils/ime-composing'
-
-// `<webview>` (enabled via webviewTag) isn't a typed JSX intrinsic; cast the tag
-// to a component so TS accepts the props we use. It renders the HTML preview in
-// an isolated guest process so its JavaScript runs without touching the app CSP.
-const Webview = 'webview' as unknown as React.FC<
-  React.HTMLAttributes<HTMLElement> & { src: string; partition?: string; plugins?: boolean }
->
+import { Webview } from './webview-tag'
 
 // ─── File Tree ───────────────────────────────────────────────────────────────
 
@@ -48,7 +45,8 @@ const SAFETY_POLL_MS = 15000
 
 export function FileTree(): React.JSX.Element {
   const { t } = useTranslation()
-  const [tree, setTree] = useState<FileTreeNode | null>(null)
+  const [listings, setListings] = useState<FolderListings | null>(null)
+  const [toggled, setToggled] = useState<ReadonlySet<string>>(() => new Set())
   const [gitStatus, setGitStatus] = useState<Record<string, GitFileStatus>>({})
   const [gitBranch, setGitBranch] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -58,29 +56,33 @@ export function FileTree(): React.JSX.Element {
   // Path included: "Change folder…" repoints a workspace without changing its
   // id, and the tree must reload for that too.
   const workspaceKey = activeWorkspace ? `${activeWorkspace.id}:${activeWorkspace.path}` : null
-  // Overlapping loads resolve out of order (a slow pre-switch tree scan can
-  // land after a fast post-switch one); only the latest may commit state.
-  const loadGuard = useMemo(() => createStaleGuard(), [])
+  const { show: showContextMenu, ContextMenuComponent } = useContextMenu()
+  const handleNodeContextMenu = useCallback((e: React.MouseEvent, node: FileTreeNode) => {
+    e.preventDefault()
+    showContextMenu(e, buildOpenPathMenuItems(async () => node.path))
+  }, [showContextMenu])
+  // A running load reads the open folders live, so a folder opened mid-load
+  // is still listed when the load reaches its level.
+  const toggledRef = useRef(toggled)
+  // Loads run one at a time per workspace, but a load of the previous
+  // workspace can still land after a switch; only the latest may commit.
+  const listingGuard = useMemo(() => createStaleGuard(), [])
+  const gitGuard = useMemo(() => createStaleGuard(), [])
+  const refreshRef = useRef<{ listings: () => Promise<void>; all: () => void } | null>(null)
 
-  const loadTree = useCallback(async (showLoading: boolean) => {
-    const isCurrent = loadGuard.begin()
-    if (showLoading) setLoading(true)
+  const loadListings = useCallback(async () => {
+    const isCurrent = listingGuard.begin()
     try {
-      const [treeData, status, branch] = await Promise.all([
-        window.piDesktop.files.getTree(4),
-        // A git failure must not take the whole tree down with it — the tree
-        // is still useful without status badges.
-        window.piDesktop.files.getGitStatus().catch(() => ({})),
-        window.piDesktop.files.getGitBranch(),
-      ])
+      const next = await loadOpenFolders(
+        (dir) => window.piDesktop.files.listDir(dir),
+        (dir) => isFolderExpanded(dir, toggledRef.current)
+      )
       if (!isCurrent()) return
-      setTree(treeData)
-      setGitStatus(status)
-      setGitBranch(branch)
+      setListings(next)
       setPathExists(true)
     } catch {
-      // The tree couldn't load — usually the workspace folder is missing or
-      // unreadable. Record whether it exists so the UI can say which.
+      // The root couldn't be listed — usually the workspace folder is missing
+      // or unreadable. Record whether it exists so the UI can say which.
       let exists: boolean
       try {
         exists = await window.piDesktop.workspace.pathExists()
@@ -88,48 +90,75 @@ export function FileTree(): React.JSX.Element {
         exists = true
       }
       if (!isCurrent()) return
-      setTree(null)
+      setListings(null)
       setPathExists(exists)
-    } finally {
-      // Unconditional: gating this on isCurrent() would leave the spinner
-      // stuck forever when a background refresh supersedes a visible load —
-      // the stale load skips the clear and the background one never does it.
-      if (showLoading) setLoading(false)
     }
-  }, [loadGuard])
+  }, [listingGuard])
+
+  const loadGit = useCallback(async () => {
+    const isCurrent = gitGuard.begin()
+    // A git failure must not take the tree down with it — the tree is still
+    // useful without status badges.
+    const [status, branch] = await Promise.all([
+      window.piDesktop.files.getGitStatus().catch(() => ({})),
+      window.piDesktop.files.getGitBranch().catch(() => null),
+    ])
+    if (!isCurrent()) return
+    setGitStatus(status)
+    setGitBranch(branch)
+  }, [gitGuard])
 
   // Keyed on the workspace id+path: switching (or repointing) workspaces must
   // reload immediately — main only watches the active workspace and attaches
-  // its watcher with ignoreInitial, so no file-change event announces the
-  // switch, and the 15s safety poll is far too slow to be the primary refresh.
+  // its watcher without an initial scan event, so no file-change event
+  // announces the switch, and the 15s safety poll is far too slow to be the
+  // primary refresh.
   useEffect(() => {
-    // The highlight belongs to the previous workspace's tree.
+    let disposed = false
+    // The open folders and the highlight belong to the previous workspace's tree.
     setSelectedFile(null)
-    void loadTree(true)
+    toggledRef.current = new Set()
+    setToggled(toggledRef.current)
+    setLoading(true)
+
+    // One load at a time: change events, focus, and the poll arriving while a
+    // load runs share one follow-up load instead of each starting a walk.
+    // A disposed workspace's queued follow-up does nothing.
+    const refreshListings = createSingleFlight(() => (disposed ? Promise.resolve() : loadListings()))
+    const refreshGit = createSingleFlight(() => (disposed ? Promise.resolve() : loadGit()))
+    const refresh = (): void => {
+      void refreshListings()
+      void refreshGit()
+    }
+    refreshRef.current = { listings: refreshListings, all: refresh }
+
+    void refreshListings().finally(() => {
+      if (!disposed) setLoading(false)
+    })
+    void refreshGit()
 
     // Primary path: refresh the instant the main process reports a disk change
     // in the active workspace.
     const unsubscribe = window.piDesktop.onFileChange(() => {
-      if (!document.hidden) void loadTree(false)
+      if (!document.hidden) refresh()
     })
 
     const interval = window.setInterval(() => {
       // Skip polling while the window is hidden/minimized; the 'focus' listener
       // below refreshes immediately when the user returns.
-      if (!document.hidden) void loadTree(false)
+      if (!document.hidden) refresh()
     }, SAFETY_POLL_MS)
 
-    const handleFocus = () => {
-      void loadTree(false)
-    }
-    window.addEventListener('focus', handleFocus)
+    window.addEventListener('focus', refresh)
 
     return () => {
+      disposed = true
+      refreshRef.current = null
       unsubscribe()
       window.clearInterval(interval)
-      window.removeEventListener('focus', handleFocus)
+      window.removeEventListener('focus', refresh)
     }
-  }, [loadTree, workspaceKey])
+  }, [loadListings, loadGit, workspaceKey])
 
   // The disk watcher only runs while this panel is visible (see ChatPanel's
   // watch-demand effect): navigating away stops it, so coming back can land
@@ -141,9 +170,19 @@ export function FileTree(): React.JSX.Element {
   const chatVisible = useChatVisible()
   const wasChatVisible = useRef(chatVisible)
   useEffect(() => {
-    if (chatVisible && !wasChatVisible.current) void loadTree(false)
+    if (chatVisible && !wasChatVisible.current) refreshRef.current?.all()
     wasChatVisible.current = chatVisible
-  }, [chatVisible, loadTree])
+  }, [chatVisible])
+
+  const toggleFolder = useCallback((relativePath: string) => {
+    const next = new Set(toggledRef.current)
+    if (!next.delete(relativePath)) next.add(relativePath)
+    toggledRef.current = next
+    setToggled(next)
+    // Loads list only open folders, so an opened one (and any open folder
+    // inside it) needs a load; a cached listing shows until it lands.
+    if (isFolderExpanded(relativePath, next)) void refreshRef.current?.listings()
+  }, [])
 
   const handleFileClick = useCallback(async (path: string, relativePath: string) => {
     // Open the preview first (images route to the image viewer); a dirty
@@ -167,7 +206,7 @@ export function FileTree(): React.JSX.Element {
     )
   }
 
-  if (!tree) {
+  if (!listings) {
     // Active workspace whose folder is missing/unreadable — say so explicitly
     // (e.g. the folder was moved/deleted or the saved path is wrong).
     if (activeWorkspace && !pathExists) {
@@ -205,43 +244,58 @@ export function FileTree(): React.JSX.Element {
 
       {/* Tree */}
       <div className="flex-1 overflow-y-auto py-1">
-        {tree.children?.map((child) => (
+        {listings.get('')?.map((child) => (
           <TreeNodeComponent
             key={child.relativePath}
             node={child}
+            listings={listings}
+            toggled={toggled}
             gitStatus={gitStatus}
             selectedFile={selectedFile}
             onFileClick={handleFileClick}
+            onContextMenu={handleNodeContextMenu}
+            onToggleFolder={toggleFolder}
             depth={0}
           />
         ))}
       </div>
+      {ContextMenuComponent}
     </div>
   )
 }
 
 function TreeNodeComponent({
   node,
+  listings,
+  toggled,
   gitStatus,
   selectedFile,
   onFileClick,
+  onContextMenu,
+  onToggleFolder,
   depth,
 }: {
   node: FileTreeNode
+  listings: FolderListings
+  toggled: ReadonlySet<string>
   gitStatus: Record<string, GitFileStatus>
   selectedFile: string | null
   onFileClick: (path: string, relativePath: string) => Promise<void>
+  onContextMenu: (e: React.MouseEvent, node: FileTreeNode) => void
+  onToggleFolder: (relativePath: string) => void
   depth: number
 }): React.JSX.Element {
-  const [expanded, setExpanded] = useState(depth < 1)
   const status = gitStatus[node.relativePath]
   const isSelected = selectedFile === node.relativePath
 
   if (node.type === 'directory') {
+    const expanded = isFolderExpanded(node.relativePath, toggled)
+    const children = expanded ? listings.get(node.relativePath) : undefined
     return (
       <div>
         <button
-          onClick={() => setExpanded(!expanded)}
+          onClick={() => onToggleFolder(node.relativePath)}
+          onContextMenu={(e) => onContextMenu(e, node)}
           className="flex w-full items-center gap-1 py-0.5 px-2 text-sm text-muted hover:bg-surface-hover/50 hover:text-secondary transition-colors"
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
         >
@@ -253,13 +307,22 @@ function TreeNodeComponent({
           )}
           <span className="truncate">{node.name}</span>
         </button>
-        {expanded && node.children?.map((child) => (
+        {expanded && !children && (
+          <div className="flex py-1" style={{ paddingLeft: `${(depth + 1) * 12 + 20}px` }}>
+            <Loader2 size={12} className="animate-spin text-dim" />
+          </div>
+        )}
+        {children?.map((child) => (
           <TreeNodeComponent
             key={child.relativePath}
             node={child}
+            listings={listings}
+            toggled={toggled}
             gitStatus={gitStatus}
             selectedFile={selectedFile}
             onFileClick={onFileClick}
+            onContextMenu={onContextMenu}
+            onToggleFolder={onToggleFolder}
             depth={depth + 1}
           />
         ))}
@@ -270,6 +333,7 @@ function TreeNodeComponent({
   return (
     <button
       onClick={() => void onFileClick(node.path, node.relativePath)}
+      onContextMenu={(e) => onContextMenu(e, node)}
       className={clsx(
         'flex w-full items-center gap-1.5 py-0.5 px-2 text-sm transition-colors',
         isSelected

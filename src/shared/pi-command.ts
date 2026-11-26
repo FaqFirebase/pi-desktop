@@ -11,6 +11,19 @@ export interface PiCommand {
   source: 'skill' | 'prompt' | 'extension' | string
 }
 
+/** Normalize the command payload both engines expose before it reaches a view. */
+export function normalizePiCommands(raw: unknown): PiCommand[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((command): command is Record<string, unknown> => typeof command === 'object' && command !== null)
+    .map((command) => ({
+      name: String(command.name ?? ''),
+      description: String(command.description ?? ''),
+      source: typeof command.source === 'string' ? command.source : 'extension',
+    }))
+    .filter((command) => command.name.length > 0)
+}
+
 /**
  * Source used for Pi built-in commands that map to a GUI action rather than
  * being inserted as text. Pi's RPC only expands `/skill:` and `/template` from

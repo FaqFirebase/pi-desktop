@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { X, Check, User, ChevronLeft } from 'lucide-react'
 import type { GalleryTheme, UserThemeRecord } from '../../../shared/ipc-contracts'
 import { resolveThemeVars } from '../../../shared/theme/resolve'
+import { useEscapeToClose } from '../hooks'
 
 // How many cards render before "Show more" reveals the next batch. Keeps a
 // large index responsive — each card mounts a live-preview subtree.
@@ -129,17 +130,12 @@ export function ThemeGallery({ onClose, onInstalled }: ThemeGalleryProps): React
     }
   }, [])
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        // Escape backs out of the detail view first, then closes the modal.
-        if (detail) setDetail(null)
-        else onClose()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+  // Escape backs out of the detail view first, then closes the modal.
+  const backOut = useCallback(() => {
+    if (detail) setDetail(null)
+    else onClose()
   }, [onClose, detail])
+  useEscapeToClose(true, backOut)
 
   const install = async (theme: GalleryTheme): Promise<void> => {
     setInstallingUrl(theme.url)

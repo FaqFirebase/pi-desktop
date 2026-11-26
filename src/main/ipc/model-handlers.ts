@@ -4,18 +4,29 @@ import { isString } from './validation'
 import type { IpcContext } from './context'
 
 export function registerModelHandlers(ctx: IpcContext): void {
-  const { getActivePi } = ctx
+  const { getActivePi, workspaceManager } = ctx
+
+  const changeModelState = async (command: Record<string, unknown>) => {
+    const manager = getActivePi()
+    const runtimeId = workspaceManager.runtimeIdFor(manager)
+    const response = await manager.sendCommand(command)
+    // Main may have switched sessions while the engine was answering.
+    if (response?.success && runtimeId) {
+      workspaceManager.notifySessionRuntimeState(runtimeId)
+    }
+    return response
+  }
 
   // ─── Model Management ───────────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.MODEL_SET, async (_event, provider: unknown, modelId: unknown) => {
     if (!isString(provider)) throw new Error('provider must be a string')
     if (!isString(modelId)) throw new Error('modelId must be a string')
-    return getActivePi().sendCommand({ type: 'set_model', provider, modelId })
+    return changeModelState({ type: 'set_model', provider, modelId })
   })
 
   ipcMain.handle(IPC_CHANNELS.MODEL_CYCLE, async () => {
-    return getActivePi().sendCommand({ type: 'cycle_model' })
+    return changeModelState({ type: 'cycle_model' })
   })
 
   ipcMain.handle(IPC_CHANNELS.MODEL_LIST_AVAILABLE, async () => {
@@ -24,10 +35,10 @@ export function registerModelHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC_CHANNELS.THINKING_SET_LEVEL, async (_event, level: unknown) => {
     if (!isString(level)) throw new Error('level must be a string')
-    return getActivePi().sendCommand({ type: 'set_thinking_level', level })
+    return changeModelState({ type: 'set_thinking_level', level })
   })
 
   ipcMain.handle(IPC_CHANNELS.THINKING_CYCLE_LEVEL, async () => {
-    return getActivePi().sendCommand({ type: 'cycle_thinking_level' })
+    return changeModelState({ type: 'cycle_thinking_level' })
   })
 }

@@ -3,18 +3,19 @@ import { createExtensionUiRouter, wireExtensionUiIpc } from './extension-ui-ipc'
 import { WorkspaceManager } from './workspace-manager'
 import { IPC_CHANNELS } from '../shared/ipc-contracts'
 import { createIpcContext } from './ipc/context'
-import { assertTrustedSender } from './ipc/validation'
 import { registerPiHandlers } from './ipc/pi-handlers'
 import { registerTerminalHandlers } from './ipc/terminal-handlers'
 import { registerSessionHandlers } from './ipc/session-handlers'
 import { registerModelHandlers } from './ipc/model-handlers'
 import { registerSettingsHandlers } from './ipc/settings'
+import { registerKeepAwakeHandlers } from './ipc/keep-awake-handlers'
 import { registerPermissionRulesHandlers } from './ipc/permission-rules-handlers'
 import { registerThemeHandlers } from './ipc/theme-handlers'
 import { registerWorkspaceHandlers } from './ipc/workspace-handlers'
 import { registerLinkedTaskHandlers } from './ipc/linked-task-handlers'
 import { registerPackageHandlers } from './ipc/package-handlers'
 import { registerSkillsMcpHandlers } from './ipc/skills-mcp-handlers'
+import { registerOmpUsageHandlers } from './ipc/omp-usage-handlers'
 import { registerModelsConfigHandlers } from './ipc/models-config-handlers'
 import { registerCouncilHandlers } from './ipc/council-handlers'
 import { registerTagHandlers } from './ipc/tag-handlers'
@@ -22,14 +23,20 @@ import { registerNotesHandlers } from './ipc/notes-handlers'
 import { registerFileHandlers } from './ipc/file-handlers'
 import { registerGitConveyorHandlers } from './ipc/git-conveyor-handlers'
 import { registerSystemHandlers } from './ipc/system-handlers'
+import { registerEditorHandlers } from './ipc/editor-handlers'
 import { registerUpdateHandlers } from './ipc/update-handlers'
 import { registerDiagnosticsHandlers } from './ipc/diagnostics-handlers'
+import { registerRendererErrorHandlers } from './ipc/renderer-error-handlers'
+import { registerGitAvailabilityHandlers } from './ipc/git-availability-handlers'
 import { registerVoiceHandlers } from './ipc/voice-handlers'
 import { registerTypeSafeHandlers } from './ipc/typesafe-handlers'
+import { registerChatImportHandlers } from './ipc/chat-import-handlers'
 import { registerWorkflowHandlers } from './ipc/workflow-handlers'
 import { registerSubagentHandlers } from './ipc/subagent-handlers'
 import { wireWorkspaceActivity, type WindowControls } from './ipc/workspace-activity-wiring'
+import { wireSessionUnread } from './ipc/session-unread-wiring'
 import type { WorkspaceTerminals } from './workspace-terminals'
+import { createQuickChatHandlers } from './ipc/quick-chat-handlers'
 
 export { loadAppSettings, saveAppSettings } from './ipc/settings'
 
@@ -45,7 +52,7 @@ export function registerIpcHandlers(
   windowControls: WindowControls = { getWindow: () => null, showWindow: () => {} },
   iconPath = '',
 ): WorkspaceTerminals {
-  const ctx = createIpcContext(workspaceManager)
+  const ctx = createIpcContext(workspaceManager, windowControls.getWindow)
 
   // Session runtime snapshots are separate from workspace activity: several
   // live Pi processes may share one project cwd.
@@ -56,14 +63,16 @@ export function registerIpcHandlers(
   registerPiHandlers(ctx)
   registerTerminalHandlers(ctx)
   registerSessionHandlers(ctx)
+  wireSessionUnread(ctx, windowControls)
   registerModelHandlers(ctx)
   registerSettingsHandlers(ctx)
+  registerKeepAwakeHandlers(ctx)
   registerPermissionRulesHandlers(ctx)
-  registerThemeHandlers()
   registerWorkspaceHandlers(ctx)
   registerLinkedTaskHandlers(ctx)
   registerPackageHandlers(ctx)
   registerSkillsMcpHandlers(ctx)
+  registerOmpUsageHandlers(ctx)
   registerModelsConfigHandlers(ctx)
   registerCouncilHandlers(ctx)
   registerTagHandlers(ctx)
@@ -71,30 +80,39 @@ export function registerIpcHandlers(
   registerFileHandlers(ctx)
   registerGitConveyorHandlers(ctx)
   registerSystemHandlers(ctx)
+  registerEditorHandlers(ctx)
   registerUpdateHandlers()
   registerDiagnosticsHandlers(ctx)
+  registerRendererErrorHandlers()
+  registerGitAvailabilityHandlers(ctx)
   registerWorkflowHandlers(ctx)
   registerSubagentHandlers(ctx)
   registerVoiceHandlers(ctx)
   registerTypeSafeHandlers()
+  registerChatImportHandlers(ctx)
 
   // ─── Extension UI Responses and Pi Event Forwarding ─────────────────────
 
   // Cross-workspace activity map + desktop notifications. Wired before the
   // router so it can observe the router's pending-prompt counts below.
   const workspaceActivity = wireWorkspaceActivity(ctx, windowControls, iconPath)
+  const quickChat = createQuickChatHandlers(ctx, windowControls)
+  const router = createExtensionUiRouter({
+    workspace: workspaceManager,
+    broadcast: ctx.broadcast,
+    onPendingCounts: (counts) => workspaceActivity.handlePendingCounts(counts),
+    secondaryView: quickChat.routing,
+  })
+  quickChat.register(router)
+  registerThemeHandlers((themes) => quickChat.updateThemes(themes))
 
   // Router construction, the dialog-answer channels, the pending-prompt
   // flush/get pair and the two workspace hooks all live in extension-ui-ipc.ts
   // so they can be tested without Electron.
   wireExtensionUiIpc<IpcMainInvokeEvent>({
     handle: (channel, handler) => ipcMain.handle(channel, handler),
-    assertTrustedSender,
-    router: createExtensionUiRouter({
-      workspace: workspaceManager,
-      broadcast: ctx.broadcast,
-      onPendingCounts: (counts) => workspaceActivity.handlePendingCounts(counts),
-    }),
+    assertTrustedSender: ctx.assertMainSender,
+    router,
     workspace: workspaceManager,
     broadcast: ctx.broadcast,
   })

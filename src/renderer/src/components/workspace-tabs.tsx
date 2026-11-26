@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertCircle, Boxes, CheckCircle2, FolderOpen, GitBranch, Loader2, MessageSquarePlus, PanelLeft, Plus, Settings, X, XCircle } from 'lucide-react'
+import { AlertCircle, Boxes, CheckCircle2, FolderOpen, GitBranch, Loader2, MessageSquarePlus, PanelLeft, Pencil, Plus, Settings, X, XCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAppStore } from '../store'
 import { useGlobalWorkflowOpen } from '../hooks'
@@ -10,6 +10,8 @@ import { activeShortcuts } from '../utils/app-shortcuts'
 import { formatShortcut } from '../../../shared/keyboard-shortcuts'
 import { pathsEqual } from '../../../shared/path-compare'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
+import { SessionNameInput } from './session-name-input'
+import { useContextMenu } from './context-menu'
 import type { Workspace } from '../../../shared/ipc-contracts'
 
 const PROJECT_TAB_DRAG_TYPE = 'application/x-pi-desktop-project-tab'
@@ -22,6 +24,7 @@ export function WorkspaceTabs(): React.JSX.Element {
   const { t } = useTranslation()
   const workspaces = useAppStore((state) => state.workspaces)
   const projectTabOrder = useAppStore((state) => state.projectTabOrder)
+  const hiddenProjectTabIds = useAppStore((state) => state.hiddenProjectTabIds)
   const reorderProjectTab = useAppStore((state) => state.reorderProjectTab)
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<{ id: string; placement: 'before' | 'after' } | null>(null)
@@ -38,20 +41,28 @@ export function WorkspaceTabs(): React.JSX.Element {
   const activateWorkspace = useAppStore((state) => state.activateWorkspace)
   const switchSession = useAppStore((state) => state.switchSession)
   const closeSessionTab = useAppStore((state) => state.closeSessionTab)
-  const removeWorkspace = useAppStore((state) => state.removeWorkspace)
+  const closeProjectTab = useAppStore((state) => state.closeProjectTab)
   const createWorktreeTab = useAppStore((state) => state.createWorktreeTab)
   const setLinkedTaskDialog = useAppStore((state) => state.setLinkedTaskDialog)
   const createNewSession = useAppStore((state) => state.createNewSession)
   const newSessionShortcut = useAppStore((state) => activeShortcuts(state).newSession)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
+  const sessionState = useAppStore((state) => state.sessionState)
+  const setSessionName = useAppStore((state) => state.setSessionName)
+  const sessionLoading = useAppStore((state) => state.sessionLoading)
+  const { show: showMenu, ContextMenuComponent } = useContextMenu()
+  // The rename RPC reaches the runtime main has active, so only that tab
+  // renames. A rename left open when another tab becomes active ends unsaved.
+  const [renamingRuntimeId, setRenamingRuntimeId] = useState<string | null>(null)
+  if (renamingRuntimeId !== null && !sessionRuntimes[renamingRuntimeId]?.active) setRenamingRuntimeId(null)
 
   const toolView = ['settings', 'packages', 'notes', 'skills', 'diagnostics'] as const
   const toolsActive =
     toolView.includes(currentView as (typeof toolView)[number]) || globalWorkflowOpen
 
   const tabs = useMemo(
-    () => getProjectTabs(workspaces, projectTabOrder),
-    [workspaces, projectTabOrder]
+    () => getProjectTabs(workspaces, projectTabOrder, hiddenProjectTabIds),
+    [workspaces, projectTabOrder, hiddenProjectTabIds]
   )
   const sessionTabs = useMemo(
     () => getSessionTabs(sessionRuntimes, activeWorkspace?.id),
@@ -77,8 +88,6 @@ export function WorkspaceTabs(): React.JSX.Element {
         const activity = workspaceActivity[workspace.id]
         const isWorktree = workspace.kind === 'worktree'
         const isLinkedTask = workspace.kind === 'repoSet'
-        // Worktree and linked task tabs close; a folder workspace is removed.
-        const isTab = isWorktree || isLinkedTask
         const isWorking = activity?.state === 'working'
         const needsApproval = activity?.state === 'needs-approval'
         const completed = activity?.state === 'completed'
@@ -121,10 +130,10 @@ export function WorkspaceTabs(): React.JSX.Element {
               // the normal context menu and use the middle button as tab-close.
               if (event.button !== 1) return
               event.preventDefault()
-              void removeWorkspace(workspace.id)
+              void closeProjectTab(workspace.id)
             }}
             className={clsx(
-              'group relative flex h-9 min-w-[150px] max-w-[240px] shrink-0 select-none items-center gap-2 rounded-t-md border border-b-0 px-2.5 text-xs transition-colors',
+              'group relative flex h-9 min-w-[150px] max-w-[240px] shrink-0 select-none items-stretch rounded-t-md border border-b-0 text-xs transition-colors',
               draggedProjectId === workspace.id && 'opacity-50',
               active
                 ? 'border-border bg-surface text-primary'
@@ -149,7 +158,8 @@ export function WorkspaceTabs(): React.JSX.Element {
                   if (switched) setCurrentView('chat')
                 })
               }}
-              className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              // The select button fills the whole tab; the close button sits on top of it.
+              className={clsx('flex min-w-0 flex-1 items-center gap-2 pl-2.5 text-left', tabs.length > 1 ? 'pr-8' : 'pr-2.5')}
               title={`${workspace.path}${workspace.branch ? `\n${workspace.branch}` : ''}`}
             >
               {isLinkedTask ? (
@@ -168,19 +178,15 @@ export function WorkspaceTabs(): React.JSX.Element {
             {tabs.length > 1 && (
               <button
                 type="button"
-                onClick={() => void removeWorkspace(workspace.id)}
+                onClick={() => void closeProjectTab(workspace.id)}
                 draggable
                 onDragStart={(event) => {
                   event.preventDefault()
                   event.stopPropagation()
                 }}
-                className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-all hover:bg-highlight hover:text-primary group-hover:opacity-100"
-                title={isTab ? t('store.confirm.closeTabLabel') : t('store.confirm.removeWorkspaceTitle')}
-                aria-label={
-                  isTab
-                    ? t('workspaceTabs.closeTabAriaLabel', { name: tabLabel(workspace) })
-                    : t('workspaceTabs.removeWorkspaceAriaLabel', { name: tabLabel(workspace) })
-                }
+                className="absolute right-2.5 top-1/2 shrink-0 -translate-y-1/2 rounded p-0.5 text-faint opacity-0 transition-all hover:bg-highlight hover:text-primary group-hover:opacity-100"
+                title={t('store.confirm.closeTabLabel')}
+                aria-label={t('workspaceTabs.closeTabAriaLabel', { name: tabLabel(workspace) })}
               >
                 <X size={12} />
               </button>
@@ -220,21 +226,6 @@ export function WorkspaceTabs(): React.JSX.Element {
 
       <button
         type="button"
-        onClick={() => {
-          setWorkflowPanelOpen(false)
-          setCurrentView('chat')
-          void createNewSession()
-        }}
-        className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary transition-colors"
-        title={newSessionShortcut
-          ? t('settings.shortcuts.actionWithShortcut', { action: t('workspaceTabs.newSessionAriaLabel'), shortcut: formatShortcut(newSessionShortcut, window.piDesktop.system.platform) })
-          : t('workspaceTabs.newSessionAriaLabel')}
-        aria-label={t('workspaceTabs.newSessionAriaLabel')}
-      >
-        <MessageSquarePlus size={15} />
-      </button>
-      <button
-        type="button"
         onClick={() => void createWorktreeTab()}
         className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary transition-colors"
         title={t('workspaceTabs.newIsolatedTabTitle')}
@@ -252,12 +243,42 @@ export function WorkspaceTabs(): React.JSX.Element {
         <Boxes size={15} />
       </button>
     </div>
-    {sessionTabs.length > 0 && (
+    {/* The row shows for every open project, even before its first session,
+        so the new session button always has a home. */}
+    {activeWorkspace && (
       <div className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border/70 px-2">
         <span className="mr-1 shrink-0 text-[10px] uppercase tracking-wide text-faint">{t('workspaceTabs.sessions')}</span>
         {sessionTabs.map((runtime) => {
           const session = sessionList.find((item) => runtime.sessionPath && pathsEqual(item.path, runtime.sessionPath))
           const active = runtime.runtimeId === activeSessionRuntimeId || runtime.active
+          // The chat already shows this tab's session.
+          const shown = Boolean(sessionState?.sessionFile && runtime.sessionPath && pathsEqual(sessionState.sessionFile, runtime.sessionPath))
+          // A session gets its list row only once its file has content; until
+          // then its name comes from the chat state (the shown session) or
+          // from the runtime (a rename made while it was shown).
+          const liveName = shown ? sessionState?.sessionName?.trim() || null : null
+          const name = liveName || session?.name?.trim() || runtime.sessionName || null
+          const title = session
+            ? getSessionTitle(name, session.sessionId, session.preview)
+            : name || t('workspaceTabs.newSessionFallback')
+          if (renamingRuntimeId === runtime.runtimeId) {
+            return (
+              <div
+                key={runtime.runtimeId}
+                className="flex min-w-0 max-w-[240px] shrink-0 items-center gap-1.5 rounded bg-card py-0.5 pl-2 pr-1 text-[11px] text-primary"
+              >
+                <SessionRuntimeIndicator runtime={runtime} />
+                <SessionNameInput
+                  initialName={name ?? ''}
+                  onDone={(newName) => {
+                    setRenamingRuntimeId(null)
+                    if (newName) void setSessionName(newName)
+                  }}
+                  className="w-40 px-1.5 py-0.5"
+                />
+              </div>
+            )
+          }
           return (
             <div
               key={runtime.runtimeId}
@@ -266,8 +287,28 @@ export function WorkspaceTabs(): React.JSX.Element {
                 event.preventDefault()
                 void closeSessionTab(runtime.runtimeId)
               }}
+              onContextMenu={(event) => {
+                // The document-level handler would show the default menu on top.
+                event.nativeEvent.stopPropagation()
+                showMenu(event, [
+                  ...(runtime.active
+                    ? [{
+                        id: 'session-tab-rename',
+                        label: t('contextMenu.rename'),
+                        icon: <Pencil size={14} />,
+                        action: () => setRenamingRuntimeId(runtime.runtimeId),
+                      }]
+                    : []),
+                  {
+                    id: 'session-tab-close',
+                    label: t('workspaceTabs.closeSessionTab'),
+                    icon: <X size={14} />,
+                    action: () => void closeSessionTab(runtime.runtimeId),
+                  },
+                ])
+              }}
               className={clsx(
-                'group flex min-w-0 max-w-[240px] shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[11px] transition-colors',
+                'group relative flex min-w-0 max-w-[240px] shrink-0 items-stretch rounded text-[11px] transition-colors',
                 active ? 'bg-card text-primary' : 'text-muted hover:bg-highlight hover:text-secondary'
               )}
             >
@@ -276,21 +317,27 @@ export function WorkspaceTabs(): React.JSX.Element {
                 onClick={() => {
                   if (!runtime.sessionPath) return
                   setCurrentView('chat')
+                  // switchSession reloads a session with no messages yet, and
+                  // the reload then focuses the composer, which would end a
+                  // rename the second click of a double-click just opened.
+                  if (shown && !sessionLoading) return
                   void switchSession(runtime.sessionPath, activeWorkspace?.path)
                 }}
-                className="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-0.5 text-left"
-                title={runtime.sessionPath ?? undefined}
+                onDoubleClick={() => {
+                  if (runtime.active) setRenamingRuntimeId(runtime.runtimeId)
+                }}
+                // The select button fills the whole tab; the close button sits on top of it.
+                className="flex min-w-0 flex-1 items-center gap-1.5 py-1 pl-2 pr-6 text-left"
+                title={runtime.active ? t('workspaceTabs.sessionTabTitleRenamable', { path: runtime.sessionPath ?? '' }) : runtime.sessionPath ?? undefined}
                 aria-current={active ? 'page' : undefined}
               >
                 <SessionRuntimeIndicator runtime={runtime} />
-                <span className="truncate">
-                  {session ? getSessionTitle(session.name, session.sessionId, session.preview) : t('workspaceTabs.newSessionFallback')}
-                </span>
+                <span className="truncate">{title}</span>
               </button>
               <button
                 type="button"
                 onClick={() => void closeSessionTab(runtime.runtimeId)}
-                className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-all hover:bg-highlight-strong hover:text-primary group-hover:opacity-100"
+                className="absolute right-1 top-1/2 shrink-0 -translate-y-1/2 rounded p-0.5 text-faint opacity-0 transition-all hover:bg-highlight-strong hover:text-primary group-hover:opacity-100"
                 title={t('workspaceTabs.closeSessionTab')}
                 aria-label={t('workspaceTabs.closeSessionTab')}
               >
@@ -299,8 +346,24 @@ export function WorkspaceTabs(): React.JSX.Element {
             </div>
           )
         })}
+        <button
+          type="button"
+          onClick={() => {
+            setWorkflowPanelOpen(false)
+            setCurrentView('chat')
+            void createNewSession()
+          }}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-highlight hover:text-primary"
+          title={newSessionShortcut
+            ? t('settings.shortcuts.actionWithShortcut', { action: t('workspaceTabs.newSessionAriaLabel'), shortcut: formatShortcut(newSessionShortcut, window.piDesktop.system.platform) })
+            : t('workspaceTabs.newSessionAriaLabel')}
+          aria-label={t('workspaceTabs.newSessionAriaLabel')}
+        >
+          <MessageSquarePlus size={13} />
+        </button>
       </div>
     )}
+    {ContextMenuComponent}
     </div>
   )
 }

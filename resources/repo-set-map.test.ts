@@ -17,6 +17,7 @@ import {
   toolCallPaths,
   type RepoSetContext,
 } from './repo-set-map'
+import { makeTempDir } from '../src/shared/temp-dir.test-helper'
 
 const ROOT = join(tmpdir(), 'repo-set-map')
 const APP = join(ROOT, 'shop-app')
@@ -53,7 +54,7 @@ test('parseRepoMap rejects a wrong version, a bad mode, a bad entry, or not exac
 })
 
 test('loadRepoMap re-reads a changed file and treats a missing or malformed one as no context', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'repo-map-'))
+  const dir = makeTempDir('repo-map-')
   const file = join(dir, 'map.json')
   assert.equal(loadRepoMap(file), null)
 

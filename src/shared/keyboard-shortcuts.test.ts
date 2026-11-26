@@ -102,6 +102,38 @@ test('push to talk ends when its key or one of its modifiers comes up, not anoth
   assert.equal(releasesShortcut(release('t', 'KeyT'), 'T', 'linux'), false)
 })
 
+test('Space is a shortcut key with Cmd or Ctrl: recorded, matched, released, shown and bound system-wide', () => {
+  const space = { key: ' ', code: 'Space', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false }
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    const press = { ...space, metaKey: platform === 'darwin', ctrlKey: platform !== 'darwin' }
+    const binding = captureShortcut(press, platform)
+    assert.equal(binding, 'Mod+Space')
+    assert.equal(matchesShortcut(press, binding, platform), true)
+    assert.equal(matchesShortcut({ ...press, shiftKey: true }, binding, platform), false)
+    assert.equal(matchesShortcut(space, binding, platform), false)
+    assert.equal(releasesShortcut(space, binding!, platform), true)
+    assert.equal(shortcutProblem({ ...DEFAULT_SETTINGS.shortcuts, pushToTalk: binding }, platform), null)
+  }
+  assert.equal(formatShortcut('Mod+Space', 'darwin'), 'Cmd+Space')
+  assert.equal(formatShortcut('Mod+Space', 'linux'), 'Ctrl+Space')
+  assert.equal(shortcutAccelerator('Mod+Space'), 'CommandOrControl+Space')
+  assert.equal(shortcutAccelerator('Ctrl+Alt+Space'), 'Control+Alt+Space')
+  assert.equal(normalizeStoredSettings({ shortcuts: { pushToTalk: 'Mod+Space' } }, ['en']).shortcuts.pushToTalk, 'Mod+Space')
+})
+
+test('Space alone, with Shift or Alt only, or while an input method composes is not a shortcut', () => {
+  const space = { key: ' ', code: 'Space', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false }
+  for (const change of [{}, { shiftKey: true }, { altKey: true }, { ctrlKey: true, isComposing: true }, { ctrlKey: true, keyCode: 229 }]) {
+    assert.equal(captureShortcut({ ...space, ...change }, 'linux'), null)
+  }
+  assert.equal(matchesShortcut({ ...space, ctrlKey: true, isComposing: true }, 'Mod+Space', 'linux'), false)
+  for (const binding of ['Space', 'Shift+Space', 'Alt+Space']) {
+    assert.equal(shortcutProblem({ ...DEFAULT_SETTINGS.shortcuts, pushToTalk: binding }, 'linux')?.kind, 'invalid')
+  }
+  assert.equal(normalizeStoredSettings({ shortcuts: { pushToTalk: 'Shift+Space' } }, ['en']).shortcuts.pushToTalk,
+    DEFAULT_SETTINGS.shortcuts.pushToTalk)
+})
+
 test('stored bindings become Electron accelerators for the system-wide key', () => {
   assert.equal(shortcutAccelerator('Mod+Shift+T'), 'CommandOrControl+Shift+T')
   assert.equal(shortcutAccelerator('Ctrl+Meta+Alt+F5'), 'Control+Super+Alt+F5')
@@ -117,4 +149,26 @@ test('the system-wide dictation key is off by default and conflicts like any oth
     { kind: 'duplicate', action: 'globalDictation', other: 'pushToTalk' })
   assert.equal(shortcutProblem({ ...defaults, globalDictation: 'Mod+V' }, 'linux')?.kind, 'reserved')
   assert.equal(shortcutProblem({ ...defaults, globalDictation: 'Mod+Alt+D' }, 'linux'), null)
+})
+
+test('Quick Chat is opt-in, rejects reserved or unsupported keys and conflicts with dictation', () => {
+  const defaults = DEFAULT_SETTINGS.shortcuts
+  assert.equal(defaults.quickChat, null)
+  assert.deepEqual(shortcutProblem({ ...defaults, quickChat: 'Mod+Shift+T' }, 'darwin'),
+    { kind: 'duplicate', action: 'quickChat', other: 'pushToTalk' })
+  assert.deepEqual(shortcutProblem({ ...defaults, globalDictation: 'Mod+Alt+Q', quickChat: 'Mod+Alt+Q' }, 'linux'),
+    { kind: 'duplicate', action: 'quickChat', other: 'globalDictation' })
+  assert.equal(shortcutProblem({ ...defaults, quickChat: 'Mod+W' }, 'darwin')?.kind, 'reserved')
+  assert.equal(shortcutProblem({ ...defaults, quickChat: 'Mod+Alt+Enter' }, 'darwin')?.kind, 'invalid')
+  assert.equal(shortcutProblem({ ...defaults, quickChat: 'Mod+Alt+Q' }, 'linux'), null)
+})
+
+test('Quick Chat bindings and explicit disabling survive settings reload; older settings leave it off', () => {
+  const reload = (quickChat: string | null) => normalizeStoredSettings(
+    JSON.parse(JSON.stringify({ shortcuts: { quickChat, globalDictation: 'Mod+Alt+D' } })), ['en'],
+  ).shortcuts
+  assert.equal(reload('Mod+Alt+Q').quickChat, 'Mod+Alt+Q')
+  assert.equal(reload(null).quickChat, null)
+  assert.equal(reload('Mod+Alt+Q').globalDictation, 'Mod+Alt+D')
+  assert.equal(normalizeStoredSettings({ shortcuts: { globalDictation: 'Mod+Alt+D' } }, ['en']).shortcuts.quickChat, null)
 })

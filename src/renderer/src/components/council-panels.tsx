@@ -1,7 +1,7 @@
 import React from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useAppStore, type CouncilPhase } from '../store'
+import { useAppStore, councilRunOnScreen, type CouncilPhase } from '../store'
 import { councilAgentLabel, type ConsultantStatus } from '../../../shared/council-config'
 import { isImeComposing } from '../utils/ime-composing'
 
@@ -27,7 +27,7 @@ function formatElapsed(seconds: number): string {
 
 export function CouncilPanels(): React.JSX.Element | null {
   const { t } = useTranslation()
-  const run = useAppStore((s) => s.councilRun)
+  const run = useAppStore(councilRunOnScreen)
   const approve = useAppStore((s) => s.approveCouncilPlan)
   const revise = useAppStore((s) => s.reviseCouncilPlan)
   const cancel = useAppStore((s) => s.cancelCouncil)

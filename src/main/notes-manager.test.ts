@@ -1,13 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp } from 'fs/promises'
-import { tmpdir } from 'os'
-import { join } from 'path'
 import { configureGuiDataDir } from './app-data-paths'
 import { NotesManager, NoteNotFoundError, NoteValidationError } from './notes-manager'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 async function freshManager(): Promise<NotesManager> {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-notes-'))
+  const dir = makeTempDir('pi-notes-')
   configureGuiDataDir(dir)
   return new NotesManager()
 }

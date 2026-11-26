@@ -2,12 +2,13 @@ import { readdir, stat } from 'fs/promises'
 import { basename, join } from 'path'
 import type { SessionLineageRecord } from '../shared/session-lineage'
 import { mapWithConcurrency } from './map-concurrent'
-import { getSessionsRoot } from './pi-paths'
+import { getSessionRoots } from './pi-paths'
 import { JSONL_EXTENSION } from './session-paths'
 import { readSessionMetadataCached } from './session-metadata'
 
 /**
- * Reads every parent session's lineage link and label out of the Pi session store.
+ * Reads every parent session's lineage link and label out of every session store
+ * the session list reads: Pi's and OMP's.
  *
  * The Timeline needs one record per session to resolve fork parents, so this walk
  * touches the whole store. It previously `readFile`d each session in full to
@@ -30,7 +31,8 @@ const MAX_LINEAGE_SESSIONS = 2000
 /**
  * Collect lineage records for parent sessions only.
  *
- * Layout under the Pi session store:
+ * Layout under each session store (Pi and OMP use the same one; an OMP file
+ * starts with its title slot line, which readSessionMetadata reads past):
  *   sessions/<sanitized-project>/<timestamp>_<id>.jsonl     ← parent (read these)
  *   sessions/<sanitized-project>/<timestamp>_<id>/<child>…  ← subagent runs
  *
@@ -38,29 +40,37 @@ const MAX_LINEAGE_SESSIONS = 2000
  * like pi-subagents nest ephemeral runs under the parent's folder, and surfacing
  * them would flood the tree.
  *
- * `sessionsRoot` is injectable so the walk can be tested without the real store.
+ * `sessionsRoots` is injectable so the walk can be tested without the real stores.
  */
 export async function readSessionLineage(
-  sessionsRoot: string = getSessionsRoot()
+  sessionsRoots: readonly string[] = getSessionRoots()
 ): Promise<SessionLineageRecord[]> {
-  const files = await collectSessionFilePaths(sessionsRoot)
+  const files = await collectSessionFilePaths(sessionsRoots)
 
   const records = await mapWithConcurrency(files, LINEAGE_READ_CONCURRENCY, readRecord)
   return records.filter((record): record is SessionLineageRecord => record !== null)
 }
 
-/** Absolute paths of every parent session file, capped. */
-async function collectSessionFilePaths(sessionsRoot: string): Promise<string[]> {
+/** Absolute paths of every parent session file across all stores, capped in total. */
+async function collectSessionFilePaths(sessionsRoots: readonly string[]): Promise<string[]> {
+  const files: string[] = []
+  for (const sessionsRoot of sessionsRoots) {
+    if (await collectStoreSessionFilePaths(sessionsRoot, files) === 'capped') break
+  }
+  return files
+}
+
+/** Appends one store's parent session files to `files`; 'capped' once the cap is hit. */
+async function collectStoreSessionFilePaths(sessionsRoot: string, files: string[]): Promise<'done' | 'capped'> {
   let projectDirs: string[]
   try {
     const entries = await readdir(sessionsRoot, { withFileTypes: true })
     projectDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name)
   } catch {
-    // Store missing or unreadable — the Timeline renders empty.
-    return []
+    // Store missing or unreadable — it adds nothing to the Timeline.
+    return 'done'
   }
 
-  const files: string[] = []
   for (const dirName of projectDirs) {
     const projectDir = join(sessionsRoot, dirName)
     let items
@@ -79,11 +89,11 @@ async function collectSessionFilePaths(sessionsRoot: string): Promise<string[]> 
           `[lineage] Session store exceeds ${MAX_LINEAGE_SESSIONS} sessions; ` +
             'the timeline is truncated and some forks will render as roots.'
         )
-        return files
+        return 'capped'
       }
     }
   }
-  return files
+  return 'done'
 }
 
 /** One lineage record, or null when the file is not a readable session. */

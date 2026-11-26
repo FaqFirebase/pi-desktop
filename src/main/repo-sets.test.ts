@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { RepoSetStore, inspectRepoFolder, validateRepoSetDraft } from './repo-sets'
+import { TEMP_FILE_SUFFIX } from './atomic-file-write'
+import type { RepoSetMember } from '../shared/ipc-contracts'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 function git(args: string[], cwd: string): void {
   const result = spawnSync('git', args, { cwd, encoding: 'utf-8' })
@@ -13,7 +15,7 @@ function git(args: string[], cwd: string): void {
 
 /** A git repository with one commit, in a fresh temporary folder. */
 async function repository(name: string): Promise<string> {
-  const path = join(await mkdtemp(join(tmpdir(), 'pi-repo-set-')), name)
+  const path = join(makeTempDir('pi-repo-set-'), name)
   await mkdir(join(path, 'src'), { recursive: true })
   await writeFile(join(path, 'README.md'), name, 'utf-8')
   git(['init'], path)
@@ -30,7 +32,7 @@ test('a folder inside a repository resolves to the top of its checkout', async (
 })
 
 test('a folder outside git or a missing folder is refused with a readable error', async () => {
-  const plain = await mkdtemp(join(tmpdir(), 'pi-not-repo-'))
+  const plain = makeTempDir('pi-not-repo-')
   await assert.rejects(inspectRepoFolder(plain), /not in a git repository/)
   await assert.rejects(inspectRepoFolder(join(plain, 'gone')), /does not exist/)
 })
@@ -57,7 +59,7 @@ test('validateRepoSetDraft trims names and refuses a folder listed two times', (
 test('the store saves, updates, lists, and deletes sets, and keeps them across a restart', async () => {
   const app = await repository('shop-app')
   const lib = await repository('shop-lib')
-  const file = join(await mkdtemp(join(tmpdir(), 'pi-repo-sets-')), 'repo-sets.json')
+  const file = join(makeTempDir('pi-repo-sets-'), 'repo-sets.json')
   const store = new RepoSetStore(file)
 
   const saved = await store.save({
@@ -80,11 +82,30 @@ test('the store saves, updates, lists, and deletes sets, and keeps them across a
   await assert.rejects(reopened.get(saved.id), /no longer exists/)
 })
 
+test('overlapping deletes both reach the file and leave no temp files', async () => {
+  const app = await repository('shop-app')
+  const lib = await repository('shop-lib')
+  const dir = makeTempDir('pi-repo-sets-')
+  const file = join(dir, 'repo-sets.json')
+  const store = new RepoSetStore(file)
+  const members: RepoSetMember[] = [
+    { name: 'shop-app', sourcePath: app, role: 'main' },
+    { name: 'shop-lib', sourcePath: lib, role: 'linked' },
+  ]
+  const shop = await store.save({ name: 'Shop', members })
+  const library = await store.save({ name: 'Library', members })
+
+  await Promise.all([store.delete(shop.id), store.delete(library.id)])
+
+  assert.deepEqual(await new RepoSetStore(file).list(), [])
+  assert.deepEqual((await readdir(dir)).filter((name) => name.endsWith(TEMP_FILE_SUFFIX)), [])
+})
+
 test('two checkouts of one repository cannot be in the same set', async () => {
   const app = await repository('shop-app')
-  const worktree = join(await mkdtemp(join(tmpdir(), 'pi-wt-')), 'second')
+  const worktree = join(makeTempDir('pi-wt-'), 'second')
   git(['worktree', 'add', '-b', 'second', worktree], app)
-  const store = new RepoSetStore(join(await mkdtemp(join(tmpdir(), 'pi-repo-sets-')), 'repo-sets.json'))
+  const store = new RepoSetStore(join(makeTempDir('pi-repo-sets-'), 'repo-sets.json'))
   await assert.rejects(store.save({
     name: 'Shop',
     members: [

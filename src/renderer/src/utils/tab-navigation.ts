@@ -1,28 +1,56 @@
 import type { SessionRuntimeInfo, Workspace } from '../../../shared/ipc-contracts'
 
 export const PROJECT_TAB_ORDER_STORAGE_KEY = 'pi-desktop.project-tab-order'
+export const HIDDEN_PROJECT_TABS_STORAGE_KEY = 'pi-desktop.hidden-project-tabs'
 
-export function readProjectTabOrder(): string[] {
+function readStoredIds(key: string): string[] {
   try {
-    const order: unknown = JSON.parse(localStorage.getItem(PROJECT_TAB_ORDER_STORAGE_KEY) ?? '[]')
-    return Array.isArray(order) && order.every((id) => typeof id === 'string') ? [...new Set(order)] : []
+    const ids: unknown = JSON.parse(localStorage.getItem(key) ?? '[]')
+    return Array.isArray(ids) && ids.every((id) => typeof id === 'string') ? [...new Set(ids)] : []
   } catch {
-    // Missing/unavailable storage or a damaged preference uses creation order.
+    // Missing/unavailable storage or a damaged preference uses the default.
     return []
   }
 }
 
-export function rememberProjectTabOrder(order: string[]): void {
+function storeIds(key: string, ids: string[]): void {
   try {
-    localStorage.setItem(PROJECT_TAB_ORDER_STORAGE_KEY, JSON.stringify(order))
+    localStorage.setItem(key, JSON.stringify(ids))
   } catch {
-    // Reordering still works for this window when storage is unavailable.
+    // The change still applies to this window when storage is unavailable.
   }
 }
 
-export function projectTabs(workspaces: Workspace[], order: readonly string[] = []): Workspace[] {
+export function readProjectTabOrder(): string[] {
+  return readStoredIds(PROJECT_TAB_ORDER_STORAGE_KEY)
+}
+
+export function rememberProjectTabOrder(order: string[]): void {
+  storeIds(PROJECT_TAB_ORDER_STORAGE_KEY, order)
+}
+
+/** Projects whose tab the user closed while keeping them in the sidebar. */
+export function readHiddenProjectTabs(): string[] {
+  return readStoredIds(HIDDEN_PROJECT_TABS_STORAGE_KEY)
+}
+
+export function rememberHiddenProjectTabs(ids: string[]): void {
+  storeIds(HIDDEN_PROJECT_TABS_STORAGE_KEY, ids)
+}
+
+/**
+ * Hidden tab ids kept to existing workspaces, without the active one: the
+ * project on screen always has a tab, so activating a project restores it.
+ * Returns `hidden` itself when nothing changes.
+ */
+export function hiddenTabsAfterActivation(hidden: string[], workspaces: readonly Workspace[], activeId: string | undefined): string[] {
+  const next = hidden.filter((id) => id !== activeId && workspaces.some((workspace) => workspace.id === id))
+  return next.length === hidden.length ? hidden : next
+}
+
+export function projectTabs(workspaces: Workspace[], order: readonly string[] = [], hidden: readonly string[] = []): Workspace[] {
   const positions = new Map(order.map((id, index) => [id, index]))
-  return [...workspaces].sort((a, b) =>
+  return workspaces.filter((workspace) => !hidden.includes(workspace.id)).sort((a, b) =>
     (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity) || a.createdAt - b.createdAt
   )
 }

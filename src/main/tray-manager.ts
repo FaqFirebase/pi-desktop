@@ -1,6 +1,6 @@
-import { app, Tray, Menu, Notification, nativeImage, type BrowserWindow } from 'electron'
-import { execFile } from 'child_process'
+import { Tray, Menu, Notification, nativeImage, type BrowserWindow } from 'electron'
 import { trayIsSupported, parseDbusBoolean } from './tray-decision'
+import { dbusSend, dbusNameHasOwner } from './dbus-probe'
 import { i18n, t } from '../shared/i18n'
 
 // System-tray lifecycle for "minimize to tray on close" (Windows/Linux; macOS
@@ -14,17 +14,18 @@ import { i18n, t } from '../shared/i18n'
 // available (KDE, GNOME's AppIndicator extension, sni-qt, snixembed, etc.).
 const SNI_WATCHER_NAME = 'org.kde.StatusNotifierWatcher'
 const SNI_WATCHER_PATH = '/StatusNotifierWatcher'
-// Bound the D-Bus probe so a missing/slow session bus can't hang enabling.
-const DBUS_PROBE_TIMEOUT_MS = 2_000
 
 interface TrayDeps {
   getWindow: () => BrowserWindow | null
   quit: () => void
   iconPath: string
+  // The product name, with the instance label when one is set (window-hints.ts).
+  tooltip: string
   // Whether the one-time hint has already been shown in a previous run.
   hasSeenHint: boolean
   // Persist that the hint has now been shown (fire-and-forget).
   onHintShown: () => void
+  toggleQuickChat?: () => void
 }
 
 let deps: TrayDeps | null = null
@@ -55,14 +56,19 @@ function showWindow(): void {
 
 // Tooltip is the product name (not translated); the menu follows the language.
 function applyTrayText(target: Tray): void {
-  target.setToolTip(app.getName())
-  target.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: t('tray.show'), click: () => showWindow() },
-      { type: 'separator' },
-      { label: t('app.quit'), click: () => deps?.quit() },
-    ]),
+  if (deps) target.setToolTip(deps.tooltip)
+  const items: Electron.MenuItemConstructorOptions[] = [
+    { label: t('tray.show'), click: () => showWindow() },
+  ]
+  const toggleQuickChat = deps?.toggleQuickChat
+  if (toggleQuickChat) {
+    items.push({ label: t('quickChat.title'), click: () => toggleQuickChat() })
+  }
+  items.push(
+    { type: 'separator' },
+    { label: t('app.quit'), click: () => deps?.quit() },
   )
+  target.setContextMenu(Menu.buildFromTemplate(items))
 }
 
 /** Create the tray icon. Returns whether it was created (false on failure). */
@@ -87,15 +93,6 @@ function createTray(): boolean {
   }
 }
 
-/** Run a `dbus-send --print-reply` and resolve its stdout, or null on error. */
-function dbusSend(args: string[]): Promise<string | null> {
-  return new Promise((resolve) => {
-    execFile('dbus-send', args, { timeout: DBUS_PROBE_TIMEOUT_MS }, (err, stdout) => {
-      resolve(err ? null : stdout)
-    })
-  })
-}
-
 /**
  * Probe the session bus for a StatusNotifierItem host. Resolves false when no
  * host is present (GNOME without the AppIndicator extension, a minimal WM), when
@@ -110,15 +107,7 @@ function dbusSend(args: string[]): Promise<string | null> {
  * false negative that needlessly disables a working tray.
  */
 async function detectLinuxTrayHost(): Promise<boolean> {
-  const ownerReply = await dbusSend([
-    '--session',
-    '--print-reply',
-    '--dest=org.freedesktop.DBus',
-    '/org/freedesktop/DBus',
-    'org.freedesktop.DBus.NameHasOwner',
-    `string:${SNI_WATCHER_NAME}`,
-  ])
-  if (parseDbusBoolean(ownerReply ?? '') !== true) return false
+  if (!(await dbusNameHasOwner(SNI_WATCHER_NAME))) return false
 
   const hostReply = await dbusSend([
     '--session',

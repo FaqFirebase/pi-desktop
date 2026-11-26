@@ -1,13 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp } from 'fs/promises'
-import { tmpdir } from 'os'
-import { join } from 'path'
 import { configureGuiDataDir } from './app-data-paths'
 import { ArchivedSessionsManager } from './archived-sessions'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 async function freshDir(): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-archived-'))
+  const dir = makeTempDir('pi-archived-')
   configureGuiDataDir(dir)
 }
 

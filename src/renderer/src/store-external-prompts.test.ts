@@ -1,7 +1,7 @@
 import { test, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { PiRpcEvent } from '../../shared/ipc-contracts'
-import { buildPlanningPrompt } from './utils/planning-prompt'
+import { buildPlanningPrompt } from '../../shared/planning-prompt'
 
 // sendPrompt/sendSteer reach the Pi process through the preload bridge; these
 // stubs accept the calls so the echo bookkeeping under test can run.

@@ -8,6 +8,12 @@
     "workingInAnotherWorkspace": "Pi 正在另一个工作区工作"
   },
   "app": {
+    "crashScreen": {
+      "copyDetails": "复制详细信息",
+      "message": "{{product}} 遇到错误，已停止绘制此窗口。你的会话仍在运行。请重新加载以继续。",
+      "reload": "重新加载",
+      "title": "出现问题"
+    },
     "dropFolder": {
       "description": "将该文件夹作为工作区打开（必要时会创建）",
       "title": "拖放文件夹以作为项目打开"
@@ -24,6 +30,22 @@
       "dismissAriaLabel": "关闭更新通知",
       "downloadButton": "下载"
     }
+  },
+  "browserPane": {
+    "addressLabel": "地址",
+    "addressPlaceholder": "输入网址或 localhost:端口",
+    "back": "后退",
+    "close": "关闭浏览器",
+    "downloadRefused": "浏览器面板已禁用下载。如需下载，请在默认浏览器中打开该页面。",
+    "emptyHint": "输入网址即可在此打开页面。选取不会发送任何内容：它只会把元素添加到你的消息中。",
+    "forward": "前进",
+    "invalidAddress": "此处只能打开 http 和 https 页面。",
+    "loadFailed": "无法加载 {{url}}。",
+    "openExternal": "在默认浏览器中打开",
+    "pick": "选取元素",
+    "pickImageTooLarge": "元素截图过大，无法附加。已添加其文本。",
+    "reload": "重新加载",
+    "stopPicking": "停止选取（Esc）"
   },
   "chat": {
     "activity": {
@@ -83,13 +105,17 @@
       "insertHint": "↑↓ 选择 · Enter/Tab 插入路径 · Esc 关闭"
     },
     "message": {
-      "branchedFrom": "分支自：“{{excerpt}}”",
       "branchFromHere": "从此处创建分支",
       "editAndResend": "编辑并重新发送",
       "stopped": "已停止"
     },
     "nextSteps": {
       "title": "建议的后续步骤"
+    },
+    "permissionModeRestart": {
+      "idle": "{{agent}} 仍在使用旧的权限模式。请重启它以使用“{{mode}}”。",
+      "restart": "重启 {{agent}}",
+      "working": "{{agent}} 仍在工作，在你重启之前会沿用旧的权限模式。请在它完成后重启，以使用“{{mode}}”。"
     },
     "projectPicker": {
       "noProject": "无项目",
@@ -121,6 +147,7 @@
       "edit": "编辑",
       "files_other": "{{count}} 个文件",
       "held": "已暂停。你的下一条消息或“立即发送”会让队列继续",
+      "heldOffScreen": "你离开时已暂停。按“立即发送”发送",
       "next": "智能体完成后发送",
       "sendNow": "立即发送",
       "sendNowHint": "现在把这条消息发送到正在运行的回合中",
@@ -129,6 +156,7 @@
     "startingAgent": "正在启动智能体…",
     "stopButton": {
       "ariaLabel": "停止生成",
+      "title": "停止",
       "titleWithShortcut": "停止（Esc）"
     },
     "subagentPanel": {
@@ -163,6 +191,7 @@
       "viewSource": "查看源码"
     },
     "toolbar": {
+      "browser": "浏览器",
       "diffViewer": "差异查看器",
       "fileTree": "文件树",
       "reviewPanel": "审查面板",
@@ -286,11 +315,12 @@
     "copyLink": "复制链接",
     "copyMessage": "复制消息",
     "copySelection": "复制选中内容",
-    "deleteSessionConfirmMessage": "删除会话“{{name}}”？\n\n若系统已安装 'trash' 命令则使用它（可恢复）；否则 .jsonl 会话文件将被永久删除。",
+    "deleteSessionConfirmMessage": "删除会话“{{name}}”？\n\n.jsonl 会话文件将移到系统回收站，可以恢复。若回收站不可用，文件将被永久删除。",
     "deleteSessionConfirmTitle": "删除会话",
     "deleteSessionLabel": "删除…",
     "openLink": "打开链接",
     "openSession": "打开会话",
+    "pin": "置顶",
     "rename": "重命名…",
     "searchSelection": "搜索选中内容",
     "shortcuts": {
@@ -301,6 +331,7 @@
       "selectAll": "Ctrl+A"
     },
     "unarchive": "取消归档",
+    "unpin": "取消置顶",
     "workflowRuns": "工作流运行"
   },
   "conveyor": {
@@ -408,6 +439,11 @@
       "working": "工作中…"
     }
   },
+  "crashRecovery": {
+    "detail": "原因：{{reason}}",
+    "message": "{{product}} 窗口在重新加载后不久再次停止。",
+    "title": "窗口已停止"
+  },
   "customModels": {
     "addModelButton": "添加模型",
     "addProviderButton": "添加提供商",
@@ -438,12 +474,18 @@
     "visionLabel": "视觉"
   },
   "diagnostics": {
+    "exportLogs": "导出日志",
+    "exportLogsFailed": "无法导出日志：{{error}}",
+    "exportLogsSaved": "日志已保存到 {{path}}",
     "fields": {
       "appVersion": "应用版本",
       "binaryFound": "已找到可执行文件",
       "chromium": "Chromium",
       "electron": "Electron",
       "engineVersion": "{{agent}} 版本",
+      "gitFailed": "未能运行：{{detail}}",
+      "gitNotFound": "未找到",
+      "gitVersion": "Git 版本",
       "globalRules": "全局规则",
       "globalRulesInvalid": "文件无效：{{error}}",
       "guiDataDir": "GUI 数据目录",
@@ -491,6 +533,7 @@
     "sections": {
       "application": "应用",
       "binaryTitle": "{{agent}} 可执行文件",
+      "git": "Git",
       "permissions": "权限",
       "providers": "提供商",
       "recentErrors": "最近错误",
@@ -503,6 +546,10 @@
     "workspaceTrustedBadge": "已信任"
   },
   "dialogs": {
+    "logExport": {
+      "fileFilterName": "JSON",
+      "title": "导出日志"
+    },
     "openFolder": {
       "title": "打开文件夹"
     },
@@ -570,10 +617,14 @@
       "pathNotPermitted": "附件路径未被允许",
       "tooLarge": "附件过大（最大 {{limit}} MB）"
     },
+    "chatImport": {
+      "busy": "已有聊天导入正在进行。"
+    },
     "council": {
       "agentNotFound": "未找到 {{agent}}。请安装它，或在设置中将其从委员会成员中移除。",
       "arbiterFailed": "仲裁者失败",
       "arbiterTimedOut": "仲裁者超时",
+      "cancelled": "委员会运行已取消",
       "notEnoughMembers": "委员会至少需要 {{min}} 个智能体。请安装或启用 Pi、Claude 或 Codex，或关闭委员会规划。",
       "planningDisabled": "设置中已禁用委员会规划。",
       "timeoutNotNumber": "委员会超时必须是有限数值",
@@ -606,6 +657,7 @@
       "localBranchRequired": "请选择一个现有的本地分支",
       "namedBranchRequired": "创建 PR 需要一个具名分支",
       "newFileNotCommittable": "无法提交 {{path}}：它不是所选更改中的新文件，或被 Git 忽略",
+      "notInstalled": "未安装 Git",
       "noTrackedChanges": "本工作区没有可提交的已跟踪更改。请先暂存未跟踪的文件以将其包含进来。",
       "operationInProgressCommit": "Git {{operation}} 进行中，无法提交",
       "operationInProgressCreateBranch": "Git {{operation}} 进行中，无法创建分支",
@@ -630,6 +682,9 @@
       "bodyRequired": "必须填写笔记内容",
       "notFound": "未找到笔记：{{id}}",
       "titleRequired": "必须填写笔记标题"
+    },
+    "ompUsage": {
+      "unreadable": "OMP 输出的用量信息无法读取"
     },
     "packages": {
       "invalidSpec": "无效的包描述",
@@ -666,9 +721,13 @@
       "alreadyAttached": "会话文件已绑定到活动运行时",
       "attachedToDifferentWorkspace": "会话已绑定到另一个工作区的运行时",
       "ompNoClone": "OMP 引擎不支持克隆会话",
+      "openInAnotherWindow": "此会话已在另一个 Pi Desktop 窗口中打开。请先在那里关闭它。",
       "pathMustExist": "{{field}} 必须指向一个已存在的 Pi 会话文件",
       "projectMismatch": "会话所属项目与当前工作区不匹配",
       "runtimeNotFound": "未找到会话运行时：{{runtimeId}}"
+    },
+    "settings": {
+      "unreadable": "设置未保存：无法读取“{{path}}”。请修复或移除该文件，然后重新保存。"
     },
     "system": {
       "externalUrlHttpOnly": "仅允许 http(s) URL"
@@ -703,6 +762,14 @@
       "skillChecksumMismatch": "{{file}} 与预期的校验和不符，因此 Pi Desktop 没有安装它。",
       "skillDownloadFailed": "无法下载 {{file}}（HTTP {{status}}）。",
       "skillInstalledElsewhere": "{{directory}} 处已存在一个并非由 Pi Desktop 安装的 TypeSafe 技能。Pi Desktop 没有改动它。"
+    },
+    "voice": {
+      "serverBadResponse": "语音服务器的回复中没有文字。",
+      "serverNotConfigured": "请在“设置 > 语音听写”中填写语音服务器的地址和模型。",
+      "serverNotSelected": "语音听写当前设为在这台电脑上运行。要使用你的语音服务器，请在“设置 > 语音听写”中选择“在你选择的服务器上”。",
+      "serverStatus": "语音服务器返回错误 {{status}}：{{detail}}",
+      "serverTimeout": "位于 {{url}} 的语音服务器在 {{seconds}} 秒内没有回复。",
+      "serverUnreachable": "无法连接位于 {{url}} 的语音服务器（{{reason}}）。"
     },
     "workflow": {
       "runNotFound": "未找到工作流运行"
@@ -748,6 +815,15 @@
       "folderNotFound": "未找到文件夹",
       "noWorkspaceHint": "通过侧边栏的工作区切换器切换到一个项目文件夹。",
       "noWorkspaceOpen": "未打开工作区"
+    }
+  },
+  "gitCheck": {
+    "banner": {
+      "checkAgain": "重新检查",
+      "dismissAriaLabel": "关闭 Git 提示",
+      "failedTitle": "Git 未能运行",
+      "howToInstall": "如何安装",
+      "missingDescription": "提交、分支、差异和工作树都需要 Git。请安装 Git，然后重新检查。"
     }
   },
   "home": {
@@ -923,6 +999,25 @@
     "needs-approval": "Pi 正在等待你的批准。",
     "withSession": "{{body}} 点击打开已完成的会话。"
   },
+  "openPath": {
+    "followUp": {
+      "reveal": "在文件夹中显示",
+      "system": "用系统应用打开"
+    },
+    "openInEditor": "在编辑器中打开",
+    "openWithSystem": "用系统应用打开",
+    "refusal": {
+      "editorRunning": "此项目的终端中已打开一个编辑器。请先关闭它，然后重试。",
+      "launchFailed": "编辑器未能启动。",
+      "noTerminalWorkspace": "请先打开一个项目。终端编辑器会在项目的终端面板中打开。",
+      "notFound": "此文件或文件夹已不存在。",
+      "outsideRoots": "此路径不在已打开的项目中。",
+      "runnableFile": "此文件可作为程序运行，因此不会用系统应用打开。",
+      "systemOpenFailed": "系统无法打开此文件或文件夹。"
+    },
+    "refusalTitle": "无法打开",
+    "showInFolder": "在文件夹中显示"
+  },
   "packages": {
     "catalog": {
       "emptyHint": "访问 <link>pi.dev/packages</link> 浏览",
@@ -1029,6 +1124,47 @@
       "target": "目标：{{path}}",
       "title": "允许 {{tool}}？"
     }
+  },
+  "quickChat": {
+    "activeTasksCount_other": "{{count}} 个任务正在活跃执行中",
+    "chooseProject": "选择项目",
+    "chooseProjectFirst": "发送前请先选择项目文件夹。",
+    "chooseSession": "选择会话",
+    "completed": "已完成",
+    "errors": {
+      "runtimeBusy": "会话忙碌、已停止或正在等待回答时无法切换。",
+      "staleApproval": "此确认请求已失效。",
+      "staleBinding": "所选会话已更改，请重试。",
+      "stateUnavailable": "无法读取会话状态，请重试。",
+      "submitting": "正在提交消息，请稍候。",
+      "targetUnavailable": "此会话已不可用，请选择其他会话。"
+    },
+    "failed": "失败",
+    "hide": "隐藏浮窗（任务在后台继续运行）",
+    "loading": "正在加载会话…",
+    "needsApproval": "等待你的回答",
+    "newTask": "新建任务",
+    "newTaskDescription": "描述你要执行的任务，智能体将在后台自动执行。",
+    "noMatchingSessions": "没有匹配的会话",
+    "noProject": "无项目",
+    "open": "查看",
+    "openInMain": "在主窗口查看",
+    "pickWorkspace": "打开文件夹…",
+    "ready": "就绪",
+    "retry": "重试",
+    "savedSession": "已保存会话",
+    "searchSessions": "搜索会话",
+    "sendRejected": "引擎未接受此消息。",
+    "sessions": "会话列表",
+    "startConversation": "向此会话发送一条消息。",
+    "starting": "正在启动…",
+    "steerHint": "向当前任务追加指令，不会将新任务加入队列。",
+    "stopFailed": "无法停止任务，请重试。",
+    "stopped": "已停止",
+    "targetUnavailable": "此会话已不可用。请重新选择会话；草稿已保留。",
+    "title": "快捷聊天",
+    "untitledSession": "未命名会话",
+    "working": "执行中"
   },
   "repoSets": {
     "bar": {
@@ -1163,7 +1299,7 @@
     "currentProjectBadge": "当前",
     "currentWorkspaceLabel": "当前工作区：",
     "deleteConfirm": {
-      "message": "删除此会话？装有 <code>trash</code> 命令时用它删除，否则永久删除。"
+      "message": "删除此会话？它将移到系统回收站；若回收站不可用，则永久删除。"
     },
     "deleteEllipsis": "删除…",
     "empty": {
@@ -1178,6 +1314,7 @@
       "projectCount_other": "{{count}} 个项目",
       "sessionCount_other": "{{count}} 个会话"
     },
+    "pinnedBadge": "已置顶",
     "runtime": {
       "completed": "{{agent}} 已完成",
       "failed": "{{agent}} 因错误而停止",
@@ -1209,7 +1346,8 @@
       "minutes_other": "{{count}} 分钟前"
     },
     "title": "会话",
-    "unknownProject": "未知"
+    "unknownProject": "未知",
+    "unreadDot": "有新动态"
   },
   "settings": {
     "actions": {
@@ -1238,6 +1376,32 @@
     "autoScroll": {
       "description": "自动滚动到新消息",
       "label": "自动滚动"
+    },
+    "chatImport": {
+      "alreadyImported": "已导入",
+      "empty": "未找到聊天。",
+      "engine": "导入为",
+      "failure": {
+        "folderMissing": "该聊天的项目文件夹已不存在。",
+        "invalidPath": "此文件不在聊天文件夹中。",
+        "noMessages": "该聊天没有可导入的消息。",
+        "unreadable": "无法读取聊天文件。",
+        "writeFailed": "无法写入会话文件。"
+      },
+      "folderMissing": "文件夹不存在",
+      "import_other": "导入 {{count}} 个聊天",
+      "intro": "将聊天复制为 {{agent}} 会话。原始文件只会被读取。",
+      "loading": "正在查找聊天…",
+      "progress": "{{done}} / {{total}}",
+      "results": {
+        "failed_other": "失败：{{count}}",
+        "imported_other": "已导入：{{count}}",
+        "skipped_other": "已跳过（已导入）：{{count}}"
+      },
+      "selectFolder": "选择此文件夹中的所有聊天",
+      "sourceRoot": "读取 {{path}}",
+      "unknownFolder": "未知文件夹",
+      "untitled": "未命名聊天"
     },
     "chatWidth": {
       "description": "消息和输入框可以扩展的宽度",
@@ -1285,6 +1449,30 @@
       "description": "当 Pi 在你未查看的工作区中完成、失败或等待批准时通知你",
       "label": "桌面通知"
     },
+    "editor": {
+      "description": "在此电脑上找到的编辑器。终端编辑器会在项目终端面板的“编辑器”标签页中打开。",
+      "label": "打开文件所用的程序",
+      "missingNote": "未找到已保存的编辑器。文件将用系统默认应用打开。",
+      "rescan": "重新扫描",
+      "systemDefault": "系统默认",
+      "terminalOption": "{{name}}（{{tag}}）",
+      "terminalTag": "终端"
+    },
+    "keepAwake": {
+      "description": "阻止这台电脑进入睡眠。屏幕仍可能关闭。合上笔记本电脑的盖子仍会让电脑进入睡眠。",
+      "label": "保持这台电脑唤醒",
+      "modes": {
+        "always": "始终",
+        "off": "关闭",
+        "whileWorking": "智能体工作时"
+      },
+      "status": {
+        "holding": "状态：正在保持这台电脑唤醒",
+        "off": "状态：关闭",
+        "unsupported": "状态：Pi Desktop 无法在此系统上阻止睡眠。未找到电源管理器，也没有 systemd 睡眠锁。",
+        "waitingForWork": "状态：等待工作"
+      }
+    },
     "language": {
       "description": "菜单、按钮和消息的语言",
       "label": "语言",
@@ -1326,13 +1514,16 @@
     },
     "runOnStartup": {
       "description": "登录计算机时自动启动 Pi Desktop（在已安装的版本中生效）",
-      "label": "开机启动"
+      "label": "开机启动",
+      "ownDataFolder": "此窗口使用自己的数据文件夹。登录时只能启动主 Pi Desktop。"
     },
     "sections": {
       "agentConfiguration": "智能体配置",
       "appearance": "外观",
       "behavior": "行为",
+      "chatImport": "导入聊天",
       "customModels": "自定义模型",
+      "editor": "编辑器",
       "multiAgentCouncilPlanning": "多智能体委员会规划",
       "typesafe": "TypeSafe Jev",
       "voiceDictation": "语音听写"
@@ -1347,17 +1538,26 @@
       "disabled": "已禁用",
       "duplicate": "{{action}}与{{other}}使用了相同的快捷键，请选择其他组合。",
       "globalDictation": "在任意应用中语音听写：按一次开始或停止",
+      "globalUnsaved": "保存后才会应用更改。下方系统注册状态仍对应已保存的设置。",
       "heading": "键盘快捷键",
       "inUse": "{{shortcut}} 已被{{action}}使用，请选择其他组合。",
-      "invalid": "请使用 Cmd 或 Ctrl 加字母、数字、标点键或 F1–F12。",
+      "invalid": "请使用 Cmd 或 Ctrl 加字母、数字、标点键、空格键或 F1–F12。",
       "modelSelector": "模型选择器",
       "nextProject": "下一个项目",
       "nextSession": "下一个已打开会话",
       "notes": "笔记选择器",
+      "openQuickChat": "打开快捷聊天",
       "pressKeys": "请按下组合键…",
       "previousProject": "上一个项目",
       "previousSession": "上一个已打开会话",
       "pushToTalk": "语音听写：按住说话",
+      "quickChat": "快捷聊天（全局）",
+      "quickChatDescription": "在任何应用中显示或隐藏快捷聊天。选择快捷键后才启用。",
+      "registrationActive": "已保存并注册系统快捷键：{{shortcut}}",
+      "registrationDisabled": "已保存的快捷键：已禁用。未注册系统快捷键。",
+      "registrationFailed": "已保存的快捷键 {{shortcut}} 未生效：可能被其他应用占用，或系统快捷键服务不可用。请选择其他组合或重新保存。",
+      "registrationLoading": "正在检查系统快捷键注册状态…",
+      "registrationUnknown": "无法读取系统注册状态。保存快捷键不代表已生效。",
       "reserved": "此组合键已被原生菜单或编辑器操作占用。",
       "reset": "重置快捷键",
       "sidebar": "侧边栏",
@@ -1430,6 +1630,11 @@
       "description": "聊天、面板和侧边栏 — 不包括终端和代码编辑器",
       "label": "界面字体大小"
     },
+    "unreadableFile": {
+      "detail": "文件：{{path}}\n\n请修复此文件，或将其移除以恢复默认设置。",
+      "message": "{{product}} 无法读取设置文件。当前使用默认设置，且无法保存对设置的更改。",
+      "title": "设置文件有问题"
+    },
     "voice": {
       "device": {
         "auto": "自动",
@@ -1454,7 +1659,34 @@
       "runtimeCpuNoGpu": "未找到可用的显卡，因此语音在处理器（CPU）上运行，使用每个模型的 CPU 版本。",
       "runtimeGpu": "在显卡（{{name}}）上运行，使用每个模型的 GPU 版本。",
       "selected": "使用中",
+      "server": {
+        "address": "服务器地址",
+        "addressInvalid": "请输入 http:// 或 https:// 地址，不要包含用户名、查询参数或 #。",
+        "addressPlaceholder": "https://speech.example.com/v1",
+        "addressTip": "你录下的语音会发送到这个地址转成文字。",
+        "intro": "每次你停顿时，Pi Desktop 会把你说的话发送到这个服务器，并加入它返回的文字。服务器必须支持与 OpenAI 兼容的转写请求。",
+        "key": "API 密钥（可选）",
+        "keyInvalid": "这看起来不像 API 密钥。请粘贴不含空格或换行的密钥。",
+        "keyPlaceholder": "粘贴服务器的 API 密钥",
+        "keyRemove": "移除",
+        "keySave": "保存密钥",
+        "keySaved": "密钥已保存",
+        "language": "语言",
+        "languagePlaceholder": "自动检测",
+        "model": "模型",
+        "modelPlaceholder": "服务器上的模型名称",
+        "notReady": "填写地址和模型后即可用这个服务器听写。",
+        "prompt": "提示词",
+        "promptPlaceholder": "可选的词语或转写风格",
+        "ready": "听写使用这个服务器。",
+        "save": "保存"
+      },
       "sizeMb": "约 {{mb}} MB",
+      "transcribe": "转写",
+      "transcriber": {
+        "local": "在这台电脑上",
+        "server": "在你选择的服务器上"
+      },
       "use": "使用"
     }
   },
@@ -1516,6 +1748,8 @@
       "diagnostics": "诊断",
       "notes": "笔记",
       "packages": "包",
+      "quickChatTitleNoShortcut": "打开快捷聊天。可在 设置 > 键盘快捷键 中设置快捷键。",
+      "quickChatTitleWithShortcut": "打开快捷聊天（{{shortcut}}）",
       "sectionLabel": "工具"
     },
     "workflowRunsForSession": "此会话的工作流运行",
@@ -1527,6 +1761,7 @@
       "namePlaceholder": "工作区名称",
       "noWorkspace": "无工作区",
       "openProjectEllipsis": "打开项目…",
+      "tabClosedTitle": "标签页已关闭 · 点击可重新打开",
       "triggerTitle": "点击切换 · 双击重命名 · 右键查看选项"
     }
   },
@@ -1655,6 +1890,24 @@
     "trigger": {
       "title": "系统状态"
     },
+    "usage": {
+      "accountNumber": "账号 {{number}}",
+      "accountsWithoutUsage_other": "{{count}} 个账号没有用量数据",
+      "capacity_other": "已用 {{used}} / {{count}} 个账号",
+      "disabled": "已停用。请重新登录以恢复。",
+      "disabledSince": "{{time}}已停用。请重新登录以恢复。",
+      "fetched": "{{time}}获取",
+      "noAccounts": "没有已登录账号报告用量",
+      "noLimits": "未报告限额",
+      "resetsExpire": "最早于 {{duration}} 后过期",
+      "resetsIn": "{{duration}} 后重置",
+      "savedResets_other": "已保存 {{count}} 次重置",
+      "unknownAmount": "未知",
+      "usableNow_other": "{{count}} 次现在可用"
+    },
+    "usageSection": {
+      "title": "用量限额"
+    },
     "workspaceSection": {
       "title": "工作区"
     }
@@ -1694,12 +1947,14 @@
       "closeUnmanagedWorktreeMessage": "关闭“{{name}}”？该现有工作树及其文件将保留在磁盘上。",
       "forkAnywayLabel": "仍然分叉",
       "forkMessage": "Pi 在此会话中尚未完成响应。分叉此会话会中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
+      "keepInSidebarHint": "“保留在侧边栏”只关闭标签页：“{{name}}”仍保留在侧边栏中，其 {{agent}} 继续运行。在侧边栏中选择它即可重新打开标签页。",
+      "keepInSidebarLabel": "保留在侧边栏",
       "keepUntrustedLabel": "保持未信任",
       "keepWorkingLabel": "让它继续工作",
       "newMessage": "Pi 在此会话中尚未完成响应。启动新会话会中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
       "okLabel": "确定",
       "permissionModeMessage": "Pi 在此会话中尚未完成响应。更改权限模式会重启 Pi，从而中止它：Pi 已写入会话的内容会保留，但响应的其余部分（包括仍在运行的工具调用）将被丢弃。",
-      "removeWorkspaceMessage": "从侧边栏移除“{{name}}”？其 Pi 进程会停止；磁盘上的文件不受影响。",
+      "removeWorkspaceMessage": "从侧边栏移除“{{name}}”？其 {{agent}} 进程会停止；磁盘上的文件不受影响。",
       "removeWorkspaceTitle": "移除工作区",
       "startAnywayLabel": "仍然启动",
       "stillWorkingTitle": "Pi 仍在工作",
@@ -1718,23 +1973,26 @@
       "cannotActivateSession": "无法激活会话",
       "cannotCreateSession": "无法创建会话",
       "changeFolderError": "更改文件夹错误：{{detail}}",
+      "cloneError": "无法克隆会话：{{detail}}",
       "closeSessionError": "关闭会话错误：{{detail}}",
       "compactingContext": "正在压缩上下文（{{reason}}）…",
       "compactionAborted": "已中止压缩。",
       "contextCompacted": "上下文已压缩。",
       "councilFailed": "委员会失败：{{detail}}",
       "councilNoQuorum": "没有顾问产出计划（全部超时或出错）。委员会已中止。",
+      "councilOpenElsewhere": "另一个聊天中有一个进行中的委员会。请先在那里批准或取消它。",
       "createWorkspaceError": "创建工作区错误：{{detail}}",
       "defaultTaskLabel": "任务",
       "deleteError": "删除错误：{{detail}}",
       "editedSessionName": "{{title}}（已编辑）",
-      "editNotInSession": "已保存的会话中没有这条消息。",
       "editResendError": "无法编辑并重新发送该消息：{{detail}}",
       "error": "错误：{{detail}}",
       "followUpError": "追问发送错误：{{detail}}",
+      "forkError": "无法创建会话分支：{{detail}}",
       "imageFallbackName": "图片 {{index}}",
       "installedPackage": "已安装 {{spec}}。重启 Pi 以加载它。",
       "installFailed": "安装失败",
+      "messageNotInSession": "已保存的会话中没有这条消息。",
       "modelError": "模型错误：{{detail}}",
       "modelsFileNotLoaded": "模型文件尚未加载，请重试。",
       "newIsolatedTabError": "新建隔离标签页错误：{{detail}}",
@@ -1742,6 +2000,7 @@
       "notAFolder": "无法作为项目打开 — 不是文件夹：{{path}}",
       "notGitRepository": "此项目不是 Git 仓库。要另开对话请使用“新建会话”，或打开 Git 项目以使用隔离标签页。",
       "openFolderError": "打开文件夹错误：{{detail}}",
+      "pinError": "置顶错误：{{detail}}",
       "removedPackage": "已移除 {{spec}}",
       "removePackageFailed": "移除失败",
       "removeWorkspaceError": "移除工作区错误：{{detail}}",
@@ -1756,6 +2015,7 @@
       "truncatedHistory_other": "为提升性能，仅显示最近 {{count}}/{{total}} 条消息。较早的对话仍保存在会话文件中。",
       "unarchiveError": "取消归档错误：{{detail}}",
       "unknownError": "未知错误",
+      "unpinError": "取消置顶错误：{{detail}}",
       "updatedAllPackages": "已更新包。重启 Pi 以加载它们。",
       "updatedPackage": "已更新 {{spec}}。重启 Pi 以加载它。",
       "updatePackageFailed": "更新失败",
@@ -1784,6 +2044,10 @@
     "maximizeLabel": "最大化终端",
     "restartHint": "按任意键启动新的 Shell",
     "restoreLabel": "还原终端",
+    "tabs": {
+      "editor": "编辑器",
+      "shell": "终端"
+    },
     "title": "终端"
   },
   "themes": {
@@ -2076,8 +2340,8 @@
     "newLinkedTaskTitle": "新建跨多个仓库的关联任务",
     "newSessionAriaLabel": "在此项目中新建会话",
     "newSessionFallback": "新建会话",
-    "removeWorkspaceAriaLabel": "移除 {{name}}",
     "sessions": "会话",
+    "sessionTabTitleRenamable": "{{path}}\n\n双击重命名 · 右键查看操作",
     "tools": "工具"
   }
 }

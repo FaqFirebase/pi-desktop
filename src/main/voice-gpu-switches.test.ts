@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, writeFile } from 'fs/promises'
+import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import {
@@ -8,9 +8,10 @@ import {
   readVoiceDeviceSync,
   voiceGpuRestartRequired,
 } from './voice-gpu-switches'
+import { makeTempDir } from '../shared/temp-dir.test-helper'
 
 async function settingsFile(content: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-voice-switches-'))
+  const dir = makeTempDir('pi-voice-switches-')
   const path = join(dir, 'settings.json')
   await writeFile(path, content)
   return path

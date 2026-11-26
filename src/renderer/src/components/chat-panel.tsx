@@ -1,9 +1,10 @@
-import { sidePanelHidesPreview, useAppStore } from '../store'
+import { councilRunOnScreen, sidePanelHidesPreview, useAppStore } from '../store'
 import { agentEngineLabel } from '../../../shared/agent-engine-label'
 import { PI_DESKTOP_PRODUCT_NAME } from '../../../shared/product-name'
-import { ChatInput } from './chat-input'
+import { ChatComposerDock } from './chat-composer-dock'
 import { ChatProjectPicker } from './chat-project-picker'
 import { CouncilPanels } from './council-panels'
+import { isEmptyChatView } from './chat-empty-view'
 import { MessageBubble, ToolGroupBubble } from './message-bubble'
 import { StreamingBubble } from './streaming-bubble'
 import { ChatSearch } from './chat-search'
@@ -26,13 +27,15 @@ import { ReviewRail } from './review-rail'
 import { groupToolMessages, prepareChatMessages } from '../message-grouping'
 import { latestNextSteps } from '../next-steps'
 import { NextStepsBar } from './next-steps-bar'
+import { PermissionModeRestartNotice } from './permission-mode-restart-notice'
 import { NowContext } from '../utils/relative-time'
 import { FileTree, FileSearch, FilePreview } from './file-tree'
 import { ImageViewer } from './image-viewer'
 import { DiffViewer } from './diff-viewer'
 import { SubagentPanel } from './subagent-panel'
+import { BrowserPane } from './browser-pane'
 import { TerminalPanel } from './terminal'
-import { isFileWatchDemanded, useChatScroll, useChatVisible, useChatWidth } from '../hooks'
+import { isFileWatchDemanded, useChatScroll, useChatVisible, useChatWidth, visibleSessionPath } from '../hooks'
 import { messageColumnClass } from '../utils/chat-width'
 import { createMeasureRef } from '../utils/element-measure'
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
@@ -60,9 +63,10 @@ export function ChatPanel(): React.JSX.Element {
   const sessionLoading = useAppStore((state) => state.sessionLoading)
   const isStreaming = useAppStore((state) => state.isStreaming)
   const reattachedMidTurn = useAppStore((state) => state.reattachedMidTurn)
+  const councilOnScreen = useAppStore((state) => councilRunOnScreen(state) !== null)
   // Drive message-list bottom padding from the real floating composer height so
   // a tall draft / attachments row never permanently covers the last message.
-  // The composer mounts only once the empty chat has messages, hence the ref.
+  // The floating frame exists only once the empty chat has messages, hence the ref.
   const [composerPadPx, composerWrapRef] = useElementMeasure(readComposerPad, DEFAULT_COMPOSER_PAD_PX)
   // The chat column and side panel share this row; the side panel gets what the column leaves.
   const [panelRowWidth, panelRowRef] = useElementMeasure(readClientWidth, Number.POSITIVE_INFINITY)
@@ -150,12 +154,13 @@ export function ChatPanel(): React.JSX.Element {
 
   const showSidePanel = sidePanel !== null || previewTarget !== null
   const showFileTree = sidePanel === 'files'
-  // The diff and the Tasks panel take the whole side slot; previews wait behind them.
+  // The diff, Tasks and Browser panels take the whole side slot; previews wait behind them.
   const previewAllowed = !sidePanelHidesPreview(sidePanel)
   const showImage = previewTarget?.kind === 'image' && previewAllowed
   const showEditor = previewTarget?.kind === 'code' && previewAllowed
   const showDiff = sidePanel === 'diff'
   const showTasks = sidePanel === 'tasks'
+  const showBrowser = sidePanel === 'browser'
   const sidePanes = { showFileTree, showEditor, showImage }
   const paneLayout = resolvePaneLayout(
     panelRowWidth,
@@ -179,7 +184,7 @@ export function ChatPanel(): React.JSX.Element {
     sidePanelStacked ? paneLayout.sidePanelRowWidth + MIN_CHAT_COLUMN_WIDTH : paneLayout.sidePanelRowWidth
   )
 
-  // Disk watching is demand-driven: the main process only attaches chokidar
+  // Disk watching is demand-driven: the main process only attaches the watcher
   // while a visible files or diff panel consumes change events. Without this,
   // cold start and the Home view would pay the full workspace-watch cost for a
   // tree nobody is looking at — and ChatPanel stays mounted (just hidden)
@@ -195,6 +200,16 @@ export function ChatPanel(): React.JSX.Element {
       void window.piDesktop.files.setWatchDemand(false).catch(() => {})
     }
   }, [fileWatchDemanded])
+
+  // Main marks a session unread when a turn ends while it is not on screen,
+  // so it must know which session this view shows.
+  const visibleSession = useAppStore(visibleSessionPath)
+  useEffect(() => {
+    void window.piDesktop.session.setVisible(visibleSession).catch(() => {})
+    return () => {
+      void window.piDesktop.session.setVisible(null).catch(() => {})
+    }
+  }, [visibleSession])
 
   const sidePanelPane = showSidePanel ? (
     <div
@@ -249,6 +264,11 @@ export function ChatPanel(): React.JSX.Element {
             <SubagentPanel onClose={() => setSidePanel(null)} />
           </div>
         )}
+        {showBrowser && (
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <BrowserPane onClose={() => setSidePanel(null)} />
+          </div>
+        )}
         {showEditor && (
           <div
             className={clsx(
@@ -299,105 +319,128 @@ export function ChatPanel(): React.JSX.Element {
               />
             )}
             {(() => {
-              const isEmptyChat =
-                !sessionLoading && messages.length === 0 && !isStreaming
+              const isEmptyChat = isEmptyChatView({
+                sessionLoading,
+                messageCount: messages.length,
+                isStreaming,
+                councilOnScreen,
+              })
 
               // Empty session: Codex-style center prompt + project picker (sidebar chrome).
-              if (isEmptyChat) {
-                return (
-                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10">
-                    <div className="mb-8 text-center">
-                      <img
-                        src={piLogo}
-                        alt={PI_DESKTOP_PRODUCT_NAME}
-                        className="mx-auto mb-4 block h-14 w-14"
-                      />
-                      <h2 className="text-2xl font-semibold text-primary">
-                        {t('chat.emptyState.title', { agent: engineLabel })}
-                      </h2>
-                      <p className="mt-1 text-sm text-dim">
-                        {piStatus === 'running'
-                          ? t('chat.emptyState.pickProject')
-                          : piStatus === 'starting'
-                            ? piStartupPhase === 'waiting-on-engine'
-                              ? t('chat.emptyState.waitingOnEngine', { agent: engineLabel })
-                              : t('chat.emptyState.starting', { agent: engineLabel })
-                            : piStatus === 'error'
-                              ? t('chat.emptyState.startFailed', { agent: engineLabel })
-                              : t('chat.emptyState.chooseProject', { agent: engineLabel })}
-                      </p>
+              const centeredLead = (
+                <>
+                  <div className="mb-8 text-center">
+                    <img
+                      src={piLogo}
+                      alt={PI_DESKTOP_PRODUCT_NAME}
+                      className="mx-auto mb-4 block h-14 w-14"
+                    />
+                    <h2 className="text-2xl font-semibold text-primary">
+                      {t('chat.emptyState.title', { agent: engineLabel })}
+                    </h2>
+                    <p className="mt-1 text-sm text-dim">
+                      {piStatus === 'running'
+                        ? t('chat.emptyState.pickProject')
+                        : piStatus === 'starting'
+                          ? piStartupPhase === 'waiting-on-engine'
+                            ? t('chat.emptyState.waitingOnEngine', { agent: engineLabel })
+                            : t('chat.emptyState.starting', { agent: engineLabel })
+                          : piStatus === 'error'
+                            ? t('chat.emptyState.startFailed', { agent: engineLabel })
+                            : t('chat.emptyState.chooseProject', { agent: engineLabel })}
+                    </p>
+                  </div>
+                  {piStatus === 'running' && (
+                    <div className={clsx('mb-4 flex w-full flex-wrap justify-center gap-2 px-4', messageColumn)}>
+                      {EXAMPLE_PROMPTS.map((prompt) => (
+                        <button
+                          key={prompt}
+                          type="button"
+                          onClick={() => {
+                            // Fill the composer only — never start a turn from a chip misclick.
+                            useAppStore.getState().insertPrompt(prompt, true)
+                          }}
+                          className="rounded-lg border border-border-strong px-3 py-1.5 text-xs text-muted hover:border-border-strong-hover hover:text-secondary transition-colors"
+                        >
+                          {prompt}
+                        </button>
+                      ))}
                     </div>
-                    <div className={clsx('w-full', messageColumn)}>
-                      {piStatus === 'running' && (
-                        <div className="mb-4 flex flex-wrap justify-center gap-2 px-4">
-                          {EXAMPLE_PROMPTS.map((prompt) => (
-                            <button
-                              key={prompt}
-                              type="button"
-                              onClick={() => {
-                                // Fill the composer only — never start a turn from a chip misclick.
-                                useAppStore.getState().insertPrompt(prompt, true)
-                              }}
-                              className="rounded-lg border border-border-strong px-3 py-1.5 text-xs text-muted hover:border-border-strong-hover hover:text-secondary transition-colors"
-                            >
-                              {prompt}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      <ChatInput dropZoneRef={chatDropZoneRef} />
-                      <div className="px-4">
-                        <ChatProjectPicker />
+                  )}
+                </>
+              )
+              const floatingLead = (
+                <>
+                  <div className={clsx('pointer-events-auto mx-auto w-full px-4', messageColumn)}>
+                    <CouncilPanels />
+                  </div>
+                  {reattachedMidTurn && (
+                    <div className={clsx('pointer-events-auto mx-auto mb-2 w-full px-4', messageColumn)}>
+                      <div className="flex items-center gap-2.5 rounded-md bg-accent px-4 py-2.5 text-sm text-white shadow-lg shadow-black/30">
+                        <Loader2 size={16} className="shrink-0 animate-spin" />
+                        <span className="shrink-0 font-medium">
+                          {t('chat.reattached.stillWorking', { agent: engineLabel })}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-white/80">
+                          {t('chat.reattached.responseWillAppear')}
+                        </span>
                       </div>
                     </div>
+                  )}
+                  <div className={clsx('pointer-events-auto mx-auto w-full px-4 empty:hidden', messageColumn)}>
+                    <PermissionModeRestartNotice />
                   </div>
-                )
-              }
+                </>
+              )
 
+              // The message list and the scroll button come and go, but the
+              // dock keeps its place, so the first send keeps its composer.
               return (
                 <>
-                  <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-                    {sessionLoading && messages.length === 0 && !isStreaming ? (
-                      <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-dim">
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
-                        {piStatus === 'running' ? t('chat.loadingSession') : t('chat.startingAgent')}
-                      </div>
-                    ) : (
-                      <NowContext.Provider value={now}>
-                        <div
-                          className={clsx('mx-auto px-4 pt-6', messageColumn)}
-                          style={{ paddingBottom: composerPadPx }}
-                        >
-                          {renderItems.map((item) =>
-                            item.kind === 'toolGroup' ? (
-                              <ToolGroupBubble
-                                key={item.id}
-                                title={item.title}
-                                messages={item.messages}
-                                onRetry={handleRetry}
-                              />
-                            ) : (
-                              <MessageBubble
-                                key={item.message.id}
-                                message={item.message}
-                                onRetry={handleRetry}
-                              />
-                            )
-                          )}
-                          {!isStreaming && <NextStepsBar steps={nextSteps} />}
-                          {isStreaming && (
-                            <StreamingBubble
-                              content={streamingContent}
-                              thinking={streamingThinking}
-                              toolCalls={streamingToolCalls}
-                            />
-                          )}
+                  {!isEmptyChat && (
+                    <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
+                      {sessionLoading && messages.length === 0 && !isStreaming ? (
+                        <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-dim">
+                          <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
+                          {piStatus === 'running' ? t('chat.loadingSession') : t('chat.startingAgent')}
                         </div>
-                      </NowContext.Provider>
-                    )}
-                  </div>
+                      ) : (
+                        <NowContext.Provider value={now}>
+                          <div
+                            className={clsx('mx-auto px-4 pt-6', messageColumn)}
+                            style={{ paddingBottom: composerPadPx }}
+                          >
+                            {renderItems.map((item) =>
+                              item.kind === 'toolGroup' ? (
+                                <ToolGroupBubble
+                                  key={item.id}
+                                  title={item.title}
+                                  messages={item.messages}
+                                  onRetry={handleRetry}
+                                />
+                              ) : (
+                                <MessageBubble
+                                  key={item.message.id}
+                                  message={item.message}
+                                  onRetry={handleRetry}
+                                />
+                              )
+                            )}
+                            {!isStreaming && <NextStepsBar steps={nextSteps} />}
+                            {isStreaming && (
+                              <StreamingBubble
+                                content={streamingContent}
+                                thinking={streamingThinking}
+                                toolCalls={streamingToolCalls}
+                              />
+                            )}
+                          </div>
+                        </NowContext.Provider>
+                      )}
+                    </div>
+                  )}
 
-                  {!atBottom && (
+                  {!isEmptyChat && !atBottom && (
                     <button
                       onClick={scrollToBottom}
                       className="absolute left-1/2 z-20 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border-strong bg-card/90 text-secondary shadow-lg shadow-black/30 backdrop-blur transition-colors hover:bg-elevated hover:text-primary"
@@ -409,28 +452,17 @@ export function ChatPanel(): React.JSX.Element {
                     </button>
                   )}
 
-                  <div
-                    ref={composerWrapRef}
-                    className="pointer-events-none absolute inset-x-0 bottom-0 z-10 pb-3 pt-8 bg-gradient-to-t from-chat-column via-chat-column/80 to-transparent"
-                  >
-                    <div className={clsx('pointer-events-auto mx-auto w-full px-4', messageColumn)}>
-                      <CouncilPanels />
-                    </div>
-                    {reattachedMidTurn && (
-                      <div className={clsx('pointer-events-auto mx-auto mb-2 w-full px-4', messageColumn)}>
-                        <div className="flex items-center gap-2.5 rounded-md bg-accent px-4 py-2.5 text-sm text-white shadow-lg shadow-black/30">
-                          <Loader2 size={16} className="shrink-0 animate-spin" />
-                          <span className="shrink-0 font-medium">
-                            {t('chat.reattached.stillWorking', { agent: engineLabel })}
-                          </span>
-                          <span className="min-w-0 flex-1 truncate text-white/80">
-                            {t('chat.reattached.responseWillAppear')}
-                          </span>
-                        </div>
+                  <ChatComposerDock
+                    centered={isEmptyChat}
+                    dropZoneRef={chatDropZoneRef}
+                    floatingRef={composerWrapRef}
+                    lead={isEmptyChat ? centeredLead : floatingLead}
+                    trail={isEmptyChat && (
+                      <div className={clsx('w-full px-4', messageColumn)}>
+                        <ChatProjectPicker />
                       </div>
                     )}
-                    <ChatInput dropZoneRef={chatDropZoneRef} />
-                  </div>
+                  />
                 </>
               )
             })()}

@@ -9,7 +9,7 @@ import {
   PERMISSION_MODE_LABEL_KEYS,
   getPermissionModeDescription,
 } from './permission-mode'
-import { useAppStore } from '../store'
+import { useChatSession } from '../chat-session-context'
 import { DEFAULT_AGENT_ENGINE_LABEL, agentEngineLabel } from '../../../shared/agent-engine-label'
 
 // Labels for a composer too narrow for the full ones. Kept beside their only
@@ -21,20 +21,23 @@ const PERMISSION_MODE_SHORT_LABEL_KEYS = {
   trusted: 'permissionMode.trusted.shortLabel',
 } as const satisfies Record<PermissionMode, string>
 
-interface ComposerPermissionMenuProps {
-  value: PermissionMode | null | undefined
-  onChange: (mode: PermissionMode) => Promise<void> | void
-}
-
 /**
  * Compact permission-mode picker for the composer toolbar (same modes as review).
  */
-export function ComposerPermissionMenu({ value, onChange }: ComposerPermissionMenuProps): React.JSX.Element {
+export function ComposerPermissionMenu(): React.JSX.Element {
+  const { composer } = useChatSession()
+  return <SessionPermissionMenu key={composer.scopeKey} />
+}
+
+function SessionPermissionMenu(): React.JSX.Element {
   const { t } = useTranslation()
-  const engineLabel = useAppStore((state) => agentEngineLabel(state.piEngine) ?? DEFAULT_AGENT_ENGINE_LABEL)
+  const { permissionMode: value, setPermissionMode: onChange, engine } = useChatSession()
+  const engineLabel = agentEngineLabel(engine) ?? DEFAULT_AGENT_ENGINE_LABEL
   const [isOpen, setIsOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const pending = useRef(false)
   const mode = value ?? DEFAULT_PERMISSION_MODE
   const isTrusted = mode === 'trusted'
 
@@ -48,11 +51,17 @@ export function ComposerPermissionMenu({ value, onChange }: ComposerPermissionMe
   }, [isOpen])
 
   const handleSelect = async (next: PermissionMode): Promise<void> => {
+    if (!onChange || pending.current) return
+    pending.current = true
     setSaving(true)
+    setActionError(null)
     try {
       await onChange(next)
       setIsOpen(false)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error))
     } finally {
+      pending.current = false
       setSaving(false)
     }
   }
@@ -61,6 +70,8 @@ export function ComposerPermissionMenu({ value, onChange }: ComposerPermissionMe
     <div ref={ref} className="relative">
       <button
         type="button"
+        disabled={!onChange || saving}
+        aria-expanded={isOpen}
         onClick={() => setIsOpen((open) => !open)}
         className={clsx(
           'flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2 text-xs transition-colors',
@@ -83,9 +94,10 @@ export function ComposerPermissionMenu({ value, onChange }: ComposerPermissionMe
         />
       </button>
 
-      {isOpen && (
+      {isOpen && onChange && (
         <div className="absolute bottom-full left-0 z-50 mb-1 min-w-[180px] rounded-lg border border-border-strong bg-app py-1 shadow-xl shadow-black/40">
           <div className="px-3 pb-0.5 pt-1 text-[11px] text-dim">{t('composer.permissionMenu.title')}</div>
+          {actionError && <div role="alert" className="max-w-64 whitespace-normal px-3 py-2 text-xs text-error">{t('store.messages.error', { detail: actionError })}</div>}
           {PERMISSION_MODE_OPTIONS.map((option) => (
             <button
               key={option.value}

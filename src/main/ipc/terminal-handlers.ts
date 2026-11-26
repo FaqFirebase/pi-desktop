@@ -3,6 +3,7 @@ import { IPC_CHANNELS } from '../../shared/ipc-contracts'
 import { assertTrustedSender, isString, isObject } from './validation'
 import type { IpcContext } from './context'
 import { DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS } from '../terminal-service'
+import { DEFAULT_TERMINAL_SLOT, isTerminalSlot, terminalKey, type TerminalSlot } from '../../shared/terminal-slot'
 
 // Upper bound on a renderer-reported column or row count.
 const MAX_TERMINAL_DIMENSION = 10000
@@ -25,40 +26,47 @@ export function registerTerminalHandlers(ctx: IpcContext): void {
     return value
   }
 
+  function slotOf(value: unknown): TerminalSlot {
+    if (value === undefined) return DEFAULT_TERMINAL_SLOT
+    if (!isTerminalSlot(value)) throw new Error('Invalid terminal slot')
+    return value
+  }
+
   ipcMain.handle(IPC_CHANNELS.TERMINAL_START, async (event, id: unknown, options: unknown) => {
     assertTrustedSender(event)
     const project = workspace(id)
     const opts = isObject(options) ? options : {}
+    const slot = slotOf(opts.slot)
     return terminalService.start(
-      project.id,
+      terminalKey(project.id, slot),
       {
         cwd: project.path,
         cols: dimension(opts.cols, DEFAULT_TERMINAL_COLS),
         rows: dimension(opts.rows, DEFAULT_TERMINAL_ROWS),
       },
-      (data) => broadcast(IPC_CHANNELS.EVENT_TERMINAL_DATA, { workspaceId: project.id, data }),
-      (event) => broadcast(IPC_CHANNELS.EVENT_TERMINAL_EXIT, { ...event, workspaceId: project.id })
+      (data) => broadcast(IPC_CHANNELS.EVENT_TERMINAL_DATA, { workspaceId: project.id, slot, data }),
+      (event) => broadcast(IPC_CHANNELS.EVENT_TERMINAL_EXIT, { ...event, workspaceId: project.id, slot })
     )
   })
 
-  ipcMain.handle(IPC_CHANNELS.TERMINAL_INPUT, async (event, id: unknown, data: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.TERMINAL_INPUT, async (event, id: unknown, data: unknown, slot: unknown) => {
     assertTrustedSender(event)
     const project = workspace(id)
     if (!isString(data)) throw new Error('terminal input must be a string')
-    terminalService.write(project.id, data)
+    terminalService.write(terminalKey(project.id, slotOf(slot)), data)
   })
 
-  ipcMain.handle(IPC_CHANNELS.TERMINAL_RESIZE, async (event, id: unknown, size: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.TERMINAL_RESIZE, async (event, id: unknown, size: unknown, slot: unknown) => {
     assertTrustedSender(event)
     const project = workspace(id)
     if (!isObject(size)) throw new Error('terminal size must be an object')
-    terminalService.resize(project.id, dimension(size.cols, DEFAULT_TERMINAL_COLS), dimension(size.rows, DEFAULT_TERMINAL_ROWS))
+    terminalService.resize(terminalKey(project.id, slotOf(slot)), dimension(size.cols, DEFAULT_TERMINAL_COLS), dimension(size.rows, DEFAULT_TERMINAL_ROWS))
   })
 
-  ipcMain.handle(IPC_CHANNELS.TERMINAL_STOP, async (event, id: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.TERMINAL_STOP, async (event, id: unknown, slot: unknown) => {
     assertTrustedSender(event)
     // Cleanup may arrive after the workspace has already been removed.
     if (!isString(id)) throw new Error('workspaceId must be a string')
-    terminalService.stop(id)
+    terminalService.stop(terminalKey(id, slotOf(slot)))
   })
 }
