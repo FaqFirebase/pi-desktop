@@ -216,21 +216,6 @@ export function WorkspaceTabs(): React.JSX.Element {
 
       <button
         type="button"
-        onClick={() => {
-          setWorkflowPanelOpen(false)
-          setCurrentView('chat')
-          void createNewSession()
-        }}
-        className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary transition-colors"
-        title={newSessionShortcut
-          ? t('settings.shortcuts.actionWithShortcut', { action: t('workspaceTabs.newSessionAriaLabel'), shortcut: formatShortcut(newSessionShortcut, window.piDesktop.system.platform) })
-          : t('workspaceTabs.newSessionAriaLabel')}
-        aria-label={t('workspaceTabs.newSessionAriaLabel')}
-      >
-        <MessageSquarePlus size={15} />
-      </button>
-      <button
-        type="button"
         onClick={() => void createWorktreeTab()}
         className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary transition-colors"
         title={t('workspaceTabs.newIsolatedTabTitle')}
@@ -248,7 +233,9 @@ export function WorkspaceTabs(): React.JSX.Element {
         <Boxes size={15} />
       </button>
     </div>
-    {sessionTabs.length > 0 && (
+    {/* The row shows for every open project, even before its first session,
+        so the new session button always has a home. */}
+    {activeWorkspace && (
       <div className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border/70 px-2">
         <span className="mr-1 shrink-0 text-[10px] uppercase tracking-wide text-faint">{t('workspaceTabs.sessions')}</span>
         {sessionTabs.map((runtime) => {
@@ -296,6 +283,21 @@ export function WorkspaceTabs(): React.JSX.Element {
             </div>
           )
         })}
+        <button
+          type="button"
+          onClick={() => {
+            setWorkflowPanelOpen(false)
+            setCurrentView('chat')
+            void createNewSession()
+          }}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-highlight hover:text-primary"
+          title={newSessionShortcut
+            ? t('settings.shortcuts.actionWithShortcut', { action: t('workspaceTabs.newSessionAriaLabel'), shortcut: formatShortcut(newSessionShortcut, window.piDesktop.system.platform) })
+            : t('workspaceTabs.newSessionAriaLabel')}
+          aria-label={t('workspaceTabs.newSessionAriaLabel')}
+        >
+          <MessageSquarePlus size={13} />
+        </button>
       </div>
     )}
     </div>
