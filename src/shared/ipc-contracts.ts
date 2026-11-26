@@ -335,6 +335,13 @@ export interface SessionRuntimeInfo extends PiStatus {
    * predates the field.
    */
   permissionMode?: PermissionMode | null
+  /**
+   * The name the user gave this session through the app. A session gets a
+   * row in the session list, and its name from there, only once its file has
+   * content, so a tab reads a newer session's name from here. Absent until
+   * the first rename.
+   */
+  sessionName?: string
 }
 
 export interface SessionRuntimeCloseResult {

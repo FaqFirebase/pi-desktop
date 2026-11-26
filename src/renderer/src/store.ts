@@ -299,6 +299,32 @@ function workspaceHasLivePi(
   )
 }
 
+/**
+ * The shown session's new name, in its state and its list row, so the chat
+ * header, the sidebar row and the session tab change together. `sessionFile`
+ * is the session the name belongs to (null: one without a file yet); a name
+ * for any other session is dropped, since the user may have switched away
+ * while the rename ran.
+ */
+function sessionNamePatch(
+  state: Pick<AppState, 'sessionState' | 'sessionList'>,
+  sessionFile: string | null,
+  name: string | null,
+  sessionId?: string
+): Partial<Pick<AppState, 'sessionState' | 'sessionList'>> {
+  const current = state.sessionState
+  if (!current) return {}
+  const currentFile = current.sessionFile ?? null
+  const sameSession = sessionFile && currentFile ? pathsEqual(currentFile, sessionFile) : sessionFile === currentFile
+  if (!sameSession) return {}
+  return {
+    sessionState: { ...current, sessionName: name, ...(sessionId ? { sessionId } : {}) },
+    ...(sessionFile
+      ? { sessionList: state.sessionList.map((s) => (pathsEqual(s.path, sessionFile) ? { ...s, name } : s)) }
+      : {}),
+  }
+}
+
 // ─── Store Shape ─────────────────────────────────────────────────────────────
 
 /**
@@ -2492,11 +2518,13 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   },
 
   setSessionName: async (name) => {
+    const sessionFile = get().sessionState?.sessionFile ?? null
     try {
-      await window.piDesktop.session.setName(name)
-      // No manual refresh: Pi emits `session_info_changed` after setting the
-      // name, and handlePiEvent applies it to the Current Session panel and the
-      // Recent row — the same path used by auto-title extensions.
+      const response = await window.piDesktop.session.setName(name) as { success?: boolean } | null
+      // Pi also emits `session_info_changed` for the new name; OMP sends no
+      // event, so a confirmed rename is applied here. Both carry the same name.
+      if (response?.success !== true) return
+      set((state) => sessionNamePatch(state, sessionFile, name))
     } catch {
       // Silent failure
     }
@@ -3144,21 +3172,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
         const info = event as { name?: unknown; title?: unknown; sessionId?: unknown }
         const rawName = info.name ?? info.title
         const newName = (typeof rawName === 'string' && rawName.trim()) || null
-        set((state) => {
-          const activeFile = state.sessionState?.sessionFile ?? null
-          return {
-            sessionState: state.sessionState
-              ? {
-                  ...state.sessionState,
-                  sessionName: newName,
-                  ...(typeof info.sessionId === 'string' ? { sessionId: info.sessionId } : {}),
-                }
-              : state.sessionState,
-            sessionList: activeFile
-              ? state.sessionList.map((s) => (s.path === activeFile ? { ...s, name: newName } : s))
-              : state.sessionList,
-          }
-        })
+        set((state) => sessionNamePatch(
+          state,
+          state.sessionState?.sessionFile ?? null,
+          newName,
+          typeof info.sessionId === 'string' ? info.sessionId : undefined
+        ))
         break
       }
 

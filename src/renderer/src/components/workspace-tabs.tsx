@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertCircle, Boxes, CheckCircle2, FolderOpen, GitBranch, Loader2, MessageSquarePlus, PanelLeft, Plus, Settings, X, XCircle } from 'lucide-react'
+import { AlertCircle, Boxes, CheckCircle2, FolderOpen, GitBranch, Loader2, MessageSquarePlus, PanelLeft, Pencil, Plus, Settings, X, XCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAppStore } from '../store'
 import { useGlobalWorkflowOpen } from '../hooks'
@@ -10,6 +10,8 @@ import { activeShortcuts } from '../utils/app-shortcuts'
 import { formatShortcut } from '../../../shared/keyboard-shortcuts'
 import { pathsEqual } from '../../../shared/path-compare'
 import { SessionRuntimeIndicator } from './session-runtime-indicator'
+import { SessionNameInput } from './session-name-input'
+import { useContextMenu } from './context-menu'
 import type { Workspace } from '../../../shared/ipc-contracts'
 
 const PROJECT_TAB_DRAG_TYPE = 'application/x-pi-desktop-project-tab'
@@ -45,6 +47,14 @@ export function WorkspaceTabs(): React.JSX.Element {
   const createNewSession = useAppStore((state) => state.createNewSession)
   const newSessionShortcut = useAppStore((state) => activeShortcuts(state).newSession)
   const setCurrentView = useAppStore((state) => state.setCurrentView)
+  const sessionState = useAppStore((state) => state.sessionState)
+  const setSessionName = useAppStore((state) => state.setSessionName)
+  const sessionLoading = useAppStore((state) => state.sessionLoading)
+  const { show: showMenu, ContextMenuComponent } = useContextMenu()
+  // The rename RPC reaches the runtime main has active, so only that tab
+  // renames. A rename left open when another tab becomes active ends unsaved.
+  const [renamingRuntimeId, setRenamingRuntimeId] = useState<string | null>(null)
+  if (renamingRuntimeId !== null && !sessionRuntimes[renamingRuntimeId]?.active) setRenamingRuntimeId(null)
 
   const toolView = ['settings', 'packages', 'notes', 'skills', 'diagnostics'] as const
   const toolsActive =
@@ -241,6 +251,34 @@ export function WorkspaceTabs(): React.JSX.Element {
         {sessionTabs.map((runtime) => {
           const session = sessionList.find((item) => runtime.sessionPath && pathsEqual(item.path, runtime.sessionPath))
           const active = runtime.runtimeId === activeSessionRuntimeId || runtime.active
+          // The chat already shows this tab's session.
+          const shown = Boolean(sessionState?.sessionFile && runtime.sessionPath && pathsEqual(sessionState.sessionFile, runtime.sessionPath))
+          // A session gets its list row only once its file has content; until
+          // then its name comes from the chat state (the shown session) or
+          // from the runtime (a rename made while it was shown).
+          const liveName = shown ? sessionState?.sessionName?.trim() || null : null
+          const name = liveName || session?.name?.trim() || runtime.sessionName || null
+          const title = session
+            ? getSessionTitle(name, session.sessionId, session.preview)
+            : name || t('workspaceTabs.newSessionFallback')
+          if (renamingRuntimeId === runtime.runtimeId) {
+            return (
+              <div
+                key={runtime.runtimeId}
+                className="flex min-w-0 max-w-[240px] shrink-0 items-center gap-1.5 rounded bg-card py-0.5 pl-2 pr-1 text-[11px] text-primary"
+              >
+                <SessionRuntimeIndicator runtime={runtime} />
+                <SessionNameInput
+                  initialName={name ?? ''}
+                  onDone={(newName) => {
+                    setRenamingRuntimeId(null)
+                    if (newName) void setSessionName(newName)
+                  }}
+                  className="w-40 px-1.5 py-0.5"
+                />
+              </div>
+            )
+          }
           return (
             <div
               key={runtime.runtimeId}
@@ -248,6 +286,26 @@ export function WorkspaceTabs(): React.JSX.Element {
                 if (event.button !== 1) return
                 event.preventDefault()
                 void closeSessionTab(runtime.runtimeId)
+              }}
+              onContextMenu={(event) => {
+                // The document-level handler would show the default menu on top.
+                event.nativeEvent.stopPropagation()
+                showMenu(event, [
+                  ...(runtime.active
+                    ? [{
+                        id: 'session-tab-rename',
+                        label: t('contextMenu.rename'),
+                        icon: <Pencil size={14} />,
+                        action: () => setRenamingRuntimeId(runtime.runtimeId),
+                      }]
+                    : []),
+                  {
+                    id: 'session-tab-close',
+                    label: t('workspaceTabs.closeSessionTab'),
+                    icon: <X size={14} />,
+                    action: () => void closeSessionTab(runtime.runtimeId),
+                  },
+                ])
               }}
               className={clsx(
                 'group relative flex min-w-0 max-w-[240px] shrink-0 items-stretch rounded text-[11px] transition-colors',
@@ -259,17 +317,22 @@ export function WorkspaceTabs(): React.JSX.Element {
                 onClick={() => {
                   if (!runtime.sessionPath) return
                   setCurrentView('chat')
+                  // switchSession reloads a session with no messages yet, and
+                  // the reload then focuses the composer, which would end a
+                  // rename the second click of a double-click just opened.
+                  if (shown && !sessionLoading) return
                   void switchSession(runtime.sessionPath, activeWorkspace?.path)
+                }}
+                onDoubleClick={() => {
+                  if (runtime.active) setRenamingRuntimeId(runtime.runtimeId)
                 }}
                 // The select button fills the whole tab; the close button sits on top of it.
                 className="flex min-w-0 flex-1 items-center gap-1.5 py-1 pl-2 pr-6 text-left"
-                title={runtime.sessionPath ?? undefined}
+                title={runtime.active ? t('workspaceTabs.sessionTabTitleRenamable', { path: runtime.sessionPath ?? '' }) : runtime.sessionPath ?? undefined}
                 aria-current={active ? 'page' : undefined}
               >
                 <SessionRuntimeIndicator runtime={runtime} />
-                <span className="truncate">
-                  {session ? getSessionTitle(session.name, session.sessionId, session.preview) : t('workspaceTabs.newSessionFallback')}
-                </span>
+                <span className="truncate">{title}</span>
               </button>
               <button
                 type="button"
@@ -300,6 +363,7 @@ export function WorkspaceTabs(): React.JSX.Element {
         </button>
       </div>
     )}
+    {ContextMenuComponent}
     </div>
   )
 }

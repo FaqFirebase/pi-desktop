@@ -2554,6 +2554,7 @@
     "newSessionAriaLabel": "Новая сессия в этом проекте",
     "newSessionFallback": "Новая сессия",
     "sessions": "Сессии",
+    "sessionTabTitleRenamable": "{{path}}\n\nДвойной щелчок — переименовать · правой кнопкой — действия",
     "tools": "Инструменты"
   }
 }

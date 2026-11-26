@@ -2412,6 +2412,7 @@
     "newSessionAriaLabel": "Bu projede yeni oturum",
     "newSessionFallback": "Yeni oturum",
     "sessions": "Oturumlar",
+    "sessionTabTitleRenamable": "{{path}}\n\nYeniden adlandırmak için çift tıklayın · işlemler için sağ tıklayın",
     "tools": "Araçlar"
   }
 }

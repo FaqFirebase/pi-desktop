@@ -2341,6 +2341,7 @@
     "newSessionAriaLabel": "在此项目中新建会话",
     "newSessionFallback": "新建会话",
     "sessions": "会话",
+    "sessionTabTitleRenamable": "{{path}}\n\n双击重命名 · 右键查看操作",
     "tools": "工具"
   }
 }

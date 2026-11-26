@@ -31,6 +31,7 @@ import { useMemo, useState, useRef } from 'react'
 import { StatusPopover } from './status-popover'
 import { useContextMenu, buildOpenPathMenuItems, buildSessionContextMenu, useSessionPinActions } from './context-menu'
 import { SessionRowIcon, SessionUnreadDot } from './session-row-markers'
+import { SessionNameInput } from './session-name-input'
 import { orderSessionsPinnedFirst } from '../utils/session-pin-order'
 import { getSessionEngineLabel, getSessionRowLabels, hasMixedSessionEngines } from './sidebar-session-labels'
 import { ResizeHandle } from './resize-handle'
@@ -123,51 +124,15 @@ export function Sidebar(): React.JSX.Element {
 
   // Pi's rename targets the active session, exposed through its Recent row.
   const [renamingWhere, setRenamingWhere] = useState<'recent' | null>(null)
-  const [renameValue, setRenameValue] = useState('')
-  const renameCancelRef = useRef(false)
 
   const startSessionRename = (where: 'recent'): void => {
-    renameCancelRef.current = false
-    // Prefill with the explicit name only; a timestamp/guid is not a name.
-    setRenameValue(sessionState?.sessionName ?? '')
     setRenamingWhere(where)
   }
 
-  // Single commit path (both Enter and Escape blur the input, which lands here).
-  const finishSessionRename = (): void => {
-    const cancelled = renameCancelRef.current
-    renameCancelRef.current = false
+  const finishSessionRename = (name: string | null): void => {
     setRenamingWhere(null)
-    // Pi's set_session_name RPC rejects an empty name ("cannot be empty"), so an
-    // empty commit is a no-op (keeps the current name) rather than a doomed call.
-    const trimmed = renameValue.trim()
-    if (!cancelled && trimmed) setSessionName(trimmed)
+    if (name) void setSessionName(name)
   }
-
-  const renderRenameInput = (): React.JSX.Element => (
-    <input
-      type="text"
-      value={renameValue}
-      onChange={(e) => setRenameValue(e.target.value)}
-      onFocus={(e) => e.target.select()}
-      onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        if (isImeComposing(e.nativeEvent)) return
-        if (e.key === 'Enter') {
-          e.preventDefault()
-          e.currentTarget.blur()
-        } else if (e.key === 'Escape') {
-          e.preventDefault()
-          renameCancelRef.current = true
-          e.currentTarget.blur()
-        }
-      }}
-      onBlur={finishSessionRename}
-      placeholder={t('sidebar.sessionNamePlaceholder')}
-      autoFocus
-      className="min-w-0 flex-1 rounded border border-border-strong bg-card px-2 py-0.5 text-sm text-primary placeholder:text-faint focus:border-focus focus:outline-none"
-    />
-  )
 
   // Archived sessions live in their own collapsible section; Recent excludes them.
   const activeSessions = useMemo(
@@ -329,7 +294,11 @@ export function Sidebar(): React.JSX.Element {
           )}
         >
           <SessionRowIcon pinned={pinned} className="text-muted" />
-          {renderRenameInput()}
+          <SessionNameInput
+            initialName={sessionState?.sessionName ?? ''}
+            onDone={finishSessionRename}
+            className="flex-1 px-2 py-0.5 text-sm"
+          />
         </div>
       )
     }

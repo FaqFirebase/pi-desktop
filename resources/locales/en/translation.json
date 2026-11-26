@@ -2412,6 +2412,7 @@
     "newSessionAriaLabel": "New session in this project",
     "newSessionFallback": "New session",
     "sessions": "Sessions",
+    "sessionTabTitleRenamable": "{{path}}\n\nDouble-click to rename · right-click for actions",
     "tools": "Tools"
   }
 }
