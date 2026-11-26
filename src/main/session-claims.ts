@@ -38,11 +38,25 @@ interface ClaimRecord {
   sessionPath: string
 }
 
+/**
+ * Which file a claim file is. A file system can give the inode of a removed
+ * file to the next new file, so the inode alone does not tell two files apart.
+ */
+interface ClaimFileId {
+  ino: bigint
+  mtimeNs: bigint
+}
+
 /** A claim file as read once: its owner, and which file it was. */
 interface FoundClaim {
   owner: ClaimRecord | null
-  inode: bigint
-  mtimeMs: number
+  id: ClaimFileId
+}
+
+const NS_PER_MS = 1_000_000n
+
+function sameClaimFile(a: ClaimFileId, b: ClaimFileId): boolean {
+  return a.ino === b.ino && a.mtimeNs === b.mtimeNs
 }
 
 export interface SessionClaimDeps {
@@ -94,7 +108,7 @@ export class SessionClaimStore {
           return true
         }
         if (found.owner && this.isLive(found)) return false
-        if (!this.removeStale(file, found.inode) || !this.create(file, sessionPath)) return false
+        if (!this.removeStale(file, found) || !this.create(file, sessionPath)) return false
       }
     }
     this.hold(key, file)
@@ -183,13 +197,14 @@ export class SessionClaimStore {
     if (before === null) return null
     const owner = this.read(file)
     const after = this.stat(file)
-    if (after === null || after.ino !== before.ino) return 'replaced'
-    return { owner, inode: before.ino, mtimeMs: Number(before.mtimeMs) }
+    if (after === null || !sameClaimFile(after, before)) return 'replaced'
+    return { owner, id: before }
   }
 
-  private stat(file: string): { ino: bigint; mtimeMs: bigint } | null {
+  private stat(file: string): ClaimFileId | null {
     try {
-      return statSync(file, { bigint: true })
+      const { ino, mtimeNs } = statSync(file, { bigint: true })
+      return { ino, mtimeNs }
     } catch (err) {
       if (errorCode(err) === NOT_FOUND) return null
       throw err
@@ -197,11 +212,12 @@ export class SessionClaimStore {
   }
 
   /**
-   * Remove the stale claim file `staleInode`, unless another instance replaced
+   * Remove the claim file read as `stale`, unless another instance replaced
    * it since it was read: the file is moved aside in one step, and only that
-   * same file is deleted. A newer claim moved aside by mistake is put back.
+   * same file, still with the same owner, is deleted. A newer claim moved
+   * aside by mistake is put back.
    */
-  private removeStale(file: string, staleInode: bigint): boolean {
+  private removeStale(file: string, stale: FoundClaim): boolean {
     const aside = `${file}.${randomUUID()}${STALE_FILE_EXTENSION}`
     try {
       renameSync(file, aside)
@@ -210,7 +226,9 @@ export class SessionClaimStore {
       if (errorCode(err) === NOT_FOUND) return true
       throw err
     }
-    if (statSync(aside, { bigint: true }).ino === staleInode) {
+    const moved = this.stat(aside)
+    if (moved === null) return true
+    if (sameClaimFile(moved, stale.id) && this.read(aside)?.pid === stale.owner?.pid) {
       this.remove(aside)
       return true
     }
@@ -225,7 +243,7 @@ export class SessionClaimStore {
   }
 
   private isLive(found: FoundClaim): boolean {
-    const age = this.deps.now() - found.mtimeMs
+    const age = this.deps.now() - Number(found.id.mtimeNs / NS_PER_MS)
     return found.owner !== null && age < CLAIM_STALE_MS && this.deps.isProcessAlive(found.owner.pid)
   }
 
