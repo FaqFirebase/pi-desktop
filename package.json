@@ -88,7 +88,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.7.0",
     "i18next-cli": "^1.73.2",
-    "katex": "^0.16.47",
+    "katex": "^0.19.1",
     "lucide-react": "^0.511.0",
     "parakeet.js": "^1.4.4",
     "react": "^19.1.0",
@@ -106,6 +106,9 @@
     "unified": "^11.0.5",
     "vite": "^6.3.5",
     "zustand": "^5.0.5"
+  },
+  "overrides": {
+    "katex": "$katex"
   },
   "build": {
     "appId": "dev.pi.desktop-gui",
